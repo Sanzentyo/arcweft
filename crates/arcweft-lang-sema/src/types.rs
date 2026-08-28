@@ -357,6 +357,12 @@ pub enum AgentBuiltinType {
     ViewportPoint,
     PointerButton,
     RagError,
+    AgentSourcePosition,
+    AgentProjectFlowControlSummary,
+    AgentProjectGraphSummary,
+    AgentBinaryBody,
+    AgentBinaryEncoding,
+    AgentBinaryData,
 }
 
 impl AgentBuiltinType {
@@ -372,6 +378,12 @@ impl AgentBuiltinType {
             Self::ViewportPoint => "ViewportPoint",
             Self::PointerButton => "PointerButton",
             Self::RagError => "RagError",
+            Self::AgentSourcePosition => "AgentSourcePosition",
+            Self::AgentProjectFlowControlSummary => "AgentProjectFlowControlSummary",
+            Self::AgentProjectGraphSummary => "AgentProjectGraphSummary",
+            Self::AgentBinaryBody => "AgentBinaryBody",
+            Self::AgentBinaryEncoding => "AgentBinaryEncoding",
+            Self::AgentBinaryData => "AgentBinaryData",
         }
     }
 
@@ -387,6 +399,12 @@ impl AgentBuiltinType {
             "ViewportPoint" => Self::ViewportPoint,
             "PointerButton" => Self::PointerButton,
             "RagError" => Self::RagError,
+            "AgentSourcePosition" => Self::AgentSourcePosition,
+            "AgentProjectFlowControlSummary" => Self::AgentProjectFlowControlSummary,
+            "AgentProjectGraphSummary" => Self::AgentProjectGraphSummary,
+            "AgentBinaryBody" => Self::AgentBinaryBody,
+            "AgentBinaryEncoding" => Self::AgentBinaryEncoding,
+            "AgentBinaryData" => Self::AgentBinaryData,
             _ => return None,
         })
     }
@@ -465,6 +483,89 @@ impl ProgressField {
 pub enum StageActorHandleType {
     Exact(CharacterId),
     Any,
+}
+
+/// Closed receiver/result constructor family of the standard `map` callable.
+///
+/// This type-level owner is shared by generic issuance, callable schemas and
+/// runtime projection so those layers cannot maintain parallel family tables.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StandardMapFamily {
+    Vec,
+    Seq,
+    Array,
+    Slice,
+    Option,
+    Result,
+    Need,
+    Parser,
+    Stream,
+}
+
+impl StandardMapFamily {
+    pub const ALL: [Self; 9] = [
+        Self::Vec,
+        Self::Seq,
+        Self::Array,
+        Self::Slice,
+        Self::Option,
+        Self::Result,
+        Self::Need,
+        Self::Parser,
+        Self::Stream,
+    ];
+
+    /// Families whose current runtime value algebra can execute a pure map.
+    /// Temporal/producer and parser families remain typed schema authorities,
+    /// but are not published until their owning transform substrate exists.
+    pub(crate) const PUBLISHED: [Self; 6] = [
+        Self::Vec,
+        Self::Seq,
+        Self::Array,
+        Self::Slice,
+        Self::Option,
+        Self::Result,
+    ];
+
+    pub(crate) const fn generic_arity(self) -> (u16, u16) {
+        match self {
+            Self::Vec | Self::Seq | Self::Slice | Self::Option | Self::Need => (2, 0),
+            Self::Array => (2, 1),
+            Self::Result | Self::Parser | Self::Stream => (3, 0),
+        }
+    }
+
+    pub(crate) const fn ordinal(self) -> u8 {
+        match self {
+            Self::Vec => 0,
+            Self::Seq => 1,
+            Self::Array => 2,
+            Self::Slice => 3,
+            Self::Option => 4,
+            Self::Result => 5,
+            Self::Need => 6,
+            Self::Parser => 7,
+            Self::Stream => 8,
+        }
+    }
+
+    pub(crate) const fn intrinsic_owner_tag(self) -> u8 {
+        self.ordinal() + 2
+    }
+
+    pub(crate) const fn intrinsic_owner_label(self) -> &'static str {
+        match self {
+            Self::Vec => "language.standard-map.vec",
+            Self::Seq => "language.standard-map.seq",
+            Self::Array => "language.standard-map.array",
+            Self::Slice => "language.standard-map.slice",
+            Self::Option => "language.standard-map.option",
+            Self::Result => "language.standard-map.result",
+            Self::Need => "language.standard-map.need",
+            Self::Parser => "language.standard-map.parser",
+            Self::Stream => "language.standard-map.stream",
+        }
+    }
 }
 
 /// Minimal semantic type used by parser/HIR contract tests.
@@ -551,6 +652,10 @@ pub enum TypeKind {
     },
     Need(Box<TypeKind>),
     Stream {
+        item: Box<TypeKind>,
+        error: Box<TypeKind>,
+    },
+    Parser {
         item: Box<TypeKind>,
         error: Box<TypeKind>,
     },
@@ -709,6 +814,9 @@ impl TypeKind {
             Self::Need(value) => format!("Need<{}>", value.source_label()),
             Self::Stream { item, error } => {
                 format!("Stream<{}, {}>", item.source_label(), error.source_label())
+            }
+            Self::Parser { item, error } => {
+                format!("Parser<{}, {}>", item.source_label(), error.source_label())
             }
             Self::Result { ok, error } => {
                 format!("Result<{}, {}>", ok.source_label(), error.source_label())
@@ -1129,6 +1237,12 @@ mod entity_kind_tests {
             AgentBuiltinType::ViewportPoint,
             AgentBuiltinType::PointerButton,
             AgentBuiltinType::RagError,
+            AgentBuiltinType::AgentSourcePosition,
+            AgentBuiltinType::AgentProjectFlowControlSummary,
+            AgentBuiltinType::AgentProjectGraphSummary,
+            AgentBuiltinType::AgentBinaryBody,
+            AgentBuiltinType::AgentBinaryEncoding,
+            AgentBuiltinType::AgentBinaryData,
         ];
 
         for builtin in builtins {

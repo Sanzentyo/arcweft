@@ -1073,6 +1073,32 @@ impl TypeCheckEnv {
                 "RagError",
                 TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::RagError),
             ),
+            (
+                "AgentSourcePosition",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentSourcePosition),
+            ),
+            (
+                "AgentProjectFlowControlSummary",
+                TypeKind::AgentBuiltin(
+                    crate::types::AgentBuiltinType::AgentProjectFlowControlSummary,
+                ),
+            ),
+            (
+                "AgentProjectGraphSummary",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentProjectGraphSummary),
+            ),
+            (
+                "AgentBinaryBody",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryBody),
+            ),
+            (
+                "AgentBinaryEncoding",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryEncoding),
+            ),
+            (
+                "AgentBinaryData",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryData),
+            ),
             ("TextCluster", TypeKind::TextCluster),
             ("Duration", TypeKind::Duration),
             ("DebugStatePath", TypeKind::DebugStatePath),

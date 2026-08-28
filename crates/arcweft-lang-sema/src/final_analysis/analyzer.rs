@@ -11,7 +11,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
-    dialogue_application::{HirPostfixBracket, HirPostfixBracketCandidates},
+    dialogue_application::{HirLinePlanItem, HirPostfixBracket, HirPostfixBracketCandidates},
     expr::{
         HirAssociatedSeparator, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
         HirCallCallee, HirCallExpr, HirCallValue, HirChoiceCompactAction, HirChoiceItem,
@@ -25,8 +25,8 @@ use arcweft_lang_hir::{
         HirTraitMember,
     },
     leaf::{
-        HirFloatLiteral, HirFloatWidth, HirIdRef, HirIntegerLiteral, HirLiteral, HirName,
-        HirPathRoot, HirPathSegment,
+        HirFloatLiteral, HirFloatWidth, HirIdRef, HirIdRefValue, HirIntegerLiteral, HirLiteral,
+        HirName, HirPathRoot, HirPathSegment,
     },
     module::HirModule,
     pattern::{
@@ -42,7 +42,7 @@ use arcweft_lang_hir::{
         HirItemSourceRole, HirPatternSourceRole, HirScopeSourceRole, HirSourcePresence,
         HirSourceQuery, HirSourceSite, HirTypeSourceRole,
     },
-    stmt::{HirAssertionMode, HirStmtKind},
+    stmt::{HirAssertionMode, HirStmtKind, HirTriggerPattern},
     symbol::{
         CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ProjectTypeTarget,
         ProjectValueLookup, ResolvedProjectSymbol,
@@ -96,17 +96,19 @@ use super::{
     CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedChoice, CheckedChoiceGoto, CheckedClosure,
-    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
-    CheckedProjectNominal, CheckedSelectResolution, CheckedStageLook, CheckedStatement,
-    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedTypedBinding, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
+    CheckedDialogueEffectOperation, CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal,
+    CheckedDialogueEffectTrigger, CheckedDialogueLinePlan, CheckedDialogueMarkHandler,
+    CheckedDialogueMarkOrdinal, CheckedEvaluatedEffect, CheckedExpression,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem,
+    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedProjectCallable,
+    CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution, CheckedStageLook,
+    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedTypedBinding,
+    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
+    CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
     PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, PreparedAssignmentStatement,
     PreparedEntryExpression, PreparedEntryReference, PreparedExpressionFact,
     PreparedExpressionShell, PreparedPatternFact, PreparedProjectVariantExpression,
@@ -247,6 +249,8 @@ struct ImplicitCallableContext {
 
 struct PipeContext {
     owner: ExprId,
+    left: ExprId,
+    right: ExprId,
     value: TypeKind,
     placeholders: BTreeSet<ExprId>,
 }
@@ -275,6 +279,7 @@ struct StagedCallableBody {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct AcceptedCandidateRank {
     exact_matches: usize,
+    declared_exact_matches: usize,
     unchecked_or_open: usize,
     omitted_parameters: usize,
     authority: Option<CallableAuthorityRank>,

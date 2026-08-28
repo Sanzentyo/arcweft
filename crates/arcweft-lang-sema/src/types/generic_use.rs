@@ -165,7 +165,9 @@ impl TypeGenericUseCollector {
                 self.visit_at(value, position)
             }
             TypeKind::BorrowRef { inner, .. } => self.visit_at(inner, position),
-            TypeKind::Stream { item, error } | TypeKind::Result { ok: item, error } => {
+            TypeKind::Stream { item, error }
+            | TypeKind::Parser { item, error }
+            | TypeKind::Result { ok: item, error } => {
                 self.visit_at(item, position)?;
                 self.visit_at(error, position)
             }
@@ -274,10 +276,7 @@ impl TypeGenericUseCollector {
         parameter: &GenericConstParameterId,
         position: u32,
     ) -> Result<(), TypeGenericUseError> {
-        if matches!(
-            parameter.owner(),
-            GenericParameterOwnerId::LanguageIntrinsic(_)
-        ) {
+        if !valid_const_ordinal(parameter) {
             return Err(TypeGenericUseError::MalformedConstParameter {
                 parameter: parameter.clone(),
             });
@@ -293,15 +292,22 @@ impl TypeGenericUseCollector {
 fn valid_type_ordinal(parameter: &GenericTypeParameterId) -> bool {
     match parameter.owner() {
         GenericParameterOwnerId::LanguageIntrinsic(owner) => {
-            let max = match owner {
-                super::LanguageIntrinsicGenericOwner::OptionConstructor
-                | super::LanguageIntrinsicGenericOwner::CollectionMap
-                | super::LanguageIntrinsicGenericOwner::FxExists
-                | super::LanguageIntrinsicGenericOwner::AgentSignal
-                | super::LanguageIntrinsicGenericOwner::AgentMetric => 0,
-                super::LanguageIntrinsicGenericOwner::ResultConstructor => 1,
-            };
-            parameter.ordinal() <= max
+            let (type_count, _) = owner.generic_arity();
+            parameter.ordinal() < type_count
+        }
+        GenericParameterOwnerId::Callable(_)
+        | GenericParameterOwnerId::Nominal(_)
+        | GenericParameterOwnerId::AcceptedNominal(_)
+        | GenericParameterOwnerId::AcceptedSource(_)
+        | GenericParameterOwnerId::Detached(_) => true,
+    }
+}
+
+fn valid_const_ordinal(parameter: &GenericConstParameterId) -> bool {
+    match parameter.owner() {
+        GenericParameterOwnerId::LanguageIntrinsic(owner) => {
+            let (_, const_count) = owner.generic_arity();
+            parameter.ordinal() < const_count
         }
         GenericParameterOwnerId::Callable(_)
         | GenericParameterOwnerId::Nominal(_)
@@ -469,6 +475,10 @@ mod tests {
                 item: Box::new(generic(112)),
                 error: Box::new(generic(113)),
             },
+            TypeKind::Parser {
+                item: Box::new(generic(125)),
+                error: Box::new(generic(126)),
+            },
             TypeKind::Result {
                 ok: Box::new(generic(114)),
                 error: Box::new(generic(115)),
@@ -496,8 +506,8 @@ mod tests {
             .map(|(position, ty)| (ty, u32::try_from(position).expect("test position fits u32")));
         let inventory = TypeGenericUseCollector::collect_many(positioned)
             .expect("all TypeKind child constructors are traversable");
-        assert_eq!(inventory.types().len(), 25);
+        assert_eq!(inventory.types().len(), 27);
         assert_eq!(inventory.first_type_use(&parameter(100, 0)), Some(0));
-        assert_eq!(inventory.first_type_use(&parameter(124, 0)), Some(20));
+        assert_eq!(inventory.first_type_use(&parameter(124, 0)), Some(21));
     }
 }

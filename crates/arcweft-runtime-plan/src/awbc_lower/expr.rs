@@ -1,20 +1,23 @@
-use crate::awbc_lower::frame::FrameBuilder;
+use crate::awbc_lower::frame::{FrameBuilder, FrameCaptureSlot};
 use crate::awbc_lower::inventory::{AwbcInventory, PendingAwbcClosure};
 use crate::awbc_lower::pattern::{admitted_plan_type, admitted_variant_case_name, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFieldProjection,
     AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
-    AwbcIntrinsic, AwbcIntrinsicId, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId,
+    AwbcIntrinsic, AwbcIntrinsicId, AwbcPattern, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId,
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
     AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
 use arcweft_core::entry::RuntimeCallableId;
-use arcweft_core::pattern::RuntimePattern;
-use arcweft_core::plan::{RuntimePlan, RuntimeReceiverMode};
+use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
+use arcweft_core::plan::{
+    RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimeReceiverMode,
+};
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
-    RuntimeFieldProjection, RuntimeUnaryOp,
+    RuntimeFieldProjection, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeUnaryOp,
 };
 
 /// Expression lowerer used by flow/source/stream builders.
@@ -394,37 +397,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     });
                 dst
             }
-            RuntimeExprKind::Map {
-                source,
-                param,
-                body,
-            } => {
-                let source_ty = admitted_plan_type(self.inventory, self.plan, source.ty());
-                let body_ty = admitted_plan_type(self.inventory, self.plan, body.ty());
-                let source = self.lower(source);
-                let _ = self.frame.local(
-                    *param,
-                    admitted_plan_type(self.inventory, self.plan, local_type(self.plan, *param)),
-                );
-                let body = self.lower(body);
-                let result_ty = admitted_plan_type(self.inventory, self.plan, expr.ty());
-                let dst = self.frame.temp(result_ty);
-                let intrinsic = self.intern_intrinsic(
-                    &RuntimeCallTarget::callable(
-                        RuntimeCallableId::try_new("seq.map".to_owned())
-                            .expect("synthetic seq.map callable identity is valid"),
-                    ),
-                    &[source_ty, body_ty],
-                    Some(result_ty),
-                );
-                self.inventory
-                    .push_instruction(AwbcInstruction::CallIntrinsic {
-                        dst: Some(dst),
-                        intrinsic,
-                        args: vec![source, body],
-                    });
-                dst
-            }
+            RuntimeExprKind::StandardMap { .. } => self.lower_value_control_expr(expr),
             RuntimeExprKind::Filter {
                 source,
                 param,
@@ -624,7 +597,7 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
     }
 
     fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
-        let captures = self.frame.capture_slots();
+        let captures = self.control_expr_captures(expr);
         let function = self.inventory.reserve_function_slot();
         self.inventory.push_pending_closure(PendingAwbcClosure {
             function,
@@ -657,6 +630,28 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 args: Vec::new(),
             });
         dst
+    }
+
+    fn control_expr_captures(&self, expr: &RuntimeExpr) -> Vec<FrameCaptureSlot> {
+        expr.evaluation_free_locals(self.plan)
+            .unwrap_or_else(|error| {
+                panic!(
+                    "admitted control expression has invalid free-local authority at {}: {error}",
+                    self.path
+                )
+            })
+            .iter()
+            .copied()
+            .map(|local| FrameCaptureSlot {
+                local,
+                register: self.frame.register_for_local(local).unwrap_or_else(|| {
+                    panic!(
+                        "admitted control expression reads local `{local}` outside the AWBC frame at {}",
+                        self.path
+                    )
+                }),
+            })
+            .collect()
     }
 
     fn load_runtime_const(
@@ -882,8 +877,550 @@ fn lower_closure_body(
         RuntimeExprKind::Match { scrutinee, arms } => {
             lower_match_value_expr(inventory, frame, plan, body, scrutinee, arms, path);
         }
+        RuntimeExprKind::StandardMap {
+            family,
+            order,
+            mapping,
+            source,
+        } => lower_standard_map_value_expr(
+            inventory,
+            frame,
+            plan,
+            body,
+            StandardMapValueExprInput {
+                family: *family,
+                order: *order,
+                mapping,
+                source,
+                result: expr,
+                path,
+            },
+        ),
         _ => terminate_return_expr(inventory, frame, plan, body, expr, path, None),
     }
+}
+
+#[derive(Clone, Copy)]
+struct StandardMapValueExprInput<'a> {
+    family: RuntimeStandardMapFamily,
+    order: RuntimeStandardMapOperandOrder,
+    mapping: &'a RuntimeExpr,
+    source: &'a RuntimeExpr,
+    result: &'a RuntimeExpr,
+    path: &'a str,
+}
+
+#[derive(Clone, Copy)]
+struct StandardMapPlanTypes {
+    input: arcweft_core::runtime_id::RuntimePlanTypeId,
+    output: arcweft_core::runtime_id::RuntimePlanTypeId,
+    residual: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
+}
+
+fn lower_standard_map_value_expr(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    body: &mut ExprBodyBuilder,
+    input: StandardMapValueExprInput<'_>,
+) {
+    let (mapping, source) = match input.order {
+        RuntimeStandardMapOperandOrder::MappingThenReceiver => (
+            AwbcExprLowerer::new(inventory, frame, format!("{}.mapping", input.path), plan)
+                .lower(input.mapping),
+            AwbcExprLowerer::new(inventory, frame, format!("{}.receiver", input.path), plan)
+                .lower(input.source),
+        ),
+        RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
+            let source =
+                AwbcExprLowerer::new(inventory, frame, format!("{}.receiver", input.path), plan)
+                    .lower(input.source);
+            let mapping =
+                AwbcExprLowerer::new(inventory, frame, format!("{}.mapping", input.path), plan)
+                    .lower(input.mapping);
+            (mapping, source)
+        }
+    };
+    let types = standard_map_plan_types(plan, input.family, input.source.ty(), input.result.ty());
+    match input.family {
+        RuntimeStandardMapFamily::Vec
+        | RuntimeStandardMapFamily::Seq
+        | RuntimeStandardMapFamily::Slice => lower_standard_sequence_map(
+            inventory,
+            frame,
+            plan,
+            body,
+            input.result.ty(),
+            types,
+            mapping,
+            source,
+        ),
+        RuntimeStandardMapFamily::Array => lower_standard_array_map(
+            inventory,
+            frame,
+            plan,
+            body,
+            input.source.ty(),
+            input.result.ty(),
+            types,
+            mapping,
+            source,
+        ),
+        RuntimeStandardMapFamily::Option | RuntimeStandardMapFamily::Result => {
+            lower_standard_variant_map(
+                inventory,
+                frame,
+                plan,
+                body,
+                input.family,
+                input.source.ty(),
+                input.result.ty(),
+                types,
+                mapping,
+                source,
+            );
+        }
+    }
+}
+
+fn standard_map_plan_types(
+    plan: &RuntimePlan,
+    family: RuntimeStandardMapFamily,
+    source: arcweft_core::runtime_id::RuntimePlanTypeId,
+    result: arcweft_core::runtime_id::RuntimePlanTypeId,
+) -> StandardMapPlanTypes {
+    match (
+        family,
+        plan_type_projection(plan, source),
+        plan_type_projection(plan, result),
+    ) {
+        (
+            RuntimeStandardMapFamily::Vec,
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: input,
+            },
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Seq,
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Seq,
+                item: input,
+            },
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Seq,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Slice,
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Slice,
+                item: input,
+            },
+            RuntimePlanTypeProjection::Sequence {
+                kind: RuntimePlanSequenceKind::Vec,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Option,
+            RuntimePlanTypeProjection::Option(input),
+            RuntimePlanTypeProjection::Option(output),
+        ) => StandardMapPlanTypes {
+            input: *input,
+            output: *output,
+            residual: None,
+        },
+        (
+            RuntimeStandardMapFamily::Array,
+            RuntimePlanTypeProjection::Array {
+                item: input,
+                length: input_length,
+            },
+            RuntimePlanTypeProjection::Array {
+                item: output,
+                length: output_length,
+            },
+        ) if input_length == output_length => StandardMapPlanTypes {
+            input: *input,
+            output: *output,
+            residual: None,
+        },
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimePlanTypeProjection::Result {
+                value: input,
+                error: input_error,
+            },
+            RuntimePlanTypeProjection::Result {
+                value: output,
+                error: output_error,
+            },
+        ) if input_error == output_error => StandardMapPlanTypes {
+            input: *input,
+            output: *output,
+            residual: Some(*input_error),
+        },
+        _ => panic!("admitted standard map has mismatched source/result family"),
+    }
+}
+
+fn plan_type_projection(
+    plan: &RuntimePlan,
+    ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+) -> &RuntimePlanTypeProjection<arcweft_core::runtime_id::RuntimePlanTypeId> {
+    plan.type_table()
+        .get(ty)
+        .unwrap_or_else(|| panic!("admitted RuntimePlan type {ty} is absent"))
+        .projection()
+}
+
+fn lower_standard_sequence_map(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    body: &mut ExprBodyBuilder,
+    result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    types: StandardMapPlanTypes,
+    mapping: AwbcRegisterId,
+    source: AwbcRegisterId,
+) {
+    let result = frame.runtime_state(admitted_plan_type(inventory, plan, result_ty));
+    inventory.push_instruction(AwbcInstruction::MakeSequence {
+        dst: result,
+        items: Vec::new(),
+    });
+    let index_ty = inventory.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
+    let index = frame.runtime_state(index_ty);
+    let zero = inventory
+        .constant_runtime_value_typed(&arcweft_core::value::RuntimeValue::usize(0), index_ty);
+    inventory.push_instruction(AwbcInstruction::LoadConst {
+        dst: index,
+        constant: zero,
+    });
+    let one = frame.temp(index_ty);
+    let one_constant = inventory
+        .constant_runtime_value_typed(&arcweft_core::value::RuntimeValue::usize(1), index_ty);
+    inventory.push_instruction(AwbcInstruction::LoadConst {
+        dst: one,
+        constant: one_constant,
+    });
+    let len = frame.temp(index_ty);
+    inventory.push_instruction(AwbcInstruction::SequenceLen {
+        dst: len,
+        sequence: source,
+    });
+
+    let header = AwbcBlockId(table_index(
+        inventory.program.blocks.len().saturating_add(1),
+    ));
+    body.close_block(
+        inventory,
+        AwbcTerminator::Jump { target: header },
+        AwbcSafePointKind::CallableBoundary,
+    );
+    let condition = frame.temp(inventory.bool_ty());
+    inventory.push_instruction(AwbcInstruction::Binary {
+        dst: condition,
+        op: AwbcBinaryOp::Lt,
+        lhs: index,
+        rhs: len,
+    });
+    let loop_body = AwbcBlockId(header.0.saturating_add(1));
+    let branch = body.close_block(
+        inventory,
+        AwbcTerminator::Branch {
+            condition,
+            then_block: loop_body,
+            else_block: loop_body,
+        },
+        AwbcSafePointKind::LoopBackedge,
+    );
+
+    let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
+    inventory.push_instruction(AwbcInstruction::SequenceGet {
+        dst: item,
+        sequence: source,
+        index,
+    });
+    let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
+    inventory.push_instruction(AwbcInstruction::ApplyFunction {
+        dst: mapped,
+        callee: mapping,
+        args: vec![item],
+    });
+    inventory.push_instruction(AwbcInstruction::SequencePush {
+        sequence: result,
+        value: mapped,
+    });
+    let next = frame.temp(index_ty);
+    inventory.push_instruction(AwbcInstruction::Binary {
+        dst: next,
+        op: AwbcBinaryOp::Add,
+        lhs: index,
+        rhs: one,
+    });
+    inventory.push_instruction(AwbcInstruction::Move {
+        dst: index,
+        src: next,
+    });
+    body.close_block(
+        inventory,
+        AwbcTerminator::Jump { target: header },
+        AwbcSafePointKind::LoopBackedge,
+    );
+    let exit = AwbcBlockId(table_index(inventory.program.blocks.len()));
+    patch_branch_else_block(inventory, branch, exit);
+    body.terminate(
+        inventory,
+        AwbcTerminator::Return {
+            value: Some(result),
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "array map lowering consumes one closed admitted call transaction"
+)]
+fn lower_standard_array_map(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    body: &mut ExprBodyBuilder,
+    source_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    types: StandardMapPlanTypes,
+    mapping: AwbcRegisterId,
+    source: AwbcRegisterId,
+) {
+    let RuntimePlanTypeProjection::Array { length, .. } = plan_type_projection(plan, source_ty)
+    else {
+        unreachable!("admitted array map source is an Array")
+    };
+    let length = usize::try_from(*length).expect("admitted array length fits this platform");
+    let index_ty = inventory.intern_type(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::USize));
+    let mut mapped_items = Vec::with_capacity(length);
+    for index in 0..length {
+        let index_register = frame.temp(index_ty);
+        let index_constant = inventory.constant_runtime_value_typed(
+            &arcweft_core::value::RuntimeValue::usize(index as u64),
+            index_ty,
+        );
+        inventory.push_instruction(AwbcInstruction::LoadConst {
+            dst: index_register,
+            constant: index_constant,
+        });
+        let item = frame.temp(admitted_plan_type(inventory, plan, types.input));
+        inventory.push_instruction(AwbcInstruction::SequenceGet {
+            dst: item,
+            sequence: source,
+            index: index_register,
+        });
+        let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
+        inventory.push_instruction(AwbcInstruction::ApplyFunction {
+            dst: mapped,
+            callee: mapping,
+            args: vec![item],
+        });
+        mapped_items.push(mapped);
+    }
+    let result = frame.temp(admitted_plan_type(inventory, plan, result_ty));
+    inventory.push_instruction(AwbcInstruction::MakeSequence {
+        dst: result,
+        items: mapped_items,
+    });
+    body.terminate(
+        inventory,
+        AwbcTerminator::Return {
+            value: Some(result),
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "variant map lowering consumes one closed admitted call transaction"
+)]
+fn lower_standard_variant_map(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    body: &mut ExprBodyBuilder,
+    family: RuntimeStandardMapFamily,
+    source_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    result_ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    types: StandardMapPlanTypes,
+    mapping: AwbcRegisterId,
+    source: AwbcRegisterId,
+) {
+    let success_case = match family {
+        RuntimeStandardMapFamily::Option => RuntimeBuiltinVariantCaseIdentity::OptionSome,
+        RuntimeStandardMapFamily::Result => RuntimeBuiltinVariantCaseIdentity::ResultOk,
+        _ => unreachable!("only Option and Result use variant map lowering"),
+    };
+    let (success_pattern, success_payload) = standard_map_variant_pattern(
+        inventory,
+        frame,
+        plan,
+        source_ty,
+        success_case,
+        Some(types.input),
+    );
+    let matched = frame.temp(inventory.bool_ty());
+    inventory.push_instruction(AwbcInstruction::TestPattern {
+        dst: matched,
+        pattern: success_pattern,
+        value: source,
+    });
+    let then_block = AwbcBlockId(table_index(
+        inventory.program.blocks.len().saturating_add(1),
+    ));
+    let branch = body.close_block(
+        inventory,
+        AwbcTerminator::Branch {
+            condition: matched,
+            then_block,
+            else_block: then_block,
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+    inventory.push_instruction(AwbcInstruction::BindPattern {
+        pattern: success_pattern,
+        value: source,
+        mode: AwbcBindMode::Declare,
+    });
+    let mapped = frame.temp(admitted_plan_type(inventory, plan, types.output));
+    inventory.push_instruction(AwbcInstruction::ApplyFunction {
+        dst: mapped,
+        callee: mapping,
+        args: vec![success_payload.expect("success variant has one payload")],
+    });
+    let success = standard_map_make_variant(
+        inventory,
+        frame,
+        plan,
+        result_ty,
+        success_case,
+        Some(mapped),
+    );
+    body.terminate(
+        inventory,
+        AwbcTerminator::Return {
+            value: Some(success),
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+
+    let else_block = body.reopen_after_terminated_branch(inventory);
+    patch_branch_else_block(inventory, branch, else_block);
+    let residual = match family {
+        RuntimeStandardMapFamily::Option => standard_map_make_variant(
+            inventory,
+            frame,
+            plan,
+            result_ty,
+            RuntimeBuiltinVariantCaseIdentity::OptionNone,
+            None,
+        ),
+        RuntimeStandardMapFamily::Result => {
+            let residual_ty = types.residual.expect("Result map has one residual type");
+            let (pattern, payload) = standard_map_variant_pattern(
+                inventory,
+                frame,
+                plan,
+                source_ty,
+                RuntimeBuiltinVariantCaseIdentity::ResultErr,
+                Some(residual_ty),
+            );
+            inventory.push_instruction(AwbcInstruction::BindPattern {
+                pattern,
+                value: source,
+                mode: AwbcBindMode::Declare,
+            });
+            standard_map_make_variant(
+                inventory,
+                frame,
+                plan,
+                result_ty,
+                RuntimeBuiltinVariantCaseIdentity::ResultErr,
+                payload,
+            )
+        }
+        _ => unreachable!("only Option and Result use variant map lowering"),
+    };
+    body.terminate(
+        inventory,
+        AwbcTerminator::Return {
+            value: Some(residual),
+        },
+        AwbcSafePointKind::CallableBoundary,
+    );
+}
+
+fn standard_map_variant_pattern(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    case: RuntimeBuiltinVariantCaseIdentity,
+    payload_ty: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
+) -> (AwbcPatternId, Option<AwbcRegisterId>) {
+    let payload = payload_ty.map(|payload_ty| {
+        let payload_ty = admitted_plan_type(inventory, plan, payload_ty);
+        let payload = frame.temp(payload_ty);
+        let pattern = inventory.intern_pattern(AwbcPattern::Bind {
+            target: payload,
+            mutable: false,
+            expected: Some(payload_ty),
+        });
+        (payload, pattern)
+    });
+    let (ordinal, _) = case
+        .owner()
+        .resolve_case(case)
+        .expect("builtin standard map case belongs to its owner");
+    let case_name = admitted_variant_case_name(inventory, plan, ty, ordinal);
+    let ty = admitted_plan_type(inventory, plan, ty);
+    let pattern = inventory.intern_pattern(AwbcPattern::Variant {
+        ty,
+        case: ordinal,
+        case_name,
+        payload: payload.as_ref().map(|(_, pattern)| *pattern),
+    });
+    (pattern, payload.map(|(payload, _)| payload))
+}
+
+fn standard_map_make_variant(
+    inventory: &mut AwbcInventory,
+    frame: &mut FrameBuilder,
+    plan: &RuntimePlan,
+    ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    case: RuntimeBuiltinVariantCaseIdentity,
+    payload: Option<AwbcRegisterId>,
+) -> AwbcRegisterId {
+    let (ordinal, _) = case
+        .owner()
+        .resolve_case(case)
+        .expect("builtin standard map case belongs to its owner");
+    let case_name = admitted_variant_case_name(inventory, plan, ty, ordinal);
+    let ty = admitted_plan_type(inventory, plan, ty);
+    let dst = frame.temp(ty);
+    inventory.push_instruction(AwbcInstruction::MakeVariant {
+        dst,
+        ty,
+        case: ordinal,
+        case_name,
+        payload,
+    });
+    dst
 }
 
 #[derive(Clone, Copy)]

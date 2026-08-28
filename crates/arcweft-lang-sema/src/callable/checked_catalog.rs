@@ -17,7 +17,7 @@ use crate::{
 };
 
 use super::{
-    CallableAccess, CallableCandidateId, CallableEffectSchema, CallableRecord,
+    CallableAccess, CallableCandidateId, CallableEffectSchema, CallableName, CallableRecord,
     CheckedCallableContext, CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId,
     EnvironmentCallablePublicationDigest, ReceiverMethodKey, RegisteredCallableCatalog,
     RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
@@ -453,8 +453,7 @@ impl CheckedCallableFacts {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedMethodLookup {
     Absent,
-    Unique(Box<CheckedCallableId>),
-    Ambiguous(Arc<[CheckedCallableId]>),
+    Candidates(Arc<[CheckedCallableId]>),
     Inaccessible(Arc<[CheckedCallableId]>),
 }
 
@@ -523,6 +522,7 @@ pub struct CheckedCallableCatalog {
     records: BTreeMap<CheckedCallableId, CheckedCallableFacts>,
     checked_by_candidate: HashMap<CallableCandidateId, CheckedCallableId>,
     method_index: HashMap<ReceiverMethodKey, Arc<[CheckedCallableId]>>,
+    extension_index: HashMap<CallableName, Arc<[CheckedCallableId]>>,
     inaccessible_methods: HashMap<ReceiverMethodKey, Arc<[CheckedCallableId]>>,
     closure_rows: BTreeMap<CheckedClosureId, EffectRow>,
     closure_source_index: BTreeMap<SourceSpan, CheckedClosureId>,
@@ -671,14 +671,30 @@ impl CheckedCallableCatalog {
     }
 
     pub fn method(&self, key: &ReceiverMethodKey) -> CheckedMethodLookup {
+        let exact = self.method_index.get(key).map(AsRef::as_ref).unwrap_or(&[]);
+        let extensions = self
+            .extension_index
+            .get(key.method())
+            .map(AsRef::as_ref)
+            .unwrap_or(&[]);
+        let mut candidates = exact.iter().chain(extensions).cloned().collect::<Vec<_>>();
+        candidates.sort();
+        candidates.dedup();
+        if !candidates.is_empty() {
+            return CheckedMethodLookup::Candidates(candidates.into());
+        }
         if let Some(candidates) = self.inaccessible_methods.get(key) {
             return CheckedMethodLookup::Inaccessible(Arc::clone(candidates));
         }
-        match self.method_index.get(key).map(AsRef::as_ref) {
-            None | Some([]) => CheckedMethodLookup::Absent,
-            Some([candidate]) => CheckedMethodLookup::Unique(Box::new(candidate.clone())),
-            Some(candidates) => CheckedMethodLookup::Ambiguous(candidates.into()),
-        }
+        CheckedMethodLookup::Absent
+    }
+
+    pub(crate) fn exact_method(&self, key: &ReceiverMethodKey) -> CheckedMethodLookup {
+        self.method_index
+            .get(key)
+            .map_or(CheckedMethodLookup::Absent, |candidates| {
+                freeze_lookup(candidates)
+            })
     }
 
     pub fn closure_row(
@@ -856,6 +872,7 @@ pub(crate) struct CheckedCallableCatalogBuilder {
     pending: BTreeMap<CheckedCallableId, PendingCheckedCallable>,
     checked_by_candidate: HashMap<CallableCandidateId, CheckedCallableId>,
     method_index: HashMap<ReceiverMethodKey, Vec<CheckedCallableId>>,
+    extension_index: HashMap<CallableName, Vec<CheckedCallableId>>,
     closure_rows: BTreeMap<CheckedClosureId, EffectRow>,
     closure_source_index: BTreeMap<SourceSpan, CheckedClosureId>,
     source_index: BTreeMap<CheckedCallableSourceKey, CheckedCallableId>,
@@ -884,6 +901,7 @@ impl CheckedCallableCatalogBuilder {
             pending: BTreeMap::new(),
             checked_by_candidate: HashMap::new(),
             method_index: HashMap::new(),
+            extension_index: HashMap::new(),
             closure_rows: BTreeMap::new(),
             closure_source_index: BTreeMap::new(),
             source_index: BTreeMap::new(),
@@ -1206,6 +1224,16 @@ impl CheckedCallableCatalogBuilder {
     }
 
     pub(crate) fn method(&self, key: &ReceiverMethodKey) -> CheckedMethodLookup {
+        let exact = self.method_index.get(key).map(Vec::as_slice).unwrap_or(&[]);
+        let extensions = self
+            .extension_index
+            .get(key.method())
+            .map(Vec::as_slice)
+            .unwrap_or(&[]);
+        freeze_lookup(&exact.iter().chain(extensions).cloned().collect::<Vec<_>>())
+    }
+
+    pub(crate) fn exact_method(&self, key: &ReceiverMethodKey) -> CheckedMethodLookup {
         self.method_index
             .get(key)
             .map_or(CheckedMethodLookup::Absent, |candidates| {
@@ -1231,6 +1259,32 @@ impl CheckedCallableCatalogBuilder {
             return Err(CheckedCallableCatalogBuildError::MissingMethodRecord);
         }
         let candidates = self.method_index.entry(key.clone()).or_default();
+        if candidates.contains(&id) {
+            return Err(CheckedCallableCatalogBuildError::DuplicateCallable);
+        }
+        candidates.push(id);
+        Ok(())
+    }
+
+    pub(crate) fn stage_extension_candidate(
+        &mut self,
+        method: &CallableName,
+        id: CheckedCallableId,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if self.state != CheckedCatalogBuildState::Collecting {
+            return Err(CheckedCallableCatalogBuildError::InvalidState);
+        }
+        let pending = self
+            .pending
+            .get(&id)
+            .ok_or(CheckedCallableCatalogBuildError::MissingMethodRecord)?;
+        if pending.record.extension_method_name() != Some(method)
+            || pending.record.schema().extension_receiver().is_none()
+            || matches!(pending.record.access(), CallableAccess::TraitImplementation)
+        {
+            return Err(CheckedCallableCatalogBuildError::MissingMethodRecord);
+        }
+        let candidates = self.extension_index.entry(method.clone()).or_default();
         if candidates.contains(&id) {
             return Err(CheckedCallableCatalogBuildError::DuplicateCallable);
         }
@@ -1320,12 +1374,14 @@ impl CheckedCallableCatalogBuilder {
         }
         self.state = CheckedCatalogBuildState::Finished;
         let method_index = freeze_method_index(&mut self.method_index);
+        let extension_index = freeze_extension_index(&mut self.extension_index);
         Ok(Arc::new(CheckedCallableCatalog {
             generation: self.generation,
             registered: self.registered,
             records,
             checked_by_candidate: self.checked_by_candidate,
             method_index,
+            extension_index,
             inaccessible_methods: HashMap::new(),
             closure_rows: self.closure_rows,
             closure_source_index: self.closure_source_index,
@@ -1418,6 +1474,23 @@ impl CheckedCallableCatalogBuilder {
                 }
             }
         }
+        for (method, candidates) in &self.extension_index {
+            if candidates.is_empty() {
+                return Err(CheckedCallableCatalogBuildError::CorruptIndex);
+            }
+            for id in candidates {
+                let pending = self
+                    .pending
+                    .get(id)
+                    .ok_or(CheckedCallableCatalogBuildError::CorruptIndex)?;
+                if pending.record.extension_method_name() != Some(method)
+                    || pending.record.schema().extension_receiver().is_none()
+                    || matches!(pending.record.access(), CallableAccess::TraitImplementation)
+                {
+                    return Err(CheckedCallableCatalogBuildError::CorruptIndex);
+                }
+            }
+        }
         if self.closure_source_index.len() != self.closure_rows.len() {
             return Err(CheckedCallableCatalogBuildError::CorruptIndex);
         }
@@ -1448,14 +1521,27 @@ fn freeze_method_index(
         .collect()
 }
 
+fn freeze_extension_index(
+    index: &mut HashMap<CallableName, Vec<CheckedCallableId>>,
+) -> HashMap<CallableName, Arc<[CheckedCallableId]>> {
+    std::mem::take(index)
+        .into_iter()
+        .map(|(key, mut ids)| {
+            ids.sort();
+            ids.dedup();
+            (key, ids.into())
+        })
+        .collect()
+}
+
 fn freeze_lookup(candidates: &[CheckedCallableId]) -> CheckedMethodLookup {
     let mut candidates = candidates.to_vec();
     candidates.sort();
     candidates.dedup();
-    match candidates.as_slice() {
-        [] => CheckedMethodLookup::Absent,
-        [candidate] => CheckedMethodLookup::Unique(Box::new(candidate.clone())),
-        _ => CheckedMethodLookup::Ambiguous(candidates.into()),
+    if candidates.is_empty() {
+        CheckedMethodLookup::Absent
+    } else {
+        CheckedMethodLookup::Candidates(candidates.into())
     }
 }
 

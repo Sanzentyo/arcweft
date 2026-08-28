@@ -162,6 +162,10 @@ impl MappedCallArgumentSlot {
         self.source_projection
     }
 
+    pub(crate) const fn declared_expected(&self) -> Option<&TypeKind> {
+        self.expected.as_ref()
+    }
+
     pub(crate) const fn open_argument(&self) -> Option<&OpenArgumentId> {
         self.open.as_ref()
     }

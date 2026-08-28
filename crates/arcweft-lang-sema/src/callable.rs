@@ -28,6 +28,7 @@ mod resolver;
 mod schema;
 mod view_modifier;
 
+pub use crate::types::StandardMapFamily;
 pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use application::{
     DetachedPreparedCallableApplication, PreparedCallableApplication,
@@ -57,13 +58,14 @@ pub use checked_application::{
     CheckedCallSemanticOperand, CheckedCallSemanticOperandSource, CheckedCallSemanticSelection,
     CheckedCandidateIndex, CheckedCandidateInventory, CheckedCapacityMethodIdentity,
     CheckedCapacityOperation, CheckedCaptureMode, CheckedCaptureSignatureRow,
-    CheckedContentCallableCoordinate, CheckedDeferredContinuationParameter,
-    CheckedDialogueCallableIdentity, CheckedDomainMethodIdentity, CheckedFunctionValueIdentity,
-    CheckedLanguageCallableIdentity, CheckedLexicalCallableIdentity, FrozenCallTypeSolution,
-    FrozenCallTypeSolutionDigest, ResolvedCallable, ResolvedCallableAuthority,
-    ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableDigest,
-    ResolvedCallableIssuerEvidence, ResolvedCallableOrigin, ResolvedCallableStableIdentity,
-    ResolvedCallableState, ResolvedDialogueCalleeIdentity,
+    CheckedContentCallableCoordinate, CheckedDeferredContinuationConstParameter,
+    CheckedDeferredContinuationParameter, CheckedDialogueCallableIdentity,
+    CheckedDomainMethodIdentity, CheckedFunctionValueIdentity, CheckedLanguageCallableIdentity,
+    CheckedLexicalCallableIdentity, FrozenCallTypeSolution, FrozenCallTypeSolutionDigest,
+    ResolvedCallable, ResolvedCallableAuthority, ResolvedCallableBase,
+    ResolvedCallableBaseInstantiation, ResolvedCallableDigest, ResolvedCallableIssuerEvidence,
+    ResolvedCallableOrigin, ResolvedCallableStableIdentity, ResolvedCallableState,
+    ResolvedDialogueCalleeIdentity,
 };
 pub(crate) use checked_application::{
     CheckedCallApplicationCoreSeal, CheckedCallExecutionArgumentSeal,
@@ -175,11 +177,12 @@ pub(crate) use resolver::{
     PreparedDialogueCalleeIdentity, PreparedFunctionValueOriginEvidence,
     PreparedFunctionValueOriginIdentity, PreparedFunctionValueOriginProducer,
     PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError,
-    PreparedResolvedCallable, PreparedResolvedCallableDefinition,
-    PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDefinitionSealInput,
-    PreparedResolvedCallableDetachArena, PreparedResolvedCallableIdentity, ResolveCallOutcome,
-    ResolvedCallTarget, prepare_final_call_callee, prepare_function_value_origin_query,
-    prepare_language_free_dot_path, prepare_presentation_callee_id, resolve_call_target,
+    PreparedImplicitExtensionReceiver, PreparedResolvedCallable,
+    PreparedResolvedCallableDefinition, PreparedResolvedCallableDefinitionBatch,
+    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableDetachArena,
+    PreparedResolvedCallableIdentity, ResolveCallOutcome, ResolvedCallTarget,
+    prepare_final_call_callee, prepare_function_value_origin_query, prepare_language_free_dot_path,
+    prepare_presentation_callee_id, resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, ResolvedCharacterOwner,
@@ -202,7 +205,7 @@ pub use schema::{
     VariantPayloadRequirement,
 };
 pub(crate) use schema::{
-    CallableGenericFirstUse, CallableGenericParameterInventory, CallableGenericTypeUse,
-    CallableRigidConstUse, CallableSchemaGenericRole,
+    CallableGenericConstUse, CallableGenericFirstUse, CallableGenericParameterInventory,
+    CallableGenericTypeUse, CallableSchemaGenericRole,
 };
 pub use view_modifier::ViewModifierId;

@@ -11,11 +11,11 @@ use crate::{
 
 use super::{
     CallableArgumentPolicy, CallableArgumentSemanticAction, CallableAuthorityRank,
-    CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect, CallableGenericFirstUse,
-    CallableGenericParameterInventory, CallableGenericTypeUse, CallableGroupKind, CallableLogLevel,
-    CallableLookupKey, CallableParameterAdmission, CallableParameterConsumer,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterValueAlternative,
-    CallableProviderId, CallableRigidConstUse, CallableSchemaGenericRole,
+    CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect, CallableGenericConstUse,
+    CallableGenericFirstUse, CallableGenericParameterInventory, CallableGenericTypeUse,
+    CallableGroupKind, CallableLogLevel, CallableLookupKey, CallableParameterAdmission,
+    CallableParameterConsumer, CallableParameterPassing, CallableParameterPresence,
+    CallableParameterValueAlternative, CallableProviderId, CallableSchemaGenericRole,
     CallableSemanticValueGuard, CallableSignatureSchema, CallableSource, CallableValidator,
     DocumentationProvenance, EnvironmentCallableId, EnvironmentCallableKind,
     EnvironmentCallableOwner, LanguageDocumentationFamily, ParameterExpectedTypeProjection,
@@ -191,9 +191,9 @@ impl CanonicalEncoder {
         for entry in inventory.types() {
             self.generic_type_use(entry);
         }
-        self.usize(inventory.rigid_consts().len());
-        for entry in inventory.rigid_consts() {
-            self.rigid_const_use(entry);
+        self.usize(inventory.consts().len());
+        for entry in inventory.consts() {
+            self.generic_const_use(entry);
         }
     }
 
@@ -210,7 +210,7 @@ impl CanonicalEncoder {
         self.generic_first_use(entry.first_use());
     }
 
-    fn rigid_const_use(&mut self, entry: &CallableRigidConstUse) {
+    fn generic_const_use(&mut self, entry: &CallableGenericConstUse) {
         self.bytes(
             TypeKind::Array {
                 item: Box::new(TypeKind::Unit),
@@ -219,6 +219,10 @@ impl CanonicalEncoder {
             .semantic_identity_digest()
             .as_bytes(),
         );
+        self.tag(match entry.role() {
+            CallableSchemaGenericRole::Candidate => 0,
+            CallableSchemaGenericRole::RigidReference => 1,
+        });
         self.generic_first_use(entry.first_use());
     }
 
@@ -348,6 +352,15 @@ impl CanonicalEncoder {
             CallableEvaluatedEffect::Fail => self.tag(5),
             CallableEvaluatedEffect::Bail => self.tag(6),
             CallableEvaluatedEffect::Ensure => self.tag(7),
+            CallableEvaluatedEffect::Drop(operation) => {
+                self.tag(8);
+                self.tag(match operation {
+                    super::DropCallableId::Drop => 0,
+                    super::DropCallableId::DropWithPolicy => 1,
+                    super::DropCallableId::DropOptional => 2,
+                    super::DropCallableId::OnDrop => 3,
+                });
+            }
         }
     }
 
@@ -397,28 +410,28 @@ impl CanonicalEncoder {
     fn validator(&mut self, validator: &CallableValidator) {
         self.tag(match validator {
             CallableValidator::Ordinary => 0,
-            CallableValidator::Untyped => 1,
-            CallableValidator::Fx(_) => 2,
-            CallableValidator::UnknownFxMember { .. } => 3,
-            CallableValidator::EnumConstructor(_) => 4,
-            CallableValidator::ResultConstructor(_) => 5,
-            CallableValidator::OptionConstructor(_) => 6,
-            CallableValidator::ReductionConstructor(_) => 7,
-            CallableValidator::Builtin(_) => 8,
-            CallableValidator::Agent(_) => 9,
-            CallableValidator::Presentation(_) => 10,
-            CallableValidator::Dialogue(_) => 11,
-            CallableValidator::Collection(_) => 12,
-            CallableValidator::PresentationHandle(_) => 13,
-            CallableValidator::Integer(_) => 14,
-            CallableValidator::Domain(_) => 15,
-            CallableValidator::Method(_) => 16,
-            CallableValidator::Capacity(_) => 17,
-            CallableValidator::Stage(_) => 18,
-            CallableValidator::Drop => 19,
-            CallableValidator::Promotion(_) => 20,
-            CallableValidator::LineContext(_) => 21,
-            CallableValidator::ViewModifier(_) => 22,
+            CallableValidator::Fx(_) => 1,
+            CallableValidator::UnknownFxMember { .. } => 2,
+            CallableValidator::EnumConstructor(_) => 3,
+            CallableValidator::ResultConstructor(_) => 4,
+            CallableValidator::OptionConstructor(_) => 5,
+            CallableValidator::ReductionConstructor(_) => 6,
+            CallableValidator::Builtin(_) => 7,
+            CallableValidator::Agent(_) => 8,
+            CallableValidator::Presentation(_) => 9,
+            CallableValidator::Dialogue(_) => 10,
+            CallableValidator::Collection(_) => 11,
+            CallableValidator::PresentationHandle(_) => 12,
+            CallableValidator::Integer(_) => 13,
+            CallableValidator::Domain(_) => 14,
+            CallableValidator::Method(_) => 15,
+            CallableValidator::Capacity(_) => 16,
+            CallableValidator::Stage(_) => 17,
+            CallableValidator::Drop(_) => 18,
+            CallableValidator::Promotion(_) => 19,
+            CallableValidator::LineContext(_) => 20,
+            CallableValidator::ViewModifier(_) => 21,
+            CallableValidator::StandardMap(_) => 22,
         });
         if let CallableValidator::Method(role) = validator {
             self.tag(match role {
@@ -437,6 +450,17 @@ impl CanonicalEncoder {
         }
         if let CallableValidator::ViewModifier(modifier) = validator {
             self.tag(u16::from(modifier.semantic_tag()));
+        }
+        if let CallableValidator::Drop(operation) = validator {
+            self.tag(match operation {
+                super::DropCallableId::Drop => 0,
+                super::DropCallableId::DropWithPolicy => 1,
+                super::DropCallableId::DropOptional => 2,
+                super::DropCallableId::OnDrop => 3,
+            });
+        }
+        if let CallableValidator::StandardMap(family) = validator {
+            self.tag(u16::from(family.intrinsic_owner_tag()));
         }
     }
 
@@ -477,8 +501,7 @@ impl CanonicalEncoder {
         self.tag(match kind {
             EnvironmentCallableKind::Function => 0,
             EnvironmentCallableKind::Method => 1,
-            EnvironmentCallableKind::UntypedMethodFallback => 2,
-            EnvironmentCallableKind::RustFunction => 3,
+            EnvironmentCallableKind::RustFunction => 2,
         });
     }
 
@@ -645,7 +668,7 @@ mod tests {
     use crate::types::TypeKind;
 
     #[test]
-    fn method_validator_replaces_reserved_tag_sixteen_with_exact_role_subtag() {
+    fn method_validator_uses_compact_family_tag_and_exact_role_subtag() {
         for (role, role_tag) in [
             (CallableMethodRole::TraitRequirement, 0_u16),
             (CallableMethodRole::TraitImplementation, 1_u16),
@@ -655,7 +678,7 @@ mod tests {
             encoder.validator(&CallableValidator::Method(role));
 
             let mut expected = Vec::new();
-            expected.extend_from_slice(&16_u16.to_le_bytes());
+            expected.extend_from_slice(&15_u16.to_le_bytes());
             expected.extend_from_slice(&role_tag.to_le_bytes());
             assert_eq!(encoder.into_bytes(), expected);
         }

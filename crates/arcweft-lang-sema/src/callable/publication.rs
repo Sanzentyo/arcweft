@@ -5,9 +5,8 @@ use crate::registration::{AcceptedNominalWorldStamp, EnvironmentManifestDigest};
 use super::digest::CanonicalEncoder;
 use super::{
     CallableDocumentation, CallableLimits, CallableLookupKey, CallablePublicationError,
-    CallableSignatureSchema, CallableSource, CallableValidator, EnvironmentCallableKind,
-    EnvironmentCallableOwner, EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal,
-    RustCallableProvenance,
+    CallableSignatureSchema, CallableSource, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal, RustCallableProvenance,
 };
 
 const PUBLICATION_DOMAIN: &[u8] = b"arcweft.environment-publication.v1\0";
@@ -93,12 +92,6 @@ impl EnvironmentCallablePublicationRecord {
     ) -> Result<Self, CallablePublicationError> {
         if kind == EnvironmentCallableKind::RustFunction && rust.is_none() {
             return Err(super::CallableCatalogError::MissingRustProvenance.into());
-        }
-        if kind == EnvironmentCallableKind::UntypedMethodFallback
-            && (!matches!(key, CallableLookupKey::Method(_))
-                || !matches!(schema.validator(), CallableValidator::Untyped))
-        {
-            return Err(CallablePublicationError::InvalidOverload);
         }
         Ok(Self {
             kind,

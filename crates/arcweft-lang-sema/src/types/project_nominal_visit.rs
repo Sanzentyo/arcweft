@@ -94,7 +94,9 @@ pub(crate) fn visit_project_nominals<E>(
             visit_project_nominals(key, visitor)?;
             visit_project_nominals(value, visitor)
         }
-        TypeKind::Stream { item, error } | TypeKind::Result { ok: item, error } => {
+        TypeKind::Stream { item, error }
+        | TypeKind::Parser { item, error }
+        | TypeKind::Result { ok: item, error } => {
             visit_project_nominals(item, visitor)?;
             visit_project_nominals(error, visitor)
         }

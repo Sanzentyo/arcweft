@@ -19,7 +19,8 @@ use crate::{
     },
     types::{
         ArrayLength, CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection,
-        MapKind, SemanticTypeDigest, TypeKind, constraints::TypeConstraintSolution,
+        GenericConstParameterId, MapKind, SemanticTypeDigest, TypeKind,
+        constraints::TypeConstraintSolution,
     },
 };
 
@@ -906,6 +907,12 @@ pub struct CheckedDeferredContinuationParameter {
     first_remaining_group: CallableGroupIndex,
 }
 
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedDeferredContinuationConstParameter {
+    parameter: GenericConstParameterId,
+    first_remaining_group: CallableGroupIndex,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallEffectBinding {
     variable: EffectVar,
@@ -930,6 +937,15 @@ impl CheckedDeferredContinuationParameter {
     }
 }
 
+impl CheckedDeferredContinuationConstParameter {
+    pub const fn parameter(&self) -> &GenericConstParameterId {
+        &self.parameter
+    }
+    pub const fn first_remaining_group(&self) -> CallableGroupIndex {
+        self.first_remaining_group
+    }
+}
+
 #[derive(Clone, Eq, PartialEq)]
 pub struct FrozenCallTypeSolution {
     base: ResolvedCallableDigest,
@@ -938,6 +954,7 @@ pub struct FrozenCallTypeSolution {
     solution: Arc<TypeConstraintSolution>,
     effect_bindings: Box<[CheckedCallEffectBinding]>,
     deferred: Box<[CheckedDeferredContinuationParameter]>,
+    deferred_consts: Box<[CheckedDeferredContinuationConstParameter]>,
     digest: FrozenCallTypeSolutionDigest,
 }
 
@@ -949,6 +966,7 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
             .field("completed_group", &self.completed_group)
             .field("effect_binding_count", &self.effect_bindings.len())
             .field("deferred_count", &self.deferred.len())
+            .field("deferred_const_count", &self.deferred_consts.len())
             .field("digest", &self.digest)
             .finish()
     }
@@ -984,6 +1002,10 @@ impl FrozenCallTypeSolution {
                 )
                 .map_err(|_| CallConstraintInvariant::PreparedEffectInstantiationMismatch)?,
         );
+        let implicit_extension_group = match base.instantiation() {
+            ResolvedCallableBaseInstantiation::Extension { group, .. } => Some(*group),
+            _ => None,
+        };
         let mut deferred = base
             .schema()
             .generic_inventory()
@@ -993,10 +1015,12 @@ impl FrozenCallTypeSolution {
                 (
                     super::CallableSchemaGenericRole::Candidate,
                     super::CallableGenericFirstUse::Group(group),
-                ) if group > seed.completed_group => Some(CheckedDeferredContinuationParameter {
-                    parameter: entry.parameter().clone(),
-                    first_remaining_group: group,
-                }),
+                ) if group > seed.completed_group && Some(group) != implicit_extension_group => {
+                    Some(CheckedDeferredContinuationParameter {
+                        parameter: entry.parameter().clone(),
+                        first_remaining_group: group,
+                    })
+                }
                 _ => None,
             })
             .collect::<Vec<_>>();
@@ -1011,6 +1035,33 @@ impl FrozenCallTypeSolution {
         if deferred.windows(2).any(|rows| rows[0] >= rows[1]) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
+        let mut deferred_consts = base
+            .schema()
+            .generic_inventory()
+            .consts()
+            .iter()
+            .filter_map(|entry| match (entry.role(), entry.first_use()) {
+                (
+                    super::CallableSchemaGenericRole::Candidate,
+                    super::CallableGenericFirstUse::Group(group),
+                ) if group > seed.completed_group && Some(group) != implicit_extension_group => {
+                    Some(CheckedDeferredContinuationConstParameter {
+                        parameter: entry.parameter().clone(),
+                        first_remaining_group: group,
+                    })
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        deferred_consts.sort_by(|left, right| {
+            ArrayLength::Generic(left.parameter.clone())
+                .canonical_checked_bytes()
+                .cmp(&ArrayLength::Generic(right.parameter.clone()).canonical_checked_bytes())
+                .then_with(|| left.first_remaining_group.cmp(&right.first_remaining_group))
+        });
+        if deferred_consts.windows(2).any(|rows| rows[0] >= rows[1]) {
+            return Err(CallConstraintInvariant::PreparedDeferredMismatch);
+        }
         let mut bindings = solution
             .bindings()
             .map(|(parameter, value)| {
@@ -1022,6 +1073,22 @@ impl FrozenCallTypeSolution {
             .collect::<Vec<_>>();
         bindings.sort_by_key(|(parameter, _)| *parameter);
         if bindings.windows(2).any(|rows| rows[0].0 >= rows[1].0) {
+            return Err(CallConstraintInvariant::PreparedDeferredMismatch);
+        }
+        let mut const_bindings = solution
+            .const_bindings()
+            .map(|(parameter, value)| {
+                let parameter = ArrayLength::Generic(parameter.clone())
+                    .canonical_checked_bytes()
+                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?;
+                let value = value
+                    .canonical_checked_bytes()
+                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?;
+                Ok((parameter, value))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        const_bindings.sort_by(|left, right| left.0.cmp(&right.0));
+        if const_bindings.windows(2).any(|rows| rows[0].0 >= rows[1].0) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
         let mut effect_bindings = solution
@@ -1054,6 +1121,12 @@ impl FrozenCallTypeSolution {
             encoder.digest(parameter.as_bytes());
             encoder.digest(value.as_bytes());
         }
+        encoder.count(const_bindings.len())?;
+        for (parameter, value) in &const_bindings {
+            encoder.tag(1);
+            encoder.bytes(parameter)?;
+            encoder.bytes(value)?;
+        }
         encoder.count(effect_bindings.len())?;
         for binding in &effect_bindings {
             encoder.digest(binding.variable().issuer().as_bytes());
@@ -1062,8 +1135,18 @@ impl FrozenCallTypeSolution {
         }
         encoder.count(deferred.len())?;
         for row in &deferred {
-            encoder.tag(1);
+            encoder.tag(2);
             encoder.digest(generic_parameter_digest(row.parameter()).as_bytes());
+            encoder.index(row.first_remaining_group().get())?;
+        }
+        encoder.count(deferred_consts.len())?;
+        for row in &deferred_consts {
+            encoder.tag(3);
+            encoder.bytes(
+                &ArrayLength::Generic(row.parameter().clone())
+                    .canonical_checked_bytes()
+                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?,
+            )?;
             encoder.index(row.first_remaining_group().get())?;
         }
         let digest = FrozenCallTypeSolutionDigest(encoder.finish());
@@ -1074,6 +1157,7 @@ impl FrozenCallTypeSolution {
             solution,
             effect_bindings: effect_bindings.into_boxed_slice(),
             deferred: deferred.into_boxed_slice(),
+            deferred_consts: deferred_consts.into_boxed_slice(),
             digest,
         }))
     }
@@ -1092,6 +1176,9 @@ impl FrozenCallTypeSolution {
     }
     pub fn deferred(&self) -> &[CheckedDeferredContinuationParameter] {
         &self.deferred
+    }
+    pub fn deferred_consts(&self) -> &[CheckedDeferredContinuationConstParameter] {
+        &self.deferred_consts
     }
     pub const fn digest(&self) -> FrozenCallTypeSolutionDigest {
         self.digest
@@ -1885,7 +1972,7 @@ impl CheckedCallApplicationCore {
         }))
     }
 
-    pub(crate) const fn site(&self) -> super::CheckedCallSite {
+    pub const fn site(&self) -> super::CheckedCallSite {
         self.site.raw()
     }
     pub const fn stable_site(&self) -> &StableCheckedValueCoordinate {
@@ -1949,6 +2036,7 @@ pub struct CheckedCallContinuation {
     base: Arc<ResolvedCallableBase>,
     next_group: CallableGroupIndex,
     inherited_solution: Arc<FrozenCallTypeSolution>,
+    prefix_call_site: super::CheckedCallSite,
     prefix_application_site: StableCheckedValueCoordinate,
     prefix_application_core: CheckedCallApplicationCoreDigest,
     function_type: TypeKind,
@@ -1979,6 +2067,7 @@ impl CheckedCallContinuation {
             base,
             next_group,
             inherited_solution: Arc::clone(core.solution()),
+            prefix_call_site: core.site(),
             prefix_application_site: core.stable_site().clone(),
             prefix_application_core: core.digest(),
             function_type,
@@ -1994,6 +2083,9 @@ impl CheckedCallContinuation {
     }
     pub const fn inherited_solution(&self) -> &Arc<FrozenCallTypeSolution> {
         &self.inherited_solution
+    }
+    pub const fn prefix_call_site(&self) -> super::CheckedCallSite {
+        self.prefix_call_site
     }
     pub const fn prefix_application_site(&self) -> &StableCheckedValueCoordinate {
         &self.prefix_application_site
@@ -2064,7 +2156,9 @@ impl CheckedCallApplication {
         let projected = base.result_type_for_group(core.current_group(), core.solution())?;
         let result = match (base.next_group_for(core.current_group()), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if prepared == projected => {
-                if !core.solution().deferred().is_empty() {
+                if !core.solution().deferred().is_empty()
+                    || !core.solution().deferred_consts().is_empty()
+                {
                     return Err(CallConstraintInvariant::PreparedDeferredMismatch);
                 }
                 CheckedCallResult::Value(projected)
@@ -3391,7 +3485,6 @@ const fn dialogue_tag(id: DialogueCallableId) -> u8 {
 const fn collection_tag(id: CollectionMethodId) -> u8 {
     match id {
         CollectionMethodId::Len => 0,
-        CollectionMethodId::Map => 1,
         CollectionMethodId::Filter => 2,
         CollectionMethodId::Sum => 3,
         CollectionMethodId::Contains => 4,
@@ -3447,6 +3540,9 @@ const fn line_schedule_tag(id: LineScheduleCallableId) -> u8 {
 const fn drop_tag(id: DropCallableId) -> u8 {
     match id {
         DropCallableId::Drop => 0,
+        DropCallableId::DropWithPolicy => 1,
+        DropCallableId::DropOptional => 2,
+        DropCallableId::OnDrop => 3,
     }
 }
 const fn promotion_tag(id: PromotionCallableId) -> u8 {

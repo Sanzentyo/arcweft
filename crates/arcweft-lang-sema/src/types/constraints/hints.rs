@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use super::super::{ArrayLength, GenericTypeParameterId, MapKind, TypeKind};
+use super::super::{ArrayLength, MapKind, TypeKind};
 use super::{PreparedSourceConstraintInvariant, TypeConstraintError, TypeConstraintInvariant};
 
 /// Minimal domain used only by the private lower tests.
@@ -506,7 +506,7 @@ pub(crate) enum ProjectedExpectedHint<'h> {
     Complete(&'h TypeKind),
     Parametric {
         expected: &'h TypeKind,
-        unbound: &'h [GenericTypeParameterId],
+        unbound: &'h [super::ConstraintGenericParameterId],
     },
 }
 

@@ -14,7 +14,7 @@ use arcweft_core::plan::{
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
 use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
@@ -32,8 +32,9 @@ use crate::semantic_facts::{
     RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact,
-    RuntimeTypeShape,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeStandardMapCall,
+    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
+    RuntimeTryCarrierFact, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
@@ -1266,6 +1267,12 @@ impl<'hir> FinalExprLowerer<'hir> {
             .facts
             .call(id)
             .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
+        if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
+            map,
+        )) = selected.dispatch()
+        {
+            return self.lower_standard_map(id, map);
+        }
         let operands = selected.operands();
         let lowered = self.lower_call_operands(id, selected)?;
         let values = lowered
@@ -1337,6 +1344,9 @@ impl<'hir> FinalExprLowerer<'hir> {
             )) => Ok(RuntimeExprSeedKind::ReductionUnchanged {
                 state: Box::new(exact_one(id, &self.scalar_values(id, &values)?)?),
             }),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
+                _,
+            )) => unreachable!("standard map is lowered before generic call operands"),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Registered(
                 registered,
             )) => Ok(RuntimeExprSeedKind::Call {
@@ -1393,6 +1403,44 @@ impl<'hir> FinalExprLowerer<'hir> {
                 format!("line capability call {id:?} must be consumed by typed line-plan lowering"),
             ),
         }
+    }
+
+    fn lower_standard_map(
+        &self,
+        owner: ExprId,
+        map: &RuntimeStandardMapCall,
+    ) -> Result<RuntimeExprSeedKind, String> {
+        let mapping = self.lower(map.mapping())?;
+        let source = self.lower(map.receiver())?;
+        let family = match map.family() {
+            SemanticStandardMapFamily::Vec => RuntimeStandardMapFamily::Vec,
+            SemanticStandardMapFamily::Seq => RuntimeStandardMapFamily::Seq,
+            SemanticStandardMapFamily::Array => RuntimeStandardMapFamily::Array,
+            SemanticStandardMapFamily::Slice => RuntimeStandardMapFamily::Slice,
+            SemanticStandardMapFamily::Option => RuntimeStandardMapFamily::Option,
+            SemanticStandardMapFamily::Result => RuntimeStandardMapFamily::Result,
+        };
+        let order = match map.order() {
+            crate::semantic_facts::RuntimeStandardMapOperandOrder::MappingThenReceiver => {
+                RuntimeStandardMapOperandOrder::MappingThenReceiver
+            }
+            crate::semantic_facts::RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
+                RuntimeStandardMapOperandOrder::ReceiverThenMapping
+            }
+        };
+        if mapping.ty() != self.expression_type(map.mapping())?
+            || source.ty() != self.expression_type(map.receiver())?
+        {
+            return Err(format!(
+                "standard map {owner:?} operand type changed during runtime expression projection"
+            ));
+        }
+        Ok(RuntimeExprSeedKind::StandardMap {
+            family,
+            order,
+            mapping: Box::new(mapping),
+            source: Box::new(source),
+        })
     }
 
     fn lower_call_operands(

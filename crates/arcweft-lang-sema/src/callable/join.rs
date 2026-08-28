@@ -518,16 +518,29 @@ pub(crate) fn validate_selected_application(
             {
                 return Err(CheckedCallableJoinError::CatalogRecordMismatch);
             }
-            if let Some(key) = row.record().receiver_method_key() {
+            if let Some(schema_key) = row.record().receiver_method_key() {
+                let key = match selected.instantiation() {
+                    ResolvedCallableBaseInstantiation::Extension { receiver, .. } => {
+                        super::ReceiverMethodKey::new(
+                            receiver.clone(),
+                            row.record()
+                                .extension_method_name()
+                                .ok_or(CheckedCallableJoinError::MethodLookupMismatch)?
+                                .clone(),
+                        )
+                    }
+                    _ => schema_key,
+                };
                 match catalog.method(&key) {
-                    CheckedMethodLookup::Unique(found) if found.as_ref() == id => {}
-                    CheckedMethodLookup::Unique(_) => {
+                    CheckedMethodLookup::Candidates(candidates)
+                        if candidates.iter().any(|candidate| candidate == id) => {}
+                    CheckedMethodLookup::Candidates(_) => {
                         return Err(CheckedCallableJoinError::MethodLookupMismatch);
                     }
                     CheckedMethodLookup::Absent => {
                         return Err(CheckedCallableJoinError::MethodLookupMissing);
                     }
-                    CheckedMethodLookup::Ambiguous(_) | CheckedMethodLookup::Inaccessible(_) => {
+                    CheckedMethodLookup::Inaccessible(_) => {
                         return Err(CheckedCallableJoinError::MethodLookupAmbiguous);
                     }
                 }

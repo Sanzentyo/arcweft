@@ -26,6 +26,7 @@ impl AcceptedCharacterLookSemanticId {
 pub struct CheckedStageLook {
     character_nominal: SemanticTypeDigest,
     character: CharacterId,
+    look_id: CharacterLookId,
     look: AcceptedCharacterLookSemanticId,
     diagnostic_name: HirName,
 }
@@ -44,12 +45,14 @@ impl CheckedStageLook {
         }
         let look_id = CharacterLookId::try_new(diagnostic_name.as_str()).ok()?;
         let look = manifest.look(&look_id)?;
-        let look = accepted_character_look_semantic_id(character, look.id(), look.selections())?;
+        let semantic_look =
+            accepted_character_look_semantic_id(character, look.id(), look.selections())?;
         Some(Self {
             character_nominal: TypeKind::CharacterNominal(nominal.clone())
                 .semantic_identity_digest(),
             character: character.clone(),
-            look,
+            look_id,
+            look: semantic_look,
             diagnostic_name,
         })
     }
@@ -66,6 +69,13 @@ impl CheckedStageLook {
 
     pub(crate) const fn look(&self) -> AcceptedCharacterLookSemanticId {
         self.look
+    }
+
+    /// Returns the exact manifest-owned runtime look identity. Downstream
+    /// projection consumes this typed id and never reconstructs it from the
+    /// diagnostic spelling.
+    pub const fn look_id(&self) -> &CharacterLookId {
+        &self.look_id
     }
 
     /// Returns the authored spelling retained only for diagnostics.

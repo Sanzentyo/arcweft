@@ -77,11 +77,11 @@ use super::{
     CallableParameterCoordinate, CallableParameterIndex, CallableParameterPresence, CallablePath,
     CallableRecord, CallableSignatureSchema, CallableValidator, CapacityMethodId,
     CheckedCallableDeclaration, CheckedCallableId, CheckedMethodLookup, CollectionMethodId,
-    CorruptCallableCatalogReason, DomainMethodId, DropCallableId, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EquivalentCallableSource,
-    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, FxResolution,
-    IntegerMethodId, LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId,
-    LocalCallableId, OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId,
+    CorruptCallableCatalogReason, DomainMethodId, EnvironmentCallableId, EnvironmentCallableKind,
+    EnvironmentCallableOwner, EquivalentCallableSource, FunctionValueOrdinal,
+    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
+    LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId, LocalCallableId,
+    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId,
     PresentationSchemaContext, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
     ReceiverMethodKey, ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId,
     StandardEnvironmentId,
@@ -179,6 +179,26 @@ pub(crate) enum PreparedCallCalleeConstraintInputs {
     DialogueApplication,
     FunctionValue { actual: TypeKind },
     NonCallable,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedImplicitExtensionReceiver {
+    source: ExprId,
+    actual: TypeKind,
+}
+
+impl PreparedImplicitExtensionReceiver {
+    pub(crate) const fn new(source: ExprId, actual: TypeKind) -> Self {
+        Self { source, actual }
+    }
+
+    pub(crate) const fn source(&self) -> ExprId {
+        self.source
+    }
+
+    pub(crate) const fn actual(&self) -> &TypeKind {
+        &self.actual
+    }
 }
 
 /// Schema-sealed source role for one non-runtime Dialogue application
@@ -1073,6 +1093,7 @@ pub(crate) struct CallResolverRequest<'a> {
     prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     work: &'a mut ResolverWork,
     limits: &'a CallableLimits,
+    implicit_extension_receiver: Option<PreparedImplicitExtensionReceiver>,
 }
 
 /// Immutable authorities and controls for one final-HIR call-resolution query.
@@ -1088,6 +1109,7 @@ pub(crate) struct CallResolverContext<'a> {
     pub(crate) cancellation: &'a AtomicBool,
     pub(crate) prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
     pub(crate) limits: &'a CallableLimits,
+    pub(crate) implicit_extension_receiver: Option<PreparedImplicitExtensionReceiver>,
 }
 
 /// The one checked-callable selection authority admitted while a final
@@ -1135,6 +1157,13 @@ impl<'a> CheckedCallResolverAuthority<'a> {
         match self {
             Self::Pending(builder) => builder.method(key),
             Self::Frozen(catalog) => catalog.method(key),
+        }
+    }
+
+    fn exact_method(self, key: &ReceiverMethodKey) -> super::CheckedMethodLookup {
+        match self {
+            Self::Pending(builder) => builder.exact_method(key),
+            Self::Frozen(catalog) => catalog.exact_method(key),
         }
     }
 }
@@ -1345,6 +1374,7 @@ impl<'a> CallResolverRequest<'a> {
             prepared_continuations: context.prepared_continuations,
             work,
             limits: context.limits,
+            implicit_extension_receiver: context.implicit_extension_receiver.clone(),
         })
     }
 
@@ -1372,6 +1402,7 @@ impl<'a> CallResolverRequest<'a> {
             prepared_continuations: context.prepared_continuations,
             work,
             limits: context.limits,
+            implicit_extension_receiver: None,
         })
     }
 

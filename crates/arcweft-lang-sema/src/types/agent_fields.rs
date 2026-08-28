@@ -1,6 +1,7 @@
 use arcweft_core::{
+    pattern::RuntimeBuiltinVariantIdentity,
     plan::RuntimeAgentOperationalType,
-    value::{RuntimeAgentField, RuntimeAgentFieldResult},
+    value::{RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue},
 };
 
 use super::{AgentBuiltinType, MapKind, TypeKind};
@@ -23,12 +24,21 @@ fn agent_field_coordinate(owner: &TypeKind, field: &str) -> Option<RuntimeAgentF
         TypeKind::ActionResult => action_result_field(field),
         TypeKind::CaptureRef => capture_reference_field(field),
         TypeKind::AgentResource => resource_field(field),
-        TypeKind::AgentResourceBody => resource_body_field(field),
+        TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryBody) => binary_body_field(field),
         TypeKind::AgentEntityMetadata => entity_metadata_field(field),
         TypeKind::AgentSourceAnchor => source_anchor_field(field),
+        TypeKind::AgentBuiltin(AgentBuiltinType::AgentSourcePosition) => {
+            source_position_field(field)
+        }
         TypeKind::AgentProjectGraphNeighborhood => project_graph_neighborhood_field(field),
         TypeKind::AgentProjectGraphSymbol => project_graph_symbol_field(field),
         TypeKind::AgentProjectGraphEdge => project_graph_edge_field(field),
+        TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectFlowControlSummary) => {
+            project_flow_control_summary_field(field)
+        }
+        TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectGraphSummary) => {
+            project_graph_summary_field(field)
+        }
         TypeKind::Ref(_) => reference_field(field),
         _ => None,
     }
@@ -116,14 +126,10 @@ fn resource_field(field: &str) -> Option<RuntimeAgentField> {
     })
 }
 
-fn resource_body_field(field: &str) -> Option<RuntimeAgentField> {
+fn binary_body_field(field: &str) -> Option<RuntimeAgentField> {
     Some(match field {
-        "kind" => RuntimeAgentField::ResourceBodyKind,
-        "json" => RuntimeAgentField::ResourceBodyJson,
-        "text" => RuntimeAgentField::ResourceBodyText,
-        "base64" => RuntimeAgentField::ResourceBodyBase64,
-        "encoding" => RuntimeAgentField::ResourceBodyEncoding,
-        "value" => RuntimeAgentField::ResourceBodyValue,
+        "encoding" => RuntimeAgentField::BinaryBodyEncoding,
+        "data" => RuntimeAgentField::BinaryBodyData,
         _ => return None,
     })
 }
@@ -140,14 +146,19 @@ fn entity_metadata_field(field: &str) -> Option<RuntimeAgentField> {
 
 fn source_anchor_field(field: &str) -> Option<RuntimeAgentField> {
     Some(match field {
-        "has_source" => RuntimeAgentField::SourceAnchorHasSource,
         "path" => RuntimeAgentField::SourceAnchorPath,
         "start_byte" => RuntimeAgentField::SourceAnchorStartByte,
         "end_byte" => RuntimeAgentField::SourceAnchorEndByte,
-        "start_line" => RuntimeAgentField::SourceAnchorStartLine,
-        "start_column" => RuntimeAgentField::SourceAnchorStartColumn,
-        "end_line" => RuntimeAgentField::SourceAnchorEndLine,
-        "end_column" => RuntimeAgentField::SourceAnchorEndColumn,
+        "start" => RuntimeAgentField::SourceAnchorStart,
+        "end" => RuntimeAgentField::SourceAnchorEnd,
+        _ => return None,
+    })
+}
+
+fn source_position_field(field: &str) -> Option<RuntimeAgentField> {
+    Some(match field {
+        "line" => RuntimeAgentField::SourcePositionLine,
+        "column" => RuntimeAgentField::SourcePositionColumn,
         _ => return None,
     })
 }
@@ -188,42 +199,70 @@ fn project_graph_symbol_field(field: &str) -> Option<RuntimeAgentField> {
         "kind" => RuntimeAgentField::ProjectGraphSymbolKind,
         "semantic_hash" => RuntimeAgentField::ProjectGraphSymbolSemanticHash,
         "summary" => RuntimeAgentField::ProjectGraphSymbolSummary,
-        "has_entity" => RuntimeAgentField::ProjectGraphSymbolHasEntity,
-        "has_semantic_hash" => RuntimeAgentField::ProjectGraphSymbolHasSemanticHash,
-        "has_flow_control" => RuntimeAgentField::ProjectGraphSymbolHasFlowControl,
-        "has_dynamic_control" => RuntimeAgentField::ProjectGraphSymbolHasDynamicControl,
-        "has_project_summary" => RuntimeAgentField::ProjectGraphSymbolHasProjectSummary,
-        "entity_count" => RuntimeAgentField::ProjectGraphSymbolEntityCount,
-        "agent_action_count" => RuntimeAgentField::ProjectGraphSymbolAgentActionCount,
-        "project_callable_count" => RuntimeAgentField::ProjectGraphSymbolProjectCallableCount,
-        "relation_count" => RuntimeAgentField::ProjectGraphSymbolRelationCount,
-        "dependency_edge_count" => RuntimeAgentField::ProjectGraphSymbolDependencyEdgeCount,
+        "flow_control" => RuntimeAgentField::ProjectGraphSymbolFlowControl,
+        "project_summary" => RuntimeAgentField::ProjectGraphSymbolProjectSummary,
+        _ => return None,
+    })
+}
+
+fn project_flow_control_summary_field(field: &str) -> Option<RuntimeAgentField> {
+    Some(match field {
+        "has_dynamic_control" => RuntimeAgentField::ProjectFlowControlHasDynamicControl,
+        "static_goto_count" => RuntimeAgentField::ProjectFlowControlStaticGotoCount,
+        "dynamic_goto_count" => RuntimeAgentField::ProjectFlowControlDynamicGotoCount,
+        "branch_count" => RuntimeAgentField::ProjectFlowControlBranchCount,
+        "loop_count" => RuntimeAgentField::ProjectFlowControlLoopCount,
+        "await_count" => RuntimeAgentField::ProjectFlowControlAwaitCount,
+        "thread_count" => RuntimeAgentField::ProjectFlowControlThreadCount,
+        "select_branch_count" => RuntimeAgentField::ProjectFlowControlSelectBranchCount,
+        _ => return None,
+    })
+}
+
+fn project_graph_summary_field(field: &str) -> Option<RuntimeAgentField> {
+    Some(match field {
+        "entity_count" => RuntimeAgentField::ProjectGraphSummaryEntityCount,
+        "agent_action_count" => RuntimeAgentField::ProjectGraphSummaryAgentActionCount,
+        "project_callable_count" => RuntimeAgentField::ProjectGraphSummaryProjectCallableCount,
+        "relation_count" => RuntimeAgentField::ProjectGraphSummaryRelationCount,
+        "dependency_edge_count" => RuntimeAgentField::ProjectGraphSummaryDependencyEdgeCount,
         "dynamic_control_flow_count" => {
-            RuntimeAgentField::ProjectGraphSymbolDynamicControlFlowCount
+            RuntimeAgentField::ProjectGraphSummaryDynamicControlFlowCount
         }
-        "debug_query_count" => RuntimeAgentField::ProjectGraphSymbolDebugQueryCount,
-        "static_goto_count" => RuntimeAgentField::ProjectGraphSymbolStaticGotoCount,
-        "dynamic_goto_count" => RuntimeAgentField::ProjectGraphSymbolDynamicGotoCount,
-        "branch_count" => RuntimeAgentField::ProjectGraphSymbolBranchCount,
-        "loop_count" => RuntimeAgentField::ProjectGraphSymbolLoopCount,
-        "await_count" => RuntimeAgentField::ProjectGraphSymbolAwaitCount,
-        "thread_count" => RuntimeAgentField::ProjectGraphSymbolThreadCount,
-        "select_branch_count" => RuntimeAgentField::ProjectGraphSymbolSelectBranchCount,
+        "debug_query_count" => RuntimeAgentField::ProjectGraphSummaryDebugQueryCount,
         _ => return None,
     })
 }
 
 fn semantic_field_result(result: RuntimeAgentFieldResult) -> TypeKind {
     match result {
-        RuntimeAgentFieldResult::Bool => TypeKind::Bool,
-        RuntimeAgentFieldResult::String => TypeKind::String,
-        RuntimeAgentFieldResult::U32 => TypeKind::U32,
-        RuntimeAgentFieldResult::U64 => TypeKind::U64,
-        RuntimeAgentFieldResult::Agent(operational) => agent_type(operational),
-        RuntimeAgentFieldResult::VecAgent(operational) => {
+        RuntimeAgentFieldResult::Required(value) => semantic_field_value(value),
+        RuntimeAgentFieldResult::Optional(value) => {
+            TypeKind::Option(Box::new(semantic_field_value(value)))
+        }
+    }
+}
+
+fn semantic_field_value(value: RuntimeAgentFieldValue) -> TypeKind {
+    match value {
+        RuntimeAgentFieldValue::Bool => TypeKind::Bool,
+        RuntimeAgentFieldValue::String => TypeKind::String,
+        RuntimeAgentFieldValue::U32 => TypeKind::U32,
+        RuntimeAgentFieldValue::U64 => TypeKind::U64,
+        RuntimeAgentFieldValue::Agent(operational) => agent_type(operational),
+        RuntimeAgentFieldValue::BuiltinVariant(owner) => match owner {
+            RuntimeBuiltinVariantIdentity::AgentResourceBody => TypeKind::AgentResourceBody,
+            RuntimeBuiltinVariantIdentity::AgentBinaryEncoding => {
+                TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryEncoding)
+            }
+            RuntimeBuiltinVariantIdentity::Option | RuntimeBuiltinVariantIdentity::Result => {
+                unreachable!("Agent field values only expose Agent-owned builtin variants")
+            }
+        },
+        RuntimeAgentFieldValue::VecAgent(operational) => {
             TypeKind::Vec(Box::new(agent_type(operational)))
         }
-        RuntimeAgentFieldResult::AgentValueMap => TypeKind::Map {
+        RuntimeAgentFieldValue::AgentValueMap => TypeKind::Map {
             kind: MapKind::BTree,
             key: Box::new(TypeKind::AgentValue),
             value: Box::new(TypeKind::AgentValue),
@@ -238,13 +277,26 @@ fn agent_type(operational: RuntimeAgentOperationalType) -> TypeKind {
         }
         RuntimeAgentOperationalType::BoundingBox => TypeKind::AgentBBox,
         RuntimeAgentOperationalType::ActionName => TypeKind::ActionName,
-        RuntimeAgentOperationalType::ResourceBody => TypeKind::AgentResourceBody,
         RuntimeAgentOperationalType::SourceAnchor => TypeKind::AgentSourceAnchor,
-        RuntimeAgentOperationalType::AgentValue => TypeKind::AgentValue,
+        RuntimeAgentOperationalType::SourcePosition => {
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentSourcePosition)
+        }
         RuntimeAgentOperationalType::ActionTarget => TypeKind::ActionTarget,
         RuntimeAgentOperationalType::ObservedObject => TypeKind::ObservedObject,
         RuntimeAgentOperationalType::ProjectGraphSymbol => TypeKind::AgentProjectGraphSymbol,
         RuntimeAgentOperationalType::ProjectGraphEdge => TypeKind::AgentProjectGraphEdge,
+        RuntimeAgentOperationalType::ProjectFlowControlSummary => {
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectFlowControlSummary)
+        }
+        RuntimeAgentOperationalType::ProjectGraphSummary => {
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectGraphSummary)
+        }
+        RuntimeAgentOperationalType::BinaryResourceBody => {
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryBody)
+        }
+        RuntimeAgentOperationalType::BinaryData => {
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryData)
+        }
         _ => unreachable!("Agent field result only declares protocol record result types"),
     }
 }
@@ -262,6 +314,26 @@ mod tests {
         assert_eq!(
             TypeKind::AgentResource.agent_field_type("body"),
             Some((RuntimeAgentField::ResourceBody, TypeKind::AgentResourceBody))
+        );
+        assert_eq!(
+            TypeKind::ObservedObject.agent_field_type("parent_id"),
+            Some((
+                RuntimeAgentField::ObservedObjectParentId,
+                TypeKind::Option(Box::new(TypeKind::String))
+            ))
+        );
+        assert_eq!(
+            TypeKind::AgentProjectGraphSymbol.agent_field_type("flow_control"),
+            Some((
+                RuntimeAgentField::ProjectGraphSymbolFlowControl,
+                TypeKind::Option(Box::new(TypeKind::AgentBuiltin(
+                    AgentBuiltinType::AgentProjectFlowControlSummary
+                )))
+            ))
+        );
+        assert_eq!(
+            TypeKind::AgentProjectGraphSymbol.agent_field_type("has_flow_control"),
+            None
         );
         assert_eq!(TypeKind::ActionResult.agent_field_type("missing"), None);
     }

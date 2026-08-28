@@ -83,7 +83,7 @@ impl Engine {
         Ok(values)
     }
 
-    fn apply_runtime_function(
+    pub(super) fn apply_runtime_function(
         &mut self,
         function: &RuntimeFunctionValue,
         args: &[RuntimeValue],

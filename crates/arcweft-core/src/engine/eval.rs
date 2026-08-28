@@ -161,11 +161,12 @@ impl Engine {
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_pure_call_expr(*helper, args, pure_backend)
             }
-            RuntimeExprKind::Map {
+            RuntimeExprKind::StandardMap {
+                family,
+                order,
+                mapping,
                 source,
-                param,
-                body,
-            } => self.evaluate_map_expr(source, *param, body, pure_backend),
+            } => self.evaluate_standard_map_expr(*family, *order, mapping, source, pure_backend),
             RuntimeExprKind::Filter {
                 source,
                 param,
@@ -954,12 +955,6 @@ pub(super) fn pure_helper_has_i64_call_shape(helper: &crate::plan::RuntimePureHe
     helper.scalar_eval_supported
         && helper.output_type == RuntimePureOutputType::I64
         && pure_helper_has_only_inputs(helper, RuntimePureInputType::I64)
-}
-
-pub(super) fn pure_helper_has_u32_call_shape(helper: &crate::plan::RuntimePureHelper) -> bool {
-    helper.scalar_eval_supported
-        && helper.output_type == RuntimePureOutputType::U32
-        && pure_helper_has_only_inputs(helper, RuntimePureInputType::U32)
 }
 
 fn pure_helper_has_only_inputs(

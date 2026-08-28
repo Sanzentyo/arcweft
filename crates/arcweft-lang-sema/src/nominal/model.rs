@@ -66,6 +66,7 @@ pub enum BuiltinTypeConstructor {
     Result,
     Need,
     Stream,
+    Parser,
     Ref,
 }
 
@@ -394,6 +395,7 @@ impl BuiltinTypeConstructor {
         Self::Result,
         Self::Need,
         Self::Stream,
+        Self::Parser,
         Self::Ref,
     ];
 
@@ -441,6 +443,7 @@ impl BuiltinTypeConstructor {
             Self::Result => "Result",
             Self::Need => "Need",
             Self::Stream => "Stream",
+            Self::Parser => "Parser",
             Self::Ref => "Ref",
         }
     }
@@ -486,7 +489,8 @@ impl BuiltinTypeConstructor {
             | Self::SortedMap
             | Self::BTreeMap
             | Self::Result
-            | Self::Stream => 2,
+            | Self::Stream
+            | Self::Parser => 2,
         }
     }
 

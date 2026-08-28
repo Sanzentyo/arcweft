@@ -322,13 +322,14 @@ fn effect_scope_invariant(
     }
 }
 
-/// Semantic inventory of one generic constant parameter.  Constants are
-/// deliberately tracked separately from type parameters; the lower solver has
-/// no const-binding solution path, so only rigid constants may enter a checked
-/// scope.
+/// Semantic inventory of one generic constant parameter. Constant and type
+/// namespaces remain distinct, but share the same continuation eligibility
+/// transitions and completed-solution authority.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum TypeConstraintConstEligibility {
     Rigid,
+    Bindable,
+    FutureEligible,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -367,11 +368,13 @@ impl TypeConstraintConstParameterScopeRow {
     }
 }
 
-/// Types-owned sorted contract for the inherited type-binding keys required by
-/// the sealed continuation prefix.  It intentionally has no const namespace.
+/// Types-owned sorted contract for inherited binding keys required by the
+/// sealed continuation prefix. The namespaces are retained separately so a
+/// type and constant at the same owner/ordinal cannot alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RequiredInheritedBindingKeys {
-    keys: Box<[GenericTypeParameterId]>,
+    type_keys: Box<[GenericTypeParameterId]>,
+    const_keys: Box<[GenericConstParameterId]>,
 }
 
 /// The complete lower-visible parameter inventory for one candidate.
@@ -387,30 +390,22 @@ impl TypeConstraintParameterScope {
     /// contract.  This is the only production constructor; callers must
     /// provide rows in canonical order and cannot ask the lower layer to sort
     /// or repair them.
-    pub(crate) fn seal_call_scope<T, C, R>(
+    pub(crate) fn seal_call_scope<T, C, R, Q>(
         type_parameters: T,
         const_parameters: C,
         required_inherited_keys: R,
+        required_inherited_const_keys: Q,
     ) -> Result<Self, super::TypeConstraintInvariant>
     where
         T: IntoIterator<Item = TypeConstraintTypeParameterScopeRow>,
         C: IntoIterator<Item = TypeConstraintConstParameterScopeRow>,
         R: IntoIterator<Item = GenericTypeParameterId>,
+        Q: IntoIterator<Item = GenericConstParameterId>,
     {
         let type_parameters = type_parameters.into_iter().collect::<Vec<_>>();
         validate_scope_rows(type_parameters.iter().map(|row| &row.parameter), false)?;
         let const_parameters = const_parameters.into_iter().collect::<Vec<_>>();
         validate_scope_rows(const_parameters.iter().map(|row| &row.parameter), true)?;
-        if let Some(row) = const_parameters
-            .iter()
-            .find(|row| !matches!(row.eligibility, TypeConstraintConstEligibility::Rigid))
-        {
-            return Err(scope_invariant(
-                super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter {
-                    parameter: row.parameter.clone(),
-                },
-            ));
-        }
 
         let required_inherited_keys = required_inherited_keys.into_iter().collect::<Vec<_>>();
         validate_scope_rows(required_inherited_keys.iter(), false)?;
@@ -434,11 +429,33 @@ impl TypeConstraintParameterScope {
             }
         }
 
+        let required_inherited_const_keys = required_inherited_const_keys
+            .into_iter()
+            .collect::<Vec<_>>();
+        validate_scope_rows(required_inherited_const_keys.iter(), true)?;
+        for key in &required_inherited_const_keys {
+            let Some(row) = const_parameters.iter().find(|row| &row.parameter == key) else {
+                return Err(scope_invariant(
+                    super::TypeConstraintParameterScopeInvariant::RequiredInheritedConstKeyOutOfScope {
+                        parameter: key.clone(),
+                    },
+                ));
+            };
+            if !matches!(row.eligibility, TypeConstraintConstEligibility::Bindable) {
+                return Err(scope_invariant(
+                    super::TypeConstraintParameterScopeInvariant::RequiredInheritedConstKeyNotBindable {
+                        parameter: key.clone(),
+                    },
+                ));
+            }
+        }
+
         Ok(Self {
             type_parameters: type_parameters.into_boxed_slice(),
             const_parameters: const_parameters.into_boxed_slice(),
             required_inherited: RequiredInheritedBindingKeys {
-                keys: required_inherited_keys.into_boxed_slice(),
+                type_keys: required_inherited_keys.into_boxed_slice(),
+                const_keys: required_inherited_const_keys.into_boxed_slice(),
             },
         })
     }
@@ -460,6 +477,7 @@ impl TypeConstraintParameterScope {
             inventory.into_iter().map(|(parameter, eligibility)| {
                 TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
             }),
+            std::iter::empty(),
             std::iter::empty(),
             std::iter::empty(),
         )
@@ -485,13 +503,6 @@ impl TypeConstraintParameterScope {
         }
         let mut constants = BTreeMap::new();
         for (parameter, eligibility) in const_parameters {
-            if !matches!(eligibility, TypeConstraintConstEligibility::Rigid) {
-                return Err(scope_error(
-                    super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter {
-                        parameter,
-                    },
-                ));
-            }
             if constants.insert(parameter, eligibility).is_some() {
                 return Err(scope_error(
                     super::TypeConstraintParameterScopeInvariant::DuplicateParameter,
@@ -506,14 +517,20 @@ impl TypeConstraintParameterScope {
                 TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
             }),
             std::iter::empty(),
+            std::iter::empty(),
         )
         .map_err(super::TypeConstraintError::Invariant)
     }
 
     #[cfg(test)]
     pub(crate) fn empty() -> Self {
-        Self::seal_call_scope(std::iter::empty(), std::iter::empty(), std::iter::empty())
-            .expect("empty test scope is valid")
+        Self::seal_call_scope(
+            std::iter::empty(),
+            std::iter::empty(),
+            std::iter::empty(),
+            std::iter::empty(),
+        )
+        .expect("empty test scope is valid")
     }
 
     pub(crate) fn eligibility(
@@ -571,15 +588,45 @@ impl TypeConstraintParameterScope {
                             )
                         )
                 })
+            && self.const_parameters.len() == other.const_parameters.len()
             && self
                 .const_parameters
                 .iter()
-                .map(|row| &row.parameter)
-                .eq(other.const_parameters.iter().map(|row| &row.parameter))
+                .zip(&other.const_parameters)
+                .all(|(completed, next)| {
+                    completed.parameter == next.parameter
+                        && matches!(
+                            (completed.eligibility, next.eligibility),
+                            (
+                                TypeConstraintConstEligibility::Rigid,
+                                TypeConstraintConstEligibility::Rigid,
+                            ) | (
+                                TypeConstraintConstEligibility::Bindable,
+                                TypeConstraintConstEligibility::Bindable,
+                            ) | (
+                                TypeConstraintConstEligibility::FutureEligible,
+                                TypeConstraintConstEligibility::FutureEligible
+                                    | TypeConstraintConstEligibility::Bindable,
+                            )
+                        )
+                })
     }
 
     pub(super) fn required_inherited_keys(&self) -> &[GenericTypeParameterId] {
-        &self.required_inherited.keys
+        &self.required_inherited.type_keys
+    }
+
+    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstParameterId] {
+        &self.required_inherited.const_keys
+    }
+
+    pub(crate) fn const_iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&GenericConstParameterId, &TypeConstraintConstEligibility)>
+    {
+        self.const_parameters
+            .iter()
+            .map(|row| (&row.parameter, &row.eligibility))
     }
 }
 
@@ -798,6 +845,10 @@ where
         self.parameter_scope.required_inherited_keys()
     }
 
+    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstParameterId] {
+        self.parameter_scope.required_inherited_const_keys()
+    }
+
     pub(super) fn required_inherited_effects(&self) -> &[EffectVar] {
         self.effect_scope.required_inherited()
     }
@@ -888,7 +939,8 @@ where
         let binding_count = path
             .bindings
             .len()
-            .checked_add(1)
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
             .and_then(|count| u64::try_from(count).ok())
             .ok_or(TypeConstraintError::Abort(
                 TypeConstraintAbort::ArithmeticOverflow,
@@ -899,9 +951,63 @@ where
             // A back-edge is evidence, not an immediate candidate failure.
             // The close phase can discard this row while retaining a valid
             // sibling and gives later source failures precedence.
-            path.deferred_cycles.parameters.insert(parameter.clone());
+            path.deferred_cycles
+                .parameters
+                .insert(parameter.clone().into());
         }
         path.bindings.insert(parameter, value.clone());
+        Ok(Some(path))
+    }
+
+    pub(crate) fn add_const_binding(
+        &mut self,
+        path: ConstraintPath<D>,
+        parameter: GenericConstParameterId,
+        value: &super::super::ArrayLength,
+    ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
+        self.check_cancelled()?;
+        if path.const_bindings.contains_key(&parameter) {
+            return Ok(Some(path));
+        }
+        match self.parameter_scope.const_eligibility(&parameter) {
+            None => {
+                return Err(TypeConstraintError::Invariant(
+                    TypeConstraintInvariant::ParameterScope(
+                        TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                            parameter,
+                        },
+                    ),
+                ));
+            }
+            Some(TypeConstraintConstEligibility::Rigid) => {
+                return Err(TypeConstraintError::Invariant(
+                    TypeConstraintInvariant::ParameterScope(
+                        TypeConstraintParameterScopeInvariant::RigidConstBinding { parameter },
+                    ),
+                ));
+            }
+            Some(
+                TypeConstraintConstEligibility::Bindable
+                | TypeConstraintConstEligibility::FutureEligible,
+            ) => {}
+        }
+        let binding_count = path
+            .bindings
+            .len()
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        self.charge_binding(binding_count)?;
+        let mut path = path;
+        if super::normalization::const_occurs_in(value, &parameter, &path.const_bindings, self)? {
+            path.deferred_cycles
+                .parameters
+                .insert(parameter.clone().into());
+        }
+        path.const_bindings.insert(parameter, value.clone());
         Ok(Some(path))
     }
 
@@ -915,7 +1021,8 @@ where
         let binding_count = path
             .bindings
             .len()
-            .checked_add(1)
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
             .and_then(|count| u64::try_from(count).ok())
             .ok_or(TypeConstraintError::Abort(
                 TypeConstraintAbort::ArithmeticOverflow,
@@ -923,9 +1030,37 @@ where
         self.charge_binding(binding_count)?;
         let shape = value.constraint_shape();
         if occurs_in_shape(shape, &parameter, &path.bindings, self)? {
-            path.deferred_cycles.parameters.insert(parameter.clone());
+            path.deferred_cycles
+                .parameters
+                .insert(parameter.clone().into());
         }
         path.bindings.insert(parameter, value);
+        Ok(())
+    }
+
+    pub(crate) fn add_sealed_const_binding(
+        &mut self,
+        path: &mut ConstraintPath<D>,
+        parameter: GenericConstParameterId,
+        value: super::super::ArrayLength,
+    ) -> Result<(), TypeConstraintError> {
+        self.check_cancelled()?;
+        let binding_count = path
+            .bindings
+            .len()
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        self.charge_binding(binding_count)?;
+        if super::normalization::const_occurs_in(&value, &parameter, &path.const_bindings, self)? {
+            path.deferred_cycles
+                .parameters
+                .insert(parameter.clone().into());
+        }
+        path.const_bindings.insert(parameter, value);
         Ok(())
     }
 
@@ -941,7 +1076,8 @@ where
         let binding_count = path
             .bindings
             .len()
-            .checked_add(1)
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
             .and_then(|count| u64::try_from(count).ok())
             .ok_or(TypeConstraintError::Abort(
                 TypeConstraintAbort::ArithmeticOverflow,
@@ -950,6 +1086,29 @@ where
         assert!(
             path.bindings.insert(parameter, value).is_none(),
             "completed solution rows are uniquely sealed before restoration"
+        );
+        Ok(())
+    }
+
+    pub(super) fn restore_completed_const_binding(
+        &mut self,
+        path: &mut ConstraintPath<D>,
+        parameter: GenericConstParameterId,
+        value: super::super::ArrayLength,
+    ) -> Result<(), TypeConstraintError> {
+        let binding_count = path
+            .bindings
+            .len()
+            .checked_add(path.const_bindings.len())
+            .and_then(|count| count.checked_add(1))
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        self.charge_binding(binding_count)?;
+        assert!(
+            path.const_bindings.insert(parameter, value).is_none(),
+            "completed const solution rows are uniquely sealed before restoration"
         );
         Ok(())
     }

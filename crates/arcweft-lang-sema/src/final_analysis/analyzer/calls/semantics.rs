@@ -173,6 +173,10 @@ fn compare_accepted_candidate_rank(
 ) -> Ordering {
     left.exact_matches
         .cmp(&right.exact_matches)
+        .then_with(|| {
+            left.declared_exact_matches
+                .cmp(&right.declared_exact_matches)
+        })
         .then_with(|| right.unchecked_or_open.cmp(&left.unchecked_or_open))
         .then_with(|| right.omitted_parameters.cmp(&left.omitted_parameters))
         .then_with(|| compare_candidate_authority(left.authority, right.authority))

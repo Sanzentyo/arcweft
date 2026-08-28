@@ -10,8 +10,9 @@ use crate::{
         nominal::{AcceptedNominalCatalog, standard_agent_error_type, standard_reduction_record},
     },
     types::{
-        CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, GenericParameterOwnerId,
-        GenericTypeParameterId, LanguageIntrinsicGenericOwner, MapKind, TypeKind,
+        CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, GenericConstParameterId,
+        GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner, MapKind,
+        TypeKind,
     },
 };
 use arcweft_character::id::CharacterId;
@@ -19,22 +20,23 @@ use arcweft_lang_syntax::reference::BorrowKind;
 
 use super::{
     CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect,
-    CallableGenericParameterIssuer, CallableGroupKind, CallableParameter,
-    CallableParameterAdmission, CallableParameterConsumer, CallableParameterGroup,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterValueRule,
-    CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
+    CallableExtensionReceiver, CallableGenericParameterIssuer, CallableGroupKind,
+    CallableParameter, CallableParameterAdmission, CallableParameterConsumer,
+    CallableParameterGroup, CallableParameterPassing, CallableParameterPresence,
+    CallableParameterValueRule, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
+    UnknownNamedArgumentPolicy,
 };
 use crate::callable::PromotionCallableId;
 use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
     DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
-    DialogueSchemaContext, DomainMethodId, DropCallableId, FloatWidth, FxCallableSignatureId,
-    IntegerMethodId, LineContextMethodId, LineScheduleCallableId, MathCallableId,
-    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
-    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
-    ResolvedCharacterOwner, ResultConstructorKind, StageMethodId, StdFloatCallableId,
-    StdFloatOperation, VectorDimensions,
+    DialogueSchemaContext, DomainMethodId, FloatWidth, FxCallableSignatureId, IntegerMethodId,
+    LineContextMethodId, LineScheduleCallableId, MathCallableId, OptionConstructorKind,
+    PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy, PresentationCallableId,
+    PresentationHandleMethodId, ReductionConstructorKind, ResolvedCharacterOwner,
+    ResultConstructorKind, StageMethodId, StandardMapFamily, StdFloatCallableId, StdFloatOperation,
+    VectorDimensions,
 };
 
 pub(in crate::callable) fn dialogue_schema(
@@ -395,9 +397,27 @@ impl BuiltinCallableId {
             Self::InlineFailureFallback => {
                 variadic_unchecked(TypeKind::Named("InlineFailure".to_owned()), validator, &[])
             }
-            Self::Panic | Self::Fail | Self::Bail => {
-                variadic_unchecked(TypeKind::Never, validator, &[])
-            }
+            Self::Panic | Self::Fail | Self::Bail => schema(
+                vec![unchecked(
+                    0,
+                    match self {
+                        Self::Fail => "error",
+                        Self::Panic | Self::Bail => "message",
+                        _ => unreachable!("grouped builtin identity is exhaustive"),
+                    },
+                    CallableParameterPresence::Required,
+                )],
+                TypeKind::Never,
+                &[],
+                closed(),
+                validator,
+            )
+            .with_evaluated_effect(match self {
+                Self::Panic => CallableEvaluatedEffect::Panic,
+                Self::Fail => CallableEvaluatedEffect::Fail,
+                Self::Bail => CallableEvaluatedEffect::Bail,
+                _ => unreachable!("grouped builtin identity is exhaustive"),
+            }),
             Self::Ensure => schema(
                 vec![
                     parameter(
@@ -409,17 +429,18 @@ impl BuiltinCallableId {
                     ),
                     parameter(
                         1,
-                        Some("details"),
+                        Some("message"),
                         CallableParameterAdmission::unchecked_supply(),
-                        CallableParameterPassing::RestPositional,
-                        CallableParameterPresence::Optional,
+                        CallableParameterPassing::PositionalOrNamed,
+                        CallableParameterPresence::Required,
                     ),
                 ],
                 TypeKind::Unit,
                 &[],
-                open_supply(),
+                closed(),
                 validator,
-            ),
+            )
+            .with_evaluated_effect(CallableEvaluatedEffect::Ensure),
             Self::Rgb => homogeneous(1, &TypeKind::String, named("Color"), validator),
             Self::Sin | Self::Cos => homogeneous(1, &TypeKind::F32, TypeKind::F32, validator),
             Self::Vector { dimensions } => {
@@ -446,10 +467,14 @@ impl BuiltinCallableId {
                 homogeneous(2, &ty, ty.clone(), validator)
             }
             Self::StdFloat(id) => std_float_schema(*id, validator),
-            Self::Capability(CapabilityCallableId::EventEmit) => {
-                variadic_unchecked(TypeKind::Unit, validator, &[])
-                    .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent)
-            }
+            Self::Capability(CapabilityCallableId::EventEmit) => schema(
+                vec![unchecked(0, "event", CallableParameterPresence::Required)],
+                TypeKind::Unit,
+                &[],
+                open_supply(),
+                validator,
+            )
+            .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent),
             Self::Reduction(_) => return None,
         })
     }
@@ -609,27 +634,6 @@ impl CollectionMethodId {
         let validator = CallableValidator::Collection(self);
         Some(match self {
             Self::Len => empty(TypeKind::USize, &[], validator),
-            Self::Map => {
-                let output = generic(
-                    GenericParameterOwnerId::LanguageIntrinsic(
-                        LanguageIntrinsicGenericOwner::CollectionMap,
-                    ),
-                    0,
-                );
-                one_positional_with_issuer(
-                    "mapping",
-                    TypeKind::function([item], output.clone()),
-                    collection_with_item(receiver, output)?,
-                    &[],
-                    validator,
-                    CallableGenericParameterIssuer::language_intrinsic(
-                        LanguageIntrinsicGenericOwner::CollectionMap,
-                        1,
-                        0,
-                    )
-                    .expect("Collection::map issuer"),
-                )
-            }
             Self::Filter => one_positional(
                 "predicate",
                 TypeKind::function([item], TypeKind::Bool),
@@ -640,6 +644,124 @@ impl CollectionMethodId {
             Self::Sum => empty(TypeKind::I64, &[], validator),
             Self::Contains => one_positional("item", item, TypeKind::Bool, &[], validator),
         })
+    }
+}
+
+impl StandardMapFamily {
+    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
+        let generic_owner = LanguageIntrinsicGenericOwner::StandardMap(self);
+        let owner = GenericParameterOwnerId::LanguageIntrinsic(generic_owner);
+        let input = generic(owner.clone(), 0);
+        let output = generic(owner.clone(), 1);
+        let error = generic(owner.clone(), 2);
+        let length = GenericConstParameterId::new(owner, 0);
+        let (receiver, result) = match self {
+            Self::Vec => (
+                TypeKind::Vec(Box::new(input.clone())),
+                TypeKind::Vec(Box::new(output.clone())),
+            ),
+            Self::Seq => (
+                TypeKind::Seq(Box::new(input.clone())),
+                TypeKind::Seq(Box::new(output.clone())),
+            ),
+            Self::Array => (
+                TypeKind::Array {
+                    item: Box::new(input.clone()),
+                    len: crate::types::ArrayLength::Generic(length.clone()),
+                },
+                TypeKind::Array {
+                    item: Box::new(output.clone()),
+                    len: crate::types::ArrayLength::Generic(length),
+                },
+            ),
+            Self::Slice => (
+                TypeKind::Slice(Box::new(input.clone())),
+                TypeKind::Vec(Box::new(output.clone())),
+            ),
+            Self::Option => (
+                TypeKind::Option(Box::new(input.clone())),
+                TypeKind::Option(Box::new(output.clone())),
+            ),
+            Self::Result => (
+                TypeKind::Result {
+                    ok: Box::new(input.clone()),
+                    error: Box::new(error.clone()),
+                },
+                TypeKind::Result {
+                    ok: Box::new(output.clone()),
+                    error: Box::new(error),
+                },
+            ),
+            Self::Need => (
+                TypeKind::Need(Box::new(input.clone())),
+                TypeKind::Need(Box::new(output.clone())),
+            ),
+            Self::Parser => (
+                TypeKind::Parser {
+                    item: Box::new(input.clone()),
+                    error: Box::new(error.clone()),
+                },
+                TypeKind::Parser {
+                    item: Box::new(output.clone()),
+                    error: Box::new(error),
+                },
+            ),
+            Self::Stream => (
+                TypeKind::Stream {
+                    item: Box::new(input.clone()),
+                    error: Box::new(error.clone()),
+                },
+                TypeKind::Stream {
+                    item: Box::new(output.clone()),
+                    error: Box::new(error),
+                },
+            ),
+        };
+        let (type_count, const_count) = self.generic_arity();
+        let groups = vec![
+            CallableParameterGroup::try_new(
+                crate::callable::CallableGroupIndex::ZERO,
+                CallableGroupKind::Initial,
+                vec![required_positional(
+                    0,
+                    "mapping",
+                    TypeKind::function([input], output),
+                )],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard map callback group is canonical"),
+            CallableParameterGroup::try_new(
+                crate::callable::CallableGroupIndex::try_from_usize(1)
+                    .expect("standard map receiver group is representable"),
+                CallableGroupKind::Curried,
+                vec![required_positional(0, "self", receiver)],
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard map receiver group is canonical"),
+        ];
+        CallableSignatureSchema::try_new(
+            groups,
+            result,
+            CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+            closed(),
+            CallableValidator::StandardMap(self),
+            CallableGenericParameterIssuer::language_intrinsic(
+                generic_owner,
+                type_count,
+                const_count,
+            )
+            .expect("standard map generic inventory is canonical"),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .and_then(|schema| {
+            schema.with_extension_receiver(CallableExtensionReceiver::new(
+                crate::callable::CallableGroupIndex::try_from_usize(1)
+                    .expect("standard map receiver group is representable"),
+                CallableParameterIndex::try_from_usize(0)
+                    .expect("standard map receiver parameter is representable"),
+            ))
+        })
+        .expect("standard map schema has one canonical explicit receiver")
     }
 }
 
@@ -814,16 +936,6 @@ impl LineScheduleCallableId {
     }
 }
 
-impl DropCallableId {
-    #[allow(
-        clippy::unused_self,
-        reason = "schema construction remains discoverable on every resolved callable identity"
-    )]
-    pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
-        variadic_unchecked(TypeKind::Unit, CallableValidator::Drop, &[])
-    }
-}
-
 impl PromotionCallableId {
     pub(crate) fn signature_schema(self) -> CallableSignatureSchema {
         let result = match self {
@@ -841,20 +953,6 @@ fn sequence_item(receiver: &TypeKind) -> Option<TypeKind> {
         | TypeKind::Slice(item)
         | TypeKind::Array { item, .. } => Some(item.as_ref().clone()),
         TypeKind::String => Some(TypeKind::TextCluster),
-        _ => None,
-    }
-}
-
-fn collection_with_item(receiver: &TypeKind, item: TypeKind) -> Option<TypeKind> {
-    match receiver {
-        TypeKind::Vec(_) => Some(TypeKind::Vec(Box::new(item))),
-        TypeKind::Seq(_) => Some(TypeKind::Seq(Box::new(item))),
-        TypeKind::Slice(_) => Some(TypeKind::Slice(Box::new(item))),
-        TypeKind::Array { len, .. } => Some(TypeKind::Array {
-            item: Box::new(item),
-            len: len.clone(),
-        }),
-        TypeKind::String => None,
         _ => None,
     }
 }
@@ -1948,10 +2046,8 @@ mod tests {
     }
 
     #[test]
-    fn collection_map_and_fx_exists_reject_untyped_receiver_fallbacks() {
-        let map = CollectionMethodId::Map
-            .signature_schema(&TypeKind::Vec(Box::new(TypeKind::I32)))
-            .expect("Vec map has a typed schema");
+    fn standard_map_and_fx_exists_reject_untyped_receiver_fallbacks() {
+        let map = StandardMapFamily::Vec.signature_schema();
         let TypeKind::Vec(item) = map.result() else {
             panic!("map preserves the concrete collection constructor")
         };
@@ -1961,23 +2057,25 @@ mod tests {
         assert_eq!(
             item.owner(),
             &GenericParameterOwnerId::LanguageIntrinsic(
-                LanguageIntrinsicGenericOwner::CollectionMap
+                LanguageIntrinsicGenericOwner::StandardMap(StandardMapFamily::Vec)
             )
         );
-        assert_eq!(item.ordinal(), 0);
+        assert_eq!(item.ordinal(), 1);
         let callback = map.groups()[0].parameters()[0]
             .declared_type()
             .expect("map callback is checked");
         let TypeKind::Function { params, .. } = callback else {
             panic!("map callback must be a function")
         };
-        assert_eq!(params.as_slice(), &[TypeKind::I32]);
-        let wrong_callback = TypeKind::function([TypeKind::String], TypeKind::Bool);
-        assert!(!callback.accepts(&wrong_callback));
         assert!(
-            CollectionMethodId::Map
-                .signature_schema(&TypeKind::Named("Unsupported".to_owned()))
-                .is_none()
+            matches!(params.as_slice(), [TypeKind::GenericParam(input)] if input.ordinal() == 0)
+        );
+        assert_eq!(
+            map.extension_receiver(),
+            Some(CallableExtensionReceiver::new(
+                crate::callable::CallableGroupIndex::try_from_usize(1).expect("second group"),
+                CallableParameterIndex::try_from_usize(0).expect("first parameter"),
+            ))
         );
 
         let exists = AgentIntrinsicSignatureId::Exists.signature_schema();
@@ -1994,6 +2092,123 @@ mod tests {
             item.owner(),
             &GenericParameterOwnerId::LanguageIntrinsic(LanguageIntrinsicGenericOwner::FxExists)
         );
+    }
+
+    #[test]
+    fn standard_map_family_owns_all_nine_generic_receiver_result_schemas() {
+        for family in StandardMapFamily::ALL {
+            let schema = family.signature_schema();
+            assert_eq!(schema.groups().len(), 2);
+            assert_eq!(
+                schema.extension_receiver(),
+                Some(CallableExtensionReceiver::new(
+                    CallableGroupIndex::try_from_usize(1).expect("second group"),
+                    CallableParameterIndex::try_from_usize(0).expect("first parameter"),
+                ))
+            );
+            assert_eq!(schema.validator(), &CallableValidator::StandardMap(family));
+
+            let TypeKind::Function {
+                params,
+                return_type,
+                ..
+            } = schema.groups()[0].parameters()[0]
+                .declared_type()
+                .expect("mapping is checked")
+            else {
+                panic!("mapping must be a typed function")
+            };
+            let [TypeKind::GenericParam(input)] = params.as_slice() else {
+                panic!("mapping has one generic input")
+            };
+            let TypeKind::GenericParam(output) = return_type.as_ref() else {
+                panic!("mapping has one generic output")
+            };
+            assert_eq!(input.ordinal(), 0);
+            assert_eq!(output.ordinal(), 1);
+            assert_eq!(input.owner(), output.owner());
+            assert_eq!(
+                input.owner(),
+                &GenericParameterOwnerId::LanguageIntrinsic(
+                    LanguageIntrinsicGenericOwner::StandardMap(family)
+                )
+            );
+
+            let receiver = schema
+                .extension_receiver_type()
+                .expect("standard map has one typed receiver");
+            match (family, receiver, schema.result()) {
+                (StandardMapFamily::Vec, TypeKind::Vec(source), TypeKind::Vec(result))
+                | (StandardMapFamily::Seq, TypeKind::Seq(source), TypeKind::Seq(result))
+                | (StandardMapFamily::Option, TypeKind::Option(source), TypeKind::Option(result))
+                | (StandardMapFamily::Need, TypeKind::Need(source), TypeKind::Need(result)) => {
+                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
+                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                }
+                (StandardMapFamily::Slice, TypeKind::Slice(source), TypeKind::Vec(result)) => {
+                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
+                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                }
+                (
+                    StandardMapFamily::Array,
+                    TypeKind::Array {
+                        item: source,
+                        len: source_len,
+                    },
+                    TypeKind::Array {
+                        item: result,
+                        len: result_len,
+                    },
+                ) => {
+                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
+                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source_len, result_len);
+                }
+                (
+                    StandardMapFamily::Result,
+                    TypeKind::Result {
+                        ok: source,
+                        error: source_error,
+                    },
+                    TypeKind::Result {
+                        ok: result,
+                        error: result_error,
+                    },
+                )
+                | (
+                    StandardMapFamily::Parser,
+                    TypeKind::Parser {
+                        item: source,
+                        error: source_error,
+                    },
+                    TypeKind::Parser {
+                        item: result,
+                        error: result_error,
+                    },
+                )
+                | (
+                    StandardMapFamily::Stream,
+                    TypeKind::Stream {
+                        item: source,
+                        error: source_error,
+                    },
+                    TypeKind::Stream {
+                        item: result,
+                        error: result_error,
+                    },
+                ) => {
+                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
+                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source_error, result_error);
+                    assert!(matches!(
+                        source_error.as_ref(),
+                        TypeKind::GenericParam(error)
+                            if error.ordinal() == 2 && error.owner() == input.owner()
+                    ));
+                }
+                actual => panic!("{family:?} published the wrong map shape: {actual:?}"),
+            }
+        }
     }
 
     #[test]

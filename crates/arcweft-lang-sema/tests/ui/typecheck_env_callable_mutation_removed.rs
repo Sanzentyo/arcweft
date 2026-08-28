@@ -9,7 +9,10 @@ fn main() {
     let _ = environment.clone().with_function("legacy", TypeKind::Unit);
     let _ = environment
         .clone()
-        .with_function_signature("legacy", FunctionSignature::return_only(TypeKind::Unit));
+        .with_function_signature(
+            "legacy",
+            FunctionSignature::new(TypeKind::Unit, std::iter::empty()),
+        );
     let _ = environment
         .clone()
         .with_function_effects("legacy", [EffectCapability::new("legacy.effect")]);
@@ -19,7 +22,7 @@ fn main() {
     let _ = environment.clone().with_method_signature(
         TypeKind::String,
         "legacy",
-        FunctionSignature::return_only(TypeKind::Unit),
+        FunctionSignature::new(TypeKind::Unit, std::iter::empty()),
     );
     let _ = environment.function_type("legacy");
     let _ = environment.function_signature("legacy");

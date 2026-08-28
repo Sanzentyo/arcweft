@@ -871,8 +871,10 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                     .map(|arg| runtime_expr_work_units(arg.value()))
                     .sum::<usize>()
         }
-        RuntimeExprKind::Map { source, body, .. }
-        | RuntimeExprKind::Filter { source, body, .. } => {
+        RuntimeExprKind::StandardMap {
+            mapping, source, ..
+        } => 8 + runtime_expr_work_units(mapping) + runtime_expr_work_units(source),
+        RuntimeExprKind::Filter { source, body, .. } => {
             8 + runtime_expr_work_units(source) + runtime_expr_work_units(body)
         }
         RuntimeExprKind::Sum { source } => 4 + runtime_expr_work_units(source),

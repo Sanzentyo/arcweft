@@ -9,8 +9,13 @@ use super::{
     },
 };
 use crate::callable::{
-    CallableEvaluatedEffect, CallableLogLevel, CallableName, CallablePath, CallableValidator,
-    ViewModifierId,
+    CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect,
+    CallableExtensionReceiver, CallableGenericParameterIssuer, CallableGroupIndex,
+    CallableGroupKind, CallableLogLevel, CallableName, CallableOverloadIndex, CallableParameter,
+    CallableParameterAdmission, CallableParameterGroup, CallableParameterIndex,
+    CallableParameterPassing, CallableParameterPresence, CallablePath, CallableSignatureSchema,
+    CallableValidator, DropCallableId, PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy,
+    StandardMapFamily, UnknownNamedArgumentPolicy, ViewModifierId,
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
@@ -19,7 +24,10 @@ use crate::dialogue_view::{
     DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
-use crate::types::{CharacterNominalType, EntityType, TypeKind, direct_type_name};
+use crate::types::{
+    CharacterNominalType, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
+    LanguageIntrinsicGenericOwner, TypeKind, direct_type_name,
+};
 use arcweft_data::DataFormat;
 use arcweft_lang_syntax::{
     ast::{
@@ -36,7 +44,6 @@ use thiserror::Error;
 pub struct FunctionSignature {
     pub(crate) return_type: TypeKind,
     pub(crate) params: Vec<FunctionParam>,
-    pub(crate) checks_args: bool,
     pub(crate) remaining_call_groups: usize,
     pub(crate) remaining_param_groups: Vec<Vec<FunctionParam>>,
 }
@@ -80,10 +87,8 @@ pub enum FunctionParamSelectorSegment {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct StandardEnvironmentFunction {
     pub(crate) path: CallablePath,
-    pub(crate) signature: FunctionSignature,
-    pub(crate) effects: Vec<EffectCapability>,
-    pub(crate) validator: CallableValidator,
-    pub(crate) evaluated_effect: Option<CallableEvaluatedEffect>,
+    pub(crate) overload: CallableOverloadIndex,
+    pub(crate) schema: CallableSignatureSchema,
 }
 
 /// Typed standard-environment method input retained until accepted-world publication.
@@ -91,8 +96,7 @@ pub(crate) struct StandardEnvironmentFunction {
 pub(crate) struct StandardEnvironmentMethod {
     pub(crate) receiver: TypeKind,
     pub(crate) member: CallableName,
-    pub(crate) signature: FunctionSignature,
-    pub(crate) role: StandardEnvironmentMethodRole,
+    pub(crate) schema: CallableSignatureSchema,
 }
 
 /// Closed standard-registry role for one typed receiver method.
@@ -135,6 +139,78 @@ pub(crate) struct EnvironmentEnumSchema {
     variants: Vec<EnvironmentEnumVariant>,
 }
 
+/// Closed source-environment value semantics retained with the binding type.
+///
+/// These are values, not spelling-based compiler intrinsics: resolution keeps
+/// the exact environment binding identity and consumers read this payload from
+/// the accepted environment.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StandardEnvironmentValue {
+    DropPolicy(StandardDropPolicyValue),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StandardDropPolicyValue {
+    Stop { fade_nanos: u64 },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum StandardDropPolicyCase {
+    Cancel,
+    Stop,
+    Finish,
+    Release,
+    Detach,
+}
+
+impl StandardEnvironmentValue {
+    pub(crate) fn for_binding(id: &EnvironmentBindingId) -> Option<Self> {
+        (id == &stop_now_binding()).then_some(Self::DropPolicy(StandardDropPolicyValue::Stop {
+            fade_nanos: 0,
+        }))
+    }
+}
+
+impl StandardDropPolicyCase {
+    const ALL: [Self; 5] = [
+        Self::Cancel,
+        Self::Stop,
+        Self::Finish,
+        Self::Release,
+        Self::Detach,
+    ];
+
+    pub(crate) fn for_owner_ordinal(owner: &EnvironmentBindingId, ordinal: u32) -> Option<Self> {
+        if owner != &drop_policy_owner() {
+            return None;
+        }
+        Self::ALL.get(usize::try_from(ordinal).ok()?).copied()
+    }
+
+    const fn name(self) -> &'static str {
+        match self {
+            Self::Cancel => "Cancel",
+            Self::Stop => "Stop",
+            Self::Finish => "Finish",
+            Self::Release => "Release",
+            Self::Detach => "Detach",
+        }
+    }
+
+    fn payload(self) -> EnumVariantPayload {
+        match self {
+            Self::Stop => EnumVariantPayload::record([("fade", TypeKind::Duration)]),
+            Self::Cancel | Self::Finish | Self::Release | Self::Detach => EnumVariantPayload::Unit,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct EnvironmentValueBinding {
+    ty: TypeKind,
+    standard: Option<StandardEnvironmentValue>,
+}
+
 impl EnvironmentEnumSchema {
     pub(crate) const fn owner(&self) -> &EnvironmentBindingId {
         &self.owner
@@ -149,7 +225,7 @@ impl EnvironmentEnumSchema {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct TypeCheckEnv {
     pub(crate) nominal_catalog: AcceptedNominalCatalog,
-    pub(crate) symbols: HashMap<String, TypeKind>,
+    pub(crate) symbols: HashMap<String, EnvironmentValueBinding>,
     closed_enums: HashMap<TypeKind, EnvironmentEnumSchema>,
     pub(crate) standard_functions: Vec<StandardEnvironmentFunction>,
     pub(crate) standard_methods: Vec<StandardEnvironmentMethod>,
@@ -192,19 +268,6 @@ impl FunctionSignature {
         Self {
             return_type: normalize_type_kind(return_type),
             params: params.into_iter().map(normalize_function_param).collect(),
-            checks_args: true,
-            remaining_call_groups: 0,
-            remaining_param_groups: Vec::new(),
-        }
-    }
-
-    /// Creates a return-only signature for adapter surfaces whose parameter
-    /// model is supplied by a later typed metadata pass.
-    pub fn return_only(return_type: TypeKind) -> Self {
-        Self {
-            return_type: normalize_type_kind(return_type),
-            params: Vec::new(),
-            checks_args: false,
             remaining_call_groups: 0,
             remaining_param_groups: Vec::new(),
         }
@@ -255,11 +318,6 @@ impl FunctionSignature {
         &self.params
     }
 
-    /// Whether this signature has enough parameter information for arg checks.
-    pub const fn checks_args(&self) -> bool {
-        self.checks_args
-    }
-
     /// Number of source declaration call groups still represented by the
     /// return function type.
     pub const fn remaining_call_groups(&self) -> usize {
@@ -273,35 +331,31 @@ impl FunctionSignature {
     }
 
     /// Type of this callable when referenced as a first-class function value.
-    pub fn function_value_type(&self) -> Option<TypeKind> {
-        self.checks_args.then(|| {
-            TypeKind::function(
-                self.params.iter().map(|param| param.ty.clone()),
-                self.return_type.clone(),
-            )
-        })
+    pub fn function_value_type(&self) -> TypeKind {
+        TypeKind::function(
+            self.params.iter().map(|param| param.ty.clone()),
+            self.return_type.clone(),
+        )
     }
 
     /// Type of this callable when referenced as a function value with a known
     /// effect row.
-    pub fn function_value_type_with_effects(&self, effects: EffectRow) -> Option<TypeKind> {
-        self.checks_args.then(|| {
-            let return_type = curried_return_type_with_body_effects(
-                self.return_type.clone(),
-                self.remaining_call_groups,
-                &effects,
-            );
-            let invocation_effects = if self.remaining_call_groups == 0 {
-                effects
-            } else {
-                EffectRow::closed(crate::effects::EffectSet::new())
-            };
-            TypeKind::function_with_effects(
-                self.params.iter().map(|param| param.ty.clone()),
-                return_type,
-                invocation_effects,
-            )
-        })
+    pub fn function_value_type_with_effects(&self, effects: EffectRow) -> TypeKind {
+        let return_type = curried_return_type_with_body_effects(
+            self.return_type.clone(),
+            self.remaining_call_groups,
+            &effects,
+        );
+        let invocation_effects = if self.remaining_call_groups == 0 {
+            effects
+        } else {
+            EffectRow::closed(crate::effects::EffectSet::new())
+        };
+        TypeKind::function_with_effects(
+            self.params.iter().map(|param| param.ty.clone()),
+            return_type,
+            invocation_effects,
+        )
     }
 }
 
@@ -438,7 +492,10 @@ impl FunctionParamHigherOrderBinding {
 impl TypeCheckEnv {
     /// Creates the core source environment with always-available runtime callables.
     pub fn new() -> Self {
-        Self::default().with_standard_runtime_callables()
+        Self::default()
+            .with_standard_accepted_nominals()
+            .with_standard_runtime_value_enums()
+            .with_standard_runtime_callables()
     }
 
     /// Creates the standard source type-checking environment.
@@ -449,16 +506,12 @@ impl TypeCheckEnv {
     /// Registers builtins that are available to ordinary Arcweft source files.
     #[must_use]
     fn with_standard_builtins(self) -> Self {
-        self.with_standard_accepted_nominals()
-            .with_standard_presentation_nominals()
+        self.with_standard_presentation_nominals()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
             .with_standard_dialogue_value_enums()
             .with_standard_agent_enums()
-            .with_standard_function(
-                ["fmt"],
-                FunctionSignature::return_only(TypeKind::DisplayText),
-            )
+            .with_typed_standard_schema(standard_callable_path(["fmt"]), fmt_schema())
             .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
             .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
@@ -527,6 +580,11 @@ impl TypeCheckEnv {
                 TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::PointerButton),
                 &["primary", "secondary", "middle"][..],
             ),
+            (
+                "AgentBinaryEncoding",
+                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryEncoding),
+                &["Base64"][..],
+            ),
         ]
         .into_iter()
         .fold(self, |environment, (owner, ty, variants)| {
@@ -539,6 +597,34 @@ impl TypeCheckEnv {
                 )
                 .expect("Agent enum inventories have distinct typed owners")
         })
+        .try_with_enum_variant_payload(
+            EnvironmentBindingId::try_new("AgentResourceBody")
+                .expect("Agent resource body owner identity is valid"),
+            TypeKind::AgentResourceBody,
+            "Json",
+            EnumVariantPayload::Tuple(vec![TypeKind::AgentValue]),
+        )
+        .and_then(|environment| {
+            environment.try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("AgentResourceBody")
+                    .expect("Agent resource body owner identity is valid"),
+                TypeKind::AgentResourceBody,
+                "Text",
+                EnumVariantPayload::Tuple(vec![TypeKind::String]),
+            )
+        })
+        .and_then(|environment| {
+            environment.try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("AgentResourceBody")
+                    .expect("Agent resource body owner identity is valid"),
+                TypeKind::AgentResourceBody,
+                "BytesBase64",
+                EnumVariantPayload::Tuple(vec![TypeKind::AgentBuiltin(
+                    crate::types::AgentBuiltinType::AgentBinaryBody,
+                )]),
+            )
+        })
+        .expect("Agent resource body variants have one canonical typed schema")
     }
 
     #[must_use]
@@ -621,100 +707,182 @@ impl TypeCheckEnv {
         .expect("DialogueVoice has one canonical source-visible enum inventory")
     }
 
+    #[must_use]
+    fn with_standard_runtime_value_enums(self) -> Self {
+        let environment = self
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("TextFlushMode")
+                    .expect("text flush mode owner identity is valid"),
+                TypeKind::Named("TextFlushMode".to_owned()),
+                ["Instant"],
+            )
+            .expect("TextFlushMode has one canonical source-visible enum inventory")
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("CueStopPolicy")
+                    .expect("cue stop policy owner identity is valid"),
+                TypeKind::Named("CueStopPolicy".to_owned()),
+                ["CancelPending", "CompleteCurrent", "SnapToFinal"],
+            )
+            .expect("CueStopPolicy has one canonical source-visible enum inventory");
+        let environment =
+            StandardDropPolicyCase::ALL
+                .into_iter()
+                .fold(environment, |environment, case| {
+                    environment
+                        .try_with_enum_variant_payload(
+                            drop_policy_owner(),
+                            drop_policy_type(),
+                            case.name(),
+                            case.payload(),
+                        )
+                        .expect("DropPolicy case inventory is canonical")
+                });
+        environment
+            .with_standard_value(
+                "stop_now",
+                drop_policy_type(),
+                StandardEnvironmentValue::DropPolicy(StandardDropPolicyValue::Stop {
+                    fade_nanos: 0,
+                }),
+            )
+            .with_symbol("keep_running", TypeKind::Named("CueStopPolicy".to_owned()))
+    }
+
     /// Installs the finite source-visible runtime callable surface.
     ///
     /// These records are the single source for both standalone type checking
     /// and the immutable core publication accepted by a registered world.
     #[must_use]
     fn with_standard_runtime_callables(self) -> Self {
-        let unit_callables = [
-            standard_callable_path(["drop"]),
-            standard_callable_path(["drop_optional"]),
-            standard_callable_path(["on_drop"]),
-            standard_callable_path(["adapter", "events"]),
-            standard_callable_path(["event", "emit"]),
-            standard_callable_path(["scene", "show"]),
-            standard_callable_path(["scene", "clear"]),
-            standard_callable_path(["progress", "set"]),
-            standard_callable_path(["meter", "show"]),
-            standard_callable_path(["text", "show"]),
-            standard_callable_path(["text", "flush"]),
-            standard_callable_path(["voice", "stop"]),
-            standard_callable_path(["cues", "stop"]),
-        ];
-        let env = unit_callables.into_iter().fold(self, |env, path| {
-            env.with_typed_standard_function(
-                path,
-                FunctionSignature::return_only(TypeKind::Unit),
-                std::iter::empty::<EffectCapability>(),
+        let env = StandardMapFamily::PUBLISHED
+            .into_iter()
+            .fold(self, |environment, family| {
+                environment.with_typed_standard_overload_schema(
+                    standard_callable_path(["map"]),
+                    family.overload(),
+                    family.signature_schema(),
+                )
+            });
+        let env = env
+            .with_typed_standard_overload_schema(
+                standard_callable_path(["drop"]),
+                standard_overload(0),
+                drop_schema(DropCallableId::Drop),
             )
-        });
+            .with_typed_standard_overload_schema(
+                standard_callable_path(["drop"]),
+                standard_overload(1),
+                drop_schema(DropCallableId::DropWithPolicy),
+            )
+            .with_typed_standard_schema(
+                standard_callable_path(["drop_optional"]),
+                drop_schema(DropCallableId::DropOptional),
+            )
+            .with_typed_standard_schema(
+                standard_callable_path(["on_drop"]),
+                drop_schema(DropCallableId::OnDrop),
+            )
+            .with_standard_function(
+                ["scene", "show"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required(
+                        "scene",
+                        TypeKind::entity_ref(crate::types::EntityKind::Scene),
+                    )],
+                ),
+            )
+            .with_standard_function(
+                ["scene", "clear"],
+                FunctionSignature::new(TypeKind::Unit, std::iter::empty::<FunctionParam>()),
+            )
+            .with_standard_function(
+                ["progress", "set"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required("ratio", TypeKind::F32)],
+                ),
+            )
+            .with_standard_function(
+                ["meter", "show"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required(
+                        "source",
+                        TypeKind::entity_ref_with_value(
+                            crate::types::EntityKind::Signal,
+                            TypeKind::F32,
+                        ),
+                    )],
+                ),
+            )
+            .with_standard_function(
+                ["text", "show"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::required(
+                        "text",
+                        TypeKind::Choice(vec![TypeKind::String, TypeKind::DisplayText]),
+                    )],
+                ),
+            )
+            .with_standard_function(
+                ["text", "flush"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::defaulted(
+                        "mode",
+                        TypeKind::Named("TextFlushMode".to_owned()),
+                    )],
+                ),
+            )
+            .with_standard_function(
+                ["voice", "stop"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::defaulted("fade", TypeKind::Duration)],
+                ),
+            )
+            .with_standard_function(
+                ["cues", "stop"],
+                FunctionSignature::new(
+                    TypeKind::Unit,
+                    [FunctionParam::defaulted(
+                        "policy",
+                        TypeKind::Named("CueStopPolicy".to_owned()),
+                    )],
+                ),
+            );
         let env = [
-            (
-                standard_callable_path(["log", "trace"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Log(CallableLogLevel::Trace),
-            ),
-            (
-                standard_callable_path(["log", "debug"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Log(CallableLogLevel::Debug),
-            ),
-            (
-                standard_callable_path(["log", "info"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Log(CallableLogLevel::Info),
-            ),
-            (
-                standard_callable_path(["log", "warn"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Log(CallableLogLevel::Warn),
-            ),
-            (
-                standard_callable_path(["log", "error"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Log(CallableLogLevel::Error),
-            ),
-            (
-                standard_callable_path(["signal", "set"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::SignalWrite,
-            ),
-            (
-                standard_callable_path(["metric", "set"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::MetricWrite,
-            ),
-            (
-                standard_callable_path(["ensure"]),
-                TypeKind::Unit,
-                CallableEvaluatedEffect::Ensure,
-            ),
-            (
-                standard_callable_path(["panic"]),
-                TypeKind::Never,
-                CallableEvaluatedEffect::Panic,
-            ),
-            (
-                standard_callable_path(["fail"]),
-                TypeKind::Never,
-                CallableEvaluatedEffect::Fail,
-            ),
-            (
-                standard_callable_path(["bail"]),
-                TypeKind::Never,
-                CallableEvaluatedEffect::Bail,
-            ),
+            CallableLogLevel::Trace,
+            CallableLogLevel::Debug,
+            CallableLogLevel::Info,
+            CallableLogLevel::Warn,
+            CallableLogLevel::Error,
         ]
         .into_iter()
-        .fold(env, |env, (path, result, effect)| {
-            env.with_typed_standard_evaluated_effect_function(
-                path,
-                FunctionSignature::return_only(result),
-                std::iter::empty::<EffectCapability>(),
-                effect,
+        .fold(env, |env, level| {
+            env.with_typed_standard_schema(
+                standard_callable_path(["log", level.as_str()]),
+                evaluated_log_schema(level),
             )
-        });
+        })
+        .with_typed_standard_schema(
+            standard_callable_path(["signal", "set"]),
+            evaluated_entity_write_schema(
+                crate::types::EntityKind::Signal,
+                crate::types::LanguageIntrinsicGenericOwner::SignalWrite,
+                CallableEvaluatedEffect::SignalWrite,
+            ),
+        )
+        .with_typed_standard_schema(
+            standard_callable_path(["metric", "set"]),
+            evaluated_entity_write_schema(
+                crate::types::EntityKind::Metric,
+                crate::types::LanguageIntrinsicGenericOwner::MetricWrite,
+                CallableEvaluatedEffect::MetricWrite,
+            ),
+        );
         let env = env.with_typed_standard_function(
             standard_callable_path(["load_bg"]),
             FunctionSignature::new(
@@ -726,40 +894,50 @@ impl TypeCheckEnv {
             ),
             std::iter::empty::<EffectCapability>(),
         );
-        [
-            (
-                standard_callable_path(["asset", "image"]),
+        env.with_standard_function(
+            ["asset", "image"],
+            FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
                     ok: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("AssetError".to_owned())),
                 })),
+                [FunctionParam::required(
+                    "asset",
+                    TypeKind::entity_ref(crate::types::EntityKind::Asset),
+                )],
             ),
-            (
-                standard_callable_path(["voice", "load"]),
+        )
+        .with_standard_function(
+            ["voice", "load"],
+            FunctionSignature::new(
                 TypeKind::Need(Box::new(TypeKind::Result {
                     ok: Box::new(TypeKind::VoiceHandle),
                     error: Box::new(TypeKind::Named("VoiceError".to_owned())),
                 })),
+                [FunctionParam::required(
+                    "voice",
+                    TypeKind::entity_ref(crate::types::EntityKind::Voice),
+                )],
             ),
-            (standard_callable_path(["len"]), TypeKind::I64),
-        ]
-        .into_iter()
-        .fold(env, |env, (path, result)| {
-            env.with_typed_standard_function(
-                path,
-                FunctionSignature::return_only(result),
-                std::iter::empty::<EffectCapability>(),
-            )
-        })
+        )
         .with_standard_method(
             TypeKind::VoiceHandle,
             "stop",
-            FunctionSignature::return_only(TypeKind::Unit),
+            FunctionSignature::new(
+                TypeKind::Unit,
+                [FunctionParam::defaulted("fade", TypeKind::Duration)],
+            ),
         )
         .with_standard_method(
             TypeKind::Named("DialogueText".to_owned()),
             "flush",
-            FunctionSignature::return_only(TypeKind::Unit),
+            FunctionSignature::new(
+                TypeKind::Unit,
+                [FunctionParam::defaulted(
+                    "mode",
+                    TypeKind::Named("TextFlushMode".to_owned()),
+                )],
+            ),
         )
         .with_standard_view_modifier(ViewModifierId::OnActivate)
     }
@@ -1078,7 +1256,29 @@ impl TypeCheckEnv {
 
     /// Looks up one exact source-visible base-environment binding identity.
     pub fn environment_binding(&self, id: &EnvironmentBindingId) -> Option<&TypeKind> {
-        self.symbols.get(id.as_str())
+        self.symbols.get(id.as_str()).map(|binding| &binding.ty)
+    }
+
+    pub(crate) fn standard_environment_value(
+        &self,
+        id: &EnvironmentBindingId,
+    ) -> Option<StandardEnvironmentValue> {
+        let stored = self.symbols.get(id.as_str())?.standard?;
+        (StandardEnvironmentValue::for_binding(id) == Some(stored)).then_some(stored)
+    }
+
+    pub(crate) fn standard_drop_policy_case(
+        &self,
+        owner: &EnvironmentBindingId,
+        ordinal: u32,
+    ) -> Option<StandardDropPolicyCase> {
+        let case = StandardDropPolicyCase::for_owner_ordinal(owner, ordinal)?;
+        let schema = self.closed_enums.get(&drop_policy_type())?;
+        if schema.owner() != owner {
+            return None;
+        }
+        let variant = schema.variants().get(usize::try_from(ordinal).ok()?)?;
+        (variant.name() == case.name() && variant.payload() == &case.payload()).then_some(case)
     }
 
     /// Returns registered enum-like unit variants grouped by semantic type in
@@ -1105,7 +1305,34 @@ impl TypeCheckEnv {
     /// Registers a variable, constant, or resolved path.
     #[must_use]
     pub fn with_symbol(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
-        self.symbols.insert(name.into(), normalize_type_kind(ty));
+        self.symbols.insert(
+            name.into(),
+            EnvironmentValueBinding {
+                ty: normalize_type_kind(ty),
+                standard: None,
+            },
+        );
+        self
+    }
+
+    #[must_use]
+    fn with_standard_value(
+        mut self,
+        name: impl Into<String>,
+        ty: TypeKind,
+        value: StandardEnvironmentValue,
+    ) -> Self {
+        let previous = self.symbols.insert(
+            name.into(),
+            EnvironmentValueBinding {
+                ty: normalize_type_kind(ty),
+                standard: Some(value),
+            },
+        );
+        assert!(
+            previous.is_none(),
+            "standard environment value identities are unique"
+        );
         self
     }
 
@@ -1134,7 +1361,7 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_typed_standard_function<I, E>(
-        mut self,
+        self,
         path: CallablePath,
         signature: FunctionSignature,
         effects: I,
@@ -1143,70 +1370,93 @@ impl TypeCheckEnv {
         I: IntoIterator<Item = E>,
         E: Into<EffectCapability>,
     {
-        let validator = if signature.checks_args() {
-            CallableValidator::Ordinary
-        } else {
-            CallableValidator::Untyped
-        };
-        assert!(
-            self.standard_functions
-                .iter()
-                .all(|function| function.path != path),
-            "standard callable paths are unique"
-        );
-        self.standard_functions.push(StandardEnvironmentFunction {
-            path,
-            signature: normalize_function_signature(signature),
-            effects: effects.into_iter().map(Into::into).collect(),
-            validator,
-            evaluated_effect: None,
-        });
-        self
+        let signature = self.canonical_standard_callable_signature(signature);
+        let effects = crate::effects::EffectSet::from_labels(
+            effects
+                .into_iter()
+                .map(Into::into)
+                .map(|effect: EffectCapability| effect.as_str().to_owned()),
+        )
+        .expect("standard callable effect labels are canonical");
+        let schema = signature
+            .callable_schema(
+                EffectRow::closed(effects),
+                CallableValidator::Ordinary,
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard function signature is a valid checked callable schema");
+        self.with_typed_standard_schema(path, schema)
     }
 
     #[must_use]
-    fn with_typed_standard_evaluated_effect_function<I, E>(
+    fn with_typed_standard_schema(
+        self,
+        path: CallablePath,
+        schema: CallableSignatureSchema,
+    ) -> Self {
+        self.with_typed_standard_overload_schema(
+            path,
+            CallableOverloadIndex::try_from_usize(0)
+                .expect("zero standard overload is representable"),
+            schema,
+        )
+    }
+
+    #[must_use]
+    fn with_typed_standard_overload_schema(
         mut self,
         path: CallablePath,
-        signature: FunctionSignature,
-        effects: I,
-        evaluated_effect: CallableEvaluatedEffect,
-    ) -> Self
-    where
-        I: IntoIterator<Item = E>,
-        E: Into<EffectCapability>,
-    {
-        let validator = if signature.checks_args() {
-            CallableValidator::Ordinary
-        } else {
-            CallableValidator::Untyped
-        };
+        overload: CallableOverloadIndex,
+        schema: CallableSignatureSchema,
+    ) -> Self {
         assert!(
             self.standard_functions
                 .iter()
-                .all(|function| function.path != path),
-            "standard callable paths are unique"
+                .all(|function| function.path != path || function.overload != overload),
+            "standard callable path/overload identities are unique"
         );
         self.standard_functions.push(StandardEnvironmentFunction {
             path,
-            signature: normalize_function_signature(signature),
-            effects: effects.into_iter().map(Into::into).collect(),
-            validator,
-            evaluated_effect: Some(evaluated_effect),
+            overload,
+            schema,
         });
         self
     }
 
     #[must_use]
     fn with_standard_method(
-        mut self,
+        self,
         receiver: TypeKind,
         member: &str,
         signature: FunctionSignature,
     ) -> Self {
-        let receiver = normalize_type_kind(receiver);
-        let member = CallableName::try_new(member)
-            .expect("standard method members are valid typed callable names");
+        self.with_standard_method_role(
+            receiver,
+            CallableName::try_new(member)
+                .expect("standard method members are valid typed callable names"),
+            signature,
+            StandardEnvironmentMethodRole::Ordinary,
+        )
+    }
+
+    fn with_standard_method_role(
+        mut self,
+        receiver: TypeKind,
+        member: CallableName,
+        signature: FunctionSignature,
+        role: StandardEnvironmentMethodRole,
+    ) -> Self {
+        let receiver = self.canonical_standard_callable_type(receiver);
+        let signature = self.canonical_standard_callable_signature(signature);
+        let schema = signature
+            .callable_schema(
+                EffectRow::closed(crate::effects::EffectSet::new()),
+                role.validator(),
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard method signature is a valid checked callable schema");
         assert!(
             self.standard_methods
                 .iter()
@@ -1216,29 +1466,19 @@ impl TypeCheckEnv {
         self.standard_methods.push(StandardEnvironmentMethod {
             receiver,
             member,
-            signature: normalize_function_signature(signature),
-            role: StandardEnvironmentMethodRole::Ordinary,
+            schema,
         });
         self
     }
 
     #[must_use]
-    fn with_standard_view_modifier(mut self, modifier: ViewModifierId) -> Self {
-        let receiver = normalize_type_kind(modifier.receiver());
-        let member = modifier.member();
-        assert!(
-            self.standard_methods
-                .iter()
-                .all(|method| method.receiver != receiver || method.member != member),
-            "standard method keys are unique"
-        );
-        self.standard_methods.push(StandardEnvironmentMethod {
-            receiver,
-            member,
-            signature: normalize_function_signature(modifier.signature()),
-            role: StandardEnvironmentMethodRole::ViewModifier(modifier),
-        });
-        self
+    fn with_standard_view_modifier(self, modifier: ViewModifierId) -> Self {
+        self.with_standard_method_role(
+            modifier.receiver(),
+            modifier.member(),
+            modifier.signature(),
+            StandardEnvironmentMethodRole::ViewModifier(modifier),
+        )
     }
 
     /// Registers a checker capability such as `state.write(flow)`.
@@ -1363,21 +1603,6 @@ impl TypeCheckEnv {
     }
 }
 
-fn normalize_function_signature(mut signature: FunctionSignature) -> FunctionSignature {
-    signature.return_type = normalize_type_kind(signature.return_type);
-    signature.params = signature
-        .params
-        .into_iter()
-        .map(normalize_function_param)
-        .collect();
-    signature.remaining_param_groups = signature
-        .remaining_param_groups
-        .into_iter()
-        .map(|group| group.into_iter().map(normalize_function_param).collect())
-        .collect();
-    signature
-}
-
 fn normalize_function_param(mut param: FunctionParam) -> FunctionParam {
     param.ty = normalize_type_kind(param.ty);
     param.higher_order_bindings = param
@@ -1410,6 +1635,250 @@ fn root_higher_order_bindings(
         )],
         _ => Vec::new(),
     }
+}
+
+fn fmt_schema() -> CallableSignatureSchema {
+    standard_schema(
+        vec![vec![standard_parameter(
+            0,
+            "value",
+            CallableParameterAdmission::unchecked_supply(),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Required,
+        )]],
+        TypeKind::DisplayText,
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenSupply,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::empty(),
+    )
+}
+
+fn evaluated_log_schema(level: CallableLogLevel) -> CallableSignatureSchema {
+    standard_schema(
+        vec![vec![standard_parameter(
+            0,
+            "message",
+            CallableParameterAdmission::unchecked_supply(),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Required,
+        )]],
+        TypeKind::Unit,
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::OpenSupply,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::empty(),
+    )
+    .with_evaluated_effect(CallableEvaluatedEffect::Log(level))
+}
+
+fn evaluated_entity_write_schema(
+    entity: crate::types::EntityKind,
+    owner: LanguageIntrinsicGenericOwner,
+    effect: CallableEvaluatedEffect,
+) -> CallableSignatureSchema {
+    let value = language_intrinsic_generic(owner);
+    standard_schema(
+        vec![vec![
+            standard_parameter(
+                0,
+                "target",
+                CallableParameterAdmission::checked(TypeKind::entity_ref_with_value(
+                    entity,
+                    value.clone(),
+                )),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                1,
+                "value",
+                CallableParameterAdmission::checked(value),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+        ]],
+        TypeKind::Unit,
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+            .expect("entity write generic owner has one typed parameter"),
+    )
+    .with_evaluated_effect(effect)
+}
+
+fn drop_schema(id: DropCallableId) -> CallableSignatureSchema {
+    let owner = drop_generic_owner(id);
+    let value = language_intrinsic_generic(owner);
+    let (groups, result, receiver_group) = match id {
+        DropCallableId::Drop => (
+            vec![drop_value_group(value)],
+            TypeKind::Unit,
+            CallableGroupIndex::ZERO,
+        ),
+        DropCallableId::DropWithPolicy => (
+            vec![drop_policy_group(), drop_value_group(value)],
+            TypeKind::Unit,
+            second_callable_group(),
+        ),
+        DropCallableId::DropOptional => (
+            vec![drop_value_group(TypeKind::Option(Box::new(value)))],
+            TypeKind::Unit,
+            CallableGroupIndex::ZERO,
+        ),
+        DropCallableId::OnDrop => (
+            vec![drop_policy_group(), drop_value_group(value.clone())],
+            value,
+            second_callable_group(),
+        ),
+    };
+    let schema = standard_schema(
+        groups,
+        result,
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Drop(id),
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+            .expect("drop generic owner has one typed parameter"),
+    )
+    .with_extension_receiver(CallableExtensionReceiver::new(
+        receiver_group,
+        zero_parameter_index(),
+    ))
+    .expect("drop receiver is a canonical explicit receiver coordinate");
+    match id {
+        DropCallableId::Drop | DropCallableId::DropWithPolicy | DropCallableId::DropOptional => {
+            schema.with_evaluated_effect(CallableEvaluatedEffect::Drop(id))
+        }
+        DropCallableId::OnDrop => schema,
+    }
+}
+
+const fn drop_generic_owner(id: DropCallableId) -> LanguageIntrinsicGenericOwner {
+    match id {
+        DropCallableId::Drop => LanguageIntrinsicGenericOwner::Drop,
+        DropCallableId::DropWithPolicy => LanguageIntrinsicGenericOwner::DropWithPolicy,
+        DropCallableId::DropOptional => LanguageIntrinsicGenericOwner::DropOptional,
+        DropCallableId::OnDrop => LanguageIntrinsicGenericOwner::OnDrop,
+    }
+}
+
+fn drop_policy_group() -> Vec<CallableParameter> {
+    vec![standard_parameter(
+        0,
+        "policy",
+        CallableParameterAdmission::checked(drop_policy_type()),
+        CallableParameterPassing::PositionalOrNamed,
+        CallableParameterPresence::Required,
+    )]
+}
+
+fn drop_value_group(value: TypeKind) -> Vec<CallableParameter> {
+    vec![standard_parameter(
+        0,
+        "value",
+        CallableParameterAdmission::checked(value),
+        CallableParameterPassing::PositionalOnly,
+        CallableParameterPresence::Required,
+    )]
+}
+
+fn second_callable_group() -> CallableGroupIndex {
+    CallableGroupIndex::try_from_usize(1).expect("second callable group is representable")
+}
+
+fn zero_parameter_index() -> CallableParameterIndex {
+    CallableParameterIndex::try_from_usize(0).expect("zero parameter index is representable")
+}
+
+fn drop_policy_type() -> TypeKind {
+    TypeKind::Named("DropPolicy".to_owned())
+}
+
+fn drop_policy_owner() -> EnvironmentBindingId {
+    EnvironmentBindingId::try_new("DropPolicy").expect("drop policy owner identity is valid")
+}
+
+fn stop_now_binding() -> EnvironmentBindingId {
+    EnvironmentBindingId::try_new("stop_now").expect("stop_now binding identity is valid")
+}
+
+fn standard_overload(index: usize) -> CallableOverloadIndex {
+    CallableOverloadIndex::try_from_usize(index).expect("standard overload index is representable")
+}
+
+fn language_intrinsic_generic(owner: LanguageIntrinsicGenericOwner) -> TypeKind {
+    TypeKind::GenericParam(GenericTypeParameterId::new(
+        GenericParameterOwnerId::LanguageIntrinsic(owner),
+        0,
+    ))
+}
+
+fn standard_schema(
+    groups: Vec<Vec<CallableParameter>>,
+    result: TypeKind,
+    argument_policy: CallableArgumentPolicy,
+    validator: CallableValidator,
+    generic_issuer: CallableGenericParameterIssuer,
+) -> CallableSignatureSchema {
+    let groups = groups
+        .into_iter()
+        .enumerate()
+        .map(|(index, parameters)| {
+            let index = CallableGroupIndex::try_from_usize(index)
+                .expect("standard callable group index is representable");
+            CallableParameterGroup::try_new(
+                index,
+                if index == CallableGroupIndex::ZERO {
+                    CallableGroupKind::Initial
+                } else {
+                    CallableGroupKind::Curried
+                },
+                parameters,
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("standard callable parameter group is valid")
+        })
+        .collect();
+    CallableSignatureSchema::try_new(
+        groups,
+        result,
+        CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
+        argument_policy,
+        validator,
+        generic_issuer,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+    .expect("standard callable schema is valid")
+}
+
+fn standard_parameter(
+    index: usize,
+    name: &str,
+    admission: CallableParameterAdmission,
+    passing: CallableParameterPassing,
+    presence: CallableParameterPresence,
+) -> CallableParameter {
+    CallableParameter::try_new(
+        CallableParameterIndex::try_from_usize(index)
+            .expect("standard parameter index is representable"),
+        Some(CallableName::try_new(name).expect("standard parameter name is valid")),
+        admission,
+        passing,
+        presence,
+        None,
+        None,
+    )
+    .expect("standard parameter schema is valid")
 }
 
 fn standard_callable_path<const N: usize>(segments: [&str; N]) -> CallablePath {

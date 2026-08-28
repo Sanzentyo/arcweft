@@ -1135,7 +1135,17 @@ impl Analyzer<'_, '_, '_> {
                 owner: source.owner,
             }),
         })?;
-        let callee_inputs = prepared.constraint_inputs();
+        let mut callee_inputs = prepared.constraint_inputs();
+        let implicit_extension_receiver = self
+            .pipe_stack
+            .last()
+            .filter(|pipe| pipe.right == source.owner && pipe.placeholders.is_empty())
+            .map(|pipe| {
+                crate::callable::PreparedImplicitExtensionReceiver::new(
+                    pipe.left,
+                    pipe.value.clone(),
+                )
+            });
         let staged = self.staged_callables.as_ref().ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
         })?;
@@ -1152,6 +1162,7 @@ impl Analyzer<'_, '_, '_> {
                     .prepared_calls()
                     .map_err(AnalyzerExpressionError::fact)?,
                 limits: &self.catalogs.callable_limits,
+                implicit_extension_receiver: implicit_extension_receiver.clone(),
             },
             &mut work,
         )
@@ -1228,6 +1239,31 @@ impl Analyzer<'_, '_, '_> {
                 });
             }
         };
+        if let Some(receiver) = implicit_extension_receiver.as_ref() {
+            if considered.iter().all(|candidate| {
+                matches!(
+                    candidate.instantiation(),
+                    crate::callable::CallableInstantiation::Extension { .. }
+                )
+            }) {
+                callee_inputs =
+                    crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
+                        source: receiver.source(),
+                        actual: receiver.actual().clone(),
+                    };
+            } else if considered.iter().any(|candidate| {
+                matches!(
+                    candidate.instantiation(),
+                    crate::callable::CallableInstantiation::Extension { .. }
+                )
+            }) {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed {
+                        owner: source.owner,
+                    },
+                ));
+            }
+        }
         Ok(ResolvedCallQuery {
             callee,
             considered,
@@ -2763,6 +2799,7 @@ impl Analyzer<'_, '_, '_> {
         };
         let mut rank = AcceptedCandidateRank {
             exact_matches: 0,
+            declared_exact_matches: 0,
             unchecked_or_open: input_projection.unchecked_or_open_slots(),
             omitted_parameters: input_projection.omitted_parameters(),
             authority: candidate.authority(),
@@ -2846,6 +2883,7 @@ impl Analyzer<'_, '_, '_> {
             .checked_add(transaction.exact_argument_matches())
             .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
             .map_err(AnalyzerExpressionError::fatal)?;
+        rank.declared_exact_matches = transaction.declared_exact_argument_matches();
         if expected_result == Some(&result) {
             rank.exact_matches = rank
                 .exact_matches
@@ -3208,7 +3246,7 @@ mod tests {
                     crate::types::constraints::TypeConstraintInvariant::InheritedSolution(
                         crate::types::constraints::InheritedSolutionInvariant {
                             kind: crate::types::constraints::InheritedSolutionInvariantKind::NonCanonical,
-                            parameter: Some(parameter),
+                            parameter: Some(parameter.into()),
                         },
                     ),
                 ),

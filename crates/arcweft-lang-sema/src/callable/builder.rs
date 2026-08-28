@@ -25,7 +25,7 @@ use arcweft_lang_hir::{
 use crate::{
     effect_row::EffectRow,
     effects::{EffectId, EffectSet},
-    env::{FunctionSignature, TypeCheckEnv},
+    env::TypeCheckEnv,
     nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
     registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp, EnvironmentManifestDigest},
     types::TypeKind,
@@ -37,18 +37,17 @@ use super::nominal_signature::ProjectSignatureResolver;
 use super::{
     CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError,
     CallableCandidateId, CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema,
-    CallableEvaluatedEffect, CallableGenericParameterIssuer, CallableGroupIndex, CallableGroupKind,
-    CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameter,
-    CallableParameterAdmission, CallableParameterGroup, CallableParameterIndex,
-    CallableParameterPassing, CallableParameterPresence, CallableParameterSource, CallablePath,
-    CallablePathError, CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource,
-    CallableValidator, CatalogCallableEntry, DocumentationProvenance, EnvironmentCallableCatalog,
-    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
-    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
-    ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding, RegisteredCallableCatalog,
-    RegisteredProjectModuleCallables, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
-    UnknownNamedArgumentPolicy,
+    CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
+    CallableOverloadIndex, CallableParameter, CallableParameterAdmission, CallableParameterGroup,
+    CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
+    CallableParameterSource, CallablePath, CallablePathError, CallableProviderId, CallableRecord,
+    CallableSignatureSchema, CallableSource, CallableValidator, CatalogCallableEntry,
+    DocumentationProvenance, EnvironmentCallableCatalog, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
+    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, EquivalentCallableSource,
+    NonEmptyCallableSet, ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding,
+    RegisteredCallableCatalog, RegisteredProjectModuleCallables, SignatureOrigin,
+    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
@@ -117,40 +116,26 @@ pub(crate) struct StandardEnvironmentMethodProjection {
 }
 
 impl StandardEnvironmentMethodProjection {
-    fn try_from_signature(
+    fn try_from_schema(
         receiver: &TypeKind,
         member: &CallableName,
-        signature: &FunctionSignature,
-        role: crate::env::StandardEnvironmentMethodRole,
-        limits: &CallableLimits,
+        schema: &CallableSignatureSchema,
     ) -> Result<Self, super::CallablePublicationError> {
-        let kind = if signature.checks_args() {
-            EnvironmentCallableKind::Method
-        } else {
-            EnvironmentCallableKind::UntypedMethodFallback
-        };
         let key = CallableLookupKey::Method(super::ReceiverMethodKey::new(
             receiver.clone(),
             member.clone(),
         ));
-        let schema = signature.callable_schema(
-            EffectRow::closed(EffectSet::new()),
-            if signature.checks_args() {
-                role.validator()
-            } else {
-                CallableValidator::Untyped
-            },
-            CallableGenericParameterIssuer::empty(),
-            limits,
-        )?;
         let id = EnvironmentCallableId::new(
             EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core),
-            kind,
+            EnvironmentCallableKind::Method,
             key,
             CallableOverloadIndex::try_from_usize(0)
                 .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
         );
-        Ok(Self { id, schema })
+        Ok(Self {
+            id,
+            schema: schema.clone(),
+        })
     }
 
     fn into_publication_record(
@@ -1437,19 +1422,19 @@ impl TypeCheckEnv {
         let owner = EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core);
         let mut records = Vec::new();
         let mut functions = self.standard_functions().iter().collect::<Vec<_>>();
-        functions.sort_by(|left, right| left.path.cmp(&right.path));
+        functions.sort_by(|left, right| {
+            left.path
+                .cmp(&right.path)
+                .then_with(|| left.overload.cmp(&right.overload))
+        });
         for (ordinal, function) in functions.into_iter().enumerate() {
             let key = CallableLookupKey::Free(function.path.clone());
-            let signature = self.canonical_standard_callable_signature(function.signature.clone());
-            records.push(environment_record_from_signature(
+            records.push(environment_record_from_schema(
                 EnvironmentCallableKind::Function,
                 key,
-                &signature,
-                Some(function.effects.as_slice()),
-                function.validator.clone(),
-                function.evaluated_effect,
+                function.overload,
+                function.schema.clone(),
                 ordinal,
-                limits,
             )?);
         }
         let offset = records.len();
@@ -1460,14 +1445,10 @@ impl TypeCheckEnv {
                 .then_with(|| left.receiver.stable_ordering(&right.receiver))
         });
         for (ordinal, method) in methods.into_iter().enumerate() {
-            let receiver = self.canonical_standard_callable_type(method.receiver.clone());
-            let signature = self.canonical_standard_callable_signature(method.signature.clone());
-            let projection = StandardEnvironmentMethodProjection::try_from_signature(
-                &receiver,
+            let projection = StandardEnvironmentMethodProjection::try_from_schema(
+                &method.receiver,
                 &method.member,
-                &signature,
-                method.role,
-                limits,
+                &method.schema,
             )?;
             records.push(projection.into_publication_record(offset + ordinal)?);
         }
@@ -1500,37 +1481,17 @@ fn standard_manifest_digest(
     EnvironmentManifestDigest::from_bytes(encoder.finish(DOMAIN))
 }
 
-fn environment_record_from_signature(
+fn environment_record_from_schema(
     kind: EnvironmentCallableKind,
     key: CallableLookupKey,
-    signature: &FunctionSignature,
-    effects: Option<&[crate::env::EffectCapability]>,
-    validator: CallableValidator,
-    evaluated_effect: Option<CallableEvaluatedEffect>,
+    overload: CallableOverloadIndex,
+    schema: CallableSignatureSchema,
     ordinal: usize,
-    limits: &CallableLimits,
 ) -> Result<EnvironmentCallablePublicationRecord, super::CallablePublicationError> {
-    let effects = EffectSet::from_labels(
-        effects
-            .unwrap_or_default()
-            .iter()
-            .map(crate::env::EffectCapability::as_str),
-    )
-    .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    let mut schema = signature.callable_schema(
-        EffectRow::closed(effects),
-        validator,
-        CallableGenericParameterIssuer::empty(),
-        limits,
-    )?;
-    if let Some(effect) = evaluated_effect {
-        schema = schema.with_evaluated_effect(effect);
-    }
     EnvironmentCallablePublicationRecord::try_new(
         kind,
         key,
-        CallableOverloadIndex::try_from_usize(0)
-            .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
+        overload,
         schema,
         CallableDocumentation::missing(),
         None,

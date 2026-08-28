@@ -22,7 +22,7 @@ use crate::effect_row::{
 };
 use crate::effects::EffectSet;
 use crate::types::{
-    DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
+    ArrayLength, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
     GenericTypeParameterId, TypeKind, TypePoisonId,
 };
 
@@ -72,6 +72,7 @@ fn try_type_only_solution(
             };
             super::context::TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
         }),
+        std::iter::empty(),
         std::iter::empty(),
         std::iter::empty(),
     )
@@ -173,6 +174,7 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
         super::normalization::project_type(
             &array,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
             &mut context,
         )
@@ -186,9 +188,403 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
                 TypeConstraintConstEligibility::Rigid,
             )],
             std::iter::empty(),
+            std::iter::empty(),
         ),
         Ok(_)
     ));
+}
+
+#[test]
+fn active_const_alias_chain_closes_before_solution_publication() {
+    let first = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(211)),
+        0,
+    );
+    let second = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(211)),
+        1,
+    );
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (second.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("const alias scope");
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            scope,
+        );
+    let solution = TypeConstraintSolution::complete_path(
+        BTreeMap::new(),
+        BTreeMap::from([
+            (first.clone(), ArrayLength::Generic(second.clone())),
+            (second.clone(), ArrayLength::Const(7)),
+        ]),
+        BTreeMap::new(),
+        &mut context,
+    )
+    .expect("active aliases close to one canonical constant");
+    assert_eq!(
+        solution
+            .const_bindings()
+            .map(|(parameter, value)| (parameter.clone(), value.clone()))
+            .collect::<Vec<_>>(),
+        vec![
+            (first, ArrayLength::Const(7)),
+            (second, ArrayLength::Const(7)),
+        ]
+    );
+}
+
+#[test]
+fn claimed_const_alias_is_rejected_as_noncanonical() {
+    let first = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(212)),
+        0,
+    );
+    let second = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(212)),
+        1,
+    );
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (second.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("const alias scope");
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            scope,
+        );
+    let error = TypeConstraintSolution::test_seal_completed_with_consts(
+        std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+        [
+            (first.clone(), ArrayLength::Generic(second)),
+            (
+                GenericConstParameterId::new(
+                    GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(212)),
+                    1,
+                ),
+                ArrayLength::Const(7),
+            ),
+        ],
+        std::iter::empty(),
+        &mut context,
+    );
+    assert!(matches!(
+        error,
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                kind: InheritedSolutionInvariantKind::NonCanonical,
+                parameter: Some(found),
+            })
+        )) if found == first.into()
+    ));
+}
+
+#[test]
+fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
+    let self_parameter = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(213)),
+        0,
+    );
+    let self_scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [(
+            self_parameter.clone(),
+            TypeConstraintConstEligibility::Bindable,
+        )],
+    )
+    .expect("self-binding const scope");
+    let cancellation = AtomicBool::new(false);
+    let mut self_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            self_scope,
+        );
+    assert!(matches!(
+        TypeConstraintSolution::test_seal_completed_with_consts(
+            std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+            [(
+                self_parameter.clone(),
+                ArrayLength::Generic(self_parameter.clone()),
+            )],
+            std::iter::empty(),
+            &mut self_context,
+        ),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                kind: InheritedSolutionInvariantKind::SelfBinding,
+                ..
+            })
+        ))
+    ));
+
+    let first = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(213)),
+        0,
+    );
+    let second = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(213)),
+        1,
+    );
+    let cycle_scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (second.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("cyclic const scope");
+    let mut cycle_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            cycle_scope,
+        );
+    assert!(matches!(
+        TypeConstraintSolution::test_seal_completed_with_consts(
+            std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+            [
+                (first.clone(), ArrayLength::Generic(second.clone())),
+                (second.clone(), ArrayLength::Generic(first)),
+            ],
+            std::iter::empty(),
+            &mut cycle_context,
+        ),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                kind: InheritedSolutionInvariantKind::OccursOrCycle,
+                ..
+            })
+        ))
+    ));
+}
+
+#[test]
+fn inherited_const_future_becomes_bindable_with_exact_key() {
+    let parameter = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(214)),
+        0,
+    );
+    let previous_scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [(
+            parameter.clone(),
+            TypeConstraintConstEligibility::FutureEligible,
+        )],
+    )
+    .expect("future const scope");
+    let cancellation = AtomicBool::new(false);
+    let mut previous_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            previous_scope,
+        );
+    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+        [(parameter.clone(), ArrayLength::Const(9))],
+        std::iter::empty(),
+        &mut previous_context,
+    )
+    .expect("completed future const binding");
+
+    let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
+        [super::context::TypeConstraintConstParameterScopeRow::new(
+            parameter.clone(),
+            TypeConstraintConstEligibility::Bindable,
+        )],
+        std::iter::empty::<GenericTypeParameterId>(),
+        [parameter.clone()],
+    )
+    .expect("inherited const key scope");
+    let mut next_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            next_scope,
+        );
+    let path = solution
+        .restore_inherited_path(&mut next_context)
+        .expect("FutureEligible const becomes Bindable");
+    assert_eq!(
+        path.const_bindings,
+        BTreeMap::from([(parameter, ArrayLength::Const(9))])
+    );
+}
+
+#[test]
+fn inherited_const_keys_reject_unexpected_and_missing_rows() {
+    let first = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(215)),
+        0,
+    );
+    let second = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(215)),
+        1,
+    );
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (second.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("unexpected const scope");
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            scope,
+        );
+    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+        [
+            (first.clone(), ArrayLength::Const(1)),
+            (second.clone(), ArrayLength::Const(2)),
+        ],
+        std::iter::empty(),
+        &mut context,
+    )
+    .expect("complete const rows");
+    let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
+        [
+            super::context::TypeConstraintConstParameterScopeRow::new(
+                first.clone(),
+                TypeConstraintConstEligibility::Bindable,
+            ),
+            super::context::TypeConstraintConstParameterScopeRow::new(
+                second.clone(),
+                TypeConstraintConstEligibility::Bindable,
+            ),
+        ],
+        std::iter::empty::<GenericTypeParameterId>(),
+        [first.clone()],
+    )
+    .expect("unexpected-key continuation scope");
+    let mut next_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            next_scope,
+        );
+    assert!(matches!(
+        solution.restore_inherited_path(&mut next_context),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                kind: InheritedSolutionInvariantKind::UnexpectedKey,
+                parameter: Some(found),
+            })
+    )) if found == second.clone().into()
+    ));
+
+    let previous_scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (
+                second.clone(),
+                TypeConstraintConstEligibility::FutureEligible,
+            ),
+        ],
+    )
+    .expect("missing-key source scope");
+    let mut previous_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            previous_scope,
+        );
+    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+        [(first.clone(), ArrayLength::Const(1))],
+        std::iter::empty(),
+        &mut previous_context,
+    )
+    .expect("complete partial future const rows");
+    let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
+        [
+            super::context::TypeConstraintConstParameterScopeRow::new(
+                first.clone(),
+                TypeConstraintConstEligibility::Bindable,
+            ),
+            super::context::TypeConstraintConstParameterScopeRow::new(
+                second.clone(),
+                TypeConstraintConstEligibility::Bindable,
+            ),
+        ],
+        std::iter::empty::<GenericTypeParameterId>(),
+        [first, second.clone()],
+    )
+    .expect("missing-key continuation scope");
+    let mut next_context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            next_scope,
+        );
+    assert!(matches!(
+        solution.restore_inherited_path(&mut next_context),
+        Err(TypeConstraintError::Invariant(
+            TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                kind: InheritedSolutionInvariantKind::Unclosed,
+                parameter: Some(found),
+            })
+        )) if found == second.into()
+    ));
+}
+
+#[test]
+fn completed_const_solution_applies_array_length_parameter() {
+    let parameter = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(216)),
+        0,
+    );
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        std::iter::empty::<(GenericTypeParameterId, TypeConstraintParameterEligibility)>(),
+        [(parameter.clone(), TypeConstraintConstEligibility::Bindable)],
+    )
+    .expect("array-length const scope");
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            scope,
+        );
+    let solution = TypeConstraintSolution::test_seal_completed_with_consts(
+        std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
+        [(parameter.clone(), ArrayLength::Const(5))],
+        std::iter::empty(),
+        &mut context,
+    )
+    .expect("canonical array-length binding");
+    assert_eq!(
+        solution.apply(&TypeKind::Array {
+            item: Box::new(TypeKind::I32),
+            len: ArrayLength::Generic(parameter),
+        }),
+        TypeKind::Array {
+            item: Box::new(TypeKind::I32),
+            len: ArrayLength::Const(5),
+        }
+    );
 }
 
 #[test]
@@ -802,7 +1198,7 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
                 kind: super::InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             }),
-        )) if found == t
+        )) if found == t.into()
     ));
 }
 
@@ -830,7 +1226,7 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
                 parameter: Some(found),
             }),
-        )) if found == parameter
+        )) if found == parameter.into()
     ));
 }
 
@@ -895,6 +1291,7 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
             ],
             std::iter::empty(),
             std::iter::empty(),
+            std::iter::empty(),
         ),
         Err(TypeConstraintInvariant::ParameterScope(
             TypeConstraintParameterScopeInvariant::ParameterUnordered
@@ -908,6 +1305,7 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
             )],
             std::iter::empty(),
             [first],
+            std::iter::empty(),
         ),
         Err(TypeConstraintInvariant::ParameterScope(
             TypeConstraintParameterScopeInvariant::RequiredInheritedKeyNotBindable { .. }
@@ -930,6 +1328,7 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
             [row(first.clone()), row(first)],
             std::iter::empty(),
             std::iter::empty(),
+            std::iter::empty(),
         ),
         Err(TypeConstraintInvariant::ParameterScope(
             TypeConstraintParameterScopeInvariant::DuplicateParameter,
@@ -938,6 +1337,7 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
             [row(second), row(owned_parameter(1600, 0))],
+            std::iter::empty(),
             std::iter::empty(),
             std::iter::empty(),
         ),
@@ -957,6 +1357,7 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
         )],
         std::iter::empty(),
         [parameter.clone()],
+        std::iter::empty(),
     )
     .expect("required inherited key scope");
     let cancellation = AtomicBool::new(false);
@@ -974,7 +1375,7 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
                 kind: InheritedSolutionInvariantKind::Unclosed,
                 parameter: Some(found),
             })
-        )) if found == parameter
+        )) if found == parameter.into()
     ));
 }
 
@@ -995,6 +1396,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         ],
         std::iter::empty(),
         [required.clone()],
+        std::iter::empty(),
     )
     .expect("required scope");
     let inherited = type_only_solution(
@@ -1019,7 +1421,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
                 parameter: Some(found),
             })
-        )) if found == extra
+        )) if found == extra.into()
     ));
 
     let rigid = owned_parameter(162, 2);
@@ -1036,6 +1438,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         ],
         std::iter::empty(),
         [required.clone()],
+        std::iter::empty(),
     )
     .expect("required and rigid scope");
     let inherited = type_only_solution(
@@ -1056,7 +1459,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
                 parameter: Some(found),
             })
-        )) if found == rigid
+        )) if found == rigid.into()
     ));
 }
 
@@ -1077,6 +1480,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
         ],
         std::iter::empty(),
         [bindable.clone()],
+        std::iter::empty(),
     )
     .expect("rigid self scope");
     let mut bindings = BTreeMap::new();
@@ -1336,6 +1740,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         ],
         std::iter::empty(),
         [first.clone()],
+        std::iter::empty(),
     )
     .expect("extension scope");
     let inherited = type_only_solution(
@@ -1382,6 +1787,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         ],
         std::iter::empty(),
         [owned_parameter(205, 0)],
+        std::iter::empty(),
     )
     .expect("unresolved extension scope");
     let transaction = TestConstraintTransaction::begin(
@@ -1423,6 +1829,7 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
         ],
         std::iter::empty(),
         [t.clone()],
+        std::iter::empty(),
     )
     .expect("canonical inherited scope");
     let inherited = type_only_solution(
@@ -1469,6 +1876,7 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
         )],
         std::iter::empty(),
         [parameter.clone()],
+        std::iter::empty(),
     )
     .expect("replacement scope");
     let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]), &[]);
@@ -1511,6 +1919,7 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
         ],
         std::iter::empty(),
         [bound.clone()],
+        std::iter::empty(),
     )
     .expect("continuation scope");
     let inherited = type_only_solution(
@@ -1549,6 +1958,7 @@ fn hint_projection_cancellation_is_checked_before_descent() {
         super::normalization::project_type(
             &TypeKind::Vec(Box::new(TypeKind::I32)),
             &BTreeMap::new(),
+            &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
             &mut context,
         ),
@@ -1568,6 +1978,7 @@ fn final_projection_cancellation_is_checked_before_descent() {
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             super::ConstraintClosurePolicy::ProjectionClosed,
             &mut context,
@@ -1589,6 +2000,7 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
         super::normalization::project_type(
             &TypeKind::I32,
             &BTreeMap::new(),
+            &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
             &mut exact,
         )
@@ -1604,6 +2016,7 @@ fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
             &mut one_over,
@@ -1660,8 +2073,14 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 scope.clone(),
             );
             assert!(
-                super::normalization::project_type(&array, &BTreeMap::new(), policy, &mut exact,)
-                    .is_ok()
+                super::normalization::project_type(
+                    &array,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    policy,
+                    &mut exact,
+                )
+                .is_ok()
             );
 
             let mut one_over = TypeConstraintContext::<
@@ -1673,7 +2092,13 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
                 scope.clone(),
             );
             assert!(matches!(
-                super::normalization::project_type(&array, &BTreeMap::new(), policy, &mut one_over,),
+                super::normalization::project_type(
+                    &array,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    policy,
+                    &mut one_over,
+                ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 3,
                     limit: 2,
@@ -1711,7 +2136,13 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 TypeConstraintParameterScope::empty(),
             );
             assert!(matches!(
-                super::normalization::project_type(&array, &BTreeMap::new(), policy, &mut exact,),
+                super::normalization::project_type(
+                    &array,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    policy,
+                    &mut exact,
+                ),
                 Err(TypeConstraintError::Rejected(
                     TypeConstraintRejection::UnresolvedType
                 ))
@@ -1726,7 +2157,13 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
                 TypeConstraintParameterScope::empty(),
             );
             assert!(matches!(
-                super::normalization::project_type(&array, &BTreeMap::new(), policy, &mut one_over,),
+                super::normalization::project_type(
+                    &array,
+                    &BTreeMap::new(),
+                    &BTreeMap::new(),
+                    policy,
+                    &mut one_over,
+                ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 2,
                     limit: 1,
@@ -1787,6 +2224,7 @@ fn array_header_observes_cancellation_after_container_charge() {
     assert!(matches!(
         super::normalization::project_type(
             &array,
+            &BTreeMap::new(),
             &BTreeMap::new(),
             super::ConstraintClosurePolicy::Hint,
             &mut context,

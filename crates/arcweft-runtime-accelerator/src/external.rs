@@ -286,9 +286,8 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
         RuntimeValue::UInt(value) => Ok(Value::Number(Number::U(runtime_uint_to_u128(*value)))),
         RuntimeValue::F32(value) => Ok(Value::Number(Number::F32(*value))),
         RuntimeValue::F64(value) => Ok(Value::Number(Number::F64(*value))),
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => {
-            Ok(Value::String(value.clone()))
-        }
+        RuntimeValue::String(value) => Ok(Value::String(value.clone())),
+        RuntimeValue::EntityRef(value) => Ok(Value::String(value.runtime_label())),
         RuntimeValue::Char(value) => Ok(Value::Char(*value)),
         RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::Bytes(values))) => {
             Ok(Value::Bytes(Bytes::new(values.as_slice().to_vec())))

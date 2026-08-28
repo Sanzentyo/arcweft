@@ -101,6 +101,18 @@ impl TypeKind {
                     .stable_ordering(right_item)
                     .then_with(|| left_error.stable_ordering(right_error)),
                 (
+                    Self::Parser {
+                        item: left_item,
+                        error: left_error,
+                    },
+                    Self::Parser {
+                        item: right_item,
+                        error: right_error,
+                    },
+                ) => left_item
+                    .stable_ordering(right_item)
+                    .then_with(|| left_error.stable_ordering(right_error)),
+                (
                     Self::Result {
                         ok: left_ok,
                         error: left_error,
@@ -388,6 +400,7 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::BorrowRef { .. } => 52,
         TypeKind::Need(_) => 53,
         TypeKind::Stream { .. } => 54,
+        TypeKind::Parser { .. } => 55,
         TypeKind::Result { .. } => 56,
         TypeKind::Option(_) => 57,
         TypeKind::Handle { .. } => 58,

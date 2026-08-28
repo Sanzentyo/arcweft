@@ -54,16 +54,16 @@ use super::{
     CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
     CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedCoverageWitness,
-    CheckedExpression, CheckedExpressionEdgeError, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
-    CheckedTypeSelection, CheckedUnreachableReason, CheckedValueResolution, CheckedVariantOwner,
-    FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticCatalogs,
-    PhysicalArgumentEvaluationKind, PostfixBracketResolution, RegisteredSemanticValueId,
-    SemanticFactFamily, SemanticTranscriptError, analyze_final_project,
+    CheckedDropFade, CheckedDropPolicy, CheckedEvaluatedEffect, CheckedExpression,
+    CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem,
+    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedSelectResolution,
+    CheckedStatement, CheckedStatementRole, CheckedSuspensionRole, CheckedSuspensionStatement,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedUnreachableReason,
+    CheckedValueResolution, CheckedVariantOwner, FinalCallSealLocation, FinalSemanticAnalysis,
+    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, PostfixBracketResolution,
+    RegisteredSemanticValueId, SemanticFactFamily, SemanticTranscriptError, analyze_final_project,
 };
 use crate::{
     CheckedNeedProducerAdmissionError,
@@ -78,13 +78,14 @@ use crate::{
         CallableParameterPresence, CallablePath, CallableProviderId, CallableReceiverMode,
         CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
         CheckedCallArgumentSlotSource, CheckedCallExecutionSource, CheckedClosureId,
-        DialogueCallableId, DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog,
-        EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-        EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal, LineContextMethodId,
-        LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
-        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog,
-        SemanticSignatureSurface, SpreadArgumentPolicy, StageMethodId, UnknownCallKind,
-        UnknownNamedArgumentPolicy, ViewModifierId,
+        DialogueCallableId, DomainMethodId, DropCallableId, EffectContractOrigin,
+        EnvironmentCallableCatalog, EnvironmentCallableId, EnvironmentCallableKind,
+        EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
+        EnvironmentDeclarationOrdinal, LineContextMethodId, LineScheduleCallableId,
+        NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS, PresentationCallableId,
+        ProjectCallablePath, RegisteredCallableCatalog, SemanticSignatureSurface,
+        SpreadArgumentPolicy, StageMethodId, UnknownCallKind, UnknownNamedArgumentPolicy,
+        ViewModifierId,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
@@ -2590,6 +2591,54 @@ fn pipeline(input: Result<i64, String>) -> Result<i64, String> {
         expression.resolution(),
         CheckedExpressionResolution::ImplicitCallable(_)
     )));
+}
+
+#[test]
+fn drop_policy_overload_is_checked_for_free_pipe_and_dot_surfaces() {
+    let fixture = fixture(
+        r"
+fn dispose(value: i64) {
+    drop(value);
+    drop(stop_now)(value);
+    value |> drop(stop_now);
+    value.drop(stop_now);
+    let retained = on_drop(stop_now)(value);
+    retained;
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("typed drop policy overload analysis");
+    let drops = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.role() {
+            CheckedStatementRole::EvaluatedEffect(effect) => match effect.as_ref() {
+                CheckedEvaluatedEffect::Drop {
+                    operation,
+                    policy_source,
+                    policy,
+                    ..
+                } => Some((*operation, *policy_source, policy)),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(drops.len(), 4);
+    assert!(matches!(
+        drops[0],
+        (DropCallableId::Drop, None, CheckedDropPolicy::Default)
+    ));
+    for (operation, policy_source, policy) in &drops[1..] {
+        assert_eq!(*operation, DropCallableId::DropWithPolicy);
+        assert!(policy_source.is_some());
+        assert!(matches!(
+            policy,
+            CheckedDropPolicy::Stop {
+                fade: CheckedDropFade::ConstantNanos(0)
+            }
+        ));
+    }
 }
 
 #[test]

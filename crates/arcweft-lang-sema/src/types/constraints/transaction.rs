@@ -5,7 +5,7 @@ use std::{
     sync::Arc,
 };
 
-use super::super::{GenericTypeParameterId, TypeKind};
+use super::super::{ArrayLength, GenericConstParameterId, GenericTypeParameterId, TypeKind};
 use super::RejectedConstraintSourceProjection;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{project_type, validate_selected_call_self};
@@ -71,7 +71,7 @@ pub(crate) struct ChoiceDerivationStep {
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct DeferredCycleWitness {
-    pub(crate) parameters: BTreeSet<GenericTypeParameterId>,
+    pub(crate) parameters: BTreeSet<super::ConstraintGenericParameterId>,
 }
 
 /// Semantic evidence retained by one closed source row.  The value/evidence
@@ -217,6 +217,7 @@ impl<D: ConstraintDomain> ConstraintProbe<D> {
 
 pub(crate) struct ConstraintPath<D: ConstraintDomain> {
     pub(crate) bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
+    pub(crate) const_bindings: BTreeMap<GenericConstParameterId, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
     pub(crate) equations: Vec<PendingEquation<D>>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
@@ -228,6 +229,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
     pub(crate) fn empty(effects: crate::effect_row::EffectConstraintEnvironment) -> Self {
         Self {
             bindings: BTreeMap::new(),
+            const_bindings: BTreeMap::new(),
             effects,
             equations: Vec::new(),
             choice_key: Vec::new(),
@@ -241,6 +243,7 @@ impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
     fn clone(&self) -> Self {
         Self {
             bindings: self.bindings.clone(),
+            const_bindings: self.const_bindings.clone(),
             effects: self.effects.clone(),
             equations: self.equations.clone(),
             choice_key: self.choice_key.clone(),
@@ -263,7 +266,7 @@ pub(crate) struct ProbeTicket<D: ConstraintDomain> {
 struct OwnedAlternativeHint<D: ConstraintDomain> {
     alternative: D::AlternativeIndex,
     expected: TypeKind,
-    unbound: Box<[GenericTypeParameterId]>,
+    unbound: Box<[super::ConstraintGenericParameterId]>,
 }
 
 impl<D: ConstraintDomain> ProbeTicket<D> {
@@ -575,7 +578,7 @@ enum MaterializedRecord<D: ConstraintDomain> {
 
 enum NormalizedPath<D: ConstraintDomain> {
     Acyclic(ConstraintPath<D>),
-    Cyclic(GenericTypeParameterId),
+    Cyclic(super::ConstraintGenericParameterId),
 }
 
 pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
@@ -584,7 +587,7 @@ pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
     projections: Vec<ProjectionRequest<D>>,
     next_equation: u32,
     next_source_ordinal: u32,
-    first_cycle: Option<GenericTypeParameterId>,
+    first_cycle: Option<super::ConstraintGenericParameterId>,
     next_correlation_ordinal: u32,
     next_materialization_ticket_ordinal: u64,
     materialization_issuer: Arc<MaterializationTicketIssuer>,
@@ -899,6 +902,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             let projected = project_type(
                 alternative.value_expected(),
                 &path.bindings,
+                &path.const_bindings,
                 ConstraintClosurePolicy::Hint,
                 context,
             )?;
@@ -1288,17 +1292,24 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     .final_expected
                     .as_ref()
                     .unwrap_or(&equation.pattern);
-                let pattern = seal_type(pattern, &path.bindings, &mut BTreeSet::new(), context)?
-                    .substitute_effect_rows(&effect_substitution)
-                    .map_err(|_| {
-                        super::effect_invariant(
-                            super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                            None,
-                        )
-                    })?;
+                let pattern = seal_type(
+                    pattern,
+                    &path.bindings,
+                    &path.const_bindings,
+                    &mut BTreeSet::new(),
+                    context,
+                )?
+                .substitute_effect_rows(&effect_substitution)
+                .map_err(|_| {
+                    super::effect_invariant(
+                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                        None,
+                    )
+                })?;
                 let actual = seal_type(
                     &equation.actual,
                     &path.bindings,
+                    &path.const_bindings,
                     &mut BTreeSet::new(),
                     context,
                 )?
@@ -1517,6 +1528,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             .collect::<BTreeMap<_, _>>();
         let solution = Arc::new(TypeConstraintSolution::complete_path(
             path.bindings,
+            path.const_bindings,
             effect_bindings,
             context,
         )?);
@@ -1558,16 +1570,22 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     ConstraintClosurePolicy::ProjectionFuture
                 }
             };
-            let value = project_type(&request.value, &path.bindings, policy, context)
-                .map_err(projection_error::<D>)?
-                .value
-                .substitute_effect_rows(&effect_substitution)
-                .map_err(|_| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })?;
+            let value = project_type(
+                &request.value,
+                &path.bindings,
+                &path.const_bindings,
+                policy,
+                context,
+            )
+            .map_err(projection_error::<D>)?
+            .value
+            .substitute_effect_rows(&effect_substitution)
+            .map_err(|_| {
+                super::effect_invariant(
+                    super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                    None,
+                )
+            })?;
             validate_selected_call_self(&value, context).map_err(projection_error::<D>)?;
             projections.push(KeyedConstraintProjection::new(request.key, value));
         }
@@ -1599,7 +1617,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                         kind: InheritedSolutionInvariantKind::Unclosed,
-                        parameter: Some(parameter.clone()),
+                        parameter: Some(parameter.clone().into()),
+                    }),
+                ));
+            }
+            if let Some(parameter) = context.required_inherited_const_keys().first() {
+                return Err(TypeConstraintError::Invariant(
+                    TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
+                        kind: InheritedSolutionInvariantKind::Unclosed,
+                        parameter: Some(parameter.clone().into()),
                     }),
                 ));
             }
@@ -1835,6 +1861,7 @@ where
         let actual = project_type(
             &probe.actual,
             &path.bindings,
+            &path.const_bindings,
             ConstraintClosurePolicy::SolutionCompletion,
             context,
         )?
@@ -1875,6 +1902,7 @@ where
         let value_expected = project_type(
             value_expected,
             &path.bindings,
+            &path.const_bindings,
             ConstraintClosurePolicy::SolutionCompletion,
             context,
         )?

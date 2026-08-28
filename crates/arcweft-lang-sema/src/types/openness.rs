@@ -95,7 +95,7 @@ impl TypeKind {
             Self::Map { key, value, .. } => {
                 key.contains_dialogue_line_operation() || value.contains_dialogue_line_operation()
             }
-            Self::Stream { item, error } => {
+            Self::Stream { item, error } | Self::Parser { item, error } => {
                 item.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
             }
             Self::Result { ok, error } => {
@@ -147,7 +147,7 @@ impl TypeKind {
             Self::Map { key, value, .. } => {
                 key.contains_nominal_poison() || value.contains_nominal_poison()
             }
-            Self::Stream { item, error } => {
+            Self::Stream { item, error } | Self::Parser { item, error } => {
                 item.contains_nominal_poison() || error.contains_nominal_poison()
             }
             Self::Result { ok, error } => {

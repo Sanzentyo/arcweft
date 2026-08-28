@@ -2036,6 +2036,30 @@ impl PreparedCallArgumentSemanticProjection {
 }
 
 impl RanCandidateTransaction {
+    pub(crate) fn declared_exact_argument_matches(&self) -> usize {
+        let Some(mapping) = self.input_projection.authored() else {
+            return 0;
+        };
+        self.solved
+            .closed_sources
+            .iter()
+            .filter(|source| {
+                let (AnalyzerCallConstraintSource::Argument { slot, .. }
+                | AnalyzerCallConstraintSource::DialoguePatch { slot, .. }) = source.source()
+                else {
+                    return false;
+                };
+                mapping
+                    .arguments()
+                    .iter()
+                    .flat_map(|argument| argument.slots().iter())
+                    .find(|mapped| mapped.slot() == slot)
+                    .and_then(|mapped| mapped.declared_expected())
+                    == Some(source.actual())
+            })
+            .count()
+    }
+
     pub(crate) fn exact_argument_matches(&self) -> usize {
         self.solved
             .closed_sources

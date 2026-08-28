@@ -932,7 +932,8 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::SortedMap
             | BuiltinTypeConstructor::BTreeMap
             | BuiltinTypeConstructor::Result
-            | BuiltinTypeConstructor::Stream => {
+            | BuiltinTypeConstructor::Stream
+            | BuiltinTypeConstructor::Parser => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
             }
             BuiltinTypeConstructor::Ref => self.apply_entity_family_builtin(
@@ -1099,6 +1100,10 @@ impl Resolver<'_, '_> {
                 error: Box::new(second),
             },
             BuiltinTypeConstructor::Stream => TypeKind::Stream {
+                item: Box::new(first),
+                error: Box::new(second),
+            },
+            BuiltinTypeConstructor::Parser => TypeKind::Parser {
                 item: Box::new(first),
                 error: Box::new(second),
             },

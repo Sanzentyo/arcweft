@@ -11,8 +11,9 @@ use std::collections::BTreeSet;
 use arcweft_core::{
     entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest, TypeLayoutHash},
     pattern::{
-        RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner,
-        RuntimeSemanticTypeId,
+        RuntimeBuiltinVariantIdentity, RuntimeBuiltinVariantTypeError, RuntimeCheckedType,
+        RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
     },
     plan::RuntimeAgentOperationalType,
     value::{
@@ -228,7 +229,8 @@ impl From<RuntimeOwnershipError> for CheckedOwnershipError {
             | RuntimeOwnershipError::CarrierMismatch { .. }
             | RuntimeOwnershipError::ArrayLengthMismatch { .. }
             | RuntimeOwnershipError::Canonical { .. }
-            | RuntimeOwnershipError::Snapshot { .. } => Self::Rejected,
+            | RuntimeOwnershipError::Snapshot { .. }
+            | RuntimeOwnershipError::BuiltinVariantSchema { .. } => Self::Rejected,
         }
     }
 }
@@ -381,6 +383,13 @@ pub(crate) enum RuntimeOwnershipError {
         #[source]
         source: AwbcRuntimeValueSnapshotError,
     },
+    #[error("builtin variant schema {owner:?} failed at {path}: {source}")]
+    BuiltinVariantSchema {
+        path: RuntimeOwnershipPath,
+        owner: RuntimeBuiltinVariantIdentity,
+        #[source]
+        source: RuntimeBuiltinVariantTypeError,
+    },
 }
 
 impl RuntimeOwnershipError {
@@ -403,7 +412,8 @@ impl RuntimeOwnershipError {
             | Self::CarrierMismatch { path }
             | Self::ArrayLengthMismatch { path, .. }
             | Self::Canonical { path, .. }
-            | Self::Snapshot { path, .. } => path,
+            | Self::Snapshot { path, .. }
+            | Self::BuiltinVariantSchema { path, .. } => path,
         }
     }
 
@@ -419,7 +429,8 @@ impl RuntimeOwnershipError {
             | Self::CarrierMismatch { .. }
             | Self::ArrayLengthMismatch { .. }
             | Self::Canonical { .. }
-            | Self::Snapshot { .. } => None,
+            | Self::Snapshot { .. }
+            | Self::BuiltinVariantSchema { .. } => None,
         }
     }
 }
@@ -534,10 +545,16 @@ impl RuntimeOwnershipProjection {
             layout,
         } = self
         {
-            let (RuntimeCheckedType::Nominal { nominal, .. }
-            | RuntimeCheckedType::Variant { nominal, .. }) = checked
-            else {
-                unreachable!("nominal projection always carries a nominal checked type")
+            let nominal = match checked {
+                RuntimeCheckedType::Nominal { nominal, .. }
+                | RuntimeCheckedType::Variant {
+                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
+                    ..
+                } => nominal,
+                RuntimeCheckedType::Variant { .. } => {
+                    unreachable!("nominal projection always carries a nominal variant owner")
+                }
+                _ => unreachable!("nominal projection always carries a nominal checked type"),
             };
             return validate_nominal_schema(schema, value, nominal, *layout, path);
         }
@@ -1041,12 +1058,13 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     RuntimeAgentOperationalType::Predicate,
                 ))
             }
+            TypeKind::AgentValue => checked(RuntimeCheckedType::AgentValue),
+            TypeKind::AgentResourceBody => self.classify_resource_body(path, traversal),
             TypeKind::Observation
             | TypeKind::ObservedObject
             | TypeKind::AgentBBox
             | TypeKind::ActionName
             | TypeKind::ActionResult
-            | TypeKind::AgentValue
             | TypeKind::DataFormat
             | TypeKind::DataShape
             | TypeKind::AgentEntityMetadata
@@ -1056,7 +1074,6 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | TypeKind::AgentProjectGraphEdge
             | TypeKind::CaptureRef
             | TypeKind::AgentResource
-            | TypeKind::AgentResourceBody
             | TypeKind::RagContextPack
             | TypeKind::Shared(_) => {
                 rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
@@ -1140,7 +1157,9 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     }),
                 ))
             }
-            TypeKind::Stream { .. } => rejected(RuntimeOwnershipRejection::StreamValue),
+            TypeKind::Stream { .. } | TypeKind::Parser { .. } => {
+                rejected(RuntimeOwnershipRejection::StreamValue)
+            }
             TypeKind::Result { ok, error } => {
                 let ok = self.classify_at(
                     ok,
@@ -1385,8 +1404,10 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                         });
                     }
                     RuntimeCheckedType::Variant {
-                        nominal: projected.nominal().clone(),
-                        semantic_identity: identity,
+                        owner: RuntimeVariantIdentity::Nominal {
+                            nominal: projected.nominal().clone(),
+                            semantic_identity: identity,
+                        },
                         arguments,
                         cases,
                     }
@@ -1539,7 +1560,10 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | AgentBuiltinType::CaptureKind
             | AgentBuiltinType::WaitError
             | AgentBuiltinType::PointerButton
-            | AgentBuiltinType::RagError => Err(RuntimeOwnershipError::rejected(
+            | AgentBuiltinType::RagError
+            | AgentBuiltinType::AgentSourcePosition
+            | AgentBuiltinType::AgentProjectFlowControlSummary
+            | AgentBuiltinType::AgentProjectGraphSummary => Err(RuntimeOwnershipError::rejected(
                 path,
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
             )),
@@ -1559,7 +1583,64 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     )),
                 ))
             }
+            AgentBuiltinType::AgentBinaryBody => {
+                record_agent_evidence(traversal, RuntimeAgentOperationalType::BinaryResourceBody)?;
+                Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
+                    RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
+                        RuntimeAgentOperationalType::BinaryResourceBody,
+                    )),
+                ))
+            }
+            AgentBuiltinType::AgentBinaryData => {
+                record_agent_evidence(traversal, RuntimeAgentOperationalType::BinaryData)?;
+                Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
+                    RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
+                        RuntimeAgentOperationalType::BinaryData,
+                    )),
+                ))
+            }
+            AgentBuiltinType::AgentBinaryEncoding => {
+                let owner = RuntimeBuiltinVariantIdentity::AgentBinaryEncoding;
+                let checked =
+                    RuntimeCheckedType::try_builtin_variant(owner, [None]).map_err(|source| {
+                        RuntimeOwnershipError::BuiltinVariantSchema {
+                            path: path.clone(),
+                            owner,
+                            source,
+                        }
+                    })?;
+                Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
+                    RuntimeOwnershipProjection::Checked(checked),
+                ))
+            }
         }
+    }
+
+    fn classify_resource_body(
+        &self,
+        path: &RuntimeOwnershipPath,
+        traversal: &mut OwnershipTraversal,
+    ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
+        record_agent_evidence(traversal, RuntimeAgentOperationalType::BinaryResourceBody)?;
+        let owner = RuntimeBuiltinVariantIdentity::AgentResourceBody;
+        let checked = RuntimeCheckedType::try_builtin_variant(
+            owner,
+            [
+                Some(RuntimeCheckedType::AgentValue),
+                Some(RuntimeCheckedType::String),
+                Some(RuntimeCheckedType::Agent(
+                    RuntimeAgentOperationalType::BinaryResourceBody,
+                )),
+            ],
+        )
+        .map_err(|source| RuntimeOwnershipError::BuiltinVariantSchema {
+            path: path.clone(),
+            owner,
+            source,
+        })?;
+        Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
+            RuntimeOwnershipProjection::Checked(checked),
+        ))
     }
 
     fn classify_map(
@@ -1773,7 +1854,8 @@ fn validate_variant_cases(
         | RuntimeCheckedType::Nominal { .. }
         | RuntimeCheckedType::Opaque { .. }
         | RuntimeCheckedType::Variant { .. }
-        | RuntimeCheckedType::Agent(_) => {}
+        | RuntimeCheckedType::Agent(_)
+        | RuntimeCheckedType::AgentValue => {}
     }
     Ok(())
 }
@@ -1786,10 +1868,7 @@ fn runtime_semantic_identity(ty: &TypeKind) -> RuntimeSemanticTypeId {
 mod tests {
     use super::*;
     use crate::effect_row::EffectRow;
-    use arcweft_core::{
-        pattern::RuntimeVariantIdentity,
-        value::{RuntimeInt, RuntimeSeq, RuntimeUInt},
-    };
+    use arcweft_core::value::{RuntimeInt, RuntimeSeq, RuntimeUInt};
 
     fn rejected(ty: TypeKind, reason: RuntimeOwnershipRejection) {
         let error = RuntimeProducerArgumentClassifier::for_test()
@@ -1830,12 +1909,7 @@ mod tests {
                 error: Box::new(TypeKind::String),
             })
             .expect("result admission");
-        let value = RuntimeValue::Variant {
-            owner: RuntimeVariantIdentity::Result,
-            ordinal: 0,
-            name: "Ok".to_owned(),
-            payload: Some(Box::new(RuntimeValue::i32(3))),
-        };
+        let value = RuntimeValue::result_ok(RuntimeValue::i32(3));
         result
             .validate_live_value(&value)
             .expect("core Result Some payload");
@@ -1843,12 +1917,7 @@ mod tests {
             .classify(&TypeKind::Option(Box::new(TypeKind::String)))
             .expect("option admission");
         option
-            .validate_live_value(&RuntimeValue::Variant {
-                owner: RuntimeVariantIdentity::Option,
-                ordinal: 1,
-                name: "None".to_owned(),
-                payload: None,
-            })
+            .validate_live_value(&RuntimeValue::option_none())
             .expect("core Option None payload");
     }
 

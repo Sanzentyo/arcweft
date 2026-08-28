@@ -422,6 +422,35 @@ where
                 structural,
             )
         }
+        (
+            TypeKind::Parser {
+                item: expected_item,
+                error: expected_error,
+            },
+            TypeKind::Parser {
+                item: actual_item,
+                error: actual_error,
+            },
+        ) => {
+            if !accepts_node(
+                expected_item,
+                actual_item,
+                policy,
+                control,
+                meter,
+                structural,
+            )? {
+                return Ok(false);
+            }
+            accepts_node(
+                expected_error,
+                actual_error,
+                policy,
+                control,
+                meter,
+                structural,
+            )
+        }
         (TypeKind::Choice(expected_alternatives), TypeKind::Choice(actual_alternatives))
             if structural =>
         {
@@ -901,7 +930,9 @@ where
         TypeKind::BorrowRef { inner, .. } => {
             return validate_strict_tree(inner, side, control);
         }
-        TypeKind::Stream { item, error } | TypeKind::Result { ok: item, error } => {
+        TypeKind::Stream { item, error }
+        | TypeKind::Parser { item, error }
+        | TypeKind::Result { ok: item, error } => {
             if let Some(kind) = validate_strict_tree(item, side, control)? {
                 return Ok(Some(kind));
             }
@@ -1109,6 +1140,16 @@ mod tests {
                     error: Box::new(TypeKind::String),
                 },
                 TypeKind::Stream {
+                    item: Box::new(TypeKind::Never),
+                    error: Box::new(TypeKind::String),
+                },
+            ),
+            (
+                TypeKind::Parser {
+                    item: Box::new(TypeKind::I32),
+                    error: Box::new(TypeKind::String),
+                },
+                TypeKind::Parser {
                     item: Box::new(TypeKind::Never),
                     error: Box::new(TypeKind::String),
                 },

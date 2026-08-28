@@ -107,8 +107,6 @@ pub enum CallableSchemaError {
     MissingCandidateType { parameter: GenericTypeParameterId },
     #[error("callable schema candidate const parameter {parameter:?} does not occur in the schema")]
     MissingCandidateConst { parameter: GenericConstParameterId },
-    #[error("inferable const generic {parameter:?} is not supported by callable schemas")]
-    InferableConstGeneric { parameter: GenericConstParameterId },
     #[error("callable generic parameter issuer has an invalid owner arity")]
     InvalidCandidateIssuer,
     #[error("callable schema must contain an initial parameter group")]
@@ -394,10 +392,6 @@ pub enum ResolveCallError {
     AmbiguousOverload {
         candidates: Arc<[CallableCandidateId]>,
     },
-    #[error("trait method is ambiguous between {candidates:?}")]
-    AmbiguousTraitMethod {
-        candidates: Arc<[super::CheckedCallableId]>,
-    },
     #[error("trait or inherent method is inaccessible")]
     InaccessibleMethod {
         candidates: Arc<[super::CheckedCallableId]>,
@@ -453,7 +447,6 @@ pub enum CallableDiagnosticCode {
     AmbiguousOverload,
     NoViableSignature,
     DiagnosticsTruncated,
-    AmbiguousTraitMethod,
     InaccessibleMethod,
     DuplicateArgument,
     ParameterAlreadyBound,
@@ -597,7 +590,6 @@ impl ResolveCallError {
             Self::WorldMismatch => CallableDiagnosticCode::WorldMismatch,
             Self::SourceIdentityMismatch => CallableDiagnosticCode::SourceIdentityMismatch,
             Self::AmbiguousOverload { .. } => CallableDiagnosticCode::AmbiguousOverload,
-            Self::AmbiguousTraitMethod { .. } => CallableDiagnosticCode::AmbiguousTraitMethod,
             Self::InaccessibleMethod { .. } => CallableDiagnosticCode::InaccessibleMethod,
             Self::CorruptCatalog { .. } => CallableDiagnosticCode::CorruptCallableCatalog,
             Self::InvalidCallGroup { .. } => CallableDiagnosticCode::InvalidCallGroup,

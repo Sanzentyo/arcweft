@@ -9,8 +9,8 @@ use crate::effect_row::{
 use crate::effects::EffectSet;
 
 use super::{
-    AcceptedNominalType, EntityType, GenericTypeParameterId, OpenNominalType, ProjectNominalType,
-    TypeKind,
+    AcceptedNominalType, ArrayLength, EntityType, GenericConstParameterId, GenericTypeParameterId,
+    OpenNominalType, ProjectNominalType, TypeKind,
 };
 
 /// One call-site instantiation of declaration-owned generic type parameters.
@@ -89,7 +89,7 @@ fn contains_generic_parameter_where(
             contains_generic_parameter_where(left, predicate)
                 || contains_generic_parameter_where(right, predicate)
         }
-        TypeKind::Stream { item, error } => {
+        TypeKind::Stream { item, error } | TypeKind::Parser { item, error } => {
             contains_generic_parameter_where(item, predicate)
                 || contains_generic_parameter_where(error, predicate)
         }
@@ -203,6 +203,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Ref(_)
         | TypeKind::Map { .. }
         | TypeKind::Need(_)
+        | TypeKind::Parser { .. }
         | TypeKind::Result { .. }
         | TypeKind::Stream { .. }
         | TypeKind::Function { .. }
@@ -270,6 +271,10 @@ impl TypeKind {
                 item: Box::new(item.substitute_type_parameters(substitutions)),
                 error: Box::new(error.substitute_type_parameters(substitutions)),
             },
+            Self::Parser { item, error } => Self::Parser {
+                item: Box::new(item.substitute_type_parameters(substitutions)),
+                error: Box::new(error.substitute_type_parameters(substitutions)),
+            },
             Self::Result { ok, error } => Self::Result {
                 ok: Box::new(ok.substitute_type_parameters(substitutions)),
                 error: Box::new(error.substitute_type_parameters(substitutions)),
@@ -318,6 +323,109 @@ impl TypeKind {
             Self::DialogueLine(result) => {
                 Self::DialogueLine(Box::new(result.substitute_type_parameters(substitutions)))
             }
+            other => other.clone(),
+        }
+    }
+
+    /// Replaces declaration-owned equality-only constant parameters throughout
+    /// this type. The completed constraint solution is the sole producer of
+    /// these rows; values are canonical `Const` or retained rigid/future
+    /// `Generic` identities, never inferred/error sentinels or expression ASTs.
+    pub(crate) fn substitute_const_parameters(
+        &self,
+        substitutions: &BTreeMap<GenericConstParameterId, ArrayLength>,
+    ) -> Self {
+        let recurse = |ty: &Self| ty.substitute_const_parameters(substitutions);
+        match self {
+            Self::ProjectNominal(nominal) => Self::ProjectNominal(ProjectNominalType::new(
+                nominal.declaration().clone(),
+                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
+            )),
+            Self::AcceptedNominal(nominal) => Self::AcceptedNominal(AcceptedNominalType::new(
+                nominal.declaration().clone(),
+                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
+            )),
+            Self::OpenNominal(nominal) => Self::OpenNominal(OpenNominalType::new(
+                nominal.rule().clone(),
+                nominal.path().clone(),
+                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
+            )),
+            Self::Range(inner) => Self::Range(Box::new(recurse(inner))),
+            Self::Probe(inner) => Self::Probe(Box::new(recurse(inner))),
+            Self::Vec(inner) => Self::Vec(Box::new(recurse(inner))),
+            Self::Slice(inner) => Self::Slice(Box::new(recurse(inner))),
+            Self::Seq(inner) => Self::Seq(Box::new(recurse(inner))),
+            Self::Need(inner) => Self::Need(Box::new(recurse(inner))),
+            Self::Option(inner) => Self::Option(Box::new(recurse(inner))),
+            Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner))),
+            Self::Shared(inner) => Self::Shared(Box::new(recurse(inner))),
+            Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner))),
+            Self::BorrowRef {
+                kind,
+                lifetime,
+                inner,
+            } => Self::BorrowRef {
+                kind: *kind,
+                lifetime: lifetime.clone(),
+                inner: Box::new(recurse(inner)),
+            },
+            Self::IteratorState { family, item } => Self::IteratorState {
+                family: *family,
+                item: Box::new(recurse(item)),
+            },
+            Self::Array { item, len } => Self::Array {
+                item: Box::new(recurse(item)),
+                len: match len {
+                    ArrayLength::Generic(parameter) => substitutions
+                        .get(parameter)
+                        .cloned()
+                        .unwrap_or_else(|| len.clone()),
+                    ArrayLength::Const(_) | ArrayLength::Error(_) | ArrayLength::Inferred => {
+                        len.clone()
+                    }
+                },
+            },
+            Self::Ref(entity) => Self::Ref(EntityType::new(
+                entity.kind().clone(),
+                entity.value().map(recurse),
+            )),
+            Self::Map { kind, key, value } => Self::Map {
+                kind: *kind,
+                key: Box::new(recurse(key)),
+                value: Box::new(recurse(value)),
+            },
+            Self::Stream { item, error } => Self::Stream {
+                item: Box::new(recurse(item)),
+                error: Box::new(recurse(error)),
+            },
+            Self::Parser { item, error } => Self::Parser {
+                item: Box::new(recurse(item)),
+                error: Box::new(recurse(error)),
+            },
+            Self::Result { ok, error } => Self::Result {
+                ok: Box::new(recurse(ok)),
+                error: Box::new(recurse(error)),
+            },
+            Self::Function {
+                params,
+                return_type,
+                effects,
+            } => Self::function_with_effects(
+                params.iter().map(recurse),
+                recurse(return_type),
+                effects.clone(),
+            ),
+            Self::Projection {
+                subject,
+                trait_name,
+                assoc,
+            } => Self::Projection {
+                subject: Box::new(recurse(subject)),
+                trait_name: trait_name.clone(),
+                assoc: assoc.clone(),
+            },
+            Self::Tuple(items) => Self::Tuple(items.iter().map(recurse).collect()),
+            Self::Choice(items) => Self::Choice(items.iter().map(recurse).collect()),
             other => other.clone(),
         }
     }
@@ -393,6 +501,10 @@ impl TypeKind {
                 value: Box::new(recurse(value)?),
             },
             Self::Stream { item, error } => Self::Stream {
+                item: Box::new(recurse(item)?),
+                error: Box::new(recurse(error)?),
+            },
+            Self::Parser { item, error } => Self::Parser {
                 item: Box::new(recurse(item)?),
                 error: Box::new(recurse(error)?),
             },
@@ -559,6 +671,10 @@ fn validate_rebound_effect_rows(
             item: key,
             error: value,
         }
+        | TypeKind::Parser {
+            item: key,
+            error: value,
+        }
         | TypeKind::Result {
             ok: key,
             error: value,
@@ -707,11 +823,19 @@ fn observe_composite_type_parameters(
                 item: declared_first,
                 error: declared_second,
             }
+            | TypeKind::Parser {
+                item: declared_first,
+                error: declared_second,
+            }
             | TypeKind::Result {
                 ok: declared_first,
                 error: declared_second,
             },
             TypeKind::Stream {
+                item: actual_first,
+                error: actual_second,
+            }
+            | TypeKind::Parser {
                 item: actual_first,
                 error: actual_second,
             }
@@ -770,6 +894,7 @@ fn observe_composite_type_parameters(
         (
             TypeKind::Need(_)
             | TypeKind::Stream { .. }
+            | TypeKind::Parser { .. }
             | TypeKind::Result { .. }
             | TypeKind::Map { .. }
             | TypeKind::Function { .. }

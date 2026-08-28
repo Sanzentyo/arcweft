@@ -139,6 +139,11 @@ impl TypeKind {
                 first: item,
                 second: error,
             },
+            Self::Parser { item, error } => TypeConstraintShape::Pair {
+                kind: PairShape::Parser,
+                first: item,
+                second: error,
+            },
             Self::Result { ok, error } => TypeConstraintShape::Pair {
                 kind: PairShape::Result,
                 first: ok,
@@ -416,6 +421,7 @@ impl UnaryShape {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PairShape {
     Stream,
+    Parser,
     Result,
 }
 
@@ -423,6 +429,10 @@ impl PairShape {
     fn rebuild(self, first: TypeKind, second: TypeKind) -> TypeKind {
         match self {
             Self::Stream => TypeKind::Stream {
+                item: Box::new(first),
+                error: Box::new(second),
+            },
+            Self::Parser => TypeKind::Parser {
                 item: Box::new(first),
                 error: Box::new(second),
             },

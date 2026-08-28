@@ -1532,6 +1532,7 @@ fn write_variant_resolution(
         CheckedVariantOwner::BuiltinClosed { .. } => 2,
         CheckedVariantOwner::Option { .. } => 3,
         CheckedVariantOwner::Result { .. } => 4,
+        CheckedVariantOwner::RuntimeBuiltin { .. } => 5,
     };
     hasher.update(&[owner_tag]);
     hasher.update(resolution.owner().semantic_type().as_bytes());

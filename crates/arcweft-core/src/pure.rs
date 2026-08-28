@@ -15,12 +15,12 @@ use crate::value::{
     RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
     RuntimeFunctionApplyError, RuntimeFunctionValue, RuntimeISizeValue, RuntimeIntrinsic,
     RuntimeIterator, RuntimeLocalBinding, RuntimeNominalRecordExpr, RuntimeReductionValue,
-    RuntimeSeq, RuntimeSignedIntWidth, RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
-    RuntimeValue, evaluate_binary, evaluate_core_iter_collect_intrinsic,
-    evaluate_core_iter_into_iter_intrinsic, evaluate_core_iter_next_intrinsic,
-    evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
-    evaluate_core_range_intrinsic, evaluate_index_intrinsic, evaluate_numeric_op,
-    evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
+    RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeUSizeValue, RuntimeUnaryOp, RuntimeUnsignedIntWidth, RuntimeValue, evaluate_binary,
+    evaluate_core_iter_collect_intrinsic, evaluate_core_iter_into_iter_intrinsic,
+    evaluate_core_iter_next_intrinsic, evaluate_core_option_is_some_intrinsic,
+    evaluate_core_option_unwrap_intrinsic, evaluate_core_range_intrinsic, evaluate_index_intrinsic,
+    evaluate_numeric_op, evaluate_std_float_intrinsic, evaluate_string_intrinsic, evaluate_unary,
     runtime_sequence_values, runtime_value_into_sequence_values, runtime_value_label,
     sum_i64_sequence_ref,
 };
@@ -1656,11 +1656,12 @@ impl<'a> PureEvaluator<'a> {
             RuntimeExprKind::PureCall { helper, args } => {
                 self.evaluate_nested_pure_call(*helper, args)
             }
-            RuntimeExprKind::Map {
+            RuntimeExprKind::StandardMap {
+                family,
+                order,
+                mapping,
                 source,
-                param,
-                body,
-            } => self.evaluate_map_expr(source, *param, body),
+            } => self.evaluate_standard_map_expr(*family, *order, mapping, source),
             RuntimeExprKind::Filter {
                 source,
                 param,
@@ -2156,32 +2157,70 @@ impl<'a> PureEvaluator<'a> {
         }
     }
 
-    fn evaluate_map_expr(
+    fn evaluate_standard_map_expr(
         &mut self,
+        family: RuntimeStandardMapFamily,
+        order: RuntimeStandardMapOperandOrder,
+        mapping: &RuntimeExpr,
         source: &RuntimeExpr,
-        param: RuntimeLocalDeclarationId,
-        body: &RuntimeExpr,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let iterator = match RuntimeIterator::from_value(self.evaluate_expr(source)?) {
-            Ok(iterator) => iterator,
-            Err(value) => {
-                return Err(RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(
-                    &value,
-                )));
+        let (mapping, source) = match order {
+            RuntimeStandardMapOperandOrder::MappingThenReceiver => {
+                (self.evaluate_expr(mapping)?, self.evaluate_expr(source)?)
+            }
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
+                let source = self.evaluate_expr(source)?;
+                let mapping = self.evaluate_expr(mapping)?;
+                (mapping, source)
             }
         };
-        iterator
-            .collect::<Vec<_>>()
-            .into_iter()
-            .map(|item| {
-                self.env.push_scope_with_capacity(1);
-                self.env.set(param, item);
-                let result = self.evaluate_expr(body);
-                self.env.pop_scope();
-                result
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(runtime_sequence_values)
+        let RuntimeValue::Function(mapping) = mapping else {
+            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                &mapping,
+            )));
+        };
+        match family {
+            RuntimeStandardMapFamily::Vec
+            | RuntimeStandardMapFamily::Seq
+            | RuntimeStandardMapFamily::Array
+            | RuntimeStandardMapFamily::Slice => {
+                let iterator = RuntimeIterator::from_value(source).map_err(|value| {
+                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value))
+                })?;
+                iterator
+                    .map(|item| self.apply_runtime_function(&mapping, &[item]))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map(runtime_sequence_values)
+            }
+            RuntimeStandardMapFamily::Option => {
+                let (case, payload) = source
+                    .try_into_builtin_variant_case()
+                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
+                match (case, payload) {
+                    (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
+                        .apply_runtime_function(&mapping, &[value])
+                        .map(RuntimeValue::option_some),
+                    (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
+                        Ok(RuntimeValue::option_none())
+                    }
+                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
+                }
+            }
+            RuntimeStandardMapFamily::Result => {
+                let (case, payload) = source
+                    .try_into_builtin_variant_case()
+                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
+                match (case, payload) {
+                    (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
+                        .apply_runtime_function(&mapping, &[value])
+                        .map(RuntimeValue::result_ok),
+                    (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
+                        Ok(RuntimeValue::result_err(error))
+                    }
+                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
+                }
+            }
+        }
     }
 
     fn evaluate_filter_expr(

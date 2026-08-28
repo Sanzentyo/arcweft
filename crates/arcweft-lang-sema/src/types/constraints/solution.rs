@@ -15,12 +15,15 @@ use crate::effect_row::{
     EffectVarIssuer,
 };
 
-use super::super::{GenericTypeParameterId, TypeKind};
+use super::super::{ArrayLength, GenericConstParameterId, GenericTypeParameterId, TypeKind};
 use super::context::{
     TypeConstraintAccounting, TypeConstraintContext, TypeConstraintEffectScope,
     TypeConstraintParameterScope,
 };
-use super::normalization::{ConstraintBindingLookup, project_type, validate_selected_call_self};
+use super::normalization::{
+    ConstraintBindingLookup, ConstraintConstBindingLookup, project_const_argument, project_type,
+    validate_selected_call_self,
+};
 use super::{
     ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, TypeConstraintError,
     TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
@@ -31,6 +34,18 @@ use super::{
 struct CheckedTypeArgumentBinding {
     parameter: GenericTypeParameterId,
     value: TypeKind,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct CheckedConstArgumentBinding {
+    parameter: GenericConstParameterId,
+    value: ArrayLength,
+}
+
+impl CheckedConstArgumentBinding {
+    fn new(parameter: GenericConstParameterId, value: ArrayLength) -> Self {
+        Self { parameter, value }
+    }
 }
 
 impl CheckedTypeArgumentBinding {
@@ -87,6 +102,7 @@ impl CompletedSolutionInput {
 pub(crate) struct TypeConstraintSolution {
     authority: CompletedTypeConstraintAuthority,
     bindings: Box<[CheckedTypeArgumentBinding]>,
+    const_bindings: Box<[CheckedConstArgumentBinding]>,
     effect_bindings: Box<[CheckedEffectArgumentBinding]>,
 }
 
@@ -99,11 +115,16 @@ impl TypeConstraintSolution {
         TypeConstraintEffectBindingIter(self.effect_bindings.iter())
     }
 
+    pub(crate) fn const_bindings(&self) -> TypeConstraintConstBindingIter<'_> {
+        TypeConstraintConstBindingIter(self.const_bindings.iter())
+    }
+
     /// Complete and seal one active lower path. No caller may publish or
     /// inherit its rows until this owner has projected the whole path and
     /// checked its scope and completeness.
     pub(super) fn complete_path<A, D>(
         bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
+        const_bindings: BTreeMap<GenericConstParameterId, ArrayLength>,
         effect_bindings: BTreeMap<EffectVar, EffectRow>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -113,6 +134,7 @@ impl TypeConstraintSolution {
     {
         Self::seal_rows(
             bindings,
+            const_bindings,
             effect_bindings,
             CompletedSolutionInput::ActivePath,
             context,
@@ -133,14 +155,39 @@ impl TypeConstraintSolution {
     {
         Self::seal_rows(
             bindings,
+            std::iter::empty(),
             effect_bindings,
             CompletedSolutionInput::ClaimedCompleted,
             context,
         )
     }
 
-    fn seal_rows<A, D, B, E>(
+    #[cfg(test)]
+    pub(crate) fn test_seal_completed_with_consts<A, D, B, C, E>(
         bindings: B,
+        const_bindings: C,
+        effect_bindings: E,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+        D: ConstraintDomain,
+        B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
+        C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
+        E: IntoIterator<Item = (EffectVar, EffectRow)>,
+    {
+        Self::seal_rows(
+            bindings,
+            const_bindings,
+            effect_bindings,
+            CompletedSolutionInput::ClaimedCompleted,
+            context,
+        )
+    }
+
+    fn seal_rows<A, D, B, C, E>(
+        bindings: B,
+        const_bindings: C,
         effect_bindings: E,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
@@ -149,32 +196,47 @@ impl TypeConstraintSolution {
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
         B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
+        C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
         E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
         let source_bindings = bindings.into_iter().collect::<Vec<_>>();
+        let source_const_bindings = const_bindings.into_iter().collect::<Vec<_>>();
         if let Some(rows) = source_bindings
             .windows(2)
             .find(|rows| rows[0].0 >= rows[1].0)
         {
             return Err(completed_solution_invariant(
                 super::InheritedSolutionInvariantKind::DuplicateOrUnordered,
-                Some(rows[1].0.clone()),
+                Some(rows[1].0.clone().into()),
+            ));
+        }
+        if let Some(rows) = source_const_bindings
+            .windows(2)
+            .find(|rows| rows[0].0 >= rows[1].0)
+        {
+            return Err(completed_solution_invariant(
+                super::InheritedSolutionInvariantKind::DuplicateOrUnordered,
+                Some(rows[1].0.clone().into()),
             ));
         }
         let lookup = source_bindings.iter().cloned().collect::<BTreeMap<_, _>>();
+        let const_lookup = source_const_bindings
+            .iter()
+            .cloned()
+            .collect::<BTreeMap<_, _>>();
         let mut bindings = Vec::with_capacity(source_bindings.len());
         for (parameter, value) in source_bindings {
             match context.parameter_eligibility(&parameter) {
                 None => {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::OutOfScope,
-                        Some(parameter.clone()),
+                        Some(parameter.clone().into()),
                     ));
                 }
                 Some(TypeConstraintParameterEligibility::Rigid) => {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::RigidBinding,
-                        Some(parameter.clone()),
+                        Some(parameter.clone().into()),
                     ));
                 }
                 Some(
@@ -187,28 +249,35 @@ impl TypeConstraintSolution {
                 TypeConstraintShape::Generic(bound) if bound == &parameter
             ) {
                 if !input.requires_canonical_claim() {
-                    return Err(TypeConstraintRejection::CyclicInstantiation { parameter }.into());
+                    return Err(TypeConstraintRejection::CyclicInstantiation {
+                        parameter: parameter.into(),
+                    }
+                    .into());
                 }
                 return Err(completed_solution_invariant(
                     super::InheritedSolutionInvariantKind::SelfBinding,
-                    Some(parameter.clone()),
+                    Some(parameter.clone().into()),
                 ));
             }
             let projected = project_type(
                 &value,
                 &lookup,
+                &const_lookup,
                 ConstraintClosurePolicy::SolutionCompletion,
                 context,
             )
-            .map_err(|error| map_completed_canonical_error(error, parameter.clone(), input))?;
+            .map_err(|error| {
+                map_completed_canonical_error(error, parameter.clone().into(), input)
+            })?;
             if input.requires_canonical_claim() && projected.value != value {
                 return Err(completed_solution_invariant(
                     super::InheritedSolutionInvariantKind::NonCanonical,
-                    Some(parameter.clone()),
+                    Some(parameter.clone().into()),
                 ));
             }
-            validate_selected_call_self(&projected.value, context)
-                .map_err(|error| map_completed_self_error(error, parameter.clone(), input))?;
+            validate_selected_call_self(&projected.value, context).map_err(|error| {
+                map_completed_self_error(error, parameter.clone().into(), input)
+            })?;
             bindings.push((parameter, projected.value));
         }
         for (parameter, eligibility) in context.parameter_scope.iter() {
@@ -216,7 +285,73 @@ impl TypeConstraintSolution {
                 && !lookup.contains_key(parameter)
             {
                 return Err(TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone(),
+                    parameter: parameter.clone().into(),
+                }
+                .into());
+            }
+        }
+
+        let mut const_bindings = Vec::with_capacity(source_const_bindings.len());
+        for (parameter, value) in source_const_bindings {
+            match context.const_parameter_eligibility(&parameter) {
+                None => {
+                    return Err(completed_solution_invariant(
+                        super::InheritedSolutionInvariantKind::OutOfScope,
+                        Some(parameter.clone().into()),
+                    ));
+                }
+                Some(super::TypeConstraintConstEligibility::Rigid) => {
+                    return Err(completed_solution_invariant(
+                        super::InheritedSolutionInvariantKind::RigidBinding,
+                        Some(parameter.clone().into()),
+                    ));
+                }
+                Some(
+                    super::TypeConstraintConstEligibility::Bindable
+                    | super::TypeConstraintConstEligibility::FutureEligible,
+                ) => {}
+            }
+            if matches!(&value, ArrayLength::Generic(bound) if bound == &parameter) {
+                if !input.requires_canonical_claim() {
+                    return Err(TypeConstraintRejection::CyclicInstantiation {
+                        parameter: parameter.into(),
+                    }
+                    .into());
+                }
+                return Err(completed_solution_invariant(
+                    super::InheritedSolutionInvariantKind::SelfBinding,
+                    Some(parameter.clone().into()),
+                ));
+            }
+            let projected = project_const_argument(
+                &value,
+                &const_lookup,
+                ConstraintClosurePolicy::SolutionCompletion,
+                context,
+            )
+            .map_err(|error| {
+                map_completed_canonical_error(error, parameter.clone().into(), input)
+            })?;
+            if input.requires_canonical_claim() && projected != value {
+                return Err(completed_solution_invariant(
+                    super::InheritedSolutionInvariantKind::NonCanonical,
+                    Some(parameter.clone().into()),
+                ));
+            }
+            if matches!(projected, ArrayLength::Error(_) | ArrayLength::Inferred) {
+                return Err(completed_solution_invariant(
+                    super::InheritedSolutionInvariantKind::Forbidden,
+                    Some(parameter.clone().into()),
+                ));
+            }
+            const_bindings.push((parameter, projected));
+        }
+        for (parameter, eligibility) in context.parameter_scope.const_iter() {
+            if matches!(eligibility, super::TypeConstraintConstEligibility::Bindable)
+                && !const_lookup.contains_key(parameter)
+            {
+                return Err(TypeConstraintRejection::IncompleteInstantiation {
+                    parameter: parameter.clone().into(),
                 }
                 .into());
             }
@@ -268,6 +403,10 @@ impl TypeConstraintSolution {
                 .into_iter()
                 .map(|(parameter, value)| CheckedTypeArgumentBinding::new(parameter, value))
                 .collect(),
+            const_bindings: const_bindings
+                .into_iter()
+                .map(|(parameter, value)| CheckedConstArgumentBinding::new(parameter, value))
+                .collect(),
             effect_bindings: effect_bindings
                 .into_iter()
                 .map(|(variable, value)| CheckedEffectArgumentBinding::new(variable, value))
@@ -300,7 +439,18 @@ impl TypeConstraintSolution {
             }) {
                 return Err(completed_solution_invariant(
                     super::InheritedSolutionInvariantKind::RigidBinding,
-                    Some(parameter.clone()),
+                    Some(parameter.clone().into()),
+                ));
+            }
+            if let Some((parameter, _)) = self.const_bindings().find(|(parameter, _)| {
+                matches!(
+                    context.const_parameter_eligibility(parameter),
+                    Some(super::TypeConstraintConstEligibility::Rigid)
+                )
+            }) {
+                return Err(completed_solution_invariant(
+                    super::InheritedSolutionInvariantKind::RigidBinding,
+                    Some(parameter.clone().into()),
                 ));
             }
             let parameter = self
@@ -309,9 +459,30 @@ impl TypeConstraintSolution {
                     context
                         .parameter_eligibility(parameter)
                         .is_none()
-                        .then(|| parameter.clone())
+                        .then(|| parameter.clone().into())
                 })
-                .or_else(|| context.required_inherited_keys().first().cloned());
+                .or_else(|| {
+                    self.const_bindings().find_map(|(parameter, _)| {
+                        context
+                            .const_parameter_eligibility(parameter)
+                            .is_none()
+                            .then(|| parameter.clone().into())
+                    })
+                })
+                .or_else(|| {
+                    context
+                        .required_inherited_keys()
+                        .first()
+                        .cloned()
+                        .map(Into::into)
+                })
+                .or_else(|| {
+                    context
+                        .required_inherited_const_keys()
+                        .first()
+                        .cloned()
+                        .map(Into::into)
+                });
             return Err(completed_solution_invariant(
                 super::InheritedSolutionInvariantKind::OutOfScope,
                 parameter,
@@ -328,11 +499,15 @@ impl TypeConstraintSolution {
             ));
         }
         require_exact_type_keys(self, context.required_inherited_keys())?;
+        require_exact_const_keys(self, context.required_inherited_const_keys())?;
         require_exact_effect_keys(self, context.required_inherited_effects())?;
 
         let mut path = context.start_path()?;
         for (parameter, value) in self.bindings() {
             context.restore_completed_binding(&mut path, parameter.clone(), value.clone())?;
+        }
+        for (parameter, value) in self.const_bindings() {
+            context.restore_completed_const_binding(&mut path, parameter.clone(), value.clone())?;
         }
         for (variable, value) in self.effect_bindings() {
             path.effects
@@ -352,7 +527,12 @@ impl TypeConstraintSolution {
             self.effect_bindings()
                 .map(|(variable, value)| (*variable, value.clone())),
         );
+        let const_bindings = self
+            .const_bindings()
+            .map(|(parameter, value)| (parameter.clone(), value.clone()))
+            .collect::<BTreeMap<_, _>>();
         ty.substitute_type_parameters(&bindings)
+            .substitute_const_parameters(&const_bindings)
             .substitute_effect_rows(&effects)
             .expect("sealed constraint solutions contain only canonical effect rows")
     }
@@ -391,6 +571,12 @@ impl TypeConstraintSolution {
                 ))
             })
             .collect::<Result<Box<[_]>, _>>()?;
+        let const_bindings = self
+            .const_bindings()
+            .map(|(parameter, value)| {
+                CheckedConstArgumentBinding::new(parameter.clone(), value.clone())
+            })
+            .collect();
         Ok(Self {
             authority: CompletedTypeConstraintAuthority {
                 parameter_scope: self.authority.parameter_scope.clone(),
@@ -401,6 +587,7 @@ impl TypeConstraintSolution {
                 )?,
             },
             bindings,
+            const_bindings,
             effect_bindings,
         })
     }
@@ -416,13 +603,13 @@ fn require_exact_type_keys(
         if row_index < rows.len() && rows[row_index].0 < required_key {
             return Err(completed_solution_invariant(
                 super::InheritedSolutionInvariantKind::UnexpectedKey,
-                Some(rows[row_index].0.clone()),
+                Some(rows[row_index].0.clone().into()),
             ));
         }
         if row_index == rows.len() || rows[row_index].0 > required_key {
             return Err(completed_solution_invariant(
                 super::InheritedSolutionInvariantKind::Unclosed,
-                Some(required_key.clone()),
+                Some(required_key.clone().into()),
             ));
         }
         row_index += 1;
@@ -430,7 +617,37 @@ fn require_exact_type_keys(
     if let Some((parameter, _)) = rows.get(row_index) {
         return Err(completed_solution_invariant(
             super::InheritedSolutionInvariantKind::UnexpectedKey,
-            Some((*parameter).clone()),
+            Some((*parameter).clone().into()),
+        ));
+    }
+    Ok(())
+}
+
+fn require_exact_const_keys(
+    solution: &TypeConstraintSolution,
+    required: &[GenericConstParameterId],
+) -> Result<(), TypeConstraintError> {
+    let rows = solution.const_bindings().collect::<Vec<_>>();
+    let mut row_index = 0;
+    for required_key in required {
+        if row_index < rows.len() && rows[row_index].0 < required_key {
+            return Err(completed_solution_invariant(
+                super::InheritedSolutionInvariantKind::UnexpectedKey,
+                Some(rows[row_index].0.clone().into()),
+            ));
+        }
+        if row_index == rows.len() || rows[row_index].0 > required_key {
+            return Err(completed_solution_invariant(
+                super::InheritedSolutionInvariantKind::Unclosed,
+                Some(required_key.clone().into()),
+            ));
+        }
+        row_index += 1;
+    }
+    if let Some((parameter, _)) = rows.get(row_index) {
+        return Err(completed_solution_invariant(
+            super::InheritedSolutionInvariantKind::UnexpectedKey,
+            Some((*parameter).clone().into()),
         ));
     }
     Ok(())
@@ -468,7 +685,7 @@ fn require_exact_effect_keys(
 
 fn completed_solution_invariant(
     kind: super::InheritedSolutionInvariantKind,
-    parameter: Option<GenericTypeParameterId>,
+    parameter: Option<super::ConstraintGenericParameterId>,
 ) -> TypeConstraintError {
     TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(
         super::InheritedSolutionInvariant { kind, parameter },
@@ -477,7 +694,7 @@ fn completed_solution_invariant(
 
 fn map_completed_canonical_error(
     error: TypeConstraintError,
-    binding_parameter: GenericTypeParameterId,
+    binding_parameter: super::ConstraintGenericParameterId,
     input: CompletedSolutionInput,
 ) -> TypeConstraintError {
     if !input.requires_canonical_claim() {
@@ -501,23 +718,25 @@ fn map_completed_canonical_error(
             super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { parameter },
         )) => completed_solution_invariant(
             super::InheritedSolutionInvariantKind::OutOfScope,
-            Some(parameter),
+            Some(parameter.into()),
         ),
         TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
             super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )) => TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
-        )),
-        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter { parameter },
-        )) => TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-            super::TypeConstraintParameterScopeInvariant::UnsupportedConstParameter { parameter },
-        )),
+        )) => completed_solution_invariant(
+            super::InheritedSolutionInvariantKind::OutOfScope,
+            Some(parameter.into()),
+        ),
         TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
             super::TypeConstraintParameterScopeInvariant::RigidBinding { parameter },
         )) => completed_solution_invariant(
             super::InheritedSolutionInvariantKind::RigidBinding,
-            Some(parameter),
+            Some(parameter.into()),
+        ),
+        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+            super::TypeConstraintParameterScopeInvariant::RigidConstBinding { parameter },
+        )) => completed_solution_invariant(
+            super::InheritedSolutionInvariantKind::RigidBinding,
+            Some(parameter.into()),
         ),
         TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error)) => {
             TypeConstraintError::Invariant(TypeConstraintInvariant::InheritedSolution(error))
@@ -536,7 +755,7 @@ fn map_completed_canonical_error(
 
 fn map_completed_self_error(
     error: TypeConstraintError,
-    binding_parameter: GenericTypeParameterId,
+    binding_parameter: super::ConstraintGenericParameterId,
     input: CompletedSolutionInput,
 ) -> TypeConstraintError {
     if !input.requires_canonical_claim() {
@@ -570,7 +789,18 @@ impl ConstraintBindingLookup for TypeConstraintSolution {
     }
 }
 
+impl ConstraintConstBindingLookup for TypeConstraintSolution {
+    fn const_binding(&self, parameter: &GenericConstParameterId) -> Option<&ArrayLength> {
+        self.const_bindings
+            .binary_search_by(|binding| binding.parameter.cmp(parameter))
+            .ok()
+            .map(|index| &self.const_bindings[index].value)
+    }
+}
+
 pub(crate) struct TypeConstraintBindingIter<'a>(slice::Iter<'a, CheckedTypeArgumentBinding>);
+
+pub(crate) struct TypeConstraintConstBindingIter<'a>(slice::Iter<'a, CheckedConstArgumentBinding>);
 
 pub(crate) struct TypeConstraintEffectBindingIter<'a>(
     slice::Iter<'a, CheckedEffectArgumentBinding>,
@@ -599,6 +829,34 @@ impl DoubleEndedIterator for TypeConstraintBindingIter<'_> {
 }
 
 impl ExactSizeIterator for TypeConstraintBindingIter<'_> {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+}
+
+impl<'a> Iterator for TypeConstraintConstBindingIter<'a> {
+    type Item = (&'a GenericConstParameterId, &'a ArrayLength);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.0
+            .next()
+            .map(|binding| (&binding.parameter, &binding.value))
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.0.size_hint()
+    }
+}
+
+impl DoubleEndedIterator for TypeConstraintConstBindingIter<'_> {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.0
+            .next_back()
+            .map(|binding| (&binding.parameter, &binding.value))
+    }
+}
+
+impl ExactSizeIterator for TypeConstraintConstBindingIter<'_> {
     fn len(&self) -> usize {
         self.0.len()
     }

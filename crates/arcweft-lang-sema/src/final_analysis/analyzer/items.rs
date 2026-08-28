@@ -657,7 +657,11 @@ impl Analyzer<'_, '_, '_> {
                 }
             };
 
-            if let Some(key) = record.receiver_method_key()
+            if let Some(method) = record.extension_method_name() {
+                builder
+                    .stage_extension_candidate(method, id)
+                    .map_err(checked_catalog_error)?;
+            } else if let Some(key) = record.receiver_method_key()
                 && !matches!(record.access(), CallableAccess::TraitImplementation)
             {
                 builder

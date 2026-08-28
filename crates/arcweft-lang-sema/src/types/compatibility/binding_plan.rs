@@ -2,15 +2,16 @@
 
 use std::collections::BTreeSet;
 
-use super::super::{TypeCompatibilityFailure, TypeCompatibilityPolicy, TypeKind};
+use super::super::{ArrayLength, TypeCompatibilityFailure, TypeCompatibilityPolicy, TypeKind};
 use crate::effect_row::EffectConstraintEnvironmentError;
 use crate::types::constraints::context::{TypeConstraintAccounting, TypeConstraintContext};
 use crate::types::constraints::transaction::ConstraintPath;
 use crate::types::constraints::{
     ChoiceDerivationStep, ChoiceForkRole, ConstraintDomain, TypeConstraintAbort,
-    TypeConstraintError, TypeConstraintInvariant, TypeConstraintParameterEligibility,
-    TypeConstraintRejection, TypeConstraintShape, TypeConstraintSourceProtocolInvariant,
-    map_effect_environment_error, seal_path, seal_type, validate_type,
+    TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
+    TypeConstraintParameterEligibility, TypeConstraintRejection, TypeConstraintShape,
+    TypeConstraintSourceProtocolInvariant, map_effect_environment_error, seal_path, seal_type,
+    validate_type,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -128,22 +129,34 @@ where
         .effects
         .substitution()
         .map_err(map_effect_environment_error)?;
-    let projected_pattern = seal_type(pattern, &path.bindings, &mut BTreeSet::new(), context)?
-        .substitute_effect_rows(&effects)
-        .map_err(|_| {
-            crate::types::constraints::effect_invariant(
-                crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                None,
-            )
-        })?;
-    let projected_actual = seal_type(actual, &path.bindings, &mut BTreeSet::new(), context)?
-        .substitute_effect_rows(&effects)
-        .map_err(|_| {
-            crate::types::constraints::effect_invariant(
-                crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                None,
-            )
-        })?;
+    let projected_pattern = seal_type(
+        pattern,
+        &path.bindings,
+        &path.const_bindings,
+        &mut BTreeSet::new(),
+        context,
+    )?
+    .substitute_effect_rows(&effects)
+    .map_err(|_| {
+        crate::types::constraints::effect_invariant(
+            crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+            None,
+        )
+    })?;
+    let projected_actual = seal_type(
+        actual,
+        &path.bindings,
+        &path.const_bindings,
+        &mut BTreeSet::new(),
+        context,
+    )?
+    .substitute_effect_rows(&effects)
+    .map_err(|_| {
+        crate::types::constraints::effect_invariant(
+            crate::types::constraints::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+            None,
+        )
+    })?;
     let compatible = match acceptance {
         ConstraintAcceptance::PatternAcceptsActual => projected_pattern
             .accepts_with(
@@ -513,7 +526,10 @@ where
                 item: found,
                 len: found_len,
             },
-        ) if expected_len == found_len => {
+        ) => {
+            let Some(path) = relate_array_lengths(expected_len, found_len, path, context)? else {
+                return Ok(Vec::new());
+            };
             relate_with_policy(expected, found, path, context, acceptance)
         }
         (
@@ -628,6 +644,78 @@ where
         (TypeConstraintShape::Leaf(_), _) => Ok(vec![path]),
         (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),
         _ => Ok(vec![path]),
+    }
+}
+
+fn relate_array_lengths<A, D>(
+    expected: &ArrayLength,
+    found: &ArrayLength,
+    path: ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    context.enter_node()?;
+    match (expected, found) {
+        (ArrayLength::Error(_) | ArrayLength::Inferred, _)
+        | (_, ArrayLength::Error(_) | ArrayLength::Inferred) => {
+            Err(TypeConstraintRejection::UnresolvedType.into())
+        }
+        (ArrayLength::Const(expected), ArrayLength::Const(found)) => {
+            Ok((expected == found).then_some(path))
+        }
+        (ArrayLength::Generic(expected), ArrayLength::Generic(found)) if expected == found => {
+            context
+                .const_parameter_eligibility(expected)
+                .ok_or_else(|| {
+                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                            parameter: expected.clone(),
+                        },
+                    ))
+                })?;
+            Ok(Some(path))
+        }
+        (ArrayLength::Generic(parameter), found) => {
+            let eligibility = context
+                .const_parameter_eligibility(parameter)
+                .ok_or_else(|| {
+                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                            parameter: parameter.clone(),
+                        },
+                    ))
+                })?;
+            if matches!(eligibility, TypeConstraintConstEligibility::Rigid) {
+                return Ok(None);
+            }
+            if let ArrayLength::Generic(found) = found {
+                context
+                    .const_parameter_eligibility(found)
+                    .ok_or_else(|| {
+                        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                            crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                                parameter: found.clone(),
+                            },
+                        ))
+                    })?;
+            }
+            context.add_const_binding(path, parameter.clone(), found)
+        }
+        (ArrayLength::Const(_), ArrayLength::Generic(found)) => {
+            context
+                .const_parameter_eligibility(found)
+                .ok_or_else(|| {
+                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                            parameter: found.clone(),
+                        },
+                    ))
+                })?;
+            Ok(None)
+        }
     }
 }
 

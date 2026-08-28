@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::env::nominal::{AcceptedNominalId, OpenNominalRuleId};
 
-use super::TypeKind;
+use super::{StandardMapFamily, TypeKind};
 
 /// Resolver-local evidence that a semantic type node has already failed.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -31,20 +31,40 @@ pub enum GenericParameterOwnerId {
 pub enum LanguageIntrinsicGenericOwner {
     OptionConstructor,
     ResultConstructor,
-    CollectionMap,
+    StandardMap(StandardMapFamily),
     FxExists,
     AgentSignal,
     AgentMetric,
+    Drop,
+    DropWithPolicy,
+    DropOptional,
+    OnDrop,
+    SignalWrite,
+    MetricWrite,
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 20] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
-        Self::CollectionMap,
+        Self::StandardMap(StandardMapFamily::Vec),
+        Self::StandardMap(StandardMapFamily::Seq),
+        Self::StandardMap(StandardMapFamily::Array),
+        Self::StandardMap(StandardMapFamily::Slice),
+        Self::StandardMap(StandardMapFamily::Option),
+        Self::StandardMap(StandardMapFamily::Result),
+        Self::StandardMap(StandardMapFamily::Need),
+        Self::StandardMap(StandardMapFamily::Parser),
+        Self::StandardMap(StandardMapFamily::Stream),
         Self::FxExists,
         Self::AgentSignal,
         Self::AgentMetric,
+        Self::Drop,
+        Self::DropWithPolicy,
+        Self::DropOptional,
+        Self::OnDrop,
+        Self::SignalWrite,
+        Self::MetricWrite,
     ];
 
     /// Canonical version-1 semantic tag owned by this closed family.
@@ -52,10 +72,33 @@ impl LanguageIntrinsicGenericOwner {
         match self {
             Self::OptionConstructor => 0,
             Self::ResultConstructor => 1,
-            Self::CollectionMap => 2,
-            Self::FxExists => 3,
-            Self::AgentSignal => 4,
-            Self::AgentMetric => 5,
+            Self::StandardMap(family) => family.intrinsic_owner_tag(),
+            Self::FxExists => 11,
+            Self::AgentSignal => 12,
+            Self::AgentMetric => 13,
+            Self::Drop => 14,
+            Self::DropWithPolicy => 15,
+            Self::DropOptional => 16,
+            Self::OnDrop => 17,
+            Self::SignalWrite => 18,
+            Self::MetricWrite => 19,
+        }
+    }
+
+    pub(crate) const fn generic_arity(self) -> (u16, u16) {
+        match self {
+            Self::OptionConstructor
+            | Self::FxExists
+            | Self::AgentSignal
+            | Self::AgentMetric
+            | Self::Drop
+            | Self::DropWithPolicy
+            | Self::DropOptional
+            | Self::OnDrop
+            | Self::SignalWrite
+            | Self::MetricWrite => (1, 0),
+            Self::ResultConstructor => (2, 0),
+            Self::StandardMap(family) => family.generic_arity(),
         }
     }
 
@@ -63,10 +106,16 @@ impl LanguageIntrinsicGenericOwner {
         match self {
             Self::OptionConstructor => "language.option-constructor",
             Self::ResultConstructor => "language.result-constructor",
-            Self::CollectionMap => "language.collection-map",
+            Self::StandardMap(family) => family.intrinsic_owner_label(),
             Self::FxExists => "language.fx-exists",
             Self::AgentSignal => "language.agent-signal",
             Self::AgentMetric => "language.agent-metric",
+            Self::Drop => "language.drop",
+            Self::DropWithPolicy => "language.drop-with-policy",
+            Self::DropOptional => "language.drop-optional",
+            Self::OnDrop => "language.on-drop",
+            Self::SignalWrite => "language.signal-write",
+            Self::MetricWrite => "language.metric-write",
         }
     }
 }

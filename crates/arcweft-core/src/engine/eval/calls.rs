@@ -5,11 +5,12 @@ use super::{
     evaluate_runtime_call, runtime_sequence_from_literal_values,
     runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
 };
+use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::{RuntimeReceiverMode, RuntimeTraitMethodId};
-use crate::pure::RuntimeFixedArgs;
 use crate::runtime_id::RuntimeLocalDeclarationId;
 use crate::value::{
-    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeExprKind, RuntimeIterator, RuntimeUInt,
+    RuntimeCallArgument, RuntimeCallArgumentMode, RuntimeFunctionValue, RuntimeIterator,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
 };
 
 pub(crate) struct TraitMethodCallOutcome {
@@ -18,6 +19,83 @@ pub(crate) struct TraitMethodCallOutcome {
 }
 
 impl Engine {
+    pub(super) fn evaluate_standard_map_expr(
+        &mut self,
+        family: RuntimeStandardMapFamily,
+        order: RuntimeStandardMapOperandOrder,
+        mapping: &RuntimeExpr,
+        source: &RuntimeExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let (mapping, source) = match order {
+            RuntimeStandardMapOperandOrder::MappingThenReceiver => (
+                self.evaluate_expr_with_backend(mapping, pure_backend)?,
+                self.evaluate_expr_with_backend(source, pure_backend)?,
+            ),
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping => {
+                let source = self.evaluate_expr_with_backend(source, pure_backend)?;
+                let mapping = self.evaluate_expr_with_backend(mapping, pure_backend)?;
+                (mapping, source)
+            }
+        };
+        let RuntimeValue::Function(mapping) = mapping else {
+            return Err(RuntimeEvalError::ExpectedFunction(runtime_value_label(
+                &mapping,
+            )));
+        };
+        match family {
+            RuntimeStandardMapFamily::Vec
+            | RuntimeStandardMapFamily::Seq
+            | RuntimeStandardMapFamily::Array
+            | RuntimeStandardMapFamily::Slice => {
+                self.evaluate_standard_sequence_map(&mapping, source, pure_backend)
+            }
+            RuntimeStandardMapFamily::Option => {
+                let (case, payload) = source
+                    .try_into_builtin_variant_case()
+                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
+                match (case, payload) {
+                    (RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value)) => self
+                        .apply_runtime_function(&mapping, &[value], pure_backend)
+                        .map(RuntimeValue::option_some),
+                    (RuntimeBuiltinVariantCaseIdentity::OptionNone, None) => {
+                        Ok(RuntimeValue::option_none())
+                    }
+                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
+                }
+            }
+            RuntimeStandardMapFamily::Result => {
+                let (case, payload) = source
+                    .try_into_builtin_variant_case()
+                    .map_err(|_| RuntimeEvalError::InvalidStandardMapSource { family })?;
+                match (case, payload) {
+                    (RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value)) => self
+                        .apply_runtime_function(&mapping, &[value], pure_backend)
+                        .map(RuntimeValue::result_ok),
+                    (RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error)) => {
+                        Ok(RuntimeValue::result_err(error))
+                    }
+                    _ => Err(RuntimeEvalError::InvalidStandardMapSource { family }),
+                }
+            }
+        }
+    }
+
+    fn evaluate_standard_sequence_map(
+        &mut self,
+        mapping: &RuntimeFunctionValue,
+        source: RuntimeValue,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let iterator = RuntimeIterator::from_value(source)
+            .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))?;
+        let mut mapped = Vec::new();
+        for item in iterator {
+            mapped.push(self.apply_runtime_function(mapping, &[item], pure_backend)?);
+        }
+        Ok(runtime_sequence_from_literal_values(mapped))
+    }
+
     pub(super) fn evaluate_call_expr(
         &mut self,
         callee: &RuntimeCallTarget,
@@ -150,35 +228,11 @@ impl Engine {
         }
     }
 
-    pub(super) fn evaluate_map_expr(
-        &mut self,
-        source: &RuntimeExpr,
-        param: RuntimeLocalDeclarationId,
-        body: &RuntimeExpr,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let iterator =
-            RuntimeIterator::from_value(self.evaluate_expr_with_backend(source, pure_backend)?)
-                .map_err(|value| {
-                    RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value))
-                })?;
-        let mut mapped = Vec::new();
-        for item in iterator {
-            mapped.push(self.with_temp_binding_ref(param, &item, |this| {
-                this.evaluate_expr_with_backend(body, pure_backend)
-            })?);
-        }
-        Ok(runtime_sequence_from_literal_values(mapped))
-    }
-
     pub(super) fn evaluate_sum_expr(
         &mut self,
         source: &RuntimeExpr,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if let Some(sum) = self.evaluate_u32_map_sum(source, pure_backend)? {
-            return Ok(RuntimeValue::i64(sum));
-        }
         let value = self.evaluate_expr_with_backend(source, pure_backend)?;
         if let RuntimeValue::Seq(sequence) = &value
             && let Some(sum) = sequence.sum_as_i64()
@@ -189,120 +243,6 @@ impl Engine {
             .map_err(|value| RuntimeEvalError::ExpectedBracketSeq(runtime_value_label(&value)))?;
         let items = iterator.collect::<Vec<_>>();
         sum_i64_sequence_ref(&items).map(RuntimeValue::i64)
-    }
-
-    fn evaluate_u32_map_sum(
-        &mut self,
-        source: &RuntimeExpr,
-        pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<Option<i64>, RuntimeEvalError> {
-        let RuntimeExprKind::Map {
-            source,
-            param,
-            body,
-        } = source.kind()
-        else {
-            return Ok(None);
-        };
-        let Some((helper_id, arity)) = self.map_u32_batch_shape(body) else {
-            return Ok(None);
-        };
-        let mut flat_inputs = std::mem::take(&mut self.pure_u32_batch_inputs);
-        let result = match self.collect_u32_map_batch_inputs(
-            source,
-            *param,
-            body,
-            arity,
-            &mut flat_inputs,
-        ) {
-            Ok(Some(row_count)) => {
-                let helper = crate::pure::RuntimePureHelperRef::resolve(&self.plan, helper_id)?;
-                pure_backend
-                    .call_u32_flat_batch_sum(helper, &flat_inputs, arity, row_count)
-                    .map(Some)
-            }
-            Ok(None) => Ok(None),
-            Err(error) => Err(error),
-        };
-        flat_inputs.clear();
-        self.pure_u32_batch_inputs = flat_inputs;
-        result
-    }
-
-    fn map_u32_batch_shape(
-        &self,
-        body: &RuntimeExpr,
-    ) -> Option<(crate::plan::RuntimePureHelperId, usize)> {
-        let RuntimeExprKind::PureCall { helper, args } = body.kind() else {
-            return None;
-        };
-        (helper.0 < self.plan.pure_helpers().len()
-            && args.len() <= RuntimeFixedArgs::<u32>::MAX
-            && args
-                .iter()
-                .all(|argument| argument.mode() == RuntimeCallArgumentMode::Value)
-            && self
-                .pure_helper_u32_call_shapes
-                .get(helper.0)
-                .copied()
-                .unwrap_or(false))
-        .then_some((*helper, args.len()))
-    }
-
-    fn collect_u32_map_batch_inputs(
-        &self,
-        source: &RuntimeExpr,
-        param: RuntimeLocalDeclarationId,
-        body: &RuntimeExpr,
-        arity: usize,
-        flat_inputs: &mut Vec<u32>,
-    ) -> Result<Option<usize>, RuntimeEvalError> {
-        let RuntimeExprKind::PureCall { args, .. } = body.kind() else {
-            unreachable!("u32 map batch shape checked before input collection");
-        };
-        let sequence = match source.kind() {
-            RuntimeExprKind::Value(RuntimeValue::Seq(sequence)) => sequence,
-            RuntimeExprKind::Local(local) => match self.fiber.env.get(*local) {
-                Some(RuntimeValue::Seq(sequence)) => sequence,
-                _ => return Ok(None),
-            },
-            _ => return Ok(None),
-        };
-        let Some(items) = sequence.as_u32_slice() else {
-            return Ok(None);
-        };
-        flat_inputs.clear();
-        flat_inputs.reserve(items.len().saturating_mul(arity));
-        for item in items.iter().copied() {
-            for argument in args.iter().take(arity) {
-                let Some(value) = self.evaluate_u32_map_argument(argument.value(), param, item)?
-                else {
-                    flat_inputs.clear();
-                    return Ok(None);
-                };
-                flat_inputs.push(value);
-            }
-        }
-        Ok(Some(items.len()))
-    }
-
-    fn evaluate_u32_map_argument(
-        &self,
-        expr: &RuntimeExpr,
-        param: RuntimeLocalDeclarationId,
-        item: u32,
-    ) -> Result<Option<u32>, RuntimeEvalError> {
-        match expr.kind() {
-            RuntimeExprKind::Local(local) if *local == param => Ok(Some(item)),
-            RuntimeExprKind::Local(local) => self
-                .fiber
-                .env
-                .get(*local)
-                .ok_or(RuntimeEvalError::UnknownLocal(*local))
-                .map(runtime_value_as_u32),
-            RuntimeExprKind::Value(value) => Ok(runtime_value_as_u32(value)),
-            _ => Ok(None),
-        }
     }
 
     pub(super) fn evaluate_call_args(
@@ -323,12 +263,5 @@ impl Engine {
             }
         }
         Ok(values)
-    }
-}
-
-fn runtime_value_as_u32(value: &RuntimeValue) -> Option<u32> {
-    match value {
-        RuntimeValue::UInt(RuntimeUInt::U32(value)) => Some(*value),
-        _ => None,
     }
 }

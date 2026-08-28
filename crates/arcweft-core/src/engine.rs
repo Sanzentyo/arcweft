@@ -66,8 +66,6 @@ pub struct Engine {
     run_child_next: bool,
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
-    pure_u32_batch_inputs: Vec<u32>,
-    pure_helper_u32_call_shapes: Vec<bool>,
     pure_helper_i64_call_shapes: Vec<bool>,
     audio_epoch: u64,
     next_audio_sequence: u64,
@@ -78,11 +76,6 @@ pub(super) struct NativeLineTaskExecutionBatch {
     child_fibers: VecDeque<FlowFiber>,
     next_fiber_id: u64,
     run_child_next: bool,
-}
-
-struct PureHelperCallShapes {
-    u32: Vec<bool>,
-    i64: Vec<bool>,
 }
 
 /// Current flow execution cursor.
@@ -491,19 +484,11 @@ impl Default for FlowFiber {
     }
 }
 
-fn pure_helper_call_shapes(plan: &RuntimePlan) -> PureHelperCallShapes {
-    PureHelperCallShapes {
-        u32: plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_u32_call_shape)
-            .collect(),
-        i64: plan
-            .pure_helpers
-            .iter()
-            .map(eval::pure_helper_has_i64_call_shape)
-            .collect(),
-    }
+fn pure_helper_i64_call_shapes(plan: &RuntimePlan) -> Vec<bool> {
+    plan.pure_helpers
+        .iter()
+        .map(eval::pure_helper_has_i64_call_shape)
+        .collect()
 }
 
 impl Engine {
@@ -555,7 +540,7 @@ impl Engine {
                 )
             })
             .collect();
-        let call_shapes = pure_helper_call_shapes(&plan);
+        let pure_helper_i64_call_shapes = pure_helper_i64_call_shapes(&plan);
         Self {
             plan,
             flow_positions,
@@ -587,9 +572,7 @@ impl Engine {
             run_child_next: false,
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
-            pure_u32_batch_inputs: Vec::new(),
-            pure_helper_u32_call_shapes: call_shapes.u32,
-            pure_helper_i64_call_shapes: call_shapes.i64,
+            pure_helper_i64_call_shapes,
             audio_epoch: 0,
             next_audio_sequence: 0,
             next_host_call_sequence: 0,

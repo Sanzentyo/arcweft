@@ -843,12 +843,34 @@ pub(super) fn checked_builtin_closed_owner(
 ) -> Result<CheckedVariantOwner, FinalSemanticAnalysisError> {
     let cases = checked_builtin_closed_cases(schema)
         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+    if let Some(runtime_owner) = runtime_builtin_variant_owner(ty) {
+        return CheckedVariantOwner::try_runtime_builtin(
+            runtime_owner,
+            ty.semantic_identity_digest(),
+            cases,
+        )
+        .ok_or(FinalSemanticAnalysisError::AccountingOverflow);
+    }
     CheckedVariantOwner::try_builtin_closed(
         schema.owner().clone(),
         ty.semantic_identity_digest(),
         cases,
     )
     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
+}
+
+fn runtime_builtin_variant_owner(
+    ty: &TypeKind,
+) -> Option<arcweft_core::pattern::RuntimeBuiltinVariantIdentity> {
+    match ty {
+        TypeKind::AgentResourceBody => {
+            Some(arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentResourceBody)
+        }
+        TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryEncoding) => {
+            Some(arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentBinaryEncoding)
+        }
+        _ => None,
+    }
 }
 
 fn checked_builtin_closed_cases(
@@ -1096,12 +1118,21 @@ fn resolve_closed_variant_pattern(
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
         }
     };
-    let checked_owner = CheckedVariantOwner::try_builtin_closed(
-        schema.owner().clone(),
-        ty.semantic_identity_digest(),
-        checked_builtin_closed_cases(schema)
-            .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?,
-    )
+    let cases = checked_builtin_closed_cases(schema)
+        .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+    let checked_owner = if let Some(runtime_owner) = runtime_builtin_variant_owner(ty) {
+        CheckedVariantOwner::try_runtime_builtin(
+            runtime_owner,
+            ty.semantic_identity_digest(),
+            cases,
+        )
+    } else {
+        CheckedVariantOwner::try_builtin_closed(
+            schema.owner().clone(),
+            ty.semantic_identity_digest(),
+            cases,
+        )
+    }
     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
     Ok(ResolvedVariantPattern::Complete {
         owner: checked_owner,

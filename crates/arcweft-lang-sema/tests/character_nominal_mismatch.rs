@@ -193,6 +193,28 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
             TypeMismatchPathSegment::StreamError,
         ),
         (
+            TypeKind::Parser {
+                item: Box::new(expected.clone()),
+                error: Box::new(TypeKind::Unit),
+            },
+            TypeKind::Parser {
+                item: Box::new(actual.clone()),
+                error: Box::new(TypeKind::Unit),
+            },
+            TypeMismatchPathSegment::ParserItem,
+        ),
+        (
+            TypeKind::Parser {
+                item: Box::new(TypeKind::Unit),
+                error: Box::new(expected.clone()),
+            },
+            TypeKind::Parser {
+                item: Box::new(TypeKind::Unit),
+                error: Box::new(actual.clone()),
+            },
+            TypeMismatchPathSegment::ParserError,
+        ),
+        (
             TypeKind::Result {
                 ok: Box::new(expected.clone()),
                 error: Box::new(TypeKind::Unit),

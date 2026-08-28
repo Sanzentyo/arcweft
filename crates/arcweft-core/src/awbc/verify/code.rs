@@ -2580,6 +2580,14 @@ fn constant_matches_type(
                     .is_some_and(|value| constant_matches_type(program, value, *item_ty, depth + 1))
             })
         }
+        (AwbcConstant::Sequence(values), AwbcRuntimeTypeShape::Array { item, length }) => {
+            usize::try_from(*length).ok() == Some(values.len())
+                && values.iter().all(|value| {
+                    program.constants.get(value.index()).is_some_and(|value| {
+                        constant_matches_type(program, value, *item, depth + 1)
+                    })
+                })
+        }
         (
             AwbcConstant::Record { ty: actual, .. },
             AwbcRuntimeTypeShape::Record { .. } | AwbcRuntimeTypeShape::NominalRecord { .. },

@@ -4,16 +4,16 @@ use super::{
     AgentIntrinsicSignatureId, Arc, BuiltinCallableId, CallResolverRequest, CallableCandidateId,
     CallableDeclarationKey, CallableInstantiation, CallableLookupKey, CallableName, CallablePath,
     CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId, DomainMethodId,
-    DropCallableId, EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver,
-    FxCallableSignatureId, FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily,
-    LineContextMethodId, LineScheduleCallableId, NonCallableSource, NonEmptyResolvedCandidates,
-    OptionConstructorKind, Ordering, PreparedCallCallee, PreparedFreeCallScope,
-    PreparedFunctionValueCallee, PreparedFunctionValueOriginProducer, PreparedResolvedCallable,
-    PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
-    PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
-    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedFunctionValueSeed,
-    ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind,
-    TypeReceiverInstantiation, TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
+    EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver, FxCallableSignatureId,
+    FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
+    LineScheduleCallableId, NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind,
+    Ordering, PreparedCallCallee, PreparedFreeCallScope, PreparedFunctionValueCallee,
+    PreparedFunctionValueOriginProducer, PreparedResolvedCallable, PresentationCallableId,
+    PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
+    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver,
+    ResolvedCallTarget, ResolvedFunctionValueSeed, ResolvedNonCallableTarget,
+    ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
+    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
 };
 use crate::callable::CallConstraintInvariant;
 use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
@@ -329,7 +329,7 @@ fn resolve_function_value(
 
 #[allow(
     clippy::too_many_lines,
-    reason = "the ordered selected-family chain is the canonical precedence table"
+    reason = "the selected-call candidate inventory is one exhaustive typed collection"
 )]
 fn resolve_selected_call(
     request: &mut CallResolverRequest<'_>,
@@ -338,125 +338,105 @@ fn resolve_selected_call(
     arguments: &[HirCallArgument],
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     let receiver_type = receiver.ty();
-    check_query_step(request)?;
-    if let Some(id) = DropCallableId::resolve(method) {
-        return resolved_language_method(
-            request,
-            CallableCandidateId::Drop(id),
-            LanguageCallableFamily::Drop,
-            id.signature_schema(),
-            CallableInstantiation::None,
-        )
-        .map(Some);
-    }
+    let mut candidates = Vec::new();
 
     check_query_step(request)?;
     if let Some(id) = LineContextMethodId::resolve(receiver_type, method, arguments.len()) {
-        return resolved_language_method(
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::LineContextMethod(id),
             LanguageCallableFamily::LineContextMethod,
             id.signature_schema(),
             receiver.value_instantiation(),
-        )
-        .map(Some);
-    }
-
-    if let Some(target) = resolve_selected_environment_method(request, receiver_type, method)? {
-        return Ok(Some(target));
+        )?);
     }
 
     check_query_step(request)?;
-    if let Some(id) = CollectionMethodId::resolve(method) {
-        let Some(schema) = id.signature_schema(receiver_type) else {
-            return Ok(None);
-        };
-        return resolved_language_method(
+    if let Some(id) = CollectionMethodId::resolve(method)
+        && let Some(schema) = id.signature_schema(receiver_type)
+    {
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::CollectionMethod(id),
             LanguageCallableFamily::CollectionMethod,
             schema,
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
     if let Some(id) = PresentationHandleMethodId::resolve(receiver_type, method) {
-        return resolved_language_method(
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::PresentationHandleMethod(id),
             LanguageCallableFamily::PresentationHandleMethod,
             id.signature_schema(),
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
     if let Some(id) = IntegerMethodId::resolve(receiver_type, method) {
         let schema = id.signature_schema(receiver_type);
-        return resolved_language_method(
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::IntegerMethod(id),
             LanguageCallableFamily::IntegerMethod,
             schema,
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
-    if let Some(id) = DomainMethodId::resolve(receiver_type, method) {
-        let Some(schema) = id.signature_schema(receiver_type) else {
-            return Ok(None);
-        };
-        return resolved_language_method(
+    if let Some(id) = DomainMethodId::resolve(receiver_type, method)
+        && let Some(schema) = id.signature_schema(receiver_type)
+    {
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::DomainMethod(id),
             LanguageCallableFamily::DomainMethod,
             schema,
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
     if let Some(id) = StageMethodId::resolve(receiver_type, method, arguments.len()) {
-        return resolved_language_method(
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::StageMethod(id),
             LanguageCallableFamily::StageMethod,
             id.signature_schema(receiver_type),
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
     if let Some(id) = CapacityMethodId::resolve(receiver_type, method, arguments.len()) {
         let schema = id.signature_schema();
-        return resolved_language_method(
+        candidates.push(prepare_language_method(
             request,
             CallableCandidateId::CapacityMethod(id),
             LanguageCallableFamily::CapacityMethod,
             schema,
             receiver.value_instantiation(),
-        )
-        .map(Some);
+        )?);
     }
 
     check_query_step(request)?;
-    if let Some(target) = resolve_checked_method(
+    candidates.extend(resolve_checked_method_candidates(
         request,
         receiver.ty(),
         method,
         receiver.value_instantiation(),
-    )? {
-        return Ok(Some(target));
-    }
+    )?);
 
-    Ok(None)
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+    NonEmptyResolvedCandidates::try_new(candidates, request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map(Some)
 }
 
 fn resolve_checked_method(
@@ -466,42 +446,75 @@ fn resolve_checked_method(
     instantiation: CallableInstantiation,
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
     let key = ReceiverMethodKey::new(receiver.clone(), method.clone());
-    let id = match request.checked.method(&key) {
-        super::CheckedMethodLookup::Absent => return Ok(None),
-        super::CheckedMethodLookup::Unique(id) => id,
-        super::CheckedMethodLookup::Ambiguous(candidates) => {
-            return Err(ResolveCallError::AmbiguousTraitMethod { candidates });
-        }
+    let lookup = request.checked.exact_method(&key);
+    let resolved =
+        materialize_checked_method_candidates(request, &key, method, instantiation, lookup)?;
+    if resolved.is_empty() {
+        return Ok(None);
+    }
+    NonEmptyResolvedCandidates::try_new(resolved, request.limits)
+        .map(ResolvedCallTarget::Candidates)
+        .map(Some)
+}
+
+fn resolve_checked_method_candidates(
+    request: &mut CallResolverRequest<'_>,
+    receiver: &TypeKind,
+    method: &CallableName,
+    instantiation: CallableInstantiation,
+) -> Result<Vec<PreparedResolvedCallable>, ResolveCallError> {
+    let key = ReceiverMethodKey::new(receiver.clone(), method.clone());
+    let lookup = request.checked.method(&key);
+    materialize_checked_method_candidates(request, &key, method, instantiation, lookup)
+}
+
+fn materialize_checked_method_candidates(
+    request: &mut CallResolverRequest<'_>,
+    key: &ReceiverMethodKey,
+    method: &CallableName,
+    instantiation: CallableInstantiation,
+    lookup: super::CheckedMethodLookup,
+) -> Result<Vec<PreparedResolvedCallable>, ResolveCallError> {
+    let ids = match lookup {
+        super::CheckedMethodLookup::Absent => return Ok(Vec::new()),
+        super::CheckedMethodLookup::Candidates(candidates) => candidates,
         super::CheckedMethodLookup::Inaccessible(candidates) => {
             return Err(ResolveCallError::InaccessibleMethod { candidates });
         }
     };
-    let record = request
-        .checked
-        .record(&id)
-        .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
-    if record.receiver_method_key().as_ref() != Some(&key) {
-        return Err(ResolveCallError::InvalidResolvedCallable);
-    }
-    let instantiation = if let Some(extension) = record.schema().extension_receiver() {
-        let CallableInstantiation::Receiver { receiver } = instantiation else {
-            return Ok(None);
+    let mut resolved = Vec::with_capacity(ids.len());
+    for id in ids.iter() {
+        let record = request
+            .checked
+            .record(id)
+            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+        let candidate_instantiation = if let Some(extension) = record.schema().extension_receiver()
+        {
+            if record.extension_method_name() != Some(method) {
+                return Err(ResolveCallError::InvalidResolvedCallable);
+            }
+            let CallableInstantiation::Receiver { receiver } = &instantiation else {
+                return Ok(Vec::new());
+            };
+            CallableInstantiation::Extension {
+                receiver: receiver.clone(),
+                group: extension.group(),
+                parameter: extension.parameter(),
+            }
+        } else if record.receiver_method_key().as_ref() == Some(key) {
+            instantiation.clone()
+        } else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        CallableInstantiation::Extension {
-            receiver,
-            group: extension.group(),
-            parameter: extension.parameter(),
-        }
-    } else if record.method_role().is_some() {
-        instantiation
-    } else {
-        return Err(ResolveCallError::InvalidResolvedCallable);
-    };
-    let record = Arc::clone(record);
-    let callable = resolve_catalog_record(&record, &[], None, instantiation, request)?;
-    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
-        .map(ResolvedCallTarget::Candidates)
-        .map(Some)
+        resolved.push(resolve_catalog_record(
+            record,
+            &[],
+            None,
+            candidate_instantiation,
+            request,
+        )?);
+    }
+    Ok(resolved)
 }
 
 fn resolved_language_method(
@@ -511,50 +524,27 @@ fn resolved_language_method(
     schema: CallableSignatureSchema,
     instantiation: CallableInstantiation,
 ) -> Result<ResolvedCallTarget, ResolveCallError> {
+    let callable = prepare_language_method(request, id, family, schema, instantiation)?;
+    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+        .map(ResolvedCallTarget::Candidates)
+}
+
+fn prepare_language_method(
+    request: &mut CallResolverRequest<'_>,
+    id: CallableCandidateId,
+    family: LanguageCallableFamily,
+    schema: CallableSignatureSchema,
+    instantiation: CallableInstantiation,
+) -> Result<PreparedResolvedCallable, ResolveCallError> {
     check_query_step(request)?;
-    let callable = PreparedResolvedCallable::try_from_intrinsic(
+    PreparedResolvedCallable::try_from_intrinsic(
         id,
         SignatureOrigin::Language { family },
         Arc::new(schema),
         instantiation,
         Vec::new(),
         request.limits,
-    )?;
-    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
-        .map(ResolvedCallTarget::Candidates)
-}
-
-fn resolve_selected_environment_method(
-    request: &mut CallResolverRequest<'_>,
-    receiver_type: &TypeKind,
-    method: &CallableName,
-) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
-    check_query_step(request)?;
-    let key = ReceiverMethodKey::new(receiver_type.clone(), method.clone());
-    let (_, _, world) = request.authority.parts();
-    let catalog = world.environment().callable_catalog();
-    let Some(candidates) = catalog
-        .validated_method(&key)
-        .map_err(|reason| corrupt(CallableLookupKey::Method(key.clone()), reason))?
-    else {
-        return Ok(None);
-    };
-    let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
-    for entry in candidates.as_slice() {
-        check_query_step(request)?;
-        resolved.push(resolve_catalog_record(
-            entry.primary(),
-            entry.equivalent_sources(),
-            None,
-            CallableInstantiation::Receiver {
-                receiver: receiver_type.clone(),
-            },
-            request,
-        )?);
-    }
-    NonEmptyResolvedCandidates::try_new(resolved, request.limits)
-        .map(ResolvedCallTarget::Candidates)
-        .map(Some)
+    )
 }
 
 #[allow(
@@ -774,14 +764,41 @@ fn resolve_free_call(
         .validated_free(path)
         .map_err(|reason| corrupt(CallableLookupKey::Free(path.clone()), reason))?
     {
-        let mut resolved = Vec::with_capacity(candidates.len().get() as usize);
-        for entry in candidates.as_slice() {
+        let implicit_extensions = request
+            .implicit_extension_receiver
+            .as_ref()
+            .map(|_| {
+                candidates
+                    .as_slice()
+                    .iter()
+                    .filter(|entry| entry.primary().schema().extension_receiver().is_some())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let selected_entries = if implicit_extensions.is_empty() {
+            candidates.as_slice().iter().collect::<Vec<_>>()
+        } else {
+            implicit_extensions
+        };
+        let mut resolved = Vec::with_capacity(selected_entries.len());
+        for entry in selected_entries {
             check_query_step(request)?;
+            let instantiation = match (
+                request.implicit_extension_receiver.as_ref(),
+                entry.primary().schema().extension_receiver(),
+            ) {
+                (Some(receiver), Some(extension)) => CallableInstantiation::Extension {
+                    receiver: receiver.actual().clone(),
+                    group: extension.group(),
+                    parameter: extension.parameter(),
+                },
+                _ => CallableInstantiation::None,
+            };
             resolved.push(resolve_catalog_record(
                 entry.primary(),
                 entry.equivalent_sources(),
                 None,
-                CallableInstantiation::None,
+                instantiation,
                 request,
             )?);
         }

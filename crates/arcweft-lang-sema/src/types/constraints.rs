@@ -11,7 +11,7 @@ use crate::{
     effects::EffectSet,
 };
 
-use super::GenericTypeParameterId;
+use super::{GenericConstParameterId, GenericTypeParameterId};
 pub(crate) mod context;
 mod hints;
 mod normalization;
@@ -60,13 +60,38 @@ pub(crate) enum TypeConstraintRejection {
     #[error("type constraint relation retained {actual} distinct solutions")]
     AmbiguousSolution { actual: usize },
     #[error("generic parameter {parameter:?} occurs in its own binding")]
-    CyclicInstantiation { parameter: GenericTypeParameterId },
+    CyclicInstantiation {
+        parameter: ConstraintGenericParameterId,
+    },
     #[error("unresolved type placeholder reached call constraint sealing")]
     UnresolvedType,
     #[error("generic parameter {parameter:?} remains unbound at the terminal boundary")]
-    IncompleteInstantiation { parameter: GenericTypeParameterId },
+    IncompleteInstantiation {
+        parameter: ConstraintGenericParameterId,
+    },
     #[error("effect-row subset is missing effects {missing:?}")]
     EffectSubset { missing: EffectSet },
+}
+
+/// Kind-separated generic identity shared by the completed type/const
+/// solution authority. Type and constant namespaces never alias even when
+/// they use the same declaration owner and ordinal.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum ConstraintGenericParameterId {
+    Type(GenericTypeParameterId),
+    Const(GenericConstParameterId),
+}
+
+impl From<GenericTypeParameterId> for ConstraintGenericParameterId {
+    fn from(parameter: GenericTypeParameterId) -> Self {
+        Self::Type(parameter)
+    }
+}
+
+impl From<GenericConstParameterId> for ConstraintGenericParameterId {
+    fn from(parameter: GenericConstParameterId) -> Self {
+        Self::Const(parameter)
+    }
 }
 
 /// Operational exhaustion and cancellation are closed aborts.
@@ -99,7 +124,7 @@ pub(crate) enum TypeConstraintAbort {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct InheritedSolutionInvariant {
     pub(crate) kind: InheritedSolutionInvariantKind,
-    pub(crate) parameter: Option<GenericTypeParameterId>,
+    pub(crate) parameter: Option<ConstraintGenericParameterId>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -123,10 +148,6 @@ pub(crate) enum TypeConstraintParameterScopeInvariant {
     ConstParameterOutOfScope {
         parameter: super::GenericConstParameterId,
     },
-    #[error("constant parameter is unsupported by the type-constraint solver")]
-    UnsupportedConstParameter {
-        parameter: super::GenericConstParameterId,
-    },
     #[error("candidate parameter scope contains a duplicate row")]
     DuplicateParameter,
     #[error("candidate parameter scope rows are not in exact order")]
@@ -137,8 +158,14 @@ pub(crate) enum TypeConstraintParameterScopeInvariant {
     RequiredInheritedKeyOutOfScope { parameter: GenericTypeParameterId },
     #[error("required inherited binding key is not bindable")]
     RequiredInheritedKeyNotBindable { parameter: GenericTypeParameterId },
+    #[error("required inherited constant binding key is outside the constant scope")]
+    RequiredInheritedConstKeyOutOfScope { parameter: GenericConstParameterId },
+    #[error("required inherited constant binding key is not bindable")]
+    RequiredInheritedConstKeyNotBindable { parameter: GenericConstParameterId },
     #[error("inherited binding targets a rigid parameter")]
     RigidBinding { parameter: GenericTypeParameterId },
+    #[error("inherited binding targets a rigid constant parameter")]
+    RigidConstBinding { parameter: GenericConstParameterId },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

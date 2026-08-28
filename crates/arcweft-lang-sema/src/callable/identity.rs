@@ -20,7 +20,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
-use crate::types::TypeKind;
+use crate::types::{StandardMapFamily, TypeKind};
 
 use super::{
     BuiltinIdentityError, CallableIdentityError, CallableIndexKind, CallableLimits,
@@ -358,7 +358,6 @@ pub enum EnvironmentCallableOwner {
 pub enum EnvironmentCallableKind {
     Function,
     Method,
-    UntypedMethodFallback,
     RustFunction,
 }
 
@@ -934,7 +933,6 @@ impl FunctionValueSignatureId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CollectionMethodId {
     Len,
-    Map,
     Filter,
     Sum,
     Contains,
@@ -944,12 +942,18 @@ impl CollectionMethodId {
     pub fn resolve(method: &CallableName) -> Option<Self> {
         match method.as_str() {
             "len" => Some(Self::Len),
-            "map" => Some(Self::Map),
             "filter" => Some(Self::Filter),
             "sum" => Some(Self::Sum),
             "contains" => Some(Self::Contains),
             _ => None,
         }
+    }
+}
+
+impl StandardMapFamily {
+    pub(crate) fn overload(self) -> CallableOverloadIndex {
+        CallableOverloadIndex::try_from_usize(usize::from(self.ordinal()))
+            .expect("closed standard map overloads are representable")
     }
 }
 
@@ -1267,13 +1271,11 @@ impl LineScheduleCallableId {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum DropCallableId {
     Drop,
+    DropWithPolicy,
+    DropOptional,
+    OnDrop,
 }
 
-impl DropCallableId {
-    pub fn resolve(method: &CallableName) -> Option<Self> {
-        matches!(method.as_str(), "drop" | "drop_optional" | "on_drop").then_some(Self::Drop)
-    }
-}
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum PromotionCallableId {
     Promote,

@@ -7,14 +7,15 @@ use super::{
     DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
     ExprId, GenericParameterOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily,
     HirLiteral, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
-    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
+    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, StmtId, TypeKind,
     TypeParameterSubstitutions,
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
-    CheckedCallableJoin, CheckedCallableJoinDigest,
+    CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId,
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
+use crate::checked_rich_text::CheckedDuration;
 use crate::types::{CharacterField, EntityKind};
 use arcweft_core::{entry::TypeLayoutHash, value::RuntimeAgentField};
 use arcweft_lang_hir::expr::HirCallArgument;
@@ -683,6 +684,11 @@ pub enum CheckedVariantOwner {
         semantic_type: SemanticTypeDigest,
         cases: Box<[CheckedVariantCase]>,
     },
+    RuntimeBuiltin {
+        owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity,
+        semantic_type: SemanticTypeDigest,
+        cases: Box<[CheckedVariantCase]>,
+    },
     Option {
         item: TypeKind,
         cases: [CheckedVariantCase; 2],
@@ -738,6 +744,18 @@ impl CheckedVariantOwner {
         })
     }
 
+    pub(crate) fn try_runtime_builtin(
+        owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity,
+        semantic_type: SemanticTypeDigest,
+        cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
+    ) -> Option<Self> {
+        Some(Self::RuntimeBuiltin {
+            owner,
+            semantic_type,
+            cases: checked_variant_cases(5, semantic_type, None, cases)?,
+        })
+    }
+
     pub(crate) fn option(item: TypeKind) -> Self {
         let semantic_type = TypeKind::Option(Box::new(item.clone())).semantic_identity_digest();
         Self::Option {
@@ -770,6 +788,7 @@ impl CheckedVariantOwner {
             Self::Project { nominal, .. } => Some(nominal),
             Self::CharacterNominal { .. }
             | Self::BuiltinClosed { .. }
+            | Self::RuntimeBuiltin { .. }
             | Self::Option { .. }
             | Self::Result { .. } => None,
         }
@@ -779,7 +798,8 @@ impl CheckedVariantOwner {
         match self {
             Self::Project { cases, .. }
             | Self::CharacterNominal { cases, .. }
-            | Self::BuiltinClosed { cases, .. } => cases,
+            | Self::BuiltinClosed { cases, .. }
+            | Self::RuntimeBuiltin { cases, .. } => cases,
             Self::Option { cases, .. } | Self::Result { cases, .. } => cases,
         }
     }
@@ -788,7 +808,8 @@ impl CheckedVariantOwner {
         match self {
             Self::Project { semantic_type, .. }
             | Self::CharacterNominal { semantic_type, .. }
-            | Self::BuiltinClosed { semantic_type, .. } => *semantic_type,
+            | Self::BuiltinClosed { semantic_type, .. }
+            | Self::RuntimeBuiltin { semantic_type, .. } => *semantic_type,
             Self::Option { item, .. } => {
                 TypeKind::Option(Box::new(item.clone())).semantic_identity_digest()
             }
@@ -805,6 +826,7 @@ impl CheckedVariantOwner {
             Self::Project { layout, .. } => Some(*layout),
             Self::CharacterNominal { .. }
             | Self::BuiltinClosed { .. }
+            | Self::RuntimeBuiltin { .. }
             | Self::Option { .. }
             | Self::Result { .. } => None,
         }
@@ -843,6 +865,7 @@ impl CheckedVariantOwner {
                 (1, *semantic_type, None)
             }
             Self::BuiltinClosed { semantic_type, .. } => (2, *semantic_type, None),
+            Self::RuntimeBuiltin { semantic_type, .. } => (5, *semantic_type, None),
             Self::Option { item, .. } => (
                 3,
                 TypeKind::Option(Box::new(item.clone())).semantic_identity_digest(),
@@ -891,7 +914,9 @@ impl CheckedVariantOwner {
                 }
                 Ok(())
             }
-            Self::CharacterNominal { cases, .. } | Self::BuiltinClosed { cases, .. } => {
+            Self::CharacterNominal { cases, .. }
+            | Self::BuiltinClosed { cases, .. }
+            | Self::RuntimeBuiltin { cases, .. } => {
                 for case in cases {
                     if let Some(payload) = case.payload() {
                         visitor(payload)?;
@@ -1125,8 +1150,148 @@ pub enum CheckedExpressionResolution {
         target: CheckedCharacterDialogueTarget,
         application_patch: Option<CheckedCharacterDialoguePatch>,
         rich_text: Box<CheckedRichTextReport>,
+        line_plan: CheckedDialogueLinePlan,
+        line_result: TypeKind,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// Source-ordered checked mark coordinate owned by one dialogue content
+/// application. The ordinal is sealed against that application's checked
+/// RichText mark catalog and is never reconstructed from a runtime label.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedDialogueMarkOrdinal(u32);
+
+impl CheckedDialogueMarkOrdinal {
+    pub(crate) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+/// One final-HIR line-plan statement bound to an exact checked content mark.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDialogueMarkHandler {
+    statement: StmtId,
+    mark: CheckedDialogueMarkOrdinal,
+}
+
+impl CheckedDialogueMarkHandler {
+    pub(crate) const fn new(statement: StmtId, mark: CheckedDialogueMarkOrdinal) -> Self {
+        Self { statement, mark }
+    }
+
+    pub const fn statement(&self) -> StmtId {
+        self.statement
+    }
+
+    pub const fn mark(&self) -> CheckedDialogueMarkOrdinal {
+        self.mark
+    }
+}
+
+/// Checked content-local line-plan coordinate catalog. Public mark identities
+/// remain useful to semantic tooling; executable consumers use only the exact
+/// statement-to-ordinal rows.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDialogueLinePlan {
+    marks: Box<[PublicId]>,
+    mark_handlers: Box<[CheckedDialogueMarkHandler]>,
+    effect_sites: Box<[CheckedDialogueEffectSite]>,
+}
+
+impl CheckedDialogueLinePlan {
+    pub(crate) fn new(
+        marks: impl Into<Box<[PublicId]>>,
+        mark_handlers: impl Into<Box<[CheckedDialogueMarkHandler]>>,
+        effect_sites: impl Into<Box<[CheckedDialogueEffectSite]>>,
+    ) -> Self {
+        Self {
+            marks: marks.into(),
+            mark_handlers: mark_handlers.into(),
+            effect_sites: effect_sites.into(),
+        }
+    }
+
+    pub const fn marks(&self) -> &[PublicId] {
+        &self.marks
+    }
+
+    pub const fn mark_handlers(&self) -> &[CheckedDialogueMarkHandler] {
+        &self.mark_handlers
+    }
+
+    pub const fn effect_sites(&self) -> &[CheckedDialogueEffectSite] {
+        &self.effect_sites
+    }
+}
+
+/// Source-ordered checked identity of one inline dialogue effect boundary.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedDialogueEffectSiteOrdinal(u32);
+
+impl CheckedDialogueEffectSiteOrdinal {
+    pub(crate) const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDialogueEffectTrigger {
+    Content,
+    Delay(CheckedDuration),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDialogueEffectOperation {
+    Evaluated(Box<CheckedEvaluatedEffect>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedDialogueEffectSite {
+    id: CheckedDialogueEffectSiteOrdinal,
+    trigger: CheckedDialogueEffectTrigger,
+    expression: ExprId,
+    operation: CheckedDialogueEffectOperation,
+}
+
+impl CheckedDialogueEffectSite {
+    pub(crate) const fn new(
+        id: CheckedDialogueEffectSiteOrdinal,
+        trigger: CheckedDialogueEffectTrigger,
+        expression: ExprId,
+        operation: CheckedDialogueEffectOperation,
+    ) -> Self {
+        Self {
+            id,
+            trigger,
+            expression,
+            operation,
+        }
+    }
+
+    pub const fn id(&self) -> CheckedDialogueEffectSiteOrdinal {
+        self.id
+    }
+
+    pub const fn trigger(&self) -> &CheckedDialogueEffectTrigger {
+        &self.trigger
+    }
+
+    pub const fn expression(&self) -> ExprId {
+        self.expression
+    }
+
+    pub const fn operation(&self) -> &CheckedDialogueEffectOperation {
+        &self.operation
+    }
 }
 
 impl CheckedExpressionResolution {
@@ -1196,12 +1361,14 @@ impl CheckedExpressionResolution {
                 target,
                 application_patch,
                 rich_text: _,
+                line_plan: _,
+                line_result,
             } => {
                 target.visit_types(visitor)?;
                 if let Some(patch) = application_patch {
                     patch.visit_types(visitor)?;
                 }
-                Ok(())
+                visitor(line_result)
             }
             Self::Structural
             | Self::Literal(_)
@@ -2170,6 +2337,22 @@ impl CheckedEffectField {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDropFade {
+    ConstantNanos(u64),
+    Expression(ExprId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedDropPolicy {
+    Default,
+    Cancel,
+    Stop { fade: CheckedDropFade },
+    Finish,
+    Release,
+    Detach,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedEvaluatedEffect {
     Log {
         level: CallableLogLevel,
@@ -2201,6 +2384,12 @@ pub enum CheckedEvaluatedEffect {
         condition: ExprId,
         message: ExprId,
     },
+    Drop {
+        operation: DropCallableId,
+        target: ExprId,
+        policy_source: Option<ExprId>,
+        policy: CheckedDropPolicy,
+    },
 }
 
 impl CheckedEvaluatedEffect {
@@ -2214,6 +2403,7 @@ impl CheckedEvaluatedEffect {
             Self::Fail { .. } => CallableEvaluatedEffect::Fail,
             Self::Bail { .. } => CallableEvaluatedEffect::Bail,
             Self::Ensure { .. } => CallableEvaluatedEffect::Ensure,
+            Self::Drop { operation, .. } => CallableEvaluatedEffect::Drop(*operation),
         }
     }
 
@@ -2268,6 +2458,7 @@ impl CheckedEvaluatedEffect {
                     message: values[1]?,
                 })
             }
+            CallableEvaluatedEffect::Drop(_) => None,
         }
     }
 }

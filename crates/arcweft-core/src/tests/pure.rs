@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
-    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeLocalDeclarationSeed,
-    RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanTypeProjection,
-    RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed,
-    RuntimePureInputType, RuntimePureOutputType,
+    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionSiteSeedId,
+    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder,
+    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId,
+    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
@@ -13,7 +13,8 @@ use crate::pure::{
     VmPureFunctionScratch, VmRuntimePureCallBackend, compare_pure_function_backend,
 };
 use crate::value::{
-    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeSignedIntWidth, RuntimeValue,
+    RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeEvalError, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeValue,
 };
 
 const I64_SEMANTIC_MARKER: u8 = 1;
@@ -72,6 +73,256 @@ fn bool_binary(lhs: RuntimeExprSeed, op: RuntimeBinaryOp, rhs: RuntimeExprSeed) 
             op,
             rhs: Box::new(rhs),
         },
+    )
+}
+
+fn standard_map_seed(
+    family: RuntimeStandardMapFamily,
+    order: RuntimeStandardMapOperandOrder,
+    function_ty: RuntimeSemanticTypeId,
+    source_ty: RuntimeSemanticTypeId,
+    result_ty: RuntimeSemanticTypeId,
+    site: RuntimeFunctionSiteSeedId,
+    source: RuntimeValue,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        result_ty,
+        RuntimeExprSeedKind::StandardMap {
+            family,
+            order,
+            mapping: Box::new(RuntimeExprSeed::new(
+                function_ty,
+                RuntimeExprSeedKind::Function(site),
+            )),
+            source: Box::new(RuntimeExprSeed::new(
+                source_ty,
+                RuntimeExprSeedKind::Value(source),
+            )),
+        },
+    )
+}
+
+struct StandardMapPureCase {
+    helper: RuntimePureHelperId,
+    expected: RuntimeValue,
+    callback_count: usize,
+}
+
+fn standard_map_source() -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::values(vec![
+        RuntimeValue::i64(1),
+        RuntimeValue::i64(2),
+        RuntimeValue::i64(3),
+    ]))
+}
+
+fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
+    let item_ty = i64_semantic_type();
+    let error_ty = semantic_type(11);
+    let function_ty = semantic_type(12);
+    let vec_ty = semantic_type(13);
+    let seq_ty = semantic_type(14);
+    let array_ty = semantic_type(15);
+    let slice_ty = semantic_type(16);
+    let option_ty = semantic_type(17);
+    let result_ty = semantic_type(18);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    item_ty,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(error_ty, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    function_ty,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([item_ty]),
+                        result: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    vec_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    seq_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Seq,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    array_ty,
+                    RuntimePlanTypeProjection::Array {
+                        item: item_ty,
+                        length: 3,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    slice_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Slice,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(option_ty, RuntimePlanTypeProjection::Option(item_ty)),
+                RuntimePlanTypeSeed::new(
+                    result_ty,
+                    RuntimePlanTypeProjection::Result {
+                        value: item_ty,
+                        error: error_ty,
+                    },
+                ),
+            ],
+            (0..6).map(|_| RuntimeLocalDeclarationSeed::new(item_ty)),
+            [],
+            [],
+        )
+        .expect("standard map type graph");
+
+    let callback_body = |local: RuntimeLocalSeedId| {
+        i64_binary(i64_local(local), RuntimeBinaryOp::Add, i64_value(1))
+    };
+    let callback_sites = admission
+        .local_ids()
+        .iter()
+        .cloned()
+        .map(|local| {
+            builder
+                .push_function_site_seed([local.clone()], [], callback_body(local))
+                .expect("standard map callback site")
+        })
+        .collect::<Vec<_>>();
+
+    let cases = [
+        (
+            RuntimeStandardMapFamily::Vec,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            vec_ty,
+            vec_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+            3,
+        ),
+        (
+            RuntimeStandardMapFamily::Seq,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            seq_ty,
+            seq_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+            3,
+        ),
+        (
+            RuntimeStandardMapFamily::Array,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            array_ty,
+            array_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+            3,
+        ),
+        (
+            RuntimeStandardMapFamily::Slice,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            slice_ty,
+            vec_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+            3,
+        ),
+        (
+            RuntimeStandardMapFamily::Option,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            option_ty,
+            option_ty,
+            RuntimeValue::option_some(RuntimeValue::i64(7)),
+            RuntimeValue::option_some(RuntimeValue::i64(8)),
+            1,
+        ),
+        (
+            RuntimeStandardMapFamily::Option,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            option_ty,
+            option_ty,
+            RuntimeValue::option_none(),
+            RuntimeValue::option_none(),
+            0,
+        ),
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            result_ty,
+            result_ty,
+            RuntimeValue::result_ok(RuntimeValue::i64(9)),
+            RuntimeValue::result_ok(RuntimeValue::i64(10)),
+            1,
+        ),
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            result_ty,
+            result_ty,
+            RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned())),
+            RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned())),
+            0,
+        ),
+    ];
+
+    let mut expectations = Vec::with_capacity(cases.len());
+    for (index, (family, order, source_ty, result_ty, source, expected, callback_count)) in
+        cases.into_iter().enumerate()
+    {
+        builder
+            .push_pure_helper_seed(RuntimePureHelperSeed {
+                name: format!("standard_map_{index}"),
+                inputs: Box::new([]),
+                input_abi: Vec::new(),
+                output_abi: RuntimePureOutputType::Value,
+                body: standard_map_seed(
+                    family,
+                    order,
+                    function_ty,
+                    source_ty,
+                    result_ty,
+                    callback_sites[index % callback_sites.len()].clone(),
+                    source,
+                ),
+                scalar_eval_supported: false,
+                origin: RuntimePureHelperOrigin::Annotated,
+            })
+            .expect("standard map helper");
+        expectations.push(StandardMapPureCase {
+            helper: RuntimePureHelperId(index),
+            expected,
+            callback_count,
+        });
+    }
+
+    (
+        Arc::new(builder.finish().expect("standard map pure plan")),
+        expectations,
     )
 }
 
@@ -368,4 +619,56 @@ fn structured_closure_captures_the_exact_owning_plan() {
         .value;
 
     assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn structured_pure_standard_map_covers_all_published_families() {
+    let (plan, cases) = standard_map_pure_plan();
+
+    for case in cases {
+        let result = VmPureFunctionBackend
+            .evaluate(
+                &PureFunctionRequest::try_new(Arc::clone(&plan), case.helper, [])
+                    .expect("standard map request"),
+            )
+            .expect("standard map pure evaluation");
+
+        assert_eq!(result.value, case.expected);
+        assert_eq!(
+            result.stats.evaluated_binary_ops, case.callback_count,
+            "callback was applied exactly once per selected source item"
+        );
+    }
+
+    let array_result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), RuntimePureHelperId(2), [])
+                .expect("array map request"),
+        )
+        .expect("array map pure evaluation");
+    let RuntimeValue::Seq(array) = array_result.value else {
+        panic!("array map must retain sequence representation");
+    };
+    assert_eq!(array.len(), 3, "array map preserves its admitted length");
+
+    let option_none_result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), RuntimePureHelperId(5), [])
+                .expect("Option::None map request"),
+        )
+        .expect("Option::None map pure evaluation");
+    assert_eq!(option_none_result.value, RuntimeValue::option_none());
+    assert_eq!(option_none_result.stats.evaluated_binary_ops, 0);
+
+    let result_err = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), RuntimePureHelperId(7), [])
+                .expect("Result::Err map request"),
+        )
+        .expect("Result::Err map pure evaluation");
+    assert_eq!(
+        result_err.value,
+        RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned()))
+    );
+    assert_eq!(result_err.stats.evaluated_binary_ops, 0);
 }

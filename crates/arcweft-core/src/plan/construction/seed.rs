@@ -1797,10 +1797,11 @@ pub enum RuntimeExprSeedKind {
         helper: RuntimePureHelperSeedId,
         args: Box<[RuntimeCallArgumentSeed]>,
     },
-    Map {
+    StandardMap {
+        family: crate::value::RuntimeStandardMapFamily,
+        order: crate::value::RuntimeStandardMapOperandOrder,
+        mapping: Box<RuntimeExprSeed>,
         source: Box<RuntimeExprSeed>,
-        param: RuntimeLocalSeedId,
-        body: Box<RuntimeExprSeed>,
     },
     Filter {
         source: Box<RuntimeExprSeed>,
@@ -2126,12 +2127,13 @@ impl RuntimeExprSeed {
                 receiver.collect_free_locals(bound, locals);
                 collect_call_argument_free_locals(args, bound, locals);
             }
-            RuntimeExprSeedKind::Map {
-                source,
-                param,
-                body,
+            RuntimeExprSeedKind::StandardMap {
+                mapping, source, ..
+            } => {
+                mapping.collect_free_locals(bound, locals);
+                source.collect_free_locals(bound, locals);
             }
-            | RuntimeExprSeedKind::Filter {
+            RuntimeExprSeedKind::Filter {
                 source,
                 param,
                 body,

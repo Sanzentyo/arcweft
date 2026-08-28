@@ -135,12 +135,6 @@ impl CallableRecord {
                 if environment.kind() == EnvironmentCallableKind::RustFunction && rust.is_none() {
                     return Err(CallableCatalogError::MissingRustProvenance);
                 }
-                if environment.kind() == EnvironmentCallableKind::UntypedMethodFallback
-                    && (!matches!(key, CallableLookupKey::Method(_))
-                        || !matches!(schema.validator(), super::CallableValidator::Untyped))
-                {
-                    return Err(CallableCatalogError::IdKeyMismatch);
-                }
                 if publication_digest.is_none() {
                     return Err(CallableCatalogError::MissingEnvironmentPublicationDigest);
                 }
@@ -264,6 +258,20 @@ impl CallableRecord {
                 })
             }
             CallableLookupKey::Method(_) => None,
+        }
+    }
+
+    /// Returns the typed member identity of an explicitly opted-in ordinary
+    /// extension declaration.
+    ///
+    /// The callable path and receiver schema remain the authorities; this is
+    /// only the catalog index projection and never re-reads source spelling.
+    pub fn extension_method_name(&self) -> Option<&super::CallableName> {
+        match self.key() {
+            CallableLookupKey::Free(path) if self.schema().extension_receiver().is_some() => {
+                Some(path.leaf())
+            }
+            CallableLookupKey::Free(_) | CallableLookupKey::Method(_) => None,
         }
     }
     pub fn family(&self) -> CallableFamily {

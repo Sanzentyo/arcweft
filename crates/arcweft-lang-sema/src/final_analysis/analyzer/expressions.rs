@@ -8,18 +8,21 @@ use std::{rc::Rc, sync::Arc};
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
     CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
-    CheckedChoiceGoto, CheckedClosure, CheckedExpression, CheckedExpressionResolution,
-    CheckedImplicitCallable, CheckedPipe, CheckedProjectItem, CheckedStageLook, CheckedStyleCallee,
-    CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
-    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
-    GenericParameterOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp,
-    HirBorrowKind, HirCallArgument, HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind,
-    HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule,
-    HirPathRoot, HirPathSegment, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
+    CheckedChoiceGoto, CheckedClosure, CheckedDialogueEffectOperation, CheckedDialogueEffectSite,
+    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger, CheckedDialogueLinePlan,
+    CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal, CheckedExpression,
+    CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe, CheckedProjectItem,
+    CheckedStageLook, CheckedStyleCallee, CheckedTry, CheckedTryBoundary, CheckedTryCarrier,
+    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, CheckedViewCall,
+    CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload, ExprId,
+    FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
+    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
+    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIdRefValue,
+    HirIntegerLiteral, HirItemKind, HirLinePlanItem, HirLiteral, HirModule, HirPathRoot,
+    HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
     HirRecoveredName, HirScopeKind, HirScopeOwner, HirSelectedMember, HirSourcePresence,
-    HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp, LocalLookup,
-    PostfixBracketResolution, PreparedExpressionFact, ProjectHirSymbolLookupError,
+    HirSourceQuery, HirSourceSite, HirStmtKind, HirTriggerPattern, HirTypeSourceRole, HirUnaryOp,
+    LocalLookup, PostfixBracketResolution, PreparedExpressionFact, ProjectHirSymbolLookupError,
     ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
     ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
     ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind,
@@ -36,8 +39,12 @@ use crate::callable::{
     DialogueCalleeIdentity, PreparedCallCallee, ResolveCallOutcome, ResolvedCallTarget,
     ResolverWork, resolve_call_target,
 };
+use crate::checked_rich_text::{
+    CheckedDialogueHostEvent, CheckedDialogueToken, CheckedRichTextAction,
+};
 use crate::final_analysis::type_rules::integer_suffix_type;
 use crate::registration::RegisteredExternalOwner;
+use arcweft_id::PublicId;
 use arcweft_lang_hir::expr::HirPlaceholderKind;
 
 use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
@@ -62,7 +69,7 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
     Complete(&'a TypeKind),
     Parametric {
         expected: &'a TypeKind,
-        unbound: Arc<[GenericTypeParameterId]>,
+        unbound: Arc<[crate::types::constraints::ConstraintGenericParameterId]>,
     },
 }
 
@@ -73,16 +80,20 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     pub(super) fn parametric(
         expected: &'a TypeKind,
-        unbound: &[GenericTypeParameterId],
+        unbound: &[crate::types::constraints::ConstraintGenericParameterId],
     ) -> Option<Self> {
         if unbound.is_empty() || !unbound.windows(2).all(|pair| pair[0] < pair[1]) {
             return None;
         }
         let inventory = crate::types::TypeGenericUseCollector::collect(expected).ok()?;
-        if !unbound
-            .iter()
-            .all(|parameter| inventory.types().binary_search(parameter).is_ok())
-        {
+        if !unbound.iter().all(|parameter| match parameter {
+            crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
+                inventory.types().binary_search(parameter).is_ok()
+            }
+            crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
+                inventory.consts().binary_search(parameter).is_ok()
+            }
+        }) {
             return None;
         }
         Some(Self::Parametric {
@@ -95,7 +106,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         match self {
             Self::Unconstrained => None,
             Self::Complete(expected) => Some(expected),
-            Self::Parametric { expected, unbound } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| candidate == parameter)) => {
+            Self::Parametric { expected, unbound } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| matches!(candidate, crate::types::constraints::ConstraintGenericParameterId::Type(candidate) if candidate == parameter))) => {
                 None
             }
             Self::Parametric { expected, .. } => Some(expected),
@@ -137,7 +148,14 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         let inventory = crate::types::TypeGenericUseCollector::collect(expected)?;
         let projected = unbound
             .iter()
-            .filter(|parameter| inventory.types().binary_search(parameter).is_ok())
+            .filter(|parameter| match parameter {
+                crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
+                    inventory.types().binary_search(parameter).is_ok()
+                }
+                crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
+                    inventory.consts().binary_search(parameter).is_ok()
+                }
+            })
             .cloned()
             .collect::<Vec<_>>();
         if projected.is_empty() {
@@ -1849,6 +1867,8 @@ impl Analyzer<'_, '_, '_> {
                     .collect::<BTreeSet<_>>();
                 self.pipe_stack.push(super::PipeContext {
                     owner,
+                    left: pipe.left(),
+                    right: pipe.right(),
                     value: left.ty().clone(),
                     placeholders: placeholders.clone(),
                 });
@@ -2951,6 +2971,7 @@ impl Analyzer<'_, '_, '_> {
             }
         }
 
+        let line_plan = self.checked_dialogue_line_plan(module, application.plan(), &rich_text)?;
         let line_result = application.plan().map_or(Ok(TypeKind::Unit), |plan| {
             self.check_dialogue_line_plan_output(context, plan.items())
         })?;
@@ -2959,6 +2980,8 @@ impl Analyzer<'_, '_, '_> {
             target,
             application_patch,
             rich_text: Box::new(rich_text),
+            line_plan,
+            line_result: line_result.clone(),
         };
         let ty = self.publish_dialogue_content_application_call(
             module,
@@ -2982,6 +3005,170 @@ impl Analyzer<'_, '_, '_> {
             EffectSet::new(),
             expression_resolution,
         ))
+    }
+
+    fn checked_dialogue_line_plan(
+        &self,
+        module: &HirModule,
+        plan: Option<&arcweft_lang_hir::dialogue_application::HirLinePlan>,
+        rich_text: &crate::checked_rich_text::CheckedRichTextReport,
+    ) -> Result<CheckedDialogueLinePlan, AnalyzerExpressionError> {
+        let mut marks = Vec::<PublicId>::new();
+        let mut mark_ordinals = std::collections::BTreeMap::<PublicId, u32>::new();
+        let mut effect_sites = Vec::new();
+        for token in rich_text.content().tokens() {
+            let CheckedDialogueToken::Open(tag) = token else {
+                continue;
+            };
+            match tag.action() {
+                CheckedRichTextAction::Marker(mark) => {
+                    let ordinal = u32::try_from(marks.len()).map_err(|_| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::AccountingOverflow,
+                        )
+                    })?;
+                    if mark_ordinals.insert(mark.clone(), ordinal).is_some() {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    }
+                    marks.push(mark.clone());
+                }
+                CheckedRichTextAction::Host {
+                    action:
+                        event @ (CheckedDialogueHostEvent::TimedCue { .. }
+                        | CheckedDialogueHostEvent::Call { .. }),
+                    ..
+                } => {
+                    let id = CheckedDialogueEffectSiteOrdinal::new(
+                        u32::try_from(effect_sites.len()).map_err(|_| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::AccountingOverflow,
+                            )
+                        })?,
+                    );
+                    let (expression, trigger) = match event {
+                        CheckedDialogueHostEvent::TimedCue { at, call } => {
+                            (*call, CheckedDialogueEffectTrigger::Delay(*at))
+                        }
+                        CheckedDialogueHostEvent::Call { call } => {
+                            (*call, CheckedDialogueEffectTrigger::Content)
+                        }
+                        _ => unreachable!("the grouped checked RichText effect event is closed"),
+                    };
+                    let effect = self
+                        .checked_evaluated_effect_expression(module, expression)
+                        .map_err(AnalyzerExpressionError::fatal)?
+                        .ok_or_else(|| {
+                            AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::WrongPayloadFamily,
+                            )
+                        })?;
+                    effect_sites.push(CheckedDialogueEffectSite::new(
+                        id,
+                        trigger,
+                        expression,
+                        CheckedDialogueEffectOperation::Evaluated(Box::new(effect)),
+                    ));
+                }
+                CheckedRichTextAction::DirectStyle { .. }
+                | CheckedRichTextAction::Control { .. }
+                | CheckedRichTextAction::Style { .. }
+                | CheckedRichTextAction::Layout { .. }
+                | CheckedRichTextAction::Transform { .. }
+                | CheckedRichTextAction::Object { .. }
+                | CheckedRichTextAction::BuiltinFx { .. }
+                | CheckedRichTextAction::Host { .. } => {}
+            }
+        }
+        let mut handlers = Vec::new();
+        if let Some(plan) = plan {
+            self.collect_dialogue_mark_handlers(
+                module,
+                plan.items(),
+                &mark_ordinals,
+                &mut handlers,
+            )?;
+        }
+        Ok(CheckedDialogueLinePlan::new(marks, handlers, effect_sites))
+    }
+
+    fn collect_dialogue_mark_handlers(
+        &self,
+        module: &HirModule,
+        items: &[HirLinePlanItem],
+        marks: &std::collections::BTreeMap<PublicId, u32>,
+        handlers: &mut Vec<CheckedDialogueMarkHandler>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        for item in items {
+            match item {
+                HirLinePlanItem::Statement(statement) | HirLinePlanItem::On(statement) => {
+                    let statement_payload = module.resolve_stmt(*statement).map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                    })?;
+                    let HirStmtKind::On {
+                        trigger: HirTriggerPattern::Mark(pattern),
+                        ..
+                    } = statement_payload.kind()
+                    else {
+                        continue;
+                    };
+                    let pattern = module.resolve_pattern(*pattern).map_err(|_| {
+                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+                    })?;
+                    let HirPatternKind::EntityReference(HirIdRefValue::Resolved(
+                        HirIdRef::Relative(mark),
+                    )) = pattern.kind()
+                    else {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    };
+                    if mark.parent_depth() != 0 || mark.suffix().as_str().contains('.') {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    }
+                    let mark = PublicId::try_new(mark.suffix().as_str()).map_err(|_| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        )
+                    })?;
+                    let ordinal = marks.get(&mark).copied().ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        )
+                    })?;
+                    if handlers
+                        .iter()
+                        .any(|handler| handler.statement() == *statement)
+                    {
+                        return Err(AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::WrongPayloadFamily,
+                        ));
+                    }
+                    handlers.push(CheckedDialogueMarkHandler::new(
+                        *statement,
+                        CheckedDialogueMarkOrdinal::new(ordinal),
+                    ));
+                }
+                HirLinePlanItem::StartGroup(children)
+                | HirLinePlanItem::TogetherGroup(children) => {
+                    self.collect_dialogue_mark_handlers(module, children, marks, handlers)?
+                }
+                HirLinePlanItem::Init(_)
+                | HirLinePlanItem::Thread(_)
+                | HirLinePlanItem::Option { .. }
+                | HirLinePlanItem::Let { .. }
+                | HirLinePlanItem::Out { .. }
+                | HirLinePlanItem::CancelRule(_)
+                | HirLinePlanItem::TimedCue { .. }
+                | HirLinePlanItem::TimelineAssert { .. }
+                | HirLinePlanItem::Expression(_)
+                | HirLinePlanItem::Error(_) => {}
+            }
+        }
+        Ok(())
     }
 
     fn publish_dialogue_content_application_call(
@@ -3037,6 +3224,7 @@ impl Analyzer<'_, '_, '_> {
                     .prepared_calls()
                     .map_err(AnalyzerExpressionError::fact)?,
                 limits: &self.catalogs.callable_limits,
+                implicit_extension_receiver: None,
             },
             &mut work,
         )
@@ -3533,13 +3721,19 @@ mod expectation_tests {
         let owned = generic(1);
         let foreign = generic(2);
         let expected = TypeKind::Option(Box::new(TypeKind::GenericParam(owned.clone())));
-        assert!(AnalyzerExpressionExpectation::parametric(&expected, &[owned.clone()]).is_some());
         assert!(
-            AnalyzerExpressionExpectation::parametric(&expected, &[foreign]).is_none(),
+            AnalyzerExpressionExpectation::parametric(&expected, &[owned.clone().into()]).is_some()
+        );
+        assert!(
+            AnalyzerExpressionExpectation::parametric(&expected, &[foreign.into()]).is_none(),
             "an unbound identity absent from the shape cannot be admitted"
         );
         assert!(
-            AnalyzerExpressionExpectation::parametric(&expected, &[owned.clone(), owned]).is_none(),
+            AnalyzerExpressionExpectation::parametric(
+                &expected,
+                &[owned.clone().into(), owned.into()],
+            )
+            .is_none(),
             "duplicate/unordered unbound rows are not canonical"
         );
     }
@@ -3552,7 +3746,7 @@ mod expectation_tests {
             TypeKind::I64,
         ]);
         let expectation =
-            AnalyzerExpressionExpectation::parametric(&expected, &[parameter.clone()])
+            AnalyzerExpressionExpectation::parametric(&expected, &[parameter.clone().into()])
                 .expect("canonical parametric expectation");
         assert!(matches!(
             expectation
@@ -3581,10 +3775,11 @@ mod expectation_tests {
         )
         .into();
         let first_expectation =
-            AnalyzerExpressionExpectation::parametric(&first, &[parameter.clone()])
+            AnalyzerExpressionExpectation::parametric(&first, &[parameter.clone().into()])
                 .expect("first expectation");
-        let second_expectation = AnalyzerExpressionExpectation::parametric(&second, &[parameter])
-            .expect("second expectation");
+        let second_expectation =
+            AnalyzerExpressionExpectation::parametric(&second, &[parameter.into()])
+                .expect("second expectation");
         assert!(first_expectation.accepts_cached(&checked));
         assert!(!second_expectation.accepts_cached(&checked));
 

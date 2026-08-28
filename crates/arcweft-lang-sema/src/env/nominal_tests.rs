@@ -869,6 +869,30 @@ fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
             "RagError",
             TypeKind::AgentBuiltin(AgentBuiltinType::RagError),
         ),
+        (
+            "AgentSourcePosition",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentSourcePosition),
+        ),
+        (
+            "AgentProjectFlowControlSummary",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectFlowControlSummary),
+        ),
+        (
+            "AgentProjectGraphSummary",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentProjectGraphSummary),
+        ),
+        (
+            "AgentBinaryBody",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryBody),
+        ),
+        (
+            "AgentBinaryEncoding",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryEncoding),
+        ),
+        (
+            "AgentBinaryData",
+            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryData),
+        ),
         ("TextCluster", TypeKind::TextCluster),
         ("Duration", TypeKind::Duration),
         ("DebugStatePath", TypeKind::DebugStatePath),

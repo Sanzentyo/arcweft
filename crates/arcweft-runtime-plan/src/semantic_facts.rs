@@ -170,6 +170,10 @@ pub enum RuntimeTypeShape {
         item: Box<RuntimeNormalizedType>,
         error: Box<RuntimeNormalizedType>,
     },
+    Parser {
+        item: Box<RuntimeNormalizedType>,
+        error: Box<RuntimeNormalizedType>,
+    },
     Result {
         value: Box<RuntimeNormalizedType>,
         error: Box<RuntimeNormalizedType>,
@@ -256,6 +260,7 @@ pub enum RuntimeUnsupportedTypeShape {
     Map,
     Need,
     Stream,
+    Parser,
     ThreadHandle,
     Shared,
     Reference,
@@ -372,6 +377,9 @@ impl RuntimeNormalizedType {
                 item: child(item),
                 error: child(error),
             },
+            RuntimeTypeShape::Parser { .. } => {
+                unreachable!("unsupported Parser shape cannot enter RuntimePlan type admission")
+            }
             RuntimeTypeShape::Result { value, error } => RuntimePlanTypeProjection::Result {
                 value: child(value),
                 error: child(error),
@@ -465,6 +473,10 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(item)) => vec![item],
             RuntimeTypeShape::Map { key, value }
             | RuntimeTypeShape::Stream {
+                item: key,
+                error: value,
+            }
+            | RuntimeTypeShape::Parser {
                 item: key,
                 error: value,
             }
@@ -627,6 +639,7 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Map { .. }
             | RuntimeTypeShape::Need(_)
             | RuntimeTypeShape::Stream { .. }
+            | RuntimeTypeShape::Parser { .. }
             | RuntimeTypeShape::ThreadHandle(_)
             | RuntimeTypeShape::Shared(_)
             | RuntimeTypeShape::Reference(_)
@@ -683,6 +696,7 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::Map { .. } => Some(RuntimeUnsupportedTypeShape::Map),
         RuntimeTypeShape::Need(_) => Some(RuntimeUnsupportedTypeShape::Need),
         RuntimeTypeShape::Stream { .. } => Some(RuntimeUnsupportedTypeShape::Stream),
+        RuntimeTypeShape::Parser { .. } => Some(RuntimeUnsupportedTypeShape::Parser),
         RuntimeTypeShape::ThreadHandle(_) => Some(RuntimeUnsupportedTypeShape::ThreadHandle),
         RuntimeTypeShape::Shared(_) => Some(RuntimeUnsupportedTypeShape::Shared),
         RuntimeTypeShape::Reference(_) => Some(RuntimeUnsupportedTypeShape::Reference),
@@ -2549,6 +2563,7 @@ impl RuntimeResolvedCall {
                 | RuntimeResolvedStaticCallTarget::Declaration(_)
                 | RuntimeResolvedStaticCallTarget::Variant(_)
                 | RuntimeResolvedStaticCallTarget::Reduction(_)
+                | RuntimeResolvedStaticCallTarget::StandardMap(_)
                 | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
                 | RuntimeResolvedStaticCallTarget::Line(_)
                 | RuntimeResolvedStaticCallTarget::Registered(_)
@@ -2626,6 +2641,11 @@ pub enum RuntimeResolvedStaticCallTarget {
     Variant(RuntimeResolvedVariant),
     /// Core-owned `Reduction` value construction selected by semantic identity.
     Reduction(RuntimeReductionConstructor),
+    /// One checked standard `map` overload with exact callback and receiver
+    /// expression coordinates. The ordinary callable identity is retained by
+    /// semantic analysis; this projection selects its closed executable
+    /// constructor family without falling through to a registered backend.
+    StandardMap(RuntimeStandardMapCall),
     TraitMethod {
         method: ImplMethodDeclarationId,
         receiver: RuntimeReceiverMode,
@@ -2636,6 +2656,67 @@ pub enum RuntimeResolvedStaticCallTarget {
     Line(RuntimeLineCallable),
     Registered(RuntimeCallableId),
     Host(RuntimeResolvedHostCall),
+}
+
+/// Closed, instantiated constructor family selected for one standard `map`
+/// call. Generic arguments are read from the call's normalized operand/result
+/// types; the family variant prevents a spelling or callable-digest lookup at
+/// lowering time.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeStandardMapFamily {
+    Vec,
+    Seq,
+    Array,
+    Slice,
+    Option,
+    Result,
+}
+
+/// Exact final-HIR operands of one fully applied standard `map` call.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeStandardMapCall {
+    family: RuntimeStandardMapFamily,
+    mapping: ExprId,
+    receiver: ExprId,
+    order: RuntimeStandardMapOperandOrder,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeStandardMapOperandOrder {
+    MappingThenReceiver,
+    ReceiverThenMapping,
+}
+
+impl RuntimeStandardMapCall {
+    pub const fn new(
+        family: RuntimeStandardMapFamily,
+        mapping: ExprId,
+        receiver: ExprId,
+        order: RuntimeStandardMapOperandOrder,
+    ) -> Self {
+        Self {
+            family,
+            mapping,
+            receiver,
+            order,
+        }
+    }
+
+    pub const fn family(&self) -> RuntimeStandardMapFamily {
+        self.family
+    }
+
+    pub const fn mapping(&self) -> ExprId {
+        self.mapping
+    }
+
+    pub const fn receiver(&self) -> ExprId {
+        self.receiver
+    }
+
+    pub const fn order(&self) -> RuntimeStandardMapOperandOrder {
+        self.order
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3968,6 +4049,7 @@ impl RuntimePlanSemanticFacts {
                     | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
                     | RuntimeResolvedStaticCallTarget::Variant(_)
                     | RuntimeResolvedStaticCallTarget::Reduction(_)
+                    | RuntimeResolvedStaticCallTarget::StandardMap(_)
                     | RuntimeResolvedStaticCallTarget::Line(_)
                     | RuntimeResolvedStaticCallTarget::Registered(_)
                     | RuntimeResolvedStaticCallTarget::Host(_),
@@ -6004,6 +6086,10 @@ fn validate_normalized_type(
             item: key,
             error: value,
         }
+        | RuntimeTypeShape::Parser {
+            item: key,
+            error: value,
+        }
         | RuntimeTypeShape::Result {
             value: key,
             error: value,
@@ -6132,6 +6218,14 @@ fn validate_call(
             | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
             | RuntimeResolvedStaticCallTarget::Registered(_),
         ) => {}
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(map)) => {
+            if !runtime_standard_map_matches_operands(call, map, expression_types.get(&expression))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Line(line)) => {
             if !runtime_line_callable_matches_operands(call, line) {
                 return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
@@ -6323,6 +6417,157 @@ fn validate_call(
         _ => {}
     }
     Ok(())
+}
+
+fn runtime_standard_map_matches_operands(
+    call: &RuntimeResolvedCall,
+    map: &RuntimeStandardMapCall,
+    result: Option<&RuntimeNormalizedType>,
+) -> bool {
+    if call.result() != RuntimeCallResultShape::Value {
+        return false;
+    }
+    let mut mappings = call
+        .operands()
+        .iter()
+        .filter(|operand| operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0)));
+    let Some(mapping) = mappings.next() else {
+        return false;
+    };
+    if mappings.next().is_some()
+        || mapping.source() != RuntimeResolvedCallOperandSource::Expression(map.mapping())
+        || !matches!(
+            mapping.projection(),
+            RuntimeResolvedCallOperandProjection::Scalar
+        )
+    {
+        return false;
+    }
+    let mut receivers = call.operands().iter().filter(|operand| {
+        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+            || operand.parameter() == Some(RuntimeCallParameterCoordinate::new(1, 0))
+    });
+    let Some(receiver) = receivers.next() else {
+        return false;
+    };
+    if receivers.next().is_some()
+        || receiver.source() != RuntimeResolvedCallOperandSource::Expression(map.receiver())
+        || !matches!(
+            receiver.projection(),
+            RuntimeResolvedCallOperandProjection::Scalar
+        )
+    {
+        return false;
+    }
+    match map.order() {
+        RuntimeStandardMapOperandOrder::ReceiverThenMapping
+            if !matches!(
+                receiver.origin(),
+                RuntimeResolvedCallOperandOrigin::Receiver
+            ) =>
+        {
+            return false;
+        }
+        RuntimeStandardMapOperandOrder::MappingThenReceiver
+            if matches!(
+                receiver.origin(),
+                RuntimeResolvedCallOperandOrigin::Receiver
+            ) =>
+        {
+            return false;
+        }
+        RuntimeStandardMapOperandOrder::MappingThenReceiver
+        | RuntimeStandardMapOperandOrder::ReceiverThenMapping => {}
+    }
+    let Some(result) = result else {
+        return false;
+    };
+    let RuntimeTypeShape::Function {
+        parameters,
+        result: mapping_result,
+    } = mapping.ty().shape()
+    else {
+        return false;
+    };
+    let [mapping_input] = parameters.as_ref() else {
+        return false;
+    };
+    let Some((receiver_input, result_output)) =
+        standard_map_item_types(map.family(), receiver.ty().shape(), result.shape())
+    else {
+        return false;
+    };
+    mapping_input == receiver_input && mapping_result.as_ref() == result_output
+}
+
+fn standard_map_item_types<'a>(
+    family: RuntimeStandardMapFamily,
+    receiver: &'a RuntimeTypeShape,
+    result: &'a RuntimeTypeShape,
+) -> Option<(&'a RuntimeNormalizedType, &'a RuntimeNormalizedType)> {
+    match (family, receiver, result) {
+        (
+            RuntimeStandardMapFamily::Vec,
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Vec,
+                item: input,
+            },
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Vec,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Seq,
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Seq,
+                item: input,
+            },
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Seq,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Slice,
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Slice,
+                item: input,
+            },
+            RuntimeTypeShape::Sequence {
+                kind: RuntimeSequenceKind::Vec,
+                item: output,
+            },
+        )
+        | (
+            RuntimeStandardMapFamily::Option,
+            RuntimeTypeShape::Option(input),
+            RuntimeTypeShape::Option(output),
+        ) => Some((input, output)),
+        (
+            RuntimeStandardMapFamily::Array,
+            RuntimeTypeShape::Array {
+                item: input,
+                length: input_length,
+            },
+            RuntimeTypeShape::Array {
+                item: output,
+                length: output_length,
+            },
+        ) if input_length == output_length => Some((input, output)),
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimeTypeShape::Result {
+                value: input,
+                error: input_error,
+            },
+            RuntimeTypeShape::Result {
+                value: output,
+                error: output_error,
+            },
+        ) if input_error == output_error => Some((input, output)),
+        _ => None,
+    }
 }
 
 fn runtime_line_callable_matches_operands(

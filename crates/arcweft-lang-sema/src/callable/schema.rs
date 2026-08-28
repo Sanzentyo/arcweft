@@ -22,9 +22,9 @@ use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
     CallableSourceError, CapacityMethodId, CollectionMethodId, DetachedCallableDeclarationId,
-    DialogueCallableId, DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId,
-    IntegerMethodId, LanguageDocumentationFamily, LineContextMethodId, OptionConstructorKind,
-    PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
+    DialogueCallableId, DomainMethodId, DropCallableId, EnumVariantSignatureId,
+    FxCallableSignatureId, IntegerMethodId, LanguageDocumentationFamily, LineContextMethodId,
+    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
     RustProvenanceField, StageMethodId,
 };
@@ -475,15 +475,8 @@ impl CallableGenericParameterIssuer {
         const_count: u16,
     ) -> Result<Self, CallableSchemaError> {
         if let CallableGenericIssuerOwner::LanguageIntrinsic(owner) = &owner {
-            let expected_type_count = match owner {
-                LanguageIntrinsicGenericOwner::OptionConstructor
-                | LanguageIntrinsicGenericOwner::CollectionMap
-                | LanguageIntrinsicGenericOwner::FxExists
-                | LanguageIntrinsicGenericOwner::AgentSignal
-                | LanguageIntrinsicGenericOwner::AgentMetric => 1,
-                LanguageIntrinsicGenericOwner::ResultConstructor => 2,
-            };
-            if const_count != 0 || type_count != expected_type_count {
+            let (expected_type_count, expected_const_count) = owner.generic_arity();
+            if const_count != expected_const_count || type_count != expected_type_count {
                 return Err(CallableSchemaError::InvalidCandidateIssuer);
             }
             return Ok(Self {
@@ -546,7 +539,7 @@ impl CallableGenericParameterIssuer {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGenericParameterInventory {
     types: Arc<[CallableGenericTypeUse]>,
-    rigid_consts: Arc<[CallableRigidConstUse]>,
+    consts: Arc<[CallableGenericConstUse]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -557,8 +550,9 @@ pub(crate) struct CallableGenericTypeUse {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct CallableRigidConstUse {
+pub(crate) struct CallableGenericConstUse {
     parameter: GenericConstParameterId,
+    role: CallableSchemaGenericRole,
     first_use: CallableGenericFirstUse,
 }
 
@@ -579,8 +573,8 @@ impl CallableGenericParameterInventory {
         &self.types
     }
 
-    pub(crate) fn rigid_consts(&self) -> &[CallableRigidConstUse] {
-        &self.rigid_consts
+    pub(crate) fn consts(&self) -> &[CallableGenericConstUse] {
+        &self.consts
     }
 }
 
@@ -598,9 +592,13 @@ impl CallableGenericTypeUse {
     }
 }
 
-impl CallableRigidConstUse {
+impl CallableGenericConstUse {
     pub(crate) const fn parameter(&self) -> &GenericConstParameterId {
         &self.parameter
+    }
+
+    pub(crate) const fn role(&self) -> CallableSchemaGenericRole {
+        self.role
     }
 
     pub(crate) const fn first_use(&self) -> CallableGenericFirstUse {
@@ -667,6 +665,7 @@ pub enum CallableEvaluatedEffect {
     Fail,
     Bail,
     Ensure,
+    Drop(DropCallableId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1086,7 +1085,6 @@ pub enum SpreadArgumentPolicy {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableValidator {
     Ordinary,
-    Untyped,
     Fx(FxCallableSignatureId),
     UnknownFxMember { member: CallableName },
     EnumConstructor(EnumVariantSignatureId),
@@ -1098,6 +1096,7 @@ pub enum CallableValidator {
     Presentation(PresentationCallableId),
     Dialogue(DialogueCallableId),
     Collection(CollectionMethodId),
+    StandardMap(super::StandardMapFamily),
     PresentationHandle(PresentationHandleMethodId),
     Integer(IntegerMethodId),
     Domain(DomainMethodId),
@@ -1105,7 +1104,7 @@ pub enum CallableValidator {
     Capacity(CapacityMethodId),
     Stage(StageMethodId),
     LineContext(LineContextMethodId),
-    Drop,
+    Drop(DropCallableId),
     Promotion(PromotionCallableId),
     ViewModifier(super::ViewModifierId),
 }
@@ -1610,13 +1609,8 @@ fn seal_generic_inventory(
         }
     }
     for parameter in collected.consts() {
-        if issuer.owns_const(parameter) {
-            if !candidate_consts.contains(parameter) {
-                return Err(CallableSchemaError::MissingCandidateConst {
-                    parameter: parameter.clone(),
-                });
-            }
-            return Err(CallableSchemaError::InferableConstGeneric {
+        if issuer.owns_const(parameter) && !candidate_consts.contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateConst {
                 parameter: parameter.clone(),
             });
         }
@@ -1645,11 +1639,17 @@ fn seal_generic_inventory(
         })
         .collect::<Vec<_>>()
         .into();
-    let rigid_consts = collected
+    let candidate_consts = candidate_consts.iter().collect::<BTreeSet<_>>();
+    let consts = collected
         .consts()
         .iter()
-        .map(|parameter| CallableRigidConstUse {
+        .map(|parameter| CallableGenericConstUse {
             parameter: parameter.clone(),
+            role: if candidate_consts.contains(parameter) {
+                CallableSchemaGenericRole::Candidate
+            } else {
+                CallableSchemaGenericRole::RigidReference
+            },
             first_use: first_use_for(
                 collected
                     .first_const_use(parameter)
@@ -1659,10 +1659,7 @@ fn seal_generic_inventory(
         })
         .collect::<Vec<_>>()
         .into();
-    Ok(CallableGenericParameterInventory {
-        types,
-        rigid_consts,
-    })
+    Ok(CallableGenericParameterInventory { types, consts })
 }
 
 fn first_use_for(position: u32, group_count: usize) -> CallableGenericFirstUse {
@@ -1686,47 +1683,33 @@ impl FunctionSignature {
         generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        let (groups, argument_policy) = if self.checks_args() {
-            let mut groups = Vec::with_capacity(self.remaining_call_groups().saturating_add(1));
-            groups.push(function_parameter_group(0, self.params(), limits)?);
-            for index in 0..self.remaining_call_groups() {
-                groups.push(function_parameter_group(
-                    index + 1,
-                    self.remaining_param_group(index).unwrap_or_default(),
-                    limits,
-                )?);
-            }
-            let spread = if self
-                .params()
-                .iter()
-                .chain(
-                    (0..self.remaining_call_groups())
-                        .flat_map(|index| self.remaining_param_group(index).unwrap_or_default()),
-                )
-                .any(FunctionParam::is_rest)
-            {
-                SpreadArgumentPolicy::TypedRest
-            } else {
-                SpreadArgumentPolicy::FixedLiteralOnly
-            };
-            (
-                groups,
-                CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, spread),
+        let mut groups = Vec::with_capacity(self.remaining_call_groups().saturating_add(1));
+        groups.push(function_parameter_group(0, self.params(), limits)?);
+        for index in 0..self.remaining_call_groups() {
+            groups.push(function_parameter_group(
+                index + 1,
+                self.remaining_param_group(index).unwrap_or_default(),
+                limits,
+            )?);
+        }
+        let spread = if self
+            .params()
+            .iter()
+            .chain(
+                (0..self.remaining_call_groups())
+                    .flat_map(|index| self.remaining_param_group(index).unwrap_or_default()),
             )
+            .any(FunctionParam::is_rest)
+        {
+            SpreadArgumentPolicy::TypedRest
         } else {
-            (
-                vec![unchecked_function_parameter_group(limits)?],
-                CallableArgumentPolicy::new(
-                    UnknownNamedArgumentPolicy::OpenSupply,
-                    SpreadArgumentPolicy::Unchecked,
-                ),
-            )
+            SpreadArgumentPolicy::FixedLiteralOnly
         };
         CallableSignatureSchema::try_new(
             groups,
             self.body_return_type().clone(),
             CallableEffectSchema::fixed(effects),
-            argument_policy,
+            CallableArgumentPolicy::new(UnknownNamedArgumentPolicy::Reject, spread),
             validator,
             generic_issuer,
             limits,
@@ -1792,26 +1775,6 @@ fn function_parameter_group(
             CallableGroupKind::Curried
         },
         parameters,
-        limits,
-    )
-}
-
-fn unchecked_function_parameter_group(
-    limits: &CallableLimits,
-) -> Result<CallableParameterGroup, CallableSchemaError> {
-    let parameter = CallableParameter::try_new(
-        CallableParameterIndex::try_from_usize(0).expect("zero parameter index is representable"),
-        Some(CallableName::try_new("args").expect("static callable name is valid")),
-        CallableParameterAdmission::unchecked_supply(),
-        CallableParameterPassing::RestPositional,
-        CallableParameterPresence::Optional,
-        None,
-        None,
-    )?;
-    CallableParameterGroup::try_new(
-        CallableGroupIndex::ZERO,
-        CallableGroupKind::Initial,
-        vec![parameter],
         limits,
     )
 }
@@ -2330,7 +2293,7 @@ mod generic_inventory_tests {
         assert_eq!(
             schema
                 .generic_inventory()
-                .rigid_consts()
+                .consts()
                 .first()
                 .expect("rigid const row")
                 .parameter(),
@@ -2369,7 +2332,7 @@ mod generic_inventory_tests {
     }
 
     #[test]
-    fn issuer_tampering_rejects_invalid_arity_missing_candidates_and_inferable_consts() {
+    fn issuer_tampering_rejects_invalid_arity_and_missing_candidates() {
         assert!(matches!(
             CallableGenericParameterIssuer::language_intrinsic(
                 LanguageIntrinsicGenericOwner::OptionConstructor,
@@ -2434,7 +2397,7 @@ mod generic_inventory_tests {
         );
         let inferable = CallableGenericParameterIssuer::accepted_nominal(accepted_owner(21), 0, 1)
             .expect("const candidate issuer");
-        let error = CallableSignatureSchema::try_new(
+        let schema = CallableSignatureSchema::try_new(
             vec![group(
                 0,
                 vec![parameter(
@@ -2455,11 +2418,12 @@ mod generic_inventory_tests {
             inferable,
             &PRODUCTION_CALLABLE_LIMITS,
         )
-        .expect_err("inferable const candidate must be rejected");
-        assert!(matches!(
-            error,
-            CallableSchemaError::InferableConstGeneric { parameter } if parameter == constant
-        ));
+        .expect("equality-only const candidate is schema-owned");
+        let [entry] = schema.generic_inventory().consts() else {
+            panic!("one const candidate row")
+        };
+        assert_eq!(entry.parameter(), &constant);
+        assert_eq!(entry.role(), CallableSchemaGenericRole::Candidate);
     }
 
     #[test]

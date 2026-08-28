@@ -24,8 +24,8 @@ use crate::value::{
     RuntimeAgentFieldValue, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
     RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
     RuntimeNominalRecordExpr, RuntimeRange, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
-    RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeUnaryOp, RuntimeUnsignedIntWidth,
-    RuntimeValue,
+    RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeUnaryOp,
+    RuntimeUnsignedIntWidth, RuntimeValue,
 };
 
 use super::super::{
@@ -332,23 +332,25 @@ impl RuntimePlanBuilder {
                 require_same("pure-call result", result, ty)?;
                 RuntimeExprKind::PureCall { helper, args }
             }
-            RuntimeExprSeedKind::Map {
+            RuntimeExprSeedKind::StandardMap {
+                family,
+                order,
+                mapping,
                 source,
-                param,
-                body,
             } => {
+                let mapping = self.lower_expression(*mapping)?;
                 let source = self.lower_expression(*source)?;
-                let (source_item, _) =
-                    self.sequence_projection(source.ty(), "map source expression")?;
-                let (param, param_ty) = self.resolve_local(&param)?;
-                require_same("map parameter", source_item, param_ty)?;
-                let body = self.lower_expression(*body)?;
-                let (result_item, _) = self.sequence_projection(ty, "map result expression")?;
-                require_same("map result element", result_item, body.ty())?;
-                RuntimeExprKind::Map {
+                let (input, output) = self.standard_map_item_projection(family, source.ty(), ty)?;
+                match self.projection(mapping.ty())? {
+                    RuntimePlanTypeProjection::Function { parameters, result }
+                        if parameters.as_ref() == [input] && *result == output => {}
+                    _ => return invalid_projection("standard map callback", mapping.ty()),
+                }
+                RuntimeExprKind::StandardMap {
+                    family,
+                    order,
+                    mapping: Box::new(mapping),
                     source: Box::new(source),
-                    param,
-                    body: Box::new(body),
                 }
             }
             RuntimeExprSeedKind::Filter {
@@ -604,6 +606,77 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::Sequence { item, .. } => Ok((*item, None)),
             RuntimePlanTypeProjection::Array { item, length } => Ok((*item, Some(*length))),
             _ => invalid_projection(context, ty),
+        }
+    }
+
+    fn standard_map_item_projection(
+        &self,
+        family: RuntimeStandardMapFamily,
+        source: RuntimePlanTypeId,
+        result: RuntimePlanTypeId,
+    ) -> Result<(RuntimePlanTypeId, RuntimePlanTypeId), RuntimePlanBuildError> {
+        match (family, self.projection(source)?, self.projection(result)?) {
+            (
+                RuntimeStandardMapFamily::Vec,
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item: input,
+                },
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Seq,
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Seq,
+                    item: input,
+                },
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Seq,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Slice,
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Slice,
+                    item: input,
+                },
+                RuntimePlanTypeProjection::Sequence {
+                    kind: RuntimePlanSequenceKind::Vec,
+                    item: output,
+                },
+            )
+            | (
+                RuntimeStandardMapFamily::Option,
+                RuntimePlanTypeProjection::Option(input),
+                RuntimePlanTypeProjection::Option(output),
+            ) => Ok((*input, *output)),
+            (
+                RuntimeStandardMapFamily::Array,
+                RuntimePlanTypeProjection::Array {
+                    item: input,
+                    length: input_length,
+                },
+                RuntimePlanTypeProjection::Array {
+                    item: output,
+                    length: output_length,
+                },
+            ) if input_length == output_length => Ok((*input, *output)),
+            (
+                RuntimeStandardMapFamily::Result,
+                RuntimePlanTypeProjection::Result {
+                    value: input,
+                    error: input_error,
+                },
+                RuntimePlanTypeProjection::Result {
+                    value: output,
+                    error: output_error,
+                },
+            ) if input_error == output_error => Ok((*input, *output)),
+            _ => invalid_projection("standard map family", source),
         }
     }
 
@@ -1888,12 +1961,13 @@ impl RuntimePlanBuilder {
                 self.validate_expression_locals(receiver, scope, used)?;
                 self.validate_argument_locals(args, scope, used)
             }
-            RuntimeExprKind::Map {
-                source,
-                param,
-                body,
+            RuntimeExprKind::StandardMap {
+                mapping, source, ..
+            } => {
+                self.validate_expression_locals(mapping, scope, used)?;
+                self.validate_expression_locals(source, scope, used)
             }
-            | RuntimeExprKind::Filter {
+            RuntimeExprKind::Filter {
                 source,
                 param,
                 body,

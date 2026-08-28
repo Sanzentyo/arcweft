@@ -1309,7 +1309,8 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::IntegerMethod(_)
             | CallableCandidateId::DomainMethod(_)
             | CallableCandidateId::StageMethod(_)
-            | CallableCandidateId::LineContextMethod(_),
+            | CallableCandidateId::LineContextMethod(_)
+            | CallableCandidateId::Drop(_),
             CallableInstantiation::Receiver { .. },
         )
         | (CallableCandidateId::Environment(_), CallableInstantiation::Receiver { .. })
@@ -1325,7 +1326,6 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
             | CallableCandidateId::Local(_)
             | CallableCandidateId::FunctionValue(_)
             | CallableCandidateId::LineSchedule(_)
-            | CallableCandidateId::Drop(_)
             | CallableCandidateId::Promotion(_),
             CallableInstantiation::None,
         ) => true,

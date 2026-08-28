@@ -1,6 +1,13 @@
 //! Product-AWBC parity coverage built exclusively through the sealed plan builder.
 
-use arcweft_core::awbc::{codec::AwbcDecodeBudget, schema::AwbcEntryId};
+use std::sync::Arc;
+
+use arcweft_core::awbc::{
+    codec::AwbcDecodeBudget,
+    product_step::evaluate_pure_program_with_backend,
+    schema::AwbcEntryId,
+    verify::{AwbcVerifyBudget, AwbcVerifyContext},
+};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::entry::{
     EntryBindingIdentity, FlowContractHash, RuntimeEntryRoles, RuntimeFlowExecutable,
@@ -12,10 +19,16 @@ use arcweft_core::plan::{
     EntryRuntimeId, FlowEvent, FlowRuntimeId, RuntimeAwaitPendingObserverSeed,
     RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeHostTaskRequestTemplateSeed, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
-    RuntimePlanBuilder, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimeFunctionSiteSeedId, RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed,
+    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
+    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId,
+    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
+    RuntimePureProgramBindingSeed,
 };
-use arcweft_core::pure::VmRuntimePureCallBackend;
+use arcweft_core::pure::{
+    PureFunctionBackend, PureFunctionRequest, RuntimePureCallBackend, VmPureFunctionBackend,
+    VmRuntimePureCallBackend,
+};
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
@@ -23,7 +36,11 @@ use arcweft_core::task::{
     HostCapabilityId, LogicalEpoch, NeedId, TaskEvent, TaskEventKind, TaskId, TaskOutcomeContract,
     TaskSequence,
 };
-use arcweft_core::value::{Progress, RuntimeValue};
+use arcweft_core::value::{
+    Progress, RuntimeBinaryOp, RuntimeSeq, RuntimeSignedIntWidth, RuntimeStandardMapFamily,
+    RuntimeStandardMapOperandOrder, RuntimeValue,
+};
+use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_text_model::DialogueContentCatalog;
 
@@ -31,6 +48,10 @@ const STRING_TYPE: RuntimeSemanticTypeId = RuntimeSemanticTypeId::from_bytes([1;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
+}
+
+fn type_id(marker: u8) -> RuntimeSemanticTypeId {
+    RuntimeSemanticTypeId::from_bytes([marker; 32])
 }
 
 fn entry_id() -> EntryRuntimeId {
@@ -42,6 +63,298 @@ fn string(value: &str) -> RuntimeExprSeed {
         STRING_TYPE,
         RuntimeExprSeedKind::Value(RuntimeValue::String(value.to_owned())),
     )
+}
+
+fn standard_map_i64(value: i64) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        type_id(20),
+        RuntimeExprSeedKind::Value(RuntimeValue::i64(value)),
+    )
+}
+
+fn standard_map_source() -> RuntimeValue {
+    RuntimeValue::Seq(RuntimeSeq::values(vec![
+        RuntimeValue::i64(1),
+        RuntimeValue::i64(2),
+        RuntimeValue::i64(3),
+    ]))
+}
+
+fn standard_map_seed(
+    family: RuntimeStandardMapFamily,
+    order: RuntimeStandardMapOperandOrder,
+    function_ty: RuntimeSemanticTypeId,
+    source_ty: RuntimeSemanticTypeId,
+    result_ty: RuntimeSemanticTypeId,
+    site: RuntimeFunctionSiteSeedId,
+    source: RuntimeValue,
+) -> RuntimeExprSeed {
+    RuntimeExprSeed::new(
+        result_ty,
+        RuntimeExprSeedKind::StandardMap {
+            family,
+            order,
+            mapping: Box::new(RuntimeExprSeed::new(
+                function_ty,
+                RuntimeExprSeedKind::Function(site),
+            )),
+            source: Box::new(RuntimeExprSeed::new(
+                source_ty,
+                RuntimeExprSeedKind::Value(source),
+            )),
+        },
+    )
+}
+
+#[derive(Clone)]
+struct AwbcStandardMapCase {
+    helper: RuntimePureHelperId,
+    program: RuntimePureProgramId,
+    expected: RuntimeValue,
+}
+
+fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
+    let item_ty = type_id(20);
+    let error_ty = type_id(21);
+    let function_ty = type_id(22);
+    let vec_ty = type_id(23);
+    let seq_ty = type_id(24);
+    let array_ty = type_id(25);
+    let slice_ty = type_id(26);
+    let option_ty = type_id(27);
+    let result_ty = type_id(28);
+    let unit_ty = type_id(29);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    item_ty,
+                    RuntimePlanTypeProjection::Signed(RuntimeSignedIntWidth::I64),
+                ),
+                RuntimePlanTypeSeed::new(error_ty, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    function_ty,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([item_ty]),
+                        result: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    vec_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Vec,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    seq_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Seq,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    array_ty,
+                    RuntimePlanTypeProjection::Array {
+                        item: item_ty,
+                        length: 3,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    slice_ty,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Slice,
+                        item: item_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(option_ty, RuntimePlanTypeProjection::Option(item_ty)),
+                RuntimePlanTypeSeed::new(
+                    result_ty,
+                    RuntimePlanTypeProjection::Result {
+                        value: item_ty,
+                        error: error_ty,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(unit_ty, RuntimePlanTypeProjection::Unit),
+            ],
+            [RuntimeLocalDeclarationSeed::new(item_ty)],
+            [],
+            [],
+        )
+        .expect("standard map AWBC type graph");
+    let callback_local = admission.local_ids()[0].clone();
+    let callback_site = builder
+        .push_function_site_seed(
+            [callback_local.clone()],
+            [],
+            RuntimeExprSeed::new(
+                item_ty,
+                RuntimeExprSeedKind::Binary {
+                    lhs: Box::new(RuntimeExprSeed::new(
+                        item_ty,
+                        RuntimeExprSeedKind::Local(callback_local),
+                    )),
+                    op: RuntimeBinaryOp::Add,
+                    rhs: Box::new(standard_map_i64(1)),
+                },
+            ),
+        )
+        .expect("standard map AWBC callback site");
+
+    let cases = [
+        (
+            RuntimeStandardMapFamily::Vec,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            vec_ty,
+            vec_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+        ),
+        (
+            RuntimeStandardMapFamily::Seq,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            seq_ty,
+            seq_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+        ),
+        (
+            RuntimeStandardMapFamily::Array,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            array_ty,
+            array_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+        ),
+        (
+            RuntimeStandardMapFamily::Slice,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            slice_ty,
+            vec_ty,
+            standard_map_source(),
+            RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::i64(2),
+                RuntimeValue::i64(3),
+                RuntimeValue::i64(4),
+            ])),
+        ),
+        (
+            RuntimeStandardMapFamily::Option,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            option_ty,
+            option_ty,
+            RuntimeValue::option_some(RuntimeValue::i64(7)),
+            RuntimeValue::option_some(RuntimeValue::i64(8)),
+        ),
+        (
+            RuntimeStandardMapFamily::Option,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            option_ty,
+            option_ty,
+            RuntimeValue::option_none(),
+            RuntimeValue::option_none(),
+        ),
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimeStandardMapOperandOrder::MappingThenReceiver,
+            result_ty,
+            result_ty,
+            RuntimeValue::result_ok(RuntimeValue::i64(9)),
+            RuntimeValue::result_ok(RuntimeValue::i64(10)),
+        ),
+        (
+            RuntimeStandardMapFamily::Result,
+            RuntimeStandardMapOperandOrder::ReceiverThenMapping,
+            result_ty,
+            result_ty,
+            RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned())),
+            RuntimeValue::result_err(RuntimeValue::String("preserve".to_owned())),
+        ),
+    ];
+
+    let mut expectations = Vec::with_capacity(cases.len());
+    for (index, (family, order, source_ty, result_ty, source, expected)) in
+        cases.into_iter().enumerate()
+    {
+        let helper = builder
+            .push_pure_helper_seed(RuntimePureHelperSeed {
+                name: format!("standard_map_awbc_{index}"),
+                inputs: Box::new([]),
+                input_abi: Vec::new(),
+                output_abi: RuntimePureOutputType::Value,
+                body: standard_map_seed(
+                    family,
+                    order,
+                    function_ty,
+                    source_ty,
+                    result_ty,
+                    callback_site.clone(),
+                    source,
+                ),
+                scalar_eval_supported: false,
+                origin: RuntimePureHelperOrigin::Annotated,
+            })
+            .expect("standard map AWBC helper");
+        let program = RuntimePureProgramId::from_checked_digest([index as u8 + 1; 32]);
+        builder
+            .push_pure_program_binding_seed(&RuntimePureProgramBindingSeed { program, helper })
+            .expect("standard map AWBC pure-program binding");
+        expectations.push((program, expected));
+    }
+
+    let flow = flow_id("standard_map.main");
+    admit_flow_authority(&mut builder, &flow);
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                unit_ty,
+                RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+            ))],
+        ))
+        .expect("standard map AWBC flow");
+    builder
+        .push_entry(RuntimeEntrySpec {
+            id: entry_id(),
+            kind: RuntimeEntryKind::Cli,
+            binding: EntryBindingIdentity::from_bytes([3; 32]),
+            target: RuntimeEntryTarget::Flow(flow),
+            roles: RuntimeEntryRoles::None,
+        })
+        .expect("standard map AWBC entry");
+
+    let plan = Arc::new(builder.finish().expect("standard map AWBC plan"));
+    let cases = expectations
+        .into_iter()
+        .map(|(program, expected)| {
+            let helper = plan
+                .pure_programs()
+                .iter()
+                .find(|binding| binding.program() == program)
+                .expect("standard map AWBC binding has its helper")
+                .helper();
+            AwbcStandardMapCase {
+                helper,
+                program,
+                expected,
+            }
+        })
+        .collect();
+    (plan, cases)
 }
 
 fn admit_flow_authority(builder: &mut RuntimePlanBuilder, flow: &FlowRuntimeId) {
@@ -300,5 +613,37 @@ fn product_awbc_matches_first_progress_observer_and_consumes_publication_once() 
             result.fiber_status,
             result.output.diagnostics
         );
+    }
+}
+
+#[test]
+fn product_awbc_standard_map_helpers_match_structured_results() {
+    let (plan, cases) = standard_map_awbc_plan();
+    let program = lower(&plan);
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("standard map AWBC product verifies");
+
+    for case in cases {
+        let structured = VmPureFunctionBackend
+            .evaluate(
+                &PureFunctionRequest::try_new(Arc::clone(&plan), case.helper, [])
+                    .expect("standard map structured request"),
+            )
+            .expect("standard map structured execution")
+            .value;
+        assert_eq!(structured, case.expected);
+
+        let mut product_backend = VmRuntimePureCallBackend::default();
+        let product =
+            evaluate_pure_program_with_backend(&program, case.program, &[], &mut product_backend)
+                .expect("standard map AWBC helper execution");
+        match (product, structured) {
+            (RuntimeValue::Seq(product), RuntimeValue::Seq(structured)) => {
+                assert_eq!(product.into_values(), structured.into_values());
+            }
+            (product, structured) => assert_eq!(product, structured),
+        }
+        assert_eq!(product_backend.stats().awbc_pure_program_calls, 1);
     }
 }

@@ -20,6 +20,7 @@ use thiserror::Error;
 mod agent;
 mod awbc_save;
 mod env;
+mod expression_locals;
 mod integer;
 mod nesting;
 mod nominal_record;
@@ -64,6 +65,7 @@ pub use agent::{
     RuntimeAgentValue,
 };
 pub use awbc_save::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
+pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
 pub use nominal_record::{
@@ -1115,6 +1117,39 @@ impl RuntimeValue {
         Some((schema.identity(), payload.as_deref()))
     }
 
+    /// Consumes one canonical builtin variant without cloning its payload.
+    /// Malformed owner/ordinal/name/payload combinations are returned intact.
+    pub fn try_into_builtin_variant_case(
+        self,
+    ) -> Result<(RuntimeBuiltinVariantCaseIdentity, Option<RuntimeValue>), Self> {
+        let Self::Variant {
+            owner: RuntimeVariantIdentity::Builtin(owner),
+            ordinal,
+            name,
+            payload,
+        } = self
+        else {
+            return Err(self);
+        };
+        let Some(schema) = owner.case_at(ordinal) else {
+            return Err(Self::Variant {
+                owner: RuntimeVariantIdentity::Builtin(owner),
+                ordinal,
+                name,
+                payload,
+            });
+        };
+        if name != schema.name() || payload.is_some() != schema.has_payload() {
+            return Err(Self::Variant {
+                owner: RuntimeVariantIdentity::Builtin(owner),
+                ordinal,
+                name,
+                payload,
+            });
+        }
+        Ok((schema.identity(), payload.map(|payload| *payload)))
+    }
+
     /// Materializes the canonical runtime representation of `Result::Ok`.
     pub fn result_ok(value: RuntimeValue) -> Self {
         Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value))
@@ -1747,10 +1782,14 @@ pub enum RuntimeExprKind {
         helper: RuntimePureHelperId,
         args: Vec<RuntimeCallArgument>,
     },
-    Map {
+    /// Fully applied standard `map` with its callback and receiver evaluated
+    /// exactly once. The family is compiler-selected typed evidence, not a
+    /// callable label interpreted by the runtime.
+    StandardMap {
+        family: RuntimeStandardMapFamily,
+        order: RuntimeStandardMapOperandOrder,
+        mapping: Box<RuntimeExpr>,
         source: Box<RuntimeExpr>,
-        param: RuntimeLocalDeclarationId,
-        body: Box<RuntimeExpr>,
     },
     Filter {
         source: Box<RuntimeExpr>,
@@ -1790,6 +1829,23 @@ pub enum RuntimeExprKind {
     ReductionUnchanged {
         state: Box<RuntimeExpr>,
     },
+}
+
+/// Closed executable family of the standard `map` callable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeStandardMapFamily {
+    Vec,
+    Seq,
+    Array,
+    Slice,
+    Option,
+    Result,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RuntimeStandardMapOperandOrder {
+    MappingThenReceiver,
+    ReceiverThenMapping,
 }
 
 /// One call operand in resolved runtime order.
@@ -1871,7 +1927,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::Apply { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
-            | RuntimeExprKind::Map { .. }
+            | RuntimeExprKind::StandardMap { .. }
             | RuntimeExprKind::Filter { .. }
             | RuntimeExprKind::Sum { .. }
             | RuntimeExprKind::IfLet { .. }
@@ -1912,7 +1968,7 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::Apply { .. } => f.write_str("apply"),
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
-            RuntimeExprKind::Map { .. } => f.write_str("map"),
+            RuntimeExprKind::StandardMap { family, .. } => write!(f, "map/{family:?}"),
             RuntimeExprKind::Filter { .. } => f.write_str("filter"),
             RuntimeExprKind::Sum { .. } => f.write_str("sum"),
             RuntimeExprKind::Unary { op, .. } => f.write_str(op.as_label()),
@@ -2134,6 +2190,8 @@ pub enum RuntimeEvalError {
     InvalidEntityTarget { target: String, reason: String },
     #[error("expected bracket sequence expression, found {0}")]
     ExpectedBracketSeq(String),
+    #[error("standard map received a value outside its selected {family:?} family")]
+    InvalidStandardMapSource { family: RuntimeStandardMapFamily },
     #[error("runtime range is invalid: {reason}")]
     InvalidRange { reason: String },
     #[error("field `{field}` does not exist on {value}")]

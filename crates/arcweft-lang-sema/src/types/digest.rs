@@ -419,6 +419,11 @@ impl Encoder {
                 self.ty(item);
                 self.ty(error);
             }
+            TypeKind::Parser { item, error } => {
+                self.tag(56);
+                self.ty(item);
+                self.ty(error);
+            }
             TypeKind::Result { ok, error } => {
                 self.tag(57);
                 self.ty(ok);
@@ -558,6 +563,12 @@ impl Encoder {
             super::AgentBuiltinType::ViewportPoint => 6,
             super::AgentBuiltinType::PointerButton => 7,
             super::AgentBuiltinType::RagError => 8,
+            super::AgentBuiltinType::AgentSourcePosition => 9,
+            super::AgentBuiltinType::AgentProjectFlowControlSummary => 10,
+            super::AgentBuiltinType::AgentProjectGraphSummary => 11,
+            super::AgentBuiltinType::AgentBinaryBody => 12,
+            super::AgentBuiltinType::AgentBinaryEncoding => 13,
+            super::AgentBuiltinType::AgentBinaryData => 14,
         });
     }
 

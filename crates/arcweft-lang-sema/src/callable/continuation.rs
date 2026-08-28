@@ -36,7 +36,7 @@ pub enum CheckedCallSite {
 }
 
 impl CheckedCallSite {
-    pub(crate) const fn expression(self) -> ExprId {
+    pub const fn expression(self) -> ExprId {
         match self {
             Self::HirCall(expression) | Self::DialogueApplication(expression) => expression,
         }
@@ -335,6 +335,23 @@ impl PreparedContinuationCandidateSeed {
 pub(crate) struct DeferredContinuationParameter {
     parameter: GenericTypeParameterId,
     first_remaining_group: CallableGroupIndex,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DeferredContinuationConstParameter {
+    parameter: GenericConstParameterId,
+    first_remaining_group: CallableGroupIndex,
+}
+
+struct DeferredContinuationInventory {
+    types: Box<[DeferredContinuationParameter]>,
+    consts: Box<[DeferredContinuationConstParameter]>,
+}
+
+impl DeferredContinuationInventory {
+    fn is_canonical(&self) -> bool {
+        strictly_ordered(&self.types) && strictly_ordered(&self.consts)
+    }
 }
 
 struct PreparedCallContinuation<P> {
@@ -1505,7 +1522,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         if let Some(function_type) = function_type.as_ref() {
             let deferred = deferred_for_candidate(selected, completed_group);
             if *function_type != result
-                || deferred.windows(2).any(|rows| rows[0] >= rows[1])
+                || !deferred.is_canonical()
                 || !matches!(function_type, TypeKind::Function { .. })
             {
                 return Err(CallConstraintInvariant::PreparedDeferredMismatch);
@@ -1815,9 +1832,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         }
         let function_type = application.function_type()?;
         let deferred = deferred_for_candidate(selected, application.completed_group());
-        if deferred.windows(2).any(|rows| rows[0] >= rows[1])
-            || !matches!(function_type, TypeKind::Function { .. })
-        {
+        if !deferred.is_canonical() || !matches!(function_type, TypeKind::Function { .. }) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
         if candidate.prepared_function_type() != Some(&function_type) {
@@ -1826,6 +1841,33 @@ impl<P, U> PreparedCallGraph<P, U> {
         Ok(PreparedCallContinuationSeed {
             coordinate: continuation.coordinate.clone(),
             solution: Arc::clone(application.solution()),
+        })
+    }
+
+    /// Borrows the exact selected prefix that issued a live continuation.
+    ///
+    /// This is a read-only graph-authority query for semantic consumers that
+    /// must project an earlier call group (for example a curried evaluated
+    /// effect). It validates the same issuer, node state, and ancestry chain as
+    /// continuation resolution and never exposes a detached node key.
+    pub(crate) fn continuation_prefix(
+        &self,
+        reference: &PreparedCallContinuationRef,
+    ) -> Result<PreparedCallGraphSelectedNode<'_, P>, CallConstraintInvariant>
+    where
+        P: PreparedCallPrefixPayload<Unselected = U>,
+    {
+        self.validate_continuation_chain(reference)?;
+        let node = self
+            .nodes
+            .get(&reference.0.node)
+            .ok_or(CallConstraintInvariant::MissingOrStalePreparedNode)?;
+        let PreparedCallNodePayload::SelectedContinuation(continuation) = &node.payload else {
+            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+        };
+        Ok(PreparedCallGraphSelectedNode {
+            site: node.site,
+            prefix: &continuation.prefix,
         })
     }
 
@@ -1857,9 +1899,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?;
         let function_type = application.function_type()?;
         let deferred = deferred_for_candidate(selected, application.completed_group());
-        if deferred.windows(2).any(|rows| rows[0] >= rows[1])
-            || !matches!(function_type, TypeKind::Function { .. })
-        {
+        if !deferred.is_canonical() || !matches!(function_type, TypeKind::Function { .. }) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
         Ok(PreparedContinuationCandidateSeed {
@@ -1937,8 +1977,14 @@ where
         None
     };
     let terminal = is_terminal_group(candidate);
+    let implicit_extension_group = match candidate.instantiation() {
+        super::CallableInstantiation::Extension { group, .. } if *group > current_group => {
+            Some(*group)
+        }
+        _ => None,
+    };
     let mut types = BTreeMap::<GenericTypeParameterId, TypeConstraintParameterEligibility>::new();
-    let mut consts = BTreeSet::<GenericConstParameterId>::new();
+    let mut consts = BTreeMap::<GenericConstParameterId, TypeConstraintConstEligibility>::new();
     for parameter in enclosing.types() {
         if types
             .insert(parameter.clone(), TypeConstraintParameterEligibility::Rigid)
@@ -1948,7 +1994,10 @@ where
         }
     }
     for parameter in enclosing.consts() {
-        if !consts.insert(parameter.clone()) {
+        if consts
+            .insert(parameter.clone(), TypeConstraintConstEligibility::Rigid)
+            .is_some()
+        {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
@@ -1969,7 +2018,9 @@ where
             (
                 super::CallableSchemaGenericRole::Candidate,
                 CallableGenericFirstUse::Group(group),
-            ) if group == current_group => TypeConstraintParameterEligibility::Bindable,
+            ) if group == current_group || Some(group) == implicit_extension_group => {
+                TypeConstraintParameterEligibility::Bindable
+            }
             (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Group(_))
                 if !terminal =>
             {
@@ -1996,8 +2047,48 @@ where
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
-    for entry in inventory.rigid_consts() {
-        if !consts.insert(entry.parameter().clone()) {
+    let mut required_consts = Vec::new();
+    for entry in inventory.consts() {
+        let eligibility = match (entry.role(), entry.first_use()) {
+            (super::CallableSchemaGenericRole::RigidReference, _) => {
+                TypeConstraintConstEligibility::Rigid
+            }
+            (
+                super::CallableSchemaGenericRole::Candidate,
+                CallableGenericFirstUse::Group(group),
+            ) if group < current_group => {
+                required_consts.push(entry.parameter().clone());
+                TypeConstraintConstEligibility::Bindable
+            }
+            (
+                super::CallableSchemaGenericRole::Candidate,
+                CallableGenericFirstUse::Group(group),
+            ) if group == current_group || Some(group) == implicit_extension_group => {
+                TypeConstraintConstEligibility::Bindable
+            }
+            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Group(_))
+                if !terminal =>
+            {
+                TypeConstraintConstEligibility::FutureEligible
+            }
+            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
+                if !terminal =>
+            {
+                TypeConstraintConstEligibility::FutureEligible
+            }
+            (super::CallableSchemaGenericRole::Candidate, CallableGenericFirstUse::Result)
+                if terminal =>
+            {
+                TypeConstraintConstEligibility::Bindable
+            }
+            (super::CallableSchemaGenericRole::Candidate, _) => {
+                return Err(CallConstraintInvariant::TerminalFutureEligibleParameter);
+            }
+        };
+        if consts
+            .insert(entry.parameter().clone(), eligibility)
+            .is_some()
+        {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
@@ -2015,11 +2106,16 @@ where
     let type_rows = types.into_iter().map(|(parameter, eligibility)| {
         TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
     });
-    let const_rows = consts.into_iter().map(|parameter| {
-        TypeConstraintConstParameterScopeRow::new(parameter, TypeConstraintConstEligibility::Rigid)
+    let const_rows = consts.into_iter().map(|(parameter, eligibility)| {
+        TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
     });
-    let scope = TypeConstraintParameterScope::seal_call_scope(type_rows, const_rows, required)
-        .map_err(CallConstraintInvariant::Lower)?;
+    let scope = TypeConstraintParameterScope::seal_call_scope(
+        type_rows,
+        const_rows,
+        required,
+        required_consts,
+    )
+    .map_err(CallConstraintInvariant::Lower)?;
 
     let inherited_effects = continuation_seed
         .as_ref()
@@ -2048,7 +2144,9 @@ where
                         required_effects.push(variable);
                         EffectConstraintEligibility::Bindable
                     }
-                    CallableGenericFirstUse::Group(group) if group == current_group => {
+                    CallableGenericFirstUse::Group(group)
+                        if group == current_group || Some(group) == implicit_extension_group =>
+                    {
                         EffectConstraintEligibility::Bindable
                     }
                     CallableGenericFirstUse::Group(_) if !terminal => {
@@ -2185,8 +2283,12 @@ fn strictly_ordered<T: Ord>(values: &[T]) -> bool {
 fn deferred_for_candidate(
     candidate: &super::PreparedResolvedCallable,
     completed_group: CallableGroupIndex,
-) -> Box<[DeferredContinuationParameter]> {
-    candidate
+) -> DeferredContinuationInventory {
+    let implicit_extension_group = match candidate.instantiation() {
+        super::CallableInstantiation::Extension { group, .. } => Some(*group),
+        _ => None,
+    };
+    let types = candidate
         .schema()
         .generic_inventory()
         .types()
@@ -2195,13 +2297,34 @@ fn deferred_for_candidate(
             (
                 super::CallableSchemaGenericRole::Candidate,
                 CallableGenericFirstUse::Group(group),
-            ) if group > completed_group => Some(DeferredContinuationParameter {
-                parameter: entry.parameter().clone(),
-                first_remaining_group: group,
-            }),
+            ) if group > completed_group && Some(group) != implicit_extension_group => {
+                Some(DeferredContinuationParameter {
+                    parameter: entry.parameter().clone(),
+                    first_remaining_group: group,
+                })
+            }
             _ => None,
         })
-        .collect()
+        .collect();
+    let consts = candidate
+        .schema()
+        .generic_inventory()
+        .consts()
+        .iter()
+        .filter_map(|entry| match (entry.role(), entry.first_use()) {
+            (
+                super::CallableSchemaGenericRole::Candidate,
+                CallableGenericFirstUse::Group(group),
+            ) if group > completed_group && Some(group) != implicit_extension_group => {
+                Some(DeferredContinuationConstParameter {
+                    parameter: entry.parameter().clone(),
+                    first_remaining_group: group,
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    DeferredContinuationInventory { types, consts }
 }
 
 fn is_terminal_group(candidate: &super::PreparedResolvedCallable) -> bool {
