@@ -126,6 +126,8 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
     let slice_ty = semantic_type(16);
     let option_ty = semantic_type(17);
     let result_ty = semantic_type(18);
+    let item_payload_ty = semantic_type(19);
+    let error_payload_ty = semantic_type(20);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -170,12 +172,28 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
                         item: item_ty,
                     },
                 ),
-                RuntimePlanTypeSeed::new(option_ty, RuntimePlanTypeProjection::Option(item_ty)),
+                RuntimePlanTypeSeed::new(
+                    item_payload_ty,
+                    RuntimePlanTypeProjection::Tuple(Box::new([item_ty])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    error_payload_ty,
+                    RuntimePlanTypeProjection::Tuple(Box::new([error_ty])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_ty,
+                    RuntimePlanTypeProjection::Option {
+                        item: item_ty,
+                        some_payload: item_payload_ty,
+                    },
+                ),
                 RuntimePlanTypeSeed::new(
                     result_ty,
                     RuntimePlanTypeProjection::Result {
                         value: item_ty,
                         error: error_ty,
+                        value_payload: item_payload_ty,
+                        error_payload: error_payload_ty,
                     },
                 ),
             ],

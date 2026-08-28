@@ -1090,7 +1090,7 @@ impl RuntimeValue {
             owner: RuntimeVariantIdentity::Builtin(owner),
             ordinal,
             name: schema.name().to_owned(),
-            payload: payload.map(Box::new),
+            payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
         })
     }
 
@@ -1111,10 +1111,12 @@ impl RuntimeValue {
             return None;
         };
         let schema = owner.case_at(*ordinal)?;
-        if name != schema.name() || payload.is_some() != schema.has_payload() {
-            return None;
-        }
-        Some((schema.identity(), payload.as_deref()))
+        let payload = match (schema.has_payload(), payload.as_deref()) {
+            (false, None) => None,
+            (true, Some(Self::Tuple(fields))) if fields.len() == 1 => fields.first(),
+            _ => return None,
+        };
+        (name == schema.name()).then_some((schema.identity(), payload))
     }
 
     /// Consumes one canonical builtin variant without cloning its payload.
@@ -1139,24 +1141,56 @@ impl RuntimeValue {
                 payload,
             });
         };
-        if name != schema.name() || payload.is_some() != schema.has_payload() {
+        let payload = match (schema.has_payload(), payload) {
+            (false, None) => None,
+            (true, Some(payload)) => match *payload {
+                Self::Tuple(mut fields) if fields.len() == 1 => fields.pop(),
+                payload => {
+                    return Err(Self::Variant {
+                        owner: RuntimeVariantIdentity::Builtin(owner),
+                        ordinal,
+                        name,
+                        payload: Some(Box::new(payload)),
+                    });
+                }
+            },
+            (_, payload) => {
+                return Err(Self::Variant {
+                    owner: RuntimeVariantIdentity::Builtin(owner),
+                    ordinal,
+                    name,
+                    payload,
+                });
+            }
+        };
+        if name != schema.name() {
             return Err(Self::Variant {
                 owner: RuntimeVariantIdentity::Builtin(owner),
                 ordinal,
                 name,
-                payload,
+                payload: payload.map(|payload| Box::new(Self::Tuple(vec![payload]))),
             });
         }
-        Ok((schema.identity(), payload.map(|payload| *payload)))
+        Ok((schema.identity(), payload))
     }
 
     /// Materializes the canonical runtime representation of `Result::Ok`.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the core-owned Result case schema is inconsistent with
+    /// its statically defined payload cardinality.
     pub fn result_ok(value: RuntimeValue) -> Self {
         Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(value))
             .expect("Result::Ok builtin schema requires exactly one payload")
     }
 
     /// Materializes the canonical runtime representation of `Result::Err`.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the core-owned Result case schema is inconsistent with
+    /// its statically defined payload cardinality.
     pub fn result_err(error: RuntimeValue) -> Self {
         Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::ResultErr, Some(error))
             .expect("Result::Err builtin schema requires exactly one payload")

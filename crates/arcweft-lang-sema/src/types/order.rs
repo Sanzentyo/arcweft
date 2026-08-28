@@ -3,7 +3,8 @@ use core::cmp::Ordering;
 use crate::effect_row::{EffectRow, EffectRowTail};
 
 use super::{
-    EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, StageActorHandleType, TypeKind,
+    EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, StageActorHandleType,
+    TypeKind, VariantPayloadShape, VariantPayloadType,
 };
 
 impl TypeKind {
@@ -200,6 +201,9 @@ impl TypeKind {
                 (Self::AgentBuiltin(left), Self::AgentBuiltin(right)) => left.cmp(right),
                 (Self::Tuple(left), Self::Tuple(right))
                 | (Self::Choice(left), Self::Choice(right)) => type_slice_ordering(left, right),
+                (Self::VariantPayload(left), Self::VariantPayload(right)) => {
+                    variant_payload_ordering(left, right)
+                }
                 _ => Ordering::Equal,
             })
     }
@@ -225,6 +229,51 @@ fn type_slice_ordering(left: &[TypeKind], right: &[TypeKind]) -> Ordering {
         .map(|(left, right)| left.stable_ordering(right))
         .find(|ordering| *ordering != Ordering::Equal)
         .unwrap_or_else(|| left.len().cmp(&right.len()))
+}
+
+fn variant_payload_ordering(left: &VariantPayloadType, right: &VariantPayloadType) -> Ordering {
+    left.owner_family()
+        .canonical_tag()
+        .cmp(&right.owner_family().canonical_tag())
+        .then_with(|| left.owner_type().cmp(&right.owner_type()))
+        .then_with(|| left.case_ordinal().cmp(&right.case_ordinal()))
+        .then_with(|| left.case().cmp(&right.case()))
+        .then_with(|| variant_payload_shape_ordering(left.shape(), right.shape()))
+}
+
+fn variant_payload_shape_ordering(
+    left: &VariantPayloadShape,
+    right: &VariantPayloadShape,
+) -> Ordering {
+    match (left, right) {
+        (VariantPayloadShape::Unit, VariantPayloadShape::Unit) => Ordering::Equal,
+        (VariantPayloadShape::Unit, _) => Ordering::Less,
+        (_, VariantPayloadShape::Unit) => Ordering::Greater,
+        (VariantPayloadShape::Tuple(left), VariantPayloadShape::Tuple(right)) => left
+            .iter()
+            .zip(right)
+            .map(|(left, right)| {
+                left.ordinal()
+                    .cmp(&right.ordinal())
+                    .then_with(|| left.semantic_id().cmp(&right.semantic_id()))
+                    .then_with(|| left.ty().stable_ordering(right.ty()))
+            })
+            .find(|ordering| *ordering != Ordering::Equal)
+            .unwrap_or_else(|| left.len().cmp(&right.len())),
+        (VariantPayloadShape::Record(left), VariantPayloadShape::Record(right)) => left
+            .iter()
+            .zip(right)
+            .map(|(left, right)| {
+                left.ordinal()
+                    .cmp(&right.ordinal())
+                    .then_with(|| left.semantic_id().cmp(&right.semantic_id()))
+                    .then_with(|| left.ty().stable_ordering(right.ty()))
+            })
+            .find(|ordering| *ordering != Ordering::Equal)
+            .unwrap_or_else(|| left.len().cmp(&right.len())),
+        (VariantPayloadShape::Tuple(_), VariantPayloadShape::Record(_)) => Ordering::Less,
+        (VariantPayloadShape::Record(_), VariantPayloadShape::Tuple(_)) => Ordering::Greater,
+    }
 }
 
 fn entity_type_ordering(left: &EntityType, right: &EntityType) -> Ordering {
@@ -431,5 +480,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::StageActorHandle(_) => 83,
         TypeKind::CueHandle => 84,
         TypeKind::VoiceHandle => 85,
+        TypeKind::VariantPayload(_) => 86,
     }
 }

@@ -50,21 +50,27 @@ use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
 };
 
+use super::match_coverage::{
+    CheckedCoverageWitness, CheckedMatchBuildError, CheckedMatchLimitKind, CheckedUnreachableReason,
+};
+use super::semantic_transcript::SemanticTranscriptError;
 use super::{
     CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
-    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedCoverageWitness,
-    CheckedDropFade, CheckedDropPolicy, CheckedEvaluatedEffect, CheckedExpression,
-    CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits,
-    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedSuspensionRole, CheckedSuspensionStatement,
-    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedUnreachableReason,
-    CheckedValueResolution, CheckedVariantOwner, FinalCallSealLocation, FinalSemanticAnalysis,
-    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
-    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, PostfixBracketResolution,
-    RegisteredSemanticValueId, SemanticFactFamily, SemanticTranscriptError, analyze_final_project,
+    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedDropFade, CheckedDropPolicy,
+    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionEdgeError,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedSelectResolution, CheckedStatement,
+    CheckedStatementRole, CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticCatalogs,
+    PhysicalArgumentEvaluationKind, PostfixBracketResolution, RegisteredSemanticValueId,
+    SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/match_coverage.rs"]
+mod match_coverage;
 use crate::{
     CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -3233,6 +3239,9 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
     let edges = report
         .checked_child_edges(owner)
         .expect("record fields have checked evidence");
+    let edge_fact = report
+        .checked_expression_edge_fact(owner)
+        .expect("record field fact");
     assert_eq!(
         edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
         expected
@@ -3243,7 +3252,15 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
             CheckedExpressionChildRole::RecordField {
                 source_ordinal,
                 accepted_field,
-            } => (*source_ordinal, accepted_field.zero_based()),
+            } => {
+                let field = edge_fact
+                    .record_fields()
+                    .iter()
+                    .find(|field| field.source_ordinal() == *source_ordinal)
+                    .expect("accepted record field row");
+                assert_eq!(*accepted_field, field.semantic_id());
+                (*source_ordinal, field.declaration_ordinal())
+            }
             other => panic!("unexpected record child role: {other:?}"),
         })
         .collect::<Vec<_>>();
@@ -3473,7 +3490,7 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
     assert!(matches!(
         non_exhaustive,
         Err(SemanticTranscriptError::NonExhaustive {
-            witness: CheckedCoverageWitness::BooleanFalse
+            witness: CheckedCoverageWitness::Bool(false)
         })
     ));
 
@@ -3481,11 +3498,17 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
         project,
         &fixture.symbols,
         checked_match_reference(&report, module, &fixture.symbols, owner),
-        CheckedMatchLimits::new(4_096, 65_536, 65_536, 0, 4_096, 256, 65_536),
+        CheckedMatchLimits::PRODUCTION.with_limit(CheckedMatchLimitKind::TranscriptBytes, 0),
     );
     assert!(matches!(
         byte_limited,
-        Err(SemanticTranscriptError::WorkLimit)
+        Err(SemanticTranscriptError::MatchBuild(
+            CheckedMatchBuildError::LimitExceeded {
+                kind: CheckedMatchLimitKind::TranscriptBytes,
+                limit: 0,
+                ..
+            }
+        ))
     ));
 }
 
@@ -3525,10 +3548,10 @@ fn root(flag: bool, ready: bool) -> i64 {
     assert!(product.coverage().exhaustive());
     let unreachable = product.coverage().unreachable();
     assert_eq!(unreachable.len(), 1);
-    assert_eq!(unreachable[0].arm(), 1);
+    assert_eq!(unreachable[0].arm().ordinal(), 1);
     assert_eq!(
         unreachable[0].reason(),
-        CheckedUnreachableReason::CoveredByPriorRows
+        CheckedUnreachableReason::CoveredByPriorUsefulArms
     );
 }
 
@@ -3631,7 +3654,10 @@ flow other {}
         .expect("stable binding coordinate evidence");
     assert_eq!(binding.owner(), local);
     let binding = binding.into_coordinate();
-    assert_eq!(binding.canonical_bytes(), binding.path().canonical_bytes());
+    assert_eq!(
+        binding.canonical_bytes().unwrap(),
+        binding.path().canonical_bytes().unwrap()
+    );
     assert!(binding.path().steps().iter().all(|step| !matches!(
         step,
         crate::semantic_coordinate::CheckedSemanticPathStep::Expression(_)
@@ -3703,7 +3729,7 @@ fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
 }
 
 #[test]
-fn checked_match_project_enum_commits_constructor_layout_evidence() {
+fn checked_match_project_enum_consumes_layout_free_semantic_cases() {
     let fixture = fixture(
         r#"
 enum Route {
@@ -3725,12 +3751,35 @@ fn root(route: Route) -> i64 {
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
-    let owner = module
+    let (owner, authored_match) = module
         .expressions()
         .find_map(|(owner, expression)| {
-            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
+            let HirExprKind::Match(authored_match) = expression.kind() else {
+                return None;
+            };
+            Some((owner, authored_match))
         })
         .expect("project enum Match expression");
+    let semantic_type = report
+        .expression(authored_match.scrutinee())
+        .expect("checked enum scrutinee")
+        .ty()
+        .semantic_identity_digest();
+    let definition = report
+        .project_nominal_semantic(semantic_type)
+        .expect("layout-free project nominal semantics");
+    let cases = definition.cases().expect("project enum semantic cases");
+    assert_eq!(cases.len(), 2);
+    for (ordinal, arm) in authored_match.arms().iter().enumerate() {
+        let checked = report.pattern(arm.pattern()).expect("checked enum pattern");
+        let CheckedPatternResolution::Variant(resolution) = checked.resolution() else {
+            panic!("enum arm must retain a checked variant case");
+        };
+        assert_eq!(
+            resolution.selected().semantic_id(),
+            cases[ordinal].semantic_id()
+        );
+    }
     let product = report
         .build_checked_match_for_ref(
             project,
@@ -3840,7 +3889,7 @@ fn root(flag: bool) -> i64 {{
 }
 
 #[test]
-fn checked_match_transcript_rejects_tuple_coverage_until_product_authority_exists() {
+fn checked_match_transcript_accepts_nested_product_coverage() {
     let fixture = fixture(
         r#"
 fn root(pair: (bool, bool)) -> i64 {
@@ -3863,16 +3912,15 @@ fn root(pair: (bool, bool)) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("tuple Match expression");
-    assert!(matches!(
-        report.build_checked_match_for_ref(
+    let product = report
+        .build_checked_match_for_ref(
             project,
             &fixture.symbols,
             checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
-        ),
-        Err(SemanticTranscriptError::UnsupportedCoverage)
-            | Err(SemanticTranscriptError::UnsupportedIdentity)
-    ));
+        )
+        .expect("tuple coverage uses the generic product matrix");
+    assert!(product.coverage().exhaustive());
 }
 
 #[test]
@@ -5168,7 +5216,7 @@ fn patterned(value: DataFormat) -> bool {
             .into_iter()
             .collect::<Vec<_>>()
     );
-    assert!(cases.iter().all(|case| case.payload().is_none()));
+    assert!(cases.iter().all(|case| case.payload().is_unit()));
 }
 
 #[test]

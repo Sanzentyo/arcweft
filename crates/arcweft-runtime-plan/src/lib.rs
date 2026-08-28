@@ -6,6 +6,7 @@ pub mod awbc_lower;
 pub mod errors;
 mod final_expr;
 mod final_pattern;
+mod final_variant;
 #[path = "final_flow.rs"]
 pub mod flow;
 pub mod semantic_facts;

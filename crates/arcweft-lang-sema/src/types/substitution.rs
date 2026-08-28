@@ -1,6 +1,9 @@
 //! Declaration-owned generic substitution for semantic types.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    convert::Infallible,
+};
 
 use crate::effect_row::{
     EffectIssuerRebindError, EffectRow, EffectRowError, EffectRowTail, EffectSubstitution,
@@ -9,8 +12,9 @@ use crate::effect_row::{
 use crate::effects::EffectSet;
 
 use super::{
-    AcceptedNominalType, ArrayLength, EntityType, GenericConstParameterId, GenericTypeParameterId,
-    OpenNominalType, ProjectNominalType, TypeKind,
+    AcceptedNominalType, AcceptedVariantCaseSemanticId, ArrayLength, EntityType,
+    GenericConstParameterId, GenericTypeParameterId, OpenNominalType, ProjectNominalType, TypeKind,
+    VariantPayloadShape, VariantPayloadType,
 };
 
 /// One call-site instantiation of declaration-owned generic type parameters.
@@ -118,6 +122,7 @@ fn contains_generic_parameter_where(
         TypeKind::Tuple(items) | TypeKind::Choice(items) => {
             contains_any_generic_where(items, predicate)
         }
+        TypeKind::VariantPayload(payload) => variant_payload_contains_generic(payload, predicate),
         atomic => atomic_contains_generic_parameter(atomic, predicate),
     }
 }
@@ -212,7 +217,8 @@ fn atomic_contains_generic_parameter(
         | TypeKind::OpenNominal(_)
         | TypeKind::Projection { .. }
         | TypeKind::Tuple(_)
-        | TypeKind::Choice(_) => unreachable!("composite type reached atomic generic scan"),
+        | TypeKind::Choice(_)
+        | TypeKind::VariantPayload(_) => unreachable!("composite type reached atomic generic scan"),
     }
 }
 
@@ -323,6 +329,9 @@ impl TypeKind {
             Self::DialogueLine(result) => {
                 Self::DialogueLine(Box::new(result.substitute_type_parameters(substitutions)))
             }
+            Self::VariantPayload(payload) => {
+                map_variant_payload_type(payload, |ty| ty.substitute_type_parameters(substitutions))
+            }
             other => other.clone(),
         }
     }
@@ -426,6 +435,7 @@ impl TypeKind {
             },
             Self::Tuple(items) => Self::Tuple(items.iter().map(recurse).collect()),
             Self::Choice(items) => Self::Choice(items.iter().map(recurse).collect()),
+            Self::VariantPayload(payload) => map_variant_payload_type(payload, recurse),
             other => other.clone(),
         }
     }
@@ -536,6 +546,7 @@ impl TypeKind {
             Self::Choice(items) => {
                 Self::Choice(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
             }
+            Self::VariantPayload(payload) => try_map_variant_payload_type(payload, recurse)?,
             other => other.clone(),
         })
     }
@@ -615,6 +626,79 @@ impl TypeKind {
     }
 }
 
+fn variant_payload_contains_generic(
+    payload: &VariantPayloadType,
+    predicate: &impl Fn(&GenericTypeParameterId) -> bool,
+) -> bool {
+    payload.shape().tuple_fields().is_some_and(|fields| {
+        fields
+            .iter()
+            .any(|field| contains_generic_parameter_where(field.ty(), predicate))
+    }) || payload.shape().record_fields().is_some_and(|fields| {
+        fields
+            .iter()
+            .any(|field| contains_generic_parameter_where(field.ty(), predicate))
+    })
+}
+
+fn map_variant_payload_type(
+    payload: &VariantPayloadType,
+    mut map: impl FnMut(&TypeKind) -> TypeKind,
+) -> TypeKind {
+    try_map_variant_payload_type(payload, |ty| Ok::<_, Infallible>(map(ty)))
+        .unwrap_or_else(|_| unreachable!("infallible variant payload mapping failed"))
+}
+
+fn try_map_variant_payload_type<E>(
+    payload: &VariantPayloadType,
+    mut map: impl FnMut(&TypeKind) -> Result<TypeKind, E>,
+) -> Result<TypeKind, E> {
+    let shape = match payload.shape() {
+        VariantPayloadShape::Unit => VariantPayloadShape::Unit,
+        VariantPayloadShape::Tuple(fields) => {
+            let mapped = fields
+                .iter()
+                .map(|field| map(field.ty()))
+                .collect::<Result<Vec<_>, _>>()?;
+            VariantPayloadShape::try_tuple(
+                payload.owner_family(),
+                payload.owner_type(),
+                payload.case_ordinal(),
+                mapped,
+            )
+            .unwrap_or_else(|_| unreachable!("valid variant tuple shape became invalid"))
+        }
+        VariantPayloadShape::Record(fields) => {
+            let mapped = fields
+                .iter()
+                .map(|field| Ok((field.diagnostic_name().to_owned(), map(field.ty())?)))
+                .collect::<Result<Vec<_>, E>>()?;
+            VariantPayloadShape::try_record(
+                payload.owner_family(),
+                payload.owner_type(),
+                payload.case_ordinal(),
+                mapped,
+            )
+            .unwrap_or_else(|_| unreachable!("valid variant record shape became invalid"))
+        }
+    };
+    let case = AcceptedVariantCaseSemanticId::issue(
+        payload.owner_family(),
+        payload.owner_type(),
+        payload.case_ordinal(),
+        &shape,
+    );
+    let rebuilt = VariantPayloadType::try_new(
+        payload.owner_family(),
+        payload.owner_type(),
+        payload.case_ordinal(),
+        case,
+        shape,
+    )
+    .unwrap_or_else(|_| unreachable!("mapped variant payload lost its owner invariant"));
+    Ok(TypeKind::VariantPayload(Box::new(rebuilt)))
+}
+
 fn validate_rebound_effect_rows(
     ty: &TypeKind,
     prepared: EffectVarIssuer,
@@ -689,6 +773,9 @@ fn validate_rebound_effect_rows(
             validate_rebound_effect_rows(subject, prepared, checked, authorized_ordinals)
         }
         TypeKind::Tuple(items) | TypeKind::Choice(items) => validate_children(items),
+        TypeKind::VariantPayload(payload) => payload.shape().visit_types(&mut |field| {
+            validate_rebound_effect_rows(field, prepared, checked, authorized_ordinals)
+        }),
         _ => Ok(()),
     }
 }
@@ -818,6 +905,9 @@ fn observe_composite_type_parameters(
         (TypeKind::Need(declared), TypeKind::Need(actual)) => {
             observe_type_parameters(declared, actual, bindings)
         }
+        (TypeKind::VariantPayload(declared), TypeKind::VariantPayload(actual)) => {
+            observe_variant_payload_types(declared, actual, bindings)
+        }
         (
             TypeKind::Stream {
                 item: declared_first,
@@ -898,12 +988,50 @@ fn observe_composite_type_parameters(
             | TypeKind::Result { .. }
             | TypeKind::Map { .. }
             | TypeKind::Function { .. }
-            | TypeKind::Projection { .. },
+            | TypeKind::Projection { .. }
+            | TypeKind::VariantPayload(_),
             _,
         ) => true,
         _ => return observe_sequence_type_parameters(declared, actual, bindings),
     };
     Some(observed)
+}
+
+fn observe_variant_payload_types(
+    declared: &VariantPayloadType,
+    actual: &VariantPayloadType,
+    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
+) -> bool {
+    if declared.owner_family() != actual.owner_family()
+        || declared.owner_type() != actual.owner_type()
+        || declared.case_ordinal() != actual.case_ordinal()
+    {
+        return false;
+    }
+    match (declared.shape(), actual.shape()) {
+        (VariantPayloadShape::Unit, VariantPayloadShape::Unit) => true,
+        (VariantPayloadShape::Tuple(declared), VariantPayloadShape::Tuple(actual)) => {
+            declared.len() == actual.len()
+                && declared.iter().zip(actual).all(|(declared, actual)| {
+                    declared.ordinal() == actual.ordinal()
+                        && observe_type_parameters(declared.ty(), actual.ty(), bindings)
+                })
+        }
+        (VariantPayloadShape::Record(declared), VariantPayloadShape::Record(actual)) => {
+            declared.len() == actual.len()
+                && declared.iter().zip(actual).all(|(declared, actual)| {
+                    declared.ordinal() == actual.ordinal()
+                        && observe_type_parameters(declared.ty(), actual.ty(), bindings)
+                })
+        }
+        (VariantPayloadShape::Unit, _)
+        | (
+            VariantPayloadShape::Tuple(_) | VariantPayloadShape::Record(_),
+            VariantPayloadShape::Unit,
+        )
+        | (VariantPayloadShape::Tuple(_), VariantPayloadShape::Record(_))
+        | (VariantPayloadShape::Record(_), VariantPayloadShape::Tuple(_)) => false,
+    }
 }
 
 fn observe_sequence_type_parameters(

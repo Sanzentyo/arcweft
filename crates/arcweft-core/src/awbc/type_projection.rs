@@ -1,17 +1,18 @@
 //! Projection from verified AWBC type rows to native runtime owners.
 
 use super::schema::{
-    AwbcAgentTypeShape, AwbcProgram, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSignedIntKind,
-    AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
+    AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
-    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeCheckedVariantCase,
-    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
+    RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+    RuntimeSemanticTypeId,
 };
 use crate::value::{
-    RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth,
+    RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeRecordFieldId,
+    RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
 };
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -46,6 +47,11 @@ pub enum AwbcTypeProjectionError {
     #[error("AWBC nominal-record descriptor is invalid: {source}")]
     InvalidNominalRecordLayout {
         source: RuntimeNominalRecordLayoutError,
+    },
+    #[error("AWBC runtime record type {index} has an invalid checked schema: {source}")]
+    InvalidRecord {
+        index: u32,
+        source: RuntimeCheckedRecordTypeError,
     },
 }
 
@@ -249,6 +255,9 @@ impl AwbcProgram {
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimeCheckedType::Tuple),
+            AwbcRuntimeTypeShape::Record { fields, .. } => {
+                self.checked_record_type(ty, fields, depth, visiting)
+            }
             AwbcRuntimeTypeShape::Choice(alternatives) => alternatives
                 .iter()
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
@@ -264,34 +273,25 @@ impl AwbcProgram {
                 layout,
                 arguments,
                 ..
-            } => Ok(RuntimeCheckedType::Nominal {
-                nominal: self.nominal_identity(*public_id)?,
-                semantic_identity: row.semantic_identity(),
-                layout: TypeLayoutHash::from_bytes(*layout),
-                arguments: self.checked_children(arguments, depth, visiting)?,
-            }),
+            } => self.checked_nominal_type(
+                row.semantic_identity(),
+                *public_id,
+                *layout,
+                arguments,
+                depth,
+                visiting,
+            ),
             AwbcRuntimeTypeShape::Opaque { .. } => self
                 .opaque_owner(ty)?
                 .map(|owner| RuntimeCheckedType::Opaque { owner })
                 .ok_or(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 }),
-            AwbcRuntimeTypeShape::Variant {
-                owner,
-                arguments,
-                cases,
-            } => self.checked_variant_type(CheckedVariantProjection {
-                ty,
-                semantic_identity: row.semantic_identity(),
-                owner,
-                arguments,
-                cases,
-                depth,
-                visiting,
-            }),
+            AwbcRuntimeTypeShape::Variant { .. } => {
+                self.checked_variant_row(ty, row, depth, visiting)
+            }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
                 Ok(RuntimeCheckedType::Agent(*agent))
             }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_))
-            | AwbcRuntimeTypeShape::Record { .. }
             | AwbcRuntimeTypeShape::MatrixF32
             | AwbcRuntimeTypeShape::MatrixF64
             | AwbcRuntimeTypeShape::TensorF32
@@ -312,6 +312,82 @@ impl AwbcProgram {
         };
         visiting.remove(&ty);
         result
+    }
+
+    fn checked_record_type(
+        &self,
+        ty: AwbcTypeId,
+        fields: &[AwbcRecordField],
+        depth: usize,
+        visiting: &mut BTreeSet<AwbcTypeId>,
+    ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        let mut checked = Vec::with_capacity(fields.len());
+        for (ordinal, field) in fields.iter().enumerate() {
+            let diagnostic_name = self.strings.get(field.name.index()).cloned().ok_or(
+                AwbcTypeProjectionError::StringOutOfBounds {
+                    index: field.name.0,
+                    role: "structural record field name",
+                },
+            )?;
+            let field_id =
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|_| {
+                    AwbcTypeProjectionError::InvalidRecord {
+                        index: ty.0,
+                        source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                    }
+                })?;
+            let field_ty = self.checked_type_at_depth(field.ty, depth + 1, visiting)?;
+            checked.push((field_id, diagnostic_name, field_ty));
+        }
+        RuntimeCheckedType::try_record(checked).map_err(|source| {
+            AwbcTypeProjectionError::InvalidRecord {
+                index: ty.0,
+                source,
+            }
+        })
+    }
+
+    fn checked_nominal_type(
+        &self,
+        semantic_identity: RuntimeSemanticTypeId,
+        public_id: super::schema::AwbcStringId,
+        layout: [u8; 32],
+        arguments: &[AwbcTypeId],
+        depth: usize,
+        visiting: &mut BTreeSet<AwbcTypeId>,
+    ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        Ok(RuntimeCheckedType::Nominal {
+            nominal: self.nominal_identity(public_id)?,
+            semantic_identity,
+            layout: TypeLayoutHash::from_bytes(layout),
+            arguments: self.checked_children(arguments, depth, visiting)?,
+        })
+    }
+
+    fn checked_variant_row(
+        &self,
+        ty: AwbcTypeId,
+        row: &AwbcRuntimeType,
+        depth: usize,
+        visiting: &mut BTreeSet<AwbcTypeId>,
+    ) -> Result<RuntimeCheckedType, AwbcTypeProjectionError> {
+        let AwbcRuntimeTypeShape::Variant {
+            owner,
+            arguments,
+            cases,
+        } = row.shape()
+        else {
+            unreachable!("checked_variant_row called for a non-variant AWBC row");
+        };
+        self.checked_variant_type(CheckedVariantProjection {
+            ty,
+            semantic_identity: row.semantic_identity(),
+            owner,
+            arguments,
+            cases,
+            depth,
+            visiting,
+        })
     }
 
     fn checked_variant_type(
@@ -368,8 +444,12 @@ impl AwbcProgram {
                             payload: Some(error),
                         },
                     ] if ok_name == "Ok" && error_name == "Err" => Ok(RuntimeCheckedType::Result {
-                        ok: ok.clone(),
-                        error: error.clone(),
+                        ok: unwrap_single_field_tuple(ok).ok_or(
+                            AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 },
+                        )?,
+                        error: unwrap_single_field_tuple(error).ok_or(
+                            AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 },
+                        )?,
                     }),
                     _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
                 }
@@ -388,7 +468,9 @@ impl AwbcProgram {
                             payload: None,
                         },
                     ] if some_name == "Some" && none_name == "None" => {
-                        Ok(RuntimeCheckedType::Option(item.clone()))
+                        unwrap_single_field_tuple(item)
+                            .map(RuntimeCheckedType::Option)
+                            .ok_or(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 })
                     }
                     _ => Err(AwbcTypeProjectionError::InvalidBuiltinVariant { index: ty.0 }),
                 }
@@ -417,4 +499,14 @@ impl AwbcProgram {
             .map(|child| self.checked_type_at_depth(*child, depth + 1, visiting))
             .collect()
     }
+}
+
+fn unwrap_single_field_tuple(payload: &RuntimeCheckedType) -> Option<Box<RuntimeCheckedType>> {
+    let RuntimeCheckedType::Tuple(fields) = payload else {
+        return None;
+    };
+    let [field] = fields.as_slice() else {
+        return None;
+    };
+    Some(Box::new(field.clone()))
 }

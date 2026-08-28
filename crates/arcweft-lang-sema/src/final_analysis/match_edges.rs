@@ -11,7 +11,6 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_core::value::RuntimeRecordFieldId;
 use arcweft_lang_hir::{
     expr::{
         HirExprKind, HirExpressionChildRole, HirNestedExpressionPath,
@@ -35,6 +34,7 @@ use crate::callable::{
     CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
+use crate::record_field::{AcceptedRecordFieldSemanticId, CheckedRecordFieldSemanticId};
 use crate::semantic_coordinate::{
     CheckedExpressionChildRole, CheckedExpressionEdgeAuthority, CheckedNestedPathSegmentV1,
     CheckedNestedPathV1,
@@ -968,7 +968,7 @@ impl FinalSemanticAnalysis {
     }
 
     /// Returns one immutable, publication-time checked child-edge vector.
-    pub fn checked_child_edges(
+    pub(crate) fn checked_child_edges(
         &self,
         owner: SemaExprId,
     ) -> Result<&[(SemaExprId, CheckedExpressionChildRole)], CheckedExpressionEdgeError> {
@@ -1031,7 +1031,7 @@ fn prepared_record_field(
     checked: &super::PreparedExpressionFact,
     child: ExprId,
     source_ordinal: u32,
-) -> Result<RuntimeRecordFieldId, CheckedChildEdgeError> {
+) -> Result<CheckedRecordFieldSemanticId, CheckedChildEdgeError> {
     let super::PreparedExpressionFact::ProjectRecord(record) = checked else {
         return Err(CheckedChildEdgeError::MissingCheckedRecordField);
     };
@@ -1043,11 +1043,13 @@ fn prepared_record_field(
     if field.source() != super::PreparedRecordValueSource::Expression(child) {
         return Err(CheckedChildEdgeError::MissingCheckedRecordField);
     }
-    RuntimeRecordFieldId::try_from_zero_based_ordinal(
-        usize::try_from(field.declaration_ordinal())
-            .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)?,
-    )
-    .map_err(|_| CheckedChildEdgeError::MissingCheckedRecordField)
+    Ok(CheckedRecordFieldSemanticId::Project(
+        AcceptedRecordFieldSemanticId::issue(
+            record.nominal().identity(),
+            field.declaration_ordinal(),
+            field.field_type().semantic_identity_digest(),
+        ),
+    ))
 }
 
 #[allow(
@@ -1056,7 +1058,7 @@ fn prepared_record_field(
 )]
 fn checked_role_from_hir(
     role: &HirExpressionChildRole,
-    accepted_field: Option<RuntimeRecordFieldId>,
+    accepted_field: Option<CheckedRecordFieldSemanticId>,
 ) -> Result<CheckedExpressionChildRole, CheckedChildEdgeError> {
     let path = checked_nested_path_from_hir;
     Ok(match role {

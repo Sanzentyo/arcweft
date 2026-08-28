@@ -5,7 +5,6 @@
 //! analysis state are deliberately outside this lower-level authority.
 
 use crate::record_field::CheckedRecordFieldSemanticId;
-use arcweft_core::value::RuntimeRecordFieldId;
 use arcweft_lang_hir::{
     body_edges::HirBodyChildRole,
     expr::{
@@ -21,6 +20,7 @@ use arcweft_lang_hir::{
     },
     stmt::{HirStatementBodyRole, HirStatementChildRole},
 };
+use thiserror::Error;
 mod catalog;
 
 pub use catalog::AcceptedSemanticRootCatalogError;
@@ -116,11 +116,15 @@ impl CheckedNestedPathV1 {
         &self.0
     }
 
-    fn write_transcript(&self, output: &mut Vec<u8>) {
-        write_len(output, self.0.len());
+    fn write_transcript(
+        &self,
+        output: &mut Vec<u8>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
+        write_len(output, self.0.len())?;
         for segment in &self.0 {
             segment.write_transcript(output);
         }
+        Ok(())
     }
 }
 
@@ -184,7 +188,7 @@ impl CheckedNestedPathSegmentV1 {
 
 /// Semantic role attached to one checked expression child.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedExpressionChildRole {
+pub(crate) enum CheckedExpressionChildRole {
     Element {
         ordinal: u32,
     },
@@ -203,7 +207,7 @@ pub enum CheckedExpressionChildRole {
     RangeEnd,
     RecordField {
         source_ordinal: u32,
-        accepted_field: RuntimeRecordFieldId,
+        accepted_field: CheckedRecordFieldSemanticId,
     },
     BinaryLeft,
     BinaryRight,
@@ -340,7 +344,7 @@ pub enum CheckedExpressionChildRole {
 }
 
 impl CheckedExpressionChildRole {
-    pub const fn semantic_tag(&self) -> u16 {
+    pub(crate) const fn semantic_tag(&self) -> u16 {
         match self {
             Self::Element { .. } => 0x1000,
             Self::RepeatedValue => 0x1001,
@@ -407,7 +411,10 @@ impl CheckedExpressionChildRole {
         }
     }
 
-    pub fn write_transcript(&self, output: &mut Vec<u8>) {
+    pub(crate) fn write_transcript(
+        &self,
+        output: &mut Vec<u8>,
+    ) -> Result<(), SemanticCoordinateEncodingError> {
         output.extend_from_slice(&self.semantic_tag().to_le_bytes());
         match self {
             Self::Element { ordinal }
@@ -427,18 +434,18 @@ impl CheckedExpressionChildRole {
                 accepted_field,
             } => {
                 output.extend_from_slice(&source_ordinal.to_le_bytes());
-                output.extend_from_slice(&accepted_field.get().get().to_le_bytes());
+                output.extend_from_slice(accepted_field.as_bytes());
             }
             Self::Guard { arm } | Self::ArmValue { arm } => {
                 output.extend_from_slice(&arm.to_le_bytes());
             }
             Self::ChoiceIfCondition { path, branch } => {
                 output.extend_from_slice(&branch.to_le_bytes());
-                path.write_transcript(output);
+                path.write_transcript(output)?;
             }
             Self::ChoiceMatchGuard { path, arm } => {
                 output.extend_from_slice(&arm.to_le_bytes());
-                path.write_transcript(output);
+                path.write_transcript(output)?;
             }
             Self::LinePlanOptionValue { path }
             | Self::LinePlanLetValue { path }
@@ -453,7 +460,7 @@ impl CheckedExpressionChildRole {
             | Self::ChoiceOptionForSource { path }
             | Self::ChoiceCompactLabel { path }
             | Self::ChoiceCompactCondition { path }
-            | Self::ChoiceCompactOut { path } => path.write_transcript(output),
+            | Self::ChoiceCompactOut { path } => path.write_transcript(output)?,
             Self::ChoiceOptionLabel { path, field }
             | Self::ChoiceOptionFieldId { path, field }
             | Self::ChoiceOptionValue { path, field }
@@ -461,12 +468,12 @@ impl CheckedExpressionChildRole {
             | Self::ChoiceOptionEnabled { path, field }
             | Self::ChoiceOptionOrder { path, field }
             | Self::ChoiceOptionHotkey { path, field } => {
-                path.write_transcript(output);
+                path.write_transcript(output)?;
                 output.extend_from_slice(&field.to_le_bytes());
             }
             Self::ChoiceOptionViewKey { path, field, entry }
             | Self::ChoiceOptionViewValue { path, field, entry } => {
-                path.write_transcript(output);
+                path.write_transcript(output)?;
                 output.extend_from_slice(&field.to_le_bytes());
                 output.extend_from_slice(&entry.to_le_bytes());
             }
@@ -495,18 +502,19 @@ impl CheckedExpressionChildRole {
             | Self::PostfixDialogueCandidate
             | Self::ForInput => {}
         }
+        Ok(())
     }
 
-    pub fn transcript_bytes(&self) -> Vec<u8> {
+    pub(crate) fn transcript_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
         let mut bytes = Vec::new();
-        self.write_transcript(&mut bytes);
-        bytes
+        self.write_transcript(&mut bytes)?;
+        Ok(bytes)
     }
 }
 
 /// One structural step in a declaration-rooted checked semantic path.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedSemanticPathStep {
+pub(crate) enum CheckedSemanticPathStep {
     DeclarationBody(HirDeclarationBodyRootRole),
     DeclarationContract(HirDeclarationContractRootRole),
     DeclarationItem(HirDeclarationItemRootRole),
@@ -545,22 +553,56 @@ impl CheckedSemanticPath {
         self.root
     }
 
-    pub fn steps(&self) -> &[CheckedSemanticPathStep] {
+    pub(crate) fn steps(&self) -> &[CheckedSemanticPathStep] {
         &self.steps
     }
 
-    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
         let mut output = Vec::new();
         self.root.write_canonical(&mut output);
-        output.extend_from_slice(
-            &u64::try_from(self.steps.len())
-                .expect("accepted semantic path steps fit u64")
-                .to_le_bytes(),
-        );
+        write_len(&mut output, self.steps.len())?;
         for step in &self.steps {
-            write_checked_path_step(&mut output, step);
+            write_checked_path_step(&mut output, step)?;
         }
-        output
+        Ok(output)
+    }
+}
+
+/// Opaque accepted-rooted coordinate carried by compiler-local semantic
+/// construction failures. It deliberately exposes neither HIR arena owners
+/// nor a serialization contract.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct StableSemanticCoordinate {
+    owner: CheckedSemanticPath,
+    arm: Option<u32>,
+    pattern: Option<StablePatternCoordinate>,
+}
+
+impl StableSemanticCoordinate {
+    pub(crate) const fn new(path: CheckedSemanticPath) -> Self {
+        Self {
+            owner: path,
+            arm: None,
+            pattern: None,
+        }
+    }
+
+    pub(crate) fn pattern(
+        path: CheckedSemanticPath,
+        arm: u32,
+        pattern: StablePatternCoordinate,
+    ) -> Self {
+        Self {
+            owner: path,
+            arm: Some(arm),
+            pattern: Some(pattern),
+        }
+    }
+}
+
+impl From<CheckedSemanticPath> for StableSemanticCoordinate {
+    fn from(path: CheckedSemanticPath) -> Self {
+        Self::new(path)
     }
 }
 
@@ -609,7 +651,7 @@ impl StableCheckedBindingCoordinate {
         self.path.root()
     }
 
-    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
         self.path.canonical_bytes()
     }
 }
@@ -670,9 +712,9 @@ impl StablePatternCoordinate {
         &self.0
     }
 
-    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
         let mut output = Vec::new();
-        write_len(&mut output, self.0.len());
+        write_len(&mut output, self.0.len())?;
         for step in &self.0 {
             match step {
                 StablePatternCoordinateStep::TupleElement(ordinal) => {
@@ -700,7 +742,7 @@ impl StablePatternCoordinate {
                 StablePatternCoordinateStep::TypedBindingInner => output.push(6),
             }
         }
-        output
+        Ok(output)
     }
 }
 
@@ -712,27 +754,31 @@ pub enum StableCheckedValueCoordinate {
 }
 
 impl StableCheckedValueCoordinate {
-    pub(crate) fn canonical_bytes(&self) -> Vec<u8> {
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
         let mut output = Vec::new();
-        self.write_canonical(&mut output);
-        output
+        self.write_canonical(&mut output)?;
+        Ok(output)
     }
 
-    fn write_canonical(&self, output: &mut Vec<u8>) {
+    fn write_canonical(&self, output: &mut Vec<u8>) -> Result<(), SemanticCoordinateEncodingError> {
         match self {
             Self::Expression(path) => {
                 output.push(0);
-                output.extend_from_slice(&path.canonical_bytes());
+                output.extend_from_slice(&path.canonical_bytes()?);
             }
             Self::Binding(binding) => {
                 output.push(1);
-                output.extend_from_slice(&binding.canonical_bytes());
+                output.extend_from_slice(&binding.canonical_bytes()?);
             }
         }
+        Ok(())
     }
 }
 
-fn write_checked_path_step(output: &mut Vec<u8>, step: &CheckedSemanticPathStep) {
+fn write_checked_path_step(
+    output: &mut Vec<u8>,
+    step: &CheckedSemanticPathStep,
+) -> Result<(), SemanticCoordinateEncodingError> {
     match step {
         CheckedSemanticPathStep::DeclarationBody(role) => {
             output.push(CHECKED_DECLARATION_BODY_STEP_TAG);
@@ -744,11 +790,11 @@ fn write_checked_path_step(output: &mut Vec<u8>, step: &CheckedSemanticPathStep)
         }
         CheckedSemanticPathStep::DeclarationItem(role) => {
             output.push(CHECKED_DECLARATION_ITEM_STEP_TAG);
-            write_declaration_item_role(output, role);
+            write_declaration_item_role(output, role)?;
         }
         CheckedSemanticPathStep::ExpressionOwned(role) => {
             output.push(CHECKED_EXPRESSION_OWNED_STEP_TAG);
-            write_expression_owned_role(output, role);
+            write_expression_owned_role(output, role)?;
         }
         CheckedSemanticPathStep::Body(role) => {
             output.extend_from_slice(&[0, body_role_tag(*role)]);
@@ -764,7 +810,7 @@ fn write_checked_path_step(output: &mut Vec<u8>, step: &CheckedSemanticPathStep)
         }
         CheckedSemanticPathStep::Expression(role) => {
             output.push(2);
-            write_bytes(output, &role.transcript_bytes());
+            write_bytes(output, &role.transcript_bytes()?)?;
         }
         CheckedSemanticPathStep::MatchPattern { arm } => {
             output.push(3);
@@ -792,6 +838,7 @@ fn write_checked_path_step(output: &mut Vec<u8>, step: &CheckedSemanticPathStep)
             output.push(CHECKED_DECLARATION_RESULT_STEP_TAG);
         }
     }
+    Ok(())
 }
 
 fn write_declaration_body_role(output: &mut Vec<u8>, role: HirDeclarationBodyRootRole) {
@@ -845,7 +892,10 @@ fn write_declaration_contract_role(output: &mut Vec<u8>, role: HirDeclarationCon
     }
 }
 
-fn write_declaration_item_role(output: &mut Vec<u8>, role: &HirDeclarationItemRootRole) {
+fn write_declaration_item_role(
+    output: &mut Vec<u8>,
+    role: &HirDeclarationItemRootRole,
+) -> Result<(), SemanticCoordinateEncodingError> {
     match role {
         HirDeclarationItemRootRole::AttributeArgument {
             owner,
@@ -897,7 +947,7 @@ fn write_declaration_item_role(output: &mut Vec<u8>, role: &HirDeclarationItemRo
         }
         HirDeclarationItemRootRole::Style { path } => {
             output.push(9);
-            write_len(output, path.segments().len());
+            write_len(output, path.segments().len())?;
             for segment in path.segments() {
                 match segment {
                     HirStyleRootPathSegment::Token { ordinal } => {
@@ -944,6 +994,7 @@ fn write_declaration_item_role(output: &mut Vec<u8>, role: &HirDeclarationItemRo
             }
         }
     }
+    Ok(())
 }
 
 fn write_item_attribute_owner(output: &mut Vec<u8>, owner: HirItemAttributeOwner) {
@@ -974,7 +1025,10 @@ const fn flow_contract_family_tag(family: HirFlowContractRootFamily) -> u8 {
     }
 }
 
-fn write_expression_owned_role(output: &mut Vec<u8>, role: &HirExpressionOwnedBodyRole) {
+fn write_expression_owned_role(
+    output: &mut Vec<u8>,
+    role: &HirExpressionOwnedBodyRole,
+) -> Result<(), SemanticCoordinateEncodingError> {
     match role {
         HirExpressionOwnedBodyRole::ClosureParameterPattern { parameter } => {
             output.push(14);
@@ -991,61 +1045,62 @@ fn write_expression_owned_role(output: &mut Vec<u8>, role: &HirExpressionOwnedBo
         }
         HirExpressionOwnedBodyRole::ChoiceLetStatement { path } => {
             output.push(2);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoiceForPattern { path } => {
             output.push(3);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoiceMatchArmPattern { path, arm } => {
             output.push(4);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
             output.extend_from_slice(&arm.to_le_bytes());
         }
         HirExpressionOwnedBodyRole::ChoiceOptionForPattern { path } => {
             output.push(5);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { path, field } => {
             output.push(6);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
             output.extend_from_slice(&field.to_le_bytes());
         }
         HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { path, field } => {
             output.push(7);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
             output.extend_from_slice(&field.to_le_bytes());
         }
         HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { path } => {
             output.push(8);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger { path } => {
             output.push(15);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path } => {
             output.push(9);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { path } => {
             output.push(10);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path } => {
             output.push(11);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role } => {
             output.push(12);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
             write_line_plan_statement_role(output, *role);
         }
         HirExpressionOwnedBodyRole::DialogueLinePlanLet { path } => {
             output.push(13);
-            write_hir_nested_path(output, path);
+            write_hir_nested_path(output, path)?;
         }
     }
+    Ok(())
 }
 
 fn write_line_plan_statement_role(output: &mut Vec<u8>, role: HirLinePlanStatementRole) {
@@ -1062,8 +1117,11 @@ fn write_line_plan_statement_role(output: &mut Vec<u8>, role: HirLinePlanStateme
     }
 }
 
-fn write_hir_nested_path(output: &mut Vec<u8>, path: &HirNestedExpressionPath) {
-    write_len(output, path.segments().len());
+fn write_hir_nested_path(
+    output: &mut Vec<u8>,
+    path: &HirNestedExpressionPath,
+) -> Result<(), SemanticCoordinateEncodingError> {
+    write_len(output, path.segments().len())?;
     for segment in path.segments() {
         match segment {
             HirNestedExpressionPathSegment::ChoiceBodyItem { ordinal } => {
@@ -1107,6 +1165,7 @@ fn write_hir_nested_path(output: &mut Vec<u8>, path: &HirNestedExpressionPath) {
             }
         }
     }
+    Ok(())
 }
 
 fn body_role_tag(role: HirBodyChildRole) -> u8 {
@@ -1280,17 +1339,23 @@ fn write_pattern_role_payload(output: &mut Vec<u8>, role: HirPatternChildRole) {
     }
 }
 
-fn write_len(output: &mut Vec<u8>, value: usize) {
-    output.extend_from_slice(
-        &u64::try_from(value)
-            .expect("checked semantic length")
-            .to_le_bytes(),
-    );
+fn write_len(output: &mut Vec<u8>, value: usize) -> Result<(), SemanticCoordinateEncodingError> {
+    let value =
+        u64::try_from(value).map_err(|_| SemanticCoordinateEncodingError::LengthOverflow)?;
+    output.extend_from_slice(&value.to_le_bytes());
+    Ok(())
 }
 
-fn write_bytes(output: &mut Vec<u8>, bytes: &[u8]) {
-    write_len(output, bytes.len());
+fn write_bytes(output: &mut Vec<u8>, bytes: &[u8]) -> Result<(), SemanticCoordinateEncodingError> {
+    write_len(output, bytes.len())?;
     output.extend_from_slice(bytes);
+    Ok(())
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub(crate) enum SemanticCoordinateEncodingError {
+    #[error("semantic coordinate length does not fit the canonical u64 grammar")]
+    LengthOverflow,
 }
 
 #[cfg(test)]
@@ -1308,11 +1373,10 @@ mod tests {
         assert_eq!(item.tag(), 0x01);
         let declaration_path = CheckedSemanticPath::new(declaration, []);
         let item_path = CheckedSemanticPath::new(item, []);
-        assert_ne!(
-            declaration_path.canonical_bytes(),
-            item_path.canonical_bytes()
-        );
-        assert_eq!(declaration_path.canonical_bytes()[0], 0x00);
-        assert_eq!(item_path.canonical_bytes()[0], 0x01);
+        let declaration_bytes = declaration_path.canonical_bytes().unwrap();
+        let item_bytes = item_path.canonical_bytes().unwrap();
+        assert_ne!(declaration_bytes, item_bytes);
+        assert_eq!(declaration_bytes[0], 0x00);
+        assert_eq!(item_bytes[0], 0x01);
     }
 }

@@ -222,7 +222,7 @@ impl CheckedExpressionEdgeFact {
     }
 
     /// Returns the accepted ordered child edges.
-    pub fn edges(&self) -> &[(ExprId, CheckedExpressionChildRole)] {
+    pub(crate) fn edges(&self) -> &[(ExprId, CheckedExpressionChildRole)] {
         &self.edges
     }
 
@@ -267,7 +267,7 @@ fn validate_record_field_plan(
                                 source_ordinal,
                                 accepted_field,
                             } if *source_ordinal == field.source_ordinal()
-                                && *accepted_field == field.runtime_field()
+                                && *accepted_field == field.semantic_id()
                         )
                 });
                 if matching.next().is_none() || matching.next().is_some() {

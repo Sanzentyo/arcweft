@@ -40,6 +40,7 @@ fn counter_plan() -> RuntimePlan {
     let iterator_type = type_id(3);
     let next_value_type = type_id(4);
     let step_type = type_id(5);
+    let next_payload_type = type_id(6);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -60,8 +61,15 @@ fn counter_plan() -> RuntimePlan {
                     RuntimePlanTypeProjection::Iterator(item_type),
                 ),
                 RuntimePlanTypeSeed::new(
+                    next_payload_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([item_type])),
+                ),
+                RuntimePlanTypeSeed::new(
                     next_value_type,
-                    RuntimePlanTypeProjection::Option(item_type),
+                    RuntimePlanTypeProjection::Option {
+                        item: item_type,
+                        some_payload: next_payload_type,
+                    },
                 ),
                 RuntimePlanTypeSeed::new(
                     step_type,

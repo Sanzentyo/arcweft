@@ -1285,10 +1285,19 @@ pub(super) fn validate_patterns(
                 validate_variant(symbols, modules, variant).is_ok()
             }
             (HirPatternKind::Record { .. }, CheckedPatternResolution::Record(record)) => {
-                record.owner().project_nominal().is_some_and(|nominal| {
-                    validate_nominal(symbols, modules, nominal).is_ok()
-                        && record.owner().semantic_type() == fact.ty().semantic_identity_digest()
-                })
+                let exact_owner = match record.owner() {
+                    super::CheckedRecordPatternOwner::Project { nominal, .. } => {
+                        validate_nominal(symbols, modules, nominal).is_ok()
+                    }
+                    super::CheckedRecordPatternOwner::Environment { record } => {
+                        record.semantic_type() == fact.ty().semantic_identity_digest()
+                    }
+                    super::CheckedRecordPatternOwner::VariantPayload { payload, .. } => {
+                        fact.ty() == &TypeKind::VariantPayload(Box::new(payload.clone()))
+                    }
+                };
+                exact_owner
+                    && record.owner().semantic_type() == fact.ty().semantic_identity_digest()
             }
             (
                 HirPatternKind::TypedBinding { ty: annotation, .. },

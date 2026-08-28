@@ -4,8 +4,10 @@ use crate::types::TypeKind;
 
 #[test]
 fn typed_binding_retains_exact_annotation_and_semantic_digest() {
-    let i64_binding = CheckedTypedBinding::new(TypeKind::I64);
-    let u64_binding = CheckedTypedBinding::new(TypeKind::U64);
+    let i64_binding =
+        CheckedTypedBinding::try_new(TypeKind::I64, &TypeKind::I64).expect("checked ordinal");
+    let u64_binding =
+        CheckedTypedBinding::try_new(TypeKind::U64, &TypeKind::U64).expect("checked ordinal");
 
     assert_eq!(i64_binding.annotation(), &TypeKind::I64);
     assert_eq!(

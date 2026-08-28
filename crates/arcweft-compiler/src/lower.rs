@@ -97,18 +97,19 @@ use arcweft_lang_sema::{
         CheckedDialogueLinePlan, CheckedDropFade, CheckedDropPolicy, CheckedEvaluatedEffect,
         CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
         CheckedIteratorFamily, CheckedPatternResolution, CheckedProjectItemOwner,
-        CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternRest,
-        CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedSelectResolution,
-        CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
-        CheckedTryBoundary, CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner,
-        CheckedVariantResolution, FinalSemanticAnalysis, FinalSemanticAnalysisError,
-        NominalSchemaPath, NominalSchemaProjectionError,
+        CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternOwner,
+        CheckedRecordPatternRest, CheckedRecordPatternSourceRef, CheckedRecordValueSource,
+        CheckedSelectResolution, CheckedStatementRole, CheckedTraitConformance,
+        CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier,
+        CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
+        NominalSchemaProjectionError,
     },
     registration::RegisteredSemanticWorld,
     types::{
         AgentBuiltinType, ArrayLength, CheckedConstraintContainerConstructor,
         CheckedConstraintSourceProjection, IteratorStateKind, MapKind, SemanticTypeDigest,
-        TypeKind,
+        TypeKind, VariantPayloadShape,
     },
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
@@ -131,9 +132,9 @@ use arcweft_runtime_plan::{
         RuntimeProjectItem, RuntimePureProgramCaptureFact, RuntimePureProgramFact,
         RuntimeRecordExpressionFact, RuntimeRecordExpressionField, RuntimeRecordExpressionSource,
         RuntimeRecordPatternFact, RuntimeRecordPatternField, RuntimeRecordPatternRest,
-        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeReductionConstructor,
-        RuntimeRegisteredValueId, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-        RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeRecordTypeField,
+        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
+        RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
         RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
         RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedNominal,
         RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
@@ -2068,12 +2069,45 @@ fn runtime_type_at(
             item: nested(item)?,
             error: nested(error)?,
         },
-        TypeKind::Result { ok, error } => RuntimeTypeShape::Result {
-            value: nested_at(ok, RuntimeTypeProjectionStep::ResultOk)?,
-            error: nested_at(error, RuntimeTypeProjectionStep::ResultError)?,
-        },
+        TypeKind::Result { ok, error } => {
+            let owner = CheckedVariantOwner::result(ok.as_ref().clone(), error.as_ref().clone());
+            let value_payload = owner.case_payload_type(0).flatten().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: "Result::Ok has no exact accepted payload type".to_owned(),
+                }
+            })?;
+            let error_payload = owner.case_payload_type(1).flatten().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: "Result::Err has no exact accepted payload type".to_owned(),
+                }
+            })?;
+            RuntimeTypeShape::Result {
+                value: nested_at(ok, RuntimeTypeProjectionStep::ResultOk)?,
+                error: nested_at(error, RuntimeTypeProjectionStep::ResultError)?,
+                value_payload: nested_at(
+                    &value_payload,
+                    RuntimeTypeProjectionStep::BuiltinVariantCase(0),
+                )?,
+                error_payload: nested_at(
+                    &error_payload,
+                    RuntimeTypeProjectionStep::BuiltinVariantCase(1),
+                )?,
+            }
+        }
         TypeKind::Option(item) => {
-            RuntimeTypeShape::Option(nested_at(item, RuntimeTypeProjectionStep::OptionItem)?)
+            let owner = CheckedVariantOwner::option(item.as_ref().clone());
+            let some_payload = owner.case_payload_type(0).flatten().ok_or_else(|| {
+                RuntimeSemanticProjectionError::Type {
+                    reason: "Option::Some has no exact accepted payload type".to_owned(),
+                }
+            })?;
+            RuntimeTypeShape::Option {
+                item: nested_at(item, RuntimeTypeProjectionStep::OptionItem)?,
+                some_payload: nested_at(
+                    &some_payload,
+                    RuntimeTypeProjectionStep::BuiltinVariantCase(0),
+                )?,
+            }
         }
         TypeKind::ThreadHandle(item) => RuntimeTypeShape::ThreadHandle(nested(item)?),
         TypeKind::Shared(item) => RuntimeTypeShape::Shared(nested(item)?),
@@ -2138,6 +2172,44 @@ fn runtime_type_at(
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
         ),
+        TypeKind::VariantPayload(payload) => match payload.shape() {
+            VariantPayloadShape::Unit => {
+                return Err(RuntimeSemanticProjectionError::Type {
+                    reason: "unit variant case was published as a payload value type".to_owned(),
+                });
+            }
+            VariantPayloadShape::Tuple(fields) => RuntimeTypeShape::Tuple(
+                fields
+                    .iter()
+                    .map(|field| {
+                        runtime_type_at(
+                            field.ty(),
+                            symbols,
+                            world,
+                            analysis,
+                            &path.pushed(RuntimeTypeProjectionStep::TupleItem(field.ordinal())),
+                        )
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
+            VariantPayloadShape::Record(fields) => RuntimeTypeShape::Record(
+                fields
+                    .iter()
+                    .map(|field| {
+                        runtime_type_at(
+                            field.ty(),
+                            symbols,
+                            world,
+                            analysis,
+                            &path.pushed(RuntimeTypeProjectionStep::RecordField(field.ordinal())),
+                        )
+                        .map(|ty| RuntimeRecordTypeField::new(field.diagnostic_name(), ty))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?
+                    .into_boxed_slice(),
+            ),
+        },
         TypeKind::Choice(items) => RuntimeTypeShape::Choice(
             items
                 .iter()
@@ -2691,30 +2763,46 @@ fn runtime_record_pattern(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeRecordPatternFact, RuntimeSemanticProjectionError> {
-    let Some(nominal) = record.owner().project_nominal() else {
-        return Err(record.fields().first().map_or(
-            RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecord {
-                owner: RuntimeRecordExecutableOwner::Pattern(owner),
-                semantic_owner: record.owner().semantic_type(),
-            },
-            |field| RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
-                owner: RuntimeRecordExecutableOwner::Pattern(owner),
-                semantic_owner: record.owner().semantic_type(),
-                ordinal: field.declaration_ordinal(),
-            },
-        ));
-    };
     let fields = record
         .fields()
         .iter()
         .map(|field| {
-            let runtime_field = field.runtime_field().ok_or(
-                RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
-                    owner: RuntimeRecordExecutableOwner::Pattern(owner),
-                    semantic_owner: record.owner().semantic_type(),
-                    ordinal: field.declaration_ordinal(),
-                },
-            )?;
+            let runtime_field = match record.owner() {
+                CheckedRecordPatternOwner::Project { .. } => field.runtime_field().ok_or(
+                    RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                        owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                        semantic_owner: record.owner().semantic_type(),
+                        ordinal: field.declaration_ordinal(),
+                    },
+                )?,
+                CheckedRecordPatternOwner::VariantPayload { .. } => {
+                    RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                        usize::try_from(field.declaration_ordinal()).map_err(|_| {
+                            RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                                owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                                semantic_owner: record.owner().semantic_type(),
+                                ordinal: field.declaration_ordinal(),
+                            }
+                        })?,
+                    )
+                    .map_err(|_| {
+                        RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                            owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                            semantic_owner: record.owner().semantic_type(),
+                            ordinal: field.declaration_ordinal(),
+                        }
+                    })?
+                }
+                CheckedRecordPatternOwner::Environment { .. } => {
+                    return Err(
+                        RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecordField {
+                            owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                            semantic_owner: record.owner().semantic_type(),
+                            ordinal: field.declaration_ordinal(),
+                        },
+                    );
+                }
+            };
             let source = match field.source().value() {
                 CheckedRecordPatternSourceRef::Pattern(pattern) => {
                     RuntimeRecordPatternSource::Pattern(pattern)
@@ -2734,12 +2822,39 @@ fn runtime_record_pattern(
             RuntimeRecordPatternRest::Binding(binding.raw())
         }
     };
-    RuntimeRecordPatternFact::try_new(
-        runtime_nominal_record(nominal, symbols, world, analysis)?,
-        fields,
-        rest,
-    )
-    .map_err(|source| RuntimeSemanticProjectionError::RecordPlan {
+    let projected = match record.owner() {
+        CheckedRecordPatternOwner::Project { nominal, .. } => RuntimeRecordPatternFact::try_new(
+            runtime_nominal_record(nominal, symbols, world, analysis)?,
+            fields,
+            rest,
+        ),
+        CheckedRecordPatternOwner::VariantPayload {
+            payload,
+            semantic_type,
+            ..
+        } => {
+            let ty = TypeKind::VariantPayload(Box::new(payload.clone()));
+            if ty.semantic_identity_digest() != *semantic_type {
+                return Err(RuntimeSemanticProjectionError::Type {
+                    reason: "variant record payload identity is inconsistent".to_owned(),
+                });
+            }
+            RuntimeRecordPatternFact::try_structural(
+                runtime_type(&ty, symbols, world, analysis)?,
+                fields,
+                rest,
+            )
+        }
+        CheckedRecordPatternOwner::Environment { .. } => {
+            return Err(
+                RuntimeSemanticProjectionError::UnrepresentableEnvironmentRecord {
+                    owner: RuntimeRecordExecutableOwner::Pattern(owner),
+                    semantic_owner: record.owner().semantic_type(),
+                },
+            );
+        }
+    };
+    projected.map_err(|source| RuntimeSemanticProjectionError::RecordPlan {
         owner: RuntimeRecordExecutableOwner::Pattern(owner),
         source,
     })
@@ -2758,7 +2873,6 @@ fn runtime_variant(
         CheckedVariantOwner::Project {
             nominal,
             semantic_type,
-            layout,
             cases,
         } => {
             if nominal.identity() != *semantic_type {
@@ -2784,13 +2898,6 @@ fn runtime_variant(
                 });
             }
             let runtime_nominal = runtime_nominal(nominal, analysis)?;
-            if runtime_nominal.layout() != *layout {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason:
-                        "checked project variant layout differs from its runtime nominal layout"
-                            .to_owned(),
-                });
-            }
             RuntimeResolvedVariant::project(
                 runtime_nominal,
                 nominal
@@ -2801,14 +2908,14 @@ fn runtime_variant(
                     .into_boxed_slice(),
                 variant.ordinal(),
                 checked_variant_selected_name(variant)?,
-                runtime_checked_variant_cases(cases, symbols, world, analysis)?,
+                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
             )
             .map_err(|error| runtime_variant_projection_error(&error))?
         }
         CheckedVariantOwner::CharacterNominal {
             nominal,
             semantic_type,
-            cases,
+            ..
         } => {
             if TypeKind::CharacterNominal(nominal.clone()).semantic_identity_digest()
                 != *semantic_type
@@ -2821,7 +2928,7 @@ fn runtime_variant(
             RuntimeResolvedVariant::character(
                 RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
                 RuntimeNominalTypeId::from_checked_digest(*semantic_type.as_bytes()),
-                runtime_checked_variant_cases(cases, symbols, world, analysis)?,
+                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
                 variant.ordinal(),
                 checked_variant_selected_name(variant)?,
             )
@@ -2830,7 +2937,7 @@ fn runtime_variant(
         CheckedVariantOwner::BuiltinClosed {
             nominal,
             semantic_type,
-            cases,
+            ..
         } => RuntimeResolvedVariant::builtin_closed(
             RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
             RuntimeNominalTypeId::try_new(nominal.as_str().to_owned()).map_err(|error| {
@@ -2838,7 +2945,7 @@ fn runtime_variant(
                     reason: format!("checked base-environment enum identity is invalid: {error}"),
                 }
             })?,
-            runtime_checked_variant_cases(cases, symbols, world, analysis)?,
+            runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
             variant.ordinal(),
             checked_variant_selected_name(variant)?,
         )
@@ -2846,40 +2953,38 @@ fn runtime_variant(
         CheckedVariantOwner::RuntimeBuiltin {
             owner,
             semantic_type,
-            cases,
+            ..
         } => RuntimeResolvedVariant::runtime_builtin(
             RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
             *owner,
-            runtime_checked_variant_cases(cases, symbols, world, analysis)?,
+            runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
             variant.ordinal(),
             checked_variant_selected_name(variant)?,
         )
         .map_err(|error| runtime_variant_projection_error(&error))?,
-        CheckedVariantOwner::Option { item, cases } => {
+        CheckedVariantOwner::Option { item, .. } => {
             let item = runtime_type(item, symbols, world, analysis)?;
-            let normalized_cases = runtime_checked_variant_cases(cases, symbols, world, analysis)?;
-            validate_runtime_closed_variant_cases(
-                &normalized_cases,
-                &[("Some", Some(&item)), ("None", None)],
-            )?;
+            let normalized_cases =
+                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?;
             RuntimeResolvedVariant::option(
+                RuntimeSemanticTypeId::from_bytes(*variant.owner().semantic_type().as_bytes()),
                 item,
+                normalized_cases,
                 variant.ordinal(),
                 checked_variant_selected_name(variant)?,
             )
             .map_err(|error| runtime_variant_projection_error(&error))?
         }
-        CheckedVariantOwner::Result { ok, error, cases } => {
+        CheckedVariantOwner::Result { ok, error, .. } => {
             let ok = runtime_type(ok, symbols, world, analysis)?;
             let error = runtime_type(error, symbols, world, analysis)?;
-            let normalized_cases = runtime_checked_variant_cases(cases, symbols, world, analysis)?;
-            validate_runtime_closed_variant_cases(
-                &normalized_cases,
-                &[("Ok", Some(&ok)), ("Err", Some(&error))],
-            )?;
+            let normalized_cases =
+                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?;
             RuntimeResolvedVariant::result(
+                RuntimeSemanticTypeId::from_bytes(*variant.owner().semantic_type().as_bytes()),
                 ok,
                 error,
+                normalized_cases,
                 variant.ordinal(),
                 checked_variant_selected_name(variant)?,
             )
@@ -2901,12 +3006,13 @@ fn checked_variant_selected_name(
 }
 
 fn runtime_checked_variant_cases(
-    cases: &[arcweft_lang_sema::final_analysis::CheckedVariantCase],
+    owner: &CheckedVariantOwner,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<Box<[RuntimeNormalizedVariantCase]>, RuntimeSemanticProjectionError> {
-    cases
+    owner
+        .cases()
         .iter()
         .map(|case| {
             let name =
@@ -2914,43 +3020,19 @@ fn runtime_checked_variant_cases(
                     .ok_or_else(|| RuntimeSemanticProjectionError::Type {
                         reason: "checked variant case has no diagnostic name authority".to_owned(),
                     })?;
-            let payload = case
-                .payload()
+            let payload = owner
+                .case_payload_type(case.ordinal())
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: "checked variant case has an invalid payload schema".to_owned(),
+                })?
                 .map(|payload| {
-                    runtime_type(payload, symbols, world, analysis)
+                    runtime_type(&payload, symbols, world, analysis)
                         .and_then(retain_checked_variant_payload)
                 })
                 .transpose()?;
             Ok(RuntimeNormalizedVariantCase::new(name.to_owned(), payload))
         })
         .collect()
-}
-
-fn validate_runtime_closed_variant_cases(
-    cases: &[RuntimeNormalizedVariantCase],
-    expected: &[(&str, Option<&RuntimeNormalizedType>)],
-) -> Result<(), RuntimeSemanticProjectionError> {
-    if cases.len() != expected.len() {
-        return Err(RuntimeSemanticProjectionError::Type {
-            reason: format!(
-                "checked closed variant case count {} differs from runtime shape {}",
-                cases.len(),
-                expected.len()
-            ),
-        });
-    }
-    for (ordinal, (case, (expected_name, expected_payload))) in
-        cases.iter().zip(expected.iter()).enumerate()
-    {
-        if case.name() != *expected_name || case.payload() != *expected_payload {
-            return Err(RuntimeSemanticProjectionError::Type {
-                reason: format!(
-                    "checked closed variant case {ordinal} differs from its runtime shape"
-                ),
-            });
-        }
-    }
-    Ok(())
 }
 
 fn runtime_evaluated_effect(
@@ -3881,15 +3963,30 @@ fn runtime_variant_constructor(
                     "Result constructor did not retain its exact checked Result type",
                 ));
             };
+            let checked_owner =
+                CheckedVariantOwner::result(ok.as_ref().clone(), error.as_ref().clone());
             let ok = runtime_type(ok, symbols, world, analysis)?;
             let error = runtime_type(error, symbols, world, analysis)?;
             let (ordinal, name) = match kind {
                 arcweft_lang_sema::callable::ResultConstructorKind::Ok => (0, "Ok"),
                 arcweft_lang_sema::callable::ResultConstructorKind::Err => (1, "Err"),
             };
-            RuntimeResolvedVariant::result(ok, error, ordinal, name)
-                .map(Some)
-                .map_err(|error| invalid(&error.to_string()))
+            RuntimeResolvedVariant::result(
+                RuntimeSemanticTypeId::from_bytes(
+                    *application
+                        .result()
+                        .ty()
+                        .semantic_identity_digest()
+                        .as_bytes(),
+                ),
+                ok,
+                error,
+                runtime_checked_variant_cases(&checked_owner, symbols, world, analysis)?,
+                ordinal,
+                name,
+            )
+            .map(Some)
+            .map_err(|error| invalid(&error.to_string()))
         }
         ResolvedCallableBaseInstantiation::Option => {
             let TypeKind::Option(item) = application.result().ty() else {
@@ -3907,9 +4004,22 @@ fn runtime_variant_constructor(
                     "Option constructor instantiation has a non-Option candidate identity",
                 ));
             }
-            RuntimeResolvedVariant::option(runtime_type(item, symbols, world, analysis)?, 0, "Some")
-                .map(Some)
-                .map_err(|error| invalid(&error.to_string()))
+            let owner = CheckedVariantOwner::option(item.as_ref().clone());
+            RuntimeResolvedVariant::option(
+                RuntimeSemanticTypeId::from_bytes(
+                    *application
+                        .result()
+                        .ty()
+                        .semantic_identity_digest()
+                        .as_bytes(),
+                ),
+                runtime_type(item, symbols, world, analysis)?,
+                runtime_checked_variant_cases(&owner, symbols, world, analysis)?,
+                0,
+                "Some",
+            )
+            .map(Some)
+            .map_err(|error| invalid(&error.to_string()))
         }
         ResolvedCallableBaseInstantiation::ExpectedEnum { expected } => {
             let TypeKind::ProjectNominal(nominal) = expected else {
@@ -3930,6 +4040,16 @@ fn runtime_variant_constructor(
                 ));
             };
             let semantic_type = expected.semantic_identity_digest();
+            let checked_owner = analysis
+                .project_variant_owner(semantic_type)
+                .filter(|owner| {
+                    owner
+                        .project()
+                        .is_some_and(|project| project.declaration() == nominal.declaration())
+                })
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: "layout-free project variant semantics are absent or stale".to_owned(),
+                })?;
             let projection = analysis
                 .runtime_nominal_projection(semantic_type)
                 .filter(|projection| {
@@ -3949,10 +4069,10 @@ fn runtime_variant_constructor(
                     "enum constructor candidate does not own the checked project nominal type",
                 ));
             }
-            let case = projection
-                .variant_cases()
+            let case = checked_owner
+                .cases()
                 .iter()
-                .find(|case| case.diagnostic_name().as_str() == candidate.variant().as_str())
+                .find(|case| case.diagnostic_name() == Some(candidate.variant().as_str()))
                 .ok_or_else(|| {
                     invalid("enum constructor variant is absent from its sealed projection")
                 })?;
@@ -3973,8 +4093,9 @@ fn runtime_variant_constructor(
                         .collect::<Result<Vec<_>, _>>()?
                         .into_boxed_slice(),
                     case.ordinal(),
-                    case.diagnostic_name().as_str(),
-                    runtime_project_variant_cases(projection, symbols, world, analysis)?,
+                    case.diagnostic_name()
+                        .ok_or_else(|| invalid("enum constructor case has no diagnostic name"))?,
+                    runtime_checked_variant_cases(&checked_owner, symbols, world, analysis)?,
                 )
                 .map_err(|error| invalid(&error.to_string()))?,
             ))
@@ -3985,37 +4106,6 @@ fn runtime_variant_constructor(
         | ResolvedCallableBaseInstantiation::TypeReceiver { .. }
         | ResolvedCallableBaseInstantiation::Extension { .. } => Ok(None),
     }
-}
-
-fn runtime_project_variant_cases(
-    projection: &arcweft_lang_sema::final_analysis::RuntimeProjectNominalProjection,
-    symbols: &ProjectSymbolTable,
-    world: &RegisteredSemanticWorld,
-    analysis: &FinalSemanticAnalysis,
-) -> Result<Box<[RuntimeNormalizedVariantCase]>, RuntimeSemanticProjectionError> {
-    if projection.kind() != arcweft_lang_sema::final_analysis::RuntimeProjectNominalKind::Variant {
-        return Err(RuntimeSemanticProjectionError::Type {
-            reason: "checked project variant owner is not an enum".to_owned(),
-        });
-    }
-    projection
-        .variant_cases()
-        .iter()
-        .map(|case| {
-            let payload = case
-                .payload()
-                .map(|ty| {
-                    let payload = runtime_type(ty, symbols, world, analysis)?;
-                    retain_checked_variant_payload(payload)
-                })
-                .transpose()?;
-            Ok(RuntimeNormalizedVariantCase::new(
-                case.diagnostic_name().as_str(),
-                payload,
-            ))
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Vec::into_boxed_slice)
 }
 
 fn retain_checked_variant_payload(

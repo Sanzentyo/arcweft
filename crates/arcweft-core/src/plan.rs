@@ -56,7 +56,8 @@ pub use nominal_record_domains::{
 };
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
-    RuntimePlanSequenceKind, RuntimePlanTypeClass, RuntimePlanTypeProjection,
+    RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeClass,
+    RuntimePlanTypeProjection,
 };
 pub use type_table::{
     MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
@@ -81,8 +82,8 @@ pub use crate::entry::{
 };
 use crate::line_task::{LineOutRequest, LineTaskGroup};
 use crate::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimePattern,
-    RuntimeSemanticTypeId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
+    RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeSemanticTypeId,
 };
 use crate::runtime_id::{
     RuntimeDialogueValueSlotId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
@@ -96,7 +97,9 @@ struct CheckedTypeTraversal<'a> {
     memo: &'a mut BTreeMap<RuntimePlanTypeId, Option<RuntimeCheckedType>>,
     visiting: &'a mut BTreeSet<RuntimePlanTypeId>,
 }
-use crate::value::{RuntimeExpr, RuntimeIterator, RuntimeLocalBinding, RuntimePayload};
+use crate::value::{
+    RuntimeExpr, RuntimeIterator, RuntimeLocalBinding, RuntimePayload, RuntimeRecordFieldId,
+};
 pub use entry_inventory::{
     EntryRuntimeId, RouteCaptureCoordinate, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlowInvocation, RuntimeFlowInvocationError, RuntimeHttpMethod, RuntimePlanError,
@@ -314,39 +317,31 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Tuple(items) => self
                 .checked_children(items, memo, visiting)?
                 .map(RuntimeCheckedType::Tuple),
+            RuntimePlanTypeProjection::Record(fields) => {
+                self.checked_record_type(ty, fields, memo, visiting)?
+            }
             RuntimePlanTypeProjection::Choice(items) => self
                 .checked_children(items, memo, visiting)?
                 .map(RuntimeCheckedType::Choice),
-            RuntimePlanTypeProjection::Result { value, error } => {
-                self.checked_result_type(*value, *error, memo, visiting)?
+            RuntimePlanTypeProjection::Result {
+                value,
+                error,
+                value_payload,
+                error_payload,
+            } => self.checked_result_type(
+                ty,
+                *value,
+                *error,
+                *value_payload,
+                *error_payload,
+                memo,
+                visiting,
+            )?,
+            RuntimePlanTypeProjection::Option { item, some_payload } => {
+                self.checked_option_type(ty, *item, *some_payload, memo, visiting)?
             }
-            RuntimePlanTypeProjection::Option(item) => self
-                .checked_type_inner(*item, memo, visiting)?
-                .map(|item| RuntimeCheckedType::Option(Box::new(item))),
             RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
-                let mut checked_cases = Vec::with_capacity(cases.len());
-                for (schema, payload) in owner.cases().iter().zip(cases) {
-                    let payload = match payload {
-                        Some(payload) => {
-                            let Some(payload) =
-                                self.checked_type_inner(*payload, memo, visiting)?
-                            else {
-                                return Ok(None);
-                            };
-                            Some(Box::new(payload))
-                        }
-                        None => None,
-                    };
-                    checked_cases.push(RuntimeCheckedVariantCase {
-                        name: schema.name().to_owned(),
-                        payload,
-                    });
-                }
-                Some(RuntimeCheckedType::Variant {
-                    owner: crate::pattern::RuntimeVariantIdentity::Builtin(*owner),
-                    arguments: Vec::new(),
-                    cases: checked_cases,
-                })
+                self.checked_builtin_variant_type(*owner, cases, memo, visiting)?
             }
             RuntimePlanTypeProjection::Opaque {
                 producer,
@@ -391,23 +386,120 @@ impl RuntimePlan {
         Ok(checked)
     }
 
+    fn checked_record_type(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        fields: &[RuntimePlanRecordField<crate::runtime_id::RuntimePlanTypeId>],
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        let mut checked = Vec::with_capacity(fields.len());
+        for (ordinal, field) in fields.iter().enumerate() {
+            let Some(field_ty) = self.checked_type_inner(*field.ty(), memo, visiting)? else {
+                return Ok(None);
+            };
+            let field_id =
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|_| {
+                    RuntimePlanTypeResolutionError::InvalidCheckedRecord {
+                        ty,
+                        source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                    }
+                })?;
+            checked.push((field_id, field.diagnostic_name().to_owned(), field_ty));
+        }
+        RuntimeCheckedType::try_record(checked)
+            .map(Some)
+            .map_err(|source| RuntimePlanTypeResolutionError::InvalidCheckedRecord { ty, source })
+    }
+
     fn checked_result_type(
         &self,
-        value: RuntimePlanTypeId,
-        error: RuntimePlanTypeId,
-        memo: &mut BTreeMap<RuntimePlanTypeId, Option<RuntimeCheckedType>>,
-        visiting: &mut BTreeSet<RuntimePlanTypeId>,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        value: crate::runtime_id::RuntimePlanTypeId,
+        error: crate::runtime_id::RuntimePlanTypeId,
+        value_payload: crate::runtime_id::RuntimePlanTypeId,
+        error_payload: crate::runtime_id::RuntimePlanTypeId,
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
     ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
-        match (
-            self.checked_type_inner(value, memo, visiting)?,
-            self.checked_type_inner(error, memo, visiting)?,
-        ) {
-            (Some(ok), Some(error)) => Ok(Some(RuntimeCheckedType::Result {
-                ok: Box::new(ok),
-                error: Box::new(error),
-            })),
-            _ => Ok(None),
+        let Some(value) = self.checked_type_inner(value, memo, visiting)? else {
+            return Ok(None);
+        };
+        let Some(error) = self.checked_type_inner(error, memo, visiting)? else {
+            return Ok(None);
+        };
+        let Some(value_payload) = self.checked_type_inner(value_payload, memo, visiting)? else {
+            return Ok(None);
+        };
+        let Some(error_payload) = self.checked_type_inner(error_payload, memo, visiting)? else {
+            return Ok(None);
+        };
+        if value_payload != RuntimeCheckedType::Tuple(vec![value.clone()]) {
+            return Err(
+                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 0 },
+            );
         }
+        if error_payload != RuntimeCheckedType::Tuple(vec![error.clone()]) {
+            return Err(
+                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 1 },
+            );
+        }
+        Ok(Some(RuntimeCheckedType::Result {
+            ok: Box::new(value),
+            error: Box::new(error),
+        }))
+    }
+
+    fn checked_option_type(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        item: crate::runtime_id::RuntimePlanTypeId,
+        some_payload: crate::runtime_id::RuntimePlanTypeId,
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        let Some(item) = self.checked_type_inner(item, memo, visiting)? else {
+            return Ok(None);
+        };
+        let Some(some_payload) = self.checked_type_inner(some_payload, memo, visiting)? else {
+            return Ok(None);
+        };
+        if some_payload != RuntimeCheckedType::Tuple(vec![item.clone()]) {
+            return Err(
+                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 0 },
+            );
+        }
+        Ok(Some(RuntimeCheckedType::Option(Box::new(item))))
+    }
+
+    fn checked_builtin_variant_type(
+        &self,
+        owner: RuntimeBuiltinVariantIdentity,
+        cases: &[Option<crate::runtime_id::RuntimePlanTypeId>],
+        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
+        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
+    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
+        let mut checked_cases = Vec::with_capacity(cases.len());
+        for (schema, payload) in owner.cases().iter().zip(cases) {
+            let payload = match payload {
+                Some(payload) => {
+                    let Some(payload) = self.checked_type_inner(*payload, memo, visiting)? else {
+                        return Ok(None);
+                    };
+                    Some(Box::new(payload))
+                }
+                None => None,
+            };
+            checked_cases.push(RuntimeCheckedVariantCase {
+                name: schema.name().to_owned(),
+                payload,
+            });
+        }
+        Ok(Some(RuntimeCheckedType::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Builtin(owner),
+            arguments: Vec::new(),
+            cases: checked_cases,
+        }))
     }
 
     fn checked_nominal_or_variant(

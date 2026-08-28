@@ -33,8 +33,8 @@ use super::super::{
     RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget,
     RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence,
     RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm,
-    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePureInputType,
-    RuntimePureOutputType, RuntimeReceiverMode,
+    RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
@@ -651,8 +651,8 @@ impl RuntimePlanBuilder {
             )
             | (
                 RuntimeStandardMapFamily::Option,
-                RuntimePlanTypeProjection::Option(input),
-                RuntimePlanTypeProjection::Option(output),
+                RuntimePlanTypeProjection::Option { item: input, .. },
+                RuntimePlanTypeProjection::Option { item: output, .. },
             ) => Ok((*input, *output)),
             (
                 RuntimeStandardMapFamily::Array,
@@ -670,10 +670,12 @@ impl RuntimePlanBuilder {
                 RuntimePlanTypeProjection::Result {
                     value: input,
                     error: input_error,
+                    ..
                 },
                 RuntimePlanTypeProjection::Result {
                     value: output,
                     error: output_error,
+                    ..
                 },
             ) if input_error == output_error => Ok((*input, *output)),
             _ => invalid_projection("standard map family", source),
@@ -727,6 +729,32 @@ impl RuntimePlanBuilder {
             .fields()
             .get(ordinal)
             .map(super::super::RuntimeNominalRecordDomainField::ty)
+            .ok_or(RuntimePlanBuildError::UnknownRecordField {
+                owner,
+                ordinal: field.zero_based(),
+            })?;
+        Ok((admitted, field_ty))
+    }
+
+    fn resolve_pattern_record_field(
+        &self,
+        owner: RuntimePlanTypeId,
+        field: RuntimeRecordFieldSeedId,
+    ) -> Result<(RuntimeRecordFieldId, RuntimePlanTypeId), RuntimePlanBuildError> {
+        if self.nominal_record_domains.get(owner).is_some() {
+            return self.resolve_record_field(owner, field);
+        }
+        let ordinal = usize::try_from(field.zero_based()).map_err(|_| {
+            RuntimePlanBuildError::RecordFieldIdentity(RuntimeRecordFieldIdError::OrdinalOverflow)
+        })?;
+        let admitted = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
+        let RuntimePlanTypeProjection::Record(fields) = self.projection(owner)? else {
+            return invalid_projection("structural record pattern owner", owner);
+        };
+        let field_ty = fields
+            .get(ordinal)
+            .map(RuntimePlanRecordField::ty)
+            .copied()
             .ok_or(RuntimePlanBuildError::UnknownRecordField {
                 owner,
                 ordinal: field.zero_based(),
@@ -820,7 +848,7 @@ impl RuntimePlanBuilder {
                     }
                     (
                         crate::value::RuntimeProgressField::Label,
-                        RuntimePlanTypeProjection::Option(item),
+                        RuntimePlanTypeProjection::Option { item, .. },
                     ) => self.is_string(*item)?,
                     _ => false,
                 };
@@ -863,10 +891,14 @@ impl RuntimePlanBuilder {
                 .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
         }
         match (self.projection(owner)?, ordinal) {
-            (RuntimePlanTypeProjection::Option(item), 0) => Ok(Some(*item)),
-            (RuntimePlanTypeProjection::Option(_), 1) => Ok(None),
-            (RuntimePlanTypeProjection::Result { value, .. }, 0) => Ok(Some(*value)),
-            (RuntimePlanTypeProjection::Result { error, .. }, 1) => Ok(Some(*error)),
+            (RuntimePlanTypeProjection::Option { some_payload, .. }, 0) => Ok(Some(*some_payload)),
+            (RuntimePlanTypeProjection::Option { .. }, 1) => Ok(None),
+            (RuntimePlanTypeProjection::Result { value_payload, .. }, 0) => {
+                Ok(Some(*value_payload))
+            }
+            (RuntimePlanTypeProjection::Result { error_payload, .. }, 1) => {
+                Ok(Some(*error_payload))
+            }
             _ => Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal }),
         }
     }
@@ -1261,7 +1293,7 @@ impl RuntimePlanBuilder {
         match result {
             RuntimeAgentFieldResult::Required(value) => self.agent_field_value_matches(ty, value),
             RuntimeAgentFieldResult::Optional(value) => {
-                let RuntimePlanTypeProjection::Option(item) = self.projection(ty)? else {
+                let RuntimePlanTypeProjection::Option { item, .. } = self.projection(ty)? else {
                     return Ok(false);
                 };
                 self.agent_field_value_matches(*item, value)
@@ -1664,17 +1696,21 @@ impl RuntimePlanBuilder {
                 RuntimePatternKind::Tuple(lowered.into_boxed_slice())
             }
             RuntimePatternSeedKind::Record { fields, rest } => {
-                let domain = self
-                    .nominal_record_domains
-                    .get(ty)
-                    .ok_or(RuntimePlanBuildError::UnknownNominalRecordDomain { owner: ty })?;
-                let field_count = domain.fields().len();
+                let field_count = match self.projection(ty)? {
+                    RuntimePlanTypeProjection::Record(fields) => fields.len(),
+                    RuntimePlanTypeProjection::ProjectNominal { .. } => self
+                        .nominal_record_domains
+                        .get(ty)
+                        .map(|domain| domain.fields().len())
+                        .ok_or(RuntimePlanBuildError::UnknownNominalRecordDomain { owner: ty })?,
+                    _ => return invalid_projection("record pattern owner", ty),
+                };
                 let exact = matches!(&rest, RuntimePatternRestSeed::Exact);
                 let mut admitted_fields = BTreeSet::new();
                 let mut lowered = Vec::with_capacity(fields.len());
                 for (pattern_ordinal, field) in fields.into_vec().into_iter().enumerate() {
                     let (field, pattern) = field.into_parts();
-                    let (field, field_ty) = self.resolve_record_field(ty, field)?;
+                    let (field, field_ty) = self.resolve_pattern_record_field(ty, field)?;
                     if !admitted_fields.insert(field) {
                         return Err(RuntimePlanBuildError::DuplicateRecordField {
                             owner: ty,
@@ -2675,7 +2711,7 @@ impl RuntimePlanBuilder {
             _ => return invalid_projection("builtin iterator state", iterator),
         }
         match self.projection(next_value)? {
-            RuntimePlanTypeProjection::Option(actual) if *actual == item => {}
+            RuntimePlanTypeProjection::Option { item: actual, .. } if *actual == item => {}
             _ => return invalid_projection("builtin iterator next value", next_value),
         }
         match self.projection(step)? {
@@ -2766,7 +2802,7 @@ impl RuntimePlanBuilder {
             });
         }
         match self.projection(result)? {
-            RuntimePlanTypeProjection::Option(actual) if *actual == item => Ok(method),
+            RuntimePlanTypeProjection::Option { item: actual, .. } if *actual == item => Ok(method),
             _ => Err(RuntimePlanBuildError::InvalidIteratorWitness {
                 context: "Iterator::next result",
             }),
@@ -3703,11 +3739,14 @@ impl RuntimePlanBuilder {
             RuntimePlanTypeProjection::Tuple(items) => {
                 self.tuple_value_matches(items, value, depth + 1)?
             }
+            RuntimePlanTypeProjection::Record(fields) => {
+                self.record_value_matches(fields, value, depth + 1)?
+            }
             RuntimePlanTypeProjection::Choice(alternatives) => {
                 self.choice_value_matches(alternatives, value, depth + 1)?
             }
             RuntimePlanTypeProjection::Result { .. }
-            | RuntimePlanTypeProjection::Option(_)
+            | RuntimePlanTypeProjection::Option { .. }
             | RuntimePlanTypeProjection::BuiltinVariant { .. } => {
                 matches!(value, RuntimeValue::Variant { .. })
                     && self.variant_value_matches(ty, value, depth + 1)?
@@ -3769,6 +3808,29 @@ impl RuntimePlanBuilder {
         }
         for (item, value) in items.iter().zip(values) {
             if !self.value_matches_type(*item, value, depth)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    fn record_value_matches(
+        &self,
+        fields: &[RuntimePlanRecordField<RuntimePlanTypeId>],
+        value: &RuntimeValue,
+        depth: usize,
+    ) -> Result<bool, RuntimePlanBuildError> {
+        let RuntimeValue::Record(values) = value else {
+            return Ok(false);
+        };
+        if fields.len() != values.len() {
+            return Ok(false);
+        }
+        for (ordinal, (field, value)) in fields.iter().zip(values).enumerate() {
+            let expected = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
+            if expected != value.field()
+                || !self.value_matches_type(*field.ty(), value.value(), depth)?
+            {
                 return Ok(false);
             }
         }
@@ -3983,7 +4045,7 @@ impl RuntimePlanBuilder {
                 })?;
         let owner_matches = match (declaration.projection(), actual_owner) {
             (
-                RuntimePlanTypeProjection::Option(_),
+                RuntimePlanTypeProjection::Option { .. },
                 RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
             )
             | (
@@ -4036,12 +4098,12 @@ impl RuntimePlanBuilder {
         }
         let projection = self.projection(owner)?;
         let (builtin_owner, payload) = match projection {
-            RuntimePlanTypeProjection::Option(item) => {
+            RuntimePlanTypeProjection::Option { some_payload, .. } => {
                 let payload = match RuntimeBuiltinVariantIdentity::Option
                     .case_at(ordinal)
-                    .map(|schema| schema.identity())
+                    .map(crate::pattern::RuntimeBuiltinVariantCaseSchema::identity)
                 {
-                    Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => Some(*item),
+                    Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => Some(*some_payload),
                     Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => None,
                     _ => {
                         return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
@@ -4049,13 +4111,17 @@ impl RuntimePlanBuilder {
                 };
                 (RuntimeBuiltinVariantIdentity::Option, payload)
             }
-            RuntimePlanTypeProjection::Result { value, error } => {
+            RuntimePlanTypeProjection::Result {
+                value_payload,
+                error_payload,
+                ..
+            } => {
                 let payload = match RuntimeBuiltinVariantIdentity::Result
                     .case_at(ordinal)
-                    .map(|schema| schema.identity())
+                    .map(crate::pattern::RuntimeBuiltinVariantCaseSchema::identity)
                 {
-                    Some(RuntimeBuiltinVariantCaseIdentity::ResultOk) => Some(*value),
-                    Some(RuntimeBuiltinVariantCaseIdentity::ResultErr) => Some(*error),
+                    Some(RuntimeBuiltinVariantCaseIdentity::ResultOk) => Some(*value_payload),
+                    Some(RuntimeBuiltinVariantCaseIdentity::ResultErr) => Some(*error_payload),
                     _ => {
                         return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
                     }

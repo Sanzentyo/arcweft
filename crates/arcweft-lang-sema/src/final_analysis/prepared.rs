@@ -734,6 +734,10 @@ pub(crate) enum PreparedRecordPatternFieldIdentity {
         declaration_ordinal: u32,
         semantic_id: CheckedRecordFieldSemanticId,
     },
+    VariantPayload {
+        declaration_ordinal: u32,
+        semantic_id: CheckedRecordFieldSemanticId,
+    },
 }
 
 impl PreparedRecordPatternFieldIdentity {
@@ -745,6 +749,10 @@ impl PreparedRecordPatternFieldIdentity {
             | Self::Environment {
                 declaration_ordinal,
                 ..
+            }
+            | Self::VariantPayload {
+                declaration_ordinal,
+                ..
             } => declaration_ordinal,
         }
     }
@@ -752,7 +760,9 @@ impl PreparedRecordPatternFieldIdentity {
     pub(crate) const fn semantic_id(self) -> Option<CheckedRecordFieldSemanticId> {
         match self {
             Self::Project { .. } => None,
-            Self::Environment { semantic_id, .. } => Some(semantic_id),
+            Self::Environment { semantic_id, .. } | Self::VariantPayload { semantic_id, .. } => {
+                Some(semantic_id)
+            }
         }
     }
 }
@@ -798,6 +808,23 @@ impl PreparedRecordPatternField {
             source,
         }
     }
+    pub(crate) const fn variant_payload(
+        source_ordinal: u32,
+        declaration_ordinal: u32,
+        semantic_id: CheckedRecordFieldSemanticId,
+        field_type: TypeKind,
+        source: PreparedRecordPatternSource,
+    ) -> Self {
+        Self {
+            source_ordinal,
+            identity: PreparedRecordPatternFieldIdentity::VariantPayload {
+                declaration_ordinal,
+                semantic_id,
+            },
+            field_type,
+            source,
+        }
+    }
     pub(crate) const fn source_ordinal(&self) -> u32 {
         self.source_ordinal
     }
@@ -834,6 +861,11 @@ pub(crate) enum PreparedRecordPatternOwner {
     Environment {
         record: AcceptedEnvironmentRecordIdentity,
     },
+    VariantPayload {
+        payload: crate::types::VariantPayloadType,
+        semantic_type: SemanticTypeDigest,
+        field_count: u32,
+    },
 }
 
 impl PreparedRecordPatternOwner {
@@ -841,13 +873,14 @@ impl PreparedRecordPatternOwner {
         match self {
             Self::Project(nominal) => nominal.identity(),
             Self::Environment { record } => record.semantic_type(),
+            Self::VariantPayload { semantic_type, .. } => *semantic_type,
         }
     }
 
     pub(crate) const fn project_nominal(&self) -> Option<&CheckedProjectNominal> {
         match self {
             Self::Project(nominal) => Some(nominal),
-            Self::Environment { .. } => None,
+            Self::Environment { .. } | Self::VariantPayload { .. } => None,
         }
     }
 
@@ -855,7 +888,20 @@ impl PreparedRecordPatternOwner {
         match self {
             Self::Project(_) => None,
             Self::Environment { record } => Some(record.field_count()),
+            Self::VariantPayload { field_count, .. } => Some(*field_count),
         }
+    }
+
+    pub(crate) fn variant_payload(payload: crate::types::VariantPayloadType) -> Option<Self> {
+        let fields = payload.shape().record_fields()?;
+        let field_count = u32::try_from(fields.len()).ok()?;
+        let semantic_type =
+            TypeKind::VariantPayload(Box::new(payload.clone())).semantic_identity_digest();
+        Some(Self::VariantPayload {
+            payload,
+            semantic_type,
+            field_count,
+        })
     }
 }
 
@@ -884,6 +930,9 @@ impl PreparedRecordPattern {
                     ) | (
                         PreparedRecordPatternOwner::Environment { .. },
                         PreparedRecordPatternFieldIdentity::Environment { .. }
+                    ) | (
+                        PreparedRecordPatternOwner::VariantPayload { .. },
+                        PreparedRecordPatternFieldIdentity::VariantPayload { .. }
                     )
                 )
             })

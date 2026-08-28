@@ -595,8 +595,9 @@ mod tests {
             AcceptedSemanticRoot::Item(ids[0]),
             Box::<[CheckedSemanticPathStep]>::default(),
         );
-        assert_eq!(path.canonical_bytes()[0], 0x01);
-        assert_eq!(&path.canonical_bytes()[33..41], &0_u64.to_le_bytes());
+        let bytes = path.canonical_bytes().unwrap();
+        assert_eq!(bytes[0], 0x01);
+        assert_eq!(&bytes[33..41], &0_u64.to_le_bytes());
     }
 
     #[test]
@@ -609,7 +610,9 @@ mod tests {
     }
 
     fn checked_path_bytes(step: CheckedSemanticPathStep) -> Vec<u8> {
-        CheckedSemanticPath::new(test_declaration_root(), [step]).canonical_bytes()
+        CheckedSemanticPath::new(test_declaration_root(), [step])
+            .canonical_bytes()
+            .unwrap()
     }
 
     #[test]
@@ -706,7 +709,7 @@ mod tests {
         expected.extend_from_slice(root.as_bytes());
         expected.extend_from_slice(&1_u64.to_le_bytes());
         expected.extend_from_slice(&[8, 0]);
-        assert_eq!(path.canonical_bytes(), expected);
+        assert_eq!(path.canonical_bytes().unwrap(), expected);
     }
 
     #[test]
@@ -717,11 +720,11 @@ mod tests {
                 HirDeclarationBodyRootRole::FunctionBody,
             )],
         );
-        let bytes = path.canonical_bytes();
+        let bytes = path.canonical_bytes().unwrap();
         assert_eq!(&bytes[33..41], &1_u64.to_le_bytes());
 
         let mut raw = Vec::new();
-        write_len(&mut raw, usize::from(0x2a_u8));
+        write_len(&mut raw, usize::from(0x2a_u8)).unwrap();
         assert_eq!(raw, 42_u64.to_le_bytes());
     }
 
@@ -743,23 +746,28 @@ mod tests {
             binding_path.clone(),
         ));
 
+        let expression_bytes = expression.canonical_bytes().unwrap();
+        let binding_bytes = binding.canonical_bytes().unwrap();
         assert_eq!(
-            expression.canonical_bytes(),
-            StableCheckedValueCoordinate::Expression(expression_path).canonical_bytes()
+            expression_bytes,
+            StableCheckedValueCoordinate::Expression(expression_path)
+                .canonical_bytes()
+                .unwrap()
         );
         assert_eq!(
-            binding.canonical_bytes(),
+            binding_bytes,
             StableCheckedValueCoordinate::Binding(StableCheckedBindingCoordinate::new(
                 binding_path.clone(),
             ))
             .canonical_bytes()
+            .unwrap()
         );
-        assert_ne!(expression.canonical_bytes(), binding.canonical_bytes());
-        assert_eq!(expression.canonical_bytes()[0], 0);
-        assert_eq!(binding.canonical_bytes()[0], 1);
+        assert_ne!(expression_bytes, binding_bytes);
+        assert_eq!(expression_bytes[0], 0);
+        assert_eq!(binding_bytes[0], 1);
         assert_eq!(
-            &binding.canonical_bytes()[1..],
-            &binding_path.canonical_bytes()
+            &binding_bytes[1..],
+            binding_path.canonical_bytes().unwrap().as_slice()
         );
     }
 }

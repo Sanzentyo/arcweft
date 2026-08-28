@@ -39,6 +39,8 @@ use crate::entry::CheckedEntryCatalog;
 use crate::semantic_coordinate::AcceptedSemanticRootCatalog;
 
 use super::nominal_schema::RuntimeNominalProjectionCatalog;
+use super::nominal_semantic::{ProjectNominalSemanticCatalog, ProjectNominalSemanticDefinition};
+use super::semantic_shapes::AcceptedSemanticShapeCatalog;
 
 /// Immutable semantic analysis bound to one exact accepted HIR generation.
 #[derive(Clone, Debug)]
@@ -46,6 +48,8 @@ pub struct FinalSemanticAnalysis {
     checked_callables: Arc<CheckedCallableCatalog>,
     accepted_roots: Arc<AcceptedSemanticRootCatalog>,
     checked_entries: CheckedEntryCatalog,
+    project_nominals: ProjectNominalSemanticCatalog,
+    semantic_shapes: AcceptedSemanticShapeCatalog,
     runtime_nominals: RuntimeNominalProjectionCatalog,
     types: BTreeMap<TypeId, TypeKind>,
     type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
@@ -189,6 +193,8 @@ impl FinalSemanticAnalysisDraft {
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
         checked_entries: CheckedEntryCatalog,
+        project_nominals: ProjectNominalSemanticCatalog,
+        semantic_shapes: AcceptedSemanticShapeCatalog,
         runtime_nominals: RuntimeNominalProjectionCatalog,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
@@ -285,6 +291,8 @@ impl FinalSemanticAnalysisDraft {
             checked_callables,
             accepted_roots,
             checked_entries,
+            project_nominals,
+            semantic_shapes,
             runtime_nominals,
             types,
             type_resolutions,
@@ -437,6 +445,7 @@ impl FinalSemanticAnalysis {
             input,
             type_resolutions,
             accepted_roots,
+            AcceptedSemanticShapeCatalog::default(),
             control,
         )
         .map_err(FinalSemanticProjectError::into_semantic_fixture_error)
@@ -453,6 +462,7 @@ impl FinalSemanticAnalysis {
         mut input: FinalSemanticAnalysisInput,
         type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
         accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+        semantic_shapes: AcceptedSemanticShapeCatalog,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<Self, FinalSemanticProjectError> {
         control.check()?;
@@ -527,7 +537,13 @@ impl FinalSemanticAnalysis {
             structural_edges,
             physical_candidate_argument_evaluations,
         };
-        super::nominal_schema::seal_runtime_nominal_draft(draft, project, symbols, control)
+        super::nominal_schema::seal_runtime_nominal_draft(
+            draft,
+            project,
+            symbols,
+            semantic_shapes,
+            control,
+        )
     }
 
     /// Rejects reuse with any missing, foreign, or stale module generation.
@@ -582,6 +598,36 @@ impl FinalSemanticAnalysis {
 
     pub(crate) const fn runtime_nominals(&self) -> &RuntimeNominalProjectionCatalog {
         &self.runtime_nominals
+    }
+
+    /// Layout-free accepted semantics for one exact project nominal type.
+    pub(crate) fn project_nominal_semantic(
+        &self,
+        semantic_type: crate::types::SemanticTypeDigest,
+    ) -> Option<&ProjectNominalSemanticDefinition> {
+        self.project_nominals.get(semantic_type)
+    }
+
+    /// Complete layout-free checked variant owner for one project semantic type.
+    pub fn project_variant_owner(
+        &self,
+        semantic_type: crate::types::SemanticTypeDigest,
+    ) -> Option<super::CheckedVariantOwner> {
+        let definition = self.project_nominals.get(semantic_type)?;
+        let cases = definition.cases()?;
+        super::CheckedVariantOwner::try_project_shapes(
+            definition.nominal().clone(),
+            cases.iter().map(|case| {
+                (
+                    case.payload().clone(),
+                    Some(case.diagnostic_name().to_owned()),
+                )
+            }),
+        )
+    }
+
+    pub(crate) const fn semantic_shapes(&self) -> &AcceptedSemanticShapeCatalog {
+        &self.semantic_shapes
     }
 
     pub fn ty(&self, owner: TypeId) -> Option<&TypeKind> {

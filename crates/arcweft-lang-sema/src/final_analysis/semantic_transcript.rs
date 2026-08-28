@@ -3,93 +3,42 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
-    CheckedCoverageDomainDigest, CheckedExpressionResolution, CheckedExpressionSemanticDigest,
+    CheckedExpressionResolution, CheckedExpressionSemanticDigest, CheckedMatchLimits,
     CheckedMatchRef, CheckedMatchSemanticDigest, CheckedPatternSemanticDigest,
     CheckedSelectResolution, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
+    FinalSemanticAnalysisControl,
+    match_coverage::{
+        CheckedCoverageWitness, CheckedGuardClass, CheckedMatchBudget, CheckedMatchBuildError,
+        CheckedMatchCoverage, CheckedMatchLimitKind, CheckedUnreachableReason, CoverageArmInput,
+        MatchCoverageAnalyzer, StableMatchArmCoordinate,
+    },
+    transcript_writer::{TranscriptByteCounter, TranscriptHasher, TranscriptWriteError},
 };
 use crate::semantic_coordinate::{
-    AcceptedSemanticRootCatalogError, CheckedSemanticPath, SemanticCoordinateIndex,
-    SemanticCoordinateIndexError, StableCheckedValueCoordinate, StablePatternCoordinate,
-    StablePatternCoordinateStep,
+    AcceptedSemanticRootCatalogError, CheckedSemanticPath, SemanticCoordinateEncodingError,
+    SemanticCoordinateIndex, SemanticCoordinateIndexError, StableCheckedValueCoordinate,
+    StablePatternCoordinate, StablePatternCoordinateStep, StableSemanticCoordinate,
 };
 use crate::types::{SemanticTypeDigest, TypeKind};
-use arcweft_core::entry::TypeLayoutHash;
 use arcweft_lang_hir::{
     expr::{HirExprKind, HirMatchExpr},
     identity::{ExprId, PatternId},
-    leaf::{
-        HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
-        HirStringLiteral, HirUnitNumberLiteral, HirUnitNumberUnit,
-    },
+    leaf::HirLiteral,
     module::HirModule,
-    pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind, HirVariantPatternPayload},
+    pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind},
     project::HirExecutableProjectView,
-    symbol::{ProjectSymbolTable, nominal::ProjectNominalBody},
+    symbol::ProjectSymbolTable,
 };
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedMatchLimits {
-    max_arms: u32,
-    max_pattern_nodes: u64,
-    max_expression_nodes: u64,
-    max_transcript_bytes: u64,
-    max_unreachable_rows: u32,
-    max_depth: u32,
-    max_coverage_states: u32,
-}
-
-impl CheckedMatchLimits {
-    pub const PRODUCTION: Self = Self {
-        max_arms: 4_096,
-        max_pattern_nodes: 65_536,
-        max_expression_nodes: 65_536,
-        max_transcript_bytes: 16 * 1024 * 1024,
-        max_unreachable_rows: 4_096,
-        max_depth: 256,
-        max_coverage_states: 65_536,
+macro_rules! transcript_update {
+    ($hasher:expr, $bytes:expr $(,)?) => {
+        $hasher.update($bytes)?
     };
-
-    /// Constructs an explicit bounded transcript policy for callers that need
-    /// a smaller admission budget (for example, a tooling preview).
-    #[allow(clippy::too_many_arguments)]
-    pub const fn new(
-        max_arms: u32,
-        max_pattern_nodes: u64,
-        max_expression_nodes: u64,
-        max_transcript_bytes: u64,
-        max_unreachable_rows: u32,
-        max_depth: u32,
-        max_coverage_states: u32,
-    ) -> Self {
-        Self {
-            max_arms,
-            max_pattern_nodes,
-            max_expression_nodes,
-            max_transcript_bytes,
-            max_unreachable_rows,
-            max_depth,
-            max_coverage_states,
-        }
-    }
-
-    pub const fn max_transcript_bytes(self) -> u64 {
-        self.max_transcript_bytes
-    }
-
-    pub const fn max_depth(self) -> u32 {
-        self.max_depth
-    }
-}
-
-impl Default for CheckedMatchLimits {
-    fn default() -> Self {
-        Self::PRODUCTION
-    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum SemanticTranscriptError {
+pub(crate) enum SemanticTranscriptError {
     #[error(transparent)]
     Generation(Box<super::FinalSemanticAnalysisError>),
     #[error("expression is not a Match")]
@@ -110,16 +59,33 @@ pub enum SemanticTranscriptError {
     RecoveredOwner,
     #[error("semantic transcript work limit exceeded")]
     WorkLimit,
+    #[error("semantic transcript byte accounting overflow")]
+    TranscriptArithmeticOverflow,
+    #[error("semantic transcript byte limit {limit} exceeded by attempt {attempted}")]
+    TranscriptLimitExceeded { limit: u64, attempted: u64 },
+    #[error(transparent)]
+    MatchBuild(#[from] CheckedMatchBuildError),
     #[error("semantic transcript cannot resolve an accepted identity")]
     MissingIdentity,
     #[error(transparent)]
     AcceptedRootCatalog(AcceptedSemanticRootCatalogError),
     #[error("semantic transcript identity family is not supported by this cut")]
     UnsupportedIdentity,
-    #[error("Match coverage family is outside the bounded exact transcript space")]
-    UnsupportedCoverage,
+    #[error(transparent)]
+    CoordinateEncoding(#[from] SemanticCoordinateEncodingError),
     #[error("Match is not exhaustive; coverage witness is retained in the error")]
     NonExhaustive { witness: CheckedCoverageWitness },
+}
+
+impl From<TranscriptWriteError> for SemanticTranscriptError {
+    fn from(error: TranscriptWriteError) -> Self {
+        match error {
+            TranscriptWriteError::ArithmeticOverflow => Self::TranscriptArithmeticOverflow,
+            TranscriptWriteError::LimitExceeded { limit, attempted } => {
+                Self::TranscriptLimitExceeded { limit, attempted }
+            }
+        }
+    }
 }
 
 impl From<super::FinalSemanticAnalysisError> for SemanticTranscriptError {
@@ -142,120 +108,18 @@ impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
     }
 }
 
-/// Counts the exact bytes fed to one semantic digest hasher.
-///
-/// The byte ceiling is checked at the digest boundary.  Hashing is kept
-/// private to this module so callers receive a typed rejection rather than a
-/// partial digest when a transcript exceeds its admission policy.
-pub(crate) struct TranscriptHasher<'a> {
-    hasher: blake3::Hasher,
-    used: &'a mut u64,
-    limit: u64,
-    exceeded: bool,
-}
-
-impl<'a> TranscriptHasher<'a> {
-    pub(crate) fn new(used: &'a mut u64, limit: u64) -> Self {
-        Self {
-            hasher: blake3::Hasher::new(),
-            used,
-            limit,
-            exceeded: false,
-        }
-    }
-
-    pub(crate) fn update(&mut self, bytes: &[u8]) {
-        let next = self.used.saturating_add(bytes.len() as u64);
-        if next > self.limit {
-            self.exceeded = true;
-            return;
-        }
-        *self.used = next;
-        self.hasher.update(bytes);
-    }
-
-    pub(crate) fn finalize(self) -> Result<[u8; 32], SemanticTranscriptError> {
-        if self.exceeded {
-            Err(SemanticTranscriptError::WorkLimit)
-        } else {
-            Ok(*self.hasher.finalize().as_bytes())
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedGuardClass {
-    Absent,
-    ConstantTrue,
-    ConstantFalse,
-    Dynamic,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedUnreachableReason {
-    CoveredByPriorRows,
-    FalseGuard,
-    RedundantOrAlternative,
-    UninhabitedDomain,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedUnreachableArm {
-    arm: u32,
-    reason: CheckedUnreachableReason,
-}
-
-impl CheckedUnreachableArm {
-    pub const fn arm(self) -> u32 {
-        self.arm
-    }
-
-    pub const fn reason(self) -> CheckedUnreachableReason {
-        self.reason
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedCoverageWitness {
-    OpenDomain,
-    BooleanFalse,
-    BooleanTrue,
-    Variant { ordinal: u32 },
-    Unit,
-}
+type MatchTranscriptHasher<'a> = TranscriptHasher<'a, CheckedMatchBudget>;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatchCoverage {
-    exhaustive: bool,
-    unreachable: Box<[CheckedUnreachableArm]>,
-    witness: Option<CheckedCoverageWitness>,
-    domain_digest: CheckedCoverageDomainDigest,
-}
-
-impl CheckedMatchCoverage {
-    pub const fn exhaustive(&self) -> bool {
-        self.exhaustive
-    }
-
-    pub fn unreachable(&self) -> &[CheckedUnreachableArm] {
-        &self.unreachable
-    }
-
-    pub const fn witness(&self) -> Option<&CheckedCoverageWitness> {
-        self.witness.as_ref()
-    }
-
-    pub const fn domain_digest(&self) -> CheckedCoverageDomainDigest {
-        self.domain_digest
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatchBinding {
+pub(crate) struct CheckedMatchBinding {
     coordinate: StableCheckedValueCoordinate,
     ty: SemanticTypeDigest,
 }
 
+#[allow(
+    dead_code,
+    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
+)]
 impl CheckedMatchBinding {
     pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
         &self.coordinate
@@ -267,7 +131,7 @@ impl CheckedMatchBinding {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatchArm {
+pub(crate) struct CheckedMatchArm {
     ordinal: u32,
     pattern: CheckedPatternSemanticDigest,
     guard: CheckedGuardClass,
@@ -276,21 +140,13 @@ pub struct CheckedMatchArm {
     bindings: Box<[CheckedMatchBinding]>,
 }
 
+#[allow(
+    dead_code,
+    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
+)]
 impl CheckedMatchArm {
-    pub const fn ordinal(&self) -> u32 {
-        self.ordinal
-    }
     pub const fn pattern(&self) -> CheckedPatternSemanticDigest {
         self.pattern
-    }
-    pub const fn guard(&self) -> CheckedGuardClass {
-        self.guard
-    }
-    pub const fn guard_expression(&self) -> Option<CheckedExpressionSemanticDigest> {
-        self.guard_expression
-    }
-    pub const fn value(&self) -> CheckedExpressionSemanticDigest {
-        self.value
     }
     pub fn bindings(&self) -> &[CheckedMatchBinding] {
         &self.bindings
@@ -298,19 +154,20 @@ impl CheckedMatchArm {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedMatch {
+pub(crate) struct CheckedMatch {
     semantic_digest: CheckedMatchSemanticDigest,
     scrutinee_type: SemanticTypeDigest,
     arms: Box<[CheckedMatchArm]>,
     coverage: CheckedMatchCoverage,
 }
 
+#[allow(
+    dead_code,
+    reason = "checked Match observations are exercised by sema tests, not a runtime consumer"
+)]
 impl CheckedMatch {
     pub const fn semantic_digest(&self) -> CheckedMatchSemanticDigest {
         self.semantic_digest
-    }
-    pub const fn scrutinee_type(&self) -> SemanticTypeDigest {
-        self.scrutinee_type
     }
     pub fn arms(&self) -> &[CheckedMatchArm] {
         &self.arms
@@ -320,9 +177,13 @@ impl CheckedMatch {
     }
 }
 
+#[allow(
+    dead_code,
+    reason = "the compiler-local Match query intentionally has no runtime consumer in this cut"
+)]
 impl FinalSemanticAnalysis {
     /// Binds one checked Match lookup to this report's exact module snapshot.
-    pub fn checked_match_ref(
+    pub(crate) fn checked_match_ref(
         &self,
         module: &HirModule,
         symbols: &ProjectSymbolTable,
@@ -349,13 +210,34 @@ impl FinalSemanticAnalysis {
 
     /// Revalidates a compiler-local Match reference before constructing its
     /// stable generic semantic product.
-    pub fn build_checked_match_for_ref(
+    pub(crate) fn build_checked_match_for_ref(
         &self,
         project: HirExecutableProjectView<'_>,
         symbols: &ProjectSymbolTable,
         reference: CheckedMatchRef,
         limits: CheckedMatchLimits,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
+        static NOT_CANCELLED: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        self.build_checked_match_for_ref_with_control(
+            project,
+            symbols,
+            reference,
+            limits,
+            FinalSemanticAnalysisControl::new(&NOT_CANCELLED),
+        )
+    }
+
+    /// Constructs a checked Match while observing caller-owned cancellation.
+    pub(crate) fn build_checked_match_for_ref_with_control(
+        &self,
+        project: HirExecutableProjectView<'_>,
+        symbols: &ProjectSymbolTable,
+        reference: CheckedMatchRef,
+        limits: CheckedMatchLimits,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<CheckedMatch, SemanticTranscriptError> {
+        control.check()?;
         self.validate_generation(project, symbols)?;
         let expression = reference.expression();
         let module = project
@@ -373,9 +255,6 @@ impl FinalSemanticAnalysis {
         let HirExprKind::Match(authored) = owner.kind() else {
             return Err(SemanticTranscriptError::NotMatch);
         };
-        if authored.arms().len() > usize::try_from(limits.max_arms).unwrap_or(usize::MAX) {
-            return Err(SemanticTranscriptError::WorkLimit);
-        }
         let checked = self
             .expression(expression)
             .ok_or(SemanticTranscriptError::MissingExpression)?;
@@ -389,39 +268,46 @@ impl FinalSemanticAnalysis {
         MatchTranscriptBuilder {
             analysis: self,
             module,
-            symbols,
             coordinates,
-            limits,
-            expression_nodes: 0,
-            pattern_nodes: 0,
-            transcript_bytes: 0,
+            control,
+            budget: CheckedMatchBudget::new(limits),
             expression_digests: BTreeMap::new(),
+            expression_paths: BTreeMap::new(),
+            expression_visiting: BTreeSet::new(),
             pattern_digests: BTreeMap::new(),
+            pattern_coordinates: BTreeMap::new(),
+            pattern_paths: BTreeMap::new(),
+            pattern_visiting: BTreeSet::new(),
+            observed_patterns: Vec::new(),
         }
         .build(expression, authored)
     }
 }
 
-struct MatchTranscriptBuilder<'analysis, 'paths, 'edges> {
+struct MatchTranscriptBuilder<'analysis, 'paths, 'edges, 'control> {
     analysis: &'analysis FinalSemanticAnalysis,
     module: &'analysis HirModule,
-    symbols: &'analysis ProjectSymbolTable,
     coordinates: SemanticCoordinateIndex<'paths, 'edges>,
-    limits: CheckedMatchLimits,
-    expression_nodes: u64,
-    pattern_nodes: u64,
-    transcript_bytes: u64,
+    control: FinalSemanticAnalysisControl<'control>,
+    budget: CheckedMatchBudget,
     expression_digests: BTreeMap<ExprId, CheckedExpressionSemanticDigest>,
-    pattern_digests: BTreeMap<(PatternId, StablePatternCoordinate), CheckedPatternSemanticDigest>,
+    expression_paths: BTreeMap<StableSemanticCoordinate, ExprId>,
+    expression_visiting: BTreeSet<ExprId>,
+    pattern_digests: BTreeMap<PatternId, CheckedPatternSemanticDigest>,
+    pattern_coordinates: BTreeMap<PatternId, StableSemanticCoordinate>,
+    pattern_paths: BTreeMap<StableSemanticCoordinate, PatternId>,
+    pattern_visiting: BTreeSet<PatternId>,
+    observed_patterns: Vec<(PatternId, StableSemanticCoordinate)>,
 }
 
-impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges> {
+impl MatchTranscriptBuilder<'_, '_, '_, '_> {
     fn build(
         &mut self,
         owner: ExprId,
         authored: &HirMatchExpr,
     ) -> Result<CheckedMatch, SemanticTranscriptError> {
         let scrutinee = self.expression_digest(authored.scrutinee())?;
+        self.control.check()?;
         let scrutinee_ty = self
             .analysis
             .expression(authored.scrutinee())
@@ -436,10 +322,33 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
         let fact = checked_owner
             .match_fact()
             .ok_or(SemanticTranscriptError::MissingMatchFact)?;
-        let mut arms = Vec::with_capacity(authored.arms().len());
+        let match_path = self.checked_path(owner)?;
+        let arm_count = u64::try_from(authored.arms().len()).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Arms,
+            }
+        })?;
+        self.budget.charge(CheckedMatchLimitKind::Arms, arm_count)?;
+        let mut arms = Vec::new();
+        arms.try_reserve_exact(authored.arms().len()).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Arms,
+            }
+        })?;
+        let mut coverage_arms = Vec::new();
+        coverage_arms
+            .try_reserve_exact(authored.arms().len())
+            .map_err(|_| CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Arms,
+            })?;
         for (ordinal, (arm, checked)) in authored.arms().iter().zip(fact.arms()).enumerate() {
             let ordinal = u32::try_from(ordinal).map_err(|_| SemanticTranscriptError::WorkLimit)?;
-            let pattern = self.pattern_digest(arm.pattern(), &StablePatternCoordinate::new([]))?;
+            let arm_coordinate = StableMatchArmCoordinate::new(match_path.clone(), ordinal);
+            let pattern = self.pattern_digest(
+                arm.pattern(),
+                &arm_coordinate,
+                &StablePatternCoordinate::new([]),
+            )?;
             let mut bindings = Vec::new();
             self.collect_pattern_bindings(
                 arm.pattern(),
@@ -465,28 +374,34 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
                 value: self.expression_digest(arm.value())?,
                 bindings: bindings.into_boxed_slice(),
             });
+            coverage_arms.push(CoverageArmInput {
+                coordinate: arm_coordinate,
+                pattern: arm.pattern(),
+                guard,
+            });
         }
-        let coverage = basic_coverage(
+        let mut coverage = MatchCoverageAnalyzer::new(
             self.analysis,
             self.module,
-            self.symbols,
-            &scrutinee_ty,
-            authored,
-            &arms,
-            self.limits,
-        )?;
-        if let Some(witness) = coverage.witness().copied() {
+            self.control,
+            &mut self.budget,
+            StableSemanticCoordinate::new(match_path),
+            std::mem::take(&mut self.observed_patterns),
+        )
+        .analyze(&scrutinee_ty, &coverage_arms)?;
+        if let Some(witness) = coverage.witness().cloned() {
             return Err(SemanticTranscriptError::NonExhaustive { witness });
         }
+        let semantic_digest = match_digest(
+            &mut self.budget,
+            scrutinee,
+            scrutinee_type,
+            &arms,
+            &coverage,
+        )?;
+        coverage.finish_transaction_work(self.budget.work());
         Ok(CheckedMatch {
-            semantic_digest: match_digest(
-                &mut self.transcript_bytes,
-                self.limits.max_transcript_bytes,
-                scrutinee,
-                scrutinee_type,
-                &arms,
-                &coverage,
-            )?,
+            semantic_digest,
             scrutinee_type,
             arms: arms.into_boxed_slice(),
             coverage,
@@ -503,41 +418,70 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
     fn expression_digest_at(
         &mut self,
         owner: ExprId,
-        depth: u32,
+        depth: u64,
     ) -> Result<CheckedExpressionSemanticDigest, SemanticTranscriptError> {
-        if depth > self.limits.max_depth {
-            return Err(SemanticTranscriptError::WorkLimit);
-        }
-        if let Some(digest) = self.expression_digests.get(&owner) {
-            return Ok(*digest);
-        }
-        self.expression_nodes = self.expression_nodes.saturating_add(1);
-        if self.expression_nodes > self.limits.max_expression_nodes {
-            return Err(SemanticTranscriptError::WorkLimit);
-        }
+        self.budget.observe_depth(depth)?;
         let checked = self
             .analysis
             .expression(owner)
             .ok_or(SemanticTranscriptError::MissingExpression)?;
         let path = self.checked_path(owner)?;
-        if path.steps().len() > usize::try_from(self.limits.max_depth).unwrap_or(usize::MAX) {
-            return Err(SemanticTranscriptError::WorkLimit);
+        let semantic_coordinate = StableSemanticCoordinate::new(path.clone());
+        if self
+            .expression_paths
+            .get(&semantic_coordinate)
+            .is_some_and(|existing| *existing != owner)
+        {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
         }
+        if self.expression_visiting.contains(&owner) {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
+        }
+        if let Some(digest) = self.expression_digests.get(&owner) {
+            return Ok(*digest);
+        }
+        self.budget
+            .charge(CheckedMatchLimitKind::ExpressionNodes, 1)?;
+        self.expression_paths
+            .insert(semantic_coordinate.clone(), owner);
+        self.expression_visiting.insert(owner);
+        let path_depth = u64::try_from(path.steps().len()).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::Depth,
+            }
+        })?;
+        self.budget.observe_depth(path_depth)?;
         let edges = self
             .analysis
             .checked_expression_edge_fact(owner)
             .map_err(|_| SemanticTranscriptError::MissingChildEdges)?;
-        let child_digests = edges
-            .edges()
-            .iter()
-            .map(|(child, _)| self.expression_digest_at(*child, depth.saturating_add(1)))
-            .collect::<Result<Vec<_>, _>>()?;
-        let mut hasher =
-            TranscriptHasher::new(&mut self.transcript_bytes, self.limits.max_transcript_bytes);
-        hasher.update(b"arcweft.lang.checked-expression-semantic.v1\0");
-        hasher.update(&path.canonical_bytes());
-        hasher.update(&checked.resolution().semantic_tag().to_le_bytes());
-        hasher.update(checked.ty().semantic_identity_digest().as_bytes());
+        let child_depth =
+            depth
+                .checked_add(1)
+                .ok_or(CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::Depth,
+                })?;
+        let mut child_digests = Vec::new();
+        for (child, _) in edges.edges() {
+            let digest = self.expression_digest_at(*child, child_depth)?;
+            child_digests.try_reserve_exact(1).map_err(|_| {
+                CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::ExpressionNodes,
+                }
+            })?;
+            child_digests.push(digest);
+        }
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-expression-semantic.v1\0");
+        transcript_update!(hasher, &path.canonical_bytes()?);
+        transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
+        transcript_update!(hasher, checked.ty().semantic_identity_digest().as_bytes());
         if let CheckedExpressionResolution::Literal(literal) = checked.resolution() {
             write_literal(&mut hasher, literal, checked.ty())?;
         }
@@ -548,20 +492,21 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
             &self.coordinates,
             self.analysis,
         )?;
-        write_record_expression_fields(&mut hasher, edges);
-        write_effects(&mut hasher, checked.effects());
+        write_record_expression_fields(&mut hasher, edges)?;
+        write_effects(&mut hasher, checked.effects())?;
         if matches!(checked.resolution(), CheckedExpressionResolution::Call) {
             let callable = edges
                 .callable()
                 .ok_or(SemanticTranscriptError::MissingCallableJoin)?;
-            hasher.update(callable.semantic_digest().as_bytes());
+            transcript_update!(hasher, callable.semantic_digest().as_bytes());
         }
-        write_len(&mut hasher, edges.edges().len());
+        write_len(&mut hasher, edges.edges().len())?;
         for ((_, role), child_digest) in edges.edges().iter().zip(child_digests) {
-            write_bytes(&mut hasher, &role.transcript_bytes());
-            hasher.update(child_digest.as_bytes());
+            write_bytes(&mut hasher, &role.transcript_bytes()?)?;
+            transcript_update!(hasher, child_digest.as_bytes());
         }
-        let digest = CheckedExpressionSemanticDigest::from_bytes(hasher.finalize()?);
+        let digest = CheckedExpressionSemanticDigest::from_bytes(hasher.finalize());
+        self.expression_visiting.remove(&owner);
         self.expression_digests.insert(owner, digest);
         Ok(digest)
     }
@@ -573,20 +518,56 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
     fn pattern_digest(
         &mut self,
         owner: PatternId,
+        arm: &StableMatchArmCoordinate,
         coordinate: &StablePatternCoordinate,
     ) -> Result<CheckedPatternSemanticDigest, SemanticTranscriptError> {
-        let depth = u32::try_from(coordinate.steps().len())
+        let depth = u64::try_from(coordinate.steps().len())
             .map_err(|_| SemanticTranscriptError::WorkLimit)?;
-        if depth > self.limits.max_depth {
-            return Err(SemanticTranscriptError::WorkLimit);
+        self.budget.observe_depth(depth)?;
+        let semantic_coordinate = arm.pattern_coordinate(coordinate.clone());
+        if self
+            .pattern_coordinates
+            .get(&owner)
+            .is_some_and(|existing| {
+                existing != &semantic_coordinate || self.pattern_visiting.contains(&owner)
+            })
+        {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
         }
-        if let Some(digest) = self.pattern_digests.get(&(owner, coordinate.clone())) {
+        if self
+            .pattern_paths
+            .get(&semantic_coordinate)
+            .is_some_and(|existing| *existing != owner)
+        {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
+        }
+        if let Some(digest) = self.pattern_digests.get(&owner) {
             return Ok(*digest);
         }
-        self.pattern_nodes = self.pattern_nodes.saturating_add(1);
-        if self.pattern_nodes > self.limits.max_pattern_nodes {
-            return Err(SemanticTranscriptError::WorkLimit);
+        self.pattern_coordinates
+            .insert(owner, semantic_coordinate.clone());
+        self.pattern_paths
+            .insert(semantic_coordinate.clone(), owner);
+        if !self.pattern_visiting.insert(owner) {
+            return Err(CheckedMatchBuildError::DuplicateSemanticPath {
+                coordinate: semantic_coordinate,
+            }
+            .into());
         }
+        self.budget.charge(CheckedMatchLimitKind::PatternNodes, 1)?;
+        self.observed_patterns.try_reserve_exact(1).map_err(|_| {
+            CheckedMatchBuildError::ArithmeticOverflow {
+                kind: CheckedMatchLimitKind::PatternNodes,
+            }
+        })?;
+        self.observed_patterns
+            .push((owner, semantic_coordinate.clone()));
         let hir = self
             .module
             .resolve_pattern(owner)
@@ -598,39 +579,43 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
             .analysis
             .pattern(owner)
             .ok_or(SemanticTranscriptError::MissingPattern)?;
-        let child_digests = if let super::CheckedPatternResolution::Record(record) =
-            checked.resolution()
-        {
-            record
-                .fields()
-                .iter()
-                .filter_map(|field| field.source().raw_pattern().map(|child| (child, field)))
-                .map(|(child, field)| {
-                    let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
-                    self.pattern_digest(child, &child_coordinate)
-                })
-                .collect::<Result<Vec<_>, SemanticTranscriptError>>()?
+        let mut child_digests = Vec::new();
+        if let super::CheckedPatternResolution::Record(record) = checked.resolution() {
+            for field in record.fields() {
+                let Some(child) = field.source().raw_pattern() else {
+                    continue;
+                };
+                let child_coordinate = record_pattern_child_coordinate(coordinate, field)?;
+                let digest = self.pattern_digest(child, arm, &child_coordinate)?;
+                child_digests.try_reserve_exact(1).map_err(|_| {
+                    CheckedMatchBuildError::ArithmeticOverflow {
+                        kind: CheckedMatchLimitKind::PatternNodes,
+                    }
+                })?;
+                child_digests.push(digest);
+            }
         } else {
-            hir.kind()
-                .child_edges()
-                .into_iter()
-                .filter_map(|edge| match edge.child() {
-                    HirPatternChild::Pattern(child) => Some((child, edge.role())),
-                    HirPatternChild::Type(_) | HirPatternChild::Local(_) => None,
-                })
-                .map(|(child, role)| {
-                    let child_coordinate = child_pattern_coordinate(coordinate, hir.kind(), role)?;
-                    self.pattern_digest(child, &child_coordinate)
-                })
-                .collect::<Result<Vec<_>, SemanticTranscriptError>>()?
-        };
-        let mut hasher =
-            TranscriptHasher::new(&mut self.transcript_bytes, self.limits.max_transcript_bytes);
-        hasher.update(b"arcweft.lang.checked-pattern-semantic.v1\0");
-        hasher.update(&coordinate.canonical_bytes());
-        hasher.update(&[pattern_kind_tag(hir.kind())]);
-        hasher.update(&checked.resolution().semantic_tag().to_le_bytes());
-        hasher.update(checked.ty().semantic_identity_digest().as_bytes());
+            for edge in hir.kind().child_edges() {
+                let HirPatternChild::Pattern(child) = edge.child() else {
+                    continue;
+                };
+                let child_coordinate =
+                    child_pattern_coordinate(coordinate, hir.kind(), edge.role())?;
+                let digest = self.pattern_digest(child, arm, &child_coordinate)?;
+                child_digests.try_reserve_exact(1).map_err(|_| {
+                    CheckedMatchBuildError::ArithmeticOverflow {
+                        kind: CheckedMatchLimitKind::PatternNodes,
+                    }
+                })?;
+                child_digests.push(digest);
+            }
+        }
+        let mut hasher = TranscriptHasher::new(&mut self.budget);
+        transcript_update!(hasher, b"arcweft.lang.checked-pattern-semantic.v1\0");
+        transcript_update!(hasher, &coordinate.canonical_bytes()?);
+        transcript_update!(hasher, &[pattern_kind_tag(hir.kind())]);
+        transcript_update!(hasher, &checked.resolution().semantic_tag().to_le_bytes());
+        transcript_update!(hasher, checked.ty().semantic_identity_digest().as_bytes());
         write_pattern_resolution(
             &mut hasher,
             checked.resolution(),
@@ -639,11 +624,11 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
             self.analysis,
         )?;
         for digest in child_digests {
-            hasher.update(digest.as_bytes());
+            transcript_update!(hasher, digest.as_bytes());
         }
-        let digest = CheckedPatternSemanticDigest::from_bytes(hasher.finalize()?);
-        self.pattern_digests
-            .insert((owner, coordinate.clone()), digest);
+        let digest = CheckedPatternSemanticDigest::from_bytes(hasher.finalize());
+        self.pattern_visiting.remove(&owner);
+        self.pattern_digests.insert(owner, digest);
         Ok(digest)
     }
 
@@ -723,26 +708,27 @@ impl<'analysis, 'paths, 'edges> MatchTranscriptBuilder<'analysis, 'paths, 'edges
 }
 
 fn write_record_expression_fields(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     edges: &super::CheckedExpressionEdgeFact,
-) {
-    write_len(hasher, edges.record_fields().len());
+) -> Result<(), SemanticTranscriptError> {
+    write_len(hasher, edges.record_fields().len())?;
     for field in edges.record_fields() {
-        hasher.update(&field.source_ordinal().to_le_bytes());
-        hasher.update(&field.declaration_ordinal().to_le_bytes());
-        hasher.update(field.semantic_id().as_bytes());
-        hasher.update(field.field_type().as_bytes());
+        transcript_update!(hasher, &field.source_ordinal().to_le_bytes());
+        transcript_update!(hasher, &field.declaration_ordinal().to_le_bytes());
+        transcript_update!(hasher, field.semantic_id().as_bytes());
+        transcript_update!(hasher, field.field_type().as_bytes());
         match field.source() {
             super::CheckedRecordValueSource::Expression(source) => {
-                hasher.update(&[0]);
-                hasher.update(&source.coordinate().canonical_bytes());
+                transcript_update!(hasher, &[0]);
+                transcript_update!(hasher, &source.coordinate().canonical_bytes()?);
             }
             super::CheckedRecordValueSource::Binding(source) => {
-                hasher.update(&[1]);
-                hasher.update(&source.coordinate().canonical_bytes());
+                transcript_update!(hasher, &[1]);
+                transcript_update!(hasher, &source.coordinate().canonical_bytes()?);
             }
         }
     }
+    Ok(())
 }
 
 fn guard_class(
@@ -763,406 +749,54 @@ fn guard_class(
     })
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-enum CoverageAtom {
-    BooleanFalse,
-    BooleanTrue,
-    Variant(u32),
-    Unit,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum CoverageShape {
-    All,
-    Atoms(BTreeSet<CoverageAtom>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-enum CoverageDomain {
-    Open,
-    Finite(Box<[CoverageAtom]>),
-}
-
-fn basic_coverage(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    symbols: &ProjectSymbolTable,
-    scrutinee_type: &TypeKind,
-    authored: &HirMatchExpr,
-    arms: &[CheckedMatchArm],
-    limits: CheckedMatchLimits,
-) -> Result<CheckedMatchCoverage, SemanticTranscriptError> {
-    let domain = coverage_domain(scrutinee_type, symbols)?;
-    let domain_digest = coverage_domain_digest(analysis, symbols, scrutinee_type)?;
-    if let CoverageDomain::Finite(values) = &domain {
-        if values.len() > usize::try_from(limits.max_coverage_states).unwrap_or(usize::MAX) {
-            return Err(SemanticTranscriptError::WorkLimit);
-        }
-    }
-    let mut unreachable = Vec::new();
-    let mut covered = BTreeSet::new();
-    let mut covered_all = false;
-    for (arm, checked) in authored.arms().iter().zip(arms) {
-        if checked.guard == CheckedGuardClass::ConstantFalse {
-            unreachable.push(CheckedUnreachableArm {
-                arm: checked.ordinal,
-                reason: CheckedUnreachableReason::FalseGuard,
-            });
-            continue;
-        }
-        let shape = pattern_coverage(analysis, module, arm.pattern(), &domain)?;
-        let guarded = matches!(
-            checked.guard,
-            CheckedGuardClass::Absent | CheckedGuardClass::ConstantTrue
-        );
-        let possible = match (&domain, &shape) {
-            (CoverageDomain::Open, CoverageShape::All) => None,
-            (CoverageDomain::Open, CoverageShape::Atoms(_)) => {
-                return Err(SemanticTranscriptError::UnsupportedCoverage);
-            }
-            (CoverageDomain::Finite(values), CoverageShape::All) => {
-                Some(values.iter().copied().collect::<BTreeSet<_>>())
-            }
-            (CoverageDomain::Finite(values), CoverageShape::Atoms(atoms)) => {
-                let values = values.iter().copied().collect::<BTreeSet<_>>();
-                let intersection = atoms
-                    .intersection(&values)
-                    .copied()
-                    .collect::<BTreeSet<_>>();
-                if intersection.is_empty() {
-                    unreachable.push(CheckedUnreachableArm {
-                        arm: checked.ordinal,
-                        reason: CheckedUnreachableReason::UninhabitedDomain,
-                    });
-                    continue;
-                }
-                Some(intersection)
-            }
-        };
-        match possible {
-            None => {
-                if covered_all {
-                    unreachable.push(CheckedUnreachableArm {
-                        arm: checked.ordinal,
-                        reason: CheckedUnreachableReason::CoveredByPriorRows,
-                    });
-                } else if guarded {
-                    covered_all = true;
-                }
-            }
-            Some(possible) => {
-                let uncovered = possible
-                    .difference(&covered)
-                    .copied()
-                    .collect::<BTreeSet<_>>();
-                if uncovered.is_empty() {
-                    unreachable.push(CheckedUnreachableArm {
-                        arm: checked.ordinal,
-                        reason: CheckedUnreachableReason::CoveredByPriorRows,
-                    });
-                } else if guarded {
-                    covered.extend(uncovered);
-                }
-            }
-        }
-    }
-    if unreachable.len() > usize::try_from(limits.max_unreachable_rows).unwrap_or(usize::MAX) {
-        return Err(SemanticTranscriptError::WorkLimit);
-    }
-    let exhaustive = match &domain {
-        CoverageDomain::Open => covered_all,
-        CoverageDomain::Finite(values) => values.iter().all(|value| covered.contains(value)),
-    };
-    let witness = (!exhaustive).then(|| match &domain {
-        CoverageDomain::Open => CheckedCoverageWitness::OpenDomain,
-        CoverageDomain::Finite(values) => values
-            .iter()
-            .find(|value| !covered.contains(value))
-            .map_or(CheckedCoverageWitness::OpenDomain, |value| match value {
-                CoverageAtom::BooleanFalse => CheckedCoverageWitness::BooleanFalse,
-                CoverageAtom::BooleanTrue => CheckedCoverageWitness::BooleanTrue,
-                CoverageAtom::Variant(ordinal) => {
-                    CheckedCoverageWitness::Variant { ordinal: *ordinal }
-                }
-                CoverageAtom::Unit => CheckedCoverageWitness::Unit,
-            }),
-    });
-    Ok(CheckedMatchCoverage {
-        exhaustive,
-        unreachable: unreachable.into_boxed_slice(),
-        witness,
-        domain_digest,
-    })
-}
-
-fn coverage_domain(
-    ty: &TypeKind,
-    symbols: &ProjectSymbolTable,
-) -> Result<CoverageDomain, SemanticTranscriptError> {
-    let values = match ty {
-        TypeKind::Bool => vec![CoverageAtom::BooleanFalse, CoverageAtom::BooleanTrue],
-        TypeKind::Unit => vec![CoverageAtom::Unit],
-        TypeKind::Option(_) | TypeKind::Result { .. } => {
-            vec![CoverageAtom::Variant(0), CoverageAtom::Variant(1)]
-        }
-        TypeKind::ProjectNominal(nominal) => {
-            let declaration = symbols
-                .nominal(nominal.declaration())
-                .ok_or(SemanticTranscriptError::MissingIdentity)?;
-            let ProjectNominalBody::Enum { variants } = declaration.body() else {
-                return Ok(CoverageDomain::Open);
-            };
-            variants
-                .iter()
-                .enumerate()
-                .map(|(ordinal, _)| {
-                    u32::try_from(ordinal)
-                        .map(CoverageAtom::Variant)
-                        .map_err(|_| SemanticTranscriptError::WorkLimit)
-                })
-                .collect::<Result<Vec<_>, _>>()?
-        }
-        _ => return Ok(CoverageDomain::Open),
-    };
-    Ok(CoverageDomain::Finite(values.into_boxed_slice()))
-}
-
-fn coverage_domain_digest(
-    analysis: &FinalSemanticAnalysis,
-    symbols: &ProjectSymbolTable,
-    ty: &TypeKind,
-) -> Result<CheckedCoverageDomainDigest, SemanticTranscriptError> {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(b"arcweft.lang.checked-coverage-domain.v1\0");
-    match ty {
-        TypeKind::Bool => {
-            hasher.update(&[0]);
-        }
-        TypeKind::Unit => {
-            hasher.update(&[1]);
-        }
-        TypeKind::Option(item) => {
-            hasher.update(&[2]);
-            hasher.update(item.semantic_identity_digest().as_bytes());
-        }
-        TypeKind::Result { ok, error } => {
-            hasher.update(&[3]);
-            hasher.update(ok.semantic_identity_digest().as_bytes());
-            hasher.update(error.semantic_identity_digest().as_bytes());
-        }
-        TypeKind::ProjectNominal(nominal) => {
-            hasher.update(&[4]);
-            let declaration = symbols
-                .nominal(nominal.declaration())
-                .ok_or(SemanticTranscriptError::MissingIdentity)?;
-            let nominal_identity =
-                TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
-            hasher.update(nominal_identity.as_bytes());
-            let checked_nominal = super::CheckedProjectNominal::new(
-                declaration.id().clone(),
-                declaration.owner(),
-                nominal_identity,
-                nominal.arguments().to_vec(),
-            );
-            hasher.update(nominal_layout_hash(analysis, &checked_nominal)?.as_bytes());
-            let ProjectNominalBody::Enum { variants } = declaration.body() else {
-                hasher.update(&[255]);
-                return Ok(CheckedCoverageDomainDigest::from_bytes(
-                    *hasher.finalize().as_bytes(),
-                ));
-            };
-            hasher.update(
-                &u32::try_from(variants.len())
-                    .map_err(|_| SemanticTranscriptError::WorkLimit)?
-                    .to_le_bytes(),
-            );
-            for (ordinal, variant) in variants.iter().enumerate() {
-                hasher.update(
-                    &u32::try_from(ordinal)
-                        .map_err(|_| SemanticTranscriptError::WorkLimit)?
-                        .to_le_bytes(),
-                );
-                match variant.payload() {
-                    Some(payload) => {
-                        hasher.update(&[1]);
-                        let payload = analysis
-                            .ty(payload)
-                            .ok_or(SemanticTranscriptError::MissingIdentity)?;
-                        hasher.update(payload.semantic_identity_digest().as_bytes());
-                    }
-                    None => {
-                        hasher.update(&[0]);
-                    }
-                }
-            }
-        }
-        _ => {
-            hasher.update(&[255]);
-            hasher.update(ty.semantic_identity_digest().as_bytes());
-        }
-    }
-    Ok(CheckedCoverageDomainDigest::from_bytes(
-        *hasher.finalize().as_bytes(),
-    ))
-}
-
-fn pattern_coverage(
-    analysis: &FinalSemanticAnalysis,
-    module: &HirModule,
-    owner: arcweft_lang_hir::identity::PatternId,
-    domain: &CoverageDomain,
-) -> Result<CoverageShape, SemanticTranscriptError> {
-    let pattern = module
-        .resolve_pattern(owner)
-        .map_err(|_| SemanticTranscriptError::MissingPattern)?;
-    if matches!(pattern.kind(), HirPatternKind::Error(_)) {
-        return Err(SemanticTranscriptError::RecoveredOwner);
-    }
-    match pattern.kind() {
-        HirPatternKind::Discard
-        | HirPatternKind::Binding(_)
-        | HirPatternKind::MutableBinding(_) => Ok(CoverageShape::All),
-        HirPatternKind::WholeBinding { pattern, .. } => {
-            pattern_coverage(analysis, module, *pattern, domain)
-        }
-        HirPatternKind::Literal(HirLiteral::Boolean(value)) => {
-            if !matches!(domain, CoverageDomain::Finite(_)) {
-                return Err(SemanticTranscriptError::UnsupportedCoverage);
-            }
-            let atom = if *value {
-                CoverageAtom::BooleanTrue
-            } else {
-                CoverageAtom::BooleanFalse
-            };
-            Ok(CoverageShape::Atoms(BTreeSet::from([atom])))
-        }
-        HirPatternKind::Tuple { elements } if elements.is_empty() => {
-            if matches!(domain, CoverageDomain::Finite(values) if values.contains(&CoverageAtom::Unit))
-            {
-                Ok(CoverageShape::Atoms(BTreeSet::from([CoverageAtom::Unit])))
-            } else {
-                Err(SemanticTranscriptError::UnsupportedCoverage)
-            }
-        }
-        HirPatternKind::Variant(variant) => {
-            let checked = analysis
-                .pattern(owner)
-                .ok_or(SemanticTranscriptError::MissingPattern)?;
-            let super::CheckedPatternResolution::Variant(resolution) = checked.resolution() else {
-                return Err(SemanticTranscriptError::MissingIdentity);
-            };
-            match variant.payload() {
-                HirVariantPatternPayload::Pattern(child) => {
-                    if !is_total_pattern(module, *child)? {
-                        return Err(SemanticTranscriptError::UnsupportedCoverage);
-                    }
-                }
-                HirVariantPatternPayload::Absent => {}
-                HirVariantPatternPayload::Recovered { .. } => {
-                    return Err(SemanticTranscriptError::RecoveredOwner);
-                }
-            }
-            let atom = CoverageAtom::Variant(resolution.ordinal());
-            let CoverageDomain::Finite(values) = domain else {
-                return Err(SemanticTranscriptError::UnsupportedCoverage);
-            };
-            if !values.contains(&atom) {
-                return Err(SemanticTranscriptError::MissingIdentity);
-            }
-            Ok(CoverageShape::Atoms(BTreeSet::from([atom])))
-        }
-        HirPatternKind::Or { alternatives } => {
-            let mut atoms = BTreeSet::new();
-            for alternative in alternatives {
-                match pattern_coverage(analysis, module, *alternative, domain)? {
-                    CoverageShape::All => return Ok(CoverageShape::All),
-                    CoverageShape::Atoms(values) => atoms.extend(values),
-                }
-            }
-            Ok(CoverageShape::Atoms(atoms))
-        }
-        HirPatternKind::Literal(_)
-        | HirPatternKind::EntityReference(_)
-        | HirPatternKind::Tuple { .. }
-        | HirPatternKind::Record { .. }
-        | HirPatternKind::BracketSequence { .. }
-        | HirPatternKind::TypedBinding { .. } => Err(SemanticTranscriptError::UnsupportedCoverage),
-        HirPatternKind::Error(_) => Err(SemanticTranscriptError::RecoveredOwner),
-    }
-}
-
-fn is_total_pattern(
-    module: &HirModule,
-    owner: arcweft_lang_hir::identity::PatternId,
-) -> Result<bool, SemanticTranscriptError> {
-    let pattern = module
-        .resolve_pattern(owner)
-        .map_err(|_| SemanticTranscriptError::MissingPattern)?;
-    Ok(match pattern.kind() {
-        HirPatternKind::Discard
-        | HirPatternKind::Binding(_)
-        | HirPatternKind::MutableBinding(_) => true,
-        HirPatternKind::WholeBinding { pattern, .. } => is_total_pattern(module, *pattern)?,
-        HirPatternKind::Tuple { elements } => {
-            let mut total = true;
-            for element in elements {
-                total &= is_total_pattern(module, *element)?;
-            }
-            total
-        }
-        HirPatternKind::Or { alternatives } => {
-            let mut total = false;
-            for alternative in alternatives {
-                total |= is_total_pattern(module, *alternative)?;
-            }
-            total
-        }
-        HirPatternKind::Error(_) => return Err(SemanticTranscriptError::RecoveredOwner),
-        _ => false,
-    })
-}
-
 fn match_digest(
-    used: &mut u64,
-    limit: u64,
+    budget: &mut CheckedMatchBudget,
     scrutinee: CheckedExpressionSemanticDigest,
     scrutinee_type: SemanticTypeDigest,
     arms: &[CheckedMatchArm],
     coverage: &CheckedMatchCoverage,
 ) -> Result<CheckedMatchSemanticDigest, SemanticTranscriptError> {
-    let mut hasher = TranscriptHasher::new(used, limit);
-    hasher.update(b"arcweft.lang.checked-match-semantic.v1\0");
-    hasher.update(scrutinee.as_bytes());
-    hasher.update(scrutinee_type.as_bytes());
-    write_len(&mut hasher, arms.len());
+    let mut hasher = TranscriptHasher::new(budget);
+    transcript_update!(hasher, b"arcweft.lang.checked-match-semantic.v1\0");
+    transcript_update!(hasher, scrutinee.as_bytes());
+    transcript_update!(hasher, scrutinee_type.as_bytes());
+    write_len(&mut hasher, arms.len())?;
     for arm in arms {
-        hasher.update(&arm.ordinal.to_le_bytes());
-        hasher.update(arm.pattern.as_bytes());
-        write_len(&mut hasher, arm.bindings.len());
+        transcript_update!(hasher, &arm.ordinal.to_le_bytes());
+        transcript_update!(hasher, arm.pattern.as_bytes());
+        write_len(&mut hasher, arm.bindings.len())?;
         for binding in &arm.bindings {
-            hasher.update(&binding.coordinate.canonical_bytes());
-            hasher.update(binding.ty.as_bytes());
+            transcript_update!(hasher, &binding.coordinate.canonical_bytes()?);
+            transcript_update!(hasher, binding.ty.as_bytes());
         }
         match arm.guard_expression {
             Some(digest) => {
-                hasher.update(&[1]);
-                hasher.update(digest.as_bytes());
-                hasher.update(&[guard_tag(arm.guard)]);
+                transcript_update!(hasher, &[1]);
+                transcript_update!(hasher, digest.as_bytes());
+                transcript_update!(hasher, &[guard_tag(arm.guard)]);
             }
             None => {
-                hasher.update(&[0]);
+                transcript_update!(hasher, &[0]);
             }
         }
-        hasher.update(arm.value.as_bytes());
+        transcript_update!(hasher, arm.value.as_bytes());
     }
-    hasher.update(&[u8::from(coverage.exhaustive)]);
-    hasher.update(coverage.domain_digest.as_bytes());
-    write_len(&mut hasher, coverage.unreachable.len());
-    for row in &coverage.unreachable {
-        hasher.update(&row.arm.to_le_bytes());
-        hasher.update(&[unreachable_tag(row.reason)]);
+    transcript_update!(hasher, &[u8::from(coverage.exhaustive())]);
+    transcript_update!(hasher, coverage.domain_digest().as_bytes());
+    write_len(&mut hasher, coverage.unreachable().len())?;
+    for row in coverage.unreachable() {
+        transcript_update!(hasher, &row.arm().owner().canonical_bytes()?);
+        transcript_update!(hasher, &row.arm().ordinal().to_le_bytes());
+        match row.alternative() {
+            Some(alternative) => {
+                transcript_update!(hasher, &[1]);
+                transcript_update!(hasher, &alternative.canonical_bytes()?);
+            }
+            None => transcript_update!(hasher, &[0]),
+        }
+        transcript_update!(hasher, &[unreachable_tag(row.reason())]);
     }
-    Ok(CheckedMatchSemanticDigest::from_bytes(hasher.finalize()?))
+    Ok(CheckedMatchSemanticDigest::from_bytes(hasher.finalize()))
 }
 
 fn child_pattern_coordinate(
@@ -1191,8 +825,8 @@ fn child_pattern_coordinate(
         HirPatternChildRole::OrAlternative { ordinal } => {
             StablePatternCoordinateStep::OrAlternative(ordinal)
         }
-        HirPatternChildRole::TypedBindingType => StablePatternCoordinateStep::TypedBindingInner,
-        HirPatternChildRole::BindingLocal
+        HirPatternChildRole::TypedBindingType
+        | HirPatternChildRole::BindingLocal
         | HirPatternChildRole::MutableBindingLocal
         | HirPatternChildRole::RecordShorthandLocal { .. }
         | HirPatternChildRole::RecordRestLocal { .. }
@@ -1236,78 +870,27 @@ fn pattern_kind_tag(kind: &HirPatternKind) -> u8 {
 }
 
 fn write_literal(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     literal: &HirLiteral,
     ty: &TypeKind,
 ) -> Result<(), SemanticTranscriptError> {
-    match literal {
-        HirLiteral::String(HirStringLiteral::Value(value)) => {
-            hasher.update(&[0]);
-            write_bytes(hasher, value.as_bytes());
-        }
-        HirLiteral::Character(HirCharacterLiteral::Value(value)) => {
-            hasher.update(&[1]);
-            hasher.update(&u32::from(*value).to_le_bytes());
-        }
-        HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. }) => {
-            hasher.update(&[2]);
-            write_len(hasher, magnitude.limbs_le().len());
-            for limb in magnitude.limbs_le() {
-                hasher.update(&limb.to_le_bytes());
+    super::match_coverage::encode_canonical_literal(literal, ty, |bytes| hasher.update(bytes))
+        .map_err(|error| match error {
+            super::match_coverage::CanonicalLiteralEncodingError::Invalid => {
+                SemanticTranscriptError::RecoveredOwner
             }
-        }
-        HirLiteral::Float(HirFloatLiteral::Value { decimal, .. }) => {
-            hasher.update(&[3]);
-            let canonical = decimal.to_decimal_string();
-            match ty {
-                TypeKind::F32 => {
-                    hasher.update(&[0]);
-                    let value = canonical
-                        .parse::<f32>()
-                        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?;
-                    hasher.update(&value.to_bits().to_le_bytes());
+            super::match_coverage::CanonicalLiteralEncodingError::ArithmeticOverflow => {
+                CheckedMatchBuildError::ArithmeticOverflow {
+                    kind: CheckedMatchLimitKind::TranscriptBytes,
                 }
-                TypeKind::F64 => {
-                    hasher.update(&[1]);
-                    let value = canonical
-                        .parse::<f64>()
-                        .map_err(|_| SemanticTranscriptError::RecoveredOwner)?;
-                    hasher.update(&value.to_bits().to_le_bytes());
-                }
-                _ => return Err(SemanticTranscriptError::RecoveredOwner),
+                .into()
             }
-        }
-        HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { decimal, unit }) => {
-            hasher.update(&[4, unit_number_tag(*unit)]);
-            write_bytes(hasher, decimal.coefficient().digits());
-            hasher.update(&decimal.scale().to_le_bytes());
-            hasher.update(&decimal.exponent10().to_le_bytes());
-        }
-        HirLiteral::Boolean(value) => {
-            hasher.update(&[5, u8::from(*value)]);
-        }
-        HirLiteral::Duration(HirDurationLiteral::Value(value)) => {
-            hasher.update(&[6]);
-            let limbs = value.semantic_value().nanoseconds().limbs_le();
-            write_len(hasher, limbs.len());
-            for limb in limbs {
-                hasher.update(&limb.to_le_bytes());
-            }
-        }
-        HirLiteral::String(HirStringLiteral::Invalid(_))
-        | HirLiteral::Character(HirCharacterLiteral::Invalid(_))
-        | HirLiteral::Integer(HirIntegerLiteral::Invalid(_))
-        | HirLiteral::Float(HirFloatLiteral::Invalid(_))
-        | HirLiteral::UnitNumber(HirUnitNumberLiteral::Invalid(_))
-        | HirLiteral::Duration(HirDurationLiteral::Invalid(_)) => {
-            return Err(SemanticTranscriptError::RecoveredOwner);
-        }
-    }
-    Ok(())
+            super::match_coverage::CanonicalLiteralEncodingError::Sink(error) => error.into(),
+        })
 }
 
 fn write_pattern_resolution(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     resolution: &super::CheckedPatternResolution,
     ty: &TypeKind,
     coordinate: &StablePatternCoordinate,
@@ -1324,39 +907,39 @@ fn write_pattern_resolution(
             write_nominal(hasher, nominal, analysis)?;
             match record.rest() {
                 super::CheckedRecordPatternRest::Absent => {
-                    hasher.update(&[0]);
+                    transcript_update!(hasher, &[0]);
                 }
                 super::CheckedRecordPatternRest::Ignore => {
-                    hasher.update(&[1]);
+                    transcript_update!(hasher, &[1]);
                 }
                 super::CheckedRecordPatternRest::Binding(binding) => {
-                    hasher.update(&[2]);
-                    hasher.update(&binding.coordinate().canonical_bytes());
+                    transcript_update!(hasher, &[2]);
+                    transcript_update!(hasher, &binding.coordinate().canonical_bytes()?);
                 }
             }
-            write_len(hasher, record.fields().len());
+            write_len(hasher, record.fields().len())?;
             for field in record.fields() {
-                hasher.update(&field.source_ordinal().to_le_bytes());
-                hasher.update(&field.declaration_ordinal().to_le_bytes());
-                hasher.update(field.semantic_id().as_bytes());
-                hasher.update(field.field_type_digest().as_bytes());
+                transcript_update!(hasher, &field.source_ordinal().to_le_bytes());
+                transcript_update!(hasher, &field.declaration_ordinal().to_le_bytes());
+                transcript_update!(hasher, field.semantic_id().as_bytes());
+                transcript_update!(hasher, field.field_type_digest().as_bytes());
                 if field.source().pattern_coordinate().is_some() {
-                    hasher.update(&[0]);
+                    transcript_update!(hasher, &[0]);
                     let child = record_pattern_child_coordinate(coordinate, field)?;
-                    hasher.update(&child.canonical_bytes());
+                    transcript_update!(hasher, &child.canonical_bytes()?);
                 } else if let Some(binding) = field.source().binding() {
-                    hasher.update(&[1]);
-                    hasher.update(&binding.coordinate().canonical_bytes());
+                    transcript_update!(hasher, &[1]);
+                    transcript_update!(hasher, &binding.coordinate().canonical_bytes()?);
                 } else {
                     return Err(SemanticTranscriptError::UnsupportedIdentity);
                 }
             }
         }
         super::CheckedPatternResolution::Variant(variant) => {
-            write_variant_resolution(hasher, variant);
+            write_variant_resolution(hasher, variant)?;
         }
         super::CheckedPatternResolution::TypedBinding(binding) => {
-            hasher.update(binding.annotation_digest().as_bytes());
+            transcript_update!(hasher, binding.annotation_digest().as_bytes());
         }
         super::CheckedPatternResolution::Entity(_) => {
             return Err(SemanticTranscriptError::UnsupportedIdentity);
@@ -1365,11 +948,11 @@ fn write_pattern_resolution(
     Ok(())
 }
 
-fn write_resolution_payload<'paths, 'edges>(
-    hasher: &mut TranscriptHasher<'_>,
+fn write_resolution_payload(
+    hasher: &mut MatchTranscriptHasher<'_>,
     resolution: &CheckedExpressionResolution,
     ty: &TypeKind,
-    coordinates: &SemanticCoordinateIndex<'paths, 'edges>,
+    coordinates: &SemanticCoordinateIndex<'_, '_>,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), SemanticTranscriptError> {
     match resolution {
@@ -1379,23 +962,26 @@ fn write_resolution_payload<'paths, 'edges>(
         CheckedExpressionResolution::Value(value) => match value {
             CheckedValueResolution::Local(local) => {
                 let binding = coordinates.binding(*local)?;
-                hasher.update(&binding.canonical_bytes());
+                transcript_update!(hasher, &binding.canonical_bytes()?);
             }
             CheckedValueResolution::LineContext => {}
             CheckedValueResolution::ProjectCallable(callable) => {
                 write_project_callable(hasher, analysis, callable)?;
             }
             CheckedValueResolution::Registered(value) => {
-                hasher.update(value.as_bytes());
+                transcript_update!(hasher, value.as_bytes());
             }
             CheckedValueResolution::Constant(literal) => write_literal(hasher, literal, ty)?,
             CheckedValueResolution::CharacterField {
                 character, field, ..
             } => {
-                write_bytes(hasher, character.as_str().as_bytes());
-                hasher.update(&[match field {
-                    crate::types::CharacterField::Stage => 0,
-                }]);
+                write_bytes(hasher, character.as_str().as_bytes())?;
+                transcript_update!(
+                    hasher,
+                    &[match field {
+                        crate::types::CharacterField::Stage => 0,
+                    }]
+                );
             }
             CheckedValueResolution::ProjectItem(_) | CheckedValueResolution::Entry(_) => {
                 return Err(SemanticTranscriptError::UnsupportedIdentity);
@@ -1403,47 +989,52 @@ fn write_resolution_payload<'paths, 'edges>(
         },
         CheckedExpressionResolution::Select(select) => match select {
             CheckedSelectResolution::Field(selection) => {
-                hasher.update(selection.owner_type().as_bytes());
-                hasher.update(selection.field().as_bytes());
-                hasher.update(&selection.declaration_ordinal().to_le_bytes());
-                hasher.update(selection.field_type().as_bytes());
+                transcript_update!(hasher, selection.owner_type().as_bytes());
+                transcript_update!(hasher, selection.field().as_bytes());
+                transcript_update!(hasher, &selection.declaration_ordinal().to_le_bytes());
+                transcript_update!(hasher, selection.field_type().as_bytes());
                 match selection.runtime_field() {
                     Some(runtime_field) => {
-                        hasher.update(&[1]);
-                        hasher.update(&runtime_field.get().get().to_le_bytes());
+                        transcript_update!(hasher, &[1]);
+                        transcript_update!(hasher, &runtime_field.get().get().to_le_bytes());
                     }
-                    None => hasher.update(&[0]),
+                    None => transcript_update!(hasher, &[0]),
                 }
             }
             CheckedSelectResolution::ProgressField { field } => {
-                hasher.update(&[match field {
-                    crate::types::ProgressField::Ratio => 0,
-                    crate::types::ProgressField::Label => 1,
-                }]);
+                transcript_update!(
+                    hasher,
+                    &[match field {
+                        crate::types::ProgressField::Ratio => 0,
+                        crate::types::ProgressField::Label => 1,
+                    }]
+                );
             }
             CheckedSelectResolution::Method(method) => {
-                hasher.update(method.callable().as_bytes());
-                hasher.update(method.receiver_type().as_bytes());
+                transcript_update!(hasher, method.callable().as_bytes());
+                transcript_update!(hasher, method.receiver_type().as_bytes());
                 match method.receiver_mode() {
                     crate::callable::CallableReceiverMode::None => {
                         return Err(SemanticTranscriptError::UnsupportedIdentity);
                     }
                     crate::callable::CallableReceiverMode::Value { .. } => {
-                        hasher.update(&[0]);
+                        transcript_update!(hasher, &[0]);
                     }
                     crate::callable::CallableReceiverMode::Type { .. } => {
-                        hasher.update(&[1]);
+                        transcript_update!(hasher, &[1]);
                     }
                     crate::callable::CallableReceiverMode::Extension {
                         group, parameter, ..
                     } => {
-                        hasher.update(&[2]);
-                        hasher.update(
+                        transcript_update!(hasher, &[2]);
+                        transcript_update!(
+                            hasher,
                             &u64::try_from(group.get())
                                 .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)?
                                 .to_le_bytes(),
                         );
-                        hasher.update(
+                        transcript_update!(
+                            hasher,
                             &u64::try_from(parameter.get())
                                 .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)?
                                 .to_le_bytes(),
@@ -1460,13 +1051,13 @@ fn write_resolution_payload<'paths, 'edges>(
             write_nominal(hasher, nominal, analysis)?;
         }
         CheckedExpressionResolution::Variant(variant) => {
-            write_variant_resolution(hasher, variant);
+            write_variant_resolution(hasher, variant)?;
         }
         CheckedExpressionResolution::Effect(effect) => {
-            write_bytes(hasher, effect.as_str().as_bytes());
+            write_bytes(hasher, effect.as_str().as_bytes())?;
         }
         CheckedExpressionResolution::StageLook(look) => {
-            hasher.update(look.look().as_bytes());
+            transcript_update!(hasher, look.look().as_bytes());
         }
         CheckedExpressionResolution::Await(_)
         | CheckedExpressionResolution::Choice(_)
@@ -1494,22 +1085,25 @@ fn write_resolution_payload<'paths, 'edges>(
 }
 
 fn write_nominal(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     nominal: &super::CheckedProjectNominal,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), SemanticTranscriptError> {
-    hasher.update(nominal.identity().as_bytes());
-    let layout = nominal_layout_hash(analysis, nominal)?;
-    hasher.update(layout.as_bytes());
-    write_len(hasher, nominal.arguments().len());
+    transcript_update!(hasher, nominal.identity().as_bytes());
+    let definition = analysis
+        .project_nominal_semantic(nominal.identity())
+        .filter(|definition| definition.nominal() == nominal)
+        .ok_or(SemanticTranscriptError::UnsupportedIdentity)?;
+    transcript_update!(hasher, definition.digest().as_bytes());
+    write_len(hasher, nominal.arguments().len())?;
     for argument in nominal.arguments() {
-        hasher.update(argument.semantic_identity_digest().as_bytes());
+        transcript_update!(hasher, argument.semantic_identity_digest().as_bytes());
     }
     Ok(())
 }
 
 fn write_project_callable(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     analysis: &FinalSemanticAnalysis,
     callable: &super::CheckedProjectCallable,
 ) -> Result<(), SemanticTranscriptError> {
@@ -1517,15 +1111,15 @@ fn write_project_callable(
         .checked_callables()
         .project_callable(callable.declaration())
         .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)?;
-    hasher.update(facts.id().semantic_digest().as_bytes());
-    hasher.update(facts.interface_digest().as_bytes());
+    transcript_update!(hasher, facts.id().semantic_digest().as_bytes());
+    transcript_update!(hasher, facts.interface_digest().as_bytes());
     Ok(())
 }
 
 fn write_variant_resolution(
-    hasher: &mut TranscriptHasher<'_>,
+    hasher: &mut MatchTranscriptHasher<'_>,
     resolution: &super::CheckedVariantResolution,
-) {
+) -> Result<(), SemanticTranscriptError> {
     let owner_tag = match resolution.owner() {
         CheckedVariantOwner::Project { .. } => 0,
         CheckedVariantOwner::CharacterNominal { .. } => 1,
@@ -1534,74 +1128,67 @@ fn write_variant_resolution(
         CheckedVariantOwner::Result { .. } => 4,
         CheckedVariantOwner::RuntimeBuiltin { .. } => 5,
     };
-    hasher.update(&[owner_tag]);
-    hasher.update(resolution.owner().semantic_type().as_bytes());
-    match resolution.owner().layout() {
-        Some(layout) => {
-            hasher.update(&[1]);
-            hasher.update(layout.as_bytes());
-        }
-        None => hasher.update(&[0]),
-    }
+    transcript_update!(hasher, &[owner_tag]);
+    transcript_update!(hasher, resolution.owner().semantic_type().as_bytes());
     let selected = resolution.selected();
-    hasher.update(selected.semantic_id().as_bytes());
-    hasher.update(&selected.ordinal().to_le_bytes());
+    transcript_update!(hasher, selected.semantic_id().as_bytes());
+    transcript_update!(hasher, &selected.ordinal().to_le_bytes());
     match selected.payload() {
-        Some(payload) => {
-            hasher.update(&[1]);
-            hasher.update(payload.semantic_identity_digest().as_bytes());
+        crate::types::VariantPayloadShape::Unit => {
+            transcript_update!(hasher, &[0]);
         }
-        None => hasher.update(&[0]),
+        crate::types::VariantPayloadShape::Tuple(fields) => {
+            transcript_update!(hasher, &[1]);
+            write_len(hasher, fields.len())?;
+            for field in fields {
+                transcript_update!(hasher, &field.ordinal().to_le_bytes());
+                transcript_update!(hasher, field.semantic_id().as_bytes());
+                transcript_update!(hasher, field.ty().semantic_identity_digest().as_bytes());
+            }
+        }
+        crate::types::VariantPayloadShape::Record(fields) => {
+            transcript_update!(hasher, &[2]);
+            write_len(hasher, fields.len())?;
+            for field in fields {
+                transcript_update!(hasher, &field.ordinal().to_le_bytes());
+                transcript_update!(hasher, field.semantic_id().as_bytes());
+                transcript_update!(hasher, field.ty().semantic_identity_digest().as_bytes());
+            }
+        }
     }
+    Ok(())
 }
 
-fn nominal_layout_hash(
-    analysis: &FinalSemanticAnalysis,
-    nominal: &super::CheckedProjectNominal,
-) -> Result<TypeLayoutHash, SemanticTranscriptError> {
-    analysis
-        .checked_runtime_nominal_projection(nominal)
-        .map_err(|_| SemanticTranscriptError::UnsupportedIdentity)
-        .map(|projection| projection.layout())
-}
-
-fn unit_number_tag(unit: HirUnitNumberUnit) -> u8 {
-    match unit {
-        HirUnitNumberUnit::Percent => 0,
-        HirUnitNumberUnit::Px => 1,
-        HirUnitNumberUnit::Pt => 2,
-        HirUnitNumberUnit::Em => 3,
-        HirUnitNumberUnit::Rem => 4,
-        HirUnitNumberUnit::Vw => 5,
-        HirUnitNumberUnit::Vh => 6,
-        HirUnitNumberUnit::Deg => 7,
-        HirUnitNumberUnit::Rad => 8,
-        HirUnitNumberUnit::Turn => 9,
-        HirUnitNumberUnit::Db => 10,
-        HirUnitNumberUnit::Lufs => 11,
-        HirUnitNumberUnit::Bpm => 12,
-        HirUnitNumberUnit::Bars => 13,
-    }
-}
-
-fn write_effects(hasher: &mut TranscriptHasher<'_>, effects: &crate::effects::EffectSet) {
-    write_len(hasher, effects.len());
+fn write_effects(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    effects: &crate::effects::EffectSet,
+) -> Result<(), SemanticTranscriptError> {
+    write_len(hasher, effects.len())?;
     for effect in effects.iter() {
-        write_bytes(hasher, effect.as_str().as_bytes());
+        write_bytes(hasher, effect.as_str().as_bytes())?;
     }
+    Ok(())
 }
 
-pub(crate) fn write_len(hasher: &mut TranscriptHasher<'_>, value: usize) {
-    hasher.update(
-        &u32::try_from(value)
-            .expect("accepted transcript sequences fit checked u32 limits")
-            .to_le_bytes(),
-    );
+pub(crate) fn write_len<C: TranscriptByteCounter + ?Sized>(
+    hasher: &mut TranscriptHasher<'_, C>,
+    value: usize,
+) -> Result<(), C::Error>
+where
+    C::Error: From<TranscriptWriteError>,
+{
+    let value = u64::try_from(value)
+        .map_err(|_| C::Error::from(TranscriptWriteError::ArithmeticOverflow))?;
+    hasher.update(&value.to_le_bytes())
 }
 
-fn write_bytes(hasher: &mut TranscriptHasher<'_>, value: &[u8]) {
-    write_len(hasher, value.len());
-    hasher.update(value);
+fn write_bytes(
+    hasher: &mut MatchTranscriptHasher<'_>,
+    value: &[u8],
+) -> Result<(), SemanticTranscriptError> {
+    write_len(hasher, value.len())?;
+    transcript_update!(hasher, value);
+    Ok(())
 }
 
 fn guard_tag(value: CheckedGuardClass) -> u8 {
@@ -1615,9 +1202,9 @@ fn guard_tag(value: CheckedGuardClass) -> u8 {
 
 fn unreachable_tag(value: CheckedUnreachableReason) -> u8 {
     match value {
-        CheckedUnreachableReason::CoveredByPriorRows => 0,
-        CheckedUnreachableReason::FalseGuard => 1,
-        CheckedUnreachableReason::RedundantOrAlternative => 2,
+        CheckedUnreachableReason::CoveredByPriorUsefulArms => 0,
+        CheckedUnreachableReason::ConstantFalseGuard => 1,
+        CheckedUnreachableReason::CoveredByEarlierOrAlternative => 2,
         CheckedUnreachableReason::UninhabitedDomain => 3,
     }
 }

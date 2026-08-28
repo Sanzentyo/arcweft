@@ -135,5 +135,8 @@ pub(crate) fn visit_project_nominals<E>(
             }
             Ok(())
         }
+        TypeKind::VariantPayload(payload) => payload
+            .shape()
+            .visit_types(&mut |field| visit_project_nominals(field, visitor)),
     }
 }

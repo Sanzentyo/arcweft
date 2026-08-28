@@ -15,7 +15,10 @@ use crate::{
         CheckedCallRuntimeOperand, CheckedCallRuntimeOperandOrder,
     },
     env::RegisteredSemanticWorld,
-    final_analysis::{FinalSemanticAnalysis, SemanticTranscriptError, TranscriptHasher, write_len},
+    final_analysis::{
+        CheckedTranscriptByteBudget, FinalSemanticAnalysis, TranscriptHasher, TranscriptWriteError,
+        write_len,
+    },
     ownership::{
         CheckedOwnershipCertificate, CheckedOwnershipError, CheckedOwnershipLimits,
         OwnershipEvidenceDigest, RetainedValueDisposition, classify_checked_producer_arguments,
@@ -93,7 +96,13 @@ impl CheckedNeedProducerAdmission {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedNeedProducerAdmissionError {
     #[error(transparent)]
-    Semantic(#[from] SemanticTranscriptError),
+    Generation(Box<crate::final_analysis::FinalSemanticAnalysisError>),
+    #[error("selected callable join is missing")]
+    MissingCallableJoin,
+    #[error("producer semantic transcript byte accounting overflow")]
+    TranscriptArithmeticOverflow,
+    #[error("producer semantic transcript byte limit {limit} exceeded by attempt {attempted}")]
+    TranscriptLimitExceeded { limit: u64, attempted: u64 },
     #[error(transparent)]
     Ownership(#[from] CheckedOwnershipError),
     #[error("producer admission requires one exact selected call")]
@@ -106,6 +115,23 @@ pub enum CheckedNeedProducerAdmissionError {
     UnsupportedArgumentInventory,
     #[error("producer admission work limit exceeded")]
     WorkLimit,
+}
+
+impl From<crate::final_analysis::FinalSemanticAnalysisError> for CheckedNeedProducerAdmissionError {
+    fn from(error: crate::final_analysis::FinalSemanticAnalysisError) -> Self {
+        Self::Generation(Box::new(error))
+    }
+}
+
+impl From<TranscriptWriteError> for CheckedNeedProducerAdmissionError {
+    fn from(error: TranscriptWriteError) -> Self {
+        match error {
+            TranscriptWriteError::ArithmeticOverflow => Self::TranscriptArithmeticOverflow,
+            TranscriptWriteError::LimitExceeded { limit, attempted } => {
+                Self::TranscriptLimitExceeded { limit, attempted }
+            }
+        }
+    }
 }
 
 impl FinalSemanticAnalysis {
@@ -156,7 +182,7 @@ impl FinalSemanticAnalysis {
     ) -> Result<Vec<(StableCheckedValueCoordinate, &'a TypeKind)>, CheckedNeedProducerAdmissionError>
     {
         self.validate_generation(project, symbols)
-            .map_err(SemanticTranscriptError::from)?;
+            .map_err(CheckedNeedProducerAdmissionError::from)?;
         let facts = self
             .call(call)
             .ok_or(CheckedNeedProducerAdmissionError::NotSelectedCall)?;
@@ -165,7 +191,7 @@ impl FinalSemanticAnalysis {
         };
         let core = application.core();
         self.checked_callable_join(call)
-            .map_err(|_| SemanticTranscriptError::MissingCallableJoin)?;
+            .map_err(|_| CheckedNeedProducerAdmissionError::MissingCallableJoin)?;
         if !matches!(core.callee(), CheckedCallCalleeExecution::Direct) {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
         }
@@ -215,18 +241,43 @@ impl FinalSemanticAnalysis {
 fn need_producer_admission_digest(
     arguments: &[CheckedProducerArgumentAdmission],
     evidence: OwnershipEvidenceDigest,
-) -> Result<CheckedNeedProducerAdmissionDigest, SemanticTranscriptError> {
-    let mut used = 0;
-    let mut hasher = TranscriptHasher::new(&mut used, u64::MAX);
-    hasher.update(b"arcweft.lang.need-producer-admission.v1\0");
-    write_len(&mut hasher, arguments.len());
+) -> Result<CheckedNeedProducerAdmissionDigest, CheckedNeedProducerAdmissionError> {
+    let mut required = u64::try_from(b"arcweft.lang.need-producer-admission.v1\0".len())
+        .map_err(|_| TranscriptWriteError::ArithmeticOverflow)?
+        .checked_add(8)
+        .ok_or(TranscriptWriteError::ArithmeticOverflow)?;
     for argument in arguments {
-        hasher.update(&argument.coordinate().canonical_bytes());
-        hasher.update(argument.ty().as_bytes());
-        hasher.update(&[argument.disposition().semantic_tag()]);
+        let coordinate = argument
+            .coordinate()
+            .canonical_bytes()
+            .map_err(|_| CheckedNeedProducerAdmissionError::TranscriptArithmeticOverflow)?;
+        required = required
+            .checked_add(
+                u64::try_from(coordinate.len())
+                    .map_err(|_| TranscriptWriteError::ArithmeticOverflow)?,
+            )
+            .and_then(|value| value.checked_add(32 + 1))
+            .ok_or(TranscriptWriteError::ArithmeticOverflow)?;
     }
-    hasher.update(evidence.as_bytes());
+    required = required
+        .checked_add(32)
+        .ok_or(TranscriptWriteError::ArithmeticOverflow)?;
+    let mut budget = CheckedTranscriptByteBudget::exact(required);
+    let mut hasher = TranscriptHasher::new(&mut budget);
+    hasher.update(b"arcweft.lang.need-producer-admission.v1\0")?;
+    write_len(&mut hasher, arguments.len())?;
+    for argument in arguments {
+        hasher.update(
+            &argument
+                .coordinate()
+                .canonical_bytes()
+                .map_err(|_| CheckedNeedProducerAdmissionError::TranscriptArithmeticOverflow)?,
+        )?;
+        hasher.update(argument.ty().as_bytes())?;
+        hasher.update(&[argument.disposition().semantic_tag()])?;
+    }
+    hasher.update(evidence.as_bytes())?;
     Ok(CheckedNeedProducerAdmissionDigest::from_bytes(
-        hasher.finalize()?,
+        hasher.finalize(),
     ))
 }

@@ -245,7 +245,8 @@ fn standard_drop_policy_keeps_payload_case_and_zero_fade_alias_distinct() {
     assert!(matches!(
         policy.variants()[1].payload(),
         EnumVariantPayload::Record(fields)
-            if fields.get("fade") == Some(&TypeKind::Duration) && fields.len() == 1
+            if matches!(fields.as_ref(), [field]
+                if field.name() == "fade" && field.ty() == &TypeKind::Duration)
     ));
     assert!(
         policy.variants()[2..]
@@ -278,6 +279,31 @@ fn standard_drop_policy_keeps_payload_case_and_zero_fade_alias_distinct() {
             StandardDropPolicyValue::Stop { fade_nanos: 0 }
         ))
     );
+}
+
+#[test]
+fn enum_record_payload_preserves_declaration_order_and_rejects_duplicates() {
+    let payload =
+        EnumVariantPayload::record([("second", TypeKind::String), ("first", TypeKind::Bool)])
+            .expect("distinct declaration-ordered fields");
+    let EnumVariantPayload::Record(fields) = payload else {
+        panic!("record payload remains a record");
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(super::enums::EnvironmentEnumRecordField::name)
+            .collect::<Vec<_>>(),
+        ["second", "first"]
+    );
+    assert!(matches!(
+        EnumVariantPayload::record([
+            ("duplicate", TypeKind::Bool),
+            ("duplicate", TypeKind::String),
+        ]),
+        Err(super::EnumVariantPayloadBuildError::DuplicateRecordField { name })
+            if name == "duplicate"
+    ));
 }
 
 #[test]
@@ -322,5 +348,46 @@ fn closed_enum_construction_rejects_duplicate_cases_and_conflicting_owners() {
             existing,
             requested,
         }) if *conflicting == ty && existing == first && requested == second
+    ));
+}
+
+#[test]
+fn record_variant_payload_preserves_declaration_order_and_rejects_duplicate_names() {
+    let payload = EnumVariantPayload::record([("z", TypeKind::I64), ("a", TypeKind::Bool)])
+        .expect("distinct record fields are accepted in declaration order");
+    let EnumVariantPayload::Record(fields) = payload else {
+        panic!("record constructor retains the record payload family")
+    };
+    assert_eq!(
+        fields
+            .iter()
+            .map(|field| (field.name(), field.ty()))
+            .collect::<Vec<_>>(),
+        vec![("z", &TypeKind::I64), ("a", &TypeKind::Bool)]
+    );
+
+    for duplicate_type in [TypeKind::I64, TypeKind::Bool] {
+        assert_eq!(
+            EnumVariantPayload::record([("field", TypeKind::I64), ("field", duplicate_type),]),
+            Err(EnumVariantPayloadBuildError::DuplicateRecordField {
+                name: "field".to_owned(),
+            })
+        );
+    }
+}
+
+#[test]
+fn standard_drop_policy_retains_the_exact_record_payload_schema() {
+    let environment = TypeCheckEnv::standard();
+    let schema = environment
+        .closed_enum(&TypeKind::Named("DropPolicy".to_owned()))
+        .expect("DropPolicy is one closed environment enum");
+    let stop = &schema.variants()[1];
+    assert_eq!(stop.name(), "Stop");
+    assert!(matches!(
+        stop.payload(),
+        EnumVariantPayload::Record(fields)
+            if matches!(fields.as_ref(), [field]
+                if field.name() == "fade" && field.ty() == &TypeKind::Duration)
     ));
 }

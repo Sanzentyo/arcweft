@@ -1029,8 +1029,8 @@ fn standard_map_plan_types(
         )
         | (
             RuntimeStandardMapFamily::Option,
-            RuntimePlanTypeProjection::Option(input),
-            RuntimePlanTypeProjection::Option(output),
+            RuntimePlanTypeProjection::Option { item: input, .. },
+            RuntimePlanTypeProjection::Option { item: output, .. },
         ) => StandardMapPlanTypes {
             input: *input,
             output: *output,
@@ -1056,10 +1056,12 @@ fn standard_map_plan_types(
             RuntimePlanTypeProjection::Result {
                 value: input,
                 error: input_error,
+                ..
             },
             RuntimePlanTypeProjection::Result {
                 value: output,
                 error: output_error,
+                ..
             },
         ) if input_error == output_error => StandardMapPlanTypes {
             input: *input,
@@ -1309,7 +1311,7 @@ fn lower_standard_variant_map(
         plan,
         result_ty,
         success_case,
-        Some(mapped),
+        Some((types.output, mapped)),
     );
     body.terminate(
         inventory,
@@ -1351,7 +1353,7 @@ fn lower_standard_variant_map(
                 plan,
                 result_ty,
                 RuntimeBuiltinVariantCaseIdentity::ResultErr,
-                payload,
+                payload.map(|payload| (residual_ty, payload)),
             )
         }
         _ => unreachable!("only Option and Result use variant map lowering"),
@@ -1371,18 +1373,26 @@ fn standard_map_variant_pattern(
     plan: &RuntimePlan,
     ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     case: RuntimeBuiltinVariantCaseIdentity,
-    payload_ty: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
+    payload_item_ty: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
 ) -> (AwbcPatternId, Option<AwbcRegisterId>) {
-    let payload = payload_ty.map(|payload_ty| {
-        let payload_ty = admitted_plan_type(inventory, plan, payload_ty);
-        let payload = frame.temp(payload_ty);
-        let pattern = inventory.intern_pattern(AwbcPattern::Bind {
-            target: payload,
-            mutable: false,
-            expected: Some(payload_ty),
-        });
-        (payload, pattern)
-    });
+    let payload_ty = standard_map_variant_payload_type(plan, ty, case, payload_item_ty);
+    let payload = match (payload_ty, payload_item_ty) {
+        (Some(_), Some(payload_item_ty)) => {
+            let payload_item_ty = admitted_plan_type(inventory, plan, payload_item_ty);
+            let payload = frame.temp(payload_item_ty);
+            let item_pattern = inventory.intern_pattern(AwbcPattern::Bind {
+                target: payload,
+                mutable: false,
+                expected: Some(payload_item_ty),
+            });
+            let pattern = inventory.intern_pattern(AwbcPattern::Tuple(vec![item_pattern]));
+            Some((payload, pattern))
+        }
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            unreachable!("admitted standard map case has inconsistent payload presence")
+        }
+    };
     let (ordinal, _) = case
         .owner()
         .resolve_case(case)
@@ -1398,14 +1408,78 @@ fn standard_map_variant_pattern(
     (pattern, payload.map(|(payload, _)| payload))
 }
 
+fn standard_map_variant_payload_type(
+    plan: &RuntimePlan,
+    ty: arcweft_core::runtime_id::RuntimePlanTypeId,
+    case: RuntimeBuiltinVariantCaseIdentity,
+    expected_item: Option<arcweft_core::runtime_id::RuntimePlanTypeId>,
+) -> Option<arcweft_core::runtime_id::RuntimePlanTypeId> {
+    let payload = match (plan_type_projection(plan, ty), case) {
+        (
+            RuntimePlanTypeProjection::Option { some_payload, .. },
+            RuntimeBuiltinVariantCaseIdentity::OptionSome,
+        ) => Some(*some_payload),
+        (
+            RuntimePlanTypeProjection::Option { .. },
+            RuntimeBuiltinVariantCaseIdentity::OptionNone,
+        ) => None,
+        (
+            RuntimePlanTypeProjection::Result { value_payload, .. },
+            RuntimeBuiltinVariantCaseIdentity::ResultOk,
+        ) => Some(*value_payload),
+        (
+            RuntimePlanTypeProjection::Result { error_payload, .. },
+            RuntimeBuiltinVariantCaseIdentity::ResultErr,
+        ) => Some(*error_payload),
+        _ => panic!("admitted standard map case is incompatible with its variant type"),
+    };
+    match (payload, expected_item) {
+        (Some(payload), Some(expected_item)) => {
+            let RuntimePlanTypeProjection::Tuple(items) = plan_type_projection(plan, payload)
+            else {
+                panic!("admitted standard map payload is not an exact Tuple type")
+            };
+            if items.as_ref() != [expected_item] {
+                panic!("admitted standard map payload is not the expected one-field Tuple")
+            }
+            Some(payload)
+        }
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            panic!("admitted standard map case has inconsistent payload presence")
+        }
+    }
+}
+
 fn standard_map_make_variant(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
     plan: &RuntimePlan,
     ty: arcweft_core::runtime_id::RuntimePlanTypeId,
     case: RuntimeBuiltinVariantCaseIdentity,
-    payload: Option<AwbcRegisterId>,
+    payload: Option<(arcweft_core::runtime_id::RuntimePlanTypeId, AwbcRegisterId)>,
 ) -> AwbcRegisterId {
+    let payload_ty = standard_map_variant_payload_type(
+        plan,
+        ty,
+        case,
+        payload.map(|(payload_ty, _)| payload_ty),
+    );
+    let payload = match (payload_ty, payload) {
+        (Some(payload_ty), Some((_, payload))) => {
+            let payload_ty = admitted_plan_type(inventory, plan, payload_ty);
+            let tuple = frame.temp(payload_ty);
+            inventory.push_instruction(AwbcInstruction::MakeTuple {
+                dst: tuple,
+                items: vec![payload],
+            });
+            Some(tuple)
+        }
+        (None, None) => None,
+        (Some(_), None) | (None, Some(_)) => {
+            unreachable!("admitted standard map case has inconsistent payload presence")
+        }
+    };
     let (ordinal, _) = case
         .owner()
         .resolve_case(case)

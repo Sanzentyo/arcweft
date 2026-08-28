@@ -1,6 +1,6 @@
 //! Recursive open-type classification used by overload selection.
 
-use super::TypeKind;
+use super::{TypeKind, VariantPayloadType};
 
 macro_rules! atomic_type_kind_pattern {
     ($($extra:pat_param)?) => {
@@ -116,6 +116,9 @@ impl TypeKind {
             Self::Tuple(items) | Self::Choice(items) => {
                 items.iter().any(Self::contains_dialogue_line_operation)
             }
+            Self::VariantPayload(payload) => {
+                variant_payload_contains(payload, TypeKind::contains_dialogue_line_operation)
+            }
             atomic_type_kind_pattern!(Self::Error(_)) => false,
         }
     }
@@ -168,6 +171,9 @@ impl TypeKind {
             Self::Tuple(items) | Self::Choice(items) => {
                 items.iter().any(Self::contains_nominal_poison)
             }
+            Self::VariantPayload(payload) => {
+                variant_payload_contains(payload, TypeKind::contains_nominal_poison)
+            }
             atomic_type_kind_pattern!() => false,
         }
     }
@@ -181,4 +187,18 @@ fn arguments_contain_dialogue_line(arguments: &[TypeKind]) -> bool {
     arguments
         .iter()
         .any(TypeKind::contains_dialogue_line_operation)
+}
+
+fn variant_payload_contains(
+    payload: &VariantPayloadType,
+    predicate: impl Fn(&TypeKind) -> bool,
+) -> bool {
+    payload
+        .shape()
+        .tuple_fields()
+        .is_some_and(|fields| fields.iter().any(|field| predicate(field.ty())))
+        || payload
+            .shape()
+            .record_fields()
+            .is_some_and(|fields| fields.iter().any(|field| predicate(field.ty())))
 }

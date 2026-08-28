@@ -1,6 +1,9 @@
 use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
-    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    pattern::{
+        RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
+    },
     runtime_id::RuntimeLocalDeclarationId,
     time::LogicalDuration,
     value::{
@@ -155,14 +158,7 @@ fn runtime_value_nesting_accepts_64_and_rejects_65() {
 
 #[test]
 fn option_none_conversion_rejects_same_named_non_option_variants() {
-    let option = RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(
-            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-        ),
-        ordinal: 0,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Bool(true))),
-    };
+    let option = RuntimeValue::option_some(RuntimeValue::Bool(true));
     assert_eq!(
         option.option_none_with_same_owner(),
         Some(RuntimeValue::Variant {
@@ -195,6 +191,109 @@ fn option_none_conversion_rejects_same_named_non_option_variants() {
         payload: None,
     };
     assert_eq!(malformed.option_none_with_same_owner(), None);
+}
+
+#[test]
+fn option_and_result_values_store_structural_tuple_payloads_but_expose_raw_operands() {
+    for (value, expected_case, expected_payload) in [
+        (
+            RuntimeValue::option_some(RuntimeValue::i64(7)),
+            RuntimeBuiltinVariantCaseIdentity::OptionSome,
+            RuntimeValue::i64(7),
+        ),
+        (
+            RuntimeValue::result_ok(RuntimeValue::i64(8)),
+            RuntimeBuiltinVariantCaseIdentity::ResultOk,
+            RuntimeValue::i64(8),
+        ),
+        (
+            RuntimeValue::result_err(RuntimeValue::i64(9)),
+            RuntimeBuiltinVariantCaseIdentity::ResultErr,
+            RuntimeValue::i64(9),
+        ),
+    ] {
+        let RuntimeValue::Variant {
+            payload: Some(stored),
+            ..
+        } = &value
+        else {
+            panic!("payload-bearing builtin variant stores one payload")
+        };
+        assert_eq!(
+            stored.as_ref(),
+            &RuntimeValue::Tuple(vec![expected_payload.clone()])
+        );
+        assert_eq!(
+            value.builtin_variant_case(),
+            Some((expected_case, Some(&expected_payload)))
+        );
+        assert_eq!(
+            value.clone().try_into_builtin_variant_case(),
+            Ok((expected_case, Some(expected_payload)))
+        );
+    }
+
+    assert!(
+        RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Signed(
+            crate::value::RuntimeSignedIntWidth::I64,
+        )))
+        .accepts_value(&RuntimeValue::option_some(RuntimeValue::i64(1)))
+    );
+    assert!(
+        RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Signed(
+                crate::value::RuntimeSignedIntWidth::I64,
+            )),
+            error: Box::new(RuntimeCheckedType::String),
+        }
+        .accepts_value(&RuntimeValue::result_err(RuntimeValue::String(
+            "error".to_owned(),
+        )))
+    );
+}
+
+#[test]
+fn builtin_option_and_result_reject_flat_legacy_payloads() {
+    let option = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Builtin(
+            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+        ),
+        ordinal: 0,
+        name: "Some".to_owned(),
+        payload: Some(Box::new(RuntimeValue::i64(7))),
+    };
+    let result = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Builtin(
+            crate::pattern::RuntimeBuiltinVariantIdentity::Result,
+        ),
+        ordinal: 0,
+        name: "Ok".to_owned(),
+        payload: Some(Box::new(RuntimeValue::i64(8))),
+    };
+
+    assert_eq!(option.builtin_variant_case(), None);
+    assert_eq!(result.builtin_variant_case(), None);
+    assert!(option.clone().try_into_builtin_variant_case().is_err());
+    assert!(result.clone().try_into_builtin_variant_case().is_err());
+    assert!(
+        !RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Signed(
+            crate::value::RuntimeSignedIntWidth::I64,
+        )))
+        .accepts_value(&option)
+    );
+    assert!(
+        !RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Signed(
+                crate::value::RuntimeSignedIntWidth::I64,
+            )),
+            error: Box::new(RuntimeCheckedType::Signed(
+                crate::value::RuntimeSignedIntWidth::I64,
+            )),
+        }
+        .accepts_value(&result)
+    );
+    assert!(crate::value::evaluate_core_option_is_some_intrinsic(&option).is_err());
+    assert!(crate::value::evaluate_core_option_unwrap_intrinsic(option).is_err());
 }
 
 #[test]

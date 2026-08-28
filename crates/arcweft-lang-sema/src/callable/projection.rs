@@ -534,25 +534,47 @@ impl AcceptedNominalWorld {
                 })
                 .collect::<Result<Vec<_>, _>>()
                 .map(EnumVariantPayload::Tuple),
-            RustVariantPayloadInput::Record(fields) => fields
-                .iter()
-                .map(|(name, field)| {
-                    Ok((
-                        name.clone(),
-                        self.project_metadata_type(
-                            field,
-                            input.item(),
-                            EnvironmentTypeSiteRoot::RustEnumRecordField {
-                                variant: variant.name().to_owned(),
-                                field: name.clone(),
-                            },
-                            limits,
-                            binder,
-                        )?,
+            RustVariantPayloadInput::Record(fields) => {
+                let projected = fields
+                    .iter()
+                    .map(|(name, field)| {
+                        Ok((
+                            name.clone(),
+                            self.project_metadata_type(
+                                field,
+                                input.item(),
+                                EnvironmentTypeSiteRoot::RustEnumRecordField {
+                                    variant: variant.name().to_owned(),
+                                    field: name.clone(),
+                                },
+                                limits,
+                                binder,
+                            )?,
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, EnvironmentPublicationProjectionReport>>()?;
+                EnumVariantPayload::record(projected).map_err(|error| {
+                    let crate::env::EnumVariantPayloadBuildError::DuplicateRecordField { name } =
+                        error;
+                    EnvironmentPublicationProjectionReport::one(type_diagnostic(
+                        input.item(),
+                        EnvironmentTypeSiteRoot::RustEnumRecordField {
+                            variant: variant.name().to_owned(),
+                            field: name.clone(),
+                        },
+                        &[],
+                        variant.source(),
+                        EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog {
+                            error:
+                                AcceptedRustTypeMetadataCatalogError::DuplicateVariantRecordField {
+                                    id: input.id().clone(),
+                                    variant: variant.name().to_owned(),
+                                    field: name,
+                                },
+                        },
                     ))
                 })
-                .collect::<Result<BTreeMap<_, _>, EnvironmentPublicationProjectionReport>>()
-                .map(EnumVariantPayload::Record),
+            }
         }
     }
 

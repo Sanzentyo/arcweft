@@ -143,6 +143,7 @@ pub enum RuntimeOperationalType {
     Iterator,
     Sequence,
     Tuple,
+    Record,
     Choice,
     Result,
     Option,
@@ -217,8 +218,13 @@ pub enum RuntimePlanTypeProjection<R> {
     Result {
         value: R,
         error: R,
+        value_payload: R,
+        error_payload: R,
     },
-    Option(R),
+    Option {
+        item: R,
+        some_payload: R,
+    },
     BuiltinVariant {
         owner: RuntimeBuiltinVariantIdentity,
         cases: Box<[Option<R>]>,
@@ -236,6 +242,7 @@ pub enum RuntimePlanTypeProjection<R> {
         arguments: Box<[R]>,
     },
     Tuple(Box<[R]>),
+    Record(Box<[RuntimePlanRecordField<R>]>),
     Choice(Box<[R]>),
     Opaque {
         producer: RuntimeOpaqueTypeProducerId,
@@ -245,6 +252,47 @@ pub enum RuntimePlanTypeProjection<R> {
         arguments: Box<[R]>,
     },
     Agent(RuntimeAgentTypeProjection<R>),
+}
+
+#[derive(Clone, Debug)]
+pub struct RuntimePlanRecordField<R> {
+    diagnostic_name: String,
+    ty: R,
+}
+
+impl<R: PartialEq> PartialEq for RuntimePlanRecordField<R> {
+    fn eq(&self, other: &Self) -> bool {
+        self.ty == other.ty
+    }
+}
+
+impl<R: Eq> Eq for RuntimePlanRecordField<R> {}
+
+impl<R> RuntimePlanRecordField<R> {
+    pub fn new(diagnostic_name: impl Into<String>, ty: R) -> Self {
+        Self {
+            diagnostic_name: diagnostic_name.into(),
+            ty,
+        }
+    }
+
+    pub fn diagnostic_name(&self) -> &str {
+        &self.diagnostic_name
+    }
+
+    pub const fn ty(&self) -> &R {
+        &self.ty
+    }
+
+    fn try_map<T, E>(
+        self,
+        map: &mut impl FnMut(R) -> Result<T, E>,
+    ) -> Result<RuntimePlanRecordField<T>, E> {
+        Ok(RuntimePlanRecordField {
+            diagnostic_name: self.diagnostic_name,
+            ty: map(self.ty)?,
+        })
+    }
 }
 
 /// Agent-owned projection with the generic `Probe<T>` descendant preserved.
@@ -292,7 +340,6 @@ impl<R> RuntimePlanTypeProjection<R> {
         match self {
             Self::Range(child)
             | Self::Iterator(child)
-            | Self::Option(child)
             | Self::ThreadHandle(child)
             | Self::Shared(child)
             | Self::Reference(child)
@@ -305,11 +352,14 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Stream {
                 item: key,
                 error: value,
-            }
-            | Self::Result {
+            } => Box::new([key, value]),
+            Self::Result {
                 value: key,
                 error: value,
-            } => Box::new([key, value]),
+                value_payload,
+                error_payload,
+            } => Box::new([key, value, value_payload, error_payload]),
+            Self::Option { item, some_payload } => Box::new([item, some_payload]),
             Self::Function { parameters, result } => parameters
                 .iter()
                 .chain(std::iter::once(result))
@@ -319,6 +369,11 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Opaque { arguments, .. }
             | Self::Tuple(arguments)
             | Self::Choice(arguments) => arguments.iter().collect::<Vec<_>>().into_boxed_slice(),
+            Self::Record(fields) => fields
+                .iter()
+                .map(RuntimePlanRecordField::ty)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             Self::Never
             | Self::Unit
             | Self::Bool
@@ -376,11 +431,21 @@ impl<R> RuntimePlanTypeProjection<R> {
                 item: map(item)?,
                 error: map(error)?,
             },
-            Self::Result { value, error } => RuntimePlanTypeProjection::Result {
+            Self::Result {
+                value,
+                error,
+                value_payload,
+                error_payload,
+            } => RuntimePlanTypeProjection::Result {
                 value: map(value)?,
                 error: map(error)?,
+                value_payload: map(value_payload)?,
+                error_payload: map(error_payload)?,
             },
-            Self::Option(child) => RuntimePlanTypeProjection::Option(map(child)?),
+            Self::Option { item, some_payload } => RuntimePlanTypeProjection::Option {
+                item: map(item)?,
+                some_payload: map(some_payload)?,
+            },
             Self::BuiltinVariant { owner, cases } => RuntimePlanTypeProjection::BuiltinVariant {
                 owner,
                 cases: cases
@@ -407,6 +472,9 @@ impl<R> RuntimePlanTypeProjection<R> {
                 arguments: try_map_boxed(arguments, &mut map)?,
             },
             Self::Tuple(items) => RuntimePlanTypeProjection::Tuple(try_map_boxed(items, &mut map)?),
+            Self::Record(fields) => {
+                RuntimePlanTypeProjection::Record(try_map_record_fields(fields, &mut map)?)
+            }
             Self::Choice(items) => {
                 RuntimePlanTypeProjection::Choice(try_map_boxed(items, &mut map)?)
             }
@@ -436,9 +504,10 @@ impl<R> RuntimePlanTypeProjection<R> {
             Self::Iterator(_) => Some(RuntimeOperationalType::Iterator),
             Self::Sequence { .. } | Self::Array { .. } => Some(RuntimeOperationalType::Sequence),
             Self::Tuple(_) => Some(RuntimeOperationalType::Tuple),
+            Self::Record(_) => Some(RuntimeOperationalType::Record),
             Self::Choice(_) => Some(RuntimeOperationalType::Choice),
             Self::Result { .. } => Some(RuntimeOperationalType::Result),
-            Self::Option(_) => Some(RuntimeOperationalType::Option),
+            Self::Option { .. } => Some(RuntimeOperationalType::Option),
             Self::Map { .. } => Some(RuntimeOperationalType::Map),
             Self::Need { .. } => Some(RuntimeOperationalType::Need),
             Self::Stream { .. } => Some(RuntimeOperationalType::Stream),
@@ -466,6 +535,18 @@ impl<R> RuntimePlanTypeProjection<R> {
             | Self::Opaque { .. } => None,
         }
     }
+}
+
+fn try_map_record_fields<R, T, E>(
+    fields: Box<[RuntimePlanRecordField<R>]>,
+    map: &mut impl FnMut(R) -> Result<T, E>,
+) -> Result<Box<[RuntimePlanRecordField<T>]>, E> {
+    fields
+        .into_vec()
+        .into_iter()
+        .map(|field| field.try_map(map))
+        .collect::<Result<Vec<_>, _>>()
+        .map(Vec::into_boxed_slice)
 }
 
 fn try_map_boxed<R, T, E>(

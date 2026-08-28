@@ -2,7 +2,8 @@ use super::*;
 
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
-    AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcProgram, AwbcSafePointKind, AwbcTerminator,
+    AwbcEntryId, AwbcEntryTarget, AwbcInstruction, AwbcPattern, AwbcProgram, AwbcRuntimeTypeShape,
+    AwbcSafePointKind, AwbcTerminator,
 };
 use arcweft_core::awbc::vm::{self, VmExit, VmStepOptions};
 use arcweft_core::entry::{
@@ -156,6 +157,245 @@ fn run_entry(program: &AwbcProgram) -> VmExit {
     )
     .expect("AWBC VM executes entry")
     .exit
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one regression fixture covers every builtin payload edge and pattern"
+)]
+fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
+    let flow = flow_id("builtin.payload_edges");
+    let item = type_id(10);
+    let error = type_id(11);
+    let item_payload = type_id(12);
+    let error_payload = type_id(13);
+    let option = type_id(14);
+    let result = type_id(15);
+    let unit = type_id(16);
+    let mut builder = RuntimePlanBuilder::new();
+    builder
+        .admit_semantic_batch(
+            [
+                RuntimePlanTypeSeed::new(
+                    item,
+                    RuntimePlanTypeProjection::Signed(
+                        arcweft_core::value::RuntimeSignedIntWidth::I64,
+                    ),
+                ),
+                RuntimePlanTypeSeed::new(error, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(
+                    item_payload,
+                    RuntimePlanTypeProjection::Tuple(Box::new([item])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    error_payload,
+                    RuntimePlanTypeProjection::Tuple(Box::new([error])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option,
+                    RuntimePlanTypeProjection::Option {
+                        item,
+                        some_payload: item_payload,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    result,
+                    RuntimePlanTypeProjection::Result {
+                        value: item,
+                        error,
+                        value_payload: item_payload,
+                        error_payload,
+                    },
+                ),
+                RuntimePlanTypeSeed::new(unit, RuntimePlanTypeProjection::Unit),
+            ],
+            [],
+            [],
+            [],
+        )
+        .expect("builtin payload type graph");
+    let option_pattern = RuntimePatternSeed::new(
+        option,
+        RuntimePatternSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(RuntimePatternSeed::new(
+                item_payload,
+                RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                    item,
+                    RuntimePatternSeedKind::Discard,
+                )])),
+            ))),
+        },
+    );
+    let result_ok_pattern = RuntimePatternSeed::new(
+        result,
+        RuntimePatternSeedKind::Variant {
+            ordinal: 0,
+            payload: Some(Box::new(RuntimePatternSeed::new(
+                item_payload,
+                RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                    item,
+                    RuntimePatternSeedKind::Discard,
+                )])),
+            ))),
+        },
+    );
+    let result_err_pattern = RuntimePatternSeed::new(
+        result,
+        RuntimePatternSeedKind::Variant {
+            ordinal: 1,
+            payload: Some(Box::new(RuntimePatternSeed::new(
+                error_payload,
+                RuntimePatternSeedKind::Tuple(Box::new([RuntimePatternSeed::new(
+                    error,
+                    RuntimePatternSeedKind::Discard,
+                )])),
+            ))),
+        },
+    );
+    builder
+        .push_flow_executable(flow_executable(&flow))
+        .expect("payload flow executable admits");
+    builder
+        .push_flow_schema(flow_schema(&flow))
+        .expect("payload flow schema admits");
+    builder
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            vec![
+                RuntimeFlowOpSeed::Let {
+                    pattern: option_pattern,
+                    expr: RuntimeExprSeed::new(
+                        option,
+                        RuntimeExprSeedKind::Value(RuntimeValue::option_some(RuntimeValue::i64(7))),
+                    ),
+                },
+                RuntimeFlowOpSeed::Let {
+                    pattern: result_ok_pattern,
+                    expr: RuntimeExprSeed::new(
+                        result,
+                        RuntimeExprSeedKind::Value(RuntimeValue::result_ok(RuntimeValue::i64(8))),
+                    ),
+                },
+                RuntimeFlowOpSeed::Let {
+                    pattern: result_err_pattern,
+                    expr: RuntimeExprSeed::new(
+                        result,
+                        RuntimeExprSeedKind::Value(RuntimeValue::result_err(RuntimeValue::String(
+                            "no".to_owned(),
+                        ))),
+                    ),
+                },
+                RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
+                    unit,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Unit),
+                )),
+            ],
+        ))
+        .expect("payload flow admits");
+    builder
+        .push_entry(flow_entry("builtin.payload_edges", flow))
+        .expect("payload entry admits");
+
+    let report = lower_plan(&builder.finish().expect("payload plan seals"));
+    let program = &report.program;
+    let runtime_type = |identity: RuntimeSemanticTypeId| {
+        program
+            .runtime_types
+            .iter()
+            .enumerate()
+            .find(|(_, row)| row.semantic_identity() == identity)
+            .map(|(index, _)| {
+                arcweft_core::awbc::schema::AwbcTypeId(
+                    u32::try_from(index).expect("test AWBC type index fits u32"),
+                )
+            })
+            .expect("semantic type is retained in AWBC runtime type table")
+    };
+    let option_type = runtime_type(option);
+    let result_type = runtime_type(result);
+    let item_type = runtime_type(item);
+    let error_type = runtime_type(error);
+    let item_payload_type = runtime_type(item_payload);
+    let error_payload_type = runtime_type(error_payload);
+
+    let assert_payload_edge =
+        |owner: arcweft_core::awbc::schema::AwbcTypeId,
+         ordinal: u32,
+         expected_payload: arcweft_core::awbc::schema::AwbcTypeId| {
+            let AwbcRuntimeTypeShape::Variant { cases, .. } =
+                program.runtime_types[owner.index()].shape()
+            else {
+                panic!("builtin type lowers to an AWBC variant shape");
+            };
+            let payload = cases
+                .get(ordinal as usize)
+                .and_then(|case| case.payload)
+                .expect("payload-bearing builtin case has a payload edge");
+            assert_eq!(payload, expected_payload);
+            let expected_item = match (owner, ordinal) {
+                (owner, 0) if owner == option_type || owner == result_type => item_type,
+                (owner, 1) if owner == result_type => error_type,
+                _ => panic!("unexpected builtin payload edge"),
+            };
+            assert_eq!(
+                program.runtime_types[payload.index()].shape(),
+                &AwbcRuntimeTypeShape::Tuple(vec![expected_item])
+            );
+        };
+    assert_payload_edge(option_type, 0, item_payload_type);
+    assert_payload_edge(result_type, 0, item_payload_type);
+    assert_payload_edge(result_type, 1, error_payload_type);
+
+    let variant_patterns = program
+        .patterns
+        .iter()
+        .filter_map(|pattern| match pattern {
+            AwbcPattern::Variant {
+                ty,
+                case,
+                payload: Some(payload),
+                ..
+            } => Some((*ty, *case, *payload)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(variant_patterns.len(), 3);
+    for (owner, ordinal, expected_payload) in [
+        (option_type, 0, item_type),
+        (result_type, 0, item_type),
+        (result_type, 1, error_type),
+    ] {
+        let (_, _, payload) = variant_patterns
+            .iter()
+            .find(|(actual_owner, actual_ordinal, _)| {
+                *actual_owner == owner && *actual_ordinal == ordinal
+            })
+            .copied()
+            .expect("lowered variant pattern retains every builtin case");
+        let AwbcPattern::Tuple(items) = &program.patterns[payload.index()] else {
+            panic!("builtin variant pattern payload is a tuple pattern");
+        };
+        assert_eq!(items.len(), 1);
+        let child = program
+            .patterns
+            .get(items[0].index())
+            .expect("tuple payload pattern child");
+        assert!(matches!(child, AwbcPattern::Discard));
+        let expected_payload_type = match (owner, ordinal) {
+            (owner, 0) if owner == option_type || owner == result_type => item_payload_type,
+            (owner, 1) if owner == result_type => error_payload_type,
+            _ => panic!("unexpected builtin pattern case"),
+        };
+        let AwbcRuntimeTypeShape::Tuple(types) =
+            program.runtime_types[expected_payload_type.index()].shape()
+        else {
+            panic!("builtin payload type is a tuple");
+        };
+        assert_eq!(types, &vec![expected_payload]);
+    }
 }
 
 fn foreign_local_seed() -> RuntimeLocalSeedId {

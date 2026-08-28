@@ -75,6 +75,7 @@ impl TypeKind {
             | Self::CharacterDialogue(_)
             | Self::ViewValue
             | Self::CharacterNominal(_)
+            | Self::VariantPayload(_)
             | Self::Unit) => TypeConstraintShape::Leaf(ty),
             Self::Never => TypeConstraintShape::Never,
             Self::GenericParam(parameter) => TypeConstraintShape::Generic(parameter),

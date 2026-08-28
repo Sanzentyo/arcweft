@@ -909,6 +909,14 @@ impl RegisteredTypeCheckEnv {
         self.character_variants.get(nominal).map(AsRef::as_ref)
     }
 
+    pub(crate) fn character_enum_variant_sets(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CharacterNominalType, &[String])> {
+        self.character_variants
+            .iter()
+            .map(|(nominal, variants)| (nominal, variants.as_ref()))
+    }
+
     pub fn environment_binding(&self, id: &EnvironmentBindingId) -> Option<&TypeKind> {
         self.nominal_world.environment_binding(id)
     }

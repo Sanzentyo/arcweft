@@ -1,9 +1,9 @@
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic};
 use arcweft_core::awbc::schema::{
-    AwbcAgentTypeShape, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcRecordPatternField,
-    AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase,
-    AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcRecordField,
+    AwbcRecordPatternField, AwbcRuntimeTypeShape, AwbcSignedIntKind, AwbcTypeId,
+    AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use arcweft_core::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimePattern, RuntimePatternKind,
@@ -245,7 +245,11 @@ fn plan_type_shape(
             item: reserved_plan_type(inventory, *item)?,
             error: reserved_plan_type(inventory, *error)?,
         },
-        RuntimePlanTypeProjection::Result { value, error } => AwbcRuntimeTypeShape::Variant {
+        RuntimePlanTypeProjection::Result {
+            value_payload,
+            error_payload,
+            ..
+        } => AwbcRuntimeTypeShape::Variant {
             owner: AwbcVariantIdentity::Builtin(
                 arcweft_core::pattern::RuntimeBuiltinVariantIdentity::Result,
             ),
@@ -253,15 +257,15 @@ fn plan_type_shape(
             cases: vec![
                 AwbcVariantCase {
                     name: inventory.intern_string("Ok"),
-                    payload: Some(reserved_plan_type(inventory, *value)?),
+                    payload: Some(reserved_plan_type(inventory, *value_payload)?),
                 },
                 AwbcVariantCase {
                     name: inventory.intern_string("Err"),
-                    payload: Some(reserved_plan_type(inventory, *error)?),
+                    payload: Some(reserved_plan_type(inventory, *error_payload)?),
                 },
             ],
         },
-        RuntimePlanTypeProjection::Option(item) => AwbcRuntimeTypeShape::Variant {
+        RuntimePlanTypeProjection::Option { some_payload, .. } => AwbcRuntimeTypeShape::Variant {
             owner: AwbcVariantIdentity::Builtin(
                 arcweft_core::pattern::RuntimeBuiltinVariantIdentity::Option,
             ),
@@ -269,7 +273,7 @@ fn plan_type_shape(
             cases: vec![
                 AwbcVariantCase {
                     name: inventory.intern_string("Some"),
-                    payload: Some(reserved_plan_type(inventory, *item)?),
+                    payload: Some(reserved_plan_type(inventory, *some_payload)?),
                 },
                 AwbcVariantCase {
                     name: inventory.intern_string("None"),
@@ -325,6 +329,18 @@ fn plan_type_shape(
                 .map(|item| reserved_plan_type(inventory, *item))
                 .collect::<Result<Vec<_>, _>>()?,
         ),
+        RuntimePlanTypeProjection::Record(fields) => AwbcRuntimeTypeShape::Record {
+            public_id: None,
+            fields: fields
+                .iter()
+                .map(|field| {
+                    Ok(AwbcRecordField {
+                        name: inventory.intern_string(field.diagnostic_name()),
+                        ty: reserved_plan_type(inventory, *field.ty())?,
+                    })
+                })
+                .collect::<Result<Vec<_>, AwbcLowerDiagnostic>>()?,
+        },
         RuntimePlanTypeProjection::Choice(items) => AwbcRuntimeTypeShape::Choice(
             items
                 .iter()
@@ -476,7 +492,7 @@ pub(crate) fn variant_case_name(
         plan.type_table()
             .get(ty)
             .and_then(|declaration| match declaration.projection() {
-                RuntimePlanTypeProjection::Option(_) => match ordinal {
+                RuntimePlanTypeProjection::Option { .. } => match ordinal {
                     0 => Some("Some".to_owned()),
                     1 => Some("None".to_owned()),
                     _ => None,
@@ -550,6 +566,16 @@ pub(crate) fn intern_runtime_type(
                 .map(|item| intern_runtime_type(inventory, item))
                 .collect(),
         ),
+        RuntimeCheckedType::Record(fields) => AwbcRuntimeTypeShape::Record {
+            public_id: None,
+            fields: fields
+                .iter()
+                .map(|field| AwbcRecordField {
+                    name: inventory.intern_string(field.diagnostic_name()),
+                    ty: intern_runtime_type(inventory, field.ty()),
+                })
+                .collect(),
+        },
         RuntimeCheckedType::Choice(alternatives) => AwbcRuntimeTypeShape::Choice(
             alternatives
                 .iter()
@@ -587,11 +613,17 @@ pub(crate) fn intern_runtime_type(
             cases: vec![
                 AwbcVariantCase {
                     name: inventory.intern_string("Ok"),
-                    payload: Some(intern_runtime_type(inventory, ok)),
+                    payload: Some(intern_runtime_type(
+                        inventory,
+                        &RuntimeCheckedType::Tuple(vec![ok.as_ref().clone()]),
+                    )),
                 },
                 AwbcVariantCase {
                     name: inventory.intern_string("Err"),
-                    payload: Some(intern_runtime_type(inventory, error)),
+                    payload: Some(intern_runtime_type(
+                        inventory,
+                        &RuntimeCheckedType::Tuple(vec![error.as_ref().clone()]),
+                    )),
                 },
             ],
         },
@@ -601,7 +633,10 @@ pub(crate) fn intern_runtime_type(
             cases: vec![
                 AwbcVariantCase {
                     name: inventory.intern_string("Some"),
-                    payload: Some(intern_runtime_type(inventory, item)),
+                    payload: Some(intern_runtime_type(
+                        inventory,
+                        &RuntimeCheckedType::Tuple(vec![item.as_ref().clone()]),
+                    )),
                 },
                 AwbcVariantCase {
                     name: inventory.intern_string("None"),

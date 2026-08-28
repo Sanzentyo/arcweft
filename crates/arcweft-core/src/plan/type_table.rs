@@ -178,12 +178,24 @@ impl RuntimePlanTypeTable {
             | RuntimePlanTypeProjection::ProjectNominal { .. }
             | RuntimePlanTypeProjection::Opaque { .. } => true,
             RuntimePlanTypeProjection::Sequence { item, .. }
-            | RuntimePlanTypeProjection::Array { item, .. }
-            | RuntimePlanTypeProjection::Option(item) => self.is_checked_memoized(*item, memo)?,
+            | RuntimePlanTypeProjection::Array { item, .. } => {
+                self.is_checked_memoized(*item, memo)?
+            }
+            RuntimePlanTypeProjection::Option { item, some_payload } => {
+                self.is_checked_memoized(*item, memo)?
+                    && self.is_checked_memoized(*some_payload, memo)?
+            }
             RuntimePlanTypeProjection::Tuple(items) | RuntimePlanTypeProjection::Choice(items) => {
                 let mut all_checked = true;
                 for child in items {
                     all_checked &= self.is_checked_memoized(*child, memo)?;
+                }
+                all_checked
+            }
+            RuntimePlanTypeProjection::Record(fields) => {
+                let mut all_checked = true;
+                for field in fields {
+                    all_checked &= self.is_checked_memoized(*field.ty(), memo)?;
                 }
                 all_checked
             }
@@ -194,8 +206,16 @@ impl RuntimePlanTypeTable {
                 }
                 all_checked
             }
-            RuntimePlanTypeProjection::Result { value, error } => {
-                self.is_checked_memoized(*value, memo)? && self.is_checked_memoized(*error, memo)?
+            RuntimePlanTypeProjection::Result {
+                value,
+                error,
+                value_payload,
+                error_payload,
+            } => {
+                self.is_checked_memoized(*value, memo)?
+                    && self.is_checked_memoized(*error, memo)?
+                    && self.is_checked_memoized(*value_payload, memo)?
+                    && self.is_checked_memoized(*error_payload, memo)?
             }
             RuntimePlanTypeProjection::Agent(agent) => {
                 !matches!(agent, RuntimeAgentTypeProjection::Probe(_))
@@ -224,6 +244,13 @@ pub enum RuntimePlanTypeResolutionError {
     MissingRuntimeClass { ty: RuntimePlanTypeId },
     #[error("checked type projection contains a recursive nominal cycle at {ty}")]
     CheckedProjectionCycle { ty: RuntimePlanTypeId },
+    #[error("runtime plan type {ty} has an invalid checked record projection: {source}")]
+    InvalidCheckedRecord {
+        ty: RuntimePlanTypeId,
+        source: crate::pattern::RuntimeCheckedRecordTypeError,
+    },
+    #[error("runtime plan type {ty} has a non-canonical payload for builtin case {ordinal}")]
+    InvalidBuiltinVariantPayload { ty: RuntimePlanTypeId, ordinal: u32 },
 }
 
 /// Sole internal issuer for one plan's semantic type declaration identities.
@@ -624,13 +651,31 @@ mod tests {
             Err(RuntimePlanTypeTableError::ConflictingProjection { .. })
         ));
         assert!(matches!(
-            builder.intern(leaf(5, RuntimePlanTypeProjection::Option(identity(9)))),
+            builder.intern(leaf(
+                5,
+                RuntimePlanTypeProjection::Option {
+                    item: identity(9),
+                    some_payload: identity(9),
+                },
+            )),
             Err(RuntimePlanTypeTableError::DanglingReference { .. })
         ));
         assert!(matches!(
             builder.intern_batch([
-                leaf(6, RuntimePlanTypeProjection::Option(identity(7))),
-                leaf(7, RuntimePlanTypeProjection::Option(identity(6))),
+                leaf(
+                    6,
+                    RuntimePlanTypeProjection::Option {
+                        item: identity(7),
+                        some_payload: identity(7),
+                    },
+                ),
+                leaf(
+                    7,
+                    RuntimePlanTypeProjection::Option {
+                        item: identity(6),
+                        some_payload: identity(6),
+                    },
+                ),
             ]),
             Err(RuntimePlanTypeTableError::Cycle { .. })
         ));
@@ -678,7 +723,10 @@ mod tests {
                 RuntimePlanTypeProjection::Unit
             } else {
                 let child = u8::try_from(index + 21).expect("test child marker fits");
-                RuntimePlanTypeProjection::Option(identity(child))
+                RuntimePlanTypeProjection::Option {
+                    item: identity(child),
+                    some_payload: identity(child),
+                }
             };
             seeds.push(leaf(marker, projection));
         }

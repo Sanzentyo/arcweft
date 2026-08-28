@@ -211,6 +211,9 @@ impl TypeGenericUseCollector {
                 }
                 Ok(())
             }
+            TypeKind::VariantPayload(payload) => payload
+                .shape()
+                .visit_types(&mut |field| self.visit_at(field, position)),
             TypeKind::Handle { .. } => Ok(()),
         }
     }

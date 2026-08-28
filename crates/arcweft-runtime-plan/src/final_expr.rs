@@ -3,13 +3,12 @@
 use std::collections::BTreeMap;
 
 use arcweft_core::entry::RuntimeCallableId;
-use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
-    RuntimeNominalRecordFieldSeed, RuntimePatternSeed, RuntimePatternSeedKind,
-    RuntimePureHelperSeedId, RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
+    RuntimeNominalRecordFieldSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
+    RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
@@ -25,6 +24,9 @@ use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 
 use crate::agent::RuntimeAgentIntrinsic;
 use crate::final_pattern::{FinalPatternLowerer, project_entity_reference};
+use crate::final_variant::{
+    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
+};
 use crate::flow::TryLocalSeeds;
 use crate::semantic_facts::{
     RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeRecordExpressionSource,
@@ -101,7 +103,7 @@ enum PureTryContinuation {
         outer: Box<Self>,
     },
     WrapSuccess {
-        boundary: RuntimeSemanticTypeId,
+        boundary: Box<RuntimeNormalizedType>,
     },
 }
 
@@ -244,7 +246,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             lowerer.lower_with_try_continuation(
                 body,
                 PureTryContinuation::WrapSuccess {
-                    boundary: tried.boundary_type().identity(),
+                    boundary: Box::new(tried.boundary_type().clone()),
                 },
             )
         } else if lowerer.contains_executable_try(body)? {
@@ -510,62 +512,41 @@ impl<'hir> FinalExprLowerer<'hir> {
             | RuntimeTryBoundaryOwner::Callable(_) => None,
         };
         let success = self.apply_try_continuation(success_value, outer)?;
-        let success_pattern = RuntimePatternSeed::new(
-            tried.carrier_type().identity(),
-            RuntimePatternSeedKind::Variant {
-                ordinal: 0,
-                payload: Some(Box::new(RuntimePatternSeed::new(
-                    tried.carrier().success().identity(),
-                    RuntimePatternSeedKind::Bind {
-                        local: locals.success.clone(),
-                        mutable: false,
-                    },
-                ))),
-            },
-        );
+        let success_pattern = normalized_variant_binding_pattern_seed(
+            tried.carrier_type(),
+            0,
+            Some(locals.success.clone()),
+        )
+        .map_err(|error| format!("Try {owner:?} success pattern is invalid: {error}"))?;
         let (failure_pattern, failure_payload) = match tried.carrier() {
             RuntimeTryCarrierFact::Result { residual, .. } => {
                 let local = locals.residual.clone().ok_or_else(|| {
                     format!("Result Try {owner:?} has no admitted residual local")
                 })?;
                 (
-                    RuntimePatternSeed::new(
-                        tried.carrier_type().identity(),
-                        RuntimePatternSeedKind::Variant {
-                            ordinal: 1,
-                            payload: Some(Box::new(RuntimePatternSeed::new(
-                                residual.identity(),
-                                RuntimePatternSeedKind::Bind {
-                                    local: local.clone(),
-                                    mutable: false,
-                                },
-                            ))),
-                        },
-                    ),
-                    Some(Box::new(RuntimeExprSeed::new(
+                    normalized_variant_binding_pattern_seed(
+                        tried.carrier_type(),
+                        1,
+                        Some(local.clone()),
+                    )
+                    .map_err(|error| {
+                        format!("Try {owner:?} residual pattern is invalid: {error}")
+                    })?,
+                    Some(RuntimeExprSeed::new(
                         residual.identity(),
                         RuntimeExprSeedKind::Local(local),
-                    ))),
+                    )),
                 )
             }
             RuntimeTryCarrierFact::Option { .. } => (
-                RuntimePatternSeed::new(
-                    tried.carrier_type().identity(),
-                    RuntimePatternSeedKind::Variant {
-                        ordinal: 1,
-                        payload: None,
-                    },
-                ),
+                normalized_variant_binding_pattern_seed(tried.carrier_type(), 1, None).map_err(
+                    |error| format!("Try {owner:?} empty residual pattern is invalid: {error}"),
+                )?,
                 None,
             ),
         };
-        let failure = RuntimeExprSeed::new(
-            tried.boundary_type().identity(),
-            RuntimeExprSeedKind::Variant {
-                ordinal: 1,
-                payload: failure_payload,
-            },
-        );
+        let failure = normalized_variant_expression_seed(tried.boundary_type(), 1, failure_payload)
+            .map_err(|error| format!("Try {owner:?} propagated residual is invalid: {error}"))?;
         let failure = match failure_continuation {
             Some(continuation) => self.apply_try_continuation(failure, continuation)?,
             None => failure,
@@ -904,7 +885,10 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .facts
                     .expression_type(owner)
                     .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
-                let wrapped = wrap_success(boundary.identity(), value);
+                let wrapped = normalized_variant_expression_seed(boundary, 0, Some(value))
+                    .map_err(|error| {
+                        format!("carrier block {owner:?} success is invalid: {error}")
+                    })?;
                 self.apply_try_continuation(wrapped, *outer)
             }
             PureTryContinuation::IfCondition {
@@ -954,7 +938,10 @@ impl<'hir> FinalExprLowerer<'hir> {
             PureTryContinuation::PipeLeft { owner, outer } => {
                 self.apply_pipe_left_continuation(owner, value, *outer)
             }
-            PureTryContinuation::WrapSuccess { boundary } => Ok(wrap_success(boundary, value)),
+            PureTryContinuation::WrapSuccess { boundary } => {
+                normalized_variant_expression_seed(boundary.as_ref(), 0, Some(value))
+                    .map_err(|error| format!("function-site Try success is invalid: {error}"))
+            }
         }
     }
 
@@ -1323,13 +1310,27 @@ impl<'hir> FinalExprLowerer<'hir> {
             )) => {
                 self.validate_variant_call_payload(id, operands, variant)?;
                 let scalar_values = self.scalar_values(id, &values)?;
-                let payload = match scalar_values.len() {
-                    0 => None,
-                    1 => Some(Box::new(scalar_values[0].clone())),
-                    _ => Some(Box::new(RuntimeExprSeed::new(
-                        self.expression_type(id)?,
-                        RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
-                    ))),
+                let payload_ty = variant
+                    .selected_payload_type()
+                    .map_err(|error| error.to_string())?;
+                let payload = match payload_ty {
+                    None if scalar_values.is_empty() => None,
+                    Some(payload) if matches!(payload.shape(), RuntimeTypeShape::Tuple(_)) => {
+                        Some(Box::new(RuntimeExprSeed::new(
+                            payload.identity(),
+                            RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
+                        )))
+                    }
+                    Some(_) => {
+                        return Err(format!(
+                            "variant constructor at {id:?} requires a non-positional payload"
+                        ));
+                    }
+                    None => {
+                        return Err(format!(
+                            "unit variant constructor at {id:?} received payload operands"
+                        ));
+                    }
                 };
                 Ok(RuntimeExprSeedKind::Variant {
                     ordinal: variant
@@ -1904,16 +1905,6 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
 }
 
-fn wrap_success(boundary: RuntimeSemanticTypeId, value: RuntimeExprSeed) -> RuntimeExprSeed {
-    RuntimeExprSeed::new(
-        boundary,
-        RuntimeExprSeedKind::Variant {
-            ordinal: 0,
-            payload: Some(Box::new(value)),
-        },
-    )
-}
-
 fn exact_one(id: ExprId, values: &[RuntimeExprSeed]) -> Result<RuntimeExprSeed, String> {
     if values.len() == 1 {
         Ok(values[0].clone())
@@ -1938,10 +1929,15 @@ fn variant_payload_accepts_argument_types(
 ) -> bool {
     match arguments {
         [] => payload.is_none(),
-        [argument] => payload == Some(*argument),
-        arguments => {
-            matches!(payload.map(RuntimeNormalizedType::shape), Some(RuntimeTypeShape::Tuple(items)) if items.len() == arguments.len() && items.iter().zip(arguments).all(|(expected, actual)| expected == *actual))
-        }
+        arguments => matches!(
+            payload.map(RuntimeNormalizedType::shape),
+            Some(RuntimeTypeShape::Tuple(items))
+                if items.len() == arguments.len()
+                    && items
+                        .iter()
+                        .zip(arguments)
+                        .all(|(expected, actual)| expected == *actual)
+        ),
     }
 }
 fn runtime_binary(operator: HirBinaryOp) -> Option<RuntimeBinaryOp> {

@@ -37,9 +37,7 @@ use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_runtime_plan::{
     flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats},
-    semantic_facts::{
-        RuntimeNormalizedType, RuntimeSemanticTypeId, RuntimeTypeShape, RuntimeVariantOwner,
-    },
+    semantic_facts::{RuntimeSemanticTypeId, RuntimeTypeShape, RuntimeVariantOwner},
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
@@ -903,10 +901,14 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
     assert_eq!(cases[0].name(), "Unit");
     assert!(cases[0].payload().is_none());
     assert_eq!(cases[1].name(), "Text");
-    assert!(matches!(
-        cases[1].payload().map(RuntimeNormalizedType::shape),
-        Some(RuntimeTypeShape::String)
-    ));
+    let payload = cases[1]
+        .payload()
+        .expect("Text case retains its canonical payload type");
+    let RuntimeTypeShape::Tuple(items) = payload.shape() else {
+        panic!("Text case payload is a canonical one-field tuple");
+    };
+    assert_eq!(items.len(), 1);
+    assert!(matches!(items[0].shape(), RuntimeTypeShape::String));
 }
 
 #[test]

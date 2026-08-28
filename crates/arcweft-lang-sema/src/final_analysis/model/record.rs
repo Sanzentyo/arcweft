@@ -224,6 +224,11 @@ pub enum CheckedRecordPatternOwner {
     Environment {
         record: AcceptedEnvironmentRecordIdentity,
     },
+    VariantPayload {
+        payload: crate::types::VariantPayloadType,
+        semantic_type: SemanticTypeDigest,
+        field_count: u32,
+    },
 }
 
 impl CheckedRecordPatternOwner {
@@ -231,13 +236,14 @@ impl CheckedRecordPatternOwner {
         match self {
             Self::Project { semantic_type, .. } => *semantic_type,
             Self::Environment { record } => record.semantic_type(),
+            Self::VariantPayload { semantic_type, .. } => *semantic_type,
         }
     }
 
     pub const fn project_nominal(&self) -> Option<&CheckedProjectNominal> {
         match self {
             Self::Project { nominal, .. } => Some(nominal),
-            Self::Environment { .. } => None,
+            Self::Environment { .. } | Self::VariantPayload { .. } => None,
         }
     }
 
@@ -259,9 +265,20 @@ impl CheckedRecordPatternOwner {
         Self::Environment { record }
     }
 
+    pub(crate) fn variant_payload(payload: crate::types::VariantPayloadType) -> Option<Self> {
+        let field_count = u32::try_from(payload.shape().record_fields()?.len()).ok()?;
+        let semantic_type =
+            TypeKind::VariantPayload(Box::new(payload.clone())).semantic_identity_digest();
+        Some(Self::VariantPayload {
+            payload,
+            semantic_type,
+            field_count,
+        })
+    }
+
     pub const fn environment_nominal(&self) -> Option<&AcceptedNominalId> {
         match self {
-            Self::Project { .. } => None,
+            Self::Project { .. } | Self::VariantPayload { .. } => None,
             Self::Environment { record } => Some(record.nominal()),
         }
     }
@@ -270,6 +287,7 @@ impl CheckedRecordPatternOwner {
         match self {
             Self::Project { field_count, .. } => *field_count,
             Self::Environment { record } => record.field_count(),
+            Self::VariantPayload { field_count, .. } => *field_count,
         }
     }
 }
@@ -446,6 +464,18 @@ impl CheckedRecordPattern {
                     CheckedRecordFieldSemanticId::Environment(_),
                     None,
                 ) => true,
+                (
+                    CheckedRecordPatternOwner::VariantPayload { payload, .. },
+                    CheckedRecordFieldSemanticId::VariantPayload(semantic_id),
+                    None,
+                ) => usize::try_from(field.declaration_ordinal())
+                    .ok()
+                    .and_then(|ordinal| payload.shape().record_fields()?.get(ordinal))
+                    .is_some_and(|expected| {
+                        expected.ordinal() == field.declaration_ordinal()
+                            && expected.semantic_id() == semantic_id
+                            && expected.ty() == field.field_type()
+                    }),
                 _ => false,
             };
             if previous_source.is_some_and(|previous| previous >= field.source_ordinal())
@@ -506,6 +536,9 @@ impl CheckedRecordPattern {
         match self.owner() {
             CheckedRecordPatternOwner::Project { nominal, .. } => nominal.visit_types(visitor)?,
             CheckedRecordPatternOwner::Environment { .. } => {}
+            CheckedRecordPatternOwner::VariantPayload { payload, .. } => {
+                visitor(&TypeKind::VariantPayload(Box::new(payload.clone())))?;
+            }
         }
         for field in self.fields() {
             visitor(field.field_type())?;

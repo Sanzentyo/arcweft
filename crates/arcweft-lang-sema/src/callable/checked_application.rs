@@ -2059,7 +2059,12 @@ impl CheckedCallContinuation {
         encoder.digest(base.digest().as_bytes());
         encoder.index(next_group.get())?;
         encoder.digest(core.solution().digest().as_bytes());
-        encoder.bytes(&core.stable_site().canonical_bytes())?;
+        encoder.bytes(
+            &core
+                .stable_site()
+                .canonical_bytes()
+                .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+        )?;
         encoder.digest(core.digest().as_bytes());
         encoder.digest(function_type.semantic_identity_digest().as_bytes());
         let digest = CheckedCallContinuationDigest(encoder.finish());
@@ -2327,12 +2332,7 @@ fn seal_captures(
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
     }
-    checked.sort_by(|left, right| {
-        left.binding
-            .coordinate()
-            .canonical_bytes()
-            .cmp(&right.binding.coordinate().canonical_bytes())
-    });
+    checked.sort_by(|left, right| left.binding.coordinate().cmp(right.binding.coordinate()));
     if checked
         .windows(2)
         .any(|rows| rows[0].binding.coordinate() == rows[1].binding.coordinate())
@@ -2886,18 +2886,33 @@ impl CheckedCallCanonicalEncoder {
             }
             ResolvedCallableStableIdentity::Lexical(identity) => {
                 self.tag(2);
-                self.bytes(&identity.binding().canonical_bytes())?;
+                self.bytes(
+                    &identity
+                        .binding()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
                 self.effect_row(identity.effects())?;
             }
             ResolvedCallableStableIdentity::FunctionValue(identity) => {
                 self.tag(3);
-                self.bytes(&identity.expression().canonical_bytes())?;
+                self.bytes(
+                    &identity
+                        .expression()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
                 self.index(identity.ordinal().get())?;
                 self.digest(identity.function_type().as_bytes());
                 self.effect_row(identity.effects())?;
                 self.count(identity.captures().len())?;
                 for capture in identity.captures() {
-                    self.bytes(&capture.binding().canonical_bytes())?;
+                    self.bytes(
+                        &capture
+                            .binding()
+                            .canonical_bytes()
+                            .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                    )?;
                     self.tag(match capture.mode() {
                         CheckedCaptureMode::Read => 0,
                         CheckedCaptureMode::Reassign => 1,
@@ -3233,15 +3248,28 @@ impl CheckedCallCanonicalEncoder {
         match operand.source() {
             CheckedCallSemanticOperandSource::DialogueTarget(source) => {
                 self.tag(0);
-                self.bytes(&source.coordinate().canonical_bytes())?;
+                self.bytes(
+                    &source
+                        .coordinate()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
             }
             CheckedCallSemanticOperandSource::DialogueContent { application } => {
                 self.tag(1);
-                self.bytes(&application.canonical_bytes())?;
+                self.bytes(
+                    &application
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
             }
             CheckedCallSemanticOperandSource::DialogueLinePlan { application } => {
                 self.tag(2);
-                self.bytes(&application.canonical_bytes())?;
+                self.bytes(
+                    &application
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
             }
             CheckedCallSemanticOperandSource::DialogueApplicationId {
                 argument,
@@ -3250,7 +3278,12 @@ impl CheckedCallCanonicalEncoder {
             } => {
                 self.tag(3);
                 self.u32(u32::from(argument.get()));
-                self.bytes(&source.coordinate().canonical_bytes())?;
+                self.bytes(
+                    &source
+                        .coordinate()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
                 self.bytes(id.as_str().as_bytes())?;
             }
             CheckedCallSemanticOperandSource::DialogueApplicationTextKey {
@@ -3260,7 +3293,12 @@ impl CheckedCallCanonicalEncoder {
             } => {
                 self.tag(4);
                 self.u32(u32::from(argument.get()));
-                self.bytes(&source.coordinate().canonical_bytes())?;
+                self.bytes(
+                    &source
+                        .coordinate()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
                 self.bytes(key.as_str().as_bytes())?;
             }
         }

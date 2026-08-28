@@ -11,14 +11,14 @@ use std::collections::BTreeSet;
 use arcweft_core::{
     entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest, TypeLayoutHash},
     pattern::{
-        RuntimeBuiltinVariantIdentity, RuntimeBuiltinVariantTypeError, RuntimeCheckedType,
-        RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId,
-        RuntimeVariantIdentity,
+        RuntimeBuiltinVariantIdentity, RuntimeBuiltinVariantTypeError,
+        RuntimeCheckedRecordTypeError, RuntimeCheckedType, RuntimeCheckedVariantCase,
+        RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId, RuntimeVariantIdentity,
     },
     plan::RuntimeAgentOperationalType,
     value::{
         AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeOpaquePersistence,
-        RuntimeOpaqueValueClass, RuntimePayload, RuntimeValue,
+        RuntimeOpaqueValueClass, RuntimePayload, RuntimeRecordFieldId, RuntimeValue,
     },
 };
 use arcweft_lang_hir::symbol::ProjectSymbolTable;
@@ -34,7 +34,7 @@ use crate::{
     types::{
         AcceptedNominalType, AgentBuiltinType, ArrayLength, CharacterNominalFamily,
         CharacterNominalType, EntityKind, HandleState, IteratorStateKind, LifetimeScopeKind,
-        MapKind, ProjectNominalType, StageActorHandleType, TypeKind,
+        MapKind, ProjectNominalType, StageActorHandleType, TypeKind, VariantPayloadShape,
     },
 };
 
@@ -230,7 +230,8 @@ impl From<RuntimeOwnershipError> for CheckedOwnershipError {
             | RuntimeOwnershipError::ArrayLengthMismatch { .. }
             | RuntimeOwnershipError::Canonical { .. }
             | RuntimeOwnershipError::Snapshot { .. }
-            | RuntimeOwnershipError::BuiltinVariantSchema { .. } => Self::Rejected,
+            | RuntimeOwnershipError::BuiltinVariantSchema { .. }
+            | RuntimeOwnershipError::VariantPayloadSchema { .. } => Self::Rejected,
         }
     }
 }
@@ -256,6 +257,7 @@ pub(crate) enum RuntimeOwnershipPathSegment {
     SequenceItem,
     ArrayItem,
     TupleItem(u32),
+    VariantPayloadField(u32),
     ResultOk,
     ResultError,
     OptionItem,
@@ -296,6 +298,9 @@ impl std::fmt::Display for RuntimeOwnershipPath {
                 RuntimeOwnershipPathSegment::ArrayItem => formatter.write_str(".array")?,
                 RuntimeOwnershipPathSegment::TupleItem(index) => {
                     write!(formatter, ".tuple[{index}]")?;
+                }
+                RuntimeOwnershipPathSegment::VariantPayloadField(index) => {
+                    write!(formatter, ".variant_payload[{index}]")?;
                 }
                 RuntimeOwnershipPathSegment::ResultOk => formatter.write_str(".ok")?,
                 RuntimeOwnershipPathSegment::ResultError => formatter.write_str(".error")?,
@@ -390,6 +395,12 @@ pub(crate) enum RuntimeOwnershipError {
         #[source]
         source: RuntimeBuiltinVariantTypeError,
     },
+    #[error("variant payload schema failed at {path}: {source}")]
+    VariantPayloadSchema {
+        path: RuntimeOwnershipPath,
+        #[source]
+        source: RuntimeCheckedRecordTypeError,
+    },
 }
 
 impl RuntimeOwnershipError {
@@ -413,7 +424,8 @@ impl RuntimeOwnershipError {
             | Self::ArrayLengthMismatch { path, .. }
             | Self::Canonical { path, .. }
             | Self::Snapshot { path, .. }
-            | Self::BuiltinVariantSchema { path, .. } => path,
+            | Self::BuiltinVariantSchema { path, .. }
+            | Self::VariantPayloadSchema { path, .. } => path,
         }
     }
 
@@ -430,7 +442,8 @@ impl RuntimeOwnershipError {
             | Self::ArrayLengthMismatch { .. }
             | Self::Canonical { .. }
             | Self::Snapshot { .. }
-            | Self::BuiltinVariantSchema { .. } => None,
+            | Self::BuiltinVariantSchema { .. }
+            | Self::VariantPayloadSchema { .. } => None,
         }
     }
 }
@@ -1243,6 +1256,65 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 }
                 checked(RuntimeCheckedType::Tuple(checked_items))
             }
+            TypeKind::VariantPayload(payload) => match payload.shape() {
+                VariantPayloadShape::Unit => rejected(RuntimeOwnershipRejection::UnresolvedType),
+                VariantPayloadShape::Tuple(fields) => {
+                    let mut checked_fields = Vec::with_capacity(fields.len());
+                    for field in fields {
+                        let admission = self.classify_at(
+                            field.ty(),
+                            &path.pushed(RuntimeOwnershipPathSegment::VariantPayloadField(
+                                field.ordinal(),
+                            )),
+                            OwnershipTraversal::child_depth(depth)?,
+                            traversal,
+                        )?;
+                        checked_fields.push(admission.projection().checked_type_at(path)?);
+                    }
+                    checked(RuntimeCheckedType::Tuple(checked_fields))
+                }
+                VariantPayloadShape::Record(fields) => {
+                    let mut checked_fields = Vec::with_capacity(fields.len());
+                    for field in fields {
+                        let field_path = path.pushed(
+                            RuntimeOwnershipPathSegment::VariantPayloadField(field.ordinal()),
+                        );
+                        let admission = self.classify_at(
+                            field.ty(),
+                            &field_path,
+                            OwnershipTraversal::child_depth(depth)?,
+                            traversal,
+                        )?;
+                        let field_id = RuntimeRecordFieldId::try_from_zero_based_ordinal(
+                            usize::try_from(field.ordinal()).map_err(|_| {
+                                RuntimeOwnershipError::VariantPayloadSchema {
+                                    path: field_path.clone(),
+                                    source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                                }
+                            })?,
+                        )
+                        .map_err(|_| {
+                            RuntimeOwnershipError::VariantPayloadSchema {
+                                path: field_path,
+                                source: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                            }
+                        })?;
+                        checked_fields.push((
+                            field_id,
+                            field.diagnostic_name().to_owned(),
+                            admission.projection().checked_type_at(path)?,
+                        ));
+                    }
+                    checked(
+                        RuntimeCheckedType::try_record(checked_fields).map_err(|source| {
+                            RuntimeOwnershipError::VariantPayloadSchema {
+                                path: path.clone(),
+                                source,
+                            }
+                        })?,
+                    )
+                }
+            },
             TypeKind::Choice(_) => rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner),
             TypeKind::Unit => copy(RuntimeCheckedType::Unit),
             TypeKind::Never => copy(RuntimeCheckedType::Never),
@@ -1626,11 +1698,13 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         let checked = RuntimeCheckedType::try_builtin_variant(
             owner,
             [
-                Some(RuntimeCheckedType::AgentValue),
-                Some(RuntimeCheckedType::String),
-                Some(RuntimeCheckedType::Agent(
+                Some(RuntimeCheckedType::Tuple(vec![
+                    RuntimeCheckedType::AgentValue,
+                ])),
+                Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String])),
+                Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Agent(
                     RuntimeAgentOperationalType::BinaryResourceBody,
-                )),
+                )])),
             ],
         )
         .map_err(|source| RuntimeOwnershipError::BuiltinVariantSchema {
@@ -1850,6 +1924,7 @@ fn validate_variant_cases(
         | RuntimeCheckedType::Bytes
         | RuntimeCheckedType::Sequence(_)
         | RuntimeCheckedType::Tuple(_)
+        | RuntimeCheckedType::Record(_)
         | RuntimeCheckedType::Choice(_)
         | RuntimeCheckedType::Nominal { .. }
         | RuntimeCheckedType::Opaque { .. }

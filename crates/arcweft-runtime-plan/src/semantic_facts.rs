@@ -23,15 +23,16 @@ use arcweft_core::entry::{
 };
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
-    RuntimeBuiltinVariantIdentity, RuntimeCheckedType, RuntimeCheckedVariantCase,
-    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+    RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
+    RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+    RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
     RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
-    RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanSequenceKind,
-    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode, RuntimeVariantCaseSeed,
-    RuntimeVariantDomainSeed,
+    RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanRecordField,
+    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode,
+    RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
 };
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
@@ -177,8 +178,13 @@ pub enum RuntimeTypeShape {
     Result {
         value: Box<RuntimeNormalizedType>,
         error: Box<RuntimeNormalizedType>,
+        value_payload: Box<RuntimeNormalizedType>,
+        error_payload: Box<RuntimeNormalizedType>,
     },
-    Option(Box<RuntimeNormalizedType>),
+    Option {
+        item: Box<RuntimeNormalizedType>,
+        some_payload: Box<RuntimeNormalizedType>,
+    },
     BuiltinVariant {
         owner: RuntimeBuiltinVariantIdentity,
         cases: Box<[Option<RuntimeNormalizedType>]>,
@@ -195,6 +201,7 @@ pub enum RuntimeTypeShape {
         arguments: Box<[RuntimeNormalizedType]>,
     },
     Tuple(Box<[RuntimeNormalizedType]>),
+    Record(Box<[RuntimeRecordTypeField]>),
     Choice(Box<[RuntimeNormalizedType]>),
     Opaque {
         producer: RuntimeOpaqueTypeProducerId,
@@ -204,6 +211,42 @@ pub enum RuntimeTypeShape {
         arguments: Box<[RuntimeNormalizedType]>,
     },
     Agent(RuntimeAgentTypeShape),
+}
+
+/// One declaration-ordered field of an exact anonymous record runtime type.
+///
+/// The label is retained for runtime record mechanics and diagnostics. Exact
+/// type equality is owned by declaration position plus the recursive semantic
+/// type, so a diagnostic rename cannot change Match or checked-type identity.
+#[derive(Clone, Debug)]
+pub struct RuntimeRecordTypeField {
+    diagnostic_name: String,
+    ty: RuntimeNormalizedType,
+}
+
+impl PartialEq for RuntimeRecordTypeField {
+    fn eq(&self, other: &Self) -> bool {
+        self.ty == other.ty
+    }
+}
+
+impl Eq for RuntimeRecordTypeField {}
+
+impl RuntimeRecordTypeField {
+    pub fn new(diagnostic_name: impl Into<String>, ty: RuntimeNormalizedType) -> Self {
+        Self {
+            diagnostic_name: diagnostic_name.into(),
+            ty,
+        }
+    }
+
+    pub fn diagnostic_name(&self) -> &str {
+        &self.diagnostic_name
+    }
+
+    pub const fn ty(&self) -> &RuntimeNormalizedType {
+        &self.ty
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -220,6 +263,7 @@ pub enum RuntimeTypeProjectionStep {
     SequenceItem,
     ProjectNominalArgument(u32),
     TupleItem(u32),
+    RecordField(u32),
     ChoiceAlternative(u32),
     OpaqueArgument(u32),
     ResultOk,
@@ -302,6 +346,12 @@ pub enum RuntimeCheckedTypeProjectionError {
         path: RuntimeTypeProjectionPath,
         owner: RuntimeBuiltinVariantIdentity,
     },
+    #[error("record runtime type has a non-canonical field schema")]
+    InvalidRecord {
+        semantic_identity: RuntimeSemanticTypeId,
+        path: RuntimeTypeProjectionPath,
+        reason: RuntimeCheckedRecordTypeError,
+    },
 }
 
 /// One normalized semantic type that can be compared without source spelling.
@@ -309,6 +359,91 @@ pub enum RuntimeCheckedTypeProjectionError {
 pub struct RuntimeNormalizedType {
     identity: RuntimeSemanticTypeId,
     shape: RuntimeTypeShape,
+}
+
+/// One exact case selected directly from a normalized runtime variant type.
+///
+/// This borrowed view keeps the normalized payload and the core checked owner
+/// reconciled. Synthetic lowering paths therefore cannot substitute a raw
+/// item type for the case's structural payload type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct RuntimeNormalizedVariantSelection<'a> {
+    owner: &'a RuntimeNormalizedType,
+    ordinal: u32,
+    payload: Option<&'a RuntimeNormalizedType>,
+}
+
+impl RuntimeNormalizedVariantSelection<'_> {
+    pub(crate) const fn owner(&self) -> &RuntimeNormalizedType {
+        self.owner
+    }
+
+    pub(crate) const fn ordinal(&self) -> u32 {
+        self.ordinal
+    }
+
+    pub(crate) const fn payload(&self) -> Option<&RuntimeNormalizedType> {
+        self.payload
+    }
+
+    pub(crate) fn single_payload_item(
+        &self,
+    ) -> Result<Option<&RuntimeNormalizedType>, RuntimeNormalizedVariantSelectionError> {
+        match self.payload {
+            Some(payload) => match payload.shape() {
+                RuntimeTypeShape::Tuple(items) if items.len() == 1 => Ok(items.first()),
+                RuntimeTypeShape::Tuple(items) => {
+                    Err(RuntimeNormalizedVariantSelectionError::PayloadArity {
+                        owner: self.owner.identity(),
+                        ordinal: self.ordinal,
+                        actual: items.len(),
+                    })
+                }
+                _ => Err(RuntimeNormalizedVariantSelectionError::NonTuplePayload {
+                    owner: self.owner.identity(),
+                    ordinal: self.ordinal,
+                }),
+            },
+            None => Ok(None),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum RuntimeNormalizedVariantSelectionError {
+    #[error(transparent)]
+    CheckedType(#[from] RuntimeCheckedTypeProjectionError),
+    #[error("normalized type {owner:?} is not a closed runtime variant owner")]
+    InvalidOwner { owner: RuntimeSemanticTypeId },
+    #[error("normalized variant type {owner:?} has {count} cases, exceeding u32 ordinals")]
+    CaseCountOverflow {
+        owner: RuntimeSemanticTypeId,
+        count: usize,
+    },
+    #[error("normalized variant type {owner:?} has no case {ordinal} among {case_count} cases")]
+    CaseOrdinal {
+        owner: RuntimeSemanticTypeId,
+        ordinal: u32,
+        case_count: u32,
+    },
+    #[error("normalized variant type {owner:?} case {ordinal} disagrees with its checked payload")]
+    PayloadMismatch {
+        owner: RuntimeSemanticTypeId,
+        ordinal: u32,
+    },
+    #[error("normalized variant type {owner:?} case {ordinal} payload is not a tuple")]
+    NonTuplePayload {
+        owner: RuntimeSemanticTypeId,
+        ordinal: u32,
+    },
+    #[error(
+        "normalized variant type {owner:?} case {ordinal} payload has {actual} fields instead of one"
+    )]
+    PayloadArity {
+        owner: RuntimeSemanticTypeId,
+        ordinal: u32,
+        actual: usize,
+    },
 }
 
 impl RuntimeNormalizedType {
@@ -322,6 +457,80 @@ impl RuntimeNormalizedType {
 
     pub const fn shape(&self) -> &RuntimeTypeShape {
         &self.shape
+    }
+
+    pub(crate) fn variant_selection(
+        &self,
+        ordinal: u32,
+    ) -> Result<RuntimeNormalizedVariantSelection<'_>, RuntimeNormalizedVariantSelectionError> {
+        let (case_count, payload) = match self.shape() {
+            RuntimeTypeShape::Result {
+                value_payload,
+                error_payload,
+                ..
+            } => (
+                2,
+                match ordinal {
+                    0 => Some(value_payload.as_ref()),
+                    1 => Some(error_payload.as_ref()),
+                    _ => None,
+                },
+            ),
+            RuntimeTypeShape::Option { some_payload, .. } => (
+                2,
+                match ordinal {
+                    0 => Some(some_payload.as_ref()),
+                    _ => None,
+                },
+            ),
+            RuntimeTypeShape::BuiltinVariant { cases, .. } => {
+                let case_count = u32::try_from(cases.len()).map_err(|_| {
+                    RuntimeNormalizedVariantSelectionError::CaseCountOverflow {
+                        owner: self.identity(),
+                        count: cases.len(),
+                    }
+                })?;
+                let payload = usize::try_from(ordinal)
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .and_then(Option::as_ref);
+                (case_count, payload)
+            }
+            _ => {
+                return Err(RuntimeNormalizedVariantSelectionError::InvalidOwner {
+                    owner: self.identity(),
+                });
+            }
+        };
+        if ordinal >= case_count {
+            return Err(RuntimeNormalizedVariantSelectionError::CaseOrdinal {
+                owner: self.identity(),
+                ordinal,
+                case_count,
+            });
+        }
+        let checked = self.checked_type()?;
+        let checked_case = checked.variant_case(ordinal).ok_or(
+            RuntimeNormalizedVariantSelectionError::CaseOrdinal {
+                owner: self.identity(),
+                ordinal,
+                case_count,
+            },
+        )?;
+        let checked_payload = payload
+            .map(RuntimeNormalizedType::checked_type)
+            .transpose()?;
+        if checked_case.payload.as_deref() != checked_payload.as_ref() {
+            return Err(RuntimeNormalizedVariantSelectionError::PayloadMismatch {
+                owner: self.identity(),
+                ordinal,
+            });
+        }
+        Ok(RuntimeNormalizedVariantSelection {
+            owner: self,
+            ordinal,
+            payload,
+        })
     }
 
     pub fn checked_type(&self) -> Result<RuntimeCheckedType, RuntimeCheckedTypeProjectionError> {
@@ -380,11 +589,21 @@ impl RuntimeNormalizedType {
             RuntimeTypeShape::Parser { .. } => {
                 unreachable!("unsupported Parser shape cannot enter RuntimePlan type admission")
             }
-            RuntimeTypeShape::Result { value, error } => RuntimePlanTypeProjection::Result {
+            RuntimeTypeShape::Result {
+                value,
+                error,
+                value_payload,
+                error_payload,
+            } => RuntimePlanTypeProjection::Result {
                 value: child(value),
                 error: child(error),
+                value_payload: child(value_payload),
+                error_payload: child(error_payload),
             },
-            RuntimeTypeShape::Option(item) => RuntimePlanTypeProjection::Option(child(item)),
+            RuntimeTypeShape::Option { item, some_payload } => RuntimePlanTypeProjection::Option {
+                item: child(item),
+                some_payload: child(some_payload),
+            },
             RuntimeTypeShape::BuiltinVariant { owner, cases } => {
                 RuntimePlanTypeProjection::BuiltinVariant {
                     owner: *owner,
@@ -422,6 +641,14 @@ impl RuntimeNormalizedType {
             }
             RuntimeTypeShape::Tuple(items) => RuntimePlanTypeProjection::Tuple(
                 items.iter().map(RuntimeNormalizedType::identity).collect(),
+            ),
+            RuntimeTypeShape::Record(fields) => RuntimePlanTypeProjection::Record(
+                fields
+                    .iter()
+                    .map(|field| {
+                        RuntimePlanRecordField::new(field.diagnostic_name(), field.ty().identity())
+                    })
+                    .collect(),
             ),
             RuntimeTypeShape::Choice(items) => RuntimePlanTypeProjection::Choice(
                 items.iter().map(RuntimeNormalizedType::identity).collect(),
@@ -463,7 +690,6 @@ impl RuntimeNormalizedType {
         match self.shape() {
             RuntimeTypeShape::Range(item)
             | RuntimeTypeShape::Iterator(item)
-            | RuntimeTypeShape::Option(item)
             | RuntimeTypeShape::ThreadHandle(item)
             | RuntimeTypeShape::Shared(item)
             | RuntimeTypeShape::Reference(item)
@@ -479,11 +705,14 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Parser {
                 item: key,
                 error: value,
-            }
-            | RuntimeTypeShape::Result {
+            } => vec![key, value],
+            RuntimeTypeShape::Result {
                 value: key,
                 error: value,
-            } => vec![key, value],
+                value_payload,
+                error_payload,
+            } => vec![key, value, value_payload, error_payload],
+            RuntimeTypeShape::Option { item, some_payload } => vec![item, some_payload],
             RuntimeTypeShape::BuiltinVariant { cases, .. } => {
                 cases.iter().filter_map(Option::as_ref).collect()
             }
@@ -495,6 +724,9 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Tuple(arguments)
             | RuntimeTypeShape::Choice(arguments)
             | RuntimeTypeShape::Opaque { arguments, .. } => arguments.iter().collect(),
+            RuntimeTypeShape::Record(fields) => {
+                fields.iter().map(RuntimeRecordTypeField::ty).collect()
+            }
             RuntimeTypeShape::Never
             | RuntimeTypeShape::Unit
             | RuntimeTypeShape::Bool
@@ -569,17 +801,77 @@ impl RuntimeNormalizedType {
                     })
                     .collect::<Result<Vec<_>, _>>()?,
             ),
-            RuntimeTypeShape::Result { value, error } => RuntimeCheckedType::Result {
-                ok: Box::new(
-                    value.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::ResultOk))?,
-                ),
-                error: Box::new(
-                    error.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::ResultError))?,
-                ),
-            },
-            RuntimeTypeShape::Option(item) => RuntimeCheckedType::Option(Box::new(
-                item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::OptionItem))?,
-            )),
+            RuntimeTypeShape::Record(fields) => {
+                let mut checked = Vec::with_capacity(fields.len());
+                for (index, field) in fields.iter().enumerate() {
+                    let field_path = path.pushed(RuntimeTypeProjectionStep::RecordField(
+                        projection_index(index),
+                    ));
+                    let field_id = RuntimeRecordFieldId::try_from_zero_based_ordinal(index)
+                        .map_err(|_| RuntimeCheckedTypeProjectionError::InvalidRecord {
+                            semantic_identity: self.identity(),
+                            path: field_path.clone(),
+                            reason: RuntimeCheckedRecordTypeError::FieldOrdinalOverflow,
+                        })?;
+                    checked.push((
+                        field_id,
+                        field.diagnostic_name().to_owned(),
+                        field.ty().checked_type_at(&field_path)?,
+                    ));
+                }
+                RuntimeCheckedType::try_record(checked).map_err(|reason| {
+                    RuntimeCheckedTypeProjectionError::InvalidRecord {
+                        semantic_identity: self.identity(),
+                        path: path.clone(),
+                        reason,
+                    }
+                })?
+            }
+            RuntimeTypeShape::Result {
+                value,
+                error,
+                value_payload,
+                error_payload,
+            } => {
+                let value =
+                    value.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::ResultOk))?;
+                let error =
+                    error.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::ResultError))?;
+                let checked_value_payload = value_payload.checked_type_at(
+                    &path.pushed(RuntimeTypeProjectionStep::BuiltinVariantCase(0)),
+                )?;
+                let checked_error_payload = error_payload.checked_type_at(
+                    &path.pushed(RuntimeTypeProjectionStep::BuiltinVariantCase(1)),
+                )?;
+                if checked_value_payload != RuntimeCheckedType::Tuple(vec![value.clone()])
+                    || checked_error_payload != RuntimeCheckedType::Tuple(vec![error.clone()])
+                {
+                    return Err(RuntimeCheckedTypeProjectionError::InvalidBuiltinVariant {
+                        semantic_identity: self.identity(),
+                        path: path.clone(),
+                        owner: RuntimeBuiltinVariantIdentity::Result,
+                    });
+                }
+                RuntimeCheckedType::Result {
+                    ok: Box::new(value),
+                    error: Box::new(error),
+                }
+            }
+            RuntimeTypeShape::Option { item, some_payload } => {
+                let item =
+                    item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::OptionItem))?;
+                let checked_payload = some_payload.checked_type_at(
+                    &path.pushed(RuntimeTypeProjectionStep::BuiltinVariantCase(0)),
+                )?;
+                if checked_payload != RuntimeCheckedType::Tuple(vec![item.clone()]) {
+                    return Err(RuntimeCheckedTypeProjectionError::InvalidBuiltinVariant {
+                        semantic_identity: self.identity(),
+                        path: path.clone(),
+                        owner: RuntimeBuiltinVariantIdentity::Option,
+                    });
+                }
+                RuntimeCheckedType::Option(Box::new(item))
+            }
             RuntimeTypeShape::BuiltinVariant { owner, cases } => {
                 let payloads = cases
                     .iter()
@@ -1185,7 +1477,7 @@ fn try_boundary_type_matches(fact: &RuntimeTryFact) -> bool {
             residual.as_ref() == error.as_ref()
                 || matches!(residual.shape(), RuntimeTypeShape::Never)
         }
-        (RuntimeTryCarrierFact::Option { .. }, RuntimeTypeShape::Option(_)) => true,
+        (RuntimeTryCarrierFact::Option { .. }, RuntimeTypeShape::Option { .. }) => true,
         _ => false,
     }
 }
@@ -1572,9 +1864,15 @@ pub enum RuntimeRecordPatternRest {
 /// Atomic executable projection of one nominal-record pattern.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeRecordPatternFact {
-    nominal: RuntimeResolvedNominalRecord,
+    owner: RuntimeRecordPatternOwner,
     fields: Box<[RuntimeRecordPatternField]>,
     rest: RuntimeRecordPatternRest,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RuntimeRecordPatternOwner {
+    Nominal(RuntimeResolvedNominalRecord),
+    Structural(RuntimeNormalizedType),
 }
 
 /// Invalid executable record plan projected from checked semantics.
@@ -1586,25 +1884,27 @@ pub enum RuntimeRecordPlanError {
     UnknownField { field: RuntimeRecordFieldId },
     #[error("complete record plan has {actual} fields, expected {expected}")]
     Incomplete { expected: usize, actual: usize },
+    #[error("structural record pattern owner is not an exact checked record type")]
+    InvalidStructuralOwner,
 }
 
 fn validate_runtime_record_fields(
-    nominal: &RuntimeResolvedNominalRecord,
+    field_count: usize,
     fields: impl IntoIterator<Item = RuntimeRecordFieldId>,
     require_complete: bool,
 ) -> Result<(), RuntimeRecordPlanError> {
     let mut seen = BTreeSet::new();
     for field in fields {
-        if nominal.layout().field_by_id(field).is_none() {
+        if usize::try_from(field.zero_based()).map_or(true, |ordinal| ordinal >= field_count) {
             return Err(RuntimeRecordPlanError::UnknownField { field });
         }
         if !seen.insert(field) {
             return Err(RuntimeRecordPlanError::DuplicateField { field });
         }
     }
-    if require_complete && seen.len() != nominal.layout().len() {
+    if require_complete && seen.len() != field_count {
         return Err(RuntimeRecordPlanError::Incomplete {
-            expected: nominal.layout().len(),
+            expected: field_count,
             actual: seen.len(),
         });
     }
@@ -1617,7 +1917,11 @@ impl RuntimeRecordExpressionFact {
         fields: impl Into<Box<[RuntimeRecordExpressionField]>>,
     ) -> Result<Self, RuntimeRecordPlanError> {
         let fields = fields.into();
-        validate_runtime_record_fields(&nominal, fields.iter().map(|field| field.field), true)?;
+        validate_runtime_record_fields(
+            nominal.layout().len(),
+            fields.iter().map(|field| field.field),
+            true,
+        )?;
         Ok(Self { nominal, fields })
     }
 
@@ -1642,19 +1946,53 @@ impl RuntimeRecordPatternFact {
     ) -> Result<Self, RuntimeRecordPlanError> {
         let fields = fields.into();
         validate_runtime_record_fields(
-            &nominal,
+            nominal.layout().len(),
             fields.iter().map(|field| field.field),
             matches!(rest, RuntimeRecordPatternRest::Absent),
         )?;
         Ok(Self {
-            nominal,
+            owner: RuntimeRecordPatternOwner::Nominal(nominal),
             fields,
             rest,
         })
     }
 
-    pub const fn nominal(&self) -> &RuntimeResolvedNominalRecord {
-        &self.nominal
+    pub fn try_structural(
+        owner: RuntimeNormalizedType,
+        fields: impl Into<Box<[RuntimeRecordPatternField]>>,
+        rest: RuntimeRecordPatternRest,
+    ) -> Result<Self, RuntimeRecordPlanError> {
+        let RuntimeTypeShape::Record(schema) = owner.shape() else {
+            return Err(RuntimeRecordPlanError::InvalidStructuralOwner);
+        };
+        if !matches!(owner.checked_type(), Ok(RuntimeCheckedType::Record(_))) {
+            return Err(RuntimeRecordPlanError::InvalidStructuralOwner);
+        }
+        let fields = fields.into();
+        validate_runtime_record_fields(
+            schema.len(),
+            fields.iter().map(|field| field.field),
+            matches!(rest, RuntimeRecordPatternRest::Absent),
+        )?;
+        Ok(Self {
+            owner: RuntimeRecordPatternOwner::Structural(owner),
+            fields,
+            rest,
+        })
+    }
+
+    pub const fn nominal(&self) -> Option<&RuntimeResolvedNominalRecord> {
+        match &self.owner {
+            RuntimeRecordPatternOwner::Nominal(nominal) => Some(nominal),
+            RuntimeRecordPatternOwner::Structural(_) => None,
+        }
+    }
+
+    pub const fn structural(&self) -> Option<&RuntimeNormalizedType> {
+        match &self.owner {
+            RuntimeRecordPatternOwner::Structural(ty) => Some(ty),
+            RuntimeRecordPatternOwner::Nominal(_) => None,
+        }
     }
 
     pub const fn fields(&self) -> &[RuntimeRecordPatternField] {
@@ -1665,8 +2003,11 @@ impl RuntimeRecordPatternFact {
         self.rest
     }
 
-    fn nominal_mut(&mut self) -> &mut RuntimeResolvedNominalRecord {
-        &mut self.nominal
+    fn nominal_mut(&mut self) -> Option<&mut RuntimeResolvedNominalRecord> {
+        match &mut self.owner {
+            RuntimeRecordPatternOwner::Nominal(nominal) => Some(nominal),
+            RuntimeRecordPatternOwner::Structural(_) => None,
+        }
     }
 }
 
@@ -2040,11 +2381,15 @@ pub enum RuntimeVariantOwner {
         cases: RuntimeNormalizedVariantCases,
     },
     Option {
+        identity: RuntimeSemanticTypeId,
         item: RuntimeNormalizedType,
+        cases: RuntimeNormalizedVariantCases,
     },
     Result {
+        identity: RuntimeSemanticTypeId,
         ok: RuntimeNormalizedType,
         error: RuntimeNormalizedType,
+        cases: RuntimeNormalizedVariantCases,
     },
 }
 
@@ -2070,10 +2415,24 @@ impl RuntimeVariantOwner {
                         .filter_map(RuntimeNormalizedVariantCase::payload),
                 );
             }
-            Self::Option { item } => types.push(item),
-            Self::Result { ok, error } => {
+            Self::Option { item, cases, .. } => {
+                types.push(item);
+                types.extend(
+                    cases
+                        .iter()
+                        .filter_map(RuntimeNormalizedVariantCase::payload),
+                );
+            }
+            Self::Result {
+                ok, error, cases, ..
+            } => {
                 types.push(ok);
                 types.push(error);
+                types.extend(
+                    cases
+                        .iter()
+                        .filter_map(RuntimeNormalizedVariantCase::payload),
+                );
             }
         }
     }
@@ -2124,28 +2483,9 @@ impl RuntimeVariantOwner {
             Self::RuntimeBuiltin { cases, .. } => ordinal_index
                 .and_then(|ordinal| cases.get(ordinal))
                 .map(RuntimeNormalizedVariantCaseRef::from_case),
-            Self::Option { item } => match ordinal {
-                0 => Some(RuntimeNormalizedVariantCaseRef {
-                    name: "Some",
-                    payload: Some(item),
-                }),
-                1 => Some(RuntimeNormalizedVariantCaseRef {
-                    name: "None",
-                    payload: None,
-                }),
-                _ => None,
-            },
-            Self::Result { ok, error } => match ordinal {
-                0 => Some(RuntimeNormalizedVariantCaseRef {
-                    name: "Ok",
-                    payload: Some(ok),
-                }),
-                1 => Some(RuntimeNormalizedVariantCaseRef {
-                    name: "Err",
-                    payload: Some(error),
-                }),
-                _ => None,
-            },
+            Self::Option { cases, .. } | Self::Result { cases, .. } => ordinal_index
+                .and_then(|ordinal| cases.get(ordinal))
+                .map(RuntimeNormalizedVariantCaseRef::from_case),
         };
         selected.ok_or(RuntimeResolvedVariantError::CaseOrdinal {
             ordinal,
@@ -2159,7 +2499,7 @@ impl RuntimeVariantOwner {
             | Self::CharacterNominal { cases, .. }
             | Self::BuiltinClosed { cases, .. }
             | Self::RuntimeBuiltin { cases, .. } => cases.count(),
-            Self::Option { .. } | Self::Result { .. } => 2,
+            Self::Option { cases, .. } | Self::Result { cases, .. } => cases.count(),
         }
     }
 
@@ -2226,13 +2566,70 @@ impl RuntimeVariantOwner {
                     }
                 })?
             }
-            Self::Option { item } => RuntimeCheckedType::Option(Box::new(item.checked_type()?)),
-            Self::Result { ok, error } => RuntimeCheckedType::Result {
-                ok: Box::new(ok.checked_type()?),
-                error: Box::new(error.checked_type()?),
-            },
+            Self::Option {
+                identity,
+                item,
+                cases,
+            } => {
+                let checked = RuntimeCheckedType::Option(Box::new(item.checked_type()?));
+                validate_normalized_builtin_cases(
+                    *identity,
+                    RuntimeBuiltinVariantIdentity::Option,
+                    cases,
+                    &checked,
+                )?;
+                checked
+            }
+            Self::Result {
+                identity,
+                ok,
+                error,
+                cases,
+            } => {
+                let checked = RuntimeCheckedType::Result {
+                    ok: Box::new(ok.checked_type()?),
+                    error: Box::new(error.checked_type()?),
+                };
+                validate_normalized_builtin_cases(
+                    *identity,
+                    RuntimeBuiltinVariantIdentity::Result,
+                    cases,
+                    &checked,
+                )?;
+                checked
+            }
         })
     }
+}
+
+fn validate_normalized_builtin_cases(
+    semantic_identity: RuntimeSemanticTypeId,
+    owner: RuntimeBuiltinVariantIdentity,
+    cases: &[RuntimeNormalizedVariantCase],
+    checked: &RuntimeCheckedType,
+) -> Result<(), RuntimeCheckedTypeProjectionError> {
+    if cases.len() != owner.cases().len()
+        || cases.iter().enumerate().any(|(ordinal, case)| {
+            u32::try_from(ordinal)
+                .ok()
+                .and_then(|ordinal| checked.variant_case(ordinal))
+                .is_none_or(|expected| {
+                    expected.name != case.name
+                        || expected.payload.as_deref()
+                            != case
+                                .payload()
+                                .and_then(|payload| payload.checked_type().ok())
+                                .as_ref()
+                })
+        })
+    {
+        return Err(RuntimeCheckedTypeProjectionError::InvalidBuiltinVariant {
+            semantic_identity,
+            path: RuntimeTypeProjectionPath::root(),
+            owner,
+        });
+    }
+    Ok(())
 }
 
 /// Complete checked variant owner and its canonical selected case.
@@ -2395,25 +2792,39 @@ impl RuntimeResolvedVariant {
 
     /// Retains one accepted Option case after reconciling its closed name.
     pub fn option(
+        identity: RuntimeSemanticTypeId,
         item: RuntimeNormalizedType,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
-        Self::try_new(RuntimeVariantOwner::Option { item }, ordinal, selected_name)
+        let cases = RuntimeNormalizedVariantCases::try_new(cases)?;
+        let owner = RuntimeVariantOwner::Option {
+            identity,
+            item,
+            cases,
+        };
+        owner.project_checked_type()?;
+        Self::try_new(owner, ordinal, selected_name)
     }
 
     /// Retains one accepted Result case after reconciling its closed name.
     pub fn result(
+        identity: RuntimeSemanticTypeId,
         ok: RuntimeNormalizedType,
         error: RuntimeNormalizedType,
+        cases: Box<[RuntimeNormalizedVariantCase]>,
         ordinal: u32,
         selected_name: &str,
     ) -> Result<Self, RuntimeResolvedVariantError> {
-        Self::try_new(
-            RuntimeVariantOwner::Result { ok, error },
-            ordinal,
-            selected_name,
-        )
+        let owner = RuntimeVariantOwner::Result {
+            identity,
+            ok,
+            error,
+            cases: RuntimeNormalizedVariantCases::try_new(cases)?,
+        };
+        owner.project_checked_type()?;
+        Self::try_new(owner, ordinal, selected_name)
     }
 
     pub const fn owner(&self) -> &RuntimeVariantOwner {
@@ -3968,6 +4379,15 @@ impl RuntimePlanSemanticFacts {
                 |kind| matches!(kind, HirPatternKind::Record { .. }),
             )?;
             validate_record_pattern_fact(&modules, *pattern, record)?;
+            if record
+                .structural()
+                .is_some_and(|owner| pattern_types.get(pattern) != Some(owner))
+            {
+                return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                    pattern: *pattern,
+                    expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+                });
+            }
         }
 
         let mut nominal_layouts = BTreeMap::new();
@@ -3975,7 +4395,9 @@ impl RuntimePlanSemanticFacts {
             intern_nominal_record_layout(record.nominal_mut(), &mut nominal_layouts)?;
         }
         for record in pattern_nominal_records.values_mut() {
-            intern_nominal_record_layout(record.nominal_mut(), &mut nominal_layouts)?;
+            if let Some(nominal) = record.nominal_mut() {
+                intern_nominal_record_layout(nominal, &mut nominal_layouts)?;
+            }
         }
 
         let expression_variants = collect_unique(
@@ -4303,11 +4725,12 @@ impl RuntimePlanSemanticFacts {
             let carrier_matches = match (fact.carrier(), operand.shape()) {
                 (
                     RuntimeTryCarrierFact::Result { success, residual },
-                    RuntimeTypeShape::Result { value, error },
+                    RuntimeTypeShape::Result { value, error, .. },
                 ) => success == value.as_ref() && residual.as_ref() == error.as_ref(),
-                (RuntimeTryCarrierFact::Option { success }, RuntimeTypeShape::Option(item)) => {
-                    success == item.as_ref()
-                }
+                (
+                    RuntimeTryCarrierFact::Option { success },
+                    RuntimeTypeShape::Option { item, .. },
+                ) => success == item.as_ref(),
                 _ => false,
             };
             if !carrier_matches || !try_boundary_type_matches(fact) {
@@ -4857,7 +5280,7 @@ impl RuntimePlanSemanticFacts {
             .chain(
                 self.pattern_nominal_records
                     .values()
-                    .map(|record| project(record.nominal())),
+                    .filter_map(|record| record.nominal().map(&project)),
             )
             .collect()
     }
@@ -4906,13 +5329,16 @@ impl RuntimePlanSemanticFacts {
             );
         }
         for record in self.pattern_nominal_records.values() {
-            roots.extend(
-                record
-                    .nominal()
-                    .fields()
-                    .iter()
-                    .map(RuntimeResolvedNominalRecordField::ty),
-            );
+            match (record.nominal(), record.structural()) {
+                (Some(nominal), None) => roots.extend(
+                    nominal
+                        .fields()
+                        .iter()
+                        .map(RuntimeResolvedNominalRecordField::ty),
+                ),
+                (None, Some(structural)) => roots.push(structural),
+                _ => unreachable!("record pattern fact has one exact owner"),
+            }
         }
         for assignment in self.assignments.values() {
             roots.extend([assignment.field_type(), assignment.value_type()]);
@@ -6029,8 +6455,9 @@ fn validate_variant(
                 Ok(())
             }
         }
-        RuntimeVariantOwner::Option { item } => {
+        RuntimeVariantOwner::Option { item, cases, .. } => {
             validate_normalized_type(modules, item)?;
+            validate_normalized_variant_payloads(modules, cases)?;
             if matches!(
                 (variant.ordinal(), selected_name),
                 (0, "Some") | (1, "None")
@@ -6040,9 +6467,12 @@ fn validate_variant(
                 Err(RuntimeSemanticFactsError::WrongVariantIdentity)
             }
         }
-        RuntimeVariantOwner::Result { ok, error } => {
+        RuntimeVariantOwner::Result {
+            ok, error, cases, ..
+        } => {
             validate_normalized_type(modules, ok)?;
             validate_normalized_type(modules, error)?;
+            validate_normalized_variant_payloads(modules, cases)?;
             if matches!((variant.ordinal(), selected_name), (0, "Ok") | (1, "Err")) {
                 Ok(())
             } else {
@@ -6073,7 +6503,6 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Iterator(item)
         | RuntimeTypeShape::Sequence { item, .. }
         | RuntimeTypeShape::Array { item, .. }
-        | RuntimeTypeShape::Option(item)
         | RuntimeTypeShape::ThreadHandle(item)
         | RuntimeTypeShape::Shared(item)
         | RuntimeTypeShape::Reference(item)
@@ -6089,13 +6518,41 @@ fn validate_normalized_type(
         | RuntimeTypeShape::Parser {
             item: key,
             error: value,
-        }
-        | RuntimeTypeShape::Result {
-            value: key,
-            error: value,
         } => {
             validate_normalized_type(modules, key)?;
             validate_normalized_type(modules, value)
+        }
+        RuntimeTypeShape::Option { item, some_payload } => {
+            validate_normalized_type(modules, item)?;
+            validate_normalized_type(modules, some_payload)?;
+            if normalized_tuple_payload_matches(some_payload, std::slice::from_ref(&item.as_ref()))
+            {
+                Ok(())
+            } else {
+                Err(RuntimeSemanticFactsError::WrongVariantIdentity)
+            }
+        }
+        RuntimeTypeShape::Result {
+            value,
+            error,
+            value_payload,
+            error_payload,
+        } => {
+            validate_normalized_type(modules, value)?;
+            validate_normalized_type(modules, error)?;
+            validate_normalized_type(modules, value_payload)?;
+            validate_normalized_type(modules, error_payload)?;
+            if normalized_tuple_payload_matches(
+                value_payload,
+                std::slice::from_ref(&value.as_ref()),
+            ) && normalized_tuple_payload_matches(
+                error_payload,
+                std::slice::from_ref(&error.as_ref()),
+            ) {
+                Ok(())
+            } else {
+                Err(RuntimeSemanticFactsError::WrongVariantIdentity)
+            }
         }
         RuntimeTypeShape::BuiltinVariant { cases, .. } => {
             for payload in cases.iter().flatten() {
@@ -6129,6 +6586,14 @@ fn validate_normalized_type(
                 validate_normalized_type(modules, item)?;
             }
             Ok(())
+        }
+        RuntimeTypeShape::Record(fields) => {
+            for field in fields {
+                validate_normalized_type(modules, field.ty())?;
+            }
+            ty.checked_type()
+                .map(|_| ())
+                .map_err(|_| RuntimeSemanticFactsError::WrongVariantIdentity)
         }
         RuntimeTypeShape::Unit
         | RuntimeTypeShape::Never
@@ -6541,8 +7006,8 @@ fn standard_map_item_types<'a>(
         )
         | (
             RuntimeStandardMapFamily::Option,
-            RuntimeTypeShape::Option(input),
-            RuntimeTypeShape::Option(output),
+            RuntimeTypeShape::Option { item: input, .. },
+            RuntimeTypeShape::Option { item: output, .. },
         ) => Some((input, output)),
         (
             RuntimeStandardMapFamily::Array,
@@ -6560,10 +7025,12 @@ fn standard_map_item_types<'a>(
             RuntimeTypeShape::Result {
                 value: input,
                 error: input_error,
+                ..
             },
             RuntimeTypeShape::Result {
                 value: output,
                 error: output_error,
+                ..
             },
         ) if input_error == output_error => Some((input, output)),
         _ => None,
@@ -6696,6 +7163,20 @@ fn validate_callable(
     }
 }
 
+fn normalized_tuple_payload_matches(
+    payload: &RuntimeNormalizedType,
+    expected_fields: &[&RuntimeNormalizedType],
+) -> bool {
+    let RuntimeTypeShape::Tuple(fields) = payload.shape() else {
+        return false;
+    };
+    fields.len() == expected_fields.len()
+        && fields
+            .iter()
+            .zip(expected_fields)
+            .all(|(field, expected)| field == *expected)
+}
+
 fn validate_nominal(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     nominal: &RuntimeResolvedNominal,
@@ -6793,7 +7274,16 @@ fn validate_record_pattern_fact(
     owner: PatternId,
     fact: &RuntimeRecordPatternFact,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    validate_nominal_record(modules, fact.nominal())?;
+    match (fact.nominal(), fact.structural()) {
+        (Some(nominal), None) => validate_nominal_record(modules, nominal)?,
+        (None, Some(structural)) => validate_normalized_type(modules, structural)?,
+        _ => {
+            return Err(RuntimeSemanticFactsError::WrongPatternFamily {
+                pattern: owner,
+                expected: RuntimeSemanticFactFamily::PatternNominalRecord,
+            });
+        }
+    }
     let HirPatternKind::Record { fields, .. } = resolve_pattern(modules, owner)? else {
         return Err(RuntimeSemanticFactsError::WrongPatternFamily {
             pattern: owner,

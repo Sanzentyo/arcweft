@@ -560,6 +560,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .collect(),
         );
         self.control.check()?;
+        let semantic_shapes =
+            super::AcceptedSemanticShapeCatalog::build(self.catalogs.world.environment())?;
         FinalSemanticAnalysis::try_new_with_control_and_type_resolutions_and_catalog(
             self.executable,
             self.symbols,
@@ -567,6 +569,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             input,
             std::mem::take(&mut self.type_reports),
             accepted_roots,
+            semantic_shapes,
             self.control,
         )
     }

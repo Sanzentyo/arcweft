@@ -498,7 +498,9 @@ fn sealed_catalog_retains_instantiated_fields_and_variant_payloads() {
         .expect("the final replay is exactly the projected inventory")
         .finish();
 
-    let pair_projection = catalog.get(&pair).expect("borrowed Pair projection");
+    let pair_projection = catalog
+        .get_semantic(pair.identity())
+        .expect("borrowed Pair projection");
     assert_eq!(
         pair_projection
             .record_fields()
@@ -515,7 +517,7 @@ fn sealed_catalog_retains_instantiated_fields_and_variant_payloads() {
     );
 
     let choice_projection = catalog
-        .get(&choice)
+        .get_semantic(choice.identity())
         .expect("borrowed ChoiceValue projection");
     assert_eq!(
         choice_projection

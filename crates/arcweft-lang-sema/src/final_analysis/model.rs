@@ -16,8 +16,11 @@ use crate::callable::{
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::checked_rich_text::CheckedDuration;
-use crate::types::{CharacterField, EntityKind};
-use arcweft_core::{entry::TypeLayoutHash, value::RuntimeAgentField};
+use crate::types::{
+    AcceptedVariantCaseSemanticId, CharacterField, EntityKind, VariantPayloadOwnerFamily,
+    VariantPayloadShape, VariantPayloadType,
+};
+use arcweft_core::value::RuntimeAgentField;
 use arcweft_lang_hir::expr::HirCallArgument;
 use arcweft_lang_hir::project::HirRuntimeIteratorWitnessMethodRole;
 use arcweft_lang_hir::symbol::{
@@ -135,7 +138,7 @@ impl CheckedProjectItem {
         let semantic_id = accepted_project_item_semantic_id(
             family,
             value_type,
-            ProjectItemSemanticOwner::Flow(declaration.semantic_digest()),
+            &ProjectItemSemanticOwner::Flow(declaration.semantic_digest()),
         );
         Some(Self {
             semantic_id,
@@ -165,7 +168,7 @@ impl CheckedProjectItem {
         let semantic_id = accepted_project_item_semantic_id(
             family,
             value_type,
-            ProjectItemSemanticOwner::Entity(&public_id),
+            &ProjectItemSemanticOwner::Entity(&public_id),
         );
         Some(Self {
             semantic_id,
@@ -189,7 +192,7 @@ impl CheckedProjectItem {
             semantic_id: accepted_project_item_semantic_id(
                 family,
                 value_type,
-                ProjectItemSemanticOwner::Entity(&public_id),
+                &ProjectItemSemanticOwner::Entity(&public_id),
             ),
             value_type,
             diagnostic_public_id: public_id,
@@ -222,7 +225,7 @@ impl CheckedProjectItem {
             }
         };
         let expected =
-            accepted_project_item_semantic_id(self.family, self.value_type, expected_owner);
+            accepted_project_item_semantic_id(self.family, self.value_type, &expected_owner);
         expected.as_bytes() == self.semantic_id().as_bytes()
             && project_item_type(self.family, self.value.as_ref()).semantic_identity_digest()
                 == self.value_type
@@ -296,7 +299,7 @@ fn project_item_type(family: DeclarationIdentityFamily, value: Option<&TypeKind>
 fn accepted_project_item_semantic_id(
     family: DeclarationIdentityFamily,
     value_type: SemanticTypeDigest,
-    owner: ProjectItemSemanticOwner<'_>,
+    owner: &ProjectItemSemanticOwner<'_>,
 ) -> AcceptedProjectItemSemanticId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(PROJECT_ITEM_SEMANTIC_DOMAIN);
@@ -626,24 +629,12 @@ pub enum CheckedSelectResolution {
     Field(CheckedFieldSelection),
 }
 
-const VARIANT_CASE_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-variant-case.v1\0";
-
-/// Canonical semantic identity of one accepted closed variant case.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct AcceptedVariantCaseSemanticId([u8; 32]);
-
-impl AcceptedVariantCaseSemanticId {
-    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
-        &self.0
-    }
-}
-
 /// One declaration-ordered case retained by its complete checked owner.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedVariantCase {
     ordinal: u32,
     semantic_id: AcceptedVariantCaseSemanticId,
-    payload: Option<TypeKind>,
+    payload: VariantPayloadShape,
     diagnostic_name: Option<String>,
 }
 
@@ -656,12 +647,31 @@ impl CheckedVariantCase {
         self.semantic_id
     }
 
-    pub const fn payload(&self) -> Option<&TypeKind> {
-        self.payload.as_ref()
+    pub const fn payload(&self) -> &VariantPayloadShape {
+        &self.payload
     }
 
     pub fn diagnostic_name(&self) -> Option<&str> {
         self.diagnostic_name.as_deref()
+    }
+
+    fn payload_type(
+        &self,
+        owner_family: VariantPayloadOwnerFamily,
+        owner_type: SemanticTypeDigest,
+    ) -> Option<Option<TypeKind>> {
+        if self.payload.is_unit() {
+            return Some(None);
+        }
+        VariantPayloadType::try_new(
+            owner_family,
+            owner_type,
+            self.ordinal,
+            self.semantic_id,
+            self.payload.clone(),
+        )
+        .ok()
+        .map(|payload| Some(TypeKind::VariantPayload(Box::new(payload))))
     }
 }
 
@@ -671,7 +681,6 @@ pub enum CheckedVariantOwner {
     Project {
         nominal: CheckedProjectNominal,
         semantic_type: SemanticTypeDigest,
-        layout: TypeLayoutHash,
         cases: Box<[CheckedVariantCase]>,
     },
     CharacterNominal {
@@ -701,21 +710,61 @@ pub enum CheckedVariantOwner {
 }
 
 impl CheckedVariantOwner {
+    pub(crate) const fn payload_owner_family(&self) -> VariantPayloadOwnerFamily {
+        match self {
+            Self::Project { .. } => VariantPayloadOwnerFamily::Project,
+            Self::CharacterNominal { .. } => VariantPayloadOwnerFamily::CharacterNominal,
+            Self::BuiltinClosed { .. } => VariantPayloadOwnerFamily::BuiltinClosed,
+            Self::RuntimeBuiltin { .. } => VariantPayloadOwnerFamily::RuntimeBuiltin,
+            Self::Option { .. } => VariantPayloadOwnerFamily::Option,
+            Self::Result { .. } => VariantPayloadOwnerFamily::Result,
+        }
+    }
+
     #[allow(
         dead_code,
         reason = "C2.4 digest-ordered Project seed sealing consumes this exact final-row constructor"
     )]
     pub(crate) fn try_project(
         nominal: CheckedProjectNominal,
-        layout: TypeLayoutHash,
         cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
     ) -> Option<Self> {
         let semantic_type = nominal.identity();
         Some(Self::Project {
             nominal,
             semantic_type,
-            layout,
-            cases: checked_variant_cases(0, semantic_type, Some(layout), cases)?,
+            cases: checked_variant_cases(VariantPayloadOwnerFamily::Project, semantic_type, cases)?,
+        })
+    }
+
+    pub(crate) fn try_project_shapes(
+        nominal: CheckedProjectNominal,
+        cases: impl IntoIterator<Item = (VariantPayloadShape, Option<String>)>,
+    ) -> Option<Self> {
+        let semantic_type = nominal.identity();
+        let cases = cases
+            .into_iter()
+            .enumerate()
+            .map(|(ordinal, (payload, diagnostic_name))| {
+                let ordinal = u32::try_from(ordinal).ok()?;
+                payload
+                    .has_valid_rows(VariantPayloadOwnerFamily::Project, semantic_type, ordinal)
+                    .then(|| {
+                        checked_variant_case(
+                            VariantPayloadOwnerFamily::Project,
+                            semantic_type,
+                            ordinal,
+                            payload,
+                            diagnostic_name,
+                        )
+                    })
+            })
+            .collect::<Option<Vec<_>>>()?
+            .into_boxed_slice();
+        Some(Self::Project {
+            nominal,
+            semantic_type,
+            cases,
         })
     }
 
@@ -728,10 +777,15 @@ impl CheckedVariantOwner {
         Some(Self::CharacterNominal {
             nominal,
             semantic_type,
-            cases: checked_variant_cases(1, semantic_type, None, cases)?,
+            cases: checked_variant_cases(
+                VariantPayloadOwnerFamily::CharacterNominal,
+                semantic_type,
+                cases,
+            )?,
         })
     }
 
+    #[cfg(test)]
     pub(crate) fn try_builtin_closed(
         nominal: EnvironmentBindingId,
         semantic_type: SemanticTypeDigest,
@@ -740,34 +794,94 @@ impl CheckedVariantOwner {
         Some(Self::BuiltinClosed {
             nominal,
             semantic_type,
-            cases: checked_variant_cases(2, semantic_type, None, cases)?,
+            cases: checked_variant_cases(
+                VariantPayloadOwnerFamily::BuiltinClosed,
+                semantic_type,
+                cases,
+            )?,
         })
     }
 
-    pub(crate) fn try_runtime_builtin(
-        owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity,
-        semantic_type: SemanticTypeDigest,
-        cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
+    /// Constructs the exact accepted environment-owned closed variant row.
+    /// Case order/payload semantics and the runtime-builtin distinction are
+    /// selected here once for both checked patterns and semantic catalogs.
+    pub(crate) fn try_environment(
+        schema: &crate::env::EnvironmentEnumSchema,
+        ty: &TypeKind,
     ) -> Option<Self> {
-        Some(Self::RuntimeBuiltin {
-            owner,
-            semantic_type,
-            cases: checked_variant_cases(5, semantic_type, None, cases)?,
-        })
+        let semantic_type = ty.semantic_identity_digest();
+        match ty {
+            TypeKind::AgentResourceBody => Some(Self::RuntimeBuiltin {
+                owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentResourceBody,
+                semantic_type,
+                cases: checked_environment_variant_cases(
+                    VariantPayloadOwnerFamily::RuntimeBuiltin,
+                    semantic_type,
+                    schema,
+                )?,
+            }),
+            TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryEncoding) => {
+                Some(Self::RuntimeBuiltin {
+                    owner:
+                        arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+                    semantic_type,
+                    cases: checked_environment_variant_cases(
+                        VariantPayloadOwnerFamily::RuntimeBuiltin,
+                        semantic_type,
+                        schema,
+                    )?,
+                })
+            }
+            _ => Some(Self::BuiltinClosed {
+                nominal: schema.owner().clone(),
+                semantic_type,
+                cases: checked_environment_variant_cases(
+                    VariantPayloadOwnerFamily::BuiltinClosed,
+                    semantic_type,
+                    schema,
+                )?,
+            }),
+        }
     }
 
-    pub(crate) fn option(item: TypeKind) -> Self {
+    /// # Panics
+    ///
+    /// Panics only if the fixed one-field `Option` payload shape violates its
+    /// checked variant invariant.
+    pub fn option(item: TypeKind) -> Self {
         let semantic_type = TypeKind::Option(Box::new(item.clone())).semantic_identity_digest();
         Self::Option {
             item: item.clone(),
             cases: [
-                checked_variant_case(3, semantic_type, None, 0, Some(item), Some("Some".into())),
-                checked_variant_case(3, semantic_type, None, 1, None, Some("None".into())),
+                checked_variant_case(
+                    VariantPayloadOwnerFamily::Option,
+                    semantic_type,
+                    0,
+                    VariantPayloadShape::try_tuple(
+                        VariantPayloadOwnerFamily::Option,
+                        semantic_type,
+                        0,
+                        [item],
+                    )
+                    .expect("one Option payload field is representable"),
+                    Some("Some".into()),
+                ),
+                checked_variant_case(
+                    VariantPayloadOwnerFamily::Option,
+                    semantic_type,
+                    1,
+                    VariantPayloadShape::Unit,
+                    Some("None".into()),
+                ),
             ],
         }
     }
 
-    pub(crate) fn result(ok: TypeKind, error: TypeKind) -> Self {
+    /// # Panics
+    ///
+    /// Panics only if the fixed `Result` payload shape violates its checked
+    /// variant invariant.
+    pub fn result(ok: TypeKind, error: TypeKind) -> Self {
         let semantic_type = TypeKind::Result {
             ok: Box::new(ok.clone()),
             error: Box::new(error.clone()),
@@ -777,8 +891,32 @@ impl CheckedVariantOwner {
             ok: ok.clone(),
             error: error.clone(),
             cases: [
-                checked_variant_case(4, semantic_type, None, 0, Some(ok), Some("Ok".into())),
-                checked_variant_case(4, semantic_type, None, 1, Some(error), Some("Err".into())),
+                checked_variant_case(
+                    VariantPayloadOwnerFamily::Result,
+                    semantic_type,
+                    0,
+                    VariantPayloadShape::try_tuple(
+                        VariantPayloadOwnerFamily::Result,
+                        semantic_type,
+                        0,
+                        [ok],
+                    )
+                    .expect("one Result payload field is representable"),
+                    Some("Ok".into()),
+                ),
+                checked_variant_case(
+                    VariantPayloadOwnerFamily::Result,
+                    semantic_type,
+                    1,
+                    VariantPayloadShape::try_tuple(
+                        VariantPayloadOwnerFamily::Result,
+                        semantic_type,
+                        1,
+                        [error],
+                    )
+                    .expect("one Result payload field is representable"),
+                    Some("Err".into()),
+                ),
             ],
         }
     }
@@ -821,17 +959,6 @@ impl CheckedVariantOwner {
         }
     }
 
-    pub const fn layout(&self) -> Option<TypeLayoutHash> {
-        match self {
-            Self::Project { layout, .. } => Some(*layout),
-            Self::CharacterNominal { .. }
-            | Self::BuiltinClosed { .. }
-            | Self::RuntimeBuiltin { .. }
-            | Self::Option { .. }
-            | Self::Result { .. } => None,
-        }
-    }
-
     pub fn case(&self, ordinal: u32) -> Option<&CheckedVariantCase> {
         usize::try_from(ordinal)
             .ok()
@@ -839,18 +966,22 @@ impl CheckedVariantOwner {
             .filter(|case| case.ordinal == ordinal)
     }
 
+    pub fn case_payload_type(&self, ordinal: u32) -> Option<Option<TypeKind>> {
+        self.case(ordinal)?
+            .payload_type(self.payload_owner_family(), self.semantic_type())
+    }
+
     pub(crate) fn has_valid_case_rows(&self) -> bool {
-        let (owner_tag, semantic_type, layout) = match self {
+        let (owner_family, semantic_type) = match self {
             Self::Project {
                 nominal,
                 semantic_type,
-                layout,
                 ..
             } => {
                 if nominal.identity() != *semantic_type {
                     return false;
                 }
-                (0, *semantic_type, Some(*layout))
+                (VariantPayloadOwnerFamily::Project, *semantic_type)
             }
             Self::CharacterNominal {
                 nominal,
@@ -862,42 +993,55 @@ impl CheckedVariantOwner {
                 {
                     return false;
                 }
-                (1, *semantic_type, None)
+                (VariantPayloadOwnerFamily::CharacterNominal, *semantic_type)
             }
-            Self::BuiltinClosed { semantic_type, .. } => (2, *semantic_type, None),
-            Self::RuntimeBuiltin { semantic_type, .. } => (5, *semantic_type, None),
+            Self::BuiltinClosed { semantic_type, .. } => {
+                (VariantPayloadOwnerFamily::BuiltinClosed, *semantic_type)
+            }
+            Self::RuntimeBuiltin { semantic_type, .. } => {
+                (VariantPayloadOwnerFamily::RuntimeBuiltin, *semantic_type)
+            }
             Self::Option { item, .. } => (
-                3,
+                VariantPayloadOwnerFamily::Option,
                 TypeKind::Option(Box::new(item.clone())).semantic_identity_digest(),
-                None,
             ),
             Self::Result { ok, error, .. } => (
-                4,
+                VariantPayloadOwnerFamily::Result,
                 TypeKind::Result {
                     ok: Box::new(ok.clone()),
                     error: Box::new(error.clone()),
                 }
                 .semantic_identity_digest(),
-                None,
             ),
         };
         self.cases().iter().enumerate().all(|(ordinal, case)| {
             u32::try_from(ordinal).is_ok_and(|ordinal| {
                 case.ordinal == ordinal
-                    && case
-                        .payload
-                        .as_ref()
-                        .is_none_or(|payload| !payload.contains_nominal_poison())
+                    && checked_variant_payload_has_no_poison(&case.payload)
+                    && checked_variant_payload_is_valid(
+                        owner_family,
+                        semantic_type,
+                        ordinal,
+                        &case.payload,
+                    )
                     && case.semantic_id
-                        == accepted_variant_case_semantic_id(
-                            owner_tag,
+                        == AcceptedVariantCaseSemanticId::issue(
+                            owner_family,
                             semantic_type,
-                            layout,
                             ordinal,
-                            case.payload.as_ref(),
+                            &case.payload,
                         )
             })
         })
+    }
+
+    pub(crate) fn has_same_diagnostic_schema(&self, other: &Self) -> bool {
+        self == other
+            && self
+                .cases()
+                .iter()
+                .zip(other.cases())
+                .all(|(left, right)| left.payload.has_same_diagnostic_schema(&right.payload))
     }
 
     pub(crate) fn visit_types<E>(
@@ -908,9 +1052,7 @@ impl CheckedVariantOwner {
             Self::Project { nominal, cases, .. } => {
                 nominal.visit_types(visitor)?;
                 for case in cases {
-                    if let Some(payload) = case.payload() {
-                        visitor(payload)?;
-                    }
+                    visit_checked_variant_payload_types(case.payload(), visitor)?;
                 }
                 Ok(())
             }
@@ -918,18 +1060,14 @@ impl CheckedVariantOwner {
             | Self::BuiltinClosed { cases, .. }
             | Self::RuntimeBuiltin { cases, .. } => {
                 for case in cases {
-                    if let Some(payload) = case.payload() {
-                        visitor(payload)?;
-                    }
+                    visit_checked_variant_payload_types(case.payload(), visitor)?;
                 }
                 Ok(())
             }
             Self::Option { item, cases } => {
                 visitor(item)?;
                 for case in cases {
-                    if let Some(payload) = case.payload() {
-                        visitor(payload)?;
-                    }
+                    visit_checked_variant_payload_types(case.payload(), visitor)?;
                 }
                 Ok(())
             }
@@ -937,9 +1075,7 @@ impl CheckedVariantOwner {
                 visitor(ok)?;
                 visitor(error)?;
                 for case in cases {
-                    if let Some(payload) = case.payload() {
-                        visitor(payload)?;
-                    }
+                    visit_checked_variant_payload_types(case.payload(), visitor)?;
                 }
                 Ok(())
             }
@@ -992,9 +1128,8 @@ impl CheckedVariantResolution {
 }
 
 fn checked_variant_cases(
-    owner_tag: u8,
+    owner_family: VariantPayloadOwnerFamily,
     semantic_type: SemanticTypeDigest,
-    layout: Option<TypeLayoutHash>,
     cases: impl IntoIterator<Item = (Option<TypeKind>, Option<String>)>,
 ) -> Option<Box<[CheckedVariantCase]>> {
     cases
@@ -1003,11 +1138,18 @@ fn checked_variant_cases(
         .map(|(ordinal, (payload, diagnostic_name))| {
             let ordinal = u32::try_from(ordinal).ok()?;
             Some(checked_variant_case(
-                owner_tag,
+                owner_family,
                 semantic_type,
-                layout,
                 ordinal,
-                payload,
+                match payload {
+                    Some(payload) => checked_variant_payload_from_pattern_type(
+                        owner_family,
+                        semantic_type,
+                        ordinal,
+                        payload,
+                    )?,
+                    None => VariantPayloadShape::Unit,
+                },
                 diagnostic_name,
             ))
         })
@@ -1016,20 +1158,14 @@ fn checked_variant_cases(
 }
 
 fn checked_variant_case(
-    owner_tag: u8,
+    owner_family: VariantPayloadOwnerFamily,
     semantic_type: SemanticTypeDigest,
-    layout: Option<TypeLayoutHash>,
     ordinal: u32,
-    payload: Option<TypeKind>,
+    payload: VariantPayloadShape,
     diagnostic_name: Option<String>,
 ) -> CheckedVariantCase {
-    let semantic_id = accepted_variant_case_semantic_id(
-        owner_tag,
-        semantic_type,
-        layout,
-        ordinal,
-        payload.as_ref(),
-    );
+    let semantic_id =
+        AcceptedVariantCaseSemanticId::issue(owner_family, semantic_type, ordinal, &payload);
     CheckedVariantCase {
         ordinal,
         semantic_id,
@@ -1038,37 +1174,79 @@ fn checked_variant_case(
     }
 }
 
-fn accepted_variant_case_semantic_id(
-    owner_tag: u8,
+fn checked_environment_variant_cases(
+    owner_family: VariantPayloadOwnerFamily,
     semantic_type: SemanticTypeDigest,
-    layout: Option<TypeLayoutHash>,
-    ordinal: u32,
-    payload: Option<&TypeKind>,
-) -> AcceptedVariantCaseSemanticId {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update(VARIANT_CASE_SEMANTIC_DOMAIN);
-    hasher.update(&[owner_tag]);
-    hasher.update(semantic_type.as_bytes());
-    match layout {
-        Some(layout) => {
-            hasher.update(&[1]);
-            hasher.update(layout.as_bytes());
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
-    hasher.update(&ordinal.to_le_bytes());
-    match payload {
-        Some(payload) => {
-            hasher.update(&[1]);
-            hasher.update(payload.semantic_identity_digest().as_bytes());
-        }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
-    AcceptedVariantCaseSemanticId(hasher.finalize().into())
+    schema: &crate::env::EnvironmentEnumSchema,
+) -> Option<Box<[CheckedVariantCase]>> {
+    schema
+        .variants()
+        .iter()
+        .enumerate()
+        .map(|(case_ordinal, variant)| {
+            let case_ordinal = u32::try_from(case_ordinal).ok()?;
+            let payload = match variant.payload() {
+                crate::env::EnumVariantPayload::Unit => VariantPayloadShape::Unit,
+                crate::env::EnumVariantPayload::Tuple(items) => VariantPayloadShape::try_tuple(
+                    owner_family,
+                    semantic_type,
+                    case_ordinal,
+                    items.iter().cloned(),
+                )
+                .ok()?,
+                crate::env::EnumVariantPayload::Record(fields) => VariantPayloadShape::try_record(
+                    owner_family,
+                    semantic_type,
+                    case_ordinal,
+                    fields
+                        .iter()
+                        .map(|field| (field.name().to_owned(), field.ty().clone())),
+                )
+                .ok()?,
+            };
+            Some(checked_variant_case(
+                owner_family,
+                semantic_type,
+                case_ordinal,
+                payload,
+                Some(variant.name().to_owned()),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()
+        .map(Vec::into_boxed_slice)
+}
+
+fn checked_variant_payload_is_valid(
+    owner_family: VariantPayloadOwnerFamily,
+    semantic_type: SemanticTypeDigest,
+    case_ordinal: u32,
+    payload: &VariantPayloadShape,
+) -> bool {
+    payload.has_valid_rows(owner_family, semantic_type, case_ordinal)
+}
+
+fn checked_variant_payload_from_pattern_type(
+    owner_family: VariantPayloadOwnerFamily,
+    semantic_type: SemanticTypeDigest,
+    case_ordinal: u32,
+    payload: TypeKind,
+) -> Option<VariantPayloadShape> {
+    VariantPayloadShape::try_tuple(owner_family, semantic_type, case_ordinal, [payload]).ok()
+}
+
+fn checked_variant_payload_has_no_poison(payload: &VariantPayloadShape) -> bool {
+    payload
+        .visit_types(&mut |ty| -> Result<(), ()> {
+            (!ty.contains_nominal_poison()).then_some(()).ok_or(())
+        })
+        .is_ok()
+}
+
+fn visit_checked_variant_payload_types<E>(
+    payload: &VariantPayloadShape,
+    visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+) -> Result<(), E> {
+    payload.visit_types(visitor)
 }
 
 #[cfg(test)]
@@ -1158,7 +1336,7 @@ pub enum CheckedExpressionResolution {
 
 /// Source-ordered checked mark coordinate owned by one dialogue content
 /// application. The ordinal is sealed against that application's checked
-/// RichText mark catalog and is never reconstructed from a runtime label.
+/// `RichText` mark catalog and is never reconstructed from a runtime label.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDialogueMarkOrdinal(u32);
 

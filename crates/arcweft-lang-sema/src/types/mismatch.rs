@@ -1108,6 +1108,12 @@ impl TypeKind {
                     ))
                 }
             }
+            Self::VariantPayload(expected) => {
+                let Self::VariantPayload(actual_payload) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_payload).then(|| TypeMismatch::outer(self, actual))
+            }
             Self::ViewValue => {
                 let Self::ViewValue = actual else {
                     unreachable!("equal discriminants")

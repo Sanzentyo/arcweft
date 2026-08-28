@@ -12,7 +12,7 @@ use crate::{
 };
 
 use super::{
-    EnumVariantPayload,
+    EnumVariantPayload, EnvironmentEnumRecordField,
     nominal::{AcceptedNominalId, RustPackageId},
 };
 
@@ -484,6 +484,14 @@ pub enum AcceptedRustTypeMetadataCatalogError {
         id: AcceptedNominalId,
         variant: String,
     },
+    #[error(
+        "accepted Rust metadata `{id:?}` variant `{variant}` contains duplicate record field `{field}`"
+    )]
+    DuplicateVariantRecordField {
+        id: AcceptedNominalId,
+        variant: String,
+        field: String,
+    },
     #[error("Rust package `{package}` has conflicting version or metadata-hash claims")]
     PackageProvenanceConflict {
         package: RustPackageId,
@@ -507,8 +515,14 @@ fn substitute_variant(
         EnumVariantPayload::Record(fields) => EnumVariantPayload::Record(
             fields
                 .iter()
-                .map(|(name, ty)| (name.clone(), ty.substitute_type_parameters(substitutions)))
-                .collect(),
+                .map(|field| {
+                    EnvironmentEnumRecordField::new(
+                        field.name(),
+                        field.ty().substitute_type_parameters(substitutions),
+                    )
+                })
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
         ),
     }
 }
@@ -581,9 +595,9 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
                     EnumVariantPayload::Record(fields) => {
                         hasher.update(&[2]);
                         hash_len(hasher, fields.len());
-                        for (field, ty) in fields {
-                            hash_str(hasher, field);
-                            hash_type(hasher, ty);
+                        for field in fields {
+                            hash_str(hasher, field.name());
+                            hash_type(hasher, field.ty());
                         }
                     }
                 }

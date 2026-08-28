@@ -4,7 +4,7 @@ use arcweft_character::id::CharacterId;
 
 use super::{
     CharacterNominalType, CheckedVariantOwner, CheckedVariantResolution, EnvironmentBindingId,
-    TypeKind,
+    TypeKind, VariantPayloadShape,
 };
 
 #[test]
@@ -13,10 +13,14 @@ fn option_and_result_own_complete_ordered_payload_rows() {
     assert_eq!(option.cases().len(), 2);
     assert_eq!(option.cases()[0].ordinal(), 0);
     assert_eq!(option.cases()[0].diagnostic_name(), Some("Some"));
-    assert_eq!(option.cases()[0].payload(), Some(&TypeKind::I64));
+    assert!(matches!(
+        option.cases()[0].payload(),
+        VariantPayloadShape::Tuple(fields)
+            if fields.len() == 1 && fields[0].ty() == &TypeKind::I64
+    ));
     assert_eq!(option.cases()[1].ordinal(), 1);
     assert_eq!(option.cases()[1].diagnostic_name(), Some("None"));
-    assert_eq!(option.cases()[1].payload(), None);
+    assert!(option.cases()[1].payload().is_unit());
     assert_ne!(
         option.cases()[0].semantic_id(),
         option.cases()[1].semantic_id()
@@ -26,9 +30,17 @@ fn option_and_result_own_complete_ordered_payload_rows() {
     let result = CheckedVariantOwner::result(TypeKind::I64, TypeKind::String);
     assert_eq!(result.cases().len(), 2);
     assert_eq!(result.cases()[0].diagnostic_name(), Some("Ok"));
-    assert_eq!(result.cases()[0].payload(), Some(&TypeKind::I64));
+    assert!(matches!(
+        result.cases()[0].payload(),
+        VariantPayloadShape::Tuple(fields)
+            if fields.len() == 1 && fields[0].ty() == &TypeKind::I64
+    ));
     assert_eq!(result.cases()[1].diagnostic_name(), Some("Err"));
-    assert_eq!(result.cases()[1].payload(), Some(&TypeKind::String));
+    assert!(matches!(
+        result.cases()[1].payload(),
+        VariantPayloadShape::Tuple(fields)
+            if fields.len() == 1 && fields[0].ty() == &TypeKind::String
+    ));
     assert!(result.has_valid_case_rows());
 }
 

@@ -1162,7 +1162,7 @@ impl<'a, 'project, 'catalog, 'control>
                         }
                         Some((
                             variant.ordinal(),
-                            if variant.selected().payload().is_some() {
+                            if !variant.selected().payload().is_unit() {
                                 VariantPayloadRequirement::Present
                             } else {
                                 VariantPayloadRequirement::Unit

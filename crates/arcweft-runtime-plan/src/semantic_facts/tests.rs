@@ -297,6 +297,27 @@ fn unsupported_range_type() -> super::RuntimeNormalizedType {
     normalized_type(0x70, RuntimeTypeShape::Range(boxed_unit_type()))
 }
 
+fn tuple_payload(marker: u8, field: super::RuntimeNormalizedType) -> super::RuntimeNormalizedType {
+    normalized_type(marker, RuntimeTypeShape::Tuple(Box::new([field])))
+}
+
+fn option_cases(payload: super::RuntimeNormalizedType) -> Box<[RuntimeNormalizedVariantCase]> {
+    Box::new([
+        RuntimeNormalizedVariantCase::new("Some", Some(payload)),
+        RuntimeNormalizedVariantCase::new("None", None),
+    ])
+}
+
+fn result_cases(
+    value_payload: super::RuntimeNormalizedType,
+    error_payload: super::RuntimeNormalizedType,
+) -> Box<[RuntimeNormalizedVariantCase]> {
+    Box::new([
+        RuntimeNormalizedVariantCase::new("Ok", Some(value_payload)),
+        RuntimeNormalizedVariantCase::new("Err", Some(error_payload)),
+    ])
+}
+
 fn complete_type_input(project: &HirProject) -> RuntimePlanSemanticFactInput {
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(project);
@@ -1184,6 +1205,9 @@ fn every_agent_shape_selects_its_closed_operational_family() {
 
 #[test]
 fn nested_operational_descendants_select_their_outer_composite_family() {
+    let result_value = unsupported_range_type();
+    let result_error = unit_type();
+    let option_item = unsupported_range_type();
     let cases = vec![
         (
             RuntimeTypeShape::Sequence {
@@ -1213,14 +1237,19 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
         ),
         (
             RuntimeTypeShape::Result {
-                value: Box::new(unsupported_range_type()),
-                error: boxed_unit_type(),
+                value: Box::new(result_value.clone()),
+                error: Box::new(result_error.clone()),
+                value_payload: Box::new(tuple_payload(0x81, result_value)),
+                error_payload: Box::new(tuple_payload(0x82, result_error)),
             },
             RuntimeTypeProjectionStep::ResultOk,
             RuntimeOperationalType::Result,
         ),
         (
-            RuntimeTypeShape::Option(Box::new(unsupported_range_type())),
+            RuntimeTypeShape::Option {
+                item: Box::new(option_item.clone()),
+                some_payload: Box::new(tuple_payload(0x83, option_item)),
+            },
             RuntimeTypeProjectionStep::OptionItem,
             RuntimeOperationalType::Option,
         ),
@@ -1248,20 +1277,31 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
 
 #[test]
 fn complete_checked_composites_retain_their_exact_checked_predicate() {
+    let option_item = unit_type();
+    let option_payload = tuple_payload(0x94, option_item.clone());
+    let result_value = normalized_type(
+        0x91,
+        RuntimeTypeShape::Option {
+            item: Box::new(option_item),
+            some_payload: Box::new(option_payload),
+        },
+    );
+    let result_error = normalized_type(
+        0x92,
+        RuntimeTypeShape::Sequence {
+            kind: RuntimeSequenceKind::Seq,
+            item: Box::new(normalized_type(0x93, RuntimeTypeShape::Bool)),
+        },
+    );
+    let result_value_payload = tuple_payload(0x95, result_value.clone());
+    let result_error_payload = tuple_payload(0x96, result_error.clone());
     let normalized = normalized_type(
         0x90,
         RuntimeTypeShape::Result {
-            value: Box::new(normalized_type(
-                0x91,
-                RuntimeTypeShape::Option(boxed_unit_type()),
-            )),
-            error: Box::new(normalized_type(
-                0x92,
-                RuntimeTypeShape::Sequence {
-                    kind: RuntimeSequenceKind::Seq,
-                    item: Box::new(normalized_type(0x93, RuntimeTypeShape::Bool)),
-                },
-            )),
+            value: Box::new(result_value),
+            error: Box::new(result_error),
+            value_payload: Box::new(result_value_payload),
+            error_payload: Box::new(result_error_payload),
         },
     );
 
@@ -1272,6 +1312,8 @@ fn complete_checked_composites_retain_their_exact_checked_predicate() {
         Ok(RuntimePlanTypeProjection::Result {
             value: RuntimeSemanticTypeId::from_bytes([0x91; 32]),
             error: RuntimeSemanticTypeId::from_bytes([0x92; 32]),
+            value_payload: RuntimeSemanticTypeId::from_bytes([0x95; 32]),
+            error_payload: RuntimeSemanticTypeId::from_bytes([0x96; 32]),
         })
     );
 }
@@ -1359,9 +1401,13 @@ fn nested_operational_expression_type_is_retained_without_reconstruction() {
         RuntimeSemanticTypeId::from_bytes([0x33; 32]),
         RuntimeTypeShape::Range(Box::new(leaf)),
     );
+    let range_payload = tuple_payload(0x45, range.clone());
     let nested = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([0x44; 32]),
-        RuntimeTypeShape::Option(Box::new(range)),
+        RuntimeTypeShape::Option {
+            item: Box::new(range),
+            some_payload: Box::new(range_payload),
+        },
     );
     let mut input = RuntimePlanSemanticFactInput::new();
     let runtime_owners = runtime_reachability(&project);
@@ -1521,11 +1567,15 @@ fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
             arguments: Box::new([]),
         },
     );
+    let opaque_value_payload = tuple_payload(0xa2, opaque.clone());
+    let opaque_error_payload = tuple_payload(0xa3, opaque.clone());
     let closed = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([2; 32]),
         RuntimeTypeShape::Result {
             value: Box::new(opaque.clone()),
             error: Box::new(opaque),
+            value_payload: Box::new(opaque_value_payload),
+            error_payload: Box::new(opaque_error_payload),
         },
     );
     assert!(matches!(
@@ -1535,26 +1585,30 @@ fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
                 && matches!(*error, RuntimeCheckedType::Opaque { .. })
     ));
 
+    let unsupported_value = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([4; 32]),
+        RuntimeTypeShape::Range(Box::new(super::RuntimeNormalizedType::new(
+            RuntimeSemanticTypeId::from_bytes([5; 32]),
+            RuntimeTypeShape::Unit,
+        ))),
+    );
+    let unsupported_error = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([6; 32]),
+        RuntimeTypeShape::Function {
+            parameters: Box::new([]),
+            result: Box::new(super::RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes([7; 32]),
+                RuntimeTypeShape::Unit,
+            )),
+        },
+    );
     let unsupported = super::RuntimeNormalizedType::new(
         RuntimeSemanticTypeId::from_bytes([3; 32]),
         RuntimeTypeShape::Result {
-            value: Box::new(super::RuntimeNormalizedType::new(
-                RuntimeSemanticTypeId::from_bytes([4; 32]),
-                RuntimeTypeShape::Range(Box::new(super::RuntimeNormalizedType::new(
-                    RuntimeSemanticTypeId::from_bytes([5; 32]),
-                    RuntimeTypeShape::Unit,
-                ))),
-            )),
-            error: Box::new(super::RuntimeNormalizedType::new(
-                RuntimeSemanticTypeId::from_bytes([6; 32]),
-                RuntimeTypeShape::Function {
-                    parameters: Box::new([]),
-                    result: Box::new(super::RuntimeNormalizedType::new(
-                        RuntimeSemanticTypeId::from_bytes([7; 32]),
-                        RuntimeTypeShape::Unit,
-                    )),
-                },
-            )),
+            value: Box::new(unsupported_value.clone()),
+            error: Box::new(unsupported_error.clone()),
+            value_payload: Box::new(tuple_payload(0x08, unsupported_value)),
+            error_payload: Box::new(tuple_payload(0x09, unsupported_error)),
         },
     );
     assert_eq!(
@@ -1578,20 +1632,32 @@ fn checked_variant_selection_retains_both_result_branches() {
         RuntimeSemanticTypeId::from_bytes([9; 32]),
         RuntimeTypeShape::String,
     );
-    let variant =
-        RuntimeResolvedVariant::result(ok.clone(), error, 0, "Ok").expect("accepted Result case");
+    let ok_payload = tuple_payload(0x0a, ok.clone());
+    let error_payload = tuple_payload(0x0b, error.clone());
+    let variant = RuntimeResolvedVariant::result(
+        RuntimeSemanticTypeId::from_bytes([0x0c; 32]),
+        ok.clone(),
+        error,
+        result_cases(ok_payload.clone(), error_payload),
+        0,
+        "Ok",
+    )
+    .expect("accepted Result case");
     assert_eq!(
         variant
             .selected_payload_type()
             .expect("selected normalized Result payload"),
-        Some(&ok)
+        Some(&ok_payload)
     );
     let selection = variant
         .checked_selection()
         .expect("complete Result selection");
     assert_eq!(selection.ordinal(), 0);
     assert_eq!(selection.name(), "Ok");
-    assert_eq!(selection.payload(), Some(&RuntimeCheckedType::Unit));
+    assert_eq!(
+        selection.payload(),
+        Some(&RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Unit]))
+    );
     assert_eq!(
         selection.owner(),
         &RuntimeCheckedType::Result {
@@ -1604,18 +1670,27 @@ fn checked_variant_selection_retains_both_result_branches() {
 #[test]
 fn option_and_character_cases_use_the_shared_normalized_selection_path() {
     let item = normalized_type(0x71, RuntimeTypeShape::Unit);
-    let some =
-        RuntimeResolvedVariant::option(item.clone(), 0, "Some").expect("accepted Option Some case");
+    let payload = tuple_payload(0x73, item.clone());
+    let identity = RuntimeSemanticTypeId::from_bytes([0x74; 32]);
+    let some = RuntimeResolvedVariant::option(
+        identity,
+        item.clone(),
+        option_cases(payload.clone()),
+        0,
+        "Some",
+    )
+    .expect("accepted Option Some case");
     assert_eq!(some.selected_name(), Ok("Some"));
-    assert_eq!(some.selected_payload_type(), Ok(Some(&item)));
+    assert_eq!(some.selected_payload_type(), Ok(Some(&payload)));
     assert_eq!(
         some.checked_selection()
             .expect("Some checked selection")
             .payload(),
-        Some(&RuntimeCheckedType::Unit)
+        Some(&RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Unit]))
     );
 
-    let none = RuntimeResolvedVariant::option(item, 1, "None").expect("accepted Option None case");
+    let none = RuntimeResolvedVariant::option(identity, item, option_cases(payload), 1, "None")
+        .expect("accepted Option None case");
     assert_eq!(none.selected_name(), Ok("None"));
     assert_eq!(none.selected_payload_type(), Ok(None));
     assert!(

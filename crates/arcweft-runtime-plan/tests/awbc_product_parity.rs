@@ -124,6 +124,8 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
     let option_ty = type_id(27);
     let result_ty = type_id(28);
     let unit_ty = type_id(29);
+    let item_payload_ty = type_id(30);
+    let error_payload_ty = type_id(31);
     let mut builder = RuntimePlanBuilder::new();
     let admission = builder
         .admit_semantic_batch(
@@ -168,12 +170,28 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                         item: item_ty,
                     },
                 ),
-                RuntimePlanTypeSeed::new(option_ty, RuntimePlanTypeProjection::Option(item_ty)),
+                RuntimePlanTypeSeed::new(
+                    item_payload_ty,
+                    RuntimePlanTypeProjection::Tuple(Box::new([item_ty])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    error_payload_ty,
+                    RuntimePlanTypeProjection::Tuple(Box::new([error_ty])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    option_ty,
+                    RuntimePlanTypeProjection::Option {
+                        item: item_ty,
+                        some_payload: item_payload_ty,
+                    },
+                ),
                 RuntimePlanTypeSeed::new(
                     result_ty,
                     RuntimePlanTypeProjection::Result {
                         value: item_ty,
                         error: error_ty,
+                        value_payload: item_payload_ty,
+                        error_payload: error_payload_ty,
                     },
                 ),
                 RuntimePlanTypeSeed::new(unit_ty, RuntimePlanTypeProjection::Unit),

@@ -5,6 +5,11 @@ use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 
 impl RuntimeValue {
     /// Materializes the canonical runtime representation of `Option::Some`.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the core-owned Option case schema is inconsistent with
+    /// its statically defined payload cardinality.
     #[must_use]
     pub fn option_some(value: RuntimeValue) -> Self {
         Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(value))
@@ -12,6 +17,11 @@ impl RuntimeValue {
     }
 
     /// Materializes the canonical runtime representation of `Option::None`.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the core-owned Option case schema is inconsistent with
+    /// its statically defined payload cardinality.
     #[must_use]
     pub fn option_none() -> Self {
         Self::try_builtin_variant(RuntimeBuiltinVariantCaseIdentity::OptionNone, None)
@@ -43,21 +53,13 @@ pub fn evaluate_core_option_is_some_intrinsic(
 pub fn evaluate_core_option_unwrap_intrinsic(
     value: RuntimeValue,
 ) -> Result<RuntimeValue, RuntimeEvalError> {
-    match value.builtin_variant_case().map(|(case, _)| case) {
-        Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => {
-            let RuntimeValue::Variant {
-                payload: Some(payload),
-                ..
-            } = value
-            else {
-                unreachable!("admitted Option::Some has a payload")
-            };
-            Ok(*payload)
-        }
-        Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => Err(
+    match value.try_into_builtin_variant_case() {
+        Ok((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(payload))) => Ok(payload),
+        Ok((RuntimeBuiltinVariantCaseIdentity::OptionNone, None)) => Err(
             RuntimeEvalError::ExpectedBracketSeq("core.option.unwrap called on None".to_owned()),
         ),
-        _ => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
+        Ok(_) => unreachable!("Option builtin schema fixes payload presence"),
+        Err(value) => Err(RuntimeEvalError::ExpectedBracketSeq(format!(
             "core.option.unwrap expected Option, found {}",
             runtime_value_label(&value)
         ))),

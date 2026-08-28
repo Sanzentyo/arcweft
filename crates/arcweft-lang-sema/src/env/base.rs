@@ -199,7 +199,8 @@ impl StandardDropPolicyCase {
 
     fn payload(self) -> EnumVariantPayload {
         match self {
-            Self::Stop => EnumVariantPayload::record([("fade", TypeKind::Duration)]),
+            Self::Stop => EnumVariantPayload::record([("fade", TypeKind::Duration)])
+                .expect("the standard Stop payload has one distinct record field"),
             Self::Cancel | Self::Finish | Self::Release | Self::Detach => EnumVariantPayload::Unit,
         }
     }
@@ -1447,7 +1448,7 @@ impl TypeCheckEnv {
         signature: FunctionSignature,
         role: StandardEnvironmentMethodRole,
     ) -> Self {
-        let receiver = self.canonical_standard_callable_type(receiver);
+        let receiver = self.canonical_accepted_type(receiver);
         let signature = self.canonical_standard_callable_signature(signature);
         let schema = signature
             .callable_schema(
@@ -1518,6 +1519,12 @@ impl TypeCheckEnv {
         self.closed_enums.get(ty)
     }
 
+    pub(crate) fn closed_enums(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&TypeKind, &EnvironmentEnumSchema)> {
+        self.closed_enums.iter()
+    }
+
     pub(crate) fn closed_enum_by_owner(
         &self,
         owner: &str,
@@ -1546,7 +1553,7 @@ impl TypeCheckEnv {
         &self,
         mut signature: FunctionSignature,
     ) -> FunctionSignature {
-        signature.return_type = self.canonical_standard_callable_type(signature.return_type);
+        signature.return_type = self.canonical_accepted_type(signature.return_type);
         signature.params = signature
             .params
             .into_iter()
@@ -1565,7 +1572,10 @@ impl TypeCheckEnv {
         signature
     }
 
-    pub(crate) fn canonical_standard_callable_type(&self, ty: TypeKind) -> TypeKind {
+    /// Canonicalizes internal named atoms against this environment's accepted
+    /// nominal catalog. Semantic catalogs and standard callable publication
+    /// share this boundary so one accepted type has one identity everywhere.
+    pub(crate) fn canonical_accepted_type(&self, ty: TypeKind) -> TypeKind {
         map_named_type_kind(ty, &|name| {
             self.nominal_catalog
                 .exact_records()
@@ -1578,12 +1588,12 @@ impl TypeCheckEnv {
     }
 
     fn canonical_standard_callable_parameter(&self, mut parameter: FunctionParam) -> FunctionParam {
-        parameter.ty = self.canonical_standard_callable_type(parameter.ty);
+        parameter.ty = self.canonical_accepted_type(parameter.ty);
         parameter.higher_order_bindings = parameter
             .higher_order_bindings
             .into_iter()
             .map(|mut binding| {
-                binding.ty = self.canonical_standard_callable_type(binding.ty);
+                binding.ty = self.canonical_accepted_type(binding.ty);
                 binding
             })
             .collect();

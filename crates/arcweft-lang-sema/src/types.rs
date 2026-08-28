@@ -12,12 +12,14 @@ mod compatibility;
 pub(crate) mod constraints;
 mod digest;
 mod generic_use;
+mod match_domain;
 mod mismatch;
 mod nominal;
 mod openness;
 mod order;
 mod project_nominal_visit;
 mod substitution;
+mod variant_payload;
 
 pub use arcweft_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
@@ -33,6 +35,7 @@ pub use digest::SemanticTypeDigest;
 pub(crate) use digest::accepted_nominal_semantic_identity_digest;
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
+pub(crate) use match_domain::{MatchDomainFamily, MatchDomainInvalidity};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
     AcceptedNominalType, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
@@ -41,6 +44,13 @@ pub use nominal::{
 };
 pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use substitution::TypeParameterSubstitutions;
+pub(crate) use variant_payload::{
+    AcceptedVariantCaseSemanticId, AcceptedVariantPayloadFieldSemanticId,
+};
+pub use variant_payload::{
+    VariantPayloadOwnerFamily, VariantPayloadRecordField, VariantPayloadShape,
+    VariantPayloadTupleField, VariantPayloadType,
+};
 
 /// Runtime lifetime-registry scope retained by checked semantic types.
 ///
@@ -709,6 +719,9 @@ pub enum TypeKind {
     Named(String),
     Tuple(Vec<TypeKind>),
     Choice(Vec<TypeKind>),
+    /// Exact anonymous tuple/record payload of one accepted variant case.
+    /// Authored type resolution never constructs this internal family.
+    VariantPayload(Box<VariantPayloadType>),
     Unit,
     Never,
 }

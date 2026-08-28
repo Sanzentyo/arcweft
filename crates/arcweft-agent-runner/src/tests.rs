@@ -132,6 +132,12 @@ const RESOURCE_RESULT_TY: u8 = 16;
 const ENTITY_METADATA_RESULT_TY: u8 = 17;
 const PROJECT_NEIGHBORHOOD_RESULT_TY: u8 = 18;
 const OBSERVATION_RESULT_TY: u8 = 19;
+const CAPTURE_REFERENCE_PAYLOAD_TY: u8 = 20;
+const RESOURCE_PAYLOAD_TY: u8 = 21;
+const ENTITY_METADATA_PAYLOAD_TY: u8 = 22;
+const PROJECT_NEIGHBORHOOD_PAYLOAD_TY: u8 = 23;
+const OBSERVATION_PAYLOAD_TY: u8 = 24;
+const STRING_PAYLOAD_TY: u8 = 25;
 
 fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
     controller_checked_type(marker).semantic_identity_digest()
@@ -174,6 +180,22 @@ fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
             ok: Box::new(controller_checked_type(OBSERVATION_TY)),
             error: Box::new(RuntimeCheckedType::String),
         },
+        CAPTURE_REFERENCE_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![controller_checked_type(CAPTURE_REFERENCE_TY)])
+        }
+        RESOURCE_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![controller_checked_type(RESOURCE_TY)])
+        }
+        ENTITY_METADATA_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![controller_checked_type(ENTITY_METADATA_TY)])
+        }
+        PROJECT_NEIGHBORHOOD_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![controller_checked_type(PROJECT_NEIGHBORHOOD_TY)])
+        }
+        OBSERVATION_PAYLOAD_TY => {
+            RuntimeCheckedType::Tuple(vec![controller_checked_type(OBSERVATION_TY)])
+        }
+        STRING_PAYLOAD_TY => RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String]),
         _ => panic!("unknown controller fixture type marker {marker}"),
     }
 }
@@ -182,7 +204,7 @@ fn controller_expr(ty: u8, kind: RuntimeExprSeedKind) -> RuntimeExprSeed {
     RuntimeExprSeed::new(controller_type(ty), kind)
 }
 
-fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
+fn controller_agent_types() -> [RuntimePlanTypeSeed; 25] {
     [
         RuntimePlanTypeSeed::new(
             controller_type(STRING_TY),
@@ -240,10 +262,44 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
             RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::Predicate),
         ),
         RuntimePlanTypeSeed::new(
+            controller_type(CAPTURE_REFERENCE_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(CAPTURE_REFERENCE_TY)].into_boxed_slice(),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(RESOURCE_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(vec![controller_type(RESOURCE_TY)].into_boxed_slice()),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(ENTITY_METADATA_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(ENTITY_METADATA_TY)].into_boxed_slice(),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(PROJECT_NEIGHBORHOOD_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(PROJECT_NEIGHBORHOOD_TY)].into_boxed_slice(),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(OBSERVATION_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(
+                vec![controller_type(OBSERVATION_TY)].into_boxed_slice(),
+            ),
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(STRING_PAYLOAD_TY),
+            RuntimePlanTypeProjection::Tuple(vec![controller_type(STRING_TY)].into_boxed_slice()),
+        ),
+        RuntimePlanTypeSeed::new(
             controller_type(CAPTURE_RESULT_TY),
             RuntimePlanTypeProjection::Result {
                 value: controller_type(CAPTURE_REFERENCE_TY),
                 error: controller_type(STRING_TY),
+                value_payload: controller_type(CAPTURE_REFERENCE_PAYLOAD_TY),
+                error_payload: controller_type(STRING_PAYLOAD_TY),
             },
         ),
         RuntimePlanTypeSeed::new(
@@ -251,6 +307,8 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
             RuntimePlanTypeProjection::Result {
                 value: controller_type(RESOURCE_TY),
                 error: controller_type(STRING_TY),
+                value_payload: controller_type(RESOURCE_PAYLOAD_TY),
+                error_payload: controller_type(STRING_PAYLOAD_TY),
             },
         ),
         RuntimePlanTypeSeed::new(
@@ -258,6 +316,8 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
             RuntimePlanTypeProjection::Result {
                 value: controller_type(ENTITY_METADATA_TY),
                 error: controller_type(STRING_TY),
+                value_payload: controller_type(ENTITY_METADATA_PAYLOAD_TY),
+                error_payload: controller_type(STRING_PAYLOAD_TY),
             },
         ),
         RuntimePlanTypeSeed::new(
@@ -265,6 +325,8 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
             RuntimePlanTypeProjection::Result {
                 value: controller_type(PROJECT_NEIGHBORHOOD_TY),
                 error: controller_type(STRING_TY),
+                value_payload: controller_type(PROJECT_NEIGHBORHOOD_PAYLOAD_TY),
+                error_payload: controller_type(STRING_PAYLOAD_TY),
             },
         ),
         RuntimePlanTypeSeed::new(
@@ -272,6 +334,8 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 19] {
             RuntimePlanTypeProjection::Result {
                 value: controller_type(OBSERVATION_TY),
                 error: controller_type(STRING_TY),
+                value_payload: controller_type(OBSERVATION_PAYLOAD_TY),
+                error_payload: controller_type(STRING_PAYLOAD_TY),
             },
         ),
     ]
@@ -290,6 +354,17 @@ fn response_binding_pattern(
     )
 }
 
+fn response_payload_type(response_ty: u8) -> u8 {
+    match response_ty {
+        CAPTURE_REFERENCE_TY => CAPTURE_REFERENCE_PAYLOAD_TY,
+        RESOURCE_TY => RESOURCE_PAYLOAD_TY,
+        ENTITY_METADATA_TY => ENTITY_METADATA_PAYLOAD_TY,
+        PROJECT_NEIGHBORHOOD_TY => PROJECT_NEIGHBORHOOD_PAYLOAD_TY,
+        OBSERVATION_TY => OBSERVATION_PAYLOAD_TY,
+        _ => panic!("fixture response type {response_ty} has no Result payload type"),
+    }
+}
+
 fn await_response_binding_pattern(
     result_ty: u8,
     response_ty: u8,
@@ -299,7 +374,13 @@ fn await_response_binding_pattern(
         controller_type(result_ty),
         RuntimePatternSeedKind::Variant {
             ordinal: 0,
-            payload: Some(Box::new(response_binding_pattern(response_ty, local))),
+            payload: Some(Box::new(RuntimePatternSeed::new(
+                controller_type(response_payload_type(response_ty)),
+                RuntimePatternSeedKind::Tuple(Box::new([response_binding_pattern(
+                    response_ty,
+                    local,
+                )])),
+            ))),
         },
     )
 }

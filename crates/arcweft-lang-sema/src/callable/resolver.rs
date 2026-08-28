@@ -693,10 +693,14 @@ impl AcceptedEnumVariantCase {
                     return Ok(None);
                 }
                 let selected = variant.selected();
+                let payload = selected.payload().single_tuple_field();
+                if !selected.payload().is_unit() && payload.is_none() {
+                    return Ok(None);
+                }
                 (
                     nominal,
                     selected.ordinal(),
-                    selected.payload(),
+                    payload,
                     selected.diagnostic_name(),
                 )
             }

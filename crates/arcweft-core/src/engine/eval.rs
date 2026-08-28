@@ -506,7 +506,7 @@ impl Engine {
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
         let (owner, name) = match declaration.projection() {
-            RuntimePlanTypeProjection::Option(_) => match ordinal {
+            RuntimePlanTypeProjection::Option { .. } => match ordinal {
                 0 => (
                     RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
                     "Some".to_owned(),

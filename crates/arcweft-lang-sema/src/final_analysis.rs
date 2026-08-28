@@ -50,15 +50,21 @@ use arcweft_lang_syntax::assertion::AssertionMode;
 mod accounting;
 #[path = "final_analysis/analyzer.rs"]
 mod analyzer;
+mod canonical_literal;
 mod error;
 mod input;
+mod match_coverage;
 mod match_edges;
+mod match_transaction;
 mod model;
 mod nominal_schema;
+mod nominal_semantic;
 mod prepared;
 mod recovery_diagnostics;
 mod report;
+mod semantic_shapes;
 mod semantic_transcript;
+mod transcript_writer;
 mod type_rules;
 mod validation;
 
@@ -79,6 +85,7 @@ pub use error::{
     FinalSemanticProjectError, RecursiveCallableContractEdge, SemanticFactFamily,
 };
 pub(crate) use input::FinalSemanticAnalysisInput;
+pub use match_coverage::CheckedMatchLimits;
 pub use match_edges::{
     CheckedChildEdgeError, CheckedExpressionEdgeError, CheckedExpressionEdgeFact,
     CheckedNestedEvidenceRole, NestedPathEvidence,
@@ -133,12 +140,11 @@ pub use recovery_diagnostics::{
     project_callable_tail_recovery_diagnostics,
 };
 pub use report::FinalSemanticAnalysis;
-pub use semantic_transcript::{
-    CheckedCoverageWitness, CheckedGuardClass, CheckedMatch, CheckedMatchArm, CheckedMatchBinding,
-    CheckedMatchCoverage, CheckedMatchLimits, CheckedUnreachableArm, CheckedUnreachableReason,
-    SemanticTranscriptError,
+pub(crate) use semantic_shapes::AcceptedSemanticShapeCatalog;
+pub(crate) use semantic_transcript::write_len;
+pub(crate) use transcript_writer::{
+    CheckedTranscriptByteBudget, TranscriptHasher, TranscriptWriteError,
 };
-pub(crate) use semantic_transcript::{TranscriptHasher, write_len};
 
 #[cfg(test)]
 #[path = "final_analysis/tests.rs"]

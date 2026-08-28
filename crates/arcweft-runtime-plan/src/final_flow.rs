@@ -66,6 +66,9 @@ use crate::assertion_identity::{
 use crate::errors::RuntimePlanLowerError;
 use crate::final_expr::FinalExprLowerer;
 use crate::final_pattern::FinalPatternLowerer;
+use crate::final_variant::{
+    normalized_variant_binding_pattern_seed, normalized_variant_expression_seed,
+};
 use crate::semantic_facts::{
     RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication, RuntimeDropFadeFact,
     RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeIteratorFact,
@@ -1918,31 +1921,6 @@ fn local_seed(ty: &RuntimeNormalizedType, local: RuntimeLocalSeedId) -> RuntimeE
     )
 }
 
-fn variant_bind_seed(
-    result: &RuntimeNormalizedType,
-    ordinal: u32,
-    payload: &RuntimeNormalizedType,
-    local: RuntimeLocalSeedId,
-) -> RuntimePatternSeed {
-    RuntimePatternSeed::new(
-        result.identity(),
-        RuntimePatternSeedKind::Variant {
-            ordinal,
-            payload: Some(Box::new(bind_seed(payload, local))),
-        },
-    )
-}
-
-fn variant_empty_seed(result: &RuntimeNormalizedType, ordinal: u32) -> RuntimePatternSeed {
-    RuntimePatternSeed::new(
-        result.identity(),
-        RuntimePatternSeedKind::Variant {
-            ordinal,
-            payload: None,
-        },
-    )
-}
-
 fn module_by_id(
     project: HirExecutableProjectView<'_>,
     expected: HirModuleId,
@@ -3334,13 +3312,12 @@ impl<'a> FinalFlowLowerer<'a> {
                         "carrier block {owner:?} has no accepted result type"
                     ))
                 })?;
-                let wrapped = RuntimeExprSeed::new(
-                    boundary.identity(),
-                    arcweft_core::plan::RuntimeExprSeedKind::Variant {
-                        ordinal: 0,
-                        payload: Some(Box::new(value)),
-                    },
-                );
+                let wrapped = normalized_variant_expression_seed(boundary, 0, Some(value))
+                    .map_err(|error| {
+                        RuntimePlanLowerError::new(format!(
+                            "carrier block {owner:?} success is invalid: {error}"
+                        ))
+                    })?;
                 return self.apply_value_continuation(wrapped, *outer);
             }
             RuntimeFlowValueContinuation::Compose {
@@ -3415,25 +3392,45 @@ impl<'a> FinalFlowLowerer<'a> {
                     ))
                 })?;
                 (
-                    variant_bind_seed(fact.carrier_type(), 1, residual, local.clone()),
+                    normalized_variant_binding_pattern_seed(
+                        fact.carrier_type(),
+                        1,
+                        Some(local.clone()),
+                    )
+                    .map_err(|error| {
+                        RuntimePlanLowerError::new(format!(
+                            "Try expression {owner:?} residual pattern is invalid: {error}"
+                        ))
+                    })?,
                     Some(local_seed(residual, local)),
                 )
             }
-            RuntimeTryCarrierFact::Option { .. } => {
-                (variant_empty_seed(fact.carrier_type(), 1), None)
-            }
+            RuntimeTryCarrierFact::Option { .. } => (
+                normalized_variant_binding_pattern_seed(fact.carrier_type(), 1, None).map_err(
+                    |error| {
+                        RuntimePlanLowerError::new(format!(
+                            "Try expression {owner:?} empty residual pattern is invalid: {error}"
+                        ))
+                    },
+                )?,
+                None,
+            ),
         };
         let failure_ops = self.propagate_try_residual(&fact, failure_value)?;
         Ok(vec![RuntimeFlowOpSeed::Match {
             scrutinee: value,
             arms: vec![
                 RuntimeFlowMatchArmSeed {
-                    pattern: variant_bind_seed(
+                    pattern: normalized_variant_binding_pattern_seed(
                         fact.carrier_type(),
                         0,
-                        fact.carrier().success(),
-                        locals.success,
-                    ),
+                        Some(locals.success),
+                    )
+                    .map_err(|error| {
+                        RuntimePlanLowerError::new(format!(
+                            "Try expression {owner:?} success pattern is invalid: {error}"
+                        ))
+                    })?,
                     guard: None,
                     ops: success_ops,
                 },
@@ -3451,13 +3448,10 @@ impl<'a> FinalFlowLowerer<'a> {
         fact: &RuntimeTryFact,
         residual: Option<RuntimeExprSeed>,
     ) -> Result<Vec<RuntimeFlowOpSeed>, RuntimePlanLowerError> {
-        let propagated = RuntimeExprSeed::new(
-            fact.boundary_type().identity(),
-            arcweft_core::plan::RuntimeExprSeedKind::Variant {
-                ordinal: 1,
-                payload: residual.map(Box::new),
-            },
-        );
+        let propagated = normalized_variant_expression_seed(fact.boundary_type(), 1, residual)
+            .map_err(|error| {
+                RuntimePlanLowerError::new(format!("Try residual is invalid: {error}"))
+            })?;
         match fact.boundary() {
             RuntimeTryBoundaryOwner::Infallible => Ok(Vec::new()),
             RuntimeTryBoundaryOwner::Callable(_) => {

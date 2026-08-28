@@ -17,7 +17,7 @@ pub use base::{
     FunctionParamSelectorSegment, FunctionSignature, TypeCheckEnv, TypeCheckEnvBuildError,
 };
 pub use effects::{EffectCapability, EffectCapabilityParts};
-pub use enums::EnumVariantPayload;
+pub use enums::{EnumVariantPayload, EnumVariantPayloadBuildError, EnvironmentEnumRecordField};
 pub use registered::{RegisteredSemanticWorld, RegisteredTypeCheckEnv};
 pub use rust_metadata::{
     AcceptedRustStructShape, AcceptedRustTypeMetadata, AcceptedRustTypeMetadataCatalog,

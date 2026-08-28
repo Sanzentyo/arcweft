@@ -347,6 +347,10 @@ pub(crate) struct ValidatedRuntimeNominalProjectionSeal {
 }
 
 impl RuntimeNominalProjectionRequestInventory {
+    pub(super) fn nominals(&self) -> impl ExactSizeIterator<Item = &CheckedProjectNominal> {
+        self.by_semantic_type.values()
+    }
+
     pub(crate) fn insert(
         &mut self,
         request: RuntimeNominalProjectionRequest,
@@ -478,32 +482,6 @@ pub(crate) struct RuntimeNominalProjectionCatalog {
 }
 
 impl RuntimeNominalProjectionCatalog {
-    pub(crate) fn get(
-        &self,
-        nominal: &CheckedProjectNominal,
-    ) -> Result<&RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
-        let semantic_type = nominal.identity();
-        let canonical = checked_nominal_semantic_digest(nominal);
-        if semantic_type != canonical {
-            return Err(NominalSchemaProjectionError::IdentityMismatch {
-                requested: semantic_type,
-                projected: canonical,
-            });
-        }
-        let projection = self
-            .by_semantic_type
-            .get(&semantic_type)
-            .ok_or(NominalSchemaProjectionError::MissingCachedProjection { semantic_type })?;
-        let projected = projection_semantic_digest(projection);
-        if projected != semantic_type {
-            return Err(NominalSchemaProjectionError::IdentityMismatch {
-                requested: semantic_type,
-                projected,
-            });
-        }
-        Ok(projection)
-    }
-
     fn get_semantic(
         &self,
         semantic_type: SemanticTypeDigest,
@@ -1027,7 +1005,7 @@ impl ValidatedRuntimeNominalProjectionSeal {
     }
 }
 
-fn validate_checked_nominal(
+pub(super) fn validate_checked_nominal(
     symbols: &ProjectSymbolTable,
     checked: &CheckedProjectNominal,
 ) -> Result<(), NominalSchemaProjectionError> {
@@ -1069,9 +1047,16 @@ pub(super) fn seal_runtime_nominal_draft(
     draft: FinalSemanticAnalysisDraft,
     project: crate::final_analysis::HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
+    semantic_shapes: super::AcceptedSemanticShapeCatalog,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<FinalSemanticAnalysis, FinalSemanticProjectError> {
     let inventory = RuntimeNominalProjectionRequestInventory::from_prepared(&draft, symbols)?;
+    let project_nominals = super::nominal_semantic::ProjectNominalSemanticCatalog::build(
+        inventory.nominals(),
+        symbols,
+        &draft.types,
+        control,
+    )?;
     let mut parts = draft.into_parts();
     let context = RuntimeNominalProjectionContext::new(
         symbols,
@@ -1097,7 +1082,8 @@ pub(super) fn seal_runtime_nominal_draft(
         .into_iter()
         .map(|(owner, fact)| {
             let sealed_record = sealed_record_expressions.remove(&owner);
-            let (fact, fields) = seal_prepared_expression(owner, fact, &seal, sealed_record)?;
+            let (fact, fields) =
+                seal_prepared_expression(owner, fact, &seal, &project_nominals, sealed_record)?;
             if let Some(fields) = fields {
                 record_fields.insert(owner, fields);
             }
@@ -1120,8 +1106,13 @@ pub(super) fn seal_runtime_nominal_draft(
     parts.patterns = prepared_patterns
         .into_iter()
         .map(|(owner, fact)| {
-            seal_prepared_pattern(owner, fact, &seal, sealed_record_patterns.remove(&owner))
-                .map(|fact| (owner, fact))
+            seal_prepared_pattern(
+                owner,
+                fact,
+                &project_nominals,
+                sealed_record_patterns.remove(&owner),
+            )
+            .map(|fact| (owner, fact))
         })
         .collect::<Result<_, _>>()?;
     if !sealed_record_patterns.is_empty() {
@@ -1155,8 +1146,17 @@ pub(super) fn seal_runtime_nominal_draft(
         .collect::<Result<_, _>>()?;
     let draft = FinalSemanticAnalysisDraft::from_parts(parts);
     let final_inventory = RuntimeNominalProjectionRequestInventory::from_prepared(&draft, symbols)?;
+    project_nominals.validate_inventory(final_inventory.nominals())?;
     let runtime_nominals = seal.validate_final_inventory(final_inventory)?.finish();
-    Ok(draft.seal(project, symbols, checked_entries, runtime_nominals, control)?)
+    Ok(draft.seal(
+        project,
+        symbols,
+        checked_entries,
+        project_nominals,
+        semantic_shapes,
+        runtime_nominals,
+        control,
+    )?)
 }
 
 fn seal_prepared_statement(
@@ -1306,8 +1306,6 @@ fn preseal_project_record_expressions(
                     };
                     let semantic_id = AcceptedRecordFieldSemanticId::issue(
                         prepared.nominal().identity(),
-                        projection.layout(),
-                        projected.runtime_field(),
                         field.declaration_ordinal(),
                         field_type_digest,
                     );
@@ -1336,6 +1334,7 @@ fn seal_prepared_expression(
     _owner: arcweft_lang_hir::identity::ExprId,
     fact: PreparedExpressionFact,
     context: &RuntimeNominalProjectionSeal,
+    project_nominals: &super::nominal_semantic::ProjectNominalSemanticCatalog,
     sealed_record: Option<SealedProjectRecordExpression>,
 ) -> Result<
     (
@@ -1347,7 +1346,7 @@ fn seal_prepared_expression(
     match fact {
         PreparedExpressionFact::ProjectVariant(prepared) => {
             let (shell, owner, selected_ordinal) = prepared.into_parts();
-            let owner = seal_project_variant_owner(owner, context)?;
+            let owner = seal_project_variant_owner(owner, project_nominals)?;
             let resolution = CheckedVariantResolution::try_new(owner, selected_ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
             let (ty, type_selection, effects) = shell.into_parts();
@@ -1377,8 +1376,6 @@ fn seal_prepared_expression(
             let semantic_id =
                 CheckedRecordFieldSemanticId::Project(AcceptedRecordFieldSemanticId::issue(
                     nominal.identity(),
-                    projection.layout(),
-                    projected.runtime_field(),
                     declaration_ordinal,
                     field_type_digest,
                 ));
@@ -1454,6 +1451,11 @@ enum SealedRecordPatternOwner {
     Environment {
         record: crate::env::nominal::AcceptedEnvironmentRecordIdentity,
     },
+    VariantPayload {
+        payload: crate::types::VariantPayloadType,
+        semantic_type: SemanticTypeDigest,
+        field_count: u32,
+    },
 }
 
 struct SealedRecordPattern {
@@ -1503,6 +1505,31 @@ fn preseal_record_patterns(
                         },
                         None,
                     ),
+                    PreparedRecordPatternOwner::VariantPayload {
+                        payload,
+                        semantic_type,
+                        field_count,
+                    } => {
+                        let fields = payload
+                            .shape()
+                            .record_fields()
+                            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                        if u32::try_from(fields.len()).ok() != Some(*field_count)
+                            || TypeKind::VariantPayload(Box::new(payload.clone()))
+                                .semantic_identity_digest()
+                                != *semantic_type
+                        {
+                            return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
+                        }
+                        (
+                            SealedRecordPatternOwner::VariantPayload {
+                                payload: payload.clone(),
+                                semantic_type: *semantic_type,
+                                field_count: *field_count,
+                            },
+                            None,
+                        )
+                    }
                 };
                 let mut fields = Vec::with_capacity(prepared.fields().len());
                 for field in prepared.fields() {
@@ -1529,8 +1556,6 @@ fn preseal_record_patterns(
                                 CheckedRecordFieldSemanticId::Project(
                                     AcceptedRecordFieldSemanticId::issue(
                                         nominal.identity(),
-                                        projection.layout(),
-                                        projected.runtime_field(),
                                         declaration_ordinal,
                                         field_type,
                                     ),
@@ -1555,6 +1580,33 @@ fn preseal_record_patterns(
                                 declaration_ordinal,
                                 None,
                                 CheckedRecordFieldSemanticId::Environment(semantic_id),
+                            )
+                        }
+                        (
+                            PreparedRecordPatternOwner::VariantPayload { payload, .. },
+                            PreparedRecordPatternFieldIdentity::VariantPayload {
+                                declaration_ordinal,
+                                semantic_id:
+                                    CheckedRecordFieldSemanticId::VariantPayload(semantic_id),
+                            },
+                            None,
+                        ) => {
+                            let index = usize::try_from(declaration_ordinal)
+                                .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                            let expected = payload
+                                .shape()
+                                .record_fields()
+                                .and_then(|fields| fields.get(index))
+                                .filter(|expected| {
+                                    expected.ordinal() == declaration_ordinal
+                                        && expected.semantic_id() == semantic_id
+                                        && expected.ty().semantic_identity_digest() == field_type
+                                })
+                                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                            (
+                                expected.ordinal(),
+                                None,
+                                CheckedRecordFieldSemanticId::VariantPayload(semantic_id),
                             )
                         }
                         _ => return Err(FinalSemanticAnalysisError::InvalidNominalOwner),
@@ -1635,13 +1687,13 @@ fn preseal_record_patterns(
 fn seal_prepared_pattern(
     _owner: arcweft_lang_hir::identity::PatternId,
     fact: PreparedPatternFact,
-    context: &RuntimeNominalProjectionSeal,
+    project_nominals: &super::nominal_semantic::ProjectNominalSemanticCatalog,
     sealed_record: Option<SealedRecordPattern>,
 ) -> Result<PreparedPatternFact, FinalSemanticAnalysisError> {
     match fact {
         PreparedPatternFact::ProjectVariant(prepared) => {
             let (ty, owner, selected_ordinal) = prepared.into_parts();
-            let owner = seal_project_variant_owner(owner, context)?;
+            let owner = seal_project_variant_owner(owner, project_nominals)?;
             let resolution = CheckedVariantResolution::try_new(owner, selected_ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
             Ok(CheckedPattern::new(ty, CheckedPatternResolution::Variant(resolution)).into())
@@ -1705,6 +1757,24 @@ fn seal_prepared_pattern(
                         record: sealed_record,
                     },
                 ) if record == sealed_record => CheckedRecordPatternOwner::environment(record),
+                (
+                    PreparedRecordPatternOwner::VariantPayload {
+                        payload,
+                        semantic_type,
+                        field_count,
+                    },
+                    SealedRecordPatternOwner::VariantPayload {
+                        payload: sealed_payload,
+                        semantic_type: sealed_semantic_type,
+                        field_count: sealed_field_count,
+                    },
+                ) if payload == sealed_payload
+                    && semantic_type == sealed_semantic_type
+                    && field_count == sealed_field_count =>
+                {
+                    CheckedRecordPatternOwner::variant_payload(payload)
+                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?
+                }
                 _ => return Err(FinalSemanticAnalysisError::InvalidNominalOwner),
             };
             if ty.semantic_identity_digest() != owner.semantic_type() {
@@ -1734,47 +1804,39 @@ fn seal_prepared_pattern(
 
 fn seal_project_variant_owner(
     prepared: crate::final_analysis::PreparedProjectVariantOwnerSeed,
-    context: &RuntimeNominalProjectionSeal,
+    project_nominals: &super::nominal_semantic::ProjectNominalSemanticCatalog,
 ) -> Result<CheckedVariantOwner, FinalSemanticAnalysisError> {
     let (nominal, prepared_cases) = prepared.into_parts();
-    let projection = context.get_cached(&nominal)?;
-    if projection.kind() != RuntimeProjectNominalKind::Variant {
+    let definition = project_nominals
+        .get(nominal.identity())
+        .filter(|definition| definition.nominal() == &nominal)
+        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+    let Some(cases) = definition.cases() else {
         return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
-    }
-    if projection.variant_cases().len() != prepared_cases.len()
-        || projection
-            .variant_cases()
+    };
+    if cases.len() != prepared_cases.len()
+        || cases
             .iter()
             .zip(prepared_cases.iter())
-            .any(|(projected, prepared)| {
-                projected.ordinal() != prepared.ordinal()
-                    || projected.payload() != prepared.payload()
-                    || prepared.diagnostic_name() != Some(projected.diagnostic_name().as_str())
+            .any(|(accepted, prepared)| {
+                accepted.ordinal() != prepared.ordinal()
+                    || accepted.project_payload_field() != prepared.payload()
+                    || prepared.diagnostic_name() != Some(accepted.diagnostic_name())
             })
     {
         return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
     }
-    let cases = projection.variant_cases().iter().map(|case| {
+    let cases = cases.iter().map(|case| {
         (
-            case.payload().cloned(),
-            Some(case.diagnostic_name().as_str().to_owned()),
+            case.project_payload_field().cloned(),
+            Some(case.diagnostic_name().to_owned()),
         )
     });
-    CheckedVariantOwner::try_project(nominal, projection.layout(), cases)
+    CheckedVariantOwner::try_project(nominal, cases)
         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
 }
 
 impl FinalSemanticAnalysis {
-    /// Borrows the sole runtime projection for one fully checked nominal.
-    /// This path validates the nominal's complete semantic identity instead of
-    /// reducing a typed owner to a digest-only lookup.
-    pub(crate) fn checked_runtime_nominal_projection(
-        &self,
-        nominal: &CheckedProjectNominal,
-    ) -> Result<&RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
-        self.runtime_nominals().get(nominal)
-    }
-
     /// Borrows the sole runtime projection sealed for one semantic nominal
     /// identity. Entry/runtime consumers cannot reconstruct or reproject a
     /// schema from a role key after final publication.
@@ -1827,8 +1889,6 @@ impl FinalSemanticAnalysis {
                     && semantic_id
                         == AcceptedRecordFieldSemanticId::issue(
                             selection.owner_type(),
-                            owner.layout(),
-                            field.runtime_field(),
                             field.declaration_ordinal(),
                             field.field_type(),
                         )

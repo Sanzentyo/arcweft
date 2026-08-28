@@ -1809,13 +1809,13 @@ impl<'a> PureEvaluator<'a> {
             .get(ty)
             .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
         let (owner, name, payload_ty) = match declaration.projection() {
-            RuntimePlanTypeProjection::Option(item) => {
+            RuntimePlanTypeProjection::Option { some_payload, .. } => {
                 let builtin = RuntimeBuiltinVariantIdentity::Option;
                 let schema = builtin
                     .case_at(ordinal)
                     .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
                 let payload = match schema.identity() {
-                    RuntimeBuiltinVariantCaseIdentity::OptionSome => Some(*item),
+                    RuntimeBuiltinVariantCaseIdentity::OptionSome => Some(*some_payload),
                     RuntimeBuiltinVariantCaseIdentity::OptionNone => None,
                     _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
                 };
@@ -1825,14 +1825,18 @@ impl<'a> PureEvaluator<'a> {
                     payload,
                 )
             }
-            RuntimePlanTypeProjection::Result { value, error } => {
+            RuntimePlanTypeProjection::Result {
+                value_payload,
+                error_payload,
+                ..
+            } => {
                 let builtin = RuntimeBuiltinVariantIdentity::Result;
                 let schema = builtin
                     .case_at(ordinal)
                     .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
                 let payload = match schema.identity() {
-                    RuntimeBuiltinVariantCaseIdentity::ResultOk => Some(*value),
-                    RuntimeBuiltinVariantCaseIdentity::ResultErr => Some(*error),
+                    RuntimeBuiltinVariantCaseIdentity::ResultOk => Some(*value_payload),
+                    RuntimeBuiltinVariantCaseIdentity::ResultErr => Some(*error_payload),
                     _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
                 };
                 (

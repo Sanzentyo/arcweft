@@ -521,6 +521,10 @@ impl Encoder {
                 self.tag(76);
                 self.types(items);
             }
+            TypeKind::VariantPayload(payload) => {
+                self.tag(87);
+                self.bytes(payload.case().as_bytes());
+            }
             TypeKind::Unit => self.checked(&RuntimeCheckedType::Unit),
             TypeKind::Never => self.checked(&RuntimeCheckedType::Never),
             TypeKind::AgentBuiltin(builtin) => {
