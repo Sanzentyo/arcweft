@@ -3,7 +3,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use super::document::parse_document;
 use crate::expressions::{
     ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueApplicationForm,
-    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxExpressionSlot,
     SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
 };
 use crate::grammar::build::UnattachedGrammarEntry;
@@ -415,6 +415,157 @@ fn explicit_mark_selector_retains_one_typed_positional_argument() {
         1
     );
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn inline_timed_cue_selects_duration_argument_and_dialogue_call_payload() {
+    let source = concat!(
+        "flow opening {\n",
+        "    let line = alice[本文。[at 120ms call=log.info(\"delay\")]]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("inline timed cue remains in the typed dialogue projection");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("selected dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("timed cue retains dialogue content");
+    };
+    let [tag] = content.tags() else {
+        panic!("one timed cue tag");
+    };
+    assert!(matches!(
+        tag.identity(),
+        SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::HostEvent(
+            crate::expressions::SyntaxRichTextHostEvent::TimedCue
+        ))
+    ));
+    assert!(matches!(
+        tag.arguments(),
+        [SyntaxRichTextArgumentProjection::Positional { value }]
+            if value.decoded() == "120ms"
+    ));
+    assert!(matches!(
+        tag.payload(),
+        crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
+            SyntaxExpressionSlot::Authored
+        )
+    ));
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::RichTextTimedCuePayload)
+            .count(),
+        1
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn inline_timed_cue_keeps_nested_call_equals_inside_the_call_expression() {
+    let source = concat!(
+        "flow opening {\n",
+        "    let line = alice[本文。[at 120ms call = log.info(message = nested(call = inner()))]]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("timed cue projection");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("dialogue content projection");
+    };
+    let [tag] = content.tags() else {
+        panic!("one timed cue tag");
+    };
+    assert!(matches!(
+        tag.payload(),
+        crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
+            SyntaxExpressionSlot::Authored
+        )
+    ));
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::RichTextTimedCuePayload)
+            .count(),
+        1
+    );
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::RichTextDialogueCallPayload)
+            .count(),
+        1
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn inline_timed_cue_missing_duplicate_and_extra_parts_never_become_ordinary_arguments() {
+    for payload in [
+        "[at]",
+        "[at 120ms]",
+        "[at call=log.info(\"delay\")]",
+        "[at 120ms call=one() call=two()]",
+        "[at 120ms extra call=one()]",
+    ] {
+        let source = format!("flow opening {{\n    let line = alice[本文。{payload}]\n}}\n");
+        let built =
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+        let projection = built
+            .index()
+            .entries()
+            .iter()
+            .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+            .and_then(UnattachedGrammarEntry::expression_projection)
+            .expect("timed cue projection");
+        let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+        else {
+            panic!("dialogue application projection: {payload}");
+        };
+        let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+            panic!("dialogue content projection: {payload}");
+        };
+        let [tag] = content.tags() else {
+            panic!("one timed cue tag: {payload}");
+        };
+        assert!(matches!(
+            tag.payload(),
+            crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
+                SyntaxExpressionSlot::Missing
+            )
+        ));
+        assert!(!matches!(
+            tag.payload(),
+            crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
+        ));
+        assert_eq!(built.green().to_string(), source, "{payload}");
+    }
 }
 
 #[test]

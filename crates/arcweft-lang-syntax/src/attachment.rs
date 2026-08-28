@@ -867,8 +867,8 @@ mod tests {
         ProofBodyKind, ProofCallStatementKind, RecordPatternKind, RichTextArgumentPayloadKind,
         RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
         RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
-        RichTextNamedArgumentKind, RichTextTagKind, SourceFileKind, UnsafeLifetimeStatementKind,
-        WholeBindingPatternKind,
+        RichTextNamedArgumentKind, RichTextTagKind, RichTextTimedCuePayloadKind, SourceFileKind,
+        UnsafeLifetimeStatementKind, WholeBindingPatternKind,
     };
     use super::{
         AstNode, GrammarIdentityMap, PredicateItemKind, ProofItemKind, SyntaxDatabaseId,
@@ -1771,6 +1771,55 @@ mod tests {
         let end_tags = attached_rich_text_end_tags(&dialogue);
         assert_eq!(end_tags.len(), 1);
         assert!(end_tags[0].name().unwrap().is_none());
+    }
+
+    #[test]
+    fn attached_timed_cue_payload_owns_duration_and_call_without_a_second_tag_payload() {
+        let source = concat!(
+            "flow opening {\n",
+            "    let line = alice[本文。[at 120ms call = log.info(message = \"delay\")]]\n",
+            "}\n",
+        );
+        let snapshot = attach(source);
+        let dialogue = attached_dialogue_content(&snapshot);
+        let tags = attached_rich_text_start_tags(&dialogue);
+        let [tag] = tags.as_slice() else {
+            panic!("one inline timed cue tag");
+        };
+        let payload = tag
+            .payload()
+            .unwrap()
+            .expect("timed cue payload node")
+            .cast::<RichTextTimedCuePayloadKind>()
+            .unwrap();
+        let duration = payload.duration().unwrap();
+        assert_eq!(duration.role(), SyntaxRole::Argument(0));
+        assert_eq!(duration.value().unwrap().source_text(), "120ms");
+        let call = payload.call().unwrap();
+        assert_eq!(
+            call.expression().unwrap().source_text(),
+            "log.info(message = \"delay\")"
+        );
+        assert_eq!(
+            payload
+                .syntax()
+                .children()
+                .into_iter()
+                .map(|child| (child.kind(), child.role()))
+                .collect::<Vec<_>>(),
+            vec![
+                (
+                    SyntaxKind::RichTextPositionalArgument,
+                    SyntaxRole::Argument(0)
+                ),
+                (SyntaxKind::RichTextDialogueCallPayload, SyntaxRole::Payload),
+            ]
+        );
+        assert_eq!(
+            tag.payload().unwrap().unwrap().kind(),
+            SyntaxKind::RichTextTimedCuePayload
+        );
+        assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
     }
 
     fn assert_rich_text_argument_descendants(source: &str, tag: &AstNode<RichTextTagKind>) {

@@ -28,8 +28,8 @@ use crate::text::{
     MAX_RICH_TEXT_TAG_BODY_BYTES, ScannedDialogueSurface, ScannedDialogueSurfaceKind,
     ScannedInlineStyle, ScannedInlineStyleKind, ScannedTagArgValue, ScannedTagArgument,
     ScannedTagArgumentParts, ScannedTagArguments, find_dialogue_tag_boundary_before,
-    is_rich_text_whitespace, scan_dialogue_surface, scan_tag_arguments, trim_rich_text_whitespace,
-    utf8_boundary_at_or_before,
+    is_rich_text_whitespace, scan_dialogue_surface, scan_tag_arg_value_if_valid,
+    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -300,12 +300,12 @@ fn emit_authored_rich_text_surface(
     mut state: RichTextAuthoredSurfaceState<'_>,
 ) {
     let tag = u32::try_from(state.tags.len()).expect("RichText tag limit fits u32");
-    match surface.body {
+    match surface.body.clone() {
         RichTextTagBody::Open(open) => {
-            emit_authored_open_rich_text(parser, start, surface, open, tag, state);
+            emit_authored_open_rich_text(parser, start, &surface, &open, tag, state);
         }
         RichTextTagBody::End { name_range } => {
-            emit_authored_end_rich_text(parser, start, surface, name_range, tag, &mut state);
+            emit_authored_end_rich_text(parser, start, &surface, name_range, tag, &mut state);
         }
     }
 }
@@ -313,8 +313,8 @@ fn emit_authored_rich_text_surface(
 fn emit_authored_open_rich_text(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
-    surface: RichTextTagSurface<'_>,
-    open: OpenTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
+    open: &OpenTagSurface<'_>,
     tag: u32,
     state: RichTextAuthoredSurfaceState<'_>,
 ) {
@@ -327,7 +327,7 @@ fn emit_authored_open_rich_text(
         open_spans,
     } = state;
     let scanned_arguments = (!open.attrs.is_empty()
-        && !matches!(open.source_name, "fx" | "call" | "!" | "if"))
+        && !matches!(open.source_name, "fx" | "call" | "!" | "if" | "at"))
     .then(|| {
         let remaining = MAX_RICH_TEXT_CONTENT_ARGUMENTS
             .checked_sub(*argument_count)
@@ -388,7 +388,7 @@ fn emit_authored_open_rich_text(
 fn emit_argument_limit_recovery(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
-    surface: RichTextTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
     scanned: Option<&ScannedTagArguments>,
     argument_limit_exhausted: &mut bool,
     nodes: &mut Vec<SyntaxDialogueNodeProjection>,
@@ -425,7 +425,7 @@ fn emit_argument_limit_recovery(
 fn emit_authored_end_rich_text(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
-    surface: RichTextTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
     name_range: TextRange,
     tag: u32,
     state: &mut RichTextAuthoredSurfaceState<'_>,
@@ -1308,7 +1308,7 @@ fn emit_content_limit_diagnostic(
     )));
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct RichTextTagSurface<'source> {
     start: usize,
     end: usize,
@@ -1316,18 +1316,19 @@ struct RichTextTagSurface<'source> {
     body: RichTextTagBody<'source>,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum RichTextTagBody<'source> {
     Open(OpenTagSurface<'source>),
     End { name_range: TextRange },
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct OpenTagSurface<'source> {
     source_name: &'source str,
     name_range: TextRange,
     attrs: &'source str,
     attrs_range: TextRange,
+    timed_cue: Option<ScannedTimedCuePayload>,
 }
 
 impl<'source> RichTextTagSurface<'source> {
@@ -1385,9 +1386,160 @@ impl<'source> RichTextTagSurface<'source> {
                 name_range: TextRange::new(name_start, name_start.checked_add(source_name.len())?),
                 attrs,
                 attrs_range: TextRange::new(attrs_start, attrs_start.checked_add(attrs.len())?),
+                timed_cue: (source_name == "at").then(|| {
+                    scan_timed_cue_payload(
+                        parser,
+                        TextRange::new(
+                            attrs_start,
+                            attrs_start
+                                .checked_add(attrs.len())
+                                .expect("RichText attribute range remains representable"),
+                        ),
+                    )
+                }),
             }),
         })
     }
+}
+
+/// The one parser-selected decomposition of an inline timed-cue payload.
+///
+/// The classification is performed over the already lexed token topology. In
+/// particular, a `call=` token pair nested inside the call expression is not a
+/// second timed-cue field. The attached CST then owns the selected duration and
+/// call payload without requiring a source-string split or a second expression
+/// parse.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct ScannedTimedCuePayload {
+    duration: Option<ScannedTagArgValue>,
+    call: Option<TextRange>,
+    malformed: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct TimedCueDelimiterDepth {
+    angle: usize,
+    paren: usize,
+    bracket: usize,
+    brace: usize,
+}
+
+impl TimedCueDelimiterDepth {
+    const fn is_top_level(self) -> bool {
+        self.angle == 0 && self.paren == 0 && self.bracket == 0 && self.brace == 0
+    }
+
+    fn bump(&mut self, spelling: &str) {
+        match spelling {
+            "<" => self.angle = self.angle.saturating_add(1),
+            ">" => self.angle = self.angle.saturating_sub(1),
+            "(" => self.paren = self.paren.saturating_add(1),
+            ")" => self.paren = self.paren.saturating_sub(1),
+            "[" => self.bracket = self.bracket.saturating_add(1),
+            "]" => self.bracket = self.bracket.saturating_sub(1),
+            "{" => self.brace = self.brace.saturating_add(1),
+            "}" => self.brace = self.brace.saturating_sub(1),
+            _ => {}
+        }
+    }
+}
+
+fn scan_timed_cue_payload(
+    parser: &DocumentParser<'_, '_>,
+    range: TextRange,
+) -> ScannedTimedCuePayload {
+    let start = parser
+        .token_boundary_index(range.start())
+        .expect("timed-cue payload starts at a lexer boundary");
+    let end = parser
+        .token_boundary_index(range.end())
+        .expect("timed-cue payload ends at a lexer boundary");
+    let mut significant = Vec::new();
+    let mut depth = TimedCueDelimiterDepth::default();
+    for index in start..end {
+        let token = parser
+            .token_at(index)
+            .expect("timed-cue token interval remains inside the document lexer");
+        if is_timed_cue_trivia(token.kind()) {
+            continue;
+        }
+        significant.push((index, depth));
+        depth.bump(parser.text_of(token));
+    }
+
+    let call_heads = significant
+        .windows(2)
+        .enumerate()
+        .filter_map(|(position, window)| {
+            let (key_index, key_depth) = window[0];
+            let (equals_index, _) = window[1];
+            (key_depth.is_top_level()
+                && parser.text_of(parser.token_at(key_index)?) == "call"
+                && parser.text_of(parser.token_at(equals_index)?) == "=")
+                .then_some((position, key_index, equals_index))
+        })
+        .collect::<Vec<_>>();
+    let Some((call_position, _key_index, equals_index)) = call_heads.first().copied() else {
+        let duration = (significant.len() == 1)
+            .then(|| timed_cue_duration(parser, significant[0].0))
+            .flatten();
+        let malformed = significant.len() > 1 || duration.is_none();
+        return ScannedTimedCuePayload {
+            duration,
+            call: None,
+            malformed,
+        };
+    };
+
+    let duration = (call_position == 1)
+        .then(|| timed_cue_duration(parser, significant[0].0))
+        .flatten();
+    let malformed = call_position != 1 || call_heads.len() != 1 || duration.is_none();
+    let call_start = significant.get(call_position + 2).map_or_else(
+        || token_end(parser, equals_index),
+        |(index, _)| token_start(parser, *index),
+    );
+    let call = (!malformed)
+        .then(|| (call_start < range.end()).then_some(TextRange::new(call_start, range.end())))
+        .flatten();
+    ScannedTimedCuePayload {
+        duration,
+        call,
+        malformed: malformed || call.is_none(),
+    }
+}
+
+fn timed_cue_duration(parser: &DocumentParser<'_, '_>, index: usize) -> Option<ScannedTagArgValue> {
+    let token = parser
+        .token_at(index)
+        .expect("timed-cue duration remains a lexer token");
+    scan_tag_arg_value_if_valid(parser.text_of(token), token.range().start())
+}
+
+fn token_start(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
+    parser
+        .token_at(index)
+        .expect("timed-cue token remains in the lexer interval")
+        .range()
+        .start()
+}
+
+fn token_end(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
+    parser
+        .token_at(index)
+        .expect("timed-cue token remains in the lexer interval")
+        .range()
+        .end()
+}
+
+fn is_timed_cue_trivia(kind: SyntaxKind) -> bool {
+    matches!(
+        kind,
+        SyntaxKind::WhitespaceToken
+            | SyntaxKind::NewlineToken
+            | SyntaxKind::CommentToken
+            | SyntaxKind::DocCommentToken
+    )
 }
 
 struct EmittedOpenTag {
@@ -1400,8 +1552,8 @@ struct EmittedOpenTag {
 
 fn emit_open_tag(
     parser: &mut DocumentParser<'_, '_>,
-    surface: RichTextTagSurface<'_>,
-    open: OpenTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
+    open: &OpenTagSurface<'_>,
     ordinal: u32,
     scanned_arguments: Option<ScannedTagArguments>,
     content_argument_count: &mut usize,
@@ -1449,8 +1601,8 @@ fn emit_open_tag(
 }
 
 fn open_tag_components(
-    surface: RichTextTagSurface<'_>,
-    open: OpenTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
+    open: &OpenTagSurface<'_>,
     ordinal: u32,
     inferred: bool,
 ) -> Vec<PendingExpressionComponent> {
@@ -1525,8 +1677,8 @@ struct OpenTagPayloadState<'a> {
 
 fn emit_open_tag_payload(
     parser: &mut DocumentParser<'_, '_>,
-    surface: RichTextTagSurface<'_>,
-    open: OpenTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
+    open: &OpenTagSurface<'_>,
     identity: &SyntaxRichTextTagIdentity,
     scanned_arguments: Option<ScannedTagArguments>,
     state: &mut OpenTagPayloadState<'_>,
@@ -1536,6 +1688,9 @@ fn emit_open_tag_payload(
 ) {
     let mut arguments = Vec::new();
     let mut payload = SyntaxRichTextTagPayloadProjection::None;
+    if let Some(timed_cue) = open.timed_cue.as_ref() {
+        return emit_timed_cue_payload(parser, open, timed_cue, state);
+    }
     if !open.attrs.is_empty() {
         bump_to_range_start(parser, open.attrs_range);
         match open.source_name {
@@ -1604,7 +1759,89 @@ fn emit_open_tag_payload(
     (arguments, payload)
 }
 
-fn emit_open_tag_close(parser: &mut DocumentParser<'_, '_>, surface: RichTextTagSurface<'_>) {
+fn emit_timed_cue_payload(
+    parser: &mut DocumentParser<'_, '_>,
+    open: &OpenTagSurface<'_>,
+    timed_cue: &ScannedTimedCuePayload,
+    state: &mut OpenTagPayloadState<'_>,
+) -> (
+    Vec<SyntaxRichTextArgumentProjection>,
+    SyntaxRichTextTagPayloadProjection,
+) {
+    parser.start(SyntaxKind::RichTextTimedCuePayload, SyntaxRole::Payload);
+    let mut arguments = Vec::new();
+    if let Some(duration) = timed_cue.duration.as_ref() {
+        bump_to_range_start(parser, duration.token_range());
+        parser.start(
+            SyntaxKind::RichTextPositionalArgument,
+            SyntaxRole::Argument(0),
+        );
+        let mut cursor = PartitionedEventCursor::new(parser, duration.token_range().start());
+        emit_present_value(&mut cursor, duration);
+        cursor.finish_at(duration.token_range().end());
+        parser.finish();
+        arguments.push(SyntaxRichTextArgumentProjection::Positional {
+            value: SyntaxRichTextValue::new(duration.decoded()),
+        });
+        state
+            .components
+            .extend(timed_cue_argument_components(state.ordinal, duration));
+        *state.content_argument_count = state
+            .content_argument_count
+            .checked_add(1)
+            .expect("retained RichText argument count remains grammar-bounded");
+    }
+
+    let call_range = timed_cue.call.filter(|_| !timed_cue.malformed);
+    let call_insertion = call_range.map_or(open.attrs_range.end(), |range| range.start());
+    bump_until_offset(parser, call_insertion);
+    let slot = match call_range {
+        Some(range) => emit_expression_payload(
+            parser,
+            range,
+            SyntaxKind::RichTextDialogueCallPayload,
+            SyntaxRole::Operand,
+        ),
+        None => emit_expression_payload(
+            parser,
+            TextRange::new(open.attrs_range.end(), open.attrs_range.end()),
+            SyntaxKind::RichTextDialogueCallPayload,
+            SyntaxRole::Operand,
+        ),
+    };
+    bump_until_offset(parser, open.attrs_range.end());
+    parser.finish();
+    (
+        arguments,
+        SyntaxRichTextTagPayloadProjection::DialogueCall(slot),
+    )
+}
+
+fn timed_cue_argument_components(
+    tag: u32,
+    duration: &ScannedTagArgValue,
+) -> [PendingExpressionComponent; 2] {
+    [
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::RichTextArgument {
+                tag,
+                argument: 0,
+                part: SyntaxRichTextArgumentSourcePart::Whole,
+            },
+            source_range(duration.token_range()),
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::RichTextArgument {
+                tag,
+                argument: 0,
+                part: SyntaxRichTextArgumentSourcePart::Value,
+            },
+            source_range(duration.content_range()),
+        ),
+    ]
+}
+
+fn emit_open_tag_close(parser: &mut DocumentParser<'_, '_>, surface: &RichTextTagSurface<'_>) {
     let close = surface
         .end
         .checked_sub(']'.len_utf8())
@@ -1800,7 +2037,7 @@ const fn source_range(range: TextRange) -> SourceRange {
 
 fn emit_end_tag(
     parser: &mut DocumentParser<'_, '_>,
-    surface: RichTextTagSurface<'_>,
+    surface: &RichTextTagSurface<'_>,
     name_range: TextRange,
     ordinal: u32,
 ) {

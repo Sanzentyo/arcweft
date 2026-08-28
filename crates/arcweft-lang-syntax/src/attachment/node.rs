@@ -305,6 +305,7 @@ define_ast_kinds!(RICH_TEXT_MARKERS, RichText;
     RichTextEndTagKind => RichTextEndTag,
     RichTextTagNameKind => RichTextTagName,
     RichTextArgumentPayloadKind => RichTextArgumentPayload,
+    RichTextTimedCuePayloadKind => RichTextTimedCuePayload,
     RichTextFxCallPayloadKind => RichTextFxCallPayload,
     RichTextDialogueCallPayloadKind => RichTextDialogueCallPayload,
     RichTextConditionPayloadKind => RichTextConditionPayload,

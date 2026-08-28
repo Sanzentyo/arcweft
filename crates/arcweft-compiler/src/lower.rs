@@ -5,8 +5,15 @@
 //! final-HIR generation and never opens source text, rebuilds a detached HIR,
 //! or consults the removed `TypeCheckReport` sidecar.
 
+#[path = "lower/evaluated_effects.rs"]
+mod evaluated_effects;
 #[path = "lower/reachability.rs"]
 mod reachability;
+#[path = "lower/variants.rs"]
+mod variants;
+
+use evaluated_effects::runtime_evaluated_effect;
+use variants::{runtime_variant, runtime_variant_constructor};
 
 pub(crate) use reachability::project_view_value_program_reachability;
 pub use reachability::{
@@ -53,7 +60,7 @@ use arcweft_dialogue::{
     },
 };
 use arcweft_lang_hir::{
-    expr::HirExprKind,
+    expr::{HirCallCallee, HirExprKind},
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     item::{HirCharacterSurfaceAlias, HirDeclarationMemberKind, HirItemKind, HirRetainedName},
     leaf::{
@@ -65,7 +72,6 @@ use arcweft_lang_hir::{
         HirRuntimeSemanticReachability, HirSelectedExpressionInventoryError,
     },
     scope::HirScopeOwner,
-    stmt::HirStmtKind,
     symbol::{
         CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolTable,
         nominal::ProjectNominalDeclarationId,
@@ -93,8 +99,9 @@ use arcweft_lang_sema::{
     env::nominal::AcceptedNominalSemantics,
     final_analysis::{
         CheckedAssertionDisposition, CheckedAssignment, CheckedCharacterDialogueTarget,
-        CheckedDialogueEffectOperation, CheckedDialogueEffectSite, CheckedDialogueEffectTrigger,
-        CheckedDialogueLinePlan, CheckedDropFade, CheckedDropPolicy, CheckedEvaluatedEffect,
+        CheckedDialogueEffectSite, CheckedDialogueEffectTrigger, CheckedDialogueLinePlan,
+        CheckedDropFade, CheckedDropInvocation, CheckedEffectField, CheckedEvaluatedEffect,
+        CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
         CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedItemRole, CheckedIteration,
         CheckedIteratorFamily, CheckedPatternResolution, CheckedProjectItemOwner,
         CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternOwner,
@@ -124,26 +131,26 @@ use arcweft_runtime_plan::{
         RuntimeDialogueApplication, RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
         RuntimeDialogueMarkHandler, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
         RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-        RuntimeEvaluatedEffectFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
-        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
-        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
-        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
-        RuntimePlanSemanticFacts, RuntimePositionedCallOperand, RuntimeProjectCallable,
-        RuntimeProjectItem, RuntimePureProgramCaptureFact, RuntimePureProgramFact,
-        RuntimeRecordExpressionFact, RuntimeRecordExpressionField, RuntimeRecordExpressionSource,
-        RuntimeRecordPatternFact, RuntimeRecordPatternField, RuntimeRecordPatternRest,
-        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeRecordTypeField,
-        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
-        RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
-        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
-        RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedNominal,
-        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
-        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
-        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner,
-        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
-        RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact,
+        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
+        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
+        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
+        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedCallOperand,
+        RuntimeProjectCallable, RuntimeProjectItem, RuntimePureProgramCaptureFact,
+        RuntimePureProgramFact, RuntimeRecordExpressionFact, RuntimeRecordExpressionField,
+        RuntimeRecordExpressionSource, RuntimeRecordPatternFact, RuntimeRecordPatternField,
+        RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeRecordPlanError,
+        RuntimeRecordTypeField, RuntimeReductionConstructor, RuntimeRegisteredValueId,
+        RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand,
+        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
+        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
+        RuntimeResolvedHostCall, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
+        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
+        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
+        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
+        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
+        RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
+        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -377,61 +384,30 @@ fn project_runtime_semantic_fact_inventories(
     }
     let dialogue_application_calls =
         dialogue_application_owned_calls(project, analysis, runtime_owners)?;
-    let mut evaluated_effect_calls = BTreeSet::new();
-    for (statement, checked) in analysis.statements() {
-        if !matches!(checked.role(), CheckedStatementRole::EvaluatedEffect(_)) {
-            continue;
-        }
-        let module = project
-            .modules()
-            .find_map(|(_, module)| {
-                (module.module_id() == statement.module()).then_some(module.as_ref())
-            })
-            .ok_or(
-                RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
-                    owner: statement,
-                },
-            )?;
-        let HirStmtKind::Expression { expression } = module
-            .resolve_stmt(statement)
-            .map_err(
-                |_| RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
-                    owner: statement,
-                },
-            )?
-            .kind()
-        else {
-            return Err(
-                RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition {
-                    owner: statement,
-                },
-            );
-        };
-        evaluated_effect_calls.insert(*expression);
-    }
-    for (_, expression) in analysis.expressions() {
-        let CheckedExpressionResolution::DialogueApplication { line_plan, .. } =
-            expression.resolution()
-        else {
-            continue;
-        };
-        evaluated_effect_calls.extend(
-            line_plan
-                .effect_sites()
-                .iter()
-                .map(CheckedDialogueEffectSite::expression),
-        );
-    }
+    let evaluated_effect_carriers = reachability::evaluated_effect_carriers(project, analysis)
+        .map_err(|error| {
+            if let Some(owner) = error.dialogue_application() {
+                RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: error.to_string(),
+                }
+            } else {
+                RuntimeSemanticProjectionError::Call {
+                    owner: error.owner(),
+                    reason: error.to_string(),
+                }
+            }
+        })?;
     let runtime_calls = analysis
         .calls()
         .filter(|(owner, _)| {
             (runtime_owners.contains_expression(*owner)
                 || view_value_owners.is_some_and(|owners| owners.contains_expression(*owner)))
                 && !dialogue_application_calls.contains(owner)
-                && !evaluated_effect_calls.contains(owner)
+                && !evaluated_effect_carriers.contains(owner)
         })
         .map(|(owner, call)| {
-            runtime_call(owner, call, symbols, world, analysis).map(|call| (owner, call))
+            runtime_call(owner, call, project, symbols, world, analysis).map(|call| (owner, call))
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
     let mut runtime_expression_type_owners = runtime_owners.selected_expression_type_owners()?;
@@ -501,12 +477,13 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        if runtime_expression_type_owners.contains(&owner) {
-            input.push_expression_type(
-                owner,
-                runtime_type(expression.ty(), symbols, world, analysis)?,
-            );
+        if !runtime_expression_type_owners.contains(&owner) {
+            continue;
         }
+        input.push_expression_type(
+            owner,
+            runtime_type(expression.ty(), symbols, world, analysis)?,
+        );
         match expression.resolution() {
             CheckedExpressionResolution::Structural => {
                 let module = project
@@ -778,7 +755,7 @@ fn project_runtime_semantic_fact_inventories(
             CheckedStatementRole::EvaluatedEffect(effect) => {
                 input.push_evaluated_effect(
                     owner,
-                    runtime_evaluated_effect(owner, effect, project)?,
+                    runtime_evaluated_effect(effect, symbols, world, analysis)?,
                 );
             }
             CheckedStatementRole::Iteration(iteration) => {
@@ -1227,8 +1204,15 @@ fn project_dialogue_application(
             }
         })?;
     let cue_handle_type = runtime_type(&TypeKind::CueHandle, symbols, world, analysis)?;
-    let (content, values, effects) =
-        lower_checked_rich_text(owner, rich_text, line_plan, &cue_handle_type)?;
+    let (content, values, effects) = lower_checked_rich_text(
+        owner,
+        rich_text,
+        line_plan,
+        &cue_handle_type,
+        symbols,
+        world,
+        analysis,
+    )?;
     let source = ProductSourceRef::try_for_identity(line.source().application_span().source())
         .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
             owner: Some(owner),
@@ -1437,6 +1421,9 @@ fn lower_checked_rich_text(
     report: &CheckedRichTextReport,
     line_plan: &CheckedDialogueLinePlan,
     cue_handle_type: &RuntimeNormalizedType,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<
     (
         RichTextDocument,
@@ -1510,6 +1497,9 @@ fn lower_checked_rich_text(
                     line_plan.marks(),
                     &mut next_mark,
                     cue_handle_type,
+                    symbols,
+                    world,
+                    analysis,
                 )? {
                     spans.insert(tag.id(), span);
                 }
@@ -1565,6 +1555,9 @@ fn lower_rich_text_action(
     marks: &[arcweft_id::PublicId],
     next_mark: &mut usize,
     cue_handle_type: &RuntimeNormalizedType,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<Option<RichTextSpanKind>, RuntimeSemanticProjectionError> {
     let style = match action {
         CheckedRichTextAction::DirectStyle { action, .. } => Some(match action {
@@ -1642,6 +1635,9 @@ fn lower_rich_text_action(
                 effect_sites,
                 next_effect,
                 cue_handle_type,
+                symbols,
+                world,
+                analysis,
             )?;
             None
         }
@@ -1710,6 +1706,9 @@ fn lower_dialogue_host_action(
     effect_sites: &[CheckedDialogueEffectSite],
     next_effect: &mut usize,
     cue_handle_type: &RuntimeNormalizedType,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<(), RuntimeSemanticProjectionError> {
     let static_event = match event {
         CheckedDialogueHostEvent::Voice { source } => DialogueHostEvent::Voice {
@@ -1751,27 +1750,30 @@ fn lower_dialogue_host_action(
         CheckedDialogueHostEvent::Shake { amplitude } => DialogueHostEvent::Shake {
             amplitude: Milli(amplitude.milli),
         },
-        CheckedDialogueHostEvent::TimedCue { at, call } => {
-            let site =
-                checked_dialogue_effect_site(owner, effect_sites, next_effect, *call, false)?;
-            let nanos = at.millis.checked_mul(1_000_000).ok_or_else(|| {
-                RuntimeSemanticProjectionError::Dialogue {
-                    owner: Some(owner),
-                    reason: "checked RichText cue duration exceeds logical time".to_owned(),
-                }
-            })?;
+        CheckedDialogueHostEvent::TimedCue { .. } => {
+            let site = checked_dialogue_effect_site(
+                owner,
+                effect_sites,
+                next_effect,
+                CheckedDialogueEffectTriggerKind::Delay,
+            )?;
             effects.push(runtime_dialogue_effect(
                 owner,
                 site,
-                RuntimeDialogueEffectTrigger::Delay {
-                    duration: LogicalDuration::from_nanos(nanos),
-                    schedule_handle_type: cue_handle_type.clone(),
-                },
+                cue_handle_type,
+                symbols,
+                world,
+                analysis,
             )?);
             return Ok(());
         }
-        CheckedDialogueHostEvent::Call { call } => {
-            let site = checked_dialogue_effect_site(owner, effect_sites, next_effect, *call, true)?;
+        CheckedDialogueHostEvent::Call { .. } => {
+            let site = checked_dialogue_effect_site(
+                owner,
+                effect_sites,
+                next_effect,
+                CheckedDialogueEffectTriggerKind::Content,
+            )?;
             let runtime_site = runtime_dialogue_effect_site_id(owner, site)?;
             nodes.push(RichTextNode::Control {
                 control: RichTextControl::Effect { site: runtime_site },
@@ -1779,7 +1781,10 @@ fn lower_dialogue_host_action(
             effects.push(runtime_dialogue_effect(
                 owner,
                 site,
-                RuntimeDialogueEffectTrigger::Content,
+                cue_handle_type,
+                symbols,
+                world,
+                analysis,
             )?);
             return Ok(());
         }
@@ -1811,12 +1816,17 @@ fn lower_dialogue_host_action(
     Ok(())
 }
 
+#[derive(Clone, Copy, Eq, PartialEq)]
+enum CheckedDialogueEffectTriggerKind {
+    Content,
+    Delay,
+}
+
 fn checked_dialogue_effect_site<'a>(
     owner: ExprId,
     sites: &'a [CheckedDialogueEffectSite],
     next: &mut usize,
-    expression: ExprId,
-    content_trigger: bool,
+    expected: CheckedDialogueEffectTriggerKind,
 ) -> Result<&'a CheckedDialogueEffectSite, RuntimeSemanticProjectionError> {
     let site = sites
         .get(*next)
@@ -1831,13 +1841,16 @@ fn checked_dialogue_effect_site<'a>(
             reason: "RichText effect-site cursor overflow".to_owned(),
         })?;
     let trigger_matches = matches!(
-        (site.trigger(), content_trigger),
-        (CheckedDialogueEffectTrigger::Content, true)
-    ) || matches!(
-        (site.trigger(), content_trigger),
-        (CheckedDialogueEffectTrigger::Delay(_), false)
+        (site.trigger(), expected),
+        (
+            CheckedDialogueEffectTrigger::Content,
+            CheckedDialogueEffectTriggerKind::Content
+        ) | (
+            CheckedDialogueEffectTrigger::Delay(_),
+            CheckedDialogueEffectTriggerKind::Delay
+        )
     );
-    if site.expression() != expression || !trigger_matches {
+    if !trigger_matches {
         return Err(RuntimeSemanticProjectionError::Dialogue {
             owner: Some(owner),
             reason: "RichText effect differs from its checked source-ordered site".to_owned(),
@@ -1866,15 +1879,31 @@ fn runtime_dialogue_effect_site_id(
 fn runtime_dialogue_effect(
     owner: ExprId,
     site: &CheckedDialogueEffectSite,
-    trigger: RuntimeDialogueEffectTrigger,
+    cue_handle_type: &RuntimeNormalizedType,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeDialogueEffectExpression, RuntimeSemanticProjectionError> {
-    let operation = match site.operation() {
-        CheckedDialogueEffectOperation::Evaluated(effect) => runtime_evaluated_effect_value(effect),
+    let operation = runtime_evaluated_effect(site.effect(), symbols, world, analysis)?;
+    let trigger = match site.trigger() {
+        CheckedDialogueEffectTrigger::Content => RuntimeDialogueEffectTrigger::Content,
+        CheckedDialogueEffectTrigger::Delay(at) => {
+            let nanos = at.millis.checked_mul(1_000_000).ok_or_else(|| {
+                RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "checked RichText cue duration exceeds logical time".to_owned(),
+                }
+            })?;
+            RuntimeDialogueEffectTrigger::Delay {
+                duration: LogicalDuration::from_nanos(nanos),
+                duration_type: runtime_type(&TypeKind::Duration, symbols, world, analysis)?,
+                schedule_handle_type: cue_handle_type.clone(),
+            }
+        }
     };
     Ok(RuntimeDialogueEffectExpression::new(
         runtime_dialogue_effect_site_id(owner, site)?,
         trigger,
-        site.expression(),
         operation,
     ))
 }
@@ -2860,290 +2889,6 @@ fn runtime_record_pattern(
     })
 }
 
-fn runtime_variant(
-    variant: &CheckedVariantResolution,
-    symbols: &ProjectSymbolTable,
-    world: &RegisteredSemanticWorld,
-    analysis: &FinalSemanticAnalysis,
-) -> Result<
-    arcweft_runtime_plan::semantic_facts::RuntimeResolvedVariant,
-    RuntimeSemanticProjectionError,
-> {
-    let projected = match variant.owner() {
-        CheckedVariantOwner::Project {
-            nominal,
-            semantic_type,
-            cases,
-        } => {
-            if nominal.identity() != *semantic_type {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "checked project variant semantic identity is inconsistent".to_owned(),
-                });
-            }
-            let projection = analysis
-                .runtime_nominal_projection(*semantic_type)
-                .filter(|projection| {
-                    projection.kind()
-                        == arcweft_lang_sema::final_analysis::RuntimeProjectNominalKind::Variant
-                })
-                .ok_or_else(|| RuntimeSemanticProjectionError::NominalSchemaProjection {
-                    nominal: nominal.declaration().qualified_name(),
-                    source: NominalSchemaProjectionError::MissingCachedProjection {
-                        semantic_type: *semantic_type,
-                    },
-                })?;
-            if projection.variant_cases().len() != cases.len() {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "checked project variant case inventory is incomplete".to_owned(),
-                });
-            }
-            let runtime_nominal = runtime_nominal(nominal, analysis)?;
-            RuntimeResolvedVariant::project(
-                runtime_nominal,
-                nominal
-                    .arguments()
-                    .iter()
-                    .map(|argument| runtime_type(argument, symbols, world, analysis))
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice(),
-                variant.ordinal(),
-                checked_variant_selected_name(variant)?,
-                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
-            )
-            .map_err(|error| runtime_variant_projection_error(&error))?
-        }
-        CheckedVariantOwner::CharacterNominal {
-            nominal,
-            semantic_type,
-            ..
-        } => {
-            if TypeKind::CharacterNominal(nominal.clone()).semantic_identity_digest()
-                != *semantic_type
-            {
-                return Err(RuntimeSemanticProjectionError::Type {
-                    reason: "checked character variant semantic identity is inconsistent"
-                        .to_owned(),
-                });
-            }
-            RuntimeResolvedVariant::character(
-                RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
-                RuntimeNominalTypeId::from_checked_digest(*semantic_type.as_bytes()),
-                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
-                variant.ordinal(),
-                checked_variant_selected_name(variant)?,
-            )
-            .map_err(|error| runtime_variant_projection_error(&error))?
-        }
-        CheckedVariantOwner::BuiltinClosed {
-            nominal,
-            semantic_type,
-            ..
-        } => RuntimeResolvedVariant::builtin_closed(
-            RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
-            RuntimeNominalTypeId::try_new(nominal.as_str().to_owned()).map_err(|error| {
-                RuntimeSemanticProjectionError::Type {
-                    reason: format!("checked base-environment enum identity is invalid: {error}"),
-                }
-            })?,
-            runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
-            variant.ordinal(),
-            checked_variant_selected_name(variant)?,
-        )
-        .map_err(|error| runtime_variant_projection_error(&error))?,
-        CheckedVariantOwner::RuntimeBuiltin {
-            owner,
-            semantic_type,
-            ..
-        } => RuntimeResolvedVariant::runtime_builtin(
-            RuntimeSemanticTypeId::from_bytes(*semantic_type.as_bytes()),
-            *owner,
-            runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?,
-            variant.ordinal(),
-            checked_variant_selected_name(variant)?,
-        )
-        .map_err(|error| runtime_variant_projection_error(&error))?,
-        CheckedVariantOwner::Option { item, .. } => {
-            let item = runtime_type(item, symbols, world, analysis)?;
-            let normalized_cases =
-                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?;
-            RuntimeResolvedVariant::option(
-                RuntimeSemanticTypeId::from_bytes(*variant.owner().semantic_type().as_bytes()),
-                item,
-                normalized_cases,
-                variant.ordinal(),
-                checked_variant_selected_name(variant)?,
-            )
-            .map_err(|error| runtime_variant_projection_error(&error))?
-        }
-        CheckedVariantOwner::Result { ok, error, .. } => {
-            let ok = runtime_type(ok, symbols, world, analysis)?;
-            let error = runtime_type(error, symbols, world, analysis)?;
-            let normalized_cases =
-                runtime_checked_variant_cases(variant.owner(), symbols, world, analysis)?;
-            RuntimeResolvedVariant::result(
-                RuntimeSemanticTypeId::from_bytes(*variant.owner().semantic_type().as_bytes()),
-                ok,
-                error,
-                normalized_cases,
-                variant.ordinal(),
-                checked_variant_selected_name(variant)?,
-            )
-            .map_err(|error| runtime_variant_projection_error(&error))?
-        }
-    };
-    Ok(projected)
-}
-
-fn checked_variant_selected_name(
-    variant: &CheckedVariantResolution,
-) -> Result<&str, RuntimeSemanticProjectionError> {
-    variant
-        .selected()
-        .diagnostic_name()
-        .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-            reason: "checked variant case has no diagnostic name authority".to_owned(),
-        })
-}
-
-fn runtime_checked_variant_cases(
-    owner: &CheckedVariantOwner,
-    symbols: &ProjectSymbolTable,
-    world: &RegisteredSemanticWorld,
-    analysis: &FinalSemanticAnalysis,
-) -> Result<Box<[RuntimeNormalizedVariantCase]>, RuntimeSemanticProjectionError> {
-    owner
-        .cases()
-        .iter()
-        .map(|case| {
-            let name =
-                case.diagnostic_name()
-                    .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                        reason: "checked variant case has no diagnostic name authority".to_owned(),
-                    })?;
-            let payload = owner
-                .case_payload_type(case.ordinal())
-                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                    reason: "checked variant case has an invalid payload schema".to_owned(),
-                })?
-                .map(|payload| {
-                    runtime_type(&payload, symbols, world, analysis)
-                        .and_then(retain_checked_variant_payload)
-                })
-                .transpose()?;
-            Ok(RuntimeNormalizedVariantCase::new(name.to_owned(), payload))
-        })
-        .collect()
-}
-
-fn runtime_evaluated_effect(
-    owner: StmtId,
-    effect: &CheckedEvaluatedEffect,
-    project: HirExecutableProjectView<'_>,
-) -> Result<RuntimeEvaluatedEffectFact, RuntimeSemanticProjectionError> {
-    let module = project
-        .modules()
-        .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))
-        .ok_or(RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner })?;
-    let statement = module
-        .resolve_stmt(owner)
-        .map_err(|_| RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner })?;
-    let HirStmtKind::Expression { expression: _ } = statement.kind() else {
-        return Err(RuntimeSemanticProjectionError::InvalidEvaluatedEffectDisposition { owner });
-    };
-    Ok(runtime_evaluated_effect_value(effect))
-}
-
-fn runtime_evaluated_effect_value(effect: &CheckedEvaluatedEffect) -> RuntimeEvaluatedEffectFact {
-    RuntimeEvaluatedEffectFact::new(match effect {
-        CheckedEvaluatedEffect::Log {
-            level,
-            message,
-            fields,
-        } => RuntimeEvaluatedEffect::Log {
-            level: runtime_log_level(*level),
-            message: *message,
-            fields: runtime_effect_fields(fields),
-        },
-        CheckedEvaluatedEffect::SignalWrite { target, value } => {
-            RuntimeEvaluatedEffect::SignalWrite {
-                target: *target,
-                value: *value,
-            }
-        }
-        CheckedEvaluatedEffect::MetricWrite { target, value } => {
-            RuntimeEvaluatedEffect::MetricWrite {
-                target: *target,
-                value: *value,
-            }
-        }
-        CheckedEvaluatedEffect::EmitEvent { event, fields } => RuntimeEvaluatedEffect::EmitEvent {
-            event: *event,
-            fields: runtime_effect_fields(fields),
-        },
-        CheckedEvaluatedEffect::Panic { message } => {
-            RuntimeEvaluatedEffect::Panic { message: *message }
-        }
-        CheckedEvaluatedEffect::Fail { message } => {
-            RuntimeEvaluatedEffect::Fail { message: *message }
-        }
-        CheckedEvaluatedEffect::Bail { message } => {
-            RuntimeEvaluatedEffect::Bail { message: *message }
-        }
-        CheckedEvaluatedEffect::Ensure { condition, message } => RuntimeEvaluatedEffect::Ensure {
-            condition: *condition,
-            message: *message,
-        },
-        CheckedEvaluatedEffect::Drop {
-            target,
-            policy_source,
-            policy,
-            ..
-        } => RuntimeEvaluatedEffect::Drop {
-            target: *target,
-            policy_source: *policy_source,
-            policy: match policy {
-                CheckedDropPolicy::Default => RuntimeDropPolicyFact::Default,
-                CheckedDropPolicy::Cancel => RuntimeDropPolicyFact::Cancel,
-                CheckedDropPolicy::Stop { fade } => RuntimeDropPolicyFact::Stop {
-                    fade: match fade {
-                        CheckedDropFade::ConstantNanos(value) => {
-                            RuntimeDropFadeFact::ConstantNanos(*value)
-                        }
-                        CheckedDropFade::Expression(expression) => {
-                            RuntimeDropFadeFact::Expression(*expression)
-                        }
-                    },
-                },
-                CheckedDropPolicy::Finish => RuntimeDropPolicyFact::Finish,
-                CheckedDropPolicy::Release => RuntimeDropPolicyFact::Release,
-                CheckedDropPolicy::Detach => RuntimeDropPolicyFact::Detach,
-            },
-        },
-    })
-}
-
-fn runtime_effect_fields(
-    fields: &[arcweft_lang_sema::final_analysis::CheckedEffectField],
-) -> Box<[RuntimeEffectFieldFact]> {
-    fields
-        .iter()
-        .map(|field| {
-            RuntimeEffectFieldFact::new(field.open_argument().binding().as_str(), field.value())
-        })
-        .collect::<Vec<_>>()
-        .into_boxed_slice()
-}
-
-const fn runtime_log_level(level: CallableLogLevel) -> RuntimeLogLevel {
-    match level {
-        CallableLogLevel::Trace => RuntimeLogLevel::Trace,
-        CallableLogLevel::Debug => RuntimeLogLevel::Debug,
-        CallableLogLevel::Info => RuntimeLogLevel::Info,
-        CallableLogLevel::Warn => RuntimeLogLevel::Warn,
-        CallableLogLevel::Error => RuntimeLogLevel::Error,
-    }
-}
-
 fn runtime_assertion(
     owner: StmtId,
     disposition: CheckedAssertionDisposition,
@@ -3295,6 +3040,7 @@ fn runtime_trait_identity(identity: &CheckedTraitIdentity) -> RuntimeTraitIdenti
 fn runtime_call(
     owner: ExprId,
     facts: &CallTargetFacts,
+    project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -3316,7 +3062,7 @@ fn runtime_call(
     } else {
         match application.core().callee() {
             CheckedCallCalleeExecution::Direct => RuntimeResolvedCallDispatch::Static(
-                runtime_call_target(owner, application, symbols, world, analysis)?,
+                runtime_call_target(owner, application, project, symbols, world, analysis)?,
             ),
             CheckedCallCalleeExecution::Value { source } => {
                 let arcweft_lang_sema::callable::CheckedCallArgumentSlotSource::Expression(callee) =
@@ -3650,12 +3396,13 @@ fn runtime_standard_map_call(
 fn runtime_call_target(
     owner: ExprId,
     application: &CheckedCallApplication,
+    project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeResolvedStaticCallTarget, RuntimeSemanticProjectionError> {
     if let Some(variant) =
-        runtime_variant_constructor(owner, application, symbols, world, analysis)?
+        runtime_variant_constructor(owner, application, project, symbols, world, analysis)?
     {
         return Ok(RuntimeResolvedStaticCallTarget::Variant(variant));
     }
@@ -3939,193 +3686,6 @@ const fn runtime_agent_probe_comparison(
         ProbeComparisonOperator::GreaterOrEqual => RuntimeAgentCompareOp::GreaterOrEqual,
         ProbeComparisonOperator::Less => RuntimeAgentCompareOp::Less,
         ProbeComparisonOperator::LessOrEqual => RuntimeAgentCompareOp::LessOrEqual,
-    }
-}
-
-#[expect(
-    clippy::too_many_lines,
-    reason = "constructor instantiations form a closed semantic validation matrix"
-)]
-fn runtime_variant_constructor(
-    owner: ExprId,
-    application: &CheckedCallApplication,
-    symbols: &ProjectSymbolTable,
-    world: &RegisteredSemanticWorld,
-    analysis: &FinalSemanticAnalysis,
-) -> Result<Option<RuntimeResolvedVariant>, RuntimeSemanticProjectionError> {
-    let invalid = |reason: &str| RuntimeSemanticProjectionError::Call {
-        owner,
-        reason: reason.to_owned(),
-    };
-    let selected = application.core().candidates().selected();
-    match selected.instantiation() {
-        ResolvedCallableBaseInstantiation::Result { kind } => {
-            let TypeKind::Result { ok, error } = application.result().ty() else {
-                return Err(invalid(
-                    "Result constructor did not retain its exact checked Result type",
-                ));
-            };
-            let checked_owner =
-                CheckedVariantOwner::result(ok.as_ref().clone(), error.as_ref().clone());
-            let ok = runtime_type(ok, symbols, world, analysis)?;
-            let error = runtime_type(error, symbols, world, analysis)?;
-            let (ordinal, name) = match kind {
-                arcweft_lang_sema::callable::ResultConstructorKind::Ok => (0, "Ok"),
-                arcweft_lang_sema::callable::ResultConstructorKind::Err => (1, "Err"),
-            };
-            RuntimeResolvedVariant::result(
-                RuntimeSemanticTypeId::from_bytes(
-                    *application
-                        .result()
-                        .ty()
-                        .semantic_identity_digest()
-                        .as_bytes(),
-                ),
-                ok,
-                error,
-                runtime_checked_variant_cases(&checked_owner, symbols, world, analysis)?,
-                ordinal,
-                name,
-            )
-            .map(Some)
-            .map_err(|error| invalid(&error.to_string()))
-        }
-        ResolvedCallableBaseInstantiation::Option => {
-            let TypeKind::Option(item) = application.result().ty() else {
-                return Err(invalid(
-                    "Option constructor did not retain its exact checked Option type",
-                ));
-            };
-            if !matches!(
-                selected.id(),
-                arcweft_lang_sema::callable::CallableCandidateId::Option(
-                    arcweft_lang_sema::callable::OptionConstructorKind::Some
-                )
-            ) {
-                return Err(invalid(
-                    "Option constructor instantiation has a non-Option candidate identity",
-                ));
-            }
-            let owner = CheckedVariantOwner::option(item.as_ref().clone());
-            RuntimeResolvedVariant::option(
-                RuntimeSemanticTypeId::from_bytes(
-                    *application
-                        .result()
-                        .ty()
-                        .semantic_identity_digest()
-                        .as_bytes(),
-                ),
-                runtime_type(item, symbols, world, analysis)?,
-                runtime_checked_variant_cases(&owner, symbols, world, analysis)?,
-                0,
-                "Some",
-            )
-            .map(Some)
-            .map_err(|error| invalid(&error.to_string()))
-        }
-        ResolvedCallableBaseInstantiation::ExpectedEnum { expected } => {
-            let TypeKind::ProjectNominal(nominal) = expected else {
-                return Err(invalid(
-                    "enum constructor expected type is not a project nominal enum",
-                ));
-            };
-            if application.result().ty() != expected {
-                return Err(invalid(
-                    "enum constructor result differs from its checked project nominal type",
-                ));
-            }
-            let arcweft_lang_sema::callable::CallableCandidateId::EnumVariant(candidate) =
-                selected.id()
-            else {
-                return Err(invalid(
-                    "enum constructor instantiation has a non-enum candidate identity",
-                ));
-            };
-            let semantic_type = expected.semantic_identity_digest();
-            let checked_owner = analysis
-                .project_variant_owner(semantic_type)
-                .filter(|owner| {
-                    owner
-                        .project()
-                        .is_some_and(|project| project.declaration() == nominal.declaration())
-                })
-                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
-                    reason: "layout-free project variant semantics are absent or stale".to_owned(),
-                })?;
-            let projection = analysis
-                .runtime_nominal_projection(semantic_type)
-                .filter(|projection| {
-                    projection.kind()
-                        == arcweft_lang_sema::final_analysis::RuntimeProjectNominalKind::Variant
-                        && projection.declaration() == nominal.declaration()
-                })
-                .ok_or_else(|| RuntimeSemanticProjectionError::NominalSchemaProjection {
-                    nominal: nominal.declaration().qualified_name(),
-                    source: NominalSchemaProjectionError::MissingCachedProjection { semantic_type },
-                })?;
-            if candidate.owner().world() != nominal.declaration().world()
-                || candidate.owner().module() != nominal.declaration().module()
-                || candidate.owner().name().as_str() != nominal.declaration().name().as_str()
-            {
-                return Err(invalid(
-                    "enum constructor candidate does not own the checked project nominal type",
-                ));
-            }
-            let case = checked_owner
-                .cases()
-                .iter()
-                .find(|case| case.diagnostic_name() == Some(candidate.variant().as_str()))
-                .ok_or_else(|| {
-                    invalid("enum constructor variant is absent from its sealed projection")
-                })?;
-            let runtime_nominal = RuntimeResolvedNominal::new(
-                nominal.declaration().clone(),
-                projection.owner(),
-                projection.nominal().clone(),
-                projection.semantic_identity(),
-                projection.layout(),
-            );
-            Ok(Some(
-                RuntimeResolvedVariant::project(
-                    runtime_nominal,
-                    nominal
-                        .arguments()
-                        .iter()
-                        .map(|argument| runtime_type(argument, symbols, world, analysis))
-                        .collect::<Result<Vec<_>, _>>()?
-                        .into_boxed_slice(),
-                    case.ordinal(),
-                    case.diagnostic_name()
-                        .ok_or_else(|| invalid("enum constructor case has no diagnostic name"))?,
-                    runtime_checked_variant_cases(&checked_owner, symbols, world, analysis)?,
-                )
-                .map_err(|error| invalid(&error.to_string()))?,
-            ))
-        }
-        ResolvedCallableBaseInstantiation::None
-        | ResolvedCallableBaseInstantiation::Character { .. }
-        | ResolvedCallableBaseInstantiation::Receiver { .. }
-        | ResolvedCallableBaseInstantiation::TypeReceiver { .. }
-        | ResolvedCallableBaseInstantiation::Extension { .. } => Ok(None),
-    }
-}
-
-fn retain_checked_variant_payload(
-    payload: RuntimeNormalizedType,
-) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
-    payload
-        .checked_type()
-        .map_err(|reason| RuntimeSemanticProjectionError::Type {
-            reason: reason.to_string(),
-        })?;
-    Ok(payload)
-}
-
-fn runtime_variant_projection_error(
-    error: &arcweft_runtime_plan::semantic_facts::RuntimeResolvedVariantError,
-) -> RuntimeSemanticProjectionError {
-    RuntimeSemanticProjectionError::Type {
-        reason: error.to_string(),
     }
 }
 

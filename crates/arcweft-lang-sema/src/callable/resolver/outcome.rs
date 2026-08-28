@@ -753,7 +753,6 @@ impl PreparedResolvedCallable {
         };
         if seed.id() != candidate
             || seed.expected() != expected
-            || seed.diagnostic_name() != candidate.variant()
             || seed.schema.semantic_digest() != schema.semantic_digest()
         {
             return Err(ResolveCallError::InvalidResolvedCallable);

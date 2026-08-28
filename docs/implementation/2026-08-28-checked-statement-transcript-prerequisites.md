@@ -123,16 +123,114 @@ Match-only transcript builder remain scheduled for deletion by the following
 statement-seal and atomic transcript cuts.
 
 The remaining Trigger, Select, dialogue-mark, unsafe-audit, and exhaustive
-statement-payload authority is design-gated by
-[Lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2](../reviews/requests/2026-08-29-lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2-checked-statement-trigger-select-mark-and-unsafe-audit-authority-correction.md).
-That request selects one deletion-driven typed boundary; it is not permission
-to add a temporary Trigger/Select payload, string mark resolver, or unsafe-ID
-fallback while the design gate is open.
+statement-payload authority is closed by the accepted
+[Lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2 design](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.2.2-checked-statement-trigger-select-mark-and-unsafe-audit-authority-correction/README.md).
+Implementation must consume that design as one deletion-driven typed boundary;
+it does not permit a temporary Trigger/Select payload, string mark resolver,
+or unsafe-ID fallback.
+
+## Evaluated-effect final-call authority cut
+
+Implementation evidence was refreshed on 2026-08-29 from Git
+`18f36ee5de97939f259b28c31b66f1a625e17978`. The checkout also contained
+unrelated user WIP in Agent, CLI, player, renderer, compiler project tests,
+documentation, and samples; that state was neither staged nor rewritten by
+this cut.
+
+The evaluated-effect prerequisite now uses the final checked call application
+as its only operand authority:
+
+- sema retains each physical operand as a C1-issued stable execution source
+  plus its solution-closed type;
+- open log/event fields retain `OpenArgumentId` and are named only when the
+  compiler projects the accepted binding into the runtime plan;
+- `Drop` policy classification consumes the accepted registered value or
+  semantic enum owner/case and retains its dynamic fade operand without HIR
+  argument reconstruction;
+- contextual enum constructor heads are a generic expected-enum call form for
+  project, `Option`, `Result`, and registered closed enums; constructor
+  identity is semantic owner digest plus case ordinal, never diagnostic
+  spelling; and
+- runtime reachability treats terminal/prefix effect calls and non-call policy
+  metadata as non-value semantic carriers. Their owning children remain live,
+  but the carriers publish neither a runtime type fact nor a runtime value fact.
+
+The same cut closes the adjacent ownership boundaries exposed by end-to-end
+validation:
+
+- checked Drop invocation is the closed `Drop`/`DropOptional`/explicit-policy
+  algebra. Explicit policy excludes the derived default and `OnDrop`; fade is
+  either `LogicalDuration` or one checked Duration operand;
+- accepted enum constructor parameters bind by accepted payload-field semantic
+  identity. Record labels are lookup-only, and tuple constructors fabricate no
+  parameter names;
+- HIR runtime reachability consumes a complete
+  `HirRuntimeExpressionProjection` table. Structural value retention and
+  selected-call result/callee retention are disjoint, missing rows reject, and
+  no retain fallback exists;
+- inline `[at duration call=...]` syntax has one token-topology-derived timed-cue
+  payload that reuses the ordinary DialogueCall expression. Malformed forms
+  retain typed recovery and never downgrade to ordinary arguments;
+- line-plan `at(duration) { ... }`, bare `at(duration):`, and
+  `let cue = at(duration):` share the ordinary Call plus callback-Closure
+  authority. Authored bare forms remain `Statement(StmtId)` roots rather than
+  discarding their expression-statement owner or fabricating a direct
+  line-plan expression edge; and
+- inline Delay and line-plan At share one runtime schedule-operation builder.
+  Delay retains both checked Duration type and schedule-handle type, while AWBC
+  callable and Flow entry blocks retain their distinct accepted safe-point
+  kinds.
+
+The obsolete line-plan TimedCue item and its two expression-child roles are
+deleted. Generic inline RichText timed-cue parsing remains because it is a
+different maintained source construct. The large evaluated-effect,
+dialogue-line-plan, compiler variant, and runtime semantic-fact owners were
+split into private domain modules with their existing facades retained.
+
+Runtime-plan effect facts retain only executable application, operand source,
+closed type, operation, and final policy data. The old source-argument
+reconstruction, runtime `policy_source`, dialogue-site expression duplicate,
+and standalone effect-call runtime facts are deleted. There is no semantic
+`Any`, source-name fallback, or case-specific `.Cancel`/`.Stop` reachability
+exception.
+
+Sol-max review selected statement authority for every line-plan construct that
+entered through ordinary statement lowering. The current bare-At producer now
+uses that final path. The following checked-statement cut must finish the same
+normalization for the older Let/Out projections, then delete copied
+`LinePlanLetValue`, `LinePlanOut`, and `DialogueLinePlanLet` rows. The dormant
+`HirLinePlanItem::Expression`, Option, and TimelineAssert families require a
+producer audit; a variant with no genuine expression-owned producer is removed
+rather than retained as a compatibility path.
+
+## Validation of the evaluated-effect final-call cut
+
+Passed on 2026-08-29:
+
+- `cargo test -p arcweft-lang-syntax --all-targets`: 676 library tests, one
+  compile-API test, and three public parser-authority tests;
+- `cargo test -p arcweft-lang-hir --all-targets`: 900 passed and eight ignored
+  library tests, one public final-HIR test, four project-symbol tests, and one
+  compile-API contract test;
+- `cargo test -p arcweft-lang-sema --all-targets`: 548 library tests, 12
+  compile-API tests, and four integration tests;
+- `cargo test -p arcweft-compiler --test evaluated_effects`: two end-to-end
+  ordinary/dialogue tests through structured runtime plans and AWBC;
+- `cargo test -p arcweft-runtime-plan --lib`: 54 tests;
+- compiler/runtime-plan all-target checks from the independent Luna-max
+  inventory audit;
+- all-target checks across syntax, HIR, sema, runtime-plan, and compiler, plus
+  clippy across the same five packages; clippy completed with the repository's
+  existing warning inventory and no command failure;
+- package formatting, repository diff checks, and deleted-symbol/debug-macro
+  scans; and
+- `just structure-audit` plus `just structure-audit-gate`: 2,273 files, 95
+  workspace packages, 270 review triggers, and zero blocking violations.
 
 ## Structural review
 
-The canonical audit scanned 2,262 files and 95 workspace packages, reported
-273 review triggers, and found zero blocking violations. Both the screening
+The canonical audit scanned 2,273 files and 95 workspace packages, reported
+270 review triggers, and found zero blocking violations. Both the screening
 and `--fail-on-blocking` gate passed.
 
 `semantic_coordinate.rs` remains the cohesive owner of accepted-rooted checked

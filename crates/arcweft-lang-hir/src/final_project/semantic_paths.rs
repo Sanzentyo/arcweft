@@ -5645,6 +5645,45 @@ fn expression_edge_ownership(
     if matches!(
         path.last(),
         Some(HirSemanticPathStep::Expression(
+            HirExpressionChildRole::PostfixDialogueCandidate
+        ))
+    ) && let HirExpressionChildRole::DialogueCoordinate { ordinal } = role
+    {
+        let parent = owning_parent.ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+        let parent = module
+            .resolve_expr(parent)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let HirExprKind::PostfixBracket(postfix) = parent.kind() else {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        };
+        let crate::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+            dialogue, ..
+        } = postfix.candidates()
+        else {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        };
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        };
+        let coordinate = application
+            .coordinates()
+            .iter()
+            .find(|coordinate| u32::from(coordinate.argument().get()) == *ordinal)
+            .ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+        if *dialogue != owner
+            || postfix.target() != application.target()
+            || coordinate.value() != child
+        {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        }
+        return Ok(crate::expr::HirExpressionChildOwnership::ReferenceOnly);
+    }
+    if matches!(
+        path.last(),
+        Some(HirSemanticPathStep::Expression(
             HirExpressionChildRole::PostfixIndexCandidate
                 | HirExpressionChildRole::PostfixDialogueCandidate
         ))
@@ -5709,8 +5748,6 @@ fn nested_expression_role_path(
         | HirExpressionChildRole::LinePlanOut { path }
         | HirExpressionChildRole::LinePlanTimelineAssert { path }
         | HirExpressionChildRole::LinePlanExpression { path }
-        | HirExpressionChildRole::LinePlanTimedCueAnchor { path }
-        | HirExpressionChildRole::LinePlanTimedCueBody { path }
         | HirExpressionChildRole::ChoiceIfCondition { path, .. }
         | HirExpressionChildRole::ChoiceForSource { path }
         | HirExpressionChildRole::ChoiceMatchScrutinee { path }

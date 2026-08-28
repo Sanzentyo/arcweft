@@ -96,20 +96,20 @@ use super::{
     CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedChoice, CheckedChoiceGoto, CheckedClosure,
-    CheckedDialogueEffectOperation, CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger, CheckedDialogueLinePlan, CheckedDialogueMarkHandler,
-    CheckedDialogueMarkOrdinal, CheckedEvaluatedEffect, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation,
-    CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution, CheckedStageLook,
-    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTry,
-    CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection, CheckedTypedBinding,
-    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
-    CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
+    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger, CheckedDialogueMarkHandler,
+    CheckedDialogueMarkOrdinal, CheckedExpression, CheckedExpressionResolution,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
+    CheckedProjectNominal, CheckedSelectResolution, CheckedStageLook, CheckedStatement,
+    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement,
+    CheckedTraitConformance, CheckedTraitIdentity, CheckedTry, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedTypedBinding, CheckedValueResolution,
+    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
+    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
     PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, PreparedAssignmentStatement,
+    PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedDialogueLinePlan,
     PreparedEntryExpression, PreparedEntryReference, PreparedExpressionFact,
     PreparedExpressionShell, PreparedPatternFact, PreparedProjectVariantExpression,
     PreparedProjectVariantOwnerSeed, PreparedProjectVariantPattern, PreparedStatementFact,
@@ -504,6 +504,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         let semantic_coordinates =
             SemanticCoordinateIndex::new(accepted_roots.as_ref(), &structural_edges);
         self.finalize_call_facts(&checked_callables, &semantic_coordinates)?;
+        self.finalize_evaluated_effects(&mut input)?;
         self.validate_view_modifier_handler_effects(&checked_callables)?;
         let callable_joins = super::match_edges::prepare_checked_callable_joins(
             self.facts.calls(),
@@ -693,6 +694,8 @@ pub(crate) use calls::CallAnalysisFailure;
 pub(crate) use expression_error::CallFrameInvariant;
 #[path = "analyzer/entities.rs"]
 mod entities;
+#[path = "analyzer/evaluated_effects.rs"]
+mod evaluated_effects;
 #[path = "analyzer/expression_error.rs"]
 mod expression_error;
 #[path = "analyzer/expression_types.rs"]

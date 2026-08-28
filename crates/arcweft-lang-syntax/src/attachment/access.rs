@@ -21,8 +21,9 @@ use super::node::{
     RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
     RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
     RichTextNamedArgumentKind, RichTextPositionalArgumentKind, RichTextTagKind,
-    RichTextTagNameKind, SelectStatementKind, TypeArgumentKind, UnsafeLifetimeStatementKind,
-    VisibilityKind, WaitStatementKind, WholeBindingPatternKind, YieldStatementKind,
+    RichTextTagNameKind, RichTextTimedCuePayloadKind, SelectStatementKind, TypeArgumentKind,
+    UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind, WholeBindingPatternKind,
+    YieldStatementKind,
 };
 use super::{SyntaxAccessError, SyntaxNodeHandle};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -1005,6 +1006,18 @@ impl AstNode<RichTextEndTagKind> {
 impl AstNode<RichTextArgumentPayloadKind> {
     pub fn arguments(&self) -> Result<Vec<RichTextNode>, SyntaxAccessError> {
         self.ordered_family_children::<RichTextFamily>(SyntaxRoleClass::Argument)
+    }
+}
+
+impl AstNode<RichTextTimedCuePayloadKind> {
+    /// Exact duration argument owned by an inline timed cue.
+    pub fn duration(&self) -> Result<AstNode<RichTextPositionalArgumentKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Argument(0))
+    }
+
+    /// Exact call payload owned by an inline timed cue.
+    pub fn call(&self) -> Result<AstNode<RichTextDialogueCallPayloadKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Payload)
     }
 }
 

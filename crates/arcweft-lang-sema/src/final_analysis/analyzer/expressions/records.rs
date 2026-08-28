@@ -172,13 +172,17 @@ fn expected_project_record_nominal<'a>(
 ) -> Result<ExpectedProjectRecordNominal<'a>, AnalyzerExpressionError> {
     match expectation {
         AnalyzerExpressionExpectation::Complete(TypeKind::ProjectNominal(nominal))
+        | AnalyzerExpressionExpectation::EnumConstructorHead(TypeKind::ProjectNominal(nominal))
             if nominal.declaration() == declaration.id() =>
         {
             Ok(ExpectedProjectRecordNominal::Complete(nominal))
         }
-        AnalyzerExpressionExpectation::Complete(_) => Err(AnalyzerExpressionError::fatal(
-            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
-        )),
+        AnalyzerExpressionExpectation::Complete(_)
+        | AnalyzerExpressionExpectation::EnumConstructorHead(_) => {
+            Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+            ))
+        }
         AnalyzerExpressionExpectation::Parametric {
             expected: TypeKind::ProjectNominal(nominal),
             ..

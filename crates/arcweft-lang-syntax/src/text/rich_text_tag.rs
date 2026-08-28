@@ -561,6 +561,13 @@ pub(super) fn scan_tag_arg_value(
     })
 }
 
+pub(crate) fn scan_tag_arg_value_if_valid(
+    source: &str,
+    start: usize,
+) -> Option<ScannedTagArgValue> {
+    scan_tag_arg_value(source, start).ok()
+}
+
 fn quoted_value_parts(
     source: &str,
     start: usize,

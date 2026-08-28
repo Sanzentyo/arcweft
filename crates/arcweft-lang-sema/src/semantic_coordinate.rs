@@ -257,12 +257,6 @@ pub(crate) enum CheckedExpressionChildRole {
     LinePlanExpression {
         path: CheckedNestedPathV1,
     },
-    LinePlanTimedCueAnchor {
-        path: CheckedNestedPathV1,
-    },
-    LinePlanTimedCueBody {
-        path: CheckedNestedPathV1,
-    },
     PostfixIndexCandidate,
     PostfixDialogueCandidate,
     ForInput,
@@ -387,8 +381,6 @@ impl CheckedExpressionChildRole {
             Self::LinePlanOut { .. } => 0x101F,
             Self::LinePlanTimelineAssert { .. } => 0x1020,
             Self::LinePlanExpression { .. } => 0x1021,
-            Self::LinePlanTimedCueAnchor { .. } => 0x1022,
-            Self::LinePlanTimedCueBody { .. } => 0x1023,
             Self::PostfixIndexCandidate => 0x1024,
             Self::PostfixDialogueCandidate => 0x1025,
             Self::ForInput => 0x1026,
@@ -459,8 +451,6 @@ impl CheckedExpressionChildRole {
             | Self::LinePlanOut { path }
             | Self::LinePlanTimelineAssert { path }
             | Self::LinePlanExpression { path }
-            | Self::LinePlanTimedCueAnchor { path }
-            | Self::LinePlanTimedCueBody { path }
             | Self::ChoiceForSource { path }
             | Self::ChoiceMatchScrutinee { path }
             | Self::ChoiceOptionId { path }

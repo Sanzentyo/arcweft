@@ -1452,43 +1452,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         call.operands()
             .iter()
             .map(|operand| {
-                let value = match operand.source() {
-                    RuntimeResolvedCallOperandSource::Expression(source) => {
-                        let value = self.lower(source)?;
-                        if value.ty() != operand.ty().identity() {
-                            return Err(format!(
-                                "call operand source {source:?} has type {:?}, expected {:?}",
-                                value.ty(),
-                                operand.ty().identity()
-                            ));
-                        }
-                        value
-                    }
-                    RuntimeResolvedCallOperandSource::CompactNumericElement {
-                        sequence,
-                        ordinal,
-                    } => {
-                        let literal = self.facts.expression_literal(sequence).ok_or_else(|| {
-                            format!(
-                                "compact call operand sequence {sequence:?} has no checked literal"
-                            )
-                        })?;
-                        let RuntimeValue::Seq(values) = literal else {
-                            return Err(format!(
-                                "compact call operand sequence {sequence:?} is not a checked sequence"
-                            ));
-                        };
-                        let ordinal = usize::try_from(ordinal).map_err(|_| {
-                            format!("compact call operand ordinal {ordinal} does not fit usize")
-                        })?;
-                        if ordinal >= values.len() {
-                            return Err(format!(
-                                "compact call operand ordinal {ordinal} is out of range for {sequence:?}"
-                            ));
-                        }
-                        RuntimeExprSeed::new(operand.ty().identity(), RuntimeExprSeedKind::Value(values.value_at(ordinal)))
-                    }
-                };
+                let value = self.lower_scalar_operand_source(operand.source(), operand.ty())?;
                 let mode = match operand.projection() {
                     RuntimeResolvedCallOperandProjection::Scalar => RuntimeCallArgumentMode::Value,
                     RuntimeResolvedCallOperandProjection::SpreadContainer(_) => {
@@ -1498,6 +1462,48 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Ok((value, mode))
             })
             .collect()
+    }
+
+    pub(crate) fn lower_scalar_operand_source(
+        &self,
+        source: RuntimeResolvedCallOperandSource,
+        ty: &RuntimeNormalizedType,
+    ) -> Result<RuntimeExprSeed, String> {
+        match source {
+            RuntimeResolvedCallOperandSource::Expression(source) => {
+                let value = self.lower(source)?;
+                if value.ty() != ty.identity() {
+                    return Err(format!(
+                        "call operand source {source:?} has type {:?}, expected {:?}",
+                        value.ty(),
+                        ty.identity()
+                    ));
+                }
+                Ok(value)
+            }
+            RuntimeResolvedCallOperandSource::CompactNumericElement { sequence, ordinal } => {
+                let literal = self.facts.expression_literal(sequence).ok_or_else(|| {
+                    format!("compact call operand sequence {sequence:?} has no checked literal")
+                })?;
+                let RuntimeValue::Seq(values) = literal else {
+                    return Err(format!(
+                        "compact call operand sequence {sequence:?} is not a checked sequence"
+                    ));
+                };
+                let ordinal = usize::try_from(ordinal).map_err(|_| {
+                    format!("compact call operand ordinal {ordinal} does not fit usize")
+                })?;
+                if ordinal >= values.len() {
+                    return Err(format!(
+                        "compact call operand ordinal {ordinal} is out of range for {sequence:?}"
+                    ));
+                }
+                Ok(RuntimeExprSeed::new(
+                    ty.identity(),
+                    RuntimeExprSeedKind::Value(values.value_at(ordinal)),
+                ))
+            }
+        }
     }
 
     fn scalar_values(

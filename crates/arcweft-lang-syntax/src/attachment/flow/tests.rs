@@ -15,15 +15,16 @@ use crate::attachment::node::{LetChoiceStatementKind, ThreadExpressionKind};
 use crate::attachment::{
     AttachedChoiceCompactAction, AttachedChoiceItem, AttachedChoiceMatchArmBody,
     AttachedChoiceOptionField, AttachedChoicePlanItem, AttachedChoiceSuiteSource,
-    AttachedRequiredChoiceBody, AttachedRequiredChoiceMatchBody, AttachedRequiredChoiceOptionBody,
-    AttachedRequiredChoicePlanBody, AttachedRequiredChoiceViewBody, AttachedRequiredIncludeTarget,
+    AttachedExpressionNode, AttachedRequiredChoiceBody, AttachedRequiredChoiceMatchBody,
+    AttachedRequiredChoiceOptionBody, AttachedRequiredChoicePlanBody,
+    AttachedRequiredChoiceViewBody, AttachedRequiredIncludeTarget,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
     AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
     AttachedSourceLocaleValue, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
     AttachedTriggerPattern, GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId,
     SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::id_ref::SyntaxIdRefPart;
 use crate::name::SyntaxNameIssue;
 use crate::parser::{ParseOptions, parse_document};
@@ -382,6 +383,72 @@ fn flow_parameter_retains_the_parser_owned_missing_colon_insertion() {
         SourceRange::new(insertion, insertion)
     );
     assert!(parameter.has_recovery());
+}
+
+#[test]
+fn line_plan_at_indentation_is_the_same_callback_expression_as_braces_and_let() {
+    let snapshot = attach(concat!(
+        "flow line_plan_at_surface {\n",
+        "    let (_, line) = alice[こんにちは。]\n",
+        "    with:\n",
+        "        at(0.42s) {\n",
+        "            alice.stage.look(.smile)\n",
+        "        }\n",
+        "        at(0.84s):\n",
+        "            alice.stage.look(.worried)\n",
+        "        let cue = at(1.2s):\n",
+        "            alice.stage.look(.surprised)\n",
+        "}\n",
+    ));
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+        panic!("line-plan fixture requires a present Flow body");
+    };
+    let AttachedThreadFlowItem::Statement(line) = &body.items()[0] else {
+        panic!("the first flow item must remain the dialogue binding");
+    };
+    let children = line.syntax().children_with_role(SyntaxRole::Initializer);
+    let [dialogue] = children.as_slice() else {
+        panic!("the dialogue binding must own one initializer expression");
+    };
+    let application = AttachedExpressionNode::from_syntax(dialogue.clone()).unwrap();
+    let plan = application
+        .dialogue_line_plan()
+        .unwrap()
+        .expect("dialogue application must own the line plan");
+    let items = plan.body().items();
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[0].kind(), SyntaxKind::ExpressionStatement);
+    assert_eq!(items[1].kind(), SyntaxKind::ExpressionStatement);
+    assert_eq!(items[2].kind(), SyntaxKind::LetStatement);
+
+    for item in &items[..2] {
+        let children = item.syntax().children_with_role(SyntaxRole::Initializer);
+        let [expression] = children.as_slice() else {
+            panic!("bare line-plan callback must own one initializer expression");
+        };
+        let expression = AttachedExpressionNode::from_syntax(expression.clone()).unwrap();
+        assert!(matches!(
+            expression.projection(),
+            crate::expressions::ExpressionProjection::Call(
+                crate::expressions::SyntaxCallProjection::CallbackBlock(_)
+            )
+        ));
+    }
+
+    let children = items[2]
+        .syntax()
+        .children_with_role(SyntaxRole::Initializer);
+    let [initializer] = children.as_slice() else {
+        panic!("callback let must own one initializer expression");
+    };
+    let initializer = AttachedExpressionNode::from_syntax(initializer.clone()).unwrap();
+    assert!(matches!(
+        initializer.projection(),
+        crate::expressions::ExpressionProjection::Call(
+            crate::expressions::SyntaxCallProjection::CallbackBlock(_)
+        )
+    ));
 }
 
 fn thread_flow_matrix_body() -> &'static str {

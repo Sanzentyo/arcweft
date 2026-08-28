@@ -114,7 +114,7 @@ struct LinePlanLowerer<'a, 'project, 'data> {
     context: &'a FinalLoweringContext<'project, 'data>,
     module: &'project arcweft_lang_hir::module::HirModule,
     flow: FinalFlowLowerer<'a>,
-    content: &'a RuntimeDialogueContentPlanSeedId,
+    content_plan: &'a RuntimeDialogueContentPlanSeedId,
     owner: ExprId,
     sites: Vec<SiteDraft>,
     activation_ops: Vec<FlowDraft>,
@@ -130,7 +130,7 @@ struct LinePlanLowerer<'a, 'project, 'data> {
 pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
     context: &'a FinalLoweringContext<'project, 'data>,
     owner: ExprId,
-    content: &'a RuntimeDialogueContentPlanSeedId,
+    content_plan: &'a RuntimeDialogueContentPlanSeedId,
 ) -> Result<(RuntimeLineTaskGroupSeed, Vec<RuntimeAssertionSite>), RuntimePlanLowerError> {
     let module = module_by_id(context.project, owner.module()).ok_or_else(|| {
         RuntimePlanLowerError::new(format!("dialogue application {owner:?} module is absent"))
@@ -158,7 +158,7 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
             context,
             RuntimeAssertionOwner::Line(application.content().line().clone()),
         ),
-        content,
+        content_plan,
         owner,
         sites: Vec::new(),
         activation_ops: Vec::new(),
@@ -206,13 +206,14 @@ impl LinePlanLowerer<'_, '_, '_> {
             ));
             match effect.trigger() {
                 RuntimeDialogueEffectTrigger::Content => {
-                    let trigger = self.content.effect_site(effect.site().index()).ok_or_else(
-                        || {
+                    let trigger = self
+                        .content_plan
+                        .effect_site(effect.site().index())
+                        .ok_or_else(|| {
                             RuntimePlanLowerError::new(
                                 "dialogue effect-site ordinal exceeds the runtime identity domain",
                             )
-                        },
-                    )?;
+                        })?;
                     let child = self.allocate_child()?;
                     self.root_children.push(NodeDraft::Child {
                         id: child,
@@ -224,36 +225,23 @@ impl LinePlanLowerer<'_, '_, '_> {
                 }
                 RuntimeDialogueEffectTrigger::Delay {
                     duration,
+                    duration_type,
                     schedule_handle_type,
                 } => {
-                    let child = self.allocate_child()?;
-                    let site = self.push_site(
-                        RuntimeLineHandleSiteKind::ScheduledCue,
-                        schedule_handle_type,
-                        None,
-                        Some(child),
-                    );
                     let actions = vec![operation];
                     let captures = self.flow_captures(&actions)?;
-                    self.root_children.push(NodeDraft::Child {
-                        id: child,
-                        trigger: TriggerDraft::Scheduled(site),
-                        join_policy: ChildJoinPolicy::Join,
-                        cancel_policy: ChildCancelPolicy::CancelAndJoin,
-                        scope: Box::new(NodeDraft::Action(actions)),
-                    });
+                    let operation = self.schedule_operation(
+                        schedule_handle_type,
+                        RuntimeExprSeed::new(
+                            duration_type.identity(),
+                            RuntimeExprSeedKind::Value(RuntimeValue::Duration(*duration)),
+                        ),
+                        actions,
+                        captures,
+                    )?;
                     self.activation_ops.push(FlowDraft::LineOperation {
                         binding: None,
-                        operation: LineOperationDraft::Schedule {
-                            site,
-                            delay: RuntimeExprSeed::new(
-                                arcweft_core::pattern::RuntimeCheckedType::Duration
-                                    .semantic_identity_digest(),
-                                RuntimeExprSeedKind::Value(RuntimeValue::Duration(*duration)),
-                            ),
-                            child,
-                            captures,
-                        },
+                        operation,
                     });
                 }
             }
@@ -336,7 +324,6 @@ impl LinePlanLowerer<'_, '_, '_> {
                 | HirLinePlanItem::On(_)
                 | HirLinePlanItem::Option { .. }
                 | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimedCue { .. }
                 | HirLinePlanItem::TimelineAssert { .. }
                 | HirLinePlanItem::Error(_) => {
                     return Err(RuntimePlanLowerError::new(format!(
@@ -491,7 +478,6 @@ impl LinePlanLowerer<'_, '_, '_> {
                 | HirLinePlanItem::On(_)
                 | HirLinePlanItem::Option { .. }
                 | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimedCue { .. }
                 | HirLinePlanItem::TimelineAssert { .. } => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "shadow line-plan item {item:?} reached final runtime lowering"
@@ -634,7 +620,7 @@ impl LinePlanLowerer<'_, '_, '_> {
         let mark_index = usize::try_from(handler.ordinal()).map_err(|_| {
             RuntimePlanLowerError::new("checked dialogue mark ordinal does not fit usize")
         })?;
-        self.content.mark(mark_index).ok_or_else(|| {
+        self.content_plan.mark(mark_index).ok_or_else(|| {
             RuntimePlanLowerError::new("dialogue mark count exceeds the runtime identity domain")
         })
     }
@@ -778,28 +764,9 @@ impl LinePlanLowerer<'_, '_, '_> {
                         "schedule callback {callback:?} lost its accepted function type"
                     )));
                 }
-                let child = self.allocate_child()?;
-                let site = self.push_site(
-                    RuntimeLineHandleSiteKind::ScheduledCue,
-                    result,
-                    None,
-                    Some(child),
-                );
                 let actions = self.lower_callback(callback)?;
                 let captures = self.callback_captures(callback, &actions)?;
-                self.root_children.push(NodeDraft::Child {
-                    id: child,
-                    trigger: TriggerDraft::Scheduled(site),
-                    join_policy: ChildJoinPolicy::Join,
-                    cancel_policy: ChildCancelPolicy::CancelAndJoin,
-                    scope: Box::new(NodeDraft::Action(actions)),
-                });
-                LineOperationDraft::Schedule {
-                    site,
-                    delay,
-                    child,
-                    captures,
-                }
+                self.schedule_operation(result, delay, actions, captures)?
             }
         };
         Ok(FlowDraft::LineOperation { binding, operation })
@@ -945,6 +912,35 @@ impl LinePlanLowerer<'_, '_, '_> {
             scheduled_child,
         });
         id
+    }
+
+    fn schedule_operation(
+        &mut self,
+        result: &RuntimeNormalizedType,
+        delay: RuntimeExprSeed,
+        actions: Vec<FlowDraft>,
+        captures: Box<[RuntimeScheduledCaptureSeed]>,
+    ) -> Result<LineOperationDraft, RuntimePlanLowerError> {
+        let child = self.allocate_child()?;
+        let site = self.push_site(
+            RuntimeLineHandleSiteKind::ScheduledCue,
+            result,
+            None,
+            Some(child),
+        );
+        self.root_children.push(NodeDraft::Child {
+            id: child,
+            trigger: TriggerDraft::Scheduled(site),
+            join_policy: ChildJoinPolicy::Join,
+            cancel_policy: ChildCancelPolicy::CancelAndJoin,
+            scope: Box::new(NodeDraft::Action(actions)),
+        });
+        Ok(LineOperationDraft::Schedule {
+            site,
+            delay,
+            child,
+            captures,
+        })
     }
 
     fn finish(

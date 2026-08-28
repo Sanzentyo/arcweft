@@ -1975,6 +1975,14 @@ impl CheckedCallApplicationCore {
     pub const fn site(&self) -> super::CheckedCallSite {
         self.site.raw()
     }
+    /// Returns the C1-issued application site paired with this final call.
+    ///
+    /// Consumers that retain call-owned semantic operations use this proof
+    /// directly; they do not reconstruct a stable coordinate from the raw
+    /// HIR expression identity.
+    pub const fn application_site(&self) -> &CheckedCallApplicationSite {
+        &self.site
+    }
     pub const fn stable_site(&self) -> &StableCheckedValueCoordinate {
         self.site.coordinate()
     }

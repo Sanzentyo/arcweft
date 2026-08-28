@@ -2,6 +2,7 @@ use super::*;
 use crate::dialogue_application::{
     HirBuiltinRichTextTag, HirDialogueCoordinateKind, HirDialogueNodeKind,
     HirPostfixBracketCandidates, HirRichTextDirectStyle, HirRichTextIssue, HirRichTextTagIdentity,
+    HirRichTextTagPayload,
 };
 use crate::source_index::{HirDialogueNodeSourcePart, HirRichTextTagSourcePart, HirSourcePresence};
 use crate::type_ref::HirTypeKind;
@@ -111,6 +112,47 @@ fn selected_bracket_dialogue_lowers_typed_content_and_exact_sources() {
             HirSourcePresence::Present(_)
         ));
     }
+}
+
+#[test]
+fn inline_timed_cue_reuses_the_existing_dialogue_call_payload_in_hir() {
+    let parsed = parsed_source(
+        "dialogue-inline-timed-cue",
+        &["alice(id = @say.shared)[Hello [at 120ms call = log.info(\"delay\")]]".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let owner = owners[0];
+    let dialogue_owner = match expression(&module, owner).kind() {
+        HirExprKind::DialogueContentApplication(_) => owner,
+        HirExprKind::PostfixBracket(postfix) => {
+            let HirPostfixBracketCandidates::Ambiguous { dialogue, .. } = postfix.candidates()
+            else {
+                panic!("inline timed cue must retain a Dialogue candidate");
+            };
+            *dialogue
+        }
+        kind => panic!("inline timed cue must lower as dialogue content: {kind:?}"),
+    };
+    let HirExprKind::DialogueContentApplication(application) =
+        expression(&module, dialogue_owner).kind()
+    else {
+        panic!("Dialogue candidate must publish E33 content");
+    };
+    let [tag] = application.content().tags() else {
+        panic!("inline timed cue publishes one RichText tag");
+    };
+    assert!(matches!(
+        tag.arguments(),
+        [argument]
+            if argument.value().is_some_and(|value| value.as_str() == "120ms")
+    ));
+    let HirRichTextTagPayload::DialogueCall(call) = tag.payload() else {
+        panic!("timed cue reuses the checked DialogueCall payload family");
+    };
+    assert!(matches!(
+        expression(&module, *call).kind(),
+        HirExprKind::Call(_)
+    ));
 }
 
 #[test]

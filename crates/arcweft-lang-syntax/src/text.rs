@@ -13,8 +13,8 @@ pub use rich_text_tag::{
 };
 pub(crate) use rich_text_tag::{
     ScannedTagArgValue, ScannedTagArgument, ScannedTagArgumentParts, ScannedTagArguments,
-    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arguments,
-    trim_rich_text_whitespace, utf8_boundary_at_or_before,
+    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arg_value_if_valid,
+    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
 };
 
 use crate::ast::common::TextRange;

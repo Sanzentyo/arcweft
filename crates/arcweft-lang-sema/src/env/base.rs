@@ -28,6 +28,7 @@ use crate::types::{
     CharacterNominalType, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
     LanguageIntrinsicGenericOwner, TypeKind, direct_type_name,
 };
+use arcweft_core::time::LogicalDuration;
 use arcweft_data::DataFormat;
 use arcweft_lang_syntax::{
     ast::{
@@ -151,7 +152,7 @@ pub(crate) enum StandardEnvironmentValue {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum StandardDropPolicyValue {
-    Stop { fade_nanos: u64 },
+    Stop { fade: LogicalDuration },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -166,7 +167,7 @@ pub(crate) enum StandardDropPolicyCase {
 impl StandardEnvironmentValue {
     pub(crate) fn for_binding(id: &EnvironmentBindingId) -> Option<Self> {
         (id == &stop_now_binding()).then_some(Self::DropPolicy(StandardDropPolicyValue::Stop {
-            fade_nanos: 0,
+            fade: LogicalDuration::from_nanos(0),
         }))
     }
 }
@@ -743,7 +744,7 @@ impl TypeCheckEnv {
                 "stop_now",
                 drop_policy_type(),
                 StandardEnvironmentValue::DropPolicy(StandardDropPolicyValue::Stop {
-                    fade_nanos: 0,
+                    fade: LogicalDuration::from_nanos(0),
                 }),
             )
             .with_symbol("keep_running", TypeKind::Named("CueStopPolicy".to_owned()))
@@ -1280,6 +1281,19 @@ impl TypeCheckEnv {
         }
         let variant = schema.variants().get(usize::try_from(ordinal).ok()?)?;
         (variant.name() == case.name() && variant.payload() == &case.payload()).then_some(case)
+    }
+
+    /// Resolves one standard DropPolicy constructor ordinal through the
+    /// environment-owned type inventory. Consumers do not need to recreate
+    /// the private owner identity or depend on source spelling.
+    pub(crate) fn standard_drop_policy_case_for_type(
+        &self,
+        ty: &TypeKind,
+        ordinal: u32,
+    ) -> Option<StandardDropPolicyCase> {
+        (ty == &drop_policy_type())
+            .then(|| self.standard_drop_policy_case(&drop_policy_owner(), ordinal))
+            .flatten()
     }
 
     /// Returns registered enum-like unit variants grouped by semantic type in

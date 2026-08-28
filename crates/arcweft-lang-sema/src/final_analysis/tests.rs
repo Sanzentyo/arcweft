@@ -60,18 +60,20 @@ use super::semantic_transcript::SemanticTranscriptError;
 use super::{
     CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
-    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedDropFade, CheckedDropPolicy,
-    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionEdgeError,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation,
-    CheckedPattern, CheckedPatternResolution, CheckedSelectResolution, CheckedStatement,
-    CheckedStatementRole, CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticCatalogs,
-    PhysicalArgumentEvaluationKind, PostfixBracketResolution, RegisteredSemanticValueId,
-    SemanticFactFamily, analyze_final_project,
+    CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedDropFade,
+    CheckedDropInvocation, CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
+    CheckedExpression, CheckedExpressionEdgeError, CheckedExpressionResolution,
+    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
+    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalCallSealLocation,
+    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
+    PostfixBracketResolution, RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/evaluated_effects.rs"]
+mod evaluated_effects;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
 use crate::{
@@ -87,14 +89,13 @@ use crate::{
         CallableParameterPresence, CallablePath, CallableProviderId, CallableReceiverMode,
         CallableRecord, CallableSignatureSchema, CallableValidator, CatalogCallableEntry,
         CheckedCallArgumentSlotSource, CheckedCallExecutionSource, CheckedClosureId,
-        DialogueCallableId, DomainMethodId, DropCallableId, EffectContractOrigin,
-        EnvironmentCallableCatalog, EnvironmentCallableId, EnvironmentCallableKind,
-        EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
-        EnvironmentDeclarationOrdinal, LineContextMethodId, LineScheduleCallableId,
-        NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS, PresentationCallableId,
-        ProjectCallablePath, RegisteredCallableCatalog, SemanticSignatureSurface,
-        SpreadArgumentPolicy, StageMethodId, UnknownCallKind, UnknownNamedArgumentPolicy,
-        ViewModifierId,
+        DialogueCallableId, DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog,
+        EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+        EnvironmentCallablePublicationDigest, EnvironmentDeclarationOrdinal, LineContextMethodId,
+        LineScheduleCallableId, NonEmptyCallableSet, PRODUCTION_CALLABLE_LIMITS,
+        PresentationCallableId, ProjectCallablePath, RegisteredCallableCatalog,
+        SemanticSignatureSurface, SpreadArgumentPolicy, StageMethodId, UnknownCallKind,
+        UnknownNamedArgumentPolicy, ViewModifierId,
     },
     character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
@@ -909,6 +910,10 @@ fn analyze_with_assertion_profile(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one integration fixture proves source-order line-plan calls, bindings, output, and checked edges together"
+)]
 fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
     let fixture = character_nominal_fixture(concat!(
         "pub character @character.akane Akane as akane {}\n",
@@ -916,6 +921,8 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
         "    with:\n",
         "        let actor = akane.stage.acquire(scope=line)\n",
+        "        at(0.20s):\n",
+        "            actor.look(.normal)\n",
         "        let cue = at(0.42s):\n",
         "            actor.look(.normal, crossfade=120ms)\n",
         "        let voice = line.voice_handle()\n",
@@ -923,7 +930,16 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         "    return \"done\"\n",
         "}\n",
     ));
-    let report = analyze(&fixture).expect("typed Dialogue line-plan bindings");
+    fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .accept_symbol_generation(&fixture.symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .unwrap_or_else(|error| panic!("line-plan evaluation topology: {error:?}"));
+    let report = analyze(&fixture)
+        .unwrap_or_else(|error| panic!("typed Dialogue line-plan bindings: {error:?}"));
     let character = CharacterId::try_new("character.akane").expect("Character identity");
     let acquire = report
         .calls()
@@ -960,12 +976,19 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
                 && application.result().ty() == &TypeKind::VoiceHandle
         })
     }));
-    assert!(report.calls().any(|(_, call)| {
-        call.selected_application().is_some_and(|application| {
-            application.core().candidates().selected().id()
-                == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
-        })
-    }));
+    assert_eq!(
+        report
+            .calls()
+            .filter(|(_, call)| {
+                call.selected_application().is_some_and(|application| {
+                    application.core().candidates().selected().id()
+                        == &CallableCandidateId::LineSchedule(LineScheduleCallableId::At)
+                })
+            })
+            .count(),
+        2,
+        "bare-indented and callback-let forms share LineScheduleCallableId::At",
+    );
     assert!(!report.calls().any(|(_, call)| {
         call.selected_application().is_some_and(|application| {
             matches!(
@@ -1040,8 +1063,6 @@ fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirM
                 | CheckedExpressionChildRole::LinePlanOut { .. }
                 | CheckedExpressionChildRole::LinePlanTimelineAssert { .. }
                 | CheckedExpressionChildRole::LinePlanExpression { .. }
-                | CheckedExpressionChildRole::LinePlanTimedCueAnchor { .. }
-                | CheckedExpressionChildRole::LinePlanTimedCueBody { .. }
         )
     }));
 }
@@ -2601,135 +2622,6 @@ fn pipeline(input: Result<i64, String>) -> Result<i64, String> {
         expression.resolution(),
         CheckedExpressionResolution::ImplicitCallable(_)
     )));
-}
-
-#[test]
-fn drop_policy_overload_is_checked_for_free_pipe_and_dot_surfaces() {
-    let fixture = fixture(
-        r"
-fn dispose(value: i64) {
-    drop(value);
-    drop(stop_now)(value);
-    value |> drop(stop_now);
-    value.drop(stop_now);
-    let retained = on_drop(stop_now)(value);
-    retained;
-}
-",
-        None,
-    );
-    let report = analyze(&fixture).expect("typed drop policy overload analysis");
-    let drops = report
-        .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::EvaluatedEffect(effect) => match effect.as_ref() {
-                CheckedEvaluatedEffect::Drop {
-                    operation,
-                    policy_source,
-                    policy,
-                    ..
-                } => Some((*operation, *policy_source, policy)),
-                _ => None,
-            },
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(drops.len(), 4);
-    assert!(matches!(
-        drops[0],
-        (DropCallableId::Drop, None, CheckedDropPolicy::Default)
-    ));
-    for (operation, policy_source, policy) in &drops[1..] {
-        assert_eq!(*operation, DropCallableId::DropWithPolicy);
-        assert!(policy_source.is_some());
-        assert!(matches!(
-            policy,
-            CheckedDropPolicy::Stop {
-                fade: CheckedDropFade::ConstantNanos(0)
-            }
-        ));
-    }
-}
-
-#[test]
-fn evaluated_effect_fields_use_selected_open_argument_identity() {
-    let fixture = fixture(
-        r#"
-fn effect_fields(zeta_value: String, alpha_value: String, payload_value: String) {
-    log.info("started", zeta = zeta_value, alpha = alpha_value);
-    event.emit("opened", payload = payload_value);
-}
-"#,
-        None,
-    );
-    let report = analyze(&fixture).expect("evaluated-effect field analysis");
-    let effects = report
-        .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::EvaluatedEffect(effect) => Some(effect.as_ref()),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(effects.len(), 2, "log and event effects are both retained");
-
-    for (effect, expected_bindings) in effects.into_iter().filter_map(|effect| match effect {
-        CheckedEvaluatedEffect::Log { .. } => Some((effect, &["zeta", "alpha"][..])),
-        CheckedEvaluatedEffect::EmitEvent { .. } => Some((effect, &["payload"][..])),
-        _ => None,
-    }) {
-        let schema = report
-            .calls()
-            .find_map(|(_, call)| {
-                let application = call.selected_application()?;
-                (application
-                    .core()
-                    .candidates()
-                    .selected()
-                    .schema()
-                    .evaluated_effect()
-                    == Some(effect.disposition()))
-                .then_some(
-                    application
-                        .core()
-                        .candidates()
-                        .selected()
-                        .schema()
-                        .semantic_digest(),
-                )
-            })
-            .expect("selected callable schema for evaluated effect");
-        let fields = match effect {
-            CheckedEvaluatedEffect::Log { fields, .. }
-            | CheckedEvaluatedEffect::EmitEvent { fields, .. } => fields,
-            _ => unreachable!("effect filtered above"),
-        };
-        assert_eq!(
-            fields
-                .iter()
-                .map(|field| field.open_argument().binding().as_str())
-                .collect::<Vec<_>>(),
-            expected_bindings.to_vec(),
-        );
-        assert!(
-            fields
-                .iter()
-                .all(|field| field.open_argument().schema() == schema)
-        );
-        assert!(
-            fields
-                .iter()
-                .all(|field| !field.open_argument().binding().as_str().starts_with("arg"))
-        );
-    }
-}
-
-#[test]
-fn evaluated_effect_does_not_fabricate_positional_field_identity() {
-    let fixture = fixture(
-        "fn positional_field() { log.info(\"started\", 1i64); }\n",
-        None,
-    );
-    assert!(analyze(&fixture).is_err());
 }
 
 #[test]

@@ -1,5 +1,7 @@
 //! Expression-family checking outside ordinary-call resolution.
 
+#[path = "dialogue_line_plan.rs"]
+mod dialogue_line_plan;
 #[path = "expressions/records.rs"]
 mod records;
 
@@ -8,22 +10,22 @@ use std::{rc::Rc, sync::Arc};
 use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
     CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
-    CheckedChoiceGoto, CheckedClosure, CheckedDialogueEffectOperation, CheckedDialogueEffectSite,
-    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger, CheckedDialogueLinePlan,
-    CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal, CheckedExpression,
-    CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe, CheckedProjectItem,
-    CheckedStageLook, CheckedStyleCallee, CheckedTry, CheckedTryBoundary, CheckedTryCarrier,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, CheckedViewCall,
-    CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload, ExprId,
-    FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
+    CheckedChoiceGoto, CheckedClosure, CheckedDialogueEffectSiteOrdinal,
+    CheckedDialogueEffectTrigger, CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal,
+    CheckedExpression, CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe,
+    CheckedProjectItem, CheckedStageLook, CheckedStyleCallee, CheckedTry, CheckedTryBoundary,
+    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload,
+    ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
     HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
     HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIdRefValue,
     HirIntegerLiteral, HirItemKind, HirLinePlanItem, HirLiteral, HirModule, HirPathRoot,
     HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
     HirRecoveredName, HirScopeKind, HirScopeOwner, HirSelectedMember, HirSourcePresence,
     HirSourceQuery, HirSourceSite, HirStmtKind, HirTriggerPattern, HirTypeSourceRole, HirUnaryOp,
-    LocalLookup, PostfixBracketResolution, PreparedExpressionFact, ProjectHirSymbolLookupError,
-    ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
+    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectSite,
+    PreparedDialogueLinePlan, PreparedExpressionFact, PreparedExpressionShell,
+    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
     ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
     ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind,
     TypeParameterSubstitutions,
@@ -67,6 +69,7 @@ use super::entities::EntityReferenceResolutionError;
 pub(super) enum AnalyzerExpressionExpectation<'a> {
     Unconstrained,
     Complete(&'a TypeKind),
+    EnumConstructorHead(&'a TypeKind),
     Parametric {
         expected: &'a TypeKind,
         unbound: Arc<[crate::types::constraints::ConstraintGenericParameterId]>,
@@ -76,6 +79,10 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
 impl<'a> AnalyzerExpressionExpectation<'a> {
     pub(super) fn from_complete(expected: Option<&'a TypeKind>) -> Self {
         expected.map_or(Self::Unconstrained, Self::Complete)
+    }
+
+    pub(super) const fn enum_constructor_head(expected: &'a TypeKind) -> Self {
+        Self::EnumConstructorHead(expected)
     }
 
     pub(super) fn parametric(
@@ -105,7 +112,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
         match self {
             Self::Unconstrained => None,
-            Self::Complete(expected) => Some(expected),
+            Self::Complete(expected) | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Parametric { expected, unbound } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| matches!(candidate, crate::types::constraints::ConstraintGenericParameterId::Type(candidate) if candidate == parameter))) => {
                 None
             }
@@ -116,14 +123,16 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
     /// Only a closed expectation may become a child call result equation.
     pub(super) const fn child_call_result(&self) -> Option<&'a TypeKind> {
         match self {
-            Self::Complete(expected) => Some(expected),
+            Self::Complete(expected) | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Unconstrained | Self::Parametric { .. } => None,
         }
     }
 
     fn accepts_cached(&self, checked: &super::PreparedExpressionFact) -> bool {
         match self {
-            Self::Complete(expected) => expected.accepts(checked.ty()),
+            Self::Complete(expected) | Self::EnumConstructorHead(expected) => {
+                expected.accepts(checked.ty())
+            }
             Self::Parametric { expected, .. } => {
                 checked.reusable_for_parametric_expectation(expected)
             }
@@ -133,6 +142,10 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
 
     pub(super) fn is_contextual(&self) -> bool {
         !matches!(self, Self::Unconstrained)
+    }
+
+    pub(super) const fn is_enum_constructor_head(&self) -> bool {
+        matches!(self, Self::EnumConstructorHead(_))
     }
 
     fn project<'b>(
@@ -639,6 +652,15 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<Option<PreparedExpressionFact>, AnalyzerExpressionError> {
         let expected = expectation.contextual_shape();
         match expression.kind() {
+            HirExprKind::DialogueContentApplication(application) => self
+                .prepare_dialogue_content_application(
+                    context,
+                    module,
+                    owner,
+                    application,
+                    expectation,
+                )
+                .map(Some),
             HirExprKind::EntityReference(reference)
                 if reference
                     .as_resolved()
@@ -657,8 +679,13 @@ impl Analyzer<'_, '_, '_> {
                 let name = name.as_resolved().ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
                 })?;
-                self.prepare_project_variant_expression(owner, expected, name)
-                    .map(Some)
+                self.prepare_project_variant_expression(
+                    owner,
+                    expected,
+                    name,
+                    expectation.is_enum_constructor_head(),
+                )
+                .map(Some)
             }
             HirExprKind::Record(record) => {
                 let declaration = match self
@@ -785,6 +812,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expected: Option<&TypeKind>,
         name: &arcweft_lang_hir::leaf::HirName,
+        constructor_head: bool,
     ) -> Result<PreparedExpressionFact, AnalyzerExpressionError> {
         let Some(expected @ TypeKind::ProjectNominal(expected_nominal)) = expected else {
             return Err(AnalyzerExpressionError::rejected(owner));
@@ -818,7 +846,7 @@ impl Analyzer<'_, '_, '_> {
                 })
                 .transpose()?;
             if variant.name().as_str() == name.as_str() {
-                if payload.is_some() {
+                if payload.is_some() && !constructor_head {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
                 selected_ordinal = Some(ordinal);
@@ -915,9 +943,13 @@ impl Analyzer<'_, '_, '_> {
         {
             return Ok(checked);
         }
-        if let Some(checked) =
-            self.check_variant_expression_kind(context, owner, expression, expected)?
-        {
+        if let Some(checked) = self.check_variant_expression_kind(
+            context,
+            owner,
+            expression,
+            expected,
+            expectation.is_enum_constructor_head(),
+        )? {
             return Ok(checked);
         }
         self.check_entity_expression_kind::<E>(
@@ -986,7 +1018,7 @@ impl Analyzer<'_, '_, '_> {
                 ) = (expected, path.root(), path.segments())
                 {
                     let (variant_owner, ordinal) =
-                        self.resolve_short_variant(owner, expected, name)?;
+                        self.resolve_short_variant(owner, expected, name, false)?;
                     return Ok(Some(CheckedExpression::new(
                         expected.clone(),
                         CheckedTypeSelection::Expected,
@@ -2525,6 +2557,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind>,
+        constructor_head: bool,
     ) -> Result<Option<CheckedExpression>, AnalyzerExpressionError> {
         match expression.kind() {
             HirExprKind::ShortVariant(name) => {
@@ -2557,7 +2590,8 @@ impl Analyzer<'_, '_, '_> {
                         CheckedExpressionResolution::StageLook(look),
                     )));
                 }
-                let (variant_owner, ordinal) = self.resolve_short_variant(owner, expected, name)?;
+                let (variant_owner, ordinal) =
+                    self.resolve_short_variant(owner, expected, name, constructor_head)?;
                 Ok(CheckedExpression::new(
                     expected.clone(),
                     CheckedTypeSelection::Expected,
@@ -2582,6 +2616,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         expected: &TypeKind,
         name: &arcweft_lang_hir::leaf::HirName,
+        constructor_head: bool,
     ) -> Result<(CheckedVariantOwner, u32), AnalyzerExpressionError> {
         match expected {
             TypeKind::ProjectNominal(expected_nominal) => {
@@ -2598,7 +2633,7 @@ impl Analyzer<'_, '_, '_> {
                     .enumerate()
                     .find(|(_, variant)| variant.name().as_str() == name.as_str())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                if variant.payload().is_some() {
+                if variant.payload().is_some() && !constructor_head {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
                 // Project cases require the digest-ordered projection seal;
@@ -2634,9 +2669,24 @@ impl Analyzer<'_, '_, '_> {
                     })?,
                 ))
             }
-            TypeKind::Option(item) if name.as_str() == "None" => {
-                Ok((CheckedVariantOwner::option(item.as_ref().clone()), 1))
-            }
+            TypeKind::Option(item) => match name.as_str() {
+                "Some" if constructor_head => {
+                    Ok((CheckedVariantOwner::option(item.as_ref().clone()), 0))
+                }
+                "None" => Ok((CheckedVariantOwner::option(item.as_ref().clone()), 1)),
+                _ => Err(AnalyzerExpressionError::rejected(owner)),
+            },
+            TypeKind::Result { ok, error } if constructor_head => match name.as_str() {
+                "Ok" => Ok((
+                    CheckedVariantOwner::result(ok.as_ref().clone(), error.as_ref().clone()),
+                    0,
+                )),
+                "Err" => Ok((
+                    CheckedVariantOwner::result(ok.as_ref().clone(), error.as_ref().clone()),
+                    1,
+                )),
+                _ => Err(AnalyzerExpressionError::rejected(owner)),
+            },
             closed_enum_ty => {
                 let schema = self
                     .catalogs
@@ -2651,7 +2701,7 @@ impl Analyzer<'_, '_, '_> {
                     .enumerate()
                     .find(|(_, variant)| variant.name() == name.as_str())
                     .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-                if !matches!(selected.payload(), EnumVariantPayload::Unit) {
+                if !constructor_head && !matches!(selected.payload(), EnumVariantPayload::Unit) {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
                 Ok((
@@ -2723,9 +2773,6 @@ impl Analyzer<'_, '_, '_> {
                     CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)),
                 ))
             }
-            HirExprKind::DialogueContentApplication(application) => self
-                .check_dialogue_content_application(context, module, owner, application, expected)
-                .map_err(E::from),
             HirExprKind::PostfixBracket(postfix) => self
                 .check_postfix_bracket(context, owner, postfix, expected, transaction_authority)
                 .map_err(E::from),
@@ -2878,548 +2925,6 @@ impl Analyzer<'_, '_, '_> {
         outcome
             .into_extracted()
             .map_err(AnalyzerExpressionError::fact)
-    }
-
-    fn check_dialogue_content_application(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        module: &HirModule,
-        owner: ExprId,
-        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
-        expected: Option<&TypeKind>,
-    ) -> Result<CheckedExpression, AnalyzerExpressionError> {
-        // Immediate id/text_key arguments are compile-time application
-        // coordinates. Publish their accepted project identities before the
-        // shared parenthesized-call resolver evaluates argument facts.
-        let dialogue_application_metadata =
-            self.publish_dialogue_coordinates(module, owner, application)?;
-        let target_owner = application.target();
-        let target_expression = module.resolve_expr(target_owner).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-        })?;
-        let checked_target = match target_expression.kind() {
-            HirExprKind::Call(call) => {
-                let dialogue_application_metadata =
-                    dialogue_application_metadata.as_ref().ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                let checked = self.check_call_expression_in_context(
-                    context,
-                    module,
-                    target_owner,
-                    call,
-                    None,
-                    Some(dialogue_application_metadata),
-                )?;
-                let write = if context.is_candidate()
-                    && self.facts.expressions().contains_key(&target_owner)
-                {
-                    self.facts
-                        .replace_existing_expression(target_owner, checked.clone())
-                } else {
-                    self.facts
-                        .publish_new_expression(target_owner, checked.clone())
-                };
-                write.map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                })?;
-                checked.into()
-            }
-            _ => self.evaluate_expression(context, target_owner, None)?,
-        };
-        let target = checked_character_dialogue_target(target_owner, &checked_target)
-            .map_err(|error| AnalyzerExpressionError::Call {
-                owner,
-                failure: super::calls::CallAnalysisFailure::Invariant(
-                    super::calls::CallAnalysisInvariant::Constraint(error),
-                ),
-            })?
-            .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let application_patch = match checked_target.checked_resolution() {
-            Some(CheckedExpressionResolution::CharacterDialogueFactory(factory)) => {
-                Some(factory.patch().clone())
-            }
-            Some(CheckedExpressionResolution::CharacterDialogueReconfigure(reconfigure)) => {
-                Some(reconfigure.patch().clone())
-            }
-            _ => None,
-        };
-        let rich_text =
-            RichTextAttributeChecker::check(module, application.content()).map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RichTextSourceQuery {
-                    owner,
-                })
-            })?;
-        if !rich_text.is_valid() {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::InvalidRichTextAttributes {
-                    owner,
-                    report: Box::new(rich_text),
-                },
-            ));
-        }
-        let application_children = module
-            .resolve_expr(owner)
-            .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner))?
-            .kind()
-            .direct_expression_children();
-        for child in application_children {
-            if child != target_owner {
-                self.evaluate_expression(context, child, None)?;
-            }
-        }
-
-        let line_plan = self.checked_dialogue_line_plan(module, application.plan(), &rich_text)?;
-        let line_result = application.plan().map_or(Ok(TypeKind::Unit), |plan| {
-            self.check_dialogue_line_plan_output(context, plan.items())
-        })?;
-        let call_target = target.clone();
-        let expression_resolution = CheckedExpressionResolution::DialogueApplication {
-            target,
-            application_patch,
-            rich_text: Box::new(rich_text),
-            line_plan,
-            line_result: line_result.clone(),
-        };
-        let ty = self.publish_dialogue_content_application_call(
-            module,
-            owner,
-            &call_target,
-            expected,
-            &line_result,
-            application.plan().is_some(),
-            expression_resolution.clone(),
-        )?;
-        let selection = match expected.map(|expected| expected.accepts(&ty)) {
-            Some(true) => CheckedTypeSelection::Expected,
-            None => CheckedTypeSelection::Inferred,
-            Some(false) => {
-                return Err(AnalyzerExpressionError::rejected(owner));
-            }
-        };
-        Ok(CheckedExpression::new(
-            ty,
-            selection,
-            EffectSet::new(),
-            expression_resolution,
-        ))
-    }
-
-    fn checked_dialogue_line_plan(
-        &self,
-        module: &HirModule,
-        plan: Option<&arcweft_lang_hir::dialogue_application::HirLinePlan>,
-        rich_text: &crate::checked_rich_text::CheckedRichTextReport,
-    ) -> Result<CheckedDialogueLinePlan, AnalyzerExpressionError> {
-        let mut marks = Vec::<PublicId>::new();
-        let mut mark_ordinals = std::collections::BTreeMap::<PublicId, u32>::new();
-        let mut effect_sites = Vec::new();
-        for token in rich_text.content().tokens() {
-            let CheckedDialogueToken::Open(tag) = token else {
-                continue;
-            };
-            match tag.action() {
-                CheckedRichTextAction::Marker(mark) => {
-                    let ordinal = u32::try_from(marks.len()).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::AccountingOverflow,
-                        )
-                    })?;
-                    if mark_ordinals.insert(mark.clone(), ordinal).is_some() {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    marks.push(mark.clone());
-                }
-                CheckedRichTextAction::Host {
-                    action:
-                        event @ (CheckedDialogueHostEvent::TimedCue { .. }
-                        | CheckedDialogueHostEvent::Call { .. }),
-                    ..
-                } => {
-                    let id = CheckedDialogueEffectSiteOrdinal::new(
-                        u32::try_from(effect_sites.len()).map_err(|_| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::AccountingOverflow,
-                            )
-                        })?,
-                    );
-                    let (expression, trigger) = match event {
-                        CheckedDialogueHostEvent::TimedCue { at, call } => {
-                            (*call, CheckedDialogueEffectTrigger::Delay(*at))
-                        }
-                        CheckedDialogueHostEvent::Call { call } => {
-                            (*call, CheckedDialogueEffectTrigger::Content)
-                        }
-                        _ => unreachable!("the grouped checked RichText effect event is closed"),
-                    };
-                    let effect = self
-                        .checked_evaluated_effect_expression(module, expression)
-                        .map_err(AnalyzerExpressionError::fatal)?
-                        .ok_or_else(|| {
-                            AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::WrongPayloadFamily,
-                            )
-                        })?;
-                    effect_sites.push(CheckedDialogueEffectSite::new(
-                        id,
-                        trigger,
-                        expression,
-                        CheckedDialogueEffectOperation::Evaluated(Box::new(effect)),
-                    ));
-                }
-                CheckedRichTextAction::DirectStyle { .. }
-                | CheckedRichTextAction::Control { .. }
-                | CheckedRichTextAction::Style { .. }
-                | CheckedRichTextAction::Layout { .. }
-                | CheckedRichTextAction::Transform { .. }
-                | CheckedRichTextAction::Object { .. }
-                | CheckedRichTextAction::BuiltinFx { .. }
-                | CheckedRichTextAction::Host { .. } => {}
-            }
-        }
-        let mut handlers = Vec::new();
-        if let Some(plan) = plan {
-            self.collect_dialogue_mark_handlers(
-                module,
-                plan.items(),
-                &mark_ordinals,
-                &mut handlers,
-            )?;
-        }
-        Ok(CheckedDialogueLinePlan::new(marks, handlers, effect_sites))
-    }
-
-    fn collect_dialogue_mark_handlers(
-        &self,
-        module: &HirModule,
-        items: &[HirLinePlanItem],
-        marks: &std::collections::BTreeMap<PublicId, u32>,
-        handlers: &mut Vec<CheckedDialogueMarkHandler>,
-    ) -> Result<(), AnalyzerExpressionError> {
-        for item in items {
-            match item {
-                HirLinePlanItem::Statement(statement) | HirLinePlanItem::On(statement) => {
-                    let statement_payload = module.resolve_stmt(*statement).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let HirStmtKind::On {
-                        trigger: HirTriggerPattern::Mark(pattern),
-                        ..
-                    } = statement_payload.kind()
-                    else {
-                        continue;
-                    };
-                    let pattern = module.resolve_pattern(*pattern).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let HirPatternKind::EntityReference(HirIdRefValue::Resolved(
-                        HirIdRef::Relative(mark),
-                    )) = pattern.kind()
-                    else {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    };
-                    if mark.parent_depth() != 0 || mark.suffix().as_str().contains('.') {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    let mark = PublicId::try_new(mark.suffix().as_str()).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                    let ordinal = marks.get(&mark).copied().ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                    if handlers
-                        .iter()
-                        .any(|handler| handler.statement() == *statement)
-                    {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    handlers.push(CheckedDialogueMarkHandler::new(
-                        *statement,
-                        CheckedDialogueMarkOrdinal::new(ordinal),
-                    ));
-                }
-                HirLinePlanItem::StartGroup(children)
-                | HirLinePlanItem::TogetherGroup(children) => {
-                    self.collect_dialogue_mark_handlers(module, children, marks, handlers)?
-                }
-                HirLinePlanItem::Init(_)
-                | HirLinePlanItem::Thread(_)
-                | HirLinePlanItem::Option { .. }
-                | HirLinePlanItem::Let { .. }
-                | HirLinePlanItem::Out { .. }
-                | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimedCue { .. }
-                | HirLinePlanItem::TimelineAssert { .. }
-                | HirLinePlanItem::Expression(_)
-                | HirLinePlanItem::Error(_) => {}
-            }
-        }
-        Ok(())
-    }
-
-    fn publish_dialogue_content_application_call(
-        &mut self,
-        module: &HirModule,
-        owner: ExprId,
-        target: &super::CheckedCharacterDialogueTarget,
-        expected: Option<&TypeKind>,
-        line_result: &TypeKind,
-        has_line_plan: bool,
-        expression_resolution: CheckedExpressionResolution,
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
-        let callee = match target {
-            super::CheckedCharacterDialogueTarget::Character { character, .. } => {
-                DialogueCalleeIdentity::Character {
-                    character: character.clone(),
-                }
-            }
-            super::CheckedCharacterDialogueTarget::Dialogue { ty, .. } => {
-                DialogueCalleeIdentity::CharacterDialogue {
-                    character: ty.character().clone(),
-                }
-            }
-        };
-        let prepared = PreparedCallCallee::Dialogue {
-            id: DialogueCallableId::ContentApplication,
-            callee: &callee,
-            patch_context: CharacterDialoguePatchContext::ImmediateContentApplication,
-            result: crate::callable::DialogueCallableResultContext::ContentApplication {
-                line_result,
-            },
-        };
-        let authority = CallResolverAuthority::accepted(
-            self.project,
-            module,
-            self.symbols,
-            self.catalogs.world,
-        );
-        let staged = self.staged_callables.as_ref().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CheckedCallableCatalog)
-        })?;
-        let mut work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
-        let request = CallResolverRequest::try_new_dialogue_application(
-            prepared,
-            &super::CallResolverContext {
-                authority,
-                checked: (&staged.builder).into(),
-                presentation_character_owner: None,
-                expression: owner,
-                cancellation: self.control.cancellation(),
-                prepared_continuations: self
-                    .facts
-                    .prepared_calls()
-                    .map_err(AnalyzerExpressionError::fact)?,
-                limits: &self.catalogs.callable_limits,
-                implicit_extension_receiver: None,
-            },
-            &mut work,
-        )
-        .map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner,
-            })
-        })?;
-        let outcome = resolve_call_target(request);
-        let candidates = match outcome {
-            ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) => candidates,
-            ResolveCallOutcome::Invariant(error) => {
-                return Err(AnalyzerExpressionError::Call {
-                    owner,
-                    failure: crate::final_analysis::analyzer::calls::CallAnalysisFailure::Invariant(
-                        crate::final_analysis::analyzer::calls::CallAnalysisInvariant::Constraint(
-                            error,
-                        ),
-                    ),
-                });
-            }
-            _ => {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                ));
-            }
-        };
-        let considered = candidates.into_shared().map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner,
-            })
-        })?;
-        let selected = considered.first().cloned().ok_or_else(|| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                owner,
-            })
-        })?;
-        if selected.id()
-            != &crate::callable::CallableCandidateId::Dialogue(
-                DialogueCallableId::ContentApplication,
-            )
-            || !matches!(selected.schema().result(), TypeKind::DialogueLine(_))
-        {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::CallResolutionFailed { owner },
-            ));
-        }
-        self.publish_resolved_dialogue_application(
-            module,
-            owner,
-            expected,
-            target.expression(),
-            target.ty(),
-            has_line_plan,
-            expression_resolution,
-            considered,
-            work,
-        )
-    }
-
-    fn check_dialogue_line_plan_output(
-        &mut self,
-        context: &AnalyzerExpressionContext<'_>,
-        items: &[arcweft_lang_hir::dialogue_application::HirLinePlanItem],
-    ) -> Result<TypeKind, AnalyzerExpressionError> {
-        use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
-
-        let mut output: Option<TypeKind> = None;
-        let mut output_statements = BTreeSet::new();
-        let mut pending = vec![items];
-        while let Some(items) = pending.pop() {
-            for item in items {
-                match item {
-                    HirLinePlanItem::Out { value, statement } => {
-                        if !output_statements.insert(*statement) {
-                            return Err(AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::WrongPayloadFamily,
-                            ));
-                        }
-                        let checked = self.evaluate_expression(context, *value, output.as_ref())?;
-                        match &output {
-                            Some(expected) if !expected.accepts(checked.ty()) => {
-                                return Err(AnalyzerExpressionError::rejected(*value));
-                            }
-                            Some(_) => {}
-                            None => output = Some(checked.ty().clone()),
-                        }
-                    }
-                    HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
-                        pending.push(items)
-                    }
-                    _ => {}
-                }
-            }
-        }
-        Ok(output.unwrap_or(TypeKind::Unit))
-    }
-
-    fn publish_dialogue_coordinates(
-        &mut self,
-        module: &HirModule,
-        owner: ExprId,
-        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
-    ) -> Result<
-        Option<crate::callable::PreparedDialogueApplicationMetadataInventory>,
-        AnalyzerExpressionError,
-    > {
-        let target = module.resolve_expr(application.target()).map_err(|_| {
-            AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-        })?;
-        if !matches!(target.kind(), HirExprKind::Call(_)) {
-            return application
-                .coordinates()
-                .is_empty()
-                .then_some(None)
-                .ok_or_else(|| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                });
-        }
-        let projection = module
-            .dialogue_application_metadata_projection(owner)
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-        let accepted = if application.coordinates().is_empty() {
-            None
-        } else {
-            Some(
-                self.project
-                    .dialogue_lines()
-                    .for_expr(owner)
-                    .ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?,
-            )
-        };
-        let mut prepared = Vec::with_capacity(projection.coordinates().len());
-        for coordinate in projection.coordinates() {
-            let accepted = accepted.ok_or_else(|| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-            })?;
-            let (metadata_coordinate, ty, evidence, resolution) = match coordinate.kind() {
-                arcweft_lang_hir::dialogue_application::HirDialogueCoordinateKind::Id => (
-                    crate::callable::DialogueApplicationMetadataCoordinate::Id,
-                    TypeKind::entity_ref(EntityKind::DialogueLine),
-                    crate::callable::PreparedDialogueApplicationMetadataEvidence::Id(
-                        accepted.id().clone(),
-                    ),
-                    CheckedExpressionResolution::DialogueLineCoordinate(accepted.id().clone()),
-                ),
-                arcweft_lang_hir::dialogue_application::HirDialogueCoordinateKind::TextKey => (
-                    crate::callable::DialogueApplicationMetadataCoordinate::TextKey,
-                    TypeKind::entity_ref(EntityKind::Text),
-                    crate::callable::PreparedDialogueApplicationMetadataEvidence::TextKey(
-                        accepted.text_key().clone(),
-                    ),
-                    CheckedExpressionResolution::DialogueTextKeyCoordinate(
-                        accepted.text_key().clone(),
-                    ),
-                ),
-            };
-            prepared.push(
-                crate::callable::PreparedDialogueApplicationMetadataArgument::seal(
-                    coordinate.argument(),
-                    coordinate.value(),
-                    metadata_coordinate,
-                    ty.clone(),
-                    evidence,
-                )
-                .map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                })?,
-            );
-            self.facts
-                .publish_new_expression(
-                    coordinate.value(),
-                    CheckedExpression::new(
-                        ty,
-                        CheckedTypeSelection::Inferred,
-                        EffectSet::new(),
-                        resolution,
-                    ),
-                )
-                .map_err(|_| {
-                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
-                })?;
-        }
-        crate::callable::PreparedDialogueApplicationMetadataInventory::seal(
-            &projection,
-            prepared.into_boxed_slice(),
-        )
-        .map(Some)
-        .map_err(|_| AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily))
     }
 
     fn check_expressions(

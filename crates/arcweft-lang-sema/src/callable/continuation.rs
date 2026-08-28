@@ -1844,33 +1844,6 @@ impl<P, U> PreparedCallGraph<P, U> {
         })
     }
 
-    /// Borrows the exact selected prefix that issued a live continuation.
-    ///
-    /// This is a read-only graph-authority query for semantic consumers that
-    /// must project an earlier call group (for example a curried evaluated
-    /// effect). It validates the same issuer, node state, and ancestry chain as
-    /// continuation resolution and never exposes a detached node key.
-    pub(crate) fn continuation_prefix(
-        &self,
-        reference: &PreparedCallContinuationRef,
-    ) -> Result<PreparedCallGraphSelectedNode<'_, P>, CallConstraintInvariant>
-    where
-        P: PreparedCallPrefixPayload<Unselected = U>,
-    {
-        self.validate_continuation_chain(reference)?;
-        let node = self
-            .nodes
-            .get(&reference.0.node)
-            .ok_or(CallConstraintInvariant::MissingOrStalePreparedNode)?;
-        let PreparedCallNodePayload::SelectedContinuation(continuation) = &node.payload else {
-            return Err(CallConstraintInvariant::InvalidPreparedNodeState);
-        };
-        Ok(PreparedCallGraphSelectedNode {
-            site: node.site,
-            prefix: &continuation.prefix,
-        })
-    }
-
     /// Issue a prepared continuation candidate directly from the graph node.
     /// This is the only path used by a function-value resolver.  It validates
     /// issuer, node state, site payload, dependency order, and the exact next

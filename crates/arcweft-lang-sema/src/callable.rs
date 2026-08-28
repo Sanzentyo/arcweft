@@ -205,7 +205,7 @@ pub use schema::{
     VariantPayloadRequirement,
 };
 pub(crate) use schema::{
-    CallableGenericConstUse, CallableGenericFirstUse, CallableGenericParameterInventory,
-    CallableGenericTypeUse, CallableSchemaGenericRole,
+    CallableEvaluatedEffectOperandRole, CallableGenericConstUse, CallableGenericFirstUse,
+    CallableGenericParameterInventory, CallableGenericTypeUse, CallableSchemaGenericRole,
 };
 pub use view_modifier::ViewModifierId;

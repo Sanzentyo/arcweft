@@ -196,7 +196,10 @@ fn parse_binding_power(
         }
 
         if operator == "{"
-            && parser.completed_kind(left.start_event) == Some(SyntaxKind::SelectExpression)
+            && matches!(
+                parser.completed_kind(left.start_event),
+                Some(SyntaxKind::SelectExpression | SyntaxKind::CallExpression)
+            )
         {
             bump_until(parser, operator_index);
             left = emit_callback_block_call(parser, end, left, role);

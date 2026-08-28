@@ -55,8 +55,7 @@ use arcweft_lang_hir::leaf::HirName;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
 use arcweft_lang_hir::project::{
-    HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeExecutableOwner,
-    HirRuntimeExpressionTypeDisposition, HirRuntimeIteratorWitnessMethodRole,
+    HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
     HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
     HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
     HirRuntimeSemanticReachability,
@@ -71,6 +70,13 @@ use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
 use crate::assertion_identity::RuntimeAssertionMode;
+
+mod evaluated_effect;
+
+pub use evaluated_effect::{
+    RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+    RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeLogLevel,
+};
 
 /// Stable semantic identity for a registered callable or value that is not
 /// owned by one project HIR item.
@@ -1482,163 +1488,6 @@ fn try_boundary_type_matches(fact: &RuntimeTryFact) -> bool {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RuntimeLogLevel {
-    Trace,
-    Debug,
-    Info,
-    Warn,
-    Error,
-}
-
-impl RuntimeLogLevel {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Trace => "trace",
-            Self::Debug => "debug",
-            Self::Info => "info",
-            Self::Warn => "warn",
-            Self::Error => "error",
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeEffectFieldFact {
-    name: String,
-    value: ExprId,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeDropFadeFact {
-    ConstantNanos(u64),
-    Expression(ExprId),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeDropPolicyFact {
-    Default,
-    Cancel,
-    Stop { fade: RuntimeDropFadeFact },
-    Finish,
-    Release,
-    Detach,
-}
-
-impl RuntimeEffectFieldFact {
-    pub fn new(name: impl Into<String>, value: ExprId) -> Self {
-        Self {
-            name: name.into(),
-            value,
-        }
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn value(&self) -> ExprId {
-        self.value
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum RuntimeEvaluatedEffect {
-    Log {
-        level: RuntimeLogLevel,
-        message: ExprId,
-        fields: Box<[RuntimeEffectFieldFact]>,
-    },
-    SignalWrite {
-        target: ExprId,
-        value: ExprId,
-    },
-    MetricWrite {
-        target: ExprId,
-        value: ExprId,
-    },
-    EmitEvent {
-        event: ExprId,
-        fields: Box<[RuntimeEffectFieldFact]>,
-    },
-    Panic {
-        message: ExprId,
-    },
-    Fail {
-        message: ExprId,
-    },
-    Bail {
-        message: ExprId,
-    },
-    Ensure {
-        condition: ExprId,
-        message: ExprId,
-    },
-    Drop {
-        target: ExprId,
-        policy_source: Option<ExprId>,
-        policy: RuntimeDropPolicyFact,
-    },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeEvaluatedEffectFact {
-    effect: RuntimeEvaluatedEffect,
-}
-
-impl RuntimeEvaluatedEffectFact {
-    pub const fn new(effect: RuntimeEvaluatedEffect) -> Self {
-        Self { effect }
-    }
-
-    pub const fn effect(&self) -> &RuntimeEvaluatedEffect {
-        &self.effect
-    }
-}
-
-impl RuntimeEvaluatedEffect {
-    fn expression_ids(&self) -> Vec<ExprId> {
-        match self {
-            Self::Log {
-                message, fields, ..
-            } => std::iter::once(*message)
-                .chain(fields.iter().map(RuntimeEffectFieldFact::value))
-                .collect(),
-            Self::SignalWrite { target, value } | Self::MetricWrite { target, value } => {
-                vec![*target, *value]
-            }
-            Self::EmitEvent { event, fields } => std::iter::once(*event)
-                .chain(fields.iter().map(RuntimeEffectFieldFact::value))
-                .collect(),
-            Self::Panic { message } | Self::Fail { message } | Self::Bail { message } => {
-                vec![*message]
-            }
-            Self::Ensure { condition, message } => vec![*condition, *message],
-            Self::Drop { target, policy, .. } => {
-                let mut expressions = vec![*target];
-                if let RuntimeDropPolicyFact::Stop {
-                    fade: RuntimeDropFadeFact::Expression(fade),
-                } = policy
-                {
-                    expressions.push(*fade);
-                }
-                expressions
-            }
-        }
-    }
-
-    fn fields_are_valid(&self) -> bool {
-        let fields = match self {
-            Self::Log { fields, .. } | Self::EmitEvent { fields, .. } => fields.as_ref(),
-            _ => return true,
-        };
-        let mut names = BTreeSet::new();
-        fields
-            .iter()
-            .all(|field| !field.name().is_empty() && names.insert(field.name()))
-    }
-}
-
 /// Checked iterator dispatch before plan-local type and method IDs are issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeIteratorFact {
@@ -2948,53 +2797,6 @@ impl RuntimeResolvedCall {
     pub const fn result(&self) -> RuntimeCallResultShape {
         self.result
     }
-
-    /// Classifies whether this selected call owns a retained runtime value type
-    /// or lowers as a synthetic call carrier, including the accepted use of
-    /// its HIR callee.
-    pub fn expression_type_disposition(&self) -> HirRuntimeExpressionTypeDisposition {
-        let callee = self.runtime_callee_disposition();
-        match self.dispatch.static_target() {
-            Some(RuntimeResolvedStaticCallTarget::Host(host))
-                if matches!(host.owner(), RuntimeResolvedHostCallOwner::Agent(_)) =>
-            {
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee }
-            }
-            Some(RuntimeResolvedStaticCallTarget::Agent(_)) => {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult { callee }
-            }
-            Some(RuntimeResolvedStaticCallTarget::AgentProbeComparison(_))
-            | Some(RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError) => {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                }
-            }
-            Some(
-                RuntimeResolvedStaticCallTarget::Intrinsic(_)
-                | RuntimeResolvedStaticCallTarget::Declaration(_)
-                | RuntimeResolvedStaticCallTarget::Variant(_)
-                | RuntimeResolvedStaticCallTarget::Reduction(_)
-                | RuntimeResolvedStaticCallTarget::StandardMap(_)
-                | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
-                | RuntimeResolvedStaticCallTarget::Line(_)
-                | RuntimeResolvedStaticCallTarget::Registered(_)
-                | RuntimeResolvedStaticCallTarget::Host(_),
-            )
-            | None => HirRuntimeExpressionTypeDisposition::Retain,
-        }
-    }
-
-    fn runtime_callee_disposition(&self) -> HirRuntimeCallCalleeDisposition {
-        if matches!(self.dispatch, RuntimeResolvedCallDispatch::Value { .. })
-            || self.operands.iter().any(|operand| {
-                matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
-            })
-        {
-            HirRuntimeCallCalleeDisposition::RuntimeReceiver
-        } else {
-            HirRuntimeCallCalleeDisposition::Static
-        }
-    }
 }
 
 /// Closed dispatch authority. Static targets are exhaustive and never encode
@@ -3003,15 +2805,6 @@ impl RuntimeResolvedCall {
 pub enum RuntimeResolvedCallDispatch {
     Static(RuntimeResolvedStaticCallTarget),
     Value { callee: ExprId },
-}
-
-impl RuntimeResolvedCallDispatch {
-    fn static_target(&self) -> Option<&RuntimeResolvedStaticCallTarget> {
-        match self {
-            Self::Static(target) => Some(target),
-            Self::Value { .. } => None,
-        }
-    }
 }
 
 /// Closed runtime dispatch selected by the shared semantic resolver.
@@ -3483,6 +3276,7 @@ pub enum RuntimeDialogueEffectTrigger {
     Content,
     Delay {
         duration: arcweft_core::time::LogicalDuration,
+        duration_type: RuntimeNormalizedType,
         schedule_handle_type: RuntimeNormalizedType,
     },
 }
@@ -3492,7 +3286,6 @@ pub enum RuntimeDialogueEffectTrigger {
 pub struct RuntimeDialogueEffectExpression {
     site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
     trigger: RuntimeDialogueEffectTrigger,
-    expression: ExprId,
     operation: RuntimeEvaluatedEffectFact,
 }
 
@@ -3500,13 +3293,11 @@ impl RuntimeDialogueEffectExpression {
     pub const fn new(
         site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
         trigger: RuntimeDialogueEffectTrigger,
-        expression: ExprId,
         operation: RuntimeEvaluatedEffectFact,
     ) -> Self {
         Self {
             site,
             trigger,
-            expression,
             operation,
         }
     }
@@ -3517,10 +3308,6 @@ impl RuntimeDialogueEffectExpression {
 
     pub const fn trigger(&self) -> &RuntimeDialogueEffectTrigger {
         &self.trigger
-    }
-
-    pub const fn expression(&self) -> ExprId {
-        self.expression
     }
 
     pub const fn operation(&self) -> &RuntimeEvaluatedEffectFact {
@@ -4939,7 +4726,13 @@ impl RuntimePlanSemanticFacts {
                 RuntimeSemanticFactFamily::EvaluatedEffect,
                 |kind| matches!(kind, HirStmtKind::Expression { .. }),
             )?;
-            validate_evaluated_effect(&modules, &expression_types, &calls, *statement, effect)?;
+            evaluated_effect::validate_evaluated_effect(
+                &modules,
+                &expression_types,
+                &calls,
+                *statement,
+                effect,
+            )?;
         }
 
         let assignments = collect_unique(input.assignments, RuntimeSemanticFactFamily::Assignment)?;
@@ -5174,13 +4967,26 @@ impl RuntimePlanSemanticFacts {
                     .ok_or(RuntimeSemanticFactsError::TooManyDialogueValueSlots {
                         expression: owner,
                     })?;
+            let trigger_valid = match effect.trigger() {
+                RuntimeDialogueEffectTrigger::Content => true,
+                RuntimeDialogueEffectTrigger::Delay {
+                    duration_type,
+                    schedule_handle_type,
+                    ..
+                } => {
+                    matches!(duration_type.shape(), RuntimeTypeShape::Duration)
+                        && validate_normalized_type(modules, duration_type).is_ok()
+                        && validate_normalized_type(modules, schedule_handle_type).is_ok()
+                }
+            };
             if effect.site() != expected
-                || !evaluated_effect_expression_matches(
+                || !trigger_valid
+                || !evaluated_effect::validate_evaluated_effect_operation(
                     modules,
                     &self.expression_types,
                     &self.calls,
-                    effect.expression(),
-                    effect.operation(),
+                    effect.operation().application(),
+                    effect.operation().effect(),
                 )
             {
                 return Err(RuntimeSemanticFactsError::InvalidDialogueEffectSite {
@@ -5307,18 +5113,32 @@ impl RuntimePlanSemanticFacts {
                 .values()
                 .map(RuntimeDialogueApplication::line_result),
         );
-        roots.extend(self.dialogue_applications.values().flat_map(|application| {
-            application.effects().iter().filter_map(|effect| {
+        for application in self.dialogue_applications.values() {
+            for effect in application.effects() {
                 let RuntimeDialogueEffectTrigger::Delay {
+                    duration_type,
                     schedule_handle_type,
                     ..
                 } = effect.trigger()
                 else {
-                    return None;
+                    continue;
                 };
-                Some(schedule_handle_type)
-            })
-        }));
+                roots.extend([duration_type, schedule_handle_type]);
+            }
+        }
+        for effect in self.evaluated_effects.values() {
+            effect
+                .effect()
+                .visit_operand_types(&mut |ty| roots.push(ty));
+        }
+        for application in self.dialogue_applications.values() {
+            for effect in application.effects() {
+                effect
+                    .operation()
+                    .effect()
+                    .visit_operand_types(&mut |ty| roots.push(ty));
+            }
+        }
         for record in self.nominal_records.values() {
             roots.extend(
                 record
@@ -6193,150 +6013,6 @@ fn validate_assignment(
     validate_normalized_type(modules, assignment.field_type())?;
     validate_normalized_type(modules, assignment.value_type())?;
     Ok(())
-}
-
-fn validate_evaluated_effect(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
-    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
-    statement: StmtId,
-    fact: &RuntimeEvaluatedEffectFact,
-) -> Result<(), RuntimeSemanticFactsError> {
-    let HirStmtKind::Expression { expression } = resolve_stmt(modules, statement)? else {
-        return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
-    };
-    evaluated_effect_expression_matches(modules, expression_types, calls, *expression, fact)
-        .then_some(())
-        .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement })
-}
-
-fn evaluated_effect_expression_matches(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
-    calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
-    expression: ExprId,
-    fact: &RuntimeEvaluatedEffectFact,
-) -> bool {
-    let owner = expression;
-    let Ok(expression) = resolve_expr(modules, owner) else {
-        return false;
-    };
-    let (call_owner, hir_call, pipeline_target) = match expression {
-        HirExprKind::Call(call) => (owner, call, None),
-        HirExprKind::Pipe(pipe) => {
-            let Ok(HirExprKind::Call(call)) = resolve_expr(modules, pipe.right()) else {
-                return false;
-            };
-            (pipe.right(), call, Some(pipe.left()))
-        }
-        _ => return false,
-    };
-    if calls.contains_key(&call_owner) || !fact.effect().fields_are_valid() {
-        return false;
-    }
-
-    if let RuntimeEvaluatedEffect::Drop {
-        target,
-        policy_source,
-        policy,
-    } = fact.effect()
-    {
-        return drop_effect_matches_hir(
-            modules,
-            hir_call,
-            *target,
-            *policy_source,
-            policy,
-            pipeline_target,
-        ) && !fact
-            .effect()
-            .expression_ids()
-            .iter()
-            .any(|expression| !expression_types.contains_key(expression));
-    }
-
-    let mut authored = hir_call
-        .arguments()
-        .iter()
-        .map(arcweft_lang_hir::expr::HirCallArgument::value)
-        .collect::<Vec<_>>();
-    let mut projected = fact.effect().expression_ids();
-    authored.sort_unstable();
-    projected.sort_unstable();
-    authored == projected
-        && !projected
-            .iter()
-            .any(|expression| !expression_types.contains_key(expression))
-}
-
-fn drop_effect_matches_hir(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    call: &HirCallExpr,
-    target: ExprId,
-    policy_source: Option<ExprId>,
-    policy: &RuntimeDropPolicyFact,
-    pipeline_target: Option<ExprId>,
-) -> bool {
-    let target_and_policy_match = if let Some(pipeline_target) = pipeline_target {
-        pipeline_target == target
-            && match policy_source {
-                Some(policy) => single_hir_call_argument(call.arguments()) == Some(policy),
-                None => call.arguments().is_empty(),
-            }
-    } else {
-        match call.callee() {
-            arcweft_lang_hir::expr::HirCallCallee::UnresolvedDot { value_receiver, .. } => {
-                *value_receiver == target
-                    && match policy_source {
-                        Some(policy) => single_hir_call_argument(call.arguments()) == Some(policy),
-                        None => call.arguments().is_empty(),
-                    }
-            }
-            arcweft_lang_hir::expr::HirCallCallee::Value { value } => {
-                if single_hir_call_argument(call.arguments()) != Some(target) {
-                    return false;
-                }
-                match policy_source {
-                    None => true,
-                    Some(policy) => matches!(
-                        resolve_expr(modules, *value),
-                        Ok(HirExprKind::Call(prefix))
-                            if single_hir_call_argument(prefix.arguments()) == Some(policy)
-                    ),
-                }
-            }
-            arcweft_lang_hir::expr::HirCallCallee::Associated { .. } => false,
-        }
-    };
-    target_and_policy_match
-        && match (policy_source, policy) {
-            (None, RuntimeDropPolicyFact::Default)
-            | (
-                Some(_),
-                RuntimeDropPolicyFact::Cancel
-                | RuntimeDropPolicyFact::Finish
-                | RuntimeDropPolicyFact::Release
-                | RuntimeDropPolicyFact::Detach,
-            ) => true,
-            (Some(source), RuntimeDropPolicyFact::Stop { fade }) => match fade {
-                RuntimeDropFadeFact::ConstantNanos(_) => {
-                    !matches!(resolve_expr(modules, source), Ok(HirExprKind::Call(_)))
-                }
-                RuntimeDropFadeFact::Expression(fade) => matches!(
-                    resolve_expr(modules, source),
-                    Ok(HirExprKind::Call(policy_call))
-                        if single_hir_call_argument(policy_call.arguments()) == Some(*fade)
-                ),
-            },
-            _ => false,
-        }
-}
-
-fn single_hir_call_argument(arguments: &[HirCallArgument]) -> Option<ExprId> {
-    let [argument] = arguments else {
-        return None;
-    };
-    (!matches!(argument, HirCallArgument::Spread { .. })).then(|| argument.value())
 }
 
 fn validate_select(

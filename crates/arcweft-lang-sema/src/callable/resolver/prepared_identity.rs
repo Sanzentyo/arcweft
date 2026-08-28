@@ -16,7 +16,7 @@ use crate::types::{CharacterDialogueCharacterType, TypeKind};
 
 use super::super::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallConstraintInvariant, CallableCandidateId,
-    CallableFamily, CallableName, CapacityMethodId, CheckedCapacityMethodIdentity,
+    CallableFamily, CapacityMethodId, CheckedCapacityMethodIdentity,
     CheckedDialogueCallableIdentity, CheckedDomainMethodIdentity, CheckedLanguageCallableIdentity,
     CollectionMethodId, DialogueCallableId, DomainMethodId, DropCallableId, EnumVariantSignatureId,
     FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, IntegerMethodId,
@@ -39,7 +39,6 @@ pub(crate) enum PreparedLanguageCallableIdentity {
     EnumConstructor {
         signature: EnumVariantSignatureId,
         case_ordinal: u32,
-        diagnostic_name: CallableName,
         expected: TypeKind,
     },
     Result(ResultConstructorKind),
@@ -84,13 +83,13 @@ impl PreparedLanguageCallableIdentity {
                 Self::EnumConstructor {
                     signature,
                     case_ordinal,
-                    diagnostic_name,
                     expected,
                 },
                 CallableCandidateId::EnumVariant(candidate),
                 CallableFamily::EnumConstructor,
             ) if &signature == candidate
-                && diagnostic_name == *candidate.variant()
+                && candidate.owner() == expected.semantic_identity_digest()
+                && candidate.case() == case_ordinal
                 && matches!(
                     instantiation,
                     ResolvedCallableBaseInstantiation::ExpectedEnum { expected: sealed }
@@ -342,7 +341,6 @@ fn language_identity(
             PreparedLanguageCallableIdentity::EnumConstructor {
                 signature: id.clone(),
                 case_ordinal: seed.case_ordinal(),
-                diagnostic_name: seed.diagnostic_name().clone(),
                 expected: expected.clone(),
             }
         }

@@ -19,12 +19,12 @@ use arcweft_lang_hir::item::{HirImplMember, HirItemKind};
 use arcweft_lang_hir::leaf::HirLiteral;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
 use arcweft_lang_hir::project::{
-    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition,
+    HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
+    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
     HirRuntimeIteratorWitnessMethodRole, HirRuntimeReachabilityEdge,
     HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
     HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
-    HirRuntimeSemanticReachabilityInput,
+    HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
 };
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::stmt::HirStmtKind;
@@ -40,9 +40,11 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
     RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
-    RuntimeCheckedTypeProjectionError, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
-    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
-    RuntimePlanSemanticFacts, RuntimeRegisteredValueId, RuntimeResolvedNominal,
+    RuntimeCheckedTypeProjectionError, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+    RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
+    RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
+    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
+    RuntimeRegisteredValueId, RuntimeResolvedCallOperandSource, RuntimeResolvedNominal,
     RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
     RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
     RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
@@ -131,9 +133,9 @@ fn runtime_reachability_with(
     selected_postfix: impl FnMut(
         arcweft_lang_hir::identity::ExprId,
     ) -> Option<arcweft_lang_hir::identity::ExprId>,
-    call_disposition: impl FnMut(
+    expression_projection: impl FnMut(
         arcweft_lang_hir::identity::ExprId,
-    ) -> HirRuntimeExpressionTypeDisposition,
+    ) -> Option<HirRuntimeExpressionProjection>,
 ) -> HirRuntimeSemanticReachability<'_> {
     let executable = project.executable_view().expect("clean fixture");
     let (_, first_module) = executable.modules().next().expect("fixture module");
@@ -217,16 +219,44 @@ fn runtime_reachability_with(
     )
     .expect("fixture reachability input");
     executable
-        .runtime_semantic_reachability(input, &topology, selected_postfix, call_disposition)
+        .runtime_semantic_reachability(input, &topology, selected_postfix, expression_projection)
         .expect("fixture reachability")
 }
 
 fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
+    let executable = project.executable_view().expect("clean fixture");
     runtime_reachability_with(
         project,
         |_| None,
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |owner| retained_runtime_projection(executable, owner),
     )
+}
+
+fn retained_runtime_projection(
+    executable: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    owner: arcweft_lang_hir::identity::ExprId,
+) -> Option<HirRuntimeExpressionProjection> {
+    executable.modules().find_map(|(_, module)| {
+        let expression = module.resolve_expr(owner).ok()?;
+        Some(match expression.kind() {
+            HirExprKind::Call(call) => HirRuntimeExpressionProjection::Call {
+                result: HirRuntimeValueRetention::Retain,
+                callee: if call.callee().value_expression().is_some() {
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver
+                } else {
+                    HirRuntimeCallCalleeDisposition::Static
+                },
+            },
+            HirExprKind::DialogueContentApplication(_) => {
+                HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Omit,
+                }
+            }
+            _ => HirRuntimeExpressionProjection::Structural {
+                value: HirRuntimeValueRetention::Retain,
+            },
+        })
+    })
 }
 
 fn runtime_facts(
@@ -252,6 +282,30 @@ fn boolean_literal(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
             .then_some(id)
         })
         .expect("fixture boolean literal")
+}
+
+fn expression_statement_matching(
+    project: &HirProject,
+    predicate: impl Fn(&HirExprKind) -> bool,
+) -> (
+    arcweft_lang_hir::identity::StmtId,
+    arcweft_lang_hir::identity::ExprId,
+) {
+    project
+        .executable_view()
+        .expect("clean fixture")
+        .modules()
+        .flat_map(|(_, module)| {
+            module.statements().filter_map(|(statement, body)| {
+                let HirStmtKind::Expression { expression } = body.kind() else {
+                    return None;
+                };
+                let expression_kind = module.resolve_expr(*expression).ok()?.kind();
+                predicate(expression_kind).then_some((statement, *expression))
+            })
+        })
+        .next()
+        .expect("fixture expression statement")
 }
 
 fn flow_item(project: &HirProject) -> arcweft_lang_hir::identity::ItemId {
@@ -889,6 +943,180 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
 }
 
 #[test]
+fn evaluated_effect_rejects_an_application_that_is_not_a_call() {
+    let project = project_fixture(
+        "evaluated-effect-non-call-application",
+        "flow opening {\n    true\n}\n",
+    );
+    let (statement, application) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Literal(_)));
+    let operand = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let mut input = complete_type_input(&project);
+    input.push_evaluated_effect(
+        statement,
+        RuntimeEvaluatedEffectFact::new(
+            application,
+            RuntimeEvaluatedEffect::Log {
+                level: super::RuntimeLogLevel::Info,
+                message: operand,
+                fields: Box::new([]),
+            },
+        ),
+    );
+
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("an evaluated effect application must be a HIR Call"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+    );
+}
+
+#[test]
+fn evaluated_effect_rejects_an_application_owned_by_another_statement() {
+    let project = project_fixture(
+        "evaluated-effect-owner-mismatch",
+        "flow opening {\n    true\n    __runtime_plan_test_probe()\n}\n",
+    );
+    let (statement, _) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Literal(_)));
+    let (_, application) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
+    let operand = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let mut input = complete_type_input(&project);
+    input.push_evaluated_effect(
+        statement,
+        RuntimeEvaluatedEffectFact::new(
+            application,
+            RuntimeEvaluatedEffect::Log {
+                level: super::RuntimeLogLevel::Info,
+                message: operand,
+                fields: Box::new([]),
+            },
+        ),
+    );
+
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("an evaluated effect must remain owned by its statement"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+    );
+}
+
+#[test]
+fn evaluated_effect_rejects_an_ensure_condition_without_bool_type() {
+    let project = project_fixture(
+        "evaluated-effect-ensure-non-bool",
+        "flow opening {\n    __runtime_plan_test_probe()\n}\n",
+    );
+    let (statement, application) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
+    let condition = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let message = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let mut input = complete_type_input(&project);
+    input.push_evaluated_effect(
+        statement,
+        RuntimeEvaluatedEffectFact::new(
+            application,
+            RuntimeEvaluatedEffect::Ensure { condition, message },
+        ),
+    );
+
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("Ensure condition must carry the checked Bool type"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+    );
+}
+
+#[test]
+fn evaluated_effect_rejects_a_stop_fade_without_duration_type() {
+    let project = project_fixture(
+        "evaluated-effect-stop-non-duration",
+        "flow opening {\n    __runtime_plan_test_probe()\n}\n",
+    );
+    let (statement, application) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
+    let target = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let fade = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let mut input = complete_type_input(&project);
+    input.push_evaluated_effect(
+        statement,
+        RuntimeEvaluatedEffectFact::new(
+            application,
+            RuntimeEvaluatedEffect::Drop {
+                target,
+                policy: RuntimeDropPolicyFact::Stop {
+                    fade: RuntimeDropFadeFact::Operand(fade),
+                },
+            },
+        ),
+    );
+
+    assert_eq!(
+        runtime_facts(&project, input).expect_err("Stop fade must carry the checked Duration type"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+    );
+}
+
+#[test]
+fn evaluated_effect_rejects_a_stop_fade_with_an_invalid_source() {
+    let project = project_fixture(
+        "evaluated-effect-stop-invalid-source",
+        "flow opening {\n    __runtime_plan_test_probe()\n}\n",
+    );
+    let (statement, application) =
+        expression_statement_matching(&project, |kind| matches!(kind, HirExprKind::Call(_)));
+    let target = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::Expression(application),
+        unit_type(),
+    );
+    let fade = RuntimeEvaluatedEffectOperandFact::new(
+        RuntimeResolvedCallOperandSource::CompactNumericElement {
+            sequence: application,
+            ordinal: 0,
+        },
+        unit_type(),
+    );
+    let mut input = complete_type_input(&project);
+    input.push_evaluated_effect(
+        statement,
+        RuntimeEvaluatedEffectFact::new(
+            application,
+            RuntimeEvaluatedEffect::Drop {
+                target,
+                policy: RuntimeDropPolicyFact::Stop {
+                    fade: RuntimeDropFadeFact::Operand(fade),
+                },
+            },
+        ),
+    );
+
+    assert_eq!(
+        runtime_facts(&project, input)
+            .expect_err("Stop fade must reference a valid checked operand source"),
+        RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement }
+    );
+}
+
+#[test]
 fn missing_expression_type_is_rejected_before_publication() {
     let project = project_fixture("missing-expression-type", "fn root() { true }\n");
     let owner = boolean_literal(&project);
@@ -1484,7 +1712,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     let runtime_owners = runtime_reachability_with(
         &project,
         |owner| postfix_candidates.get(&owner).copied(),
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |owner| retained_runtime_projection(executable, owner),
     );
     let accepted = runtime_owners
         .selected_expression_type_owners()
@@ -1927,7 +2155,7 @@ fn iterator_reachability_with_edges<'project>(
             input,
             &topology,
             |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
+            |owner| retained_runtime_projection(executable, owner),
         )
         .expect("accepted iterator reachability")
 }

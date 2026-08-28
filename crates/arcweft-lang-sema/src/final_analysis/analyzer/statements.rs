@@ -3,25 +3,23 @@
 use super::{
     Analyzer, AssertionContext, BTreeMap, BTreeSet, CallableDeclarationKey, CallableEffectContract,
     CheckedAssertionDisposition, CheckedCallableExecution, CheckedCallableId, CheckedClosureId,
-    CheckedEvaluatedEffect, CheckedExpression, CheckedExpressionResolution, CheckedIteration,
-    CheckedIteratorFamily, CheckedStatement, CheckedStatementRole, CheckedSuspensionStatement,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution,
-    EffectClauseSource, EffectId, EffectItemSource, EffectRow, EffectSet, ExprId,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, GenericParameterOwnerId,
-    GenericTypeBinding, GenericTypeParameterId, GenericTypeScope, HirAssertionMode,
-    HirCallableEffectSourcePart, HirCallableSourceOwner, HirCallableSourceRole, HirExprKind,
-    HirExprSourceRole, HirFunctionItem, HirGenericParameter, HirImplMember, HirItem, HirItemKind,
-    HirItemSourceRole, HirModule, HirName, HirPatternSourceRole, HirScopeKind, HirScopeOwner,
-    HirScopeSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeKind,
-    ItemId, ModuleSegment, PatternId, PreparedAssignmentStatement, PreparedExpressionFact,
+    CheckedExpression, CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
+    CheckedStatement, CheckedStatementRole, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, EffectClauseSource,
+    EffectId, EffectItemSource, EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, GenericParameterOwnerId, GenericTypeBinding,
+    GenericTypeParameterId, GenericTypeScope, HirAssertionMode, HirCallableEffectSourcePart,
+    HirCallableSourceOwner, HirCallableSourceRole, HirExprKind, HirExprSourceRole, HirFunctionItem,
+    HirGenericParameter, HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule,
+    HirName, HirPatternSourceRole, HirScopeKind, HirScopeOwner, HirScopeSourceRole,
+    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeKind, ItemId,
+    ModuleSegment, PatternId, PreparedAssignmentStatement, PreparedExpressionFact,
     PreparedStatementFact, ProjectSymbolTable, ScopeId, SourceSpan, TypeId, TypeKind,
     TypeSourceEvidence,
     calls::checked_project_nominal,
     expression_types::builtin_iteration,
     items::{SourceCallableShell, checked_catalog_error},
 };
-use crate::callable::CheckedCallSite;
-use crate::final_analysis::{CheckedDropFade, CheckedDropPolicy};
 
 impl Analyzer<'_, '_, '_> {
     pub(super) fn analyze_statements(
@@ -259,7 +257,12 @@ impl Analyzer<'_, '_, '_> {
                     .map(PreparedStatementFact::Assignment);
             }
             HirStmtKind::Expression { expression } => {
-                self.checked_expression_statement_role(module, *expression)
+                if let Some(effect) =
+                    self.prepare_evaluated_effect_expression(module, *expression)?
+                {
+                    return Ok(PreparedStatementFact::EvaluatedEffect(effect));
+                }
+                Ok(CheckedStatementRole::Ordinary)
             }
             HirStmtKind::Break { label, value } => {
                 self.checked_break_role(module, owner, scope, label.as_ref(), *value)
@@ -331,321 +334,6 @@ impl Analyzer<'_, '_, '_> {
                 return Err(FinalSemanticAnalysisError::InvalidOwner);
             };
             scope = parent;
-        }
-    }
-
-    fn checked_expression_statement_role(
-        &self,
-        module: &HirModule,
-        expression: ExprId,
-    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
-        Ok(self
-            .checked_evaluated_effect_expression(module, expression)?
-            .map_or(CheckedStatementRole::Ordinary, |effect| {
-                CheckedStatementRole::EvaluatedEffect(Box::new(effect))
-            }))
-    }
-
-    pub(super) fn checked_evaluated_effect_expression(
-        &self,
-        module: &HirModule,
-        expression: ExprId,
-    ) -> Result<Option<CheckedEvaluatedEffect>, FinalSemanticAnalysisError> {
-        let authored = module
-            .resolve_expr(expression)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let (call_owner, pipeline_target) = match authored.kind() {
-            HirExprKind::Call(_) => (expression, None),
-            HirExprKind::Pipe(authored_pipe) => {
-                let Some(CheckedExpressionResolution::Pipe(checked_pipe)) = self
-                    .facts
-                    .expressions()
-                    .get(&expression)
-                    .and_then(PreparedExpressionFact::checked_resolution)
-                else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                if checked_pipe.left() != authored_pipe.left()
-                    || checked_pipe.right() != authored_pipe.right()
-                {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                (checked_pipe.right(), Some(checked_pipe.left()))
-            }
-            _ => return Ok(None),
-        };
-        let Some(node) = self
-            .facts
-            .prepared_calls()
-            .map_err(FinalSemanticAnalysisError::from)?
-            .selected_nodes()
-            .find(|node| node.site() == CheckedCallSite::HirCall(call_owner))
-        else {
-            return Ok(None);
-        };
-        let application = node.prefix().application();
-        let Some(effect) = application.selected().schema().evaluated_effect() else {
-            return Ok(None);
-        };
-        if application
-            .selected()
-            .next_group_for(application.completed_group())
-            .is_some()
-        {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let call_expression = module
-            .resolve_expr(call_owner)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let HirExprKind::Call(call) = call_expression.kind() else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        };
-        let effect = match effect {
-            crate::callable::CallableEvaluatedEffect::Drop(operation) => self.checked_drop_effect(
-                module,
-                call_owner,
-                call,
-                application,
-                operation,
-                pipeline_target,
-            )?,
-            _ if pipeline_target.is_some() => {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-            effect => {
-                let mapping = node
-                    .prefix()
-                    .record()
-                    .input_projection()
-                    .authored()
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                let head = effect
-                    .accepts_open_fields()
-                    .then(|| {
-                        mapping.arguments().iter().find_map(|argument| {
-                            argument.slots().iter().find_map(|slot| {
-                                slot.coordinate()
-                                    .filter(|coordinate| effect.operand_role(*coordinate).is_some())
-                                    .map(|_| argument.source())
-                            })
-                        })
-                    })
-                    .flatten();
-                let open_arguments = mapping.arguments().iter().map(|argument| {
-                    let [slot] = argument.slots() else {
-                        return None;
-                    };
-                    let source = match slot.source() {
-                        crate::callable::CheckedCallArgumentSlotSource::Expression(source) => {
-                            source
-                        }
-                        crate::callable::CheckedCallArgumentSlotSource::CompactNumericElement {
-                            ..
-                        } => return None,
-                    };
-                    Some((source, slot.open_argument()?))
-                });
-                CheckedEvaluatedEffect::try_from_call(
-                    effect,
-                    call.arguments(),
-                    application.selected().schema().semantic_digest(),
-                    head,
-                    open_arguments,
-                )
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
-            }
-        };
-        Ok(Some(effect))
-    }
-
-    fn checked_drop_effect(
-        &self,
-        module: &HirModule,
-        owner: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
-        application: &crate::callable::PreparedCallableApplication,
-        operation: crate::callable::DropCallableId,
-        pipeline_target: Option<ExprId>,
-    ) -> Result<CheckedEvaluatedEffect, FinalSemanticAnalysisError> {
-        if operation == crate::callable::DropCallableId::OnDrop {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let selected = application.selected();
-        let receiver = match (selected.instantiation(), call.callee(), pipeline_target) {
-            (
-                crate::callable::CallableInstantiation::Receiver { .. },
-                arcweft_lang_hir::expr::HirCallCallee::UnresolvedDot { value_receiver, .. },
-                None,
-            ) => Some(*value_receiver),
-            (
-                crate::callable::CallableInstantiation::Extension {
-                    group, parameter, ..
-                },
-                arcweft_lang_hir::expr::HirCallCallee::UnresolvedDot { value_receiver, .. },
-                None,
-            ) if selected
-                .schema()
-                .extension_receiver()
-                .is_some_and(|receiver| {
-                    receiver.group() == *group
-                        && receiver.parameter() == *parameter
-                        && application
-                            .completed_group()
-                            .get()
-                            .checked_add(1)
-                            .is_some_and(|next| next == group.get())
-                }) =>
-            {
-                Some(*value_receiver)
-            }
-            (
-                crate::callable::CallableInstantiation::Extension {
-                    group, parameter, ..
-                },
-                _,
-                Some(target),
-            ) if selected
-                .schema()
-                .extension_receiver()
-                .is_some_and(|receiver| {
-                    receiver.group() == *group
-                        && receiver.parameter() == *parameter
-                        && application
-                            .completed_group()
-                            .get()
-                            .checked_add(1)
-                            .is_some_and(|next| next == group.get())
-                }) =>
-            {
-                Some(target)
-            }
-            (
-                crate::callable::CallableInstantiation::Receiver { .. }
-                | crate::callable::CallableInstantiation::Extension { .. },
-                _,
-                _,
-            ) => {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-            (_, _, Some(_)) => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-            (_, _, None) => None,
-        };
-        let target = receiver
-            .or_else(|| single_call_argument(call.arguments()))
-            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let (policy_source, policy) = match operation {
-            crate::callable::DropCallableId::Drop
-            | crate::callable::DropCallableId::DropOptional => (None, CheckedDropPolicy::Default),
-            crate::callable::DropCallableId::DropWithPolicy => {
-                let source = if receiver.is_some() {
-                    single_call_argument(call.arguments())
-                } else {
-                    let reference = selected
-                        .prepared_continuation()
-                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                    let prefix = self
-                        .facts
-                        .prepared_calls()
-                        .map_err(FinalSemanticAnalysisError::from)?
-                        .continuation_prefix(reference)
-                        .map_err(|failure| {
-                            FinalSemanticAnalysisError::CallSeal(
-                                crate::final_analysis::FinalCallSealFailure::new(
-                                    crate::final_analysis::FinalCallSealLocation::Site(
-                                        CheckedCallSite::HirCall(owner),
-                                    ),
-                                    failure,
-                                ),
-                            )
-                        })?;
-                    let CheckedCallSite::HirCall(owner) = prefix.site() else {
-                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                    };
-                    let expression = module
-                        .resolve_expr(owner)
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                    let HirExprKind::Call(prefix_call) = expression.kind() else {
-                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                    };
-                    single_call_argument(prefix_call.arguments())
-                }
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                (Some(source), self.checked_drop_policy(module, source)?)
-            }
-            crate::callable::DropCallableId::OnDrop => {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-        };
-        Ok(CheckedEvaluatedEffect::Drop {
-            operation,
-            target,
-            policy_source,
-            policy,
-        })
-    }
-
-    fn checked_drop_policy(
-        &self,
-        module: &HirModule,
-        expression: ExprId,
-    ) -> Result<CheckedDropPolicy, FinalSemanticAnalysisError> {
-        let checked =
-            self.facts.expressions().get(&expression).ok_or(
-                FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: expression },
-            )?;
-        match checked.checked_resolution() {
-            Some(CheckedExpressionResolution::Value(CheckedValueResolution::Registered(value))) => {
-                let binding = value
-                    .environment_binding()
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                match self
-                    .catalogs
-                    .world
-                    .environment()
-                    .typecheck_env()
-                    .standard_environment_value(binding)
-                {
-                    Some(crate::env::StandardEnvironmentValue::DropPolicy(
-                        crate::env::StandardDropPolicyValue::Stop { fade_nanos },
-                    )) => Ok(CheckedDropPolicy::Stop {
-                        fade: CheckedDropFade::ConstantNanos(fade_nanos),
-                    }),
-                    None => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                }
-            }
-            Some(CheckedExpressionResolution::Variant(variant)) => {
-                let super::CheckedVariantOwner::BuiltinClosed { nominal, .. } = variant.owner()
-                else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                let policy = self
-                    .catalogs
-                    .world
-                    .environment()
-                    .typecheck_env()
-                    .standard_drop_policy_case(nominal, variant.ordinal())
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                Ok(match policy {
-                    crate::env::StandardDropPolicyCase::Cancel => CheckedDropPolicy::Cancel,
-                    crate::env::StandardDropPolicyCase::Stop => {
-                        let source = module
-                            .resolve_expr(expression)
-                            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                        let HirExprKind::Call(call) = source.kind() else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        let fade = single_call_argument(call.arguments())
-                            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                        CheckedDropPolicy::Stop {
-                            fade: CheckedDropFade::Expression(fade),
-                        }
-                    }
-                    crate::env::StandardDropPolicyCase::Finish => CheckedDropPolicy::Finish,
-                    crate::env::StandardDropPolicyCase::Release => CheckedDropPolicy::Release,
-                    crate::env::StandardDropPolicyCase::Detach => CheckedDropPolicy::Detach,
-                })
-            }
-            _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         }
     }
 
@@ -791,17 +479,6 @@ impl Analyzer<'_, '_, '_> {
         };
         Ok(CheckedStatementRole::Assertion(disposition))
     }
-}
-
-fn single_call_argument(arguments: &[arcweft_lang_hir::expr::HirCallArgument]) -> Option<ExprId> {
-    let [argument] = arguments else {
-        return None;
-    };
-    (!matches!(
-        argument,
-        arcweft_lang_hir::expr::HirCallArgument::Spread { .. }
-    ))
-    .then(|| argument.value())
 }
 
 struct SelectedStandardIteratorImpl {
@@ -1025,7 +702,7 @@ pub(super) fn execution_effects(
                 body_scope,
             )?
         {
-            effects.union_with(checked.effects());
+            checked.extend_effects(&mut effects);
         }
     }
     Ok(effects)

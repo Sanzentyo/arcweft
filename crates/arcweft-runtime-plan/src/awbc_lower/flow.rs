@@ -37,6 +37,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// terminators to split the instruction stream into verified resume blocks.
 struct FlowBodyBuilder {
     owner: AwbcFunctionId,
+    entry_safe_point: AwbcSafePointKind,
     block_start: u32,
     instruction_start: u32,
     resume_points: Vec<AwbcResumePointId>,
@@ -90,9 +91,14 @@ impl BranchJoin {
 }
 
 impl FlowBodyBuilder {
-    fn new(inventory: &AwbcInventory, owner: AwbcFunctionId) -> Self {
+    fn new(
+        inventory: &AwbcInventory,
+        owner: AwbcFunctionId,
+        entry_safe_point: AwbcSafePointKind,
+    ) -> Self {
         Self {
             owner,
+            entry_safe_point,
             block_start: table_index(inventory.program.blocks.len()),
             instruction_start: table_index(inventory.program.instructions.len()),
             resume_points: Vec::new(),
@@ -191,7 +197,7 @@ impl FlowBodyBuilder {
         safe_point: AwbcSafePointKind,
     ) -> AwbcSafePointKind {
         if table_index(inventory.program.blocks.len()) == self.block_start {
-            AwbcSafePointKind::FlowEntry
+            self.entry_safe_point
         } else {
             safe_point
         }
@@ -589,7 +595,8 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             let ty = self.local_type(*capture);
             frame.parameter(*capture, ty);
         }
-        let mut body = FlowBodyBuilder::new(self.inventory, owner);
+        let mut body =
+            FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
         self.lower_ops(&mut frame, &mut body, ops, path);
         if body.needs_value_fallthrough() {
             self.terminate_value_fallthrough(&mut frame, &mut body);
@@ -641,7 +648,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             let ty = self.local_type(*parameter);
             frame.parameter(*parameter, ty);
         }
-        let mut body = FlowBodyBuilder::new(self.inventory, owner);
+        let mut body = FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::FlowEntry);
         self.lower_ops(&mut frame, &mut body, &flow.ops, &public_name);
         if body.needs_value_fallthrough() {
             self.terminate_value_fallthrough(&mut frame, &mut body);

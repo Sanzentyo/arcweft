@@ -293,6 +293,7 @@ define_family!(RichTextFamily, RichTextNode, RichText, |kind| matches!(
         | SyntaxKind::RichTextEndTag
         | SyntaxKind::RichTextTagName
         | SyntaxKind::RichTextArgumentPayload
+        | SyntaxKind::RichTextTimedCuePayload
         | SyntaxKind::RichTextFxCallPayload
         | SyntaxKind::RichTextDialogueCallPayload
         | SyntaxKind::RichTextConditionPayload

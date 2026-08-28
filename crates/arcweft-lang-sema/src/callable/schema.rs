@@ -13,8 +13,9 @@ use crate::{
     effect_row::EffectRow,
     env::{FunctionParam, FunctionSignature, nominal::AcceptedNominalId},
     types::{
-        GenericConstParameterId, GenericParameterOwnerId, GenericTypeParameterId,
-        LanguageIntrinsicGenericOwner, SemanticTypeDigest, TypeGenericUseCollector, TypeKind,
+        AcceptedVariantPayloadFieldSemanticId, GenericConstParameterId, GenericParameterOwnerId,
+        GenericTypeParameterId, LanguageIntrinsicGenericOwner, SemanticTypeDigest,
+        TypeGenericUseCollector, TypeKind, VariantPayloadShape,
     },
 };
 
@@ -774,12 +775,20 @@ pub enum CallableGroupKind {
 pub struct CallableParameter {
     index: CallableParameterIndex,
     name: Option<CallableName>,
+    semantic_binding: CallableParameterSemanticBinding,
     admission: CallableParameterAdmission,
     passing: CallableParameterPassing,
     presence: CallableParameterPresence,
     consumer: CallableParameterConsumer,
     documentation: Option<Arc<str>>,
     source: Option<CallableParameterSource>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) enum CallableParameterSemanticBinding {
+    Coordinate,
+    Named(CallableName),
+    AcceptedVariantPayloadField(AcceptedVariantPayloadFieldSemanticId),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1556,47 +1565,71 @@ impl CallableSignatureSchema {
         )
     }
 
-    /// Builds the exact constructor schema retained by one accepted project
-    /// enum case. The checked case row has already instantiated declaration
-    /// generics, so no generic issuer or path lookup is admitted here.
+    /// Builds the exact constructor schema retained by one accepted enum case.
+    /// The checked case row has already instantiated its owner, so no generic
+    /// issuer or path lookup is admitted here. Tuple and record payloads keep
+    /// their distinct positional and named argument contracts.
     pub(crate) fn for_accepted_enum_case(
         id: EnumVariantSignatureId,
-        payload: Option<&TypeKind>,
+        payload: &VariantPayloadShape,
         result: TypeKind,
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
-        let payloads: &[TypeKind] = match payload {
-            Some(TypeKind::Tuple(items)) => items,
-            Some(payload) => std::slice::from_ref(payload),
-            None => &[],
+        let mut parameters = Vec::with_capacity(payload.field_count());
+        let mut push_parameter = |index: usize,
+                                  name: Option<CallableName>,
+                                  semantic_id: AcceptedVariantPayloadFieldSemanticId,
+                                  ty: &TypeKind,
+                                  passing: CallableParameterPassing|
+         -> Result<(), CallableSchemaError> {
+            let index = CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                CallableSchemaError::ParameterLimit {
+                    actual: payload.field_count(),
+                    limit: limits.max_parameters_per_callable(),
+                }
+            })?;
+            parameters.push(CallableParameter::for_accepted_variant_payload_field(
+                index,
+                name,
+                semantic_id,
+                CallableParameterAdmission::checked(ty.clone()),
+                passing,
+                CallableParameterPresence::Required,
+                None,
+                None,
+            )?);
+            Ok(())
         };
-        let parameters = payloads
-            .iter()
-            .enumerate()
-            .map(|(index, payload)| {
-                CallableParameter::try_new(
-                    CallableParameterIndex::try_from_usize(index).map_err(|_| {
-                        CallableSchemaError::ParameterLimit {
-                            actual: payloads.len(),
-                            limit: limits.max_parameters_per_callable(),
-                        }
-                    })?,
-                    Some(
-                        CallableName::try_new(format!("payload{}", index + 1)).map_err(|_| {
+        match payload {
+            VariantPayloadShape::Unit => {}
+            VariantPayloadShape::Tuple(fields) => {
+                for (index, field) in fields.iter().enumerate() {
+                    push_parameter(
+                        index,
+                        None,
+                        field.semantic_id(),
+                        field.ty(),
+                        CallableParameterPassing::PositionalOnly,
+                    )?;
+                }
+            }
+            VariantPayloadShape::Record(fields) => {
+                for (index, field) in fields.iter().enumerate() {
+                    push_parameter(
+                        index,
+                        Some(CallableName::try_new(field.diagnostic_name()).map_err(|_| {
                             CallableSchemaError::FamilyInvariant {
                                 family: super::CallableFamily::EnumConstructor,
                                 code: super::CallableFamilyInvariantCode::InvalidParameterType,
                             }
-                        })?,
-                    ),
-                    CallableParameterAdmission::checked(payload.clone()),
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
-                    None,
-                    None,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                        })?),
+                        field.semantic_id(),
+                        field.ty(),
+                        CallableParameterPassing::NamedOnly,
+                    )?;
+                }
+            }
+        }
         let group = CallableParameterGroup::try_new(
             CallableGroupIndex::ZERO,
             CallableGroupKind::Initial,
@@ -2009,6 +2042,20 @@ impl CallableParameter {
         source: Option<CallableParameterSource>,
     ) -> Result<Self, CallableSchemaError> {
         let admission = admission.into();
+        let semantic_binding = match passing {
+            CallableParameterPassing::PositionalOnly | CallableParameterPassing::RestPositional => {
+                CallableParameterSemanticBinding::Coordinate
+            }
+            CallableParameterPassing::PositionalOrNamed
+            | CallableParameterPassing::NamedOnly
+            | CallableParameterPassing::RestNamed => CallableParameterSemanticBinding::Named(
+                name.clone()
+                    .ok_or(CallableSchemaError::MissingParameterName {
+                        group: CallableGroupIndex::ZERO,
+                        parameter: index,
+                    })?,
+            ),
+        };
         if matches!(
             passing,
             CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed
@@ -2040,6 +2087,7 @@ impl CallableParameter {
         Ok(Self {
             index,
             name,
+            semantic_binding,
             admission,
             passing,
             presence,
@@ -2048,11 +2096,37 @@ impl CallableParameter {
             source,
         })
     }
+    fn for_accepted_variant_payload_field(
+        index: CallableParameterIndex,
+        name: Option<CallableName>,
+        semantic_id: AcceptedVariantPayloadFieldSemanticId,
+        admission: CallableParameterAdmission,
+        passing: CallableParameterPassing,
+        presence: CallableParameterPresence,
+        documentation: Option<Arc<str>>,
+        source: Option<CallableParameterSource>,
+    ) -> Result<Self, CallableSchemaError> {
+        let mut parameter = Self::try_new(
+            index,
+            name,
+            admission,
+            passing,
+            presence,
+            documentation,
+            source,
+        )?;
+        parameter.semantic_binding =
+            CallableParameterSemanticBinding::AcceptedVariantPayloadField(semantic_id);
+        Ok(parameter)
+    }
     pub const fn index(&self) -> CallableParameterIndex {
         self.index
     }
     pub fn name(&self) -> Option<&CallableName> {
         self.name.as_ref()
+    }
+    pub(super) const fn semantic_binding(&self) -> &CallableParameterSemanticBinding {
+        &self.semantic_binding
     }
     pub const fn admission(&self) -> &CallableParameterAdmission {
         &self.admission
@@ -2084,7 +2158,7 @@ impl CallableParameter {
     }
     fn semantic_eq(&self, other: &Self) -> bool {
         self.index == other.index
-            && self.name == other.name
+            && self.semantic_binding == other.semantic_binding
             && self.admission == other.admission
             && self.passing == other.passing
             && self.presence == other.presence
@@ -2524,5 +2598,96 @@ mod generic_inventory_tests {
         )
         .expect("rigid schema");
         assert_ne!(first.semantic_digest(), rigid.semantic_digest());
+    }
+}
+
+#[cfg(test)]
+mod accepted_variant_schema_tests {
+    use super::*;
+    use crate::{callable::PRODUCTION_CALLABLE_LIMITS, types::VariantPayloadOwnerFamily};
+
+    fn owner(ty: TypeKind) -> SemanticTypeDigest {
+        ty.semantic_identity_digest()
+    }
+
+    fn record_schema(
+        owner: SemanticTypeDigest,
+        case: u32,
+        label: &str,
+        field_type: TypeKind,
+    ) -> CallableSignatureSchema {
+        let payload = VariantPayloadShape::try_record(
+            VariantPayloadOwnerFamily::BuiltinClosed,
+            owner,
+            case,
+            [(label.to_owned(), field_type)],
+        )
+        .expect("accepted record payload");
+        CallableSignatureSchema::for_accepted_enum_case(
+            EnumVariantSignatureId::new(owner, case),
+            &payload,
+            TypeKind::Unit,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("accepted record constructor schema")
+    }
+
+    #[test]
+    fn accepted_record_labels_are_lookup_only_not_schema_identity() {
+        let owner = owner(TypeKind::I32);
+        let left = record_schema(owner, 3, "fade", TypeKind::Duration);
+        let right = record_schema(owner, 3, "duration", TypeKind::Duration);
+        let left_parameter = &left.groups()[0].parameters()[0];
+        let right_parameter = &right.groups()[0].parameters()[0];
+
+        assert_ne!(left_parameter.name(), right_parameter.name());
+        assert_eq!(
+            left_parameter.semantic_binding(),
+            right_parameter.semantic_binding()
+        );
+        assert!(left.semantic_eq(&right));
+        assert_eq!(left.semantic_digest(), right.semantic_digest());
+    }
+
+    #[test]
+    fn accepted_record_field_owner_case_and_type_are_schema_identity() {
+        let first_owner = owner(TypeKind::I32);
+        let second_owner = owner(TypeKind::I64);
+        let base = record_schema(first_owner, 3, "fade", TypeKind::Duration);
+        let changed_owner = record_schema(second_owner, 3, "fade", TypeKind::Duration);
+        let changed_case = record_schema(first_owner, 4, "fade", TypeKind::Duration);
+        let changed_type = record_schema(first_owner, 3, "fade", TypeKind::I64);
+
+        assert_ne!(base.semantic_digest(), changed_owner.semantic_digest());
+        assert_ne!(base.semantic_digest(), changed_case.semantic_digest());
+        assert_ne!(base.semantic_digest(), changed_type.semantic_digest());
+    }
+
+    #[test]
+    fn accepted_tuple_constructor_has_no_fabricated_parameter_names() {
+        let owner = owner(TypeKind::I32);
+        let payload = VariantPayloadShape::try_tuple(
+            VariantPayloadOwnerFamily::BuiltinClosed,
+            owner,
+            2,
+            [TypeKind::I64, TypeKind::Bool],
+        )
+        .expect("accepted tuple payload");
+        let schema = CallableSignatureSchema::for_accepted_enum_case(
+            EnumVariantSignatureId::new(owner, 2),
+            &payload,
+            TypeKind::Unit,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("accepted tuple constructor schema");
+
+        assert!(schema.groups()[0].parameters().iter().all(|parameter| {
+            parameter.name().is_none()
+                && parameter.passing() == CallableParameterPassing::PositionalOnly
+                && matches!(
+                    parameter.semantic_binding(),
+                    CallableParameterSemanticBinding::AcceptedVariantPayloadField(_)
+                )
+        }));
     }
 }

@@ -20,7 +20,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
-use crate::types::{StandardMapFamily, TypeKind};
+use crate::types::{SemanticTypeDigest, StandardMapFamily, TypeKind};
 
 use super::{
     BuiltinIdentityError, CallableIdentityError, CallableIndexKind, CallableLimits,
@@ -700,21 +700,23 @@ fn resolve_std_float(path: &CallablePath) -> Option<BuiltinCallableId> {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct EnumVariantSignatureId {
-    owner: arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId,
-    variant: CallableName,
+    owner: SemanticTypeDigest,
+    case: u32,
 }
 impl EnumVariantSignatureId {
-    pub fn new(
-        owner: arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId,
-        variant: CallableName,
-    ) -> Self {
-        Self { owner, variant }
+    /// Identifies one constructor by its accepted semantic owner and
+    /// declaration ordinal. Diagnostic case spelling is deliberately not
+    /// part of equality or hashing.
+    pub(crate) const fn new(owner: SemanticTypeDigest, case: u32) -> Self {
+        Self { owner, case }
     }
-    pub const fn owner(&self) -> &arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId {
-        &self.owner
+
+    pub const fn owner(&self) -> SemanticTypeDigest {
+        self.owner
     }
-    pub const fn variant(&self) -> &CallableName {
-        &self.variant
+
+    pub const fn case(&self) -> u32 {
+        self.case
     }
 }
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

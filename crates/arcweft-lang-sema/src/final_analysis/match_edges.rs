@@ -215,6 +215,13 @@ impl CheckedSelectedExpressionGraph {
                 HirSelectedExpressionInventoryError::MissingPostfixSelection { .. }
                 | HirSelectedExpressionInventoryError::InvalidPostfixSelection { .. }
                 | HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition { .. }
+                | HirSelectedExpressionInventoryError::InvalidRuntimeStructuralDisposition {
+                    ..
+                }
+                | HirSelectedExpressionInventoryError::MissingRuntimeExpressionProjection {
+                    ..
+                }
+                | HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention { .. }
                 | HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { .. } => {
                     FinalSemanticAnalysisError::WrongPayloadFamily
                 }
@@ -431,6 +438,15 @@ impl CheckedStructuralEdgeDraft {
                     &edges,
                     expressions,
                 ) {
+                    facts.insert(owner, Err(error));
+                    continue;
+                }
+            } else if let super::PreparedExpressionFact::DialogueApplication(prepared) =
+                checked_owner
+            {
+                if let Err(error) =
+                    validate_prepared_nested_path_evidence(prepared, &edges, expressions)
+                {
                     facts.insert(owner, Err(error));
                     continue;
                 }
@@ -832,11 +848,7 @@ fn nested_path_role(
         | HirExpressionChildRole::LinePlanLetValue { path }
         | HirExpressionChildRole::LinePlanOut { path }
         | HirExpressionChildRole::LinePlanTimelineAssert { path }
-        | HirExpressionChildRole::LinePlanExpression { path }
-        | HirExpressionChildRole::LinePlanTimedCueAnchor { path }
-        | HirExpressionChildRole::LinePlanTimedCueBody { path } => {
-            (path, NestedPathFamily::LinePlan)
-        }
+        | HirExpressionChildRole::LinePlanExpression { path } => (path, NestedPathFamily::LinePlan),
         HirExpressionChildRole::ChoiceIfCondition { path, .. }
         | HirExpressionChildRole::ChoiceForSource { path }
         | HirExpressionChildRole::ChoiceMatchScrutinee { path }
@@ -869,21 +881,40 @@ pub(crate) fn build_nested_path_evidence(
 ) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
     let owner_family = match (kind, checked.resolution()) {
         (HirExprKind::Choice(_), CheckedExpressionResolution::Choice(_)) => {
-            Some(NestedPathFamily::Choice)
+            NestedPathFamily::Choice
         }
         (
             HirExprKind::DialogueContentApplication(_),
             CheckedExpressionResolution::DialogueApplication { .. },
-        ) => Some(NestedPathFamily::LinePlan),
+        ) => NestedPathFamily::LinePlan,
         _ => return None,
     };
+    build_nested_path_evidence_for_family(owner_family, edges, expressions)
+}
+
+/// Builds line-plan nested-path evidence while the dialogue expression is
+/// still private and awaiting its callable seal.  The optional outer result
+/// is intentional: the prepared owner may be observed before the structural
+/// edge issuer has selected a path-bearing family.
+pub(crate) fn build_line_plan_nested_path_evidence(
+    edges: &[SelectedHirExpressionEdge],
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
+    build_nested_path_evidence_for_family(NestedPathFamily::LinePlan, edges, expressions)
+}
+
+fn build_nested_path_evidence_for_family(
+    owner_family: NestedPathFamily,
+    edges: &[SelectedHirExpressionEdge],
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
     let mut evidence =
         BTreeMap::<CheckedNestedPathV1, Vec<(CheckedNestedEvidenceRole, ExprId)>>::new();
     for (child, role) in edges {
         let Some((hir_path, family)) = nested_path_role(role) else {
             continue;
         };
-        if owner_family != Some(family) {
+        if owner_family != family {
             return Some(Err(CheckedChildEdgeError::StaleNestedPath));
         }
         let path = match checked_nested_path_from_hir(hir_path) {
@@ -940,6 +971,31 @@ fn validate_nested_path_evidence(
     };
     let stored = stored.as_ref().map_err(Clone::clone)?;
     let Some(expected) = expected else {
+        return Err(CheckedChildEdgeError::StaleNestedPath);
+    };
+    let expected = expected?;
+    if stored == &expected {
+        Ok(())
+    } else if stored.is_empty() && !expected.is_empty() {
+        Err(CheckedChildEdgeError::MissingNestedPath)
+    } else {
+        Err(CheckedChildEdgeError::StaleNestedPath)
+    }
+}
+
+fn validate_prepared_nested_path_evidence(
+    prepared: &super::PreparedDialogueApplication,
+    edges: &[SelectedHirExpressionEdge],
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Result<(), CheckedChildEdgeError> {
+    // A prepared owner may legitimately reach this draft before the issuer
+    // has attached path evidence.  When evidence is present, however, it is
+    // checked against the same HIR-owned edge projection as completed rows.
+    let Some(stored) = prepared.nested_path_evidence() else {
+        return Ok(());
+    };
+    let stored = stored.as_ref().map_err(Clone::clone)?;
+    let Some(expected) = build_line_plan_nested_path_evidence(edges, expressions) else {
         return Err(CheckedChildEdgeError::StaleNestedPath);
     };
     let expected = expected?;
@@ -1123,12 +1179,6 @@ fn checked_role_from_hir(
         }
         HirExpressionChildRole::LinePlanExpression { path: value } => {
             CheckedExpressionChildRole::LinePlanExpression { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanTimedCueAnchor { path: value } => {
-            CheckedExpressionChildRole::LinePlanTimedCueAnchor { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanTimedCueBody { path: value } => {
-            CheckedExpressionChildRole::LinePlanTimedCueBody { path: path(value)? }
         }
         HirExpressionChildRole::PostfixIndexCandidate => {
             CheckedExpressionChildRole::PostfixIndexCandidate

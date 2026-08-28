@@ -170,12 +170,6 @@ pub enum HirExpressionChildRole {
     LinePlanExpression {
         path: HirNestedExpressionPath,
     },
-    LinePlanTimedCueAnchor {
-        path: HirNestedExpressionPath,
-    },
-    LinePlanTimedCueBody {
-        path: HirNestedExpressionPath,
-    },
     PostfixIndexCandidate,
     PostfixDialogueCandidate,
     ForInput,
@@ -758,18 +752,6 @@ fn append_line_plan_edges(
                     *value,
                     HirExpressionChildRole::LinePlanExpression { path: path() },
                 ),
-                HirLinePlanItem::TimedCue { anchor, body } => {
-                    push_edge(
-                        edges,
-                        *anchor,
-                        HirExpressionChildRole::LinePlanTimedCueAnchor { path: path() },
-                    );
-                    push_edge(
-                        edges,
-                        *body,
-                        HirExpressionChildRole::LinePlanTimedCueBody { path: path() },
-                    );
-                }
                 HirLinePlanItem::StartGroup(nested) => {
                     pending.push((nested, item_path, Some(GroupKind::Start)));
                 }

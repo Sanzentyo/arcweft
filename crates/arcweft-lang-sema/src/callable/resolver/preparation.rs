@@ -134,6 +134,30 @@ where
         });
     }
 
+    if let Some(checked) = facts.expressions.get(&value)
+        && (matches!(checked, PreparedExpressionFact::ProjectVariant(_))
+            || matches!(
+                checked.checked_resolution(),
+                Some(CheckedExpressionResolution::Variant(_))
+            ))
+    {
+        if function_origin.is_some() {
+            return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
+                expression: value,
+            });
+        }
+        let seed = super::AcceptedEnumVariantCase::try_from_checked(checked, limits)
+            .map_err(
+                |_| PrepareFinalCallCalleeError::InvalidEnumVariantAuthority { expression: value },
+            )?
+            .ok_or(PrepareFinalCallCalleeError::InvalidEnumVariantAuthority {
+                expression: value,
+            })?;
+        return Ok(PreparedFinalCallCallee::EnumConstructor {
+            seed: Box::new(seed),
+        });
+    }
+
     if let HirExprKind::Path(HirPathValue::Resolved(path)) = expression.kind() {
         if let Some(checked) = facts.expressions.get(&value)
             && matches!(
@@ -202,34 +226,10 @@ where
                 expression: value,
             });
         }
-        let enum_variant = checked
-            .map(|checked| {
-                let project_variant = matches!(
-                    checked,
-                    PreparedExpressionFact::ProjectVariant(_)
-                ) || matches!(
-                    checked.checked_resolution(),
-                    Some(CheckedExpressionResolution::Variant(variant))
-                        if matches!(variant.owner(), crate::final_analysis::CheckedVariantOwner::Project { .. })
-                );
-                let accepted = super::AcceptedEnumVariantCase::try_from_checked(checked, limits)
-                    .map_err(|_| PrepareFinalCallCalleeError::InvalidEnumVariantAuthority {
-                        expression: value,
-                    })?;
-                if project_variant && accepted.is_none() {
-                    return Err(PrepareFinalCallCalleeError::InvalidEnumVariantAuthority {
-                        expression: value,
-                    });
-                }
-                Ok(accepted)
-            })
-            .transpose()?
-            .flatten();
         return Ok(PreparedFinalCallCallee::Free {
             path: Box::new(callable_path_from_hir(value, path, limits)?),
             project: project.map(Box::new),
             scope,
-            enum_variant: enum_variant.map(Box::new),
         });
     }
 
@@ -373,7 +373,6 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                         path: Box::new(callable_path_from_hir(value_receiver, &full_path, limits)?),
                         project: Some(Box::new(symbol.declaration().clone())),
                         scope,
-                        enum_variant: None,
                     });
                 }
                 ProjectValueLookup::Absent => {}
@@ -419,7 +418,6 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                     path: Box::new(path),
                     project: None,
                     scope: PreparedFreeCallScope::Implicit,
-                    enum_variant: None,
                 });
             }
             return prepare_associated_callee(nominal_receiver, member, facts.nominal_receivers);
@@ -676,6 +674,7 @@ pub(super) fn classify_prepared_callee(
     match (prepared, call.callee()) {
         (
             PreparedCallCallee::Free { .. }
+            | PreparedCallCallee::EnumConstructor { .. }
             | PreparedCallCallee::Dialogue { .. }
             | PreparedCallCallee::FunctionValue { .. }
             | PreparedCallCallee::NonCallableValue { .. },

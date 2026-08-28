@@ -18,6 +18,15 @@ use super::{
     CheckedStatement, CheckedTypeSelection,
 };
 
+#[path = "prepared/evaluated_effect.rs"]
+mod evaluated_effect;
+pub(crate) use evaluated_effect::PreparedEvaluatedEffect;
+#[path = "prepared/dialogue.rs"]
+mod dialogue;
+pub(crate) use dialogue::{
+    PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedDialogueLinePlan,
+};
+
 /// Common checked expression state retained while a projection-dependent row
 /// is awaiting the one project-wide seal.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -436,6 +445,7 @@ impl PreparedProjectRecordExpression {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedExpressionFact {
     Complete(CheckedExpression),
+    DialogueApplication(PreparedDialogueApplication),
     Method(PreparedMethodExpression),
     Entry(PreparedEntryExpression),
     ProjectVariant(PreparedProjectVariantExpression),
@@ -453,6 +463,7 @@ impl PreparedExpressionFact {
     pub(crate) const fn ty(&self) -> &TypeKind {
         match self {
             Self::Complete(value) => value.ty(),
+            Self::DialogueApplication(value) => value.shell().ty(),
             Self::Method(value) => value.shell().ty(),
             Self::Entry(value) => value.shell().ty(),
             Self::ProjectVariant(value) => value.shell().ty(),
@@ -464,6 +475,7 @@ impl PreparedExpressionFact {
     pub(crate) const fn type_selection(&self) -> CheckedTypeSelection {
         match self {
             Self::Complete(value) => value.type_selection(),
+            Self::DialogueApplication(value) => value.shell().type_selection(),
             Self::Method(value) => value.shell().type_selection(),
             Self::Entry(value) => value.shell().type_selection(),
             Self::ProjectVariant(value) => value.shell().type_selection(),
@@ -475,6 +487,7 @@ impl PreparedExpressionFact {
     pub(crate) const fn effects(&self) -> &EffectSet {
         match self {
             Self::Complete(value) => value.effects(),
+            Self::DialogueApplication(value) => value.shell().effects(),
             Self::Method(value) => value.shell().effects(),
             Self::Entry(value) => value.shell().effects(),
             Self::ProjectVariant(value) => value.shell().effects(),
@@ -487,6 +500,7 @@ impl PreparedExpressionFact {
         match self {
             Self::Complete(value) => Some(value),
             Self::Method(_)
+            | Self::DialogueApplication(_)
             | Self::Entry(_)
             | Self::ProjectVariant(_)
             | Self::ProjectField(_)
@@ -504,7 +518,8 @@ impl PreparedExpressionFact {
     pub(crate) const fn checked_resolution(&self) -> Option<&CheckedExpressionResolution> {
         match self {
             Self::Complete(value) => Some(value.resolution()),
-            Self::Method(_)
+            Self::DialogueApplication(_)
+            | Self::Method(_)
             | Self::Entry(_)
             | Self::ProjectVariant(_)
             | Self::ProjectField(_)
@@ -523,14 +538,20 @@ impl PreparedExpressionFact {
     ) -> Option<crate::callable::CheckedCallSite> {
         match self.checked_resolution() {
             Some(resolution) => resolution.checked_call_site(owner),
-            None => None,
+            None => match self {
+                Self::DialogueApplication(_) => {
+                    Some(crate::callable::CheckedCallSite::DialogueApplication(owner))
+                }
+                _ => None,
+            },
         }
     }
 
     pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
         match self {
             Self::Complete(value) => value.selected_postfix_candidate(),
-            Self::Method(_)
+            Self::DialogueApplication(_)
+            | Self::Method(_)
             | Self::Entry(_)
             | Self::ProjectVariant(_)
             | Self::ProjectField(_)
@@ -544,6 +565,13 @@ impl PreparedExpressionFact {
     ) -> Result<(), E> {
         match self {
             Self::Complete(value) => value.visit_types(visitor),
+            Self::DialogueApplication(value) => {
+                value.target().visit_types(visitor)?;
+                if let Some(patch) = value.application_patch() {
+                    patch.visit_types(visitor)?;
+                }
+                visitor(value.line_result())
+            }
             Self::Method(value) => visitor(value.shell().ty()),
             Self::Entry(value) => visitor(value.shell().ty()),
             Self::ProjectVariant(value) => {
@@ -643,6 +671,7 @@ impl PreparedAssignmentStatement {
 pub(crate) enum PreparedStatementFact {
     Complete(CheckedStatement),
     Assignment(PreparedAssignmentStatement),
+    EvaluatedEffect(PreparedEvaluatedEffect),
 }
 
 impl From<CheckedStatement> for PreparedStatementFact {
@@ -652,10 +681,15 @@ impl From<CheckedStatement> for PreparedStatementFact {
 }
 
 impl PreparedStatementFact {
-    pub(crate) const fn effects(&self) -> &EffectSet {
+    pub(crate) fn extend_effects(&self, effects: &mut EffectSet) {
         match self {
-            Self::Complete(value) => value.effects(),
-            Self::Assignment(value) => value.effects(),
+            Self::Complete(value) => {
+                effects.union_with(value.effects());
+            }
+            Self::Assignment(value) => {
+                effects.union_with(value.effects());
+            }
+            Self::EvaluatedEffect(_) => {}
         }
     }
 
@@ -673,6 +707,7 @@ impl PreparedStatementFact {
         match self {
             Self::Complete(value) => value.visit_types(visitor),
             Self::Assignment(value) => value.visit_types(visitor),
+            Self::EvaluatedEffect(_) => Ok(()),
         }
     }
 }

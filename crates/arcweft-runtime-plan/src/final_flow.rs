@@ -29,7 +29,6 @@ use arcweft_core::plan::{
     RuntimeTraitMethodIdentity, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::{HostCapabilityId, NeedId, TaskId, TaskOutcomeContract};
-use arcweft_core::time::LogicalDuration;
 use arcweft_core::value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue};
 use arcweft_lang_hir::expr::{
     HirChoiceCompactAction, HirChoiceItem, HirExprKind, HirThreadBody, HirThreadFlowItem,
@@ -71,11 +70,12 @@ use crate::final_variant::{
 };
 use crate::semantic_facts::{
     RuntimeAssertionAdmission, RuntimeAwaitFact, RuntimeDialogueApplication, RuntimeDropFadeFact,
-    RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeIteratorFact,
-    RuntimeIteratorWitnessExecutableFact, RuntimeNormalizedType, RuntimePlanSemanticFacts,
-    RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
-    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
+    RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
+    RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
+    RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeResolvedCallDispatch,
+    RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeSemanticFactsError,
+    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact,
+    RuntimeTryFact, RuntimeTypeShape,
 };
 use arcweft_text_model::{RichTextControl, RichTextNode};
 
@@ -3863,14 +3863,17 @@ fn lower_evaluated_effect(
     expr: &FinalExprLowerer<'_>,
     effect: &RuntimeEvaluatedEffect,
 ) -> Result<RuntimeEvaluatedEffectSeed, RuntimePlanLowerError> {
-    let lower = |expression| expr.lower(expression).map_err(RuntimePlanLowerError::new);
-    let fields = |fields: &[crate::semantic_facts::RuntimeEffectFieldFact]| {
+    let lower = |operand: &RuntimeEvaluatedEffectOperandFact| {
+        expr.lower_scalar_operand_source(operand.source(), operand.ty())
+            .map_err(RuntimePlanLowerError::new)
+    };
+    let fields = |fields: &[RuntimeEffectFieldFact]| {
         fields
             .iter()
             .map(|field| {
                 Ok(RuntimeEffectFieldSeed {
                     name: field.name().to_owned(),
-                    value: lower(field.value())?,
+                    value: lower(field.operand())?,
                 })
             })
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>()
@@ -3882,58 +3885,58 @@ fn lower_evaluated_effect(
             fields: effect_fields,
         } => RuntimeEvaluatedEffectSeed::Log {
             level: level.as_str().to_owned(),
-            message: lower(*message)?,
+            message: lower(message)?,
             fields: fields(effect_fields)?,
         },
         RuntimeEvaluatedEffect::SignalWrite { target, value } => {
             RuntimeEvaluatedEffectSeed::SignalWrite {
-                target: lower(*target)?,
-                value: lower(*value)?,
+                target: lower(target)?,
+                value: lower(value)?,
             }
         }
         RuntimeEvaluatedEffect::MetricWrite { target, value } => {
             RuntimeEvaluatedEffectSeed::MetricWrite {
-                target: lower(*target)?,
-                value: lower(*value)?,
+                target: lower(target)?,
+                value: lower(value)?,
             }
         }
         RuntimeEvaluatedEffect::EmitEvent {
             event,
             fields: effect_fields,
         } => RuntimeEvaluatedEffectSeed::EmitEvent {
-            event: lower(*event)?,
+            event: lower(event)?,
             fields: fields(effect_fields)?,
         },
         RuntimeEvaluatedEffect::Panic { message } => {
-            RuntimeEvaluatedEffectSeed::Panic(lower(*message)?)
+            RuntimeEvaluatedEffectSeed::Panic(lower(message)?)
         }
         RuntimeEvaluatedEffect::Fail { message } => {
-            RuntimeEvaluatedEffectSeed::Fail(lower(*message)?)
+            RuntimeEvaluatedEffectSeed::Fail(lower(message)?)
         }
         RuntimeEvaluatedEffect::Bail { message } => {
-            RuntimeEvaluatedEffectSeed::Bail(lower(*message)?)
+            RuntimeEvaluatedEffectSeed::Bail(lower(message)?)
         }
         RuntimeEvaluatedEffect::Ensure { condition, message } => {
             RuntimeEvaluatedEffectSeed::Ensure {
-                condition: lower(*condition)?,
-                message: lower(*message)?,
+                condition: lower(condition)?,
+                message: lower(message)?,
             }
         }
-        RuntimeEvaluatedEffect::Drop { target, policy, .. } => RuntimeEvaluatedEffectSeed::Drop {
-            target: lower(*target)?,
+        RuntimeEvaluatedEffect::Drop { target, policy } => RuntimeEvaluatedEffectSeed::Drop {
+            target: lower(target)?,
             policy: match policy {
                 RuntimeDropPolicyFact::Default => RuntimeDropPolicySeed::Default,
                 RuntimeDropPolicyFact::Cancel => RuntimeDropPolicySeed::Cancel,
                 RuntimeDropPolicyFact::Stop { fade } => RuntimeDropPolicySeed::Stop {
                     fade: match fade {
-                        RuntimeDropFadeFact::ConstantNanos(value) => RuntimeExprSeed::new(
+                        RuntimeDropFadeFact::Constant(value) => RuntimeExprSeed::new(
                             arcweft_core::pattern::RuntimeCheckedType::Duration
                                 .semantic_identity_digest(),
                             arcweft_core::plan::RuntimeExprSeedKind::Value(RuntimeValue::Duration(
-                                LogicalDuration::from_nanos(*value),
+                                *value,
                             )),
                         ),
-                        RuntimeDropFadeFact::Expression(expression) => lower(*expression)?,
+                        RuntimeDropFadeFact::Operand(operand) => lower(operand)?,
                     },
                 },
                 RuntimeDropPolicyFact::Finish => RuntimeDropPolicySeed::Finish,
@@ -3992,13 +3995,14 @@ mod tests {
         },
     };
     use arcweft_lang_hir::database::HirDatabase;
+    use arcweft_lang_hir::expr::HirExprKind;
     use arcweft_lang_hir::item::HirItemKind;
     use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
     use arcweft_lang_hir::project::{
-        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
-        HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
-        HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
-        HirRuntimeSemanticReachabilityInput,
+        HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
+        HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
+        HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+        HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
     };
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
@@ -4260,9 +4264,36 @@ mod tests {
                 input,
                 &topology,
                 |_| None,
-                |_| HirRuntimeExpressionTypeDisposition::Retain,
+                |owner| retained_runtime_projection(executable, owner),
             )
             .expect("fixture reachability")
+    }
+
+    fn retained_runtime_projection(
+        executable: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+        owner: arcweft_lang_hir::identity::ExprId,
+    ) -> Option<HirRuntimeExpressionProjection> {
+        executable.modules().find_map(|(_, module)| {
+            let expression = module.resolve_expr(owner).ok()?;
+            Some(match expression.kind() {
+                HirExprKind::Call(call) => HirRuntimeExpressionProjection::Call {
+                    result: HirRuntimeValueRetention::Retain,
+                    callee: if call.callee().value_expression().is_some() {
+                        HirRuntimeCallCalleeDisposition::RuntimeReceiver
+                    } else {
+                        HirRuntimeCallCalleeDisposition::Static
+                    },
+                },
+                HirExprKind::DialogueContentApplication(_) => {
+                    HirRuntimeExpressionProjection::Structural {
+                        value: HirRuntimeValueRetention::Omit,
+                    }
+                }
+                _ => HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Retain,
+                },
+            })
+        })
     }
 
     fn runtime_facts(

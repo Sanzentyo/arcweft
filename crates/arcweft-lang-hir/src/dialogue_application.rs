@@ -388,10 +388,6 @@ pub enum HirLinePlanItem {
         statement: StmtId,
     },
     CancelRule(StmtId),
-    TimedCue {
-        anchor: ExprId,
-        body: ExprId,
-    },
     StartGroup(Box<[HirLinePlanItem]>),
     TogetherGroup(Box<[HirLinePlanItem]>),
     TimelineAssert {
@@ -689,10 +685,6 @@ fn validate_line_plan_items(
                 validate_module(expected, value.module())?;
                 validate_module(expected, statement.module())?;
             }
-            HirLinePlanItem::TimedCue { anchor, body } => {
-                validate_module(expected, anchor.module())?;
-                validate_module(expected, body.module())?;
-            }
             HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                 validate_line_plan_items(expected, items)?;
             }
@@ -749,16 +741,6 @@ fn report_line_plan_items<C: HirDialogueTransactionContext>(
                 context
                     .require(HirDialogueTransactionRequirement::Statement(*statement))
                     .map_err(HirDialogueTransactionError::Context)?;
-            }
-            HirLinePlanItem::TimedCue { anchor, body } => {
-                for expression in [*anchor, *body] {
-                    context
-                        .require(HirDialogueTransactionRequirement::Expression {
-                            id: expression,
-                            expected: HirDialogueExpressionExpectation::Unrestricted,
-                        })
-                        .map_err(HirDialogueTransactionError::Context)?;
-                }
             }
             HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                 report_line_plan_items(items, context)?;

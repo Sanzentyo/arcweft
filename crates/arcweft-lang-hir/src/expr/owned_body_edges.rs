@@ -739,7 +739,6 @@ fn append_line_plan_item<'plan>(
             );
         }
         HirLinePlanItem::Option { .. }
-        | HirLinePlanItem::TimedCue { .. }
         | HirLinePlanItem::TimelineAssert { .. }
         | HirLinePlanItem::Expression(_) => {}
     }

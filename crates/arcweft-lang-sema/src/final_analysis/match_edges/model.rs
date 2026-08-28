@@ -21,6 +21,8 @@ const SELECT_PROGRESS_FIELD_TAG: u16 = 0x0403;
 const SELECT_FIELD_TAG: u16 = 0x0404;
 pub(crate) const REMOVED_SELECT_TUPLE_ELEMENT_TAG: u16 = 0x0405;
 pub(crate) const REMOVED_SELECT_RECORD_ELEMENT_TAG: u16 = 0x0406;
+pub(crate) const REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG: u16 = 0x1022;
+pub(crate) const REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG: u16 = 0x1023;
 const EXPRESSION_RESOLUTION_TAG_BASE: u16 = 0x0200;
 const EXPRESSION_RESOLUTION_TAG_END: u16 = 0x021B;
 const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 28;
@@ -42,6 +44,7 @@ const _: () = {
     assert!(VALUE_RESOLUTION_TAG_END == VALUE_RESOLUTION_TAG_BASE + VALUE_RESOLUTION_TAG_COUNT - 1);
     assert!(REMOVED_SELECT_TUPLE_ELEMENT_TAG > SELECT_FIELD_TAG);
     assert!(REMOVED_SELECT_RECORD_ELEMENT_TAG > REMOVED_SELECT_TUPLE_ELEMENT_TAG);
+    assert!(REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG < REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG);
 };
 
 /// Closed checked role family for one child recorded under a nested path.
@@ -56,8 +59,6 @@ pub enum CheckedNestedEvidenceRole {
     LinePlanOut,
     LinePlanTimelineAssert,
     LinePlanExpression,
-    LinePlanTimedCueAnchor,
-    LinePlanTimedCueBody,
     ChoiceIfCondition { branch: u32 },
     ChoiceForSource,
     ChoiceMatchScrutinee,
@@ -92,10 +93,6 @@ impl CheckedNestedEvidenceRole {
                 Self::LinePlanTimelineAssert
             }
             CheckedExpressionChildRole::LinePlanExpression { .. } => Self::LinePlanExpression,
-            CheckedExpressionChildRole::LinePlanTimedCueAnchor { .. } => {
-                Self::LinePlanTimedCueAnchor
-            }
-            CheckedExpressionChildRole::LinePlanTimedCueBody { .. } => Self::LinePlanTimedCueBody,
             CheckedExpressionChildRole::ChoiceIfCondition { branch, .. } => {
                 Self::ChoiceIfCondition { branch: *branch }
             }
@@ -156,8 +153,6 @@ impl CheckedNestedEvidenceRole {
             Self::LinePlanOut => 0x101F,
             Self::LinePlanTimelineAssert => 0x1020,
             Self::LinePlanExpression => 0x1021,
-            Self::LinePlanTimedCueAnchor => 0x1022,
-            Self::LinePlanTimedCueBody => 0x1023,
             Self::ChoiceIfCondition { .. } => 0x1027,
             Self::ChoiceForSource => 0x1028,
             Self::ChoiceMatchScrutinee => 0x1029,
@@ -430,7 +425,8 @@ mod tests {
     use super::{
         EXPRESSION_RESOLUTION_TAG_BASE, EXPRESSION_RESOLUTION_TAG_COUNT,
         EXPRESSION_RESOLUTION_TAG_END, PATTERN_RESOLUTION_TAG_BASE, PATTERN_RESOLUTION_TAG_COUNT,
-        PATTERN_RESOLUTION_TAG_END, REMOVED_SELECT_RECORD_ELEMENT_TAG,
+        PATTERN_RESOLUTION_TAG_END, REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG,
+        REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG, REMOVED_SELECT_RECORD_ELEMENT_TAG,
         REMOVED_SELECT_TUPLE_ELEMENT_TAG, SELECT_AGENT_FIELD_TAG, SELECT_DIALOGUE_VIEW_TAG,
         SELECT_FIELD_TAG, SELECT_METHOD_TAG, SELECT_PROGRESS_FIELD_TAG, VALUE_RESOLUTION_TAG_BASE,
         VALUE_RESOLUTION_TAG_COUNT, VALUE_RESOLUTION_TAG_END,
@@ -493,6 +489,12 @@ mod tests {
         assert_unique(&select_with_removed);
         assert_eq!(REMOVED_SELECT_TUPLE_ELEMENT_TAG, 0x0405);
         assert_eq!(REMOVED_SELECT_RECORD_ELEMENT_TAG, 0x0406);
+        let removed_line_plan = [
+            REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG,
+            REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG,
+        ];
+        assert_eq!(removed_line_plan, [0x1022, 0x1023]);
+        assert_unique(&removed_line_plan);
 
         let pattern =
             (PATTERN_RESOLUTION_TAG_BASE..=PATTERN_RESOLUTION_TAG_END).collect::<Vec<_>>();
@@ -508,6 +510,7 @@ mod tests {
         let mut all = expression;
         all.extend(value);
         all.extend(select_with_removed);
+        all.extend(removed_line_plan);
         all.extend(pattern);
         assert_unique(&all);
     }

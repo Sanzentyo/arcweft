@@ -55,6 +55,12 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
         }
+        PreparedCallCallee::EnumConstructor { seed } => {
+            match resolve_enum_constructor(&mut request, seed) {
+                Ok(target) => ResolveCallOutcome::Resolved(target),
+                Err(error) => ResolveCallOutcome::Rejected(error),
+            }
+        }
         PreparedCallCallee::Selected {
             receiver_expression,
             receiver_type,
@@ -581,34 +587,6 @@ fn resolve_free_call(
     }
 
     check_query_step(request)?;
-    let enum_variant = match &request.callee {
-        PreparedCallCallee::Free {
-            enum_variant: Some(seed),
-            ..
-        } => Some(*seed),
-        _ => None,
-    };
-    if let Some(seed) = enum_variant {
-        check_query_step(request)?;
-        let callable = PreparedResolvedCallable::try_from_intrinsic_with_enum_seed(
-            CallableCandidateId::EnumVariant(seed.id.clone()),
-            SignatureOrigin::Language {
-                family: LanguageCallableFamily::EnumConstructor,
-            },
-            &seed,
-            Arc::new(seed.schema.clone()),
-            CallableInstantiation::ExpectedEnum {
-                expected: seed.expected.clone(),
-            },
-            Vec::new(),
-            request.limits,
-        )?;
-        return NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
-            .map(ResolvedCallTarget::Candidates)
-            .map(Some);
-    }
-
-    check_query_step(request)?;
     if let Some(kind) = ResultConstructorKind::resolve(path) {
         check_query_step(request)?;
         let callable = PreparedResolvedCallable::try_from_intrinsic(
@@ -831,6 +809,28 @@ fn resolve_free_call(
     }
 
     Ok(None)
+}
+
+fn resolve_enum_constructor(
+    request: &mut CallResolverRequest<'_>,
+    seed: &super::AcceptedEnumVariantCase,
+) -> Result<ResolvedCallTarget, ResolveCallError> {
+    check_query_step(request)?;
+    let callable = PreparedResolvedCallable::try_from_intrinsic_with_enum_seed(
+        CallableCandidateId::EnumVariant(seed.id.clone()),
+        SignatureOrigin::Language {
+            family: LanguageCallableFamily::EnumConstructor,
+        },
+        seed,
+        Arc::new(seed.schema.clone()),
+        CallableInstantiation::ExpectedEnum {
+            expected: seed.expected.clone(),
+        },
+        Vec::new(),
+        request.limits,
+    )?;
+    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+        .map(ResolvedCallTarget::Candidates)
 }
 
 fn resolve_exact_project_callable(

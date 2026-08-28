@@ -274,6 +274,7 @@ define_syntax_kinds! {
     RichTextEndTag,
     RichTextTagName,
     RichTextArgumentPayload,
+    RichTextTimedCuePayload,
     RichTextFxCallPayload,
     RichTextDialogueCallPayload,
     RichTextConditionPayload,
@@ -694,6 +695,7 @@ impl SyntaxKind {
             | Self::RichTextEndTag
             | Self::RichTextTagName
             | Self::RichTextArgumentPayload
+            | Self::RichTextTimedCuePayload
             | Self::RichTextFxCallPayload
             | Self::RichTextDialogueCallPayload
             | Self::RichTextConditionPayload
@@ -984,6 +986,7 @@ impl SyntaxKind {
             | Self::RichTextEndTag
             | Self::RichTextTagName
             | Self::RichTextArgumentPayload
+            | Self::RichTextTimedCuePayload
             | Self::RichTextFxCallPayload
             | Self::RichTextDialogueCallPayload
             | Self::RichTextConditionPayload

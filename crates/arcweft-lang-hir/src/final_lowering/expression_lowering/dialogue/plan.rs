@@ -47,9 +47,6 @@ impl StagedHirModuleTransaction<'_> {
                         value: *value,
                         statement: lowered.owner,
                     },
-                    HirStmtKind::Expression { expression } => {
-                        HirLinePlanItem::Expression(*expression)
-                    }
                     _ => HirLinePlanItem::Statement(lowered.owner),
                 }
             };

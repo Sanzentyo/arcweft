@@ -125,7 +125,6 @@ fn edge_kind_matches_target(
             method == target
                 && impl_method_implementation_owner(project, method) == Some(*implementation)
         }
-        (HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }, _) => false,
         (
             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod {
                 implementation,
@@ -138,7 +137,11 @@ fn edge_kind_matches_target(
             method == target
                 && iterator_witness_method_matches(project, *implementation, *member, method)
         }
-        (HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. }, _) => false,
+        (
+            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { .. }
+            | HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
+            _,
+        ) => false,
         _ => true,
     }
 }

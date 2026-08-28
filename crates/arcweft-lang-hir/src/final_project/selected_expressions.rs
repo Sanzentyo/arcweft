@@ -121,6 +121,12 @@ pub enum HirSelectedExpressionInventoryError {
     },
     #[error("expression {expression:?} has a runtime call disposition but is not a Call")]
     InvalidRuntimeCallDisposition { expression: ExprId },
+    #[error("Call expression {expression:?} has a structural runtime projection")]
+    InvalidRuntimeStructuralDisposition { expression: ExprId },
+    #[error("expression {expression:?} has no runtime projection")]
+    MissingRuntimeExpressionProjection { expression: ExprId },
+    #[error("non-value runtime expression {expression:?} has a retained value projection")]
+    InvalidRuntimeValueRetention { expression: ExprId },
     #[error("selected runtime call {expression:?} requires a runtime receiver but has none")]
     MissingRuntimeCallReceiver { expression: ExprId },
     #[error("selected semantic call {expression:?} has no accepted call-edge inventory")]
@@ -143,20 +149,23 @@ pub enum HirRuntimeCallCalleeDisposition {
     RuntimeReceiver,
 }
 
-/// Accepted higher-layer disposition of one HIR expression at the runtime
-/// type-fact boundary.
+/// Whether one reached HIR expression publishes a runtime value/type fact.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirRuntimeExpressionTypeDisposition {
-    /// The expression produces a runtime value whose accepted type is retained.
+pub enum HirRuntimeValueRetention {
     Retain,
-    /// A selected call produces a retained runtime value, while its callee
-    /// follows the accepted static-dispatch or receiver use.
-    RetainedCallResult {
-        callee: HirRuntimeCallCalleeDisposition,
+    Omit,
+}
+
+/// Exact checked projection of one HIR expression at the runtime boundary.
+/// The shape axis prevents structural traversal from standing in for an
+/// accepted Call application, while retention controls only owner publication.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRuntimeExpressionProjection {
+    Structural {
+        value: HirRuntimeValueRetention,
     },
-    /// A selected call lowers as a non-value carrier. Its authored arguments
-    /// remain live, while its callee follows the accepted dispatch use.
-    NonValueCallCarrier {
+    Call {
+        result: HirRuntimeValueRetention,
         callee: HirRuntimeCallCalleeDisposition,
     },
 }
@@ -182,7 +191,11 @@ impl HirExecutableProjectView<'_> {
                 execution_roots: &[],
                 selected_postfix,
                 selected_call_edges,
-                expression_disposition: |_| HirRuntimeExpressionTypeDisposition::Retain,
+                expression_disposition: |_| {
+                    Some(HirRuntimeExpressionProjection::Structural {
+                        value: HirRuntimeValueRetention::Retain,
+                    })
+                },
             })?;
         if traversal.reached != traversal.typed
             || traversal.edges.len() != traversal.typed.len()
@@ -208,7 +221,7 @@ impl HirExecutableProjectView<'_> {
         outer_owners: &BTreeSet<ExprId>,
         execution_roots: &[ExprId],
         selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
-        expression_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+        expression_disposition: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirSelectedRuntimeExpressionOwners, HirSelectedExpressionInventoryError> {
         let traversal =
             self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
@@ -226,6 +239,10 @@ impl HirExecutableProjectView<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one traversal keeps selected-call projection, ownership, and fail-closed completeness atomic"
+    )]
     fn selected_expression_owners_in_domain<Postfix, Calls, Disposition>(
         self,
         input: SelectedExpressionTraversalInput<'_, Postfix, Calls, Disposition>,
@@ -233,7 +250,7 @@ impl HirExecutableProjectView<'_> {
     where
         Postfix: FnMut(ExprId) -> Option<ExprId>,
         Calls: FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
-        Disposition: FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+        Disposition: FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     {
         let SelectedExpressionTraversalInput {
             domain,
@@ -280,27 +297,56 @@ impl HirExecutableProjectView<'_> {
                     continue;
                 }
             }
-            let disposition = if domain == SelectedExpressionDomain::RuntimeType {
-                expression_disposition(owner)
+            let projection = if domain == SelectedExpressionDomain::RuntimeType {
+                expression_disposition(owner).ok_or(
+                    HirSelectedExpressionInventoryError::MissingRuntimeExpressionProjection {
+                        expression: owner,
+                    },
+                )?
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Retain,
+                }
             };
             let mut followed_edges = Vec::new();
-            if (SelectedCallContext {
-                topology,
-                modules: &modules,
-                owner,
-                kind,
-                disposition,
-                pending: &mut pending,
-                selected: &mut selected,
-                followed: &mut followed_edges,
-            })
-            .apply()?
-            {
-                selected_edges.insert(owner, followed_edges.into_boxed_slice());
-                continue;
-            }
+            let value = match (kind, projection) {
+                (HirExprKind::Call(_), HirRuntimeExpressionProjection::Call { result, callee }) => {
+                    if result == HirRuntimeValueRetention::Retain {
+                        selected.insert(owner);
+                    }
+                    append_selected_call_operands(
+                        topology,
+                        &modules,
+                        owner,
+                        kind,
+                        callee,
+                        &mut pending,
+                        &mut followed_edges,
+                    )?;
+                    selected_edges.insert(owner, followed_edges.into_boxed_slice());
+                    continue;
+                }
+                (HirExprKind::Call(_), HirRuntimeExpressionProjection::Structural { value })
+                    if domain == SelectedExpressionDomain::SemanticAnalysis =>
+                {
+                    value
+                }
+                (HirExprKind::Call(_), HirRuntimeExpressionProjection::Structural { .. }) => {
+                    return Err(
+                        HirSelectedExpressionInventoryError::InvalidRuntimeStructuralDisposition {
+                            expression: owner,
+                        },
+                    );
+                }
+                (_, HirRuntimeExpressionProjection::Call { .. }) => {
+                    return Err(
+                        HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                            expression: owner,
+                        },
+                    );
+                }
+                (_, HirRuntimeExpressionProjection::Structural { value }) => value,
+            };
             match kind {
                 HirExprKind::PostfixBracket(postfix) => {
                     let candidate = selected_postfix(owner).ok_or(
@@ -313,6 +359,7 @@ impl HirExecutableProjectView<'_> {
                         owner,
                         postfix,
                         domain,
+                        value,
                         pending: &mut pending,
                         selected: &mut selected,
                         followed: &mut followed_edges,
@@ -322,10 +369,19 @@ impl HirExecutableProjectView<'_> {
                 HirExprKind::DialogueContentApplication(_)
                     if domain == SelectedExpressionDomain::RuntimeType =>
                 {
+                    if value != HirRuntimeValueRetention::Omit {
+                        return Err(
+                            HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention {
+                                expression: owner,
+                            },
+                        );
+                    }
                     enqueue_expression_edges(topology, owner, &mut pending, &mut followed_edges);
                 }
                 _ => {
-                    selected.insert(owner);
+                    if value == HirRuntimeValueRetention::Retain {
+                        selected.insert(owner);
+                    }
                     enqueue_expression_edges(topology, owner, &mut pending, &mut followed_edges);
                 }
             }
@@ -422,48 +478,12 @@ enum SelectedExpressionDomain {
     RuntimeType,
 }
 
-struct SelectedCallContext<'a> {
-    topology: &'a HirProjectEvaluationTopology,
-    modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
-    owner: ExprId,
-    kind: &'a HirExprKind,
-    disposition: HirRuntimeExpressionTypeDisposition,
-    pending: &'a mut VecDeque<ExprId>,
-    selected: &'a mut BTreeSet<ExprId>,
-    followed: &'a mut Vec<HirExpressionEvaluationEdge>,
-}
-
-impl SelectedCallContext<'_> {
-    fn apply(&mut self) -> Result<bool, HirSelectedExpressionInventoryError> {
-        let callee = match self.disposition {
-            HirRuntimeExpressionTypeDisposition::NonValueCallCarrier { callee }
-            | HirRuntimeExpressionTypeDisposition::RetainedCallResult { callee } => callee,
-            HirRuntimeExpressionTypeDisposition::Retain => return Ok(false),
-        };
-        if matches!(
-            self.disposition,
-            HirRuntimeExpressionTypeDisposition::RetainedCallResult { .. }
-        ) {
-            self.selected.insert(self.owner);
-        }
-        append_selected_call_operands(
-            self.topology,
-            self.modules,
-            self.owner,
-            self.kind,
-            callee,
-            self.pending,
-            self.followed,
-        )?;
-        Ok(true)
-    }
-}
-
 struct SelectedPostfixContext<'a> {
     topology: &'a HirProjectEvaluationTopology,
     owner: ExprId,
     postfix: &'a HirPostfixBracket,
     domain: SelectedExpressionDomain,
+    value: HirRuntimeValueRetention,
     pending: &'a mut VecDeque<ExprId>,
     selected: &'a mut BTreeSet<ExprId>,
     followed: &'a mut Vec<HirExpressionEvaluationEdge>,
@@ -520,7 +540,9 @@ impl SelectedPostfixContext<'_> {
                 candidate,
             },
         )?;
-        if self.domain == SelectedExpressionDomain::SemanticAnalysis || selected_index {
+        if self.domain == SelectedExpressionDomain::SemanticAnalysis
+            || (selected_index && self.value == HirRuntimeValueRetention::Retain)
+        {
             self.selected.insert(self.owner);
         }
         self.pending

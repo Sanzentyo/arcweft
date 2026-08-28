@@ -30,7 +30,7 @@ use crate::symbol::{
     CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolRevision, ProjectSymbolWorldId,
 };
 
-use super::{HirRuntimeExpressionTypeDisposition, HirSelectedExpressionInventoryError};
+use super::{HirRuntimeExpressionProjection, HirSelectedExpressionInventoryError};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirRuntimeEmissionMode {
@@ -637,7 +637,7 @@ impl<'project> HirExecutableProjectView<'project> {
         input: HirRuntimeSemanticReachabilityInput,
         topology: &super::HirProjectEvaluationTopology,
         mut selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
-        mut call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+        mut expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
         self.validate_reachability_generation(&input, topology)?;
         validate_roots_and_edges(self, &input)?;
@@ -672,7 +672,7 @@ impl<'project> HirExecutableProjectView<'project> {
                     &structural.expressions,
                     &execution_expression_roots,
                     &mut selected_postfix,
-                    &mut call_disposition,
+                    &mut expression_projection,
                 )?;
             expression_type_owners.extend(typed);
             accepted.locals.extend(structural.locals);
@@ -1158,11 +1158,8 @@ fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
     match (&edge.source, &edge.kind) {
         (
             HirRuntimeReachabilitySite::Expression(source),
-            HirRuntimeReachabilityEdgeKind::CheckedProjectCall { call, .. },
-        ) => source == call,
-        (
-            HirRuntimeReachabilitySite::Expression(source),
-            HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { call, .. },
+            HirRuntimeReachabilityEdgeKind::CheckedProjectCall { call, .. }
+            | HirRuntimeReachabilityEdgeKind::CheckedTraitMethodCall { call, .. },
         ) => source == call,
         (
             HirRuntimeReachabilitySite::Statement(_),

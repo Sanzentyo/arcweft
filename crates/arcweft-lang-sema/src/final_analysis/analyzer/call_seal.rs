@@ -37,7 +37,7 @@ use crate::{
 use super::calls::{
     AnalyzerDetachedCandidateRecord, AnalyzerDetachedConsideredCandidate,
     AnalyzerDetachedUnselectedCall, AnalyzerDetachedUnselectedOutcome, AnalyzerPreparedCallGraph,
-    final_call_effects, final_callable_effects,
+    AnalyzerPreparedExpressionResolution, final_call_effects, final_callable_effects,
 };
 
 pub(super) struct DetachedAnalyzerCallGraph {
@@ -671,6 +671,10 @@ fn checked_execution_projection(
                 };
                 let selection = checked_semantic_selection(location, closed)?;
                 let source_projection = closed.source_projection().clone();
+                let inferred = solution.apply(closed.actual());
+                let expected = closed
+                    .final_expected()
+                    .map(|expected| solution.apply(expected));
                 if let CheckedCallArgumentSlotSource::Expression(expression) = slot.source() {
                     let checked = expressions.get(&expression).ok_or_else(|| {
                         final_call_seal_error(
@@ -763,8 +767,8 @@ fn checked_execution_projection(
                             destination: coordinate,
                             source_projection,
                             selection,
-                            inferred: closed.actual().clone(),
-                            expected: closed.final_expected().cloned(),
+                            inferred,
+                            expected,
                         });
                         continue;
                     }
@@ -780,8 +784,8 @@ fn checked_execution_projection(
                     destination,
                     source_projection,
                     selection,
-                    inferred: closed.actual().clone(),
-                    expected: closed.final_expected().cloned(),
+                    inferred,
+                    expected,
                 });
             }
             arguments.push(CheckedCallExecutionArgumentSeal {
@@ -808,6 +812,10 @@ fn checked_execution_projection(
                 })?;
             let selection = checked_semantic_selection(location, closed)?;
             let source_projection = closed.source_projection().clone();
+            let inferred = solution.apply(closed.actual());
+            let expected = closed
+                .final_expected()
+                .map(|expected| solution.apply(expected));
             let actual = match operand.source() {
                 crate::callable::PreparedDialogueCallOperandSource::Target { expression } => {
                     expressions
@@ -859,8 +867,8 @@ fn checked_execution_projection(
                 destination: operand.coordinate(),
                 source_projection,
                 selection,
-                inferred: closed.actual().clone(),
-                expected: closed.final_expected().cloned(),
+                inferred,
+                expected,
             });
         }
     }
@@ -873,7 +881,7 @@ fn checked_execution_projection(
 
 struct SealedSelectedCall {
     application: crate::callable::CheckedCallApplication,
-    expression_resolution: crate::final_analysis::CheckedExpressionResolution,
+    expression_resolution: AnalyzerPreparedExpressionResolution,
     callable_callee_expression: Option<ExprId>,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     diagnostics: Vec<crate::callable::CallableDiagnostic>,
@@ -1163,7 +1171,7 @@ struct PendingFinalCall {
 }
 
 struct PendingSelectedExpressionUpdate {
-    resolution: crate::final_analysis::CheckedExpressionResolution,
+    resolution: AnalyzerPreparedExpressionResolution,
     result: TypeKind,
     effects: crate::effects::EffectSet,
     callee: Option<(ExprId, TypeKind)>,
@@ -1381,7 +1389,8 @@ impl super::Analyzer<'_, '_, '_> {
                             )
                             .into()
                         }
-                        crate::final_analysis::PreparedExpressionFact::Entry(_)
+                        crate::final_analysis::PreparedExpressionFact::DialogueApplication(_)
+                        | crate::final_analysis::PreparedExpressionFact::Entry(_)
                         | crate::final_analysis::PreparedExpressionFact::ProjectVariant(_)
                         | crate::final_analysis::PreparedExpressionFact::ProjectField(_)
                         | crate::final_analysis::PreparedExpressionFact::ProjectRecord(_) => {
@@ -1400,16 +1409,28 @@ impl super::Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: pending.owner,
                     })?;
-                self.facts
-                    .replace_existing_expression(
-                        pending.owner,
+                let updated = match update.resolution {
+                    AnalyzerPreparedExpressionResolution::Complete(resolution) => {
                         CheckedExpression::new(
                             update.result,
                             previous.type_selection(),
                             update.effects,
-                            update.resolution,
-                        ),
-                    )
+                            resolution,
+                        )
+                        .into()
+                    }
+                    AnalyzerPreparedExpressionResolution::DialogueApplication => {
+                        let PreparedExpressionFact::DialogueApplication(prepared) = previous else {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        };
+                        if prepared.shell().ty() != &update.result {
+                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                        }
+                        PreparedExpressionFact::DialogueApplication(prepared)
+                    }
+                };
+                self.facts
+                    .replace_existing_expression(pending.owner, updated)
                     .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
             }
             if self

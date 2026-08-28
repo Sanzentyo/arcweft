@@ -1171,7 +1171,8 @@ impl<'a, 'project, 'catalog, 'control>
                         }
                         _ => None,
                     },
-                    crate::final_analysis::PreparedExpressionFact::Method(_)
+                    crate::final_analysis::PreparedExpressionFact::DialogueApplication(_)
+                    | crate::final_analysis::PreparedExpressionFact::Method(_)
                     | crate::final_analysis::PreparedExpressionFact::Entry(_)
                     | crate::final_analysis::PreparedExpressionFact::ProjectField(_)
                     | crate::final_analysis::PreparedExpressionFact::ProjectRecord(_) => None,
@@ -2412,7 +2413,8 @@ impl AnalyzerPreparedCallPrefix {
                         .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?,
                 )
             }
-            PreparedCallCalleeConstraintInputs::Free { .. }
+            PreparedCallCalleeConstraintInputs::Free
+            | PreparedCallCalleeConstraintInputs::ExpectedEnum { .. }
             | PreparedCallCalleeConstraintInputs::AssociatedType { .. }
             | PreparedCallCalleeConstraintInputs::DialogueCallee => {
                 if requires_value_callee {
@@ -2733,10 +2735,16 @@ impl AnalyzerPreparedCalleeExpression {
     }
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AnalyzerPreparedExpressionResolution {
+    Complete(crate::final_analysis::CheckedExpressionResolution),
+    DialogueApplication,
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerPreparedCandidateMetadata {
     expression: ExprId,
-    expression_resolution: crate::final_analysis::CheckedExpressionResolution,
+    expression_resolution: AnalyzerPreparedExpressionResolution,
     callee_expression: AnalyzerPreparedCalleeExpression,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     inventory: AnalyzerPreparedCandidateInventory,
@@ -2748,7 +2756,7 @@ pub(crate) struct AnalyzerPreparedCandidateMetadata {
 impl AnalyzerPreparedCandidateMetadata {
     pub(crate) fn new(
         expression: ExprId,
-        expression_resolution: crate::final_analysis::CheckedExpressionResolution,
+        expression_resolution: AnalyzerPreparedExpressionResolution,
         callee_expression: AnalyzerPreparedCalleeExpression,
         enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
         inventory: AnalyzerPreparedCandidateInventory,
@@ -2850,7 +2858,7 @@ impl AnalyzerPreparedCandidateRecord {
 
 pub(crate) struct AnalyzerPreparedCandidateRecordParts {
     pub(crate) expression: ExprId,
-    pub(crate) expression_resolution: crate::final_analysis::CheckedExpressionResolution,
+    pub(crate) expression_resolution: AnalyzerPreparedExpressionResolution,
     pub(crate) callee_expression: AnalyzerPreparedCalleeExpression,
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) inventory: AnalyzerPreparedCandidateInventory,
@@ -2887,7 +2895,7 @@ impl AnalyzerPreparedCandidateRecordParts {
 /// definition reference; no `Arc<PreparedResolvedCallable>` survives.
 pub(crate) struct AnalyzerDetachedCandidateRecord {
     pub(crate) expression: ExprId,
-    pub(crate) expression_resolution: crate::final_analysis::CheckedExpressionResolution,
+    pub(crate) expression_resolution: AnalyzerPreparedExpressionResolution,
     pub(crate) callee_expression: AnalyzerPreparedCalleeExpression,
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) inventory: Box<[AnalyzerDetachedConsideredCandidate]>,
@@ -3187,9 +3195,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     let mut receiver_constraints = Vec::new();
     match (&callee_inputs, candidate.instantiation()) {
         (
-            PreparedCallCalleeConstraintInputs::Free {
-                expected_enum: Some(expected),
-            },
+            PreparedCallCalleeConstraintInputs::ExpectedEnum { expected },
             CallableInstantiation::ExpectedEnum {
                 expected: candidate_expected,
             },
@@ -3210,18 +3216,14 @@ pub(crate) fn validate_and_prepare_call_constraints(
                 acceptance: ConstraintAcceptance::PatternAcceptsActual,
             });
         }
-        (
-            PreparedCallCalleeConstraintInputs::Free {
-                expected_enum: None,
-            },
-            instantiation,
-        ) if matches!(
-            instantiation,
-            CallableInstantiation::None
-                | CallableInstantiation::Result { .. }
-                | CallableInstantiation::Option
-                | CallableInstantiation::Character { .. }
-        ) => {}
+        (PreparedCallCalleeConstraintInputs::Free, instantiation)
+            if matches!(
+                instantiation,
+                CallableInstantiation::None
+                    | CallableInstantiation::Result { .. }
+                    | CallableInstantiation::Option
+                    | CallableInstantiation::Character { .. }
+            ) => {}
         (
             PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual },
             CallableInstantiation::Receiver { receiver },

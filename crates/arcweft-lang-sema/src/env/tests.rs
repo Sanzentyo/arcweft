@@ -276,7 +276,9 @@ fn standard_drop_policy_keeps_payload_case_and_zero_fade_alias_distinct() {
     assert_eq!(
         environment.standard_environment_value(&stop_now),
         Some(StandardEnvironmentValue::DropPolicy(
-            StandardDropPolicyValue::Stop { fade_nanos: 0 }
+            StandardDropPolicyValue::Stop {
+                fade: arcweft_core::time::LogicalDuration::from_nanos(0)
+            }
         ))
     );
 }

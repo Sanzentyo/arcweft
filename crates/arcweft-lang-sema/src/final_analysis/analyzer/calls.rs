@@ -15,10 +15,10 @@ pub(crate) use constraints::{
     AnalyzerDetachedUnselectedOutcome, AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix,
     AnalyzerPreparedCalleeExpression, AnalyzerPreparedCandidateInventory,
     AnalyzerPreparedCandidateMetadata, AnalyzerPreparedCandidateRecord,
-    AnalyzerPreparedDialoguePatchAdmission, AnalyzerPreparedUnselectedCall,
-    AnalyzerPreparedUnselectedOutcome, CallAnalysisInvariant, PreparedCallApplicationTransaction,
-    RanCandidateTransaction, SealedAcceptedCandidate, run_prepared_candidate,
-    validate_and_prepare_call_constraints,
+    AnalyzerPreparedDialoguePatchAdmission, AnalyzerPreparedExpressionResolution,
+    AnalyzerPreparedUnselectedCall, AnalyzerPreparedUnselectedOutcome, CallAnalysisInvariant,
+    PreparedCallApplicationTransaction, RanCandidateTransaction, SealedAcceptedCandidate,
+    run_prepared_candidate, validate_and_prepare_call_constraints,
 };
 
 pub(super) use semantics::{
@@ -617,11 +617,15 @@ impl Analyzer<'_, '_, '_> {
                 },
             ));
         }
-        let staged_callee =
-            match self.stage_call_callee_children(context, source.module, source.call) {
-                Ok(recovery) => recovery,
-                Err(error) => return Err(error),
-            };
+        let staged_callee = match self.stage_call_callee_children(
+            context,
+            source.module,
+            source.call,
+            source.expected,
+        ) {
+            Ok(recovery) => recovery,
+            Err(error) => return Err(error),
+        };
         if let Some(recovery) = staged_callee.recovery {
             return self.publish_associated_receiver_recovery(source, recovery, work);
         }
@@ -1586,7 +1590,6 @@ impl Analyzer<'_, '_, '_> {
         target_expression: ExprId,
         target_actual: TypeKind,
         has_line_plan: bool,
-        expression_resolution: CheckedExpressionResolution,
         considered: Vec<Arc<PreparedResolvedCallable>>,
         mut work: ResolverWork,
     ) -> Result<TypeKind, AnalyzerExpressionError> {
@@ -1685,7 +1688,7 @@ impl Analyzer<'_, '_, '_> {
         })?;
         let metadata = AnalyzerPreparedCandidateMetadata::new(
             owner,
-            expression_resolution,
+            AnalyzerPreparedExpressionResolution::DialogueApplication,
             AnalyzerPreparedCalleeExpression::none(),
             self.enclosing_ordinary_callable(module, owner)
                 .map_err(AnalyzerExpressionError::fatal)?,
@@ -1928,7 +1931,7 @@ impl Analyzer<'_, '_, '_> {
         })?;
         let metadata = AnalyzerPreparedCandidateMetadata::new(
             source.owner,
-            expression_resolution.clone(),
+            AnalyzerPreparedExpressionResolution::Complete(expression_resolution.clone()),
             callee_expression,
             self.enclosing_ordinary_callable(source.module, source.owner)
                 .map_err(AnalyzerExpressionError::fatal)?,
@@ -2294,6 +2297,7 @@ impl Analyzer<'_, '_, '_> {
         context: &AnalyzerExpressionContext<'_>,
         module: &HirModule,
         call: &HirCallExpr,
+        expected: Option<&TypeKind>,
     ) -> Result<StagedCallCalleeChildren, AnalyzerExpressionError> {
         let mut function_value_origin = None;
         match call.callee() {
@@ -2304,7 +2308,19 @@ impl Analyzer<'_, '_, '_> {
                 if let HirExprKind::Select(select) = expression.kind() {
                     self.evaluate_expression(context, select.target(), None)?;
                 } else if !matches!(expression.kind(), HirExprKind::Path(_)) {
-                    self.evaluate_expression(context, *value, None)?;
+                    if matches!(expression.kind(), HirExprKind::ShortVariant(_))
+                        && let Some(expected) = expected
+                    {
+                        self.evaluate_expression_with_expectation(
+                            context,
+                            *value,
+                            super::expressions::AnalyzerExpressionExpectation::enum_constructor_head(
+                                expected,
+                            ),
+                        )?;
+                    } else {
+                        self.evaluate_expression(context, *value, None)?;
+                    }
                 } else if let HirExprKind::Path(path) = expression.kind() {
                     let path = path
                         .as_resolved()
@@ -3074,7 +3090,8 @@ impl Analyzer<'_, '_, '_> {
                 }
                 _ if matches!(
                     callee_inputs,
-                    crate::callable::PreparedCallCalleeConstraintInputs::Free { .. }
+                    crate::callable::PreparedCallCalleeConstraintInputs::Free
+                        | crate::callable::PreparedCallCalleeConstraintInputs::ExpectedEnum { .. }
                         | crate::callable::PreparedCallCalleeConstraintInputs::DialogueCallee
                 ) =>
                 {

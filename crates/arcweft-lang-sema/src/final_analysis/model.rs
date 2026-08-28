@@ -1,7 +1,5 @@
 //! Generation-bound checked semantic fact model.
 
-use std::collections::BTreeSet;
-
 use super::match_edges::NestedPathEvidence;
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
@@ -9,22 +7,19 @@ use super::{
     DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
     ExprId, GenericParameterOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily,
     HirLiteral, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
-    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, StmtId, TypeKind,
+    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
     TypeParameterSubstitutions,
 };
 use crate::callable::{
-    CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CallableSignatureSchemaDigest,
-    CharacterDialoguePatchContext, CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId,
-    OpenArgumentId,
+    CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
+    CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId, OpenArgumentId,
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
-use crate::checked_rich_text::CheckedDuration;
 use crate::types::{
     AcceptedVariantCaseSemanticId, CharacterField, EntityKind, VariantPayloadOwnerFamily,
     VariantPayloadShape, VariantPayloadType,
 };
 use arcweft_core::value::RuntimeAgentField;
-use arcweft_lang_hir::expr::HirCallArgument;
 use arcweft_lang_hir::project::HirRuntimeIteratorWitnessMethodRole;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationDigest, ExternalDeclarationId, ImplMethodDeclarationId,
@@ -1274,6 +1269,13 @@ pub use capture::{
     CheckedImplicitCaptureUse,
 };
 
+#[path = "model/dialogue_line_plan.rs"]
+mod dialogue_line_plan;
+pub use dialogue_line_plan::{
+    CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
+    CheckedDialogueLinePlan, CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal,
+};
+
 /// Semantic payload needed in addition to the final-HIR expression family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedExpressionResolution {
@@ -1335,144 +1337,6 @@ pub enum CheckedExpressionResolution {
         line_result: TypeKind,
     },
     PostfixBracket(PostfixBracketResolution),
-}
-
-/// Source-ordered checked mark coordinate owned by one dialogue content
-/// application. The ordinal is sealed against that application's checked
-/// `RichText` mark catalog and is never reconstructed from a runtime label.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedDialogueMarkOrdinal(u32);
-
-impl CheckedDialogueMarkOrdinal {
-    pub(crate) const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-/// One final-HIR line-plan statement bound to an exact checked content mark.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedDialogueMarkHandler {
-    statement: StmtId,
-    mark: CheckedDialogueMarkOrdinal,
-}
-
-impl CheckedDialogueMarkHandler {
-    pub(crate) const fn new(statement: StmtId, mark: CheckedDialogueMarkOrdinal) -> Self {
-        Self { statement, mark }
-    }
-
-    pub const fn statement(&self) -> StmtId {
-        self.statement
-    }
-
-    pub const fn mark(&self) -> CheckedDialogueMarkOrdinal {
-        self.mark
-    }
-}
-
-/// Checked content-local line-plan coordinate catalog. Public mark identities
-/// remain useful to semantic tooling; executable consumers use only the exact
-/// statement-to-ordinal rows.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedDialogueLinePlan {
-    marks: Box<[PublicId]>,
-    mark_handlers: Box<[CheckedDialogueMarkHandler]>,
-    effect_sites: Box<[CheckedDialogueEffectSite]>,
-}
-
-impl CheckedDialogueLinePlan {
-    pub(crate) fn new(
-        marks: impl Into<Box<[PublicId]>>,
-        mark_handlers: impl Into<Box<[CheckedDialogueMarkHandler]>>,
-        effect_sites: impl Into<Box<[CheckedDialogueEffectSite]>>,
-    ) -> Self {
-        Self {
-            marks: marks.into(),
-            mark_handlers: mark_handlers.into(),
-            effect_sites: effect_sites.into(),
-        }
-    }
-
-    pub const fn marks(&self) -> &[PublicId] {
-        &self.marks
-    }
-
-    pub const fn mark_handlers(&self) -> &[CheckedDialogueMarkHandler] {
-        &self.mark_handlers
-    }
-
-    pub const fn effect_sites(&self) -> &[CheckedDialogueEffectSite] {
-        &self.effect_sites
-    }
-}
-
-/// Source-ordered checked identity of one inline dialogue effect boundary.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedDialogueEffectSiteOrdinal(u32);
-
-impl CheckedDialogueEffectSiteOrdinal {
-    pub(crate) const fn new(value: u32) -> Self {
-        Self(value)
-    }
-
-    pub const fn get(self) -> u32 {
-        self.0
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedDialogueEffectTrigger {
-    Content,
-    Delay(CheckedDuration),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedDialogueEffectOperation {
-    Evaluated(Box<CheckedEvaluatedEffect>),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedDialogueEffectSite {
-    id: CheckedDialogueEffectSiteOrdinal,
-    trigger: CheckedDialogueEffectTrigger,
-    expression: ExprId,
-    operation: CheckedDialogueEffectOperation,
-}
-
-impl CheckedDialogueEffectSite {
-    pub(crate) const fn new(
-        id: CheckedDialogueEffectSiteOrdinal,
-        trigger: CheckedDialogueEffectTrigger,
-        expression: ExprId,
-        operation: CheckedDialogueEffectOperation,
-    ) -> Self {
-        Self {
-            id,
-            trigger,
-            expression,
-            operation,
-        }
-    }
-
-    pub const fn id(&self) -> CheckedDialogueEffectSiteOrdinal {
-        self.id
-    }
-
-    pub const fn trigger(&self) -> &CheckedDialogueEffectTrigger {
-        &self.trigger
-    }
-
-    pub const fn expression(&self) -> ExprId {
-        self.expression
-    }
-
-    pub const fn operation(&self) -> &CheckedDialogueEffectOperation {
-        &self.operation
-    }
 }
 
 impl CheckedExpressionResolution {
@@ -2494,239 +2358,13 @@ pub enum CheckedSuspensionStatement {
     Wait,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedEffectField {
-    open_argument: OpenArgumentId,
-    value: ExprId,
-}
-
-impl CheckedEffectField {
-    pub(crate) fn new(open_argument: OpenArgumentId, value: ExprId) -> Self {
-        Self {
-            open_argument,
-            value,
-        }
-    }
-
-    pub const fn open_argument(&self) -> &OpenArgumentId {
-        &self.open_argument
-    }
-
-    pub const fn value(&self) -> ExprId {
-        self.value
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedDropFade {
-    ConstantNanos(u64),
-    Expression(ExprId),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedDropPolicy {
-    Default,
-    Cancel,
-    Stop { fade: CheckedDropFade },
-    Finish,
-    Release,
-    Detach,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedEvaluatedEffect {
-    Log {
-        level: CallableLogLevel,
-        message: ExprId,
-        fields: Box<[CheckedEffectField]>,
-    },
-    SignalWrite {
-        target: ExprId,
-        value: ExprId,
-    },
-    MetricWrite {
-        target: ExprId,
-        value: ExprId,
-    },
-    EmitEvent {
-        event: ExprId,
-        fields: Box<[CheckedEffectField]>,
-    },
-    Panic {
-        message: ExprId,
-    },
-    Fail {
-        message: ExprId,
-    },
-    Bail {
-        message: ExprId,
-    },
-    Ensure {
-        condition: ExprId,
-        message: ExprId,
-    },
-    Drop {
-        operation: DropCallableId,
-        target: ExprId,
-        policy_source: Option<ExprId>,
-        policy: CheckedDropPolicy,
-    },
-}
-
-impl CheckedEvaluatedEffect {
-    pub const fn disposition(&self) -> CallableEvaluatedEffect {
-        match self {
-            Self::Log { level, .. } => CallableEvaluatedEffect::Log(*level),
-            Self::SignalWrite { .. } => CallableEvaluatedEffect::SignalWrite,
-            Self::MetricWrite { .. } => CallableEvaluatedEffect::MetricWrite,
-            Self::EmitEvent { .. } => CallableEvaluatedEffect::EmitEvent,
-            Self::Panic { .. } => CallableEvaluatedEffect::Panic,
-            Self::Fail { .. } => CallableEvaluatedEffect::Fail,
-            Self::Bail { .. } => CallableEvaluatedEffect::Bail,
-            Self::Ensure { .. } => CallableEvaluatedEffect::Ensure,
-            Self::Drop { operation, .. } => CallableEvaluatedEffect::Drop(*operation),
-        }
-    }
-
-    pub(crate) fn try_from_call<'a>(
-        effect: CallableEvaluatedEffect,
-        arguments: &[HirCallArgument],
-        schema: CallableSignatureSchemaDigest,
-        head: Option<ExprId>,
-        open_arguments: impl IntoIterator<Item = Option<(ExprId, &'a OpenArgumentId)>>,
-    ) -> Option<Self> {
-        match effect {
-            CallableEvaluatedEffect::Log(level) => {
-                let (message, fields) =
-                    checked_message_and_fields(arguments, head, schema, open_arguments)?;
-                Some(Self::Log {
-                    level,
-                    message,
-                    fields,
-                })
-            }
-            CallableEvaluatedEffect::EmitEvent => {
-                let (event, fields) =
-                    checked_message_and_fields(arguments, head, schema, open_arguments)?;
-                Some(Self::EmitEvent { event, fields })
-            }
-            CallableEvaluatedEffect::SignalWrite => {
-                let values = checked_fixed_effect_arguments(arguments, &["target", "value"], 2)?;
-                Some(Self::SignalWrite {
-                    target: values[0]?,
-                    value: values[1]?,
-                })
-            }
-            CallableEvaluatedEffect::MetricWrite => {
-                let values = checked_fixed_effect_arguments(arguments, &["target", "value"], 2)?;
-                Some(Self::MetricWrite {
-                    target: values[0]?,
-                    value: values[1]?,
-                })
-            }
-            CallableEvaluatedEffect::Panic
-            | CallableEvaluatedEffect::Fail
-            | CallableEvaluatedEffect::Bail => {
-                let values = checked_fixed_effect_arguments(arguments, &["message"], 1)?;
-                let message = values[0]?;
-                Some(match effect {
-                    CallableEvaluatedEffect::Panic => Self::Panic { message },
-                    CallableEvaluatedEffect::Fail => Self::Fail { message },
-                    CallableEvaluatedEffect::Bail => Self::Bail { message },
-                    _ => unreachable!("the grouped evaluated-effect family is exhaustive"),
-                })
-            }
-            CallableEvaluatedEffect::Ensure => {
-                let values =
-                    checked_fixed_effect_arguments(arguments, &["condition", "message"], 2)?;
-                Some(Self::Ensure {
-                    condition: values[0]?,
-                    message: values[1]?,
-                })
-            }
-            CallableEvaluatedEffect::Drop(_) => None,
-        }
-    }
-}
-
-fn checked_message_and_fields<'a>(
-    arguments: &[HirCallArgument],
-    head: Option<ExprId>,
-    schema: CallableSignatureSchemaDigest,
-    open_arguments: impl IntoIterator<Item = Option<(ExprId, &'a OpenArgumentId)>>,
-) -> Option<(ExprId, Box<[CheckedEffectField]>)> {
-    let expected_head = head?;
-    let mut found_head = None;
-    let mut open_arguments = open_arguments.into_iter();
-    let mut identities = BTreeSet::new();
-    let mut fields = Vec::new();
-    for argument in arguments {
-        let open_argument = open_arguments.next()?;
-        if matches!(argument, HirCallArgument::Spread { .. }) {
-            return None;
-        }
-        if expected_head == argument.value() {
-            if open_argument.is_some() {
-                return None;
-            }
-            if found_head.replace(argument.value()).is_some() {
-                return None;
-            }
-            continue;
-        }
-        let (source, open_argument) = open_argument?;
-        if source != argument.value()
-            || open_argument.schema() != schema
-            || !identities.insert(open_argument)
-        {
-            return None;
-        }
-        fields.push(CheckedEffectField::new(
-            open_argument.clone(),
-            argument.value(),
-        ));
-    }
-    if open_arguments.next().is_some() {
-        return None;
-    }
-    Some((found_head?, fields.into_boxed_slice()))
-}
-
-fn checked_fixed_effect_arguments(
-    arguments: &[HirCallArgument],
-    names: &[&str],
-    required: usize,
-) -> Option<Vec<Option<ExprId>>> {
-    let mut values = vec![None; names.len()];
-    let mut next_positional = 0;
-    for argument in arguments {
-        let index = match argument {
-            HirCallArgument::Positional { .. } => {
-                while values.get(next_positional).is_some_and(Option::is_some) {
-                    next_positional += 1;
-                }
-                let index = next_positional;
-                next_positional += 1;
-                index
-            }
-            HirCallArgument::Named { .. } => names.iter().position(|candidate| {
-                argument
-                    .resolved_name()
-                    .is_some_and(|name| *candidate == name.as_str())
-            })?,
-            HirCallArgument::Spread { .. } => return None,
-        };
-        let slot = values.get_mut(index)?;
-        if slot.replace(argument.value()).is_some() {
-            return None;
-        }
-    }
-    values
-        .iter()
-        .take(required)
-        .all(Option::is_some)
-        .then_some(values)
-}
+#[path = "model/evaluated_effect.rs"]
+mod evaluated_effect;
+pub use evaluated_effect::{
+    CheckedDropFade, CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource,
+    CheckedEffectField, CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand,
+    CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
+};
 
 /// Closed checked fact for one live statement.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2759,9 +2397,9 @@ impl CheckedStatement {
                 visitor(assignment.value_type())
             }
             CheckedStatementRole::Iteration(iteration) => iteration.visit_types(visitor),
+            CheckedStatementRole::EvaluatedEffect(effect) => effect.visit_types(visitor),
             CheckedStatementRole::Ordinary
             | CheckedStatementRole::Assertion(_)
-            | CheckedStatementRole::EvaluatedEffect(_)
             | CheckedStatementRole::Suspension(_)
             | CheckedStatementRole::Yield
             | CheckedStatementRole::UnsafeAudit => Ok(()),

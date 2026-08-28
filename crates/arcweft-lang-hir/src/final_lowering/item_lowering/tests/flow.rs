@@ -42,6 +42,11 @@ fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
             "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
             "    with:\n",
             "        let actor = alice.stage.acquire(scope=line)\n",
+            "        at(0.10s) {\n",
+            "            actor.look(.smile)\n",
+            "        }\n",
+            "        at(0.20s):\n",
+            "            actor.look(.worried)\n",
             "        let cue = at(0.42s):\n",
             "            actor.look(.worried, crossfade=120ms)\n",
             "        let voice = line.voice_handle()\n",
@@ -85,17 +90,31 @@ fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
     let plan = application
         .plan()
         .expect("Dialogue application owns its line plan");
-    assert_eq!(plan.items().len(), 4);
+    assert_eq!(plan.items().len(), 6);
     assert!(matches!(plan.items()[0], HirLinePlanItem::Let { .. }));
-    let HirLinePlanItem::Let { value: cue, .. } = plan.items()[1] else {
+    for item in &plan.items()[1..3] {
+        let HirLinePlanItem::Statement(statement) = item else {
+            panic!("bare line-plan callback remains statement-owned")
+        };
+        let HirStmtKind::Expression { expression } =
+            module.resolve_stmt(*statement).unwrap().kind()
+        else {
+            panic!("bare line-plan statement retains its expression payload")
+        };
+        assert!(matches!(
+            module.resolve_expr(*expression).unwrap().kind(),
+            HirExprKind::Call(_)
+        ));
+    }
+    let HirLinePlanItem::Let { value: cue, .. } = plan.items()[3] else {
         panic!("timed cue binding remains a typed line-plan Let")
     };
     assert!(matches!(
         module.resolve_expr(cue).unwrap().kind(),
         HirExprKind::Call(_)
     ));
-    assert!(matches!(plan.items()[2], HirLinePlanItem::Let { .. }));
-    assert!(matches!(plan.items()[3], HirLinePlanItem::Out { .. }));
+    assert!(matches!(plan.items()[4], HirLinePlanItem::Let { .. }));
+    assert!(matches!(plan.items()[5], HirLinePlanItem::Out { .. }));
 }
 
 #[test]

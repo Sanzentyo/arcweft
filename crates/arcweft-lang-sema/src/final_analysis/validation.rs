@@ -6,7 +6,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
-    expr::{HirCallArgument, HirCallCallee, HirCallExpr, HirPlaceholderKind},
+    expr::{HirCallCallee, HirPlaceholderKind},
     project::HirProjectEvaluationTopology,
     source_index::{
         HirExprSourceRole, HirLocalSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
@@ -15,9 +15,7 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    callable::{
-        CallableCandidateId, CallableValidator, CheckedCallOperandDestination, DialogueCallableId,
-    },
+    callable::{CallableCandidateId, CallableValidator, DialogueCallableId},
     types::{
         NoopTypeCompatibilityControl, TypeCompatibilityFailure, TypeCompatibilityForbidden,
         TypeCompatibilityPolicy,
@@ -29,19 +27,18 @@ use super::{
     CallAnalysisOutcome, CallCalleeClassificationFact, CallTargetFacts, CallableDeclarationOwner,
     CallableDiagnosticSubject, CaptureId, CheckedAssignment, CheckedBinding, CheckedBindingRole,
     CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallResult,
-    CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice, CheckedDropFade,
-    CheckedDropPolicy, CheckedEntryReference, CheckedEvaluatedEffect, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPipe, CheckedProjectCallable, CheckedProjectItem,
-    CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution, CheckedStatement,
-    CheckedStatementRole, CheckedTraitConformance, CheckedTryBoundary, CheckedTryCarrier,
-    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-    DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisWork,
-    HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId, HirPatternKind, HirStmtKind,
-    ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution,
-    ProjectNominalBody, ProjectSymbolTable, ResolvedCallable, ResolvedCallableOrigin,
-    SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
+    CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice,
+    CheckedEntryReference, CheckedExpression, CheckedExpressionResolution,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe,
+    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
+    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedTraitConformance,
+    CheckedTryBoundary, CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner,
+    CheckedVariantResolution, DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisWork, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
+    HirPatternKind, HirStmtKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
+    PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
+    ResolvedCallableOrigin, SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
 };
 
 /// Borrowed semantic fact maps validated and accounted as one generation.
@@ -1650,8 +1647,8 @@ pub(super) fn validate_statements(
                 let statement_expression = resolve_module(modules, expression.module())?
                     .resolve_expr(*expression)
                     .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                let (call_owner, pipeline_target) = match statement_expression.kind() {
-                    HirExprKind::Call(_) => (*expression, None),
+                let call_owner = match statement_expression.kind() {
+                    HirExprKind::Call(_) => *expression,
                     HirExprKind::Pipe(authored) => {
                         let Some(CheckedExpressionResolution::Pipe(checked)) = expressions
                             .get(expression)
@@ -1663,7 +1660,7 @@ pub(super) fn validate_statements(
                         {
                             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                         }
-                        (checked.right(), Some(checked.left()))
+                        checked.right()
                     }
                     _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
                 };
@@ -1674,73 +1671,10 @@ pub(super) fn validate_statements(
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
                 let selected = application.core().candidates().selected();
-                if selected.schema().evaluated_effect() != Some(effect.disposition()) {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                }
-                let expression = resolve_module(modules, call_owner.module())?
-                    .resolve_expr(call_owner)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                let HirExprKind::Call(call) = expression.kind() else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                match effect.as_ref() {
-                    CheckedEvaluatedEffect::Drop { .. } => {
-                        validate_drop_effect(modules, expressions, call, effect, pipeline_target)
-                    }
-                    _ if pipeline_target.is_some() => false,
-                    _ => {
-                        let execution = application.core().execution();
-                        let disposition = effect.disposition();
-                        let head = disposition
-                            .accepts_open_fields()
-                            .then(|| {
-                                execution.arguments().iter().find_map(|argument| {
-                                    argument.slots().iter().find_map(|slot| {
-                                        let CheckedCallOperandDestination::Parameter(coordinate) =
-                                            slot.destination()
-                                        else {
-                                            return None;
-                                        };
-                                        disposition.operand_role(*coordinate).and_then(|_| {
-                                            match slot.source().raw() {
-                                                CheckedCallArgumentSlotSource::Expression(source) => {
-                                                    Some(source)
-                                                }
-                                                CheckedCallArgumentSlotSource::CompactNumericElement {
-                                                    ..
-                                                } => None,
-                                            }
-                                        })
-                                    })
-                                })
-                            })
-                            .flatten();
-                        let open_arguments = execution.arguments().iter().map(|argument| {
-                            let [slot] = argument.slots() else {
-                                return None;
-                            };
-                            let source = match slot.source().raw() {
-                                CheckedCallArgumentSlotSource::Expression(source) => source,
-                                CheckedCallArgumentSlotSource::CompactNumericElement { .. } => {
-                                    return None;
-                                }
-                            };
-                            let CheckedCallOperandDestination::Open(open) = slot.destination()
-                            else {
-                                return None;
-                            };
-                            Some((source, open))
-                        });
-                        CheckedEvaluatedEffect::try_from_call(
-                            disposition,
-                            call.arguments(),
-                            selected.schema().semantic_digest(),
-                            head,
-                            open_arguments,
-                        )
-                        .is_some_and(|projected| projected == **effect)
-                    }
-                }
+                application.core().site() == crate::callable::CheckedCallSite::HirCall(call_owner)
+                    && application.core().application_site() == effect.application()
+                    && selected.schema().evaluated_effect() == Some(effect.disposition())
+                    && matches!(application.result(), CheckedCallResult::Value(_))
             }
             CheckedStatementRole::Iteration(_) => {
                 matches!(statement.kind(), HirStmtKind::For(_))
@@ -1773,148 +1707,6 @@ pub(super) fn validate_statements(
         }
     }
     Ok(())
-}
-
-fn validate_drop_effect(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    expressions: &BTreeMap<ExprId, CheckedExpression>,
-    call: &HirCallExpr,
-    effect: &CheckedEvaluatedEffect,
-    pipeline_target: Option<ExprId>,
-) -> bool {
-    let CheckedEvaluatedEffect::Drop {
-        operation,
-        target,
-        policy_source,
-        policy,
-    } = effect
-    else {
-        return false;
-    };
-    let target_matches = if let Some(pipeline_target) = pipeline_target {
-        pipeline_target == *target
-            && match policy_source {
-                Some(source) => single_call_argument(call.arguments()) == Some(*source),
-                None => call.arguments().is_empty(),
-            }
-    } else {
-        match call.callee() {
-            HirCallCallee::UnresolvedDot { value_receiver, .. } => {
-                value_receiver == target
-                    && match policy_source {
-                        Some(source) => single_call_argument(call.arguments()) == Some(*source),
-                        None => call.arguments().is_empty(),
-                    }
-            }
-            HirCallCallee::Value { value } => {
-                if single_call_argument(call.arguments()) != Some(*target) {
-                    return false;
-                }
-                match policy_source {
-                    None => true,
-                    Some(source) => {
-                        resolve_module(modules, value.module())
-                            .ok()
-                            .and_then(|module| module.resolve_expr(*value).ok())
-                            .and_then(|expression| match expression.kind() {
-                                HirExprKind::Call(prefix) => {
-                                    single_call_argument(prefix.arguments())
-                                }
-                                _ => None,
-                            })
-                            == Some(*source)
-                    }
-                }
-            }
-            HirCallCallee::Associated { .. } => false,
-        }
-    };
-    if !target_matches {
-        return false;
-    }
-    match (operation, policy_source, policy) {
-        (
-            crate::callable::DropCallableId::Drop | crate::callable::DropCallableId::DropOptional,
-            None,
-            CheckedDropPolicy::Default,
-        ) => true,
-        (crate::callable::DropCallableId::DropWithPolicy, Some(source), policy) => {
-            validate_drop_policy_source(modules, expressions, *source, policy)
-        }
-        _ => false,
-    }
-}
-
-fn validate_drop_policy_source(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    expressions: &BTreeMap<ExprId, CheckedExpression>,
-    source: ExprId,
-    policy: &CheckedDropPolicy,
-) -> bool {
-    let Some(expression) = expressions.get(&source) else {
-        return false;
-    };
-    match expression.resolution() {
-        CheckedExpressionResolution::Value(CheckedValueResolution::Registered(value)) => {
-            let Some(binding) = value.environment_binding() else {
-                return false;
-            };
-            matches!(
-                (
-                    crate::env::StandardEnvironmentValue::for_binding(binding),
-                    policy,
-                ),
-                (
-                    Some(crate::env::StandardEnvironmentValue::DropPolicy(
-                        crate::env::StandardDropPolicyValue::Stop { fade_nanos: expected },
-                    )),
-                    CheckedDropPolicy::Stop {
-                        fade: CheckedDropFade::ConstantNanos(actual),
-                    },
-                ) if expected == *actual
-            )
-        }
-        CheckedExpressionResolution::Variant(variant) => {
-            let CheckedVariantOwner::BuiltinClosed { nominal, .. } = variant.owner() else {
-                return false;
-            };
-            let Some(case) =
-                crate::env::StandardDropPolicyCase::for_owner_ordinal(nominal, variant.ordinal())
-            else {
-                return false;
-            };
-            match (case, policy) {
-                (crate::env::StandardDropPolicyCase::Cancel, CheckedDropPolicy::Cancel)
-                | (crate::env::StandardDropPolicyCase::Finish, CheckedDropPolicy::Finish)
-                | (crate::env::StandardDropPolicyCase::Release, CheckedDropPolicy::Release)
-                | (crate::env::StandardDropPolicyCase::Detach, CheckedDropPolicy::Detach) => true,
-                (
-                    crate::env::StandardDropPolicyCase::Stop,
-                    CheckedDropPolicy::Stop {
-                        fade: CheckedDropFade::Expression(fade),
-                    },
-                ) => {
-                    resolve_module(modules, source.module())
-                        .ok()
-                        .and_then(|module| module.resolve_expr(source).ok())
-                        .and_then(|expression| match expression.kind() {
-                            HirExprKind::Call(call) => single_call_argument(call.arguments()),
-                            _ => None,
-                        })
-                        == Some(*fade)
-                }
-                _ => false,
-            }
-        }
-        _ => false,
-    }
-}
-
-fn single_call_argument(arguments: &[HirCallArgument]) -> Option<ExprId> {
-    let [argument] = arguments else {
-        return None;
-    };
-    (!matches!(argument, HirCallArgument::Spread { .. })).then(|| argument.value())
 }
 
 fn validate_assignment(

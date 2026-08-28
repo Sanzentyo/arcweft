@@ -188,6 +188,18 @@ fn emit_line_plan_item(
             }
         }
     }
+    if parser.at("at") {
+        let head_end = physical_line_end(parser, parser.cursor(), end);
+        if let Some(colon) = trailing_owner_body_token(parser, parser.cursor(), head_end, true)
+            && token_text(parser, colon) == Some(":")
+        {
+            let interval = indented_suite_interval(parser, parser.cursor(), colon, end);
+            if interval.issue().is_none() {
+                emit_callback_expression(parser, colon, interval, ordinal);
+                return;
+            }
+        }
+    }
     emit_statement_with_role(
         parser,
         end,
@@ -221,6 +233,26 @@ fn emit_callback_let(
         SyntaxRole::Initializer,
     );
     bump_until(parser, interval.end());
+    parser.finish();
+}
+
+fn emit_callback_expression(
+    parser: &mut DocumentParser<'_, '_>,
+    colon: usize,
+    interval: IndentedSuiteInterval,
+    ordinal: u32,
+) {
+    parser.start(
+        SyntaxKind::ExpressionStatement,
+        SyntaxRole::DialogueLinePlanItem(ordinal),
+    );
+    emit_indented_callback_call(
+        parser,
+        colon,
+        interval.first_item(),
+        interval.end(),
+        SyntaxRole::Initializer,
+    );
     parser.finish();
 }
 

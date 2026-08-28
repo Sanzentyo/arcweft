@@ -40,7 +40,7 @@ pub use self::runtime_semantic_owners::{
     HirRuntimeSemanticReachabilityInput,
 };
 pub use self::selected_expressions::{
-    HirRuntimeCallCalleeDisposition, HirRuntimeExpressionTypeDisposition,
+    HirRuntimeCallCalleeDisposition, HirRuntimeExpressionProjection, HirRuntimeValueRetention,
     HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
     HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
 };

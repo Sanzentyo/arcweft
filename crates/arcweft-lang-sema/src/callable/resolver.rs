@@ -66,7 +66,7 @@ use crate::{
     },
     nominal::{ResolvedAssociatedTypeReceiver, TypeResolutionReport},
     registration::RegisteredSemanticWorld,
-    types::TypeKind,
+    types::{TypeKind, VariantPayloadOwnerFamily, VariantPayloadShape},
 };
 
 use super::CharacterDialoguePatchContext;
@@ -93,7 +93,9 @@ pub(crate) enum PreparedCallCallee<'a> {
         path: &'a CallablePath,
         project: Option<&'a CallableDeclarationKey>,
         scope: PreparedFreeCallScope,
-        enum_variant: Option<&'a AcceptedEnumVariantCase>,
+    },
+    EnumConstructor {
+        seed: &'a AcceptedEnumVariantCase,
     },
     Selected {
         receiver_expression: ExprId,
@@ -142,7 +144,9 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
         path: Box<CallablePath>,
         project: Option<Box<CallableDeclarationKey>>,
         scope: PreparedFreeCallScope,
-        enum_variant: Option<Box<AcceptedEnumVariantCase>>,
+    },
+    EnumConstructor {
+        seed: Box<AcceptedEnumVariantCase>,
     },
     Selected {
         receiver_expression: ExprId,
@@ -172,7 +176,8 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
 /// or detached function-value type alongside the resolved candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCallCalleeConstraintInputs {
-    Free { expected_enum: Option<TypeKind> },
+    Free,
+    ExpectedEnum { expected: TypeKind },
     ValueReceiver { source: ExprId, actual: TypeKind },
     AssociatedType { actual: TypeKind },
     DialogueCallee,
@@ -431,17 +436,13 @@ impl PreparedCallCalleeConstraintInputs {
     ) -> Result<Option<&'a TypeKind>, super::CallConstraintInvariant> {
         match (self, instantiation) {
             (
-                Self::Free {
-                    expected_enum: Some(expected),
-                },
+                Self::ExpectedEnum { expected },
                 CallableInstantiation::ExpectedEnum {
                     expected: instantiated,
                 },
             ) if expected == instantiated => Ok(None),
             (
-                Self::Free {
-                    expected_enum: None,
-                },
+                Self::Free,
                 CallableInstantiation::None
                 | CallableInstantiation::Result { .. }
                 | CallableInstantiation::Option
@@ -462,6 +463,7 @@ impl PreparedFinalCallCallee<'_> {
         match self {
             Self::FunctionValue { value } => Some(value.into_origin()),
             Self::Free { .. }
+            | Self::EnumConstructor { .. }
             | Self::Selected { .. }
             | Self::AssociatedType { .. }
             | Self::Dialogue { .. }
@@ -471,8 +473,9 @@ impl PreparedFinalCallCallee<'_> {
 
     pub(crate) fn constraint_inputs(&self) -> PreparedCallCalleeConstraintInputs {
         match self {
-            Self::Free { enum_variant, .. } => PreparedCallCalleeConstraintInputs::Free {
-                expected_enum: enum_variant.as_ref().map(|seed| seed.expected.clone()),
+            Self::Free { .. } => PreparedCallCalleeConstraintInputs::Free,
+            Self::EnumConstructor { seed } => PreparedCallCalleeConstraintInputs::ExpectedEnum {
+                expected: seed.expected.clone(),
             },
             Self::Selected {
                 receiver_expression,
@@ -501,13 +504,12 @@ impl PreparedFinalCallCallee<'_> {
                 path,
                 project,
                 scope,
-                enum_variant,
             } => PreparedCallCallee::Free {
                 path,
                 project: project.as_deref(),
                 scope: *scope,
-                enum_variant: enum_variant.as_deref(),
             },
+            Self::EnumConstructor { seed } => PreparedCallCallee::EnumConstructor { seed },
             Self::Selected {
                 receiver_expression,
                 receiver_type,
@@ -650,7 +652,6 @@ struct TypedEnvironmentMethodCandidate<'a> {
 pub(crate) struct AcceptedEnumVariantCase {
     id: super::EnumVariantSignatureId,
     case_ordinal: u32,
-    diagnostic_name: super::CallableName,
     expected: TypeKind,
     schema: CallableSignatureSchema,
 }
@@ -660,7 +661,7 @@ impl AcceptedEnumVariantCase {
         checked: &PreparedExpressionFact,
         limits: &CallableLimits,
     ) -> Result<Option<Self>, super::CallableSchemaError> {
-        let (nominal, ordinal, payload, diagnostic_name) = match checked {
+        let (owner, ordinal, payload, expected) = match checked {
             PreparedExpressionFact::ProjectVariant(prepared) => {
                 let Some(selected_index) = usize::try_from(prepared.selected_ordinal()).ok() else {
                     return Ok(None);
@@ -673,67 +674,66 @@ impl AcceptedEnumVariantCase {
                 let Some(selected) = selected else {
                     return Ok(None);
                 };
+                let owner = prepared.owner().nominal().identity();
+                let payload = match selected.payload() {
+                    None => VariantPayloadShape::Unit,
+                    Some(payload) => VariantPayloadShape::try_tuple(
+                        VariantPayloadOwnerFamily::Project,
+                        owner,
+                        selected.ordinal(),
+                        [payload.clone()],
+                    )
+                    .map_err(|_| {
+                        super::CallableSchemaError::FamilyInvariant {
+                            family: super::CallableFamily::EnumConstructor,
+                            code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                        }
+                    })?,
+                };
                 (
-                    prepared.owner().nominal(),
+                    owner,
                     selected.ordinal(),
-                    selected.payload(),
-                    selected.diagnostic_name(),
+                    payload,
+                    prepared.owner().nominal().ty(),
                 )
             }
             PreparedExpressionFact::Complete(checked) => {
                 let CheckedExpressionResolution::Variant(variant) = checked.resolution() else {
                     return Ok(None);
                 };
-                let crate::final_analysis::CheckedVariantOwner::Project { nominal, .. } =
-                    variant.owner()
-                else {
-                    return Ok(None);
-                };
                 if !variant.owner().has_valid_case_rows() {
                     return Ok(None);
                 }
                 let selected = variant.selected();
-                let payload = selected.payload().single_tuple_field();
-                if !selected.payload().is_unit() && payload.is_none() {
+                if checked.ty().semantic_identity_digest() != variant.owner().semantic_type() {
                     return Ok(None);
                 }
                 (
-                    nominal,
+                    variant.owner().semantic_type(),
                     selected.ordinal(),
-                    payload,
-                    selected.diagnostic_name(),
+                    selected.payload().clone(),
+                    checked.ty().clone(),
                 )
             }
-            PreparedExpressionFact::Method(_)
+            PreparedExpressionFact::DialogueApplication(_)
+            | PreparedExpressionFact::Method(_)
             | PreparedExpressionFact::Entry(_)
             | PreparedExpressionFact::ProjectField(_)
             | PreparedExpressionFact::ProjectRecord(_) => return Ok(None),
         };
-        let expected = nominal.ty();
         if checked.ty() != &expected {
             return Ok(None);
         }
-        let Some(diagnostic_name) = diagnostic_name else {
-            return Ok(None);
-        };
-        let diagnostic_name = match super::CallableName::try_new(diagnostic_name) {
-            Ok(name) => name,
-            Err(_) => return Ok(None),
-        };
-        let id = super::EnumVariantSignatureId::new(
-            nominal.declaration().clone(),
-            diagnostic_name.clone(),
-        );
+        let id = super::EnumVariantSignatureId::new(owner, ordinal);
         let schema = CallableSignatureSchema::for_accepted_enum_case(
             id.clone(),
-            payload,
+            &payload,
             expected.clone(),
             limits,
         )?;
         Ok(Some(Self {
             id,
             case_ordinal: ordinal,
-            diagnostic_name,
             expected,
             schema,
         }))
@@ -745,10 +745,6 @@ impl AcceptedEnumVariantCase {
 
     pub(crate) const fn case_ordinal(&self) -> u32 {
         self.case_ordinal
-    }
-
-    pub(crate) const fn diagnostic_name(&self) -> &super::CallableName {
-        &self.diagnostic_name
     }
 
     pub(crate) const fn expected(&self) -> &TypeKind {

@@ -14,9 +14,9 @@ use super::{
     HirDeclarationParameterRootRole, HirExecutableProjectView, HirPackageModuleKey, HirProject,
     HirProjectBuildError, HirProjectBuilder, HirProjectExecutionError, HirProjectModule,
     HirProjectModuleError, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
+    HirRuntimeExecutableOwner, HirRuntimeExpressionProjection, HirRuntimeReachabilityEdge,
     HirRuntimeReachabilityError, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
-    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
+    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
     HirSelectedExpressionInventoryError, HirSemanticOwnerPath, HirSemanticPathStep, exported_parts,
     styles,
 };
@@ -128,7 +128,7 @@ fn runtime_reachability<'project>(
     executable: HirExecutableProjectView<'project>,
     topology: &super::HirProjectEvaluationTopology,
     selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
-    call_disposition: impl FnMut(ExprId) -> HirRuntimeExpressionTypeDisposition,
+    expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
 ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
     let world = topology.generation().symbol_world().clone();
     let revision = topology.generation().symbol_revision();
@@ -153,7 +153,52 @@ fn runtime_reachability<'project>(
         roots,
         Vec::new(),
     )?;
-    executable.runtime_semantic_reachability(input, topology, selected_postfix, call_disposition)
+    executable.runtime_semantic_reachability(
+        input,
+        topology,
+        selected_postfix,
+        expression_projection,
+    )
+}
+
+fn retained_runtime_projection(
+    executable: HirExecutableProjectView<'_>,
+    owner: ExprId,
+) -> Option<HirRuntimeExpressionProjection> {
+    executable.modules().find_map(|(_, module)| {
+        let expression = module.resolve_expr(owner).ok()?;
+        Some(match expression.kind() {
+            HirExprKind::Call(call) => HirRuntimeExpressionProjection::Call {
+                result: HirRuntimeValueRetention::Retain,
+                callee: if call.callee().value_expression().is_some() {
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver
+                } else {
+                    HirRuntimeCallCalleeDisposition::Static
+                },
+            },
+            HirExprKind::DialogueContentApplication(_) => {
+                HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Omit,
+                }
+            }
+            _ => HirRuntimeExpressionProjection::Structural {
+                value: HirRuntimeValueRetention::Retain,
+            },
+        })
+    })
+}
+
+fn structural_projection(
+    value: HirRuntimeValueRetention,
+) -> Option<HirRuntimeExpressionProjection> {
+    Some(HirRuntimeExpressionProjection::Structural { value })
+}
+
+fn call_projection(
+    result: HirRuntimeValueRetention,
+    callee: HirRuntimeCallCalleeDisposition,
+) -> Option<HirRuntimeExpressionProjection> {
+    Some(HirRuntimeExpressionProjection::Call { result, callee })
 }
 
 pub(super) fn root_module_fixture(
@@ -325,7 +370,7 @@ fn runtime_reachability_rejects_a_foreign_topology_generation() {
             input,
             foreign.as_ref(),
             |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
+            |_| structural_projection(HirRuntimeValueRetention::Retain),
         ),
         Err(HirRuntimeReachabilityError::TopologyGenerationMismatch)
     ));
@@ -676,7 +721,7 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
         concat!(
             "pub character alice { display_name = \"Alice\" }\n",
             "flow opening {\n",
-            "    alice[Hello[p]]\n",
+            "    alice(id = @say.shared)[Hello]\n",
             "}\n",
         ),
     );
@@ -715,6 +760,26 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
     );
 
     for (owner, expression) in module.expressions() {
+        if let HirExprKind::DialogueContentApplication(application) = expression.kind() {
+            for coordinate in application.coordinates() {
+                let role = HirExpressionChildRole::DialogueCoordinate {
+                    ordinal: u32::from(coordinate.argument().get()),
+                };
+                assert!(
+                    module_topology.expression_edges(owner).iter().any(|edge| {
+                        matches!(
+                            edge,
+                            super::HirExpressionEvaluationEdge::Expression {
+                                role: actual_role,
+                                ownership: HirExpressionChildOwnership::ReferenceOnly,
+                                child,
+                            } if actual_role == &role && *child == coordinate.value()
+                        )
+                    }),
+                    "postfix dialogue coordinate {role:?} must reference the call-owned argument"
+                );
+            }
+        }
         let target_role = match expression.kind() {
             HirExprKind::PostfixBracket(_) | HirExprKind::Index(_) => {
                 Some(HirExpressionChildRole::Target)
@@ -734,16 +799,22 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
             }
             _ => unreachable!(),
         };
-        assert!(module_topology.expression_edges(owner).iter().any(|edge| {
-            matches!(
-                edge,
-                super::HirExpressionEvaluationEdge::Expression {
-                    role,
-                    ownership,
-                    ..
-                } if role == &target_role && *ownership == expected_ownership
-            )
-        }));
+        let edges = module_topology.expression_edges(owner);
+        assert!(
+            edges.iter().any(|edge| {
+                matches!(
+                    edge,
+                    super::HirExpressionEvaluationEdge::Expression {
+                        role,
+                        ownership,
+                        ..
+                    } if role == &target_role && *ownership == expected_ownership
+                )
+            }),
+            "expression {owner:?} ({:?}) must publish {target_role:?} as \
+             {expected_ownership:?}; actual edges: {edges:?}",
+            expression.kind()
+        );
     }
 }
 
@@ -2580,7 +2651,7 @@ fn assert_runtime_postfix_expression_type_inventory(
             executable,
             topology,
             |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
+            |_| structural_projection(HirRuntimeValueRetention::Retain),
         ),
         Err(HirRuntimeReachabilityError::SelectedExpressions(
             HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
@@ -2590,7 +2661,7 @@ fn assert_runtime_postfix_expression_type_inventory(
         executable,
         topology,
         |candidate_owner| (candidate_owner == owner).then_some(index),
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |_| structural_projection(HirRuntimeValueRetention::Retain),
     )
     .expect("selected runtime index reachability")
     .selected_expression_type_owners()
@@ -2606,11 +2677,42 @@ fn assert_runtime_postfix_expression_type_inventory(
         "the complete runtime index graph remains reachable"
     );
 
+    let runtime_omitted = runtime_reachability(
+        executable,
+        topology,
+        |candidate_owner| (candidate_owner == owner).then_some(index),
+        |expression| {
+            if expression == owner {
+                structural_projection(HirRuntimeValueRetention::Omit)
+            } else {
+                retained_runtime_projection(executable, expression)
+            }
+        },
+    )
+    .expect("selected runtime postfix with omitted value")
+    .selected_expression_type_owners()
+    .expect("omitted postfix runtime type graph");
+    assert!(!runtime_omitted.contains(&owner));
+    assert!(runtime_omitted.contains(&target));
+    assert!(runtime_omitted.contains(&index));
+    assert!(
+        index_children
+            .iter()
+            .all(|child| runtime_omitted.contains(child)),
+        "an omitted postfix still follows the selected candidate subtree"
+    );
+
     let runtime_dialogue = runtime_reachability(
         executable,
         topology,
         |candidate_owner| (candidate_owner == owner).then_some(dialogue),
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |expression| {
+            if expression == dialogue {
+                structural_projection(HirRuntimeValueRetention::Omit)
+            } else {
+                structural_projection(HirRuntimeValueRetention::Retain)
+            }
+        },
     )
     .expect("selected runtime dialogue reachability")
     .selected_expression_type_owners()
@@ -2683,7 +2785,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
         executable,
         &topology,
         |_| None,
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |_| structural_projection(HirRuntimeValueRetention::Retain),
     )
     .expect("runtime semantic reachability");
     let runtime = runtime_owners
@@ -2700,16 +2802,16 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 #[test]
 #[expect(
     clippy::too_many_lines,
-    reason = "the fixture asserts every non-value call-carrier disposition in one matrix"
+    reason = "the fixture asserts retained and omitted Call projections in one matrix"
 )]
-fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
+fn runtime_expression_projection_applies_retained_and_omitted_call_results() {
     let (project, call, callee, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
     let executable = project.executable_view().unwrap();
     let retained = runtime_reachability(
         executable,
         &topology,
         |_| None,
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |owner| retained_runtime_projection(executable, owner),
     )
     .expect("retained reachability")
     .selected_expression_type_owners()
@@ -2724,11 +2826,12 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
         |_| None,
         |owner| {
             if owner == call {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: HirRuntimeCallCalleeDisposition::Static,
-                }
+                call_projection(
+                    HirRuntimeValueRetention::Retain,
+                    HirRuntimeCallCalleeDisposition::Static,
+                )
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                retained_runtime_projection(executable, owner)
             }
         },
     )
@@ -2745,11 +2848,12 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
         |_| None,
         |owner| {
             if owner == call {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                }
+                call_projection(
+                    HirRuntimeValueRetention::Retain,
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                )
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                retained_runtime_projection(executable, owner)
             }
         },
     )
@@ -2766,11 +2870,12 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
         |_| None,
         |owner| {
             if owner == call {
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                    callee: HirRuntimeCallCalleeDisposition::Static,
-                }
+                call_projection(
+                    HirRuntimeValueRetention::Omit,
+                    HirRuntimeCallCalleeDisposition::Static,
+                )
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                retained_runtime_projection(executable, owner)
             }
         },
     )
@@ -2787,11 +2892,12 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
         |_| None,
         |owner| {
             if owner == call {
-                HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                }
+                call_projection(
+                    HirRuntimeValueRetention::Omit,
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                )
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                retained_runtime_projection(executable, owner)
             }
         },
     )
@@ -2809,11 +2915,136 @@ fn runtime_expression_type_inventory_applies_typed_non_value_call_carriers() {
             |_| None,
             |owner| {
                 if owner == argument {
-                    HirRuntimeExpressionTypeDisposition::NonValueCallCarrier {
-                        callee: HirRuntimeCallCalleeDisposition::Static,
-                    }
+                    call_projection(
+                        HirRuntimeValueRetention::Omit,
+                        HirRuntimeCallCalleeDisposition::Static,
+                    )
                 } else {
-                    HirRuntimeExpressionTypeDisposition::Retain
+                    retained_runtime_projection(executable, owner)
+                }
+            },
+        ),
+        Err(HirRuntimeReachabilityError::SelectedExpressions(
+            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                expression,
+            }
+        )) if expression == argument
+    ));
+}
+
+#[test]
+fn runtime_expression_type_inventory_applies_generic_non_value_semantic_carriers() {
+    let (project, call, callee, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
+    let executable = project.executable_view().unwrap();
+    let leaf_carrier = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| {
+            if owner == argument {
+                structural_projection(HirRuntimeValueRetention::Omit)
+            } else {
+                retained_runtime_projection(executable, owner)
+            }
+        },
+    )
+    .expect("leaf semantic-carrier reachability")
+    .selected_expression_type_owners()
+    .expect("leaf semantic-carrier inventory");
+    assert!(leaf_carrier.contains(&call));
+    assert!(leaf_carrier.contains(&callee));
+    assert!(!leaf_carrier.contains(&argument));
+
+    let nested_call_carrier = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| {
+            if owner == call {
+                call_projection(
+                    HirRuntimeValueRetention::Omit,
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                )
+            } else {
+                retained_runtime_projection(executable, owner)
+            }
+        },
+    )
+    .expect("nested-call semantic-carrier reachability")
+    .selected_expression_type_owners()
+    .expect("nested-call semantic-carrier inventory");
+    assert!(!nested_call_carrier.contains(&call));
+    assert!(nested_call_carrier.contains(&callee));
+    assert!(nested_call_carrier.contains(&argument));
+}
+
+#[test]
+fn runtime_expression_projection_requires_an_explicit_projection() {
+    let (project, _, _, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
+    let executable = project.executable_view().expect("executable fixture");
+    assert!(matches!(
+        runtime_reachability(
+            executable,
+            &topology,
+            |_| None,
+            |owner| {
+                if owner == argument {
+                    None
+                } else {
+                    retained_runtime_projection(executable, owner)
+                }
+            },
+        ),
+        Err(HirRuntimeReachabilityError::SelectedExpressions(
+            HirSelectedExpressionInventoryError::MissingRuntimeExpressionProjection {
+                expression,
+            }
+        )) if expression == argument
+    ));
+}
+
+#[test]
+fn runtime_expression_projection_rejects_structural_projection_for_call() {
+    let (project, call, _, _, _, _, _, _, topology) = runtime_call_inventory_fixture();
+    let executable = project.executable_view().expect("executable fixture");
+    assert!(matches!(
+        runtime_reachability(
+            executable,
+            &topology,
+            |_| None,
+            |owner| {
+                if owner == call {
+                    structural_projection(HirRuntimeValueRetention::Omit)
+                } else {
+                    retained_runtime_projection(executable, owner)
+                }
+            },
+        ),
+        Err(HirRuntimeReachabilityError::SelectedExpressions(
+            HirSelectedExpressionInventoryError::InvalidRuntimeStructuralDisposition {
+                expression,
+            }
+        )) if expression == call
+    ));
+}
+
+#[test]
+fn runtime_expression_projection_rejects_call_projection_for_non_call() {
+    let (project, _, _, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
+    let executable = project.executable_view().expect("executable fixture");
+    assert!(matches!(
+        runtime_reachability(
+            executable,
+            &topology,
+            |_| None,
+            |owner| {
+                if owner == argument {
+                    call_projection(
+                        HirRuntimeValueRetention::Omit,
+                        HirRuntimeCallCalleeDisposition::Static,
+                    )
+                } else {
+                    retained_runtime_projection(executable, owner)
                 }
             },
         ),
@@ -2836,11 +3067,12 @@ fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
         |_| None,
         |owner| {
             if owner == call {
-                HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                    callee: HirRuntimeCallCalleeDisposition::RuntimeReceiver,
-                }
+                call_projection(
+                    HirRuntimeValueRetention::Retain,
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                )
             } else {
-                HirRuntimeExpressionTypeDisposition::Retain
+                retained_runtime_projection(executable, owner)
             }
         },
     )
@@ -2990,7 +3222,7 @@ fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions
         executable,
         &topology,
         |_| None,
-        |_| HirRuntimeExpressionTypeDisposition::Retain,
+        |owner| retained_runtime_projection(executable, owner),
     )
     .expect("runtime semantic reachability");
 
@@ -3218,11 +3450,12 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
                 |_| None,
                 |owner| {
                     if owner == call {
-                        HirRuntimeExpressionTypeDisposition::RetainedCallResult {
-                            callee: HirRuntimeCallCalleeDisposition::Static,
-                        }
+                        call_projection(
+                            HirRuntimeValueRetention::Retain,
+                            HirRuntimeCallCalleeDisposition::Static,
+                        )
                     } else {
-                        HirRuntimeExpressionTypeDisposition::Retain
+                        retained_runtime_projection(executable, owner)
                     }
                 },
             )

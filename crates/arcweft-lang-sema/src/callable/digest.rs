@@ -9,6 +9,7 @@ use crate::{
     types::{ArrayLength, TypeKind},
 };
 
+use super::schema::CallableParameterSemanticBinding;
 use super::{
     CallableArgumentPolicy, CallableArgumentSemanticAction, CallableAuthorityRank,
     CallableDocumentation, CallableEffectSchema, CallableEvaluatedEffect, CallableGenericConstUse,
@@ -150,9 +151,17 @@ impl CanonicalEncoder {
             self.usize(group.parameters().len());
             for parameter in group.parameters() {
                 self.usize(parameter.index().get());
-                self.option(parameter.name(), |encoder, name| {
-                    encoder.string(name.as_str());
-                });
+                match parameter.semantic_binding() {
+                    CallableParameterSemanticBinding::Coordinate => self.tag(0),
+                    CallableParameterSemanticBinding::Named(name) => {
+                        self.tag(1);
+                        self.string(name.as_str());
+                    }
+                    CallableParameterSemanticBinding::AcceptedVariantPayloadField(field) => {
+                        self.tag(2);
+                        self.bytes(field.as_bytes());
+                    }
+                }
                 self.tag(match parameter.passing() {
                     CallableParameterPassing::PositionalOnly => 0,
                     CallableParameterPassing::PositionalOrNamed => 1,

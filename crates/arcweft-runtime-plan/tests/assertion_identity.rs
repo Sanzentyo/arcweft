@@ -16,8 +16,9 @@ use arcweft_lang_hir::{
     lowering::{HirModuleKey, LoweringRequest},
     project::{
         HirProject, HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode,
-        HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
+        HirRuntimeExecutableOwner, HirRuntimeExpressionProjection, HirRuntimeReachabilityRoot,
         HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachabilityInput,
+        HirRuntimeValueRetention,
     },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
@@ -604,7 +605,11 @@ fn lower_assertion_project(
             reachability_input,
             &topology,
             |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
+            |_| {
+                Some(HirRuntimeExpressionProjection::Structural {
+                    value: HirRuntimeValueRetention::Retain,
+                })
+            },
         )
         .expect("runtime semantic reachability");
     for owner in runtime_owners.locals() {
