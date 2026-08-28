@@ -3,11 +3,14 @@ use std::{collections::BTreeMap, sync::Arc};
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
-        HirProjectEvaluationTopology, HirSemanticBodyLocation, HirSemanticBodyLocator,
-        HirSemanticBodyLookupError, HirSemanticOwnerPath, HirSemanticPathLocation,
+        HirControlTransferKind, HirControlTransferLookupError, HirControlTransferTarget,
+        HirLoopTargetFamily, HirProjectEvaluationTopology, HirSemanticBodyLocation,
+        HirSemanticBodyLocator, HirSemanticBodyLookupError, HirSemanticBodyOwner,
+        HirSemanticBodyOwnerRole, HirSemanticOwnerPath, HirSemanticPathLocation,
         HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot,
         HirSemanticPathStep,
     },
+    stmt::HirStatementBodyRole,
     symbol::CallableDeclarationKey,
 };
 use thiserror::Error;
@@ -16,11 +19,13 @@ use crate::final_analysis::{CheckedItem, CheckedItemRole};
 
 use super::{
     AcceptedDeclarationSemanticId, AcceptedItemSemanticId, AcceptedSemanticRoot,
-    CheckedBindingCoordinateEvidence, CheckedBodyCoordinateEvidence, CheckedExpressionChildRole,
-    CheckedExpressionCoordinateEvidence, CheckedPatternCoordinateEvidence, CheckedSemanticPath,
-    CheckedSemanticPathStep, CheckedStatementCoordinateEvidence, HirItemEvaluationEntryRole,
-    HirPatternChildRole, HirStatementChildRole, StableCheckedBindingCoordinate,
-    StableCheckedBodyCoordinate, StableCheckedPatternOwnerCoordinate,
+    CheckedBindingCoordinateEvidence, CheckedBodyCoordinateEvidence,
+    CheckedControlTransferEvidence, CheckedControlTransferTarget, CheckedExpressionChildRole,
+    CheckedExpressionCoordinateEvidence, CheckedLoopControlTarget, CheckedOutputTarget,
+    CheckedPatternCoordinateEvidence, CheckedSemanticPath, CheckedSemanticPathStep,
+    CheckedStatementCoordinateEvidence, HirItemEvaluationEntryRole, HirPatternChildRole,
+    HirStatementChildRole, StableCheckedBindingCoordinate, StableCheckedBodyCoordinate,
+    StableCheckedOutputTargetCoordinate, StableCheckedPatternOwnerCoordinate,
     StableCheckedStatementCoordinate,
 };
 
@@ -241,6 +246,8 @@ pub(crate) trait CheckedExpressionEdgeAuthority {
 pub(crate) enum SemanticCoordinateIndexError {
     #[error(transparent)]
     RootCatalog(#[from] AcceptedSemanticRootCatalogError),
+    #[error(transparent)]
+    ControlTransferLookup(#[from] HirControlTransferLookupError),
     #[error("semantic coordinate owner is absent from the HIR path index: {owner:?}")]
     MissingOwner { owner: HirSemanticPathOwnerId },
     #[error("semantic body coordinate is absent from the HIR body index: {locator:?}")]
@@ -335,6 +342,100 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
 
     #[allow(
         dead_code,
+        reason = "the control-transfer evidence is consumed by the subsequent checked statement cut"
+    )]
+    pub(crate) fn control_transfer_evidence(
+        &self,
+        statement: StmtId,
+    ) -> Result<CheckedControlTransferEvidence, SemanticCoordinateIndexError> {
+        let location = self
+            .catalog
+            .topology()
+            .control_transfer(statement)
+            .map_err(SemanticCoordinateIndexError::ControlTransferLookup)?;
+        if location.statement() != statement
+            || location.snapshot().module() != statement.module()
+            || location.path().steps().is_empty()
+        {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let statement_owner = HirSemanticPathOwnerId::Statement(statement);
+        let Some(statement_location) = self.catalog.semantic_path(statement_owner)? else {
+            return Err(SemanticCoordinateIndexError::MissingOwner {
+                owner: statement_owner,
+            });
+        };
+        if statement_location.owner() != statement_owner
+            || statement_location.snapshot() != location.snapshot()
+            || statement_location.root() != location.root()
+            || statement_location.path() != location.path()
+        {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let target = match (location.kind(), location.target()) {
+            (HirControlTransferKind::Out, HirControlTransferTarget::Output { application }) => {
+                let owner = HirSemanticPathOwnerId::Expression(*application);
+                let Some(application_location) = self.catalog.semantic_path(owner)? else {
+                    return Err(SemanticCoordinateIndexError::MissingOwner { owner });
+                };
+                if application_location.owner() != owner
+                    || application_location.snapshot() != location.snapshot()
+                    || application_location.root() != location.root()
+                    || !hir_path_is_strict_prefix(application_location.path(), location.path())
+                {
+                    return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                }
+                let accepted = *self.catalog.root_for_hir(location.root())?;
+                let application = checked_path_from_owner_path(
+                    accepted,
+                    location.root(),
+                    application_location.path(),
+                    self.edges,
+                )?;
+                CheckedControlTransferTarget::Output(CheckedOutputTarget::new(
+                    StableCheckedOutputTargetCoordinate::new(application),
+                ))
+            }
+            (
+                HirControlTransferKind::Break | HirControlTransferKind::Continue,
+                HirControlTransferTarget::Loop { family, body_owner },
+            ) => {
+                if !loop_family_matches_body(*family, body_owner)
+                    || body_owner
+                        .expression_owner()
+                        .is_some_and(|owner| owner.module() != location.snapshot().module())
+                    || body_owner
+                        .statement_owner()
+                        .is_some_and(|owner| owner.module() != location.snapshot().module())
+                {
+                    return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                }
+                let locator =
+                    HirSemanticBodyLocator::new(location.root().clone(), body_owner.clone());
+                let Some(body_location) = self.catalog.semantic_body(&locator)? else {
+                    return Err(SemanticCoordinateIndexError::MissingBody { locator });
+                };
+                if body_location.root() != location.root()
+                    || body_location.snapshot() != location.snapshot()
+                    || body_location.row().owner() != body_owner
+                    || !hir_path_is_strict_prefix(body_location.row().path(), location.path())
+                {
+                    return Err(SemanticCoordinateIndexError::InvalidRootPath);
+                }
+                let body = self.body(&locator)?;
+                CheckedControlTransferTarget::Loop(CheckedLoopControlTarget::new(*family, body))
+            }
+            _ => return Err(SemanticCoordinateIndexError::InvalidRootPath),
+        };
+        Ok(CheckedControlTransferEvidence::new(
+            statement,
+            location.kind(),
+            target,
+        ))
+    }
+
+    #[allow(
+        dead_code,
         reason = "the semantic transcript graph consumes this typed coordinate when body digests publish"
     )]
     pub(crate) fn body(
@@ -413,6 +514,39 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         let accepted = *self.catalog.root_for_hir(location.root())?;
         checked_path_from_owner_path(accepted, location.root(), location.path(), self.edges)
     }
+}
+
+#[allow(
+    dead_code,
+    reason = "control-transfer issuance uses this topology prefix invariant"
+)]
+fn hir_path_is_strict_prefix(prefix: &HirSemanticOwnerPath, path: &HirSemanticOwnerPath) -> bool {
+    path.steps().len() > prefix.steps().len()
+        && path.steps().starts_with(prefix.steps())
+        && path.hops().starts_with(prefix.hops())
+}
+
+#[allow(
+    dead_code,
+    reason = "control-transfer issuance uses this typed family/body invariant"
+)]
+fn loop_family_matches_body(family: HirLoopTargetFamily, owner: &HirSemanticBodyOwner) -> bool {
+    matches!(
+        (family, owner.semantic_role()),
+        (
+            HirLoopTargetFamily::LoopExpression,
+            HirSemanticBodyOwnerRole::Expression
+        ) | (
+            HirLoopTargetFamily::WhileStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::While)
+        ) | (
+            HirLoopTargetFamily::WhileLetStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::WhileLet)
+        ) | (
+            HirLoopTargetFamily::ForStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::For)
+        )
+    )
 }
 
 fn is_binding_local_path(path: &HirSemanticOwnerPath) -> bool {
@@ -896,5 +1030,31 @@ mod tests {
             ordinary.canonical_bytes().unwrap(),
             item.canonical_bytes().unwrap()
         );
+    }
+
+    #[test]
+    fn checked_output_target_coordinates_use_a_distinct_append_only_suffix() {
+        let path = CheckedSemanticPath::new(
+            test_declaration_root(),
+            [CheckedSemanticPathStep::DeclarationBody(
+                HirDeclarationBodyRootRole::FlowBody,
+            )],
+        );
+        let output = StableCheckedOutputTargetCoordinate::new(path.clone());
+        let body = StableCheckedBodyCoordinate::new(
+            &HirSemanticBodyOwner::declaration(HirDeclarationBodyRootRole::FlowBody),
+            HirBodyKind::Thread,
+            path.clone(),
+        );
+        let mut expected = path.canonical_bytes().unwrap();
+        expected.push(super::super::CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG);
+        expected.push(super::super::CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG);
+        assert_eq!(output.application(), &path);
+        assert_eq!(output.canonical_bytes().unwrap(), expected);
+        assert_ne!(
+            output.canonical_bytes().unwrap(),
+            body.canonical_bytes().unwrap()
+        );
+        assert!(output.canonical_bytes().unwrap().ends_with(&[1, 0]));
     }
 }

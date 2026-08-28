@@ -98,6 +98,7 @@ impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
     fn from(error: SemanticCoordinateIndexError) -> Self {
         match error {
             SemanticCoordinateIndexError::RootCatalog(error) => Self::AcceptedRootCatalog(error),
+            SemanticCoordinateIndexError::ControlTransferLookup(_) => Self::MissingIdentity,
             SemanticCoordinateIndexError::MissingChildEdges => Self::MissingChildEdges,
             SemanticCoordinateIndexError::MissingOwner { .. }
             | SemanticCoordinateIndexError::MissingBody { .. }

@@ -100,3 +100,72 @@ retain an explicit expression-versus-statement child-kind tag.
 There is no transcript `Any`, wildcard identity, source-spelling fallback, or
 `UnsupportedIdentity` success path. Coverage's typed open-domain `Other`
 constructor remains coverage-only and is unrelated to transcript identity.
+
+## Implemented prerequisite cuts
+
+Evidence was refreshed on 2026-08-29 at Git
+`fe7cbcc5cfa2f737ee0ac10e5c0c7dbebcf18f0a` with unrelated user WIP and the
+current four-file sema coordinate cut present in the working tree.
+
+- HIR now resolves each accepted `out`, `break`, and `continue` statement to
+  one root-local typed target. Labeled transfers reject because no target-label
+  declaration authority currently exists.
+- evaluated-effect open fields now retain callable-owned `OpenArgumentId`
+  identities. Positional names are not fabricated and runtime spelling is
+  projected only at the compiler boundary.
+- sema now issues affine control-transfer evidence from the HIR topology and
+  accepted root catalog. Line-plan output coordinates append the disjoint
+  `output=0x01, dialogue-line-plan=0x00` suffix; loop transfers retain both the
+  exact `HirLoopTargetFamily` and the existing checked body coordinate.
+
+These are prerequisites only. The sparse statement role and the lazy
+Match-only transcript builder remain scheduled for deletion by the following
+statement-seal and atomic transcript cuts.
+
+## Structural review
+
+The canonical audit scanned 2,262 files and 95 workspace packages, reported
+273 review triggers, and found zero blocking violations. Both the screening
+and `--fail-on-blocking` gate passed.
+
+`semantic_coordinate.rs` remains the cohesive owner of accepted-rooted checked
+coordinate types and their canonical byte grammar; issuance and topology joins
+remain separated in `semantic_coordinate/catalog.rs`. The cut adds only
+crate-private control-target coordinates and does not widen a public API, copy
+HIR scope state, or invert the HIR-to-sema dependency. Splitting these
+coordinate types by statement family would scatter one canonical grammar, so
+the existing owner is retained.
+
+`final_analysis/tests.rs` remains the integration-fixture owner for private
+final-analysis publication behavior. The two added tests exercise the same
+accepted-root/topology/report fixture authority as the surrounding coordinate
+tests. Moving only these rows would duplicate the private fixture harness or
+introduce a test-only access seam, so the cohesive integration owner is
+retained despite the upper LOC review trigger.
+
+## Validation of the checked control-target coordinate cut
+
+Passed:
+
+- both focused output-target and four-loop-family tests (one test each);
+- `cargo test -p arcweft-lang-sema --tests`: 542 library tests, 12 compile-API
+  tests, and 4 integration tests;
+- `cargo check --workspace --all-targets --all-features`;
+- `cargo clippy --workspace --all-targets --all-features`, with existing
+  warnings and no command failure;
+- package formatting and repository diff checks; and
+- `just structure-audit` plus `just structure-audit-gate`.
+
+Blocked environment validation:
+
+- the first `just test-workspace` attempt exhausted the build volume after the
+  workspace `target` cache had grown to 296,527,421,327 bytes;
+- `cargo clean` removed 146,998 regenerated files (276.2 GiB), without touching
+  tracked files or user WIP; and
+- clean and cached retries both reached Windows error 1455 while concurrently
+  linking the broad workspace test inventory: the configured paging file was
+  too small to map the generated `rlib` metadata. No Arcweft assertion or
+  compile diagnostic preceded those environment failures.
+
+Tier 2 was not run because this sema-private coordinate cut does not change a
+runtime, renderer, Agent, MCP, capture, protocol, or persisted public contract.

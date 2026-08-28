@@ -26,8 +26,8 @@ use arcweft_lang_hir::{
     module::HirModule,
     pattern::HirPatternKind,
     project::{
-        HirProject, HirProjectBuilder, HirProjectModule, HirSemanticBodyLocator,
-        HirSemanticPathStep,
+        HirControlTransferKind, HirLoopTargetFamily, HirProject, HirProjectBuilder,
+        HirProjectModule, HirSemanticBodyLocator, HirSemanticPathStep,
     },
     proof_return::HirProofReturnSemanticFactSet,
     source_index::{
@@ -125,7 +125,8 @@ use crate::{
         RegisteredSemanticWorld, SourceBackedEnvironmentRegistrationInput,
     },
     semantic_coordinate::{
-        CheckedExpressionChildRole, SemanticCoordinateIndex, StableCheckedValueCoordinate,
+        CheckedControlTransferTarget, CheckedExpressionChildRole, SemanticCoordinateIndex,
+        StableCheckedValueCoordinate,
     },
     signature::{
         SignatureQuery, SignatureQueryControl, SignatureQueryError, SignatureQueryOutcome,
@@ -3907,6 +3908,119 @@ fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
                 .expect("mismatched expression coordinate evidence"),
         ),
         Err(CallConstraintInvariant::PreparedCallSiteMismatch)
+    );
+}
+
+#[test]
+fn semantic_coordinate_index_issues_output_target_with_affine_application_owner() {
+    let fixture = character_nominal_fixture(concat!(
+        "pub character @character.akane Akane as akane {}\n",
+        "flow line() -> String {\n",
+        "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
+        "    with:\n",
+        "        let actor = akane.stage.acquire(scope=line)\n",
+        "        let cue = at(0.42s):\n",
+        "            actor.look(.normal, crossfade=120ms)\n",
+        "        let voice = line.voice_handle()\n",
+        "        out (voice, cue)\n",
+        "    return \"done\"\n",
+        "}\n",
+    ));
+    let report = analyze(&fixture).expect("line-plan out final analysis");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let statement = module
+        .statements()
+        .find_map(|(owner, value)| matches!(value.kind(), HirStmtKind::Out { .. }).then_some(owner))
+        .expect("line-plan out statement");
+    let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let evidence = index
+        .control_transfer_evidence(statement)
+        .expect("checked line-plan out target");
+    assert_eq!(evidence.owner(), statement);
+    assert_eq!(evidence.kind(), HirControlTransferKind::Out);
+    let CheckedControlTransferTarget::Output(output) = evidence.target() else {
+        panic!("out must retain an output target");
+    };
+    let coordinate = output.coordinate();
+    let mut expected = coordinate.application().canonical_bytes().unwrap();
+    expected.extend_from_slice(&[1, 0]);
+    assert_eq!(coordinate.canonical_bytes().unwrap(), expected);
+    assert!(coordinate.canonical_bytes().unwrap().ends_with(&[1, 0]));
+}
+
+#[test]
+fn semantic_coordinate_index_issues_all_loop_families_with_affine_statement_owners() {
+    let mut observed = BTreeSet::new();
+    for (source, expected_family, expected_kind) in [
+        (
+            "flow root {\n    let result = loop {\n        loop {\n            break\n        }\n        break\n    }\n}\n",
+            HirLoopTargetFamily::LoopExpression,
+            HirControlTransferKind::Break,
+        ),
+        (
+            "flow root {\n    let ready: bool = true\n    while ready {\n        continue\n    }\n}\n",
+            HirLoopTargetFamily::WhileStatement,
+            HirControlTransferKind::Continue,
+        ),
+        (
+            "flow root {\n    let values: Vec<bool> = [true, false]\n    for value in values {\n        continue\n    }\n}\n",
+            HirLoopTargetFamily::ForStatement,
+            HirControlTransferKind::Continue,
+        ),
+        (
+            "flow root {\n    let maybe: Option<i64> = option { 1i64 }\n    while let .Some(value) = maybe {\n        break\n    }\n}\n",
+            HirLoopTargetFamily::WhileLetStatement,
+            HirControlTransferKind::Break,
+        ),
+    ] {
+        let fixture = fixture(source, None);
+        let report = analyze(&fixture).expect("loop-family final analysis");
+        let project = fixture.project.executable_view().expect("executable HIR");
+        let module = project
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+        let mut matched = false;
+        for (statement, value) in module.statements() {
+            let kind = match value.kind() {
+                HirStmtKind::Break { .. } => HirControlTransferKind::Break,
+                HirStmtKind::Continue { .. } => HirControlTransferKind::Continue,
+                _ => continue,
+            };
+            let evidence = index
+                .control_transfer_evidence(statement)
+                .expect("checked loop target");
+            assert_eq!(evidence.owner(), statement);
+            assert_eq!(evidence.kind(), kind);
+            let CheckedControlTransferTarget::Loop(loop_target) = evidence.target() else {
+                panic!("loop control must retain a loop target");
+            };
+            if kind == expected_kind {
+                assert_eq!(loop_target.family(), expected_family);
+                observed.insert(loop_target.family());
+                assert!(
+                    loop_target
+                        .body()
+                        .canonical_bytes()
+                        .unwrap()
+                        .starts_with(&loop_target.body().path().canonical_bytes().unwrap())
+                );
+                matched = true;
+            }
+        }
+        assert!(matched, "fixture must contain the expected loop transfer");
+    }
+    assert_eq!(
+        observed,
+        BTreeSet::from([
+            HirLoopTargetFamily::LoopExpression,
+            HirLoopTargetFamily::WhileStatement,
+            HirLoopTargetFamily::WhileLetStatement,
+            HirLoopTargetFamily::ForStatement,
+        ])
     );
 }
 

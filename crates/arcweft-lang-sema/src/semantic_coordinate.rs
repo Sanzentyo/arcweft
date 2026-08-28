@@ -14,10 +14,11 @@ use arcweft_lang_hir::{
     identity::{ExprId, LocalId, PatternId, StmtId},
     pattern::HirPatternChildRole,
     project::{
-        HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationItemRootRole,
-        HirFlowContractRootFamily, HirItemAttributeOwner, HirItemEvaluationEntryRole,
-        HirItemRecoveryRootOwner, HirLayerExpressionRootField, HirSemanticBodyOwner,
-        HirSemanticBodyOwnerRole, HirStyleRootPathSegment,
+        HirControlTransferKind, HirDeclarationBodyRootRole, HirDeclarationContractRootRole,
+        HirDeclarationItemRootRole, HirFlowContractRootFamily, HirItemAttributeOwner,
+        HirItemEvaluationEntryRole, HirItemRecoveryRootOwner, HirLayerExpressionRootField,
+        HirLoopTargetFamily, HirSemanticBodyOwner, HirSemanticBodyOwnerRole,
+        HirStyleRootPathSegment,
     },
     stmt::{HirStatementBodyRole, HirStatementChildRole},
 };
@@ -37,6 +38,10 @@ const CHECKED_DECLARATION_ITEM_STEP_TAG: u8 = 11;
 const CHECKED_DECLARATION_MEMBER_STEP_TAG: u8 = 12;
 const CHECKED_DECLARATION_RESULT_STEP_TAG: u8 = 13;
 const CHECKED_BODY_COORDINATE_SUFFIX_TAG: u8 = 0;
+#[allow(dead_code)]
+const CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG: u8 = 1;
+#[allow(dead_code)]
+const CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG: u8 = 0;
 
 /// Stable semantic identity of one accepted declaration root.
 ///
@@ -806,6 +811,41 @@ impl StableCheckedBodyCoordinate {
     }
 }
 
+/// Stable accepted-rooted coordinate for one checked line-plan output target.
+///
+/// Output targets use the accepted application path directly and append a
+/// distinct coordinate suffix. This keeps an output target disjoint from the
+/// body-coordinate grammar even when both coordinates share a path prefix.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the control-transfer coordinate is consumed by the subsequent checked statement cut"
+)]
+pub(crate) struct StableCheckedOutputTargetCoordinate {
+    application: CheckedSemanticPath,
+}
+
+#[allow(
+    dead_code,
+    reason = "the control-transfer coordinate is consumed by the subsequent checked statement cut"
+)]
+impl StableCheckedOutputTargetCoordinate {
+    fn new(application: CheckedSemanticPath) -> Self {
+        Self { application }
+    }
+
+    pub(crate) const fn application(&self) -> &CheckedSemanticPath {
+        &self.application
+    }
+
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        let mut output = self.application.canonical_bytes()?;
+        output.push(CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG);
+        output.push(CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG);
+        Ok(output)
+    }
+}
+
 fn write_body_owner_role(
     output: &mut Vec<u8>,
     owner: &HirSemanticBodyOwnerRole,
@@ -866,6 +906,138 @@ impl CheckedBodyCoordinateEvidence {
 
     pub(crate) fn into_coordinate(self) -> StableCheckedBodyCoordinate {
         self.coordinate
+    }
+}
+
+/// Checked target selected for one accepted line-plan `out` statement.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+pub(crate) struct CheckedOutputTarget {
+    coordinate: StableCheckedOutputTargetCoordinate,
+}
+
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+impl CheckedOutputTarget {
+    fn new(coordinate: StableCheckedOutputTargetCoordinate) -> Self {
+        Self { coordinate }
+    }
+
+    pub(crate) const fn coordinate(&self) -> &StableCheckedOutputTargetCoordinate {
+        &self.coordinate
+    }
+}
+
+/// Checked loop target selected for one accepted `break` or `continue`.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+pub(crate) struct CheckedLoopControlTarget {
+    family: HirLoopTargetFamily,
+    body: StableCheckedBodyCoordinate,
+}
+
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+impl CheckedLoopControlTarget {
+    fn new(family: HirLoopTargetFamily, body: StableCheckedBodyCoordinate) -> Self {
+        Self { family, body }
+    }
+
+    pub(crate) const fn family(&self) -> HirLoopTargetFamily {
+        self.family
+    }
+
+    pub(crate) const fn body(&self) -> &StableCheckedBodyCoordinate {
+        &self.body
+    }
+}
+
+/// Closed checked target vocabulary for the HIR control-transfer authority.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+pub(crate) enum CheckedControlTransferTarget {
+    Output(CheckedOutputTarget),
+    Loop(CheckedLoopControlTarget),
+}
+
+#[allow(
+    dead_code,
+    reason = "the control-transfer target is consumed by the subsequent checked statement cut"
+)]
+impl CheckedControlTransferTarget {
+    pub(crate) const fn output(&self) -> Option<&CheckedOutputTarget> {
+        match self {
+            Self::Output(target) => Some(target),
+            Self::Loop(_) => None,
+        }
+    }
+
+    pub(crate) const fn loop_target(&self) -> Option<&CheckedLoopControlTarget> {
+        match self {
+            Self::Output(_) => None,
+            Self::Loop(target) => Some(target),
+        }
+    }
+}
+
+/// Affine evidence that one HIR control-transfer statement owns one checked
+/// target and operation kind. The issuer is the only constructor, so callers
+/// cannot pair a statement with an independently selected target coordinate.
+#[derive(Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "the control-transfer evidence is consumed by the subsequent checked statement cut"
+)]
+pub(crate) struct CheckedControlTransferEvidence {
+    owner: StmtId,
+    kind: HirControlTransferKind,
+    target: CheckedControlTransferTarget,
+}
+
+#[allow(
+    dead_code,
+    reason = "the control-transfer evidence is consumed by the subsequent checked statement cut"
+)]
+impl CheckedControlTransferEvidence {
+    fn new(
+        owner: StmtId,
+        kind: HirControlTransferKind,
+        target: CheckedControlTransferTarget,
+    ) -> Self {
+        Self {
+            owner,
+            kind,
+            target,
+        }
+    }
+
+    pub(crate) const fn owner(&self) -> StmtId {
+        self.owner
+    }
+
+    pub(crate) const fn kind(&self) -> HirControlTransferKind {
+        self.kind
+    }
+
+    pub(crate) const fn target(&self) -> &CheckedControlTransferTarget {
+        &self.target
+    }
+
+    pub(crate) fn into_target(self) -> CheckedControlTransferTarget {
+        self.target
     }
 }
 
