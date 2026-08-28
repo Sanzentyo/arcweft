@@ -1,6 +1,8 @@
 use core::num::{NonZeroU32, NonZeroU64};
+use std::sync::Arc;
 
 use super::*;
+use crate::database::HirDatabase;
 use crate::dialogue_application::{
     HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirLinePlan,
     HirLinePlanItem,
@@ -10,8 +12,78 @@ use crate::expr::{
     HirChoiceOptionFor, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
     HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirNestedExpressionPathSegment,
 };
+use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::identity::{HirDatabaseId, HirModuleId, HirTypedId, RawHirId};
+use crate::lowering::{HirLoweringControl, HirModuleKey, LoweringRequest};
 use crate::symbol::{CallableDeclarationId, CallableDeclarationOwner};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::incremental::SyntaxDatabase;
+use arcweft_source::identity::SourceSnapshotId;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+fn lower_control_transfer_fixture(source: &str) -> Arc<HirModule> {
+    let package =
+        crate::symbol::CallablePackageId::try_new("control-transfer-tests").expect("test package");
+    let path = CanonicalModulePath::crate_root();
+    let source = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://control-transfer").expect("source ID"),
+            SourceName::path("control-transfer.arcw"),
+            source,
+        )
+        .expect("source document"),
+    );
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(SourceName::path("control-transfer.arcw")),
+            source,
+            arcweft_lang_syntax::parser::ParseOptions::default(),
+        )
+        .expect("parse fixture");
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let key = HirModuleKey::new(package, path, parsed.document().identity().clone());
+    let mut transaction = stage_unpublished_module_for_invariant_test(
+        &database,
+        LoweringRequest::try_new(key, &parsed).expect("lowering request"),
+        HirLoweringControl::new(),
+    )
+    .expect("stage fixture");
+    transaction
+        .lower_parsed_source_items(&parsed)
+        .expect("lower fixture");
+    transaction
+        .finish(&mut database)
+        .expect("finish fixture")
+        .into_module()
+}
+
+fn loop_expression_owner(module: &HirModule, scope: crate::identity::ScopeId) -> Option<ExprId> {
+    let scope = module.resolve_scope(scope).ok()?;
+    match scope.owner() {
+        crate::scope::HirScopeOwner::Expr(owner)
+            if matches!(
+                module.resolve_expr(*owner).ok()?.kind(),
+                HirExprKind::Loop(_)
+            ) =>
+        {
+            Some(*owner)
+        }
+        _ => None,
+    }
+}
+
+fn nearest_loop_expression(module: &HirModule, statement: StmtId) -> Option<ExprId> {
+    let mut scope = Some(module.resolve_stmt(statement).ok()?.scope());
+    while let Some(scope_id) = scope {
+        let value = module.resolve_scope(scope_id).ok()?;
+        if let Some(owner) = loop_expression_owner(module, scope_id) {
+            return Some(owner);
+        }
+        scope = value.parent();
+    }
+    None
+}
 
 fn fixture() -> (std::sync::Arc<HirModule>, CallableDeclarationKey, ExprId) {
     let (_, package, module_path, module) =
@@ -31,6 +103,246 @@ fn fixture() -> (std::sync::Arc<HirModule>, CallableDeclarationKey, ExprId) {
     );
     let missing = ExprId::from_raw(RawHirId::new(foreign_module, NonZeroU32::MIN, ExprId::KIND));
     (module, declaration, missing)
+}
+
+#[test]
+fn loop_control_transfers_resolve_the_nearest_loop_expression() {
+    let module = lower_control_transfer_fixture(
+        "fn accepted() {\n    let result = loop {\n        loop {\n            break\n        }\n        break\n    }\n}\n",
+    );
+    let loops = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Loop(_)).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(loops.len(), 2, "nested loop fixture must retain both loops");
+    let breaks = module
+        .statements()
+        .filter_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Break { .. }).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        breaks.len(),
+        2,
+        "nested loop fixture must retain both breaks"
+    );
+
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    let root = [HirSemanticPathStep::DeclarationBody(
+        HirDeclarationBodyRootRole::FunctionBody,
+    )];
+    let outer = loops
+        .iter()
+        .copied()
+        .find(|owner| {
+            module
+                .resolve_expr(*owner)
+                .ok()
+                .and_then(|expression| match expression.kind() {
+                    HirExprKind::Loop(loop_expression) => module
+                        .resolve_scope(loop_expression.scope())
+                        .ok()
+                        .and_then(crate::scope::HirScope::parent)
+                        .and_then(|parent| loop_expression_owner(&module, parent)),
+                    _ => None,
+                })
+                .is_none()
+        })
+        .expect("outer loop expression");
+    builder
+        .walk_expression(outer, &root, &[], None, CaptureAccess::Read)
+        .expect("nested loop topology");
+
+    assert_eq!(builder.control_transfers.len(), 2);
+    for statement in breaks {
+        let expected = nearest_loop_expression(&module, statement).expect("nearest loop");
+        let row = builder
+            .control_transfers
+            .get(&statement)
+            .expect("break transfer row");
+        assert_eq!(row.kind(), HirControlTransferKind::Break);
+        assert_eq!(
+            row.target(),
+            &HirControlTransferTarget::Loop {
+                family: HirLoopTargetFamily::LoopExpression,
+                body_owner: HirSemanticBodyOwner::direct_expression(expected),
+            }
+        );
+    }
+}
+
+#[test]
+fn break_value_rejects_statement_loop_targets() {
+    let module = lower_control_transfer_fixture(
+        "flow accepted() {\n    while true {\n        break 1\n    }\n}\n",
+    );
+    let statement = module
+        .statements()
+        .find_map(|(owner, value)| {
+            matches!(value.kind(), HirStmtKind::Break { value: Some(_), .. }).then_some(owner)
+        })
+        .expect("break value statement");
+    let kind = module
+        .resolve_stmt(statement)
+        .expect("break statement")
+        .kind();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    assert_eq!(
+        builder.record_control_transfer(statement, kind),
+        Err(HirSemanticPathError::ControlTransfer(
+            HirControlTransferResolutionError::BreakValueRequiresLoopExpression { statement },
+        ))
+    );
+}
+
+#[test]
+fn statement_loop_control_transfers_resolve_each_statement_loop_family() {
+    let module = lower_control_transfer_fixture(
+        "flow accepted() {\n    while ready {\n        continue\n    }\n    while let value = source {\n        break\n    }\n    for value in source {\n        continue\n    }\n}\n",
+    );
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    let expected = [
+        (
+            HirControlTransferKind::Continue,
+            HirLoopTargetFamily::WhileStatement,
+            HirStatementBodyRole::While,
+        ),
+        (
+            HirControlTransferKind::Break,
+            HirLoopTargetFamily::WhileLetStatement,
+            HirStatementBodyRole::WhileLet,
+        ),
+        (
+            HirControlTransferKind::Continue,
+            HirLoopTargetFamily::ForStatement,
+            HirStatementBodyRole::For,
+        ),
+    ];
+    let mut transfers = module
+        .statements()
+        .filter_map(|(owner, value)| match value.kind() {
+            HirStmtKind::Break { .. } => Some((owner, HirControlTransferKind::Break)),
+            HirStmtKind::Continue { .. } => Some((owner, HirControlTransferKind::Continue)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    transfers.sort_by_key(|(owner, _)| *owner);
+    assert_eq!(transfers.len(), expected.len());
+    for ((statement, kind), (_, family, role)) in transfers.into_iter().zip(expected) {
+        let statement_kind = module.resolve_stmt(statement).expect("transfer").kind();
+        builder
+            .record_control_transfer(statement, statement_kind)
+            .expect("statement-loop transfer");
+        let HirControlTransferTarget::Loop {
+            family: actual_family,
+            body_owner,
+        } = builder
+            .control_transfers
+            .get(&statement)
+            .expect("transfer row")
+            .target()
+        else {
+            panic!("statement loop must resolve to a loop target")
+        };
+        assert_eq!(*actual_family, family);
+        assert_eq!(
+            body_owner.semantic_role(),
+            HirSemanticBodyOwnerRole::Statement(role)
+        );
+        assert_eq!(
+            builder
+                .control_transfers
+                .get(&statement)
+                .expect("row")
+                .kind(),
+            kind
+        );
+    }
+}
+
+#[test]
+fn output_control_transfers_require_a_line_plan_and_reject_labels() {
+    let module = lower_control_transfer_fixture(
+        "pub character alice { display_name = \"Alice\" }\nflow accepted() -> String {\n    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n    with:\n        out cue\n    return \"done\"\n}\n",
+    );
+    let application = module
+        .expressions()
+        .find_map(|(owner, value)| match value.kind() {
+            HirExprKind::DialogueContentApplication(application)
+                if application.plan().is_some() =>
+            {
+                Some(owner)
+            }
+            _ => None,
+        })
+        .expect("dialogue application with line plan");
+    let output = module
+        .statements()
+        .find_map(|(owner, value)| matches!(value.kind(), HirStmtKind::Out { .. }).then_some(owner))
+        .expect("line-plan out statement");
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&module);
+    builder
+        .walk_expression(
+            application,
+            &[HirSemanticPathStep::DeclarationBody(
+                HirDeclarationBodyRootRole::FlowBody,
+            )],
+            &[],
+            None,
+            CaptureAccess::Read,
+        )
+        .expect("line-plan topology");
+    assert_eq!(
+        builder.control_transfers.get(&output),
+        Some(&HirControlTransferRow::new(
+            output,
+            HirControlTransferKind::Out,
+            HirControlTransferTarget::Output { application },
+        ))
+    );
+
+    let outside = lower_control_transfer_fixture("flow accepted() { out 1 }\n");
+    let output = outside
+        .statements()
+        .find_map(|(owner, value)| matches!(value.kind(), HirStmtKind::Out { .. }).then_some(owner))
+        .expect("outside out statement");
+    let kind = outside.resolve_stmt(output).expect("out statement").kind();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&outside);
+    assert_eq!(
+        builder.record_control_transfer(output, kind),
+        Err(HirSemanticPathError::ControlTransfer(
+            HirControlTransferResolutionError::UnresolvedTarget {
+                statement: output,
+                kind: HirControlTransferKind::Out,
+            },
+        ))
+    );
+
+    let labeled = lower_control_transfer_fixture(
+        "flow accepted() {\n    while true {\n        continue 'events\n    }\n}\n",
+    );
+    let statement = labeled
+        .statements()
+        .find_map(|(owner, value)| {
+            matches!(value.kind(), HirStmtKind::Continue { .. }).then_some(owner)
+        })
+        .expect("labeled continue statement");
+    let kind = labeled
+        .resolve_stmt(statement)
+        .expect("continue statement")
+        .kind();
+    let mut builder = HirProjectEvaluationTopologyBuilder::new_for_module(&labeled);
+    assert_eq!(
+        builder.record_control_transfer(statement, kind),
+        Err(HirSemanticPathError::ControlTransfer(
+            HirControlTransferResolutionError::UnresolvedTarget {
+                statement,
+                kind: HirControlTransferKind::Continue,
+            },
+        ))
+    );
 }
 
 #[test]
@@ -198,6 +510,7 @@ fn project_lookup_rejects_every_second_location_with_the_exact_owner() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: Box::new([]),
+        control_transfers: Box::new([]),
     };
     let owner = HirSemanticPathOwnerId::Expression(owner);
     let mut found = None;
@@ -206,6 +519,82 @@ fn project_lookup_rejects_every_second_location_with_the_exact_owner() {
     assert_eq!(
         record_semantic_path_location(&mut found, owner, &index),
         Err(HirSemanticPathLookupError::DuplicateOwner { owner })
+    );
+}
+
+#[test]
+fn control_transfer_lookup_reports_missing_duplicate_and_module_mismatch() {
+    let (module, declaration, application) = fixture();
+    let statement = module.statements().next().expect("fixture statement").0;
+    let path = HirSemanticOwnerPath::new(
+        Box::new([HirSemanticPathStep::DeclarationResult]),
+        Box::new([]),
+    );
+    let row = HirControlTransferRow::new(
+        statement,
+        HirControlTransferKind::Out,
+        HirControlTransferTarget::Output { application },
+    );
+    let index = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(application, path.clone())]),
+        statements: BTreeMap::from([(statement, path)]),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+        body_rows: Box::new([]),
+        control_transfers: Box::new([row.clone()]),
+    };
+    let mut found = None;
+    record_control_transfer_location(&mut found, statement, &index)
+        .expect("first transfer location");
+    assert_eq!(found.expect("stored transfer location").row(), &row);
+    assert_eq!(
+        record_control_transfer_location(&mut found, statement, &index),
+        Err(HirControlTransferLookupError::Duplicate { statement })
+    );
+
+    let missing = StmtId::from_raw(RawHirId::new(
+        module.module_id(),
+        NonZeroU32::new(99).expect("missing statement slot"),
+        StmtId::KIND,
+    ));
+    let mut missing_found = None;
+    assert_eq!(
+        record_control_transfer_location(&mut missing_found, missing, &index),
+        Ok(())
+    );
+    assert_eq!(
+        HirProjectEvaluationTopology {
+            generation: Arc::new(super::super::AcceptedHirProjectGeneration {
+                symbol_world: crate::symbol::ProjectSymbolWorldId::try_new(
+                    crate::symbol::CallablePackageId::try_new("lookup-tests").unwrap(),
+                    SourceDocumentId::try_new("lookup").unwrap(),
+                    "default",
+                )
+                .unwrap(),
+                symbol_revision: crate::symbol::ProjectSymbolRevision::try_for_documents([])
+                    .unwrap(),
+                modules: Box::new([]),
+            }),
+            modules: Box::new([]),
+        }
+        .control_transfer(missing),
+        Err(HirControlTransferLookupError::Missing { statement: missing })
+    );
+
+    let foreign_module = HirModuleId::new(
+        HirDatabaseId::from_raw_for_test(NonZeroU64::new(2).unwrap()),
+        NonZeroU32::MIN,
+    );
+    let foreign = StmtId::from_raw(RawHirId::new(foreign_module, NonZeroU32::MIN, StmtId::KIND));
+    let mut foreign_found = None;
+    assert_eq!(
+        record_control_transfer_location(&mut foreign_found, foreign, &index),
+        Err(HirControlTransferLookupError::ModuleMismatch {
+            statement: foreign,
+            snapshot: module.snapshot_id(),
+        })
     );
 }
 
@@ -246,6 +635,7 @@ fn body_rows_allow_distinct_typed_owners_at_one_structural_path() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: vec![declaration_row, expression_row].into_boxed_slice(),
+        control_transfers: Box::new([]),
     };
 
     index.validate_root_paths().unwrap();
@@ -285,6 +675,7 @@ fn body_rows_reject_duplicate_typed_owner_and_wrong_child_join() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: vec![row(), row()].into_boxed_slice(),
+        control_transfers: Box::new([]),
     };
     assert_eq!(
         duplicate.validate_root_paths(),
@@ -307,6 +698,7 @@ fn body_rows_reject_duplicate_typed_owner_and_wrong_child_join() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: vec![row()].into_boxed_slice(),
+        control_transfers: Box::new([]),
     };
     assert_eq!(
         mismatched.validate_root_paths(),
@@ -356,6 +748,7 @@ fn body_owner_and_kind_pairing_is_closed() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: Box::new([row]),
+        control_transfers: Box::new([]),
     };
     assert_eq!(
         index.validate_root_paths(),
@@ -391,6 +784,7 @@ fn path_index_rejects_cross_family_structural_aliases() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: Box::new([]),
+        control_transfers: Box::new([]),
     };
     assert_eq!(
         index.validate_root_paths(),
@@ -418,6 +812,7 @@ fn path_index_rejects_a_foreign_owner_before_issuing_a_location() {
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
         body_rows: Box::new([]),
+        control_transfers: Box::new([]),
     };
     assert_eq!(
         index.validate_root_paths(),

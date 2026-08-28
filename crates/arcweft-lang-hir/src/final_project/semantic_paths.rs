@@ -26,7 +26,7 @@ use crate::{
     },
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternChild, HirPatternChildRole, HirPatternKind},
-    scope::{CaptureAccess, HirLocalKind},
+    scope::{CaptureAccess, HirLocalKind, HirScopeOwner},
     source_index::HirCallableSourceOwner,
     stmt::{
         HirContextualStmtBody, HirSelectBranchHead, HirSelectStmt, HirStatementBodyProjectionError,
@@ -441,6 +441,108 @@ pub struct HirSemanticBodyRow {
     projection: HirBodyProjection,
 }
 
+/// Kind of control transfer retained by the HIR topology.
+///
+/// The spelling of a control-transfer label is deliberately absent.  Labels
+/// are not target declarations in the current final HIR, so a labeled use is
+/// rejected while the topology is being built rather than being retained as
+/// unresolved semantic identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirControlTransferKind {
+    Out,
+    Break,
+    Continue,
+}
+
+/// Lexical construct family that can receive a `break` or `continue`.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirLoopTargetFamily {
+    LoopExpression,
+    WhileStatement,
+    WhileLetStatement,
+    ForStatement,
+}
+
+/// Typed target resolved for one accepted control-transfer statement.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirControlTransferTarget {
+    Output {
+        application: ExprId,
+    },
+    Loop {
+        family: HirLoopTargetFamily,
+        body_owner: HirSemanticBodyOwner,
+    },
+}
+
+impl HirControlTransferTarget {
+    pub(crate) const fn output(application: ExprId) -> Self {
+        Self::Output { application }
+    }
+
+    pub(crate) const fn loop_target(
+        family: HirLoopTargetFamily,
+        body_owner: HirSemanticBodyOwner,
+    ) -> Self {
+        Self::Loop { family, body_owner }
+    }
+
+    pub const fn output_application(&self) -> Option<ExprId> {
+        match self {
+            Self::Output { application } => Some(*application),
+            Self::Loop { .. } => None,
+        }
+    }
+
+    pub const fn loop_family(&self) -> Option<HirLoopTargetFamily> {
+        match self {
+            Self::Output { .. } => None,
+            Self::Loop { family, .. } => Some(*family),
+        }
+    }
+
+    pub const fn loop_body_owner(&self) -> Option<&HirSemanticBodyOwner> {
+        match self {
+            Self::Output { .. } => None,
+            Self::Loop { body_owner, .. } => Some(body_owner),
+        }
+    }
+}
+
+/// One root-local semantic control-transfer row.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirControlTransferRow {
+    statement: StmtId,
+    kind: HirControlTransferKind,
+    target: HirControlTransferTarget,
+}
+
+impl HirControlTransferRow {
+    pub(crate) const fn new(
+        statement: StmtId,
+        kind: HirControlTransferKind,
+        target: HirControlTransferTarget,
+    ) -> Self {
+        Self {
+            statement,
+            kind,
+            target,
+        }
+    }
+
+    pub const fn statement(&self) -> StmtId {
+        self.statement
+    }
+
+    pub const fn kind(&self) -> HirControlTransferKind {
+        self.kind
+    }
+
+    pub const fn target(&self) -> &HirControlTransferTarget {
+        &self.target
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 enum HirSemanticBodyRowError {
     #[error("a semantic body row has no structural path")]
@@ -515,6 +617,7 @@ pub struct HirSemanticPathIndex {
     patterns: BTreeMap<PatternId, HirSemanticOwnerPath>,
     locals: BTreeMap<LocalId, HirSemanticOwnerPath>,
     body_rows: Box<[HirSemanticBodyRow]>,
+    control_transfers: Box<[HirControlTransferRow]>,
 }
 
 /// Closed owner vocabulary for raw HIR identities that can have one accepted
@@ -615,6 +718,46 @@ pub struct HirSemanticBodyLocation<'topology> {
     row: &'topology HirSemanticBodyRow,
 }
 
+/// Borrowed proof that one control-transfer statement resolves to exactly one
+/// root-local target in the sealed project topology.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirControlTransferLocation<'topology> {
+    snapshot: HirSnapshotId,
+    root: &'topology HirSemanticPathRoot,
+    path: &'topology HirSemanticOwnerPath,
+    row: &'topology HirControlTransferRow,
+}
+
+impl<'topology> HirControlTransferLocation<'topology> {
+    pub const fn snapshot(self) -> HirSnapshotId {
+        self.snapshot
+    }
+
+    pub const fn root(self) -> &'topology HirSemanticPathRoot {
+        self.root
+    }
+
+    pub const fn path(self) -> &'topology HirSemanticOwnerPath {
+        self.path
+    }
+
+    pub const fn row(self) -> &'topology HirControlTransferRow {
+        self.row
+    }
+
+    pub const fn statement(self) -> StmtId {
+        self.row.statement()
+    }
+
+    pub const fn kind(self) -> HirControlTransferKind {
+        self.row.kind()
+    }
+
+    pub const fn target(self) -> &'topology HirControlTransferTarget {
+        self.row.target()
+    }
+}
+
 impl<'topology> HirSemanticBodyLocation<'topology> {
     pub const fn snapshot(self) -> HirSnapshotId {
         self.snapshot
@@ -677,6 +820,17 @@ impl HirSemanticPathIndex {
     /// containers from the absence of children.
     pub const fn body_rows(&self) -> &[HirSemanticBodyRow] {
         &self.body_rows
+    }
+
+    /// Returns the root-local control-transfer rows in statement-ID order.
+    pub const fn control_transfers(&self) -> &[HirControlTransferRow] {
+        &self.control_transfers
+    }
+
+    pub fn control_transfer(&self, statement: StmtId) -> Option<&HirControlTransferRow> {
+        self.control_transfers
+            .iter()
+            .find(|row| row.statement() == statement)
     }
 
     pub fn body_row(&self, owner: &HirSemanticBodyOwner) -> Option<&HirSemanticBodyRow> {
@@ -803,6 +957,7 @@ impl HirSemanticPathIndex {
             }
         }
         self.validate_body_rows()?;
+        self.validate_control_transfers()?;
         Ok(())
     }
 
@@ -848,6 +1003,114 @@ impl HirSemanticPathIndex {
         }
         Ok(())
     }
+
+    fn validate_control_transfers(&self) -> Result<(), HirSemanticPathError> {
+        let mut statements = BTreeSet::new();
+        for row in &self.control_transfers {
+            let statement = row.statement();
+            if !statements.insert(statement) {
+                return Err(HirSemanticPathError::DuplicateControlTransfer { statement });
+            }
+            if statement.module() != self.snapshot.module() {
+                return Err(HirSemanticPathError::ControlTransferModuleMismatch {
+                    statement,
+                    snapshot: self.snapshot,
+                });
+            }
+            let Some(statement_path) = self.statement(statement) else {
+                return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+            };
+            match (row.kind(), row.target()) {
+                (HirControlTransferKind::Out, HirControlTransferTarget::Output { application }) => {
+                    if application.module() != self.snapshot.module() {
+                        return Err(HirSemanticPathError::ControlTransferModuleMismatch {
+                            statement,
+                            snapshot: self.snapshot,
+                        });
+                    }
+                    let Some(application_path) = self.expression(*application) else {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    };
+                    if !output_path_is_descendant(application_path, statement_path) {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    }
+                }
+                (
+                    HirControlTransferKind::Break | HirControlTransferKind::Continue,
+                    HirControlTransferTarget::Loop { family, body_owner },
+                ) => {
+                    if body_owner
+                        .expression_owner()
+                        .is_some_and(|owner| owner.module() != self.snapshot.module())
+                        || body_owner
+                            .statement_owner()
+                            .is_some_and(|owner| owner.module() != self.snapshot.module())
+                    {
+                        return Err(HirSemanticPathError::ControlTransferModuleMismatch {
+                            statement,
+                            snapshot: self.snapshot,
+                        });
+                    }
+                    let Some(body_row) = self.body_row(body_owner) else {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    };
+                    if !loop_target_family_matches(*family, body_owner)
+                        || !path_is_prefix(body_row.path(), statement_path)
+                    {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    }
+                }
+                _ => {
+                    return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn path_is_prefix(prefix: &HirSemanticOwnerPath, path: &HirSemanticOwnerPath) -> bool {
+    path.steps().starts_with(prefix.steps()) && path.hops().starts_with(prefix.hops())
+}
+
+fn output_path_is_descendant(
+    application_path: &HirSemanticOwnerPath,
+    statement_path: &HirSemanticOwnerPath,
+) -> bool {
+    if !path_is_prefix(application_path, statement_path)
+        || statement_path.steps().len() <= application_path.steps().len()
+    {
+        return false;
+    }
+    statement_path.steps()[application_path.steps().len()..]
+        .iter()
+        .any(|step| {
+            matches!(
+                step,
+                HirSemanticPathStep::ExpressionOwned(
+                    HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
+                )
+            )
+        })
+}
+
+fn loop_target_family_matches(family: HirLoopTargetFamily, owner: &HirSemanticBodyOwner) -> bool {
+    matches!(
+        (family, owner.semantic_role()),
+        (
+            HirLoopTargetFamily::LoopExpression,
+            HirSemanticBodyOwnerRole::Expression
+        ) | (
+            HirLoopTargetFamily::WhileStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::While),
+        ) | (
+            HirLoopTargetFamily::WhileLetStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::WhileLet),
+        ) | (
+            HirLoopTargetFamily::ForStatement,
+            HirSemanticBodyOwnerRole::Statement(HirStatementBodyRole::For),
+        )
+    )
 }
 
 fn validate_body_owner_kind(row: &HirSemanticBodyRow) -> Result<(), HirSemanticPathError> {
@@ -1853,6 +2116,35 @@ impl HirProjectEvaluationTopology {
         Ok(found)
     }
 
+    /// Returns the sole root-local control-transfer row for one statement.
+    /// The returned location borrows the sealed topology and therefore keeps
+    /// the exact root, path, and resolved target joined together.
+    pub fn control_transfer(
+        &self,
+        statement: StmtId,
+    ) -> Result<HirControlTransferLocation<'_>, HirControlTransferLookupError> {
+        let Some(module) = self.module(statement.module()) else {
+            return Err(HirControlTransferLookupError::Missing { statement });
+        };
+        let mut found = None;
+        for entry in &module.entries {
+            record_control_transfer_location(&mut found, statement, &entry.paths)?;
+            if let Some(body) = &entry.body {
+                record_control_transfer_location(&mut found, statement, &body.paths)?;
+            }
+        }
+        found.ok_or(HirControlTransferLookupError::Missing { statement })
+    }
+
+    /// Returns only the resolved control-transfer row for one statement.
+    pub fn control_transfer_row(
+        &self,
+        statement: StmtId,
+    ) -> Result<&HirControlTransferRow, HirControlTransferLookupError> {
+        self.control_transfer(statement)
+            .map(HirControlTransferLocation::row)
+    }
+
     /// Returns the sole body row named by an exact root-relative locator.
     pub fn semantic_body(
         &self,
@@ -1902,6 +2194,35 @@ fn record_semantic_path_location<'topology>(
         snapshot: index.snapshot(),
         root: index.root(),
         path,
+    });
+    Ok(())
+}
+
+fn record_control_transfer_location<'topology>(
+    found: &mut Option<HirControlTransferLocation<'topology>>,
+    statement: StmtId,
+    index: &'topology HirSemanticPathIndex,
+) -> Result<(), HirControlTransferLookupError> {
+    if statement.module() != index.snapshot().module() {
+        return Err(HirControlTransferLookupError::ModuleMismatch {
+            statement,
+            snapshot: index.snapshot(),
+        });
+    }
+    let Some(row) = index.control_transfer(statement) else {
+        return Ok(());
+    };
+    let Some(path) = index.statement(statement) else {
+        return Err(HirControlTransferLookupError::Missing { statement });
+    };
+    if found.is_some() {
+        return Err(HirControlTransferLookupError::Duplicate { statement });
+    }
+    *found = Some(HirControlTransferLocation {
+        snapshot: index.snapshot(),
+        root: index.root(),
+        path,
+        row,
     });
     Ok(())
 }
@@ -2088,6 +2409,34 @@ pub enum HirSemanticPathError {
     InvalidResultPath,
     #[error("a declaration result local has an invalid HIR origin")]
     InvalidResultOrigin,
+    #[error("control-transfer row for {statement:?} is duplicated")]
+    DuplicateControlTransfer { statement: StmtId },
+    #[error("control-transfer row for {statement:?} is invalid for its rooted path")]
+    InvalidControlTransferRow { statement: StmtId },
+    #[error("control-transfer statement {statement:?} belongs to a module other than {snapshot:?}")]
+    ControlTransferModuleMismatch {
+        statement: StmtId,
+        snapshot: HirSnapshotId,
+    },
+    #[error(transparent)]
+    ControlTransfer(#[from] HirControlTransferResolutionError),
+}
+
+/// Typed failure while resolving one control-transfer statement during the
+/// HIR topology seal.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirControlTransferResolutionError {
+    #[error("control-transfer statement {statement:?} has an unresolved {kind:?} target")]
+    UnresolvedTarget {
+        statement: StmtId,
+        kind: HirControlTransferKind,
+    },
+    #[error("break statement {statement:?} with a value requires a loop expression target")]
+    BreakValueRequiresLoopExpression { statement: StmtId },
+    #[error("control-transfer statement {statement:?} has an invalid lexical scope chain")]
+    InvalidScopeChain { statement: StmtId },
+    #[error("out statement {statement:?} has an invalid line-plan application target")]
+    InvalidOutputApplication { statement: StmtId },
 }
 
 impl From<HirExpressionOwnedChildEdgeError> for HirSemanticPathError {
@@ -2108,6 +2457,21 @@ pub enum HirSemanticPathLookupError {
     #[error("HIR semantic path owner {owner:?} disagrees with stored snapshot {snapshot:?}")]
     OwnerModuleMismatch {
         owner: HirSemanticPathOwnerId,
+        snapshot: HirSnapshotId,
+    },
+}
+
+/// Closed failure vocabulary for topology-wide borrowed control-transfer
+/// lookup.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirControlTransferLookupError {
+    #[error("control-transfer statement {statement:?} has no stored semantic target")]
+    Missing { statement: StmtId },
+    #[error("control-transfer statement {statement:?} has more than one stored semantic target")]
+    Duplicate { statement: StmtId },
+    #[error("control-transfer statement {statement:?} disagrees with stored snapshot {snapshot:?}")]
+    ModuleMismatch {
+        statement: StmtId,
         snapshot: HirSnapshotId,
     },
 }
@@ -3415,6 +3779,8 @@ struct HirProjectEvaluationTopologyBuilder<'module> {
     patterns: BTreeMap<PatternId, HirSemanticOwnerPath>,
     locals: BTreeMap<LocalId, HirSemanticOwnerPath>,
     body_rows: Vec<HirSemanticBodyRow>,
+    control_transfers: BTreeMap<StmtId, HirControlTransferRow>,
+    line_plan_applications: Vec<ExprId>,
     local_origins: BTreeMap<LocalId, HirLocalBindingOrigin>,
     expression_uses: BTreeMap<ExprId, HirExpressionUseRow>,
     next_source_ordinal: u32,
@@ -3450,6 +3816,7 @@ struct HirPathCheckpoint {
     patterns: BTreeSet<PatternId>,
     locals: BTreeSet<LocalId>,
     body_rows: usize,
+    control_transfers: BTreeSet<StmtId>,
 }
 
 #[derive(Clone, Copy)]
@@ -3488,6 +3855,8 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             patterns: BTreeMap::new(),
             locals: BTreeMap::new(),
             body_rows: Vec::new(),
+            control_transfers: BTreeMap::new(),
+            line_plan_applications: Vec::new(),
             local_origins: BTreeMap::new(),
             expression_uses: BTreeMap::new(),
             next_source_ordinal: 0,
@@ -3509,6 +3878,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             patterns: self.patterns.keys().copied().collect(),
             locals: self.locals.keys().copied().collect(),
             body_rows: self.body_rows.len(),
+            control_transfers: self.control_transfers.keys().copied().collect(),
         }
     }
 
@@ -3526,6 +3896,13 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             locals: path_map_delta(&self.locals, &checkpoint.locals),
             body_rows: self.body_rows[checkpoint.body_rows..]
                 .to_vec()
+                .into_boxed_slice(),
+            control_transfers: self
+                .control_transfers
+                .iter()
+                .filter(|(statement, _)| !checkpoint.control_transfers.contains(statement))
+                .map(|(_, row)| row.clone())
+                .collect::<Vec<_>>()
                 .into_boxed_slice(),
         };
         paths.validate_root_paths()?;
@@ -3638,6 +4015,11 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         let statement_keys = self.statements.keys().copied().collect::<BTreeSet<_>>();
         let pattern_keys = self.patterns.keys().copied().collect::<BTreeSet<_>>();
         let local_keys = self.locals.keys().copied().collect::<BTreeSet<_>>();
+        let control_transfer_keys = self
+            .control_transfers
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>();
         let body_rows_start = self.body_rows.len();
         self.binding_item = Some(item);
         self.binding_owner = Some(owner);
@@ -3680,6 +4062,13 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 .collect(),
             body_rows: self.body_rows[body_rows_start..]
                 .to_vec()
+                .into_boxed_slice(),
+            control_transfers: self
+                .control_transfers
+                .iter()
+                .filter(|(statement, _)| !control_transfer_keys.contains(statement))
+                .map(|(_, row)| row.clone())
+                .collect::<Vec<_>>()
                 .into_boxed_slice(),
         };
         paths.validate_root_paths()?;
@@ -4488,7 +4877,8 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .module
             .resolve_stmt(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-        match statement.kind() {
+        self.line_plan_applications.push(owning_parent);
+        let result = (|| match statement.kind() {
             HirStmtKind::Let {
                 pattern,
                 initializer,
@@ -4506,9 +4896,178 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 }
                 Ok(())
             }
-            HirStmtKind::Out { .. } => insert_unique(&mut self.statements, owner, path, hops),
+            HirStmtKind::Out { .. } => {
+                insert_unique(&mut self.statements, owner, path, hops)?;
+                self.record_control_transfer(owner, statement.kind())
+            }
             _ => self.walk_statement(owner, path, hops, Some(owning_parent), access),
+        })();
+        self.line_plan_applications.pop();
+        result
+    }
+
+    fn record_control_transfer(
+        &mut self,
+        statement: StmtId,
+        kind: &HirStmtKind,
+    ) -> Result<(), HirSemanticPathError> {
+        let (kind, target) = match kind {
+            HirStmtKind::Out { label, .. } => {
+                if label.is_some() {
+                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
+                        statement,
+                        kind: HirControlTransferKind::Out,
+                    }
+                    .into());
+                }
+                let Some(application) = self.line_plan_applications.last().copied() else {
+                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
+                        statement,
+                        kind: HirControlTransferKind::Out,
+                    }
+                    .into());
+                };
+                let expression = self
+                    .module
+                    .resolve_expr(application)
+                    .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+                let HirExprKind::DialogueContentApplication(value) = expression.kind() else {
+                    return Err(
+                        HirControlTransferResolutionError::InvalidOutputApplication { statement }
+                            .into(),
+                    );
+                };
+                if value.plan().is_none() {
+                    return Err(
+                        HirControlTransferResolutionError::InvalidOutputApplication { statement }
+                            .into(),
+                    );
+                }
+                (
+                    HirControlTransferKind::Out,
+                    HirControlTransferTarget::output(application),
+                )
+            }
+            HirStmtKind::Break { label, value } => {
+                if label.is_some() {
+                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
+                        statement,
+                        kind: HirControlTransferKind::Break,
+                    }
+                    .into());
+                }
+                let (family, body_owner) =
+                    self.nearest_loop_target(statement, HirControlTransferKind::Break)?;
+                if value.is_some() && family != HirLoopTargetFamily::LoopExpression {
+                    return Err(
+                        HirControlTransferResolutionError::BreakValueRequiresLoopExpression {
+                            statement,
+                        }
+                        .into(),
+                    );
+                }
+                (
+                    HirControlTransferKind::Break,
+                    HirControlTransferTarget::loop_target(family, body_owner),
+                )
+            }
+            HirStmtKind::Continue { label } => {
+                if label.is_some() {
+                    return Err(HirControlTransferResolutionError::UnresolvedTarget {
+                        statement,
+                        kind: HirControlTransferKind::Continue,
+                    }
+                    .into());
+                }
+                let (family, body_owner) =
+                    self.nearest_loop_target(statement, HirControlTransferKind::Continue)?;
+                (
+                    HirControlTransferKind::Continue,
+                    HirControlTransferTarget::loop_target(family, body_owner),
+                )
+            }
+            _ => return Ok(()),
+        };
+        if self
+            .control_transfers
+            .insert(
+                statement,
+                HirControlTransferRow::new(statement, kind, target),
+            )
+            .is_some()
+        {
+            return Err(HirSemanticPathError::DuplicateControlTransfer { statement });
         }
+        Ok(())
+    }
+
+    fn nearest_loop_target(
+        &self,
+        statement_id: StmtId,
+        kind: HirControlTransferKind,
+    ) -> Result<(HirLoopTargetFamily, HirSemanticBodyOwner), HirSemanticPathError> {
+        let statement = self
+            .module
+            .resolve_stmt(statement_id)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let mut scope = Some(statement.scope());
+        let mut visited = BTreeSet::new();
+        while let Some(scope_id) = scope {
+            if !visited.insert(scope_id) {
+                return Err(HirControlTransferResolutionError::InvalidScopeChain {
+                    statement: statement_id,
+                }
+                .into());
+            }
+            let value = self
+                .module
+                .resolve_scope(scope_id)
+                .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+            match value.owner() {
+                HirScopeOwner::Expr(owner) => {
+                    let expression = self
+                        .module
+                        .resolve_expr(*owner)
+                        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+                    if matches!(expression.kind(), HirExprKind::Loop(_)) {
+                        return Ok((
+                            HirLoopTargetFamily::LoopExpression,
+                            HirSemanticBodyOwner::direct_expression(*owner),
+                        ));
+                    }
+                }
+                HirScopeOwner::Stmt(owner) => {
+                    let statement = self
+                        .module
+                        .resolve_stmt(*owner)
+                        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+                    let target = match statement.kind() {
+                        HirStmtKind::While(_) => Some((
+                            HirLoopTargetFamily::WhileStatement,
+                            HirStatementBodyRole::While,
+                        )),
+                        HirStmtKind::WhileLet(_) => Some((
+                            HirLoopTargetFamily::WhileLetStatement,
+                            HirStatementBodyRole::WhileLet,
+                        )),
+                        HirStmtKind::For(_) => {
+                            Some((HirLoopTargetFamily::ForStatement, HirStatementBodyRole::For))
+                        }
+                        _ => None,
+                    };
+                    if let Some((family, role)) = target {
+                        return Ok((family, HirSemanticBodyOwner::statement_body(*owner, role)));
+                    }
+                }
+                HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => {}
+            }
+            scope = value.parent();
+        }
+        Err(HirControlTransferResolutionError::UnresolvedTarget {
+            statement: statement_id,
+            kind,
+        }
+        .into())
     }
 
     fn walk_statement(
@@ -4530,6 +5089,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .module
             .resolve_stmt(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        self.record_control_transfer(owner, statement.kind())?;
         let body_projections =
             self.record_statement_body_rows(owner, path, hops, statement.kind())?;
         self.record_statement_local_origins(owner, statement.kind(), owning_parent)?;

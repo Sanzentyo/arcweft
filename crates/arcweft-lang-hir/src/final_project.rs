@@ -46,6 +46,8 @@ pub use self::selected_expressions::{
 };
 pub use self::semantic_paths::{
     HirAcceptedItemFamily, HirBindingSite, HirCaptureEvaluationIndex, HirCaptureEvaluationRow,
+    HirControlTransferKind, HirControlTransferLocation, HirControlTransferLookupError,
+    HirControlTransferResolutionError, HirControlTransferRow, HirControlTransferTarget,
     HirDeclarationBodyRoot, HirDeclarationBodyRootRole, HirDeclarationBodyTopology,
     HirDeclarationContractRoot, HirDeclarationContractRootRole, HirDeclarationEvaluationPhase,
     HirDeclarationEvaluationView, HirDeclarationItemRootRole, HirDeclarationParameterRoot,
@@ -55,7 +57,7 @@ pub use self::semantic_paths::{
     HirImplicitCallableRegion, HirItemAttributeOwner, HirItemEvaluationEntry,
     HirItemEvaluationEntryRole, HirItemEvaluationRoot, HirItemRecoveryRootOwner,
     HirLayerExpressionRootField, HirLocalBindingOrigin, HirLocalBindingOriginIndex,
-    HirLocalBindingStatementRole, HirLocalValueOrigin, HirMemberBindingRole,
+    HirLocalBindingStatementRole, HirLocalValueOrigin, HirLoopTargetFamily, HirMemberBindingRole,
     HirModuleEvaluationTopology, HirProjectEvaluationTopology, HirSemanticBodyLocation,
     HirSemanticBodyLocator, HirSemanticBodyLookupError, HirSemanticBodyOwner,
     HirSemanticBodyOwnerError, HirSemanticBodyOwnerRole, HirSemanticBodyRow, HirSemanticOwnerPath,
