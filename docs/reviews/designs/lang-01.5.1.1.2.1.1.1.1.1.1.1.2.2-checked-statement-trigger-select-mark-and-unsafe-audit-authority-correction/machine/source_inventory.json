@@ -1,0 +1,80 @@
+{
+  "inventory_version": 1,
+  "head": "163a3b0da9fdcd5524ffeca8b055d774d53008e2",
+  "origin_main": "163a3b0da9fdcd5524ffeca8b055d774d53008e2",
+  "files": [
+    {"mode": "HEAD", "blob": "f910fa0f6b17da4c03f7e985322c83d69ac3a0a9", "head_blob": "f910fa0f6b17da4c03f7e985322c83d69ac3a0a9", "path": "crates/arcweft-lang-syntax/src/text/rich_text_tag.rs"},
+    {"mode": "HEAD", "blob": "4cdc56d15893160d07578e59be1366aa4854f23e", "head_blob": "4cdc56d15893160d07578e59be1366aa4854f23e", "path": "crates/arcweft-lang-syntax/src/attachment/trigger.rs"},
+    {"mode": "HEAD", "blob": "2c6d5140e25288e60f39bb532758cdc44755d864", "head_blob": "2c6d5140e25288e60f39bb532758cdc44755d864", "path": "crates/arcweft-lang-syntax/src/parser/statement.rs"},
+    {"mode": "HEAD", "blob": "101f46112c256941e377d4eb1672748c1ad73858", "head_blob": "101f46112c256941e377d4eb1672748c1ad73858", "path": "crates/arcweft-lang-syntax/src/attachment/thread_statement.rs"},
+    {"mode": "HEAD", "blob": "500b32d54d2e8257c97fc76d51565962a480b39d", "head_blob": "500b32d54d2e8257c97fc76d51565962a480b39d", "path": "crates/arcweft-lang-hir/src/dialogue_application/rich_text.rs"},
+    {"mode": "HEAD", "blob": "e80032216df860ee57935086bb6b9c45695eb138", "head_blob": "e80032216df860ee57935086bb6b9c45695eb138", "path": "crates/arcweft-lang-hir/src/stmt.rs"},
+    {"mode": "HEAD", "blob": "02967d6f824e6721b71b20e6a10e78f10e4567ed", "head_blob": "02967d6f824e6721b71b20e6a10e78f10e4567ed", "path": "crates/arcweft-lang-hir/src/stmt/thread.rs"},
+    {"mode": "HEAD", "blob": "584610197af07e6d09d35f9829a3bc06abdc464a", "head_blob": "584610197af07e6d09d35f9829a3bc06abdc464a", "path": "crates/arcweft-lang-hir/src/stmt/child_edges.rs"},
+    {"mode": "HEAD", "blob": "743d1b2aeac4d2c7f2660faff9dfa9c0d6576c49", "head_blob": "743d1b2aeac4d2c7f2660faff9dfa9c0d6576c49", "path": "crates/arcweft-lang-hir/src/final_project/semantic_paths.rs"},
+    {"mode": "HEAD", "blob": "34cd249b5116eddf7e4272dd84b78824f365a401", "head_blob": "34cd249b5116eddf7e4272dd84b78824f365a401", "path": "crates/arcweft-lang-hir/src/final_lowering/statement_lowering.rs"},
+    {"mode": "HEAD", "blob": "3da374649cdf0670f1ee73f7bc5fce1661c2a131", "head_blob": "3da374649cdf0670f1ee73f7bc5fce1661c2a131", "path": "crates/arcweft-lang-hir/src/final_lowering/expression_lowering/dialogue/candidate/block.rs"},
+    {"mode": "HEAD", "blob": "3bdf32c57fdd91e91cb834e01f93387d55d03998", "head_blob": "3bdf32c57fdd91e91cb834e01f93387d55d03998", "path": "crates/arcweft-lang-hir/src/source_index/stmt_projection.rs"},
+    {"mode": "HEAD", "blob": "c8a27b3f49cabac0df5ffcf7883f2aa4d299de9d", "head_blob": "c8a27b3f49cabac0df5ffcf7883f2aa4d299de9d", "path": "crates/arcweft-lang-sema/src/types.rs"},
+    {"mode": "HEAD", "blob": "a388968d5ead228540bba10e8e6fdbb12e0e2308", "head_blob": "a388968d5ead228540bba10e8e6fdbb12e0e2308", "path": "crates/arcweft-lang-sema/src/types/digest.rs"},
+    {"mode": "WORKTREE", "blob": "247bd4111333be6ba139e1168dbf68544839acb3", "head_blob": "b5f9acba10a87187adc56be760e8ef4fd27eae30", "path": "crates/arcweft-lang-sema/src/env/base.rs"},
+    {"mode": "HEAD", "blob": "b40771706e7228b14e35088bcd9b38c4cb04b8ad", "head_blob": "b40771706e7228b14e35088bcd9b38c4cb04b8ad", "path": "crates/arcweft-lang-sema/src/registration/model.rs"},
+    {"mode": "HEAD", "blob": "289af49545e9cb6e1c8f4af1714d6b18a73b9c9d", "head_blob": "289af49545e9cb6e1c8f4af1714d6b18a73b9c9d", "path": "crates/arcweft-lang-sema/src/registration/environment_input.rs"},
+    {"mode": "HEAD", "blob": "ad2e2ad5f330f9bdc16cf967643b24f5dcb690df", "head_blob": "ad2e2ad5f330f9bdc16cf967643b24f5dcb690df", "path": "crates/arcweft-lang-sema/src/registration/environment_digest.rs"},
+    {"mode": "HEAD", "blob": "48532ea695297fc445d3d79f8301ec4f63ccc254", "head_blob": "48532ea695297fc445d3d79f8301ec4f63ccc254", "path": "crates/arcweft-lang-sema/src/registration/registrar.rs"},
+    {"mode": "HEAD", "blob": "ab967ce26782e0123fdb33bf5318e78a8fd7fdf7", "head_blob": "ab967ce26782e0123fdb33bf5318e78a8fd7fdf7", "path": "crates/arcweft-lang-sema/src/entry/checker.rs"},
+    {"mode": "WORKTREE", "blob": "e1cb76e85a20fb3f767a869edb8b64844fb037fb", "head_blob": "a709ed91cff52f36afe0556fa55855e505afb6ee", "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs"},
+    {"mode": "WORKTREE", "blob": "65f7cd1d254d0adaab56816059f178b8b1fc07d6", "head_blob": "27388ef3799c79801e3f22de3e6fad6cc453f45d", "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer.rs"},
+    {"mode": "HEAD", "blob": "ea4dfd2de768d1e4ff780806f0d3d5049b5c1565", "head_blob": "ea4dfd2de768d1e4ff780806f0d3d5049b5c1565", "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/preparation.rs"},
+    {"mode": "WORKTREE", "blob": "6211a0ea391b855370bf0b0d31be97bf03c7c500", "head_blob": "e8d1be62652c75f9baad14b5b6c6b8076c3b3597", "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/statements.rs"},
+    {"mode": "WORKTREE_UNTRACKED", "blob": "a22ed08c5d57a0c31398f4bf62a491ee8e03e1af", "head_blob": null, "path": "crates/arcweft-lang-sema/src/final_analysis/analyzer/evaluated_effects.rs"},
+    {"mode": "HEAD", "blob": "0a9800554a81e0e5d84f0f321ac2f9ca83e34ae8", "head_blob": "0a9800554a81e0e5d84f0f321ac2f9ca83e34ae8", "path": "crates/arcweft-lang-sema/src/semantic_coordinate.rs"},
+    {"mode": "HEAD", "blob": "404462a473eb327a35a6a9e2439d2bb62a6bbc57", "head_blob": "404462a473eb327a35a6a9e2439d2bb62a6bbc57", "path": "crates/arcweft-lang-sema/src/semantic_coordinate/catalog.rs"},
+    {"mode": "HEAD", "blob": "be512e5941d9d3a4efe3216c1eb9c60076aa2aab", "head_blob": "be512e5941d9d3a4efe3216c1eb9c60076aa2aab", "path": "crates/arcweft-lang-sema/src/checked_rich_text/model.rs"},
+    {"mode": "HEAD", "blob": "0204098a8717e95c36ab87ea2bf4b0ccfd4033b2", "head_blob": "0204098a8717e95c36ab87ea2bf4b0ccfd4033b2", "path": "crates/arcweft-lang-sema/src/checked_rich_text/checker.rs"},
+    {"mode": "WORKTREE", "blob": "020eabe145d0362cff5ad9786867215de27c3390", "head_blob": "61339ae9622062995a70ffc5cd6fef1545ffdc0b", "path": "crates/arcweft-lang-sema/src/final_analysis/prepared.rs"},
+    {"mode": "WORKTREE", "blob": "4f1e57d31b3f3e3eef813ad0d9284eb74dcbdc8c", "head_blob": "ce0616240ffdb1f6cd1453c6e1a7172f9eb89df7", "path": "crates/arcweft-compiler/src/lower.rs"},
+    {"mode": "WORKTREE", "blob": "56acb51a22eb52e04b8eca4e3d06007f4c515641", "head_blob": "2cc7c3db49039c218d39eb467e958ba9724a1277", "path": "crates/arcweft-runtime-plan/src/semantic_facts.rs"},
+    {"mode": "HEAD", "blob": "fb745457aa128837052df52db85daf34089c72de", "head_blob": "fb745457aa128837052df52db85daf34089c72de", "path": "crates/arcweft-runtime-plan/src/final_flow/line_plan.rs"},
+    {"mode": "HEAD", "blob": "181df448688036df4a2aa78e0323052f2eed3954", "head_blob": "181df448688036df4a2aa78e0323052f2eed3954", "path": "crates/arcweft-core/src/effect.rs"},
+    {"mode": "HEAD", "blob": "f243e26cdd22e0f8967f98db99203d648941a4fe", "head_blob": "f243e26cdd22e0f8967f98db99203d648941a4fe", "path": "crates/arcweft-core/src/runtime_id.rs"},
+    {"mode": "HEAD", "blob": "6c5fc59bb99111cacee0ef2bd4c1c4567c260acc", "head_blob": "6c5fc59bb99111cacee0ef2bd4c1c4567c260acc", "path": "crates/arcweft-core/src/line_task.rs"},
+    {"mode": "HEAD", "blob": "c8d39d8f90f8bf13dd0b0e30f645762f5286b2a4", "head_blob": "c8d39d8f90f8bf13dd0b0e30f645762f5286b2a4", "path": "crates/arcweft-id/src/unsafe_audit.rs"},
+    {"mode": "HEAD", "blob": "5b87201912bae1cf5821a8b615cd2a8d734963ed", "head_blob": "5b87201912bae1cf5821a8b615cd2a8d734963ed", "path": "crates/arcweft-verify/src/lib.rs"},
+    {"mode": "HEAD", "blob": "2e02425d7e2283a69659c5f6b5ffa41e14b0b06a", "head_blob": "2e02425d7e2283a69659c5f6b5ffa41e14b0b06a", "path": "crates/arcweft-cli/src/app/verify.rs"},
+    {"mode": "HEAD", "blob": "713be000a6f0bb462ae0020fe76315043a283af5", "head_blob": "713be000a6f0bb462ae0020fe76315043a283af5", "path": "crates/arcweft-verify-lsp/src/lib.rs"},
+    {"mode": "HEAD", "blob": "7160ec8d764b94f4209e10a7fe7e347de2bc48b6", "head_blob": "7160ec8d764b94f4209e10a7fe7e347de2bc48b6", "path": "crates/arcweft-view/src/style/value.rs"}
+  ],
+  "ast_inventories": [
+    {
+      "path": "crates/arcweft-lang-hir/src/stmt.rs",
+      "enum": "HirStmtKind",
+      "variants": ["Assertion", "Let", "Assign", "LetElse", "LetChoice", "LetScope", "LetActionReceive", "Return", "Out", "Goto", "DeferBlock", "Defer", "Yield", "Signal", "LifetimeSet", "Wait", "On", "UnsafeLifetime", "Choice", "If", "IfLet", "Match", "While", "WhileLet", "For", "Close", "Select", "SourceLocale", "Scope", "Include", "Break", "Continue", "Expression", "ProofCall", "Error"]
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/stmt/child_edges.rs",
+      "enum": "HirStatementChildRole",
+      "variants": ["AssertionCondition", "Pattern", "Annotation", "Initializer", "Input", "Target", "Value", "BodyItem", "ElseIf", "TriggerExpression", "TriggerPattern", "TriggerSignalTarget", "TriggerSignalValue", "UnsafeReason", "Condition", "Scrutinee", "Guard", "MatchPattern", "MatchGuard", "MatchValue", "ForSource", "ForIterator", "ForNextValue", "SelectOperand", "SelectBinding", "SelectSource", "SelectPattern"]
+    },
+    {
+      "path": "crates/arcweft-lang-hir/src/stmt/child_edges.rs",
+      "enum": "HirStatementBodyRole",
+      "variants": ["LetElse", "Defer", "On", "UnsafeLifetime", "Then", "Else", "MatchArm", "While", "WhileLet", "For", "SelectBranch", "SourceLocale", "Scope"]
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/final_analysis/model.rs",
+      "enum": "CheckedSelectResolution",
+      "variants": ["Method", "DialogueView", "AgentField", "ProgressField", "Field"]
+    },
+    {
+      "path": "crates/arcweft-view/src/style/value.rs",
+      "enum": "ViewSpecifiedValue",
+      "variants": ["Token", "BoxAxes", "Bool", "Integer", "Ratio", "Scalar", "Length", "Angle", "Color", "FontFamilyList", "FontWeight", "FontStyle", "Display", "Position", "Overflow", "FlexDirection", "FlexWrap", "Alignment", "BorderRadii", "ShadowList", "FilterList", "Clip", "Mask", "BlendMode", "Transition", "Resource"]
+    },
+    {
+      "path": "crates/arcweft-lang-sema/src/checked_rich_text/model.rs",
+      "enum": "CheckedRichTextAction",
+      "variants": ["Control", "DirectStyle", "Style", "Layout", "Transform", "Object", "BuiltinFx", "Host", "Marker"]
+    }
+  ]
+}

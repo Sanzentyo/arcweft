@@ -1,0 +1,22 @@
+# Decision register
+
+| ID | Repository evidence | Selected final decision | Rejected alternatives |
+| --- | --- | --- | --- |
+| D01 | Syntax currently shares a pattern-shaped mark trigger and marker checking reparses display text. | Parse one `SyntaxDialogueMarkName`; HIR content owns typed mark IDs and source order. | String/PublicId reparsing, name side tables, pattern-shaped Mark. |
+| D02 | `HirTriggerPattern` has the old `Expr` spelling and Mark pattern child. | Replace it directly with the closed nine-variant `HirTrigger`; `Mark` carries only `HirDialogueMarkId`; `Expression` is the final name. | Compatibility enum, aliases, fallback resolver. |
+| D03 | Select bind stores `propagates_error` after parser suffix stripping. | Delete the field through every producer/consumer; prefix `Try` alone propagates. | Dual propagation flags or suffix compatibility. |
+| D04 | Registration has no statement-ingress record; `EntityKind::Other(String)` is the only tempting scope stand-in. | Add closed standard ingress ID/role input and `TypeKind::StatementIngress`; seal four exact types in `RegisteredStatementIngressTypes`. | `Any`, `Other`, `Named`, terminal-name lookup, runtime-core types as reverse dependencies. |
+| D05 | Pattern seeding precedes completed call facts, while Event type depends on all accepted Entry roots that can reach a statement. | Reorder analyzer preparation and share one private typed Entry-root/call/Include reachability proof with the final Entry seal. | Lexical-only Entry choice, a published event map, duplicate root resolver, first-entry wins. |
+| D06 | HIR topology already owns typed semantic paths but no single Choice-context accessor. | Add `enclosing_choice_lifecycle(StmtId)` in place and require exactly one accepted owner. | Parent walking in sema, source scan, hard-coded Choice name. |
+| D07 | Current checked statements publish sparse roles; child facts already own types. | Publish one 15-variant `CheckedStatementPayload` and keep contextual types solely on child facts. | Parallel roles, copied type side tables, wildcard structural fallback. |
+| D08 | Checked rich-text Marker carries `PublicId`; line plans and runtime application carry mark/handler side tables. | Issue one accepted-rooted coordinate, put it on the Marker action, and make the compiler's coordinate→runtime-ID map temporary. | Runtime stable-coordinate persistence, string runtime mark, duplicate mark/handler catalogs. |
+| D09 | Legacy core has `RuntimeWaitTarget::Mark(String)` but final statement/runtime-plan lowering does not admit Wait. | Reject executable `wait(mark)` in this cut; later admission must reuse this design's typed identity. | Silently entering the legacy string path or inventing a second wait-mark ID. |
+| D10 | Unsafe verifier currently re-reads HIR identity labels. | HIR stores typed accepted/recovered identity; checked payload owns `UnsafeAuditId` and safety-doc bit; verifier consumes checked data. | `id_ref_label`, PublicId parsing, HIR re-read. |
+| D11 | Generic predecessor statement transcript is incomplete for this statement model. | Amend it with a version-1 purpose-built statement/body grammar and the complete 35-arm matrix. | Serde, raw IDs, whole-analysis digest, version bump. |
+| D12 | Generic predecessor lists seven `CheckedSelectResolution` variants and 27 style values; later accepted source has five and 26. | Do not import stale inventories. Reserve removed expression-select tags and limit this correction to statement/body grammar. | Editing old accepted packages or conflating expression select with select statements. |
+| D13 | Runtime core already owns typed `RuntimeDialogueMarkId`; lower crates cannot depend on sema. | Compiler performs the only stable-coordinate→runtime-ID projection and drops its map. | Reverse dependency, runtime string lookup, persisted sema coordinate. |
+| D14 | Current dirty evaluated-effect WIP already selects a sealed typed operation authority. | Integrate that authority unchanged into the Expression matrix row. | Redesigning the WIP, source-string effect classification, a second effect model. |
+| D15 | All affected contracts are unreleased and repository policy fixes versions at 1. | Deletion-driven direct replacement; no compatibility surface and every version remains 1. | V2/V3 names, old readers/writers, optional legacy fields. |
+
+Evidence entries describe inspected source; decisions are selected architecture.
+Implementation cost and patch size did not select any decision.
