@@ -2,6 +2,7 @@ pub mod dialogue;
 mod locale;
 pub mod runtime_program;
 mod semantic_type;
+mod unsafe_audit;
 
 use core::fmt;
 use core::str::FromStr;
@@ -10,6 +11,7 @@ use thiserror::Error;
 
 pub use locale::{LocaleSemanticDigest, LocaleTag, LocaleTagError};
 pub use semantic_type::RuntimeSemanticTypeId;
+pub use unsafe_audit::{AcceptedUnsafeAuditSemanticId, UnsafeAuditId, UnsafeAuditIdError};
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("{kind}")]
