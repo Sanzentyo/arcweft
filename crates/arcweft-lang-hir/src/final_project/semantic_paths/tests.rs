@@ -114,7 +114,7 @@ fn expression_walk_rejects_cycle_before_duplicate() {
 }
 
 #[test]
-fn item_root_path_index_keeps_recovery_coordinate_typed_and_item_owned() {
+fn item_root_path_index_rejects_recovery_body_publication() {
     let (module, _, _) = fixture();
     let item = module.items().next().expect("fixture item").0;
     let expression = module.expressions().next().expect("fixture expression").0;
@@ -125,37 +125,24 @@ fn item_root_path_index_keeps_recovery_coordinate_typed_and_item_owned() {
             role: HirDeclarationItemRootRole::Recovery {
                 owner: HirItemRecoveryRootOwner::Item,
             },
-            child: HirDeclarationBodyRootChild::Expression(expression),
+            projection: HirBodyProjection::expression(expression),
         })
         .expect("recovery item root");
-    let paths = builder
-        .path_index_since(
+    assert_eq!(
+        builder.path_index_since(
             HirSemanticPathRoot::Item {
                 item,
                 entry_ordinal: 0,
                 role: HirItemEvaluationEntryRole::Item,
             },
             &checkpoint,
-        )
-        .expect("item recovery path index");
-    assert!(matches!(
-        paths.root(),
-        HirSemanticPathRoot::Item {
-            item: actual,
-            entry_ordinal: 0,
-            role: HirItemEvaluationEntryRole::Item,
-        } if *actual == item
-    ));
-    assert!(matches!(
-        paths
-            .expression(expression)
-            .and_then(|path| path.steps().first()),
-        Some(HirSemanticPathStep::DeclarationItem(
-            HirDeclarationItemRootRole::Recovery {
-                owner: HirItemRecoveryRootOwner::Item
-            }
-        ))
-    ));
+        ),
+        Err(HirSemanticPathError::InvalidBodyRow {
+            owner: HirSemanticBodyOwner::item(HirDeclarationItemRootRole::Recovery {
+                owner: HirItemRecoveryRootOwner::Item,
+            }),
+        })
+    );
 }
 
 #[test]
@@ -210,6 +197,7 @@ fn project_lookup_rejects_every_second_location_with_the_exact_owner() {
         statements: BTreeMap::new(),
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
+        body_rows: Box::new([]),
     };
     let owner = HirSemanticPathOwnerId::Expression(owner);
     let mut found = None;
@@ -218,6 +206,160 @@ fn project_lookup_rejects_every_second_location_with_the_exact_owner() {
     assert_eq!(
         record_semantic_path_location(&mut found, owner, &index),
         Err(HirSemanticPathLookupError::DuplicateOwner { owner })
+    );
+}
+
+#[test]
+fn body_rows_allow_distinct_typed_owners_at_one_structural_path() {
+    let (module, declaration, _) = fixture();
+    let expression = module.expressions().next().expect("fixture expression").0;
+    let path = HirSemanticOwnerPath::new(
+        Box::new([HirSemanticPathStep::DeclarationBody(
+            HirDeclarationBodyRootRole::ViewValue { ordinal: 0 },
+        )]),
+        Box::new([]),
+    );
+    let declaration_row = HirSemanticBodyRow::try_new(
+        HirSemanticBodyOwner::declaration(HirDeclarationBodyRootRole::ViewValue { ordinal: 0 }),
+        path.clone(),
+        HirBodyProjection::try_new(
+            HirBodyKind::Expression,
+            vec![HirBodyChildEdge::new(
+                HirBodyChild::Expression(expression),
+                HirBodyChildRole::Expression,
+            )],
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let expression_row = HirSemanticBodyRow::try_new(
+        HirSemanticBodyOwner::direct_expression(expression),
+        path.clone(),
+        HirBodyProjection::try_new(HirBodyKind::Thread, Vec::new()).unwrap(),
+    )
+    .unwrap();
+    let index = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(expression, path)]),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+        body_rows: vec![declaration_row, expression_row].into_boxed_slice(),
+    };
+
+    index.validate_root_paths().unwrap();
+    assert_eq!(index.body_rows().len(), 2);
+    assert_eq!(index.body_rows()[0].path(), index.body_rows()[1].path());
+}
+
+#[test]
+fn body_rows_reject_duplicate_typed_owner_and_wrong_child_join() {
+    let (module, declaration, _) = fixture();
+    let expression = module.expressions().next().expect("fixture expression").0;
+    let root_role = HirDeclarationBodyRootRole::ViewValue { ordinal: 0 };
+    let path = HirSemanticOwnerPath::new(
+        Box::new([HirSemanticPathStep::DeclarationBody(root_role)]),
+        Box::new([]),
+    );
+    let row = || {
+        HirSemanticBodyRow::try_new(
+            HirSemanticBodyOwner::declaration(root_role),
+            path.clone(),
+            HirBodyProjection::try_new(
+                HirBodyKind::Expression,
+                vec![HirBodyChildEdge::new(
+                    HirBodyChild::Expression(expression),
+                    HirBodyChildRole::Expression,
+                )],
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    let duplicate = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration.clone()),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(expression, path.clone())]),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+        body_rows: vec![row(), row()].into_boxed_slice(),
+    };
+    assert_eq!(
+        duplicate.validate_root_paths(),
+        Err(HirSemanticPathError::DuplicateBodyOwner {
+            owner: HirSemanticBodyOwner::declaration(root_role),
+        })
+    );
+
+    let wrong_path = HirSemanticOwnerPath::new(
+        Box::new([HirSemanticPathStep::DeclarationBody(
+            HirDeclarationBodyRootRole::ViewValue { ordinal: 1 },
+        )]),
+        Box::new([]),
+    );
+    let mismatched = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(expression, wrong_path)]),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+        body_rows: vec![row()].into_boxed_slice(),
+    };
+    assert_eq!(
+        mismatched.validate_root_paths(),
+        Err(HirSemanticPathError::InvalidBodyRow {
+            owner: HirSemanticBodyOwner::declaration(root_role),
+        })
+    );
+}
+
+#[test]
+fn body_owner_and_kind_pairing_is_closed() {
+    let (module, _, _) = fixture();
+    let expression = module.expressions().next().expect("fixture expression").0;
+    let non_body_role = HirExpressionOwnedBodyRole::ClosureParameterPattern { parameter: 0 };
+    assert_eq!(
+        HirSemanticBodyOwner::try_expression_owned(expression, non_body_role.clone()),
+        Err(
+            HirSemanticBodyOwnerError::NonBodyBearingExpressionOwnedRole {
+                role: non_body_role,
+            }
+        )
+    );
+
+    let item = module.items().next().expect("fixture item").0;
+    let root = HirSemanticPathRoot::Item {
+        item,
+        entry_ordinal: 0,
+        role: HirItemEvaluationEntryRole::Item,
+    };
+    let owner = HirSemanticBodyOwner::item(HirDeclarationItemRootRole::TestBody);
+    let row = HirSemanticBodyRow::try_new(
+        owner.clone(),
+        HirSemanticOwnerPath::new(
+            Box::new([HirSemanticPathStep::DeclarationItem(
+                HirDeclarationItemRootRole::TestBody,
+            )]),
+            Box::new([]),
+        ),
+        HirBodyProjection::try_new(HirBodyKind::Thread, Vec::new()).unwrap(),
+    )
+    .unwrap();
+    let index = HirSemanticPathIndex {
+        root,
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::new(),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+        body_rows: Box::new([row]),
+    };
+    assert_eq!(
+        index.validate_root_paths(),
+        Err(HirSemanticPathError::InvalidBodyRow { owner })
     );
 }
 
@@ -248,6 +390,7 @@ fn path_index_rejects_cross_family_structural_aliases() {
         statements: BTreeMap::from([(statement, path())]),
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
+        body_rows: Box::new([]),
     };
     assert_eq!(
         index.validate_root_paths(),
@@ -274,6 +417,7 @@ fn path_index_rejects_a_foreign_owner_before_issuing_a_location() {
         statements: BTreeMap::new(),
         patterns: BTreeMap::new(),
         locals: BTreeMap::new(),
+        body_rows: Box::new([]),
     };
     assert_eq!(
         index.validate_root_paths(),

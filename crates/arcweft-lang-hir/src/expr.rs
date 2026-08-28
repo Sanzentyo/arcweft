@@ -50,6 +50,7 @@ pub use self::control::{
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
 pub use self::owned_body_edges::{
+    HirExpressionOwnedBodyProjection, HirExpressionOwnedBodyProjectionError,
     HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirExpressionOwnedChildEdge,
     HirExpressionOwnedChildEdgeError, HirLinePlanStatementRole,
 };

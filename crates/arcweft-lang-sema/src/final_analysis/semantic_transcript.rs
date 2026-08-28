@@ -100,6 +100,7 @@ impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
             SemanticCoordinateIndexError::RootCatalog(error) => Self::AcceptedRootCatalog(error),
             SemanticCoordinateIndexError::MissingChildEdges => Self::MissingChildEdges,
             SemanticCoordinateIndexError::MissingOwner { .. }
+            | SemanticCoordinateIndexError::MissingBody { .. }
             | SemanticCoordinateIndexError::InvalidBindingPath { .. }
             | SemanticCoordinateIndexError::ExpressionRoleMismatch
             | SemanticCoordinateIndexError::InvalidRootPath => Self::MissingIdentity,

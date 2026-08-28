@@ -6,7 +6,7 @@
 
 use crate::record_field::CheckedRecordFieldSemanticId;
 use arcweft_lang_hir::{
-    body_edges::HirBodyChildRole,
+    body_edges::{HirBodyChildRole, HirBodyKind},
     expr::{
         HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirNestedExpressionPath,
         HirNestedExpressionPathSegment,
@@ -16,7 +16,8 @@ use arcweft_lang_hir::{
     project::{
         HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationItemRootRole,
         HirFlowContractRootFamily, HirItemAttributeOwner, HirItemEvaluationEntryRole,
-        HirItemRecoveryRootOwner, HirLayerExpressionRootField, HirStyleRootPathSegment,
+        HirItemRecoveryRootOwner, HirLayerExpressionRootField, HirSemanticBodyOwner,
+        HirSemanticBodyOwnerRole, HirStyleRootPathSegment,
     },
     stmt::{HirStatementBodyRole, HirStatementChildRole},
 };
@@ -35,6 +36,7 @@ const CHECKED_DECLARATION_CONTRACT_STEP_TAG: u8 = 10;
 const CHECKED_DECLARATION_ITEM_STEP_TAG: u8 = 11;
 const CHECKED_DECLARATION_MEMBER_STEP_TAG: u8 = 12;
 const CHECKED_DECLARATION_RESULT_STEP_TAG: u8 = 13;
+const CHECKED_BODY_COORDINATE_SUFFIX_TAG: u8 = 0;
 
 /// Stable semantic identity of one accepted declaration root.
 ///
@@ -521,7 +523,7 @@ pub(crate) enum CheckedSemanticPathStep {
     ExpressionOwned(HirExpressionOwnedBodyRole),
     Body(HirBodyChildRole),
     Statement(HirStatementChildRole),
-    ThreadBody(HirStatementBodyRole),
+    StatementBody(HirStatementBodyRole),
     Expression(CheckedExpressionChildRole),
     MatchPattern { arm: u32 },
     Pattern(HirPatternChildRole),
@@ -753,6 +755,120 @@ impl CheckedStatementCoordinateEvidence {
     }
 }
 
+/// Stable accepted-rooted coordinate for one executable body container.
+///
+/// Raw expression and statement owners are lookup evidence only. The stable
+/// grammar retains the typed body-owner family/role, body kind, and checked
+/// accepted path so body containers that legitimately share a path remain
+/// distinct.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed coordinate when body digests publish"
+)]
+pub(crate) struct StableCheckedBodyCoordinate {
+    owner: HirSemanticBodyOwnerRole,
+    kind: HirBodyKind,
+    path: CheckedSemanticPath,
+}
+
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed coordinate when body digests publish"
+)]
+impl StableCheckedBodyCoordinate {
+    fn new(owner: &HirSemanticBodyOwner, kind: HirBodyKind, path: CheckedSemanticPath) -> Self {
+        Self {
+            owner: owner.semantic_role(),
+            kind,
+            path,
+        }
+    }
+
+    pub(crate) const fn path(&self) -> &CheckedSemanticPath {
+        &self.path
+    }
+
+    pub(crate) const fn kind(&self) -> HirBodyKind {
+        self.kind
+    }
+
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        let mut output = self.path.canonical_bytes()?;
+        output.push(CHECKED_BODY_COORDINATE_SUFFIX_TAG);
+        write_body_owner_role(&mut output, &self.owner)?;
+        output.push(match self.kind {
+            HirBodyKind::Expression => 0,
+            HirBodyKind::Ordinary => 1,
+            HirBodyKind::Thread => 2,
+        });
+        Ok(output)
+    }
+}
+
+fn write_body_owner_role(
+    output: &mut Vec<u8>,
+    owner: &HirSemanticBodyOwnerRole,
+) -> Result<(), SemanticCoordinateEncodingError> {
+    match owner {
+        HirSemanticBodyOwnerRole::Declaration(role) => {
+            output.push(0);
+            write_declaration_body_role(output, *role);
+        }
+        HirSemanticBodyOwnerRole::Item(role) => {
+            output.push(1);
+            write_declaration_item_role(output, role)?;
+        }
+        HirSemanticBodyOwnerRole::Expression => output.push(2),
+        HirSemanticBodyOwnerRole::ExpressionOwned(role) => {
+            output.push(3);
+            write_expression_owned_role(output, role)?;
+        }
+        HirSemanticBodyOwnerRole::Statement(role) => {
+            output.push(4);
+            output.push(statement_body_tag(*role));
+            write_statement_body_payload(output, *role);
+        }
+    }
+    Ok(())
+}
+
+/// Move-only proof that one generation-local body locator and its stable
+/// coordinate were issued together by the sealed accepted-root catalog.
+#[derive(Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "checked body transcript publication consumes this affine evidence"
+)]
+pub(crate) struct CheckedBodyCoordinateEvidence {
+    locator: arcweft_lang_hir::project::HirSemanticBodyLocator,
+    coordinate: StableCheckedBodyCoordinate,
+}
+
+#[allow(
+    dead_code,
+    reason = "checked body transcript publication consumes this affine evidence"
+)]
+impl CheckedBodyCoordinateEvidence {
+    fn new(
+        locator: arcweft_lang_hir::project::HirSemanticBodyLocator,
+        coordinate: StableCheckedBodyCoordinate,
+    ) -> Self {
+        Self {
+            locator,
+            coordinate,
+        }
+    }
+
+    pub(crate) const fn locator(&self) -> &arcweft_lang_hir::project::HirSemanticBodyLocator {
+        &self.locator
+    }
+
+    pub(crate) fn into_coordinate(self) -> StableCheckedBodyCoordinate {
+        self.coordinate
+    }
+}
+
 /// Stable coordinate for one accepted checked binding.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct StableCheckedBindingCoordinate {
@@ -925,7 +1041,7 @@ fn write_checked_path_step(
             output.extend_from_slice(&[1, statement_role_tag(*role)]);
             write_statement_role_payload(output, *role);
         }
-        CheckedSemanticPathStep::ThreadBody(role) => {
+        CheckedSemanticPathStep::StatementBody(role) => {
             output.extend_from_slice(&[7, statement_body_tag(*role)]);
             write_statement_body_payload(output, *role);
         }

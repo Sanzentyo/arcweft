@@ -25,7 +25,10 @@ use arcweft_lang_hir::{
     lowering::{HirModuleKey, LoweringRequest},
     module::HirModule,
     pattern::HirPatternKind,
-    project::{HirProject, HirProjectBuilder, HirProjectModule, HirSemanticPathStep},
+    project::{
+        HirProject, HirProjectBuilder, HirProjectModule, HirSemanticBodyLocator,
+        HirSemanticPathStep,
+    },
     proof_return::HirProofReturnSemanticFactSet,
     source_index::{
         HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
@@ -3604,7 +3607,7 @@ flow main(flag: bool) {
     assert!(
         path.steps()
             .iter()
-            .any(|step| matches!(step, HirSemanticPathStep::ThreadBody(_)))
+            .any(|step| matches!(step, HirSemanticPathStep::StatementBody(_)))
     );
     assert!(path.steps().iter().any(|step| {
         matches!(
@@ -3649,6 +3652,40 @@ flow other {}
         })
         .expect("root binding local");
     let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let mut body_locator = None;
+    'body: for module in report.accepted_root_catalog().topology().modules() {
+        for entry in module.entries() {
+            for paths in std::iter::once(entry.paths()).chain(entry.body().map(|body| body.paths()))
+            {
+                if let Some(row) = paths.body_rows().first() {
+                    body_locator = Some(HirSemanticBodyLocator::new(
+                        paths.root().clone(),
+                        row.owner().clone(),
+                    ));
+                    break 'body;
+                }
+            }
+        }
+    }
+    let body_locator = body_locator.expect("accepted body locator");
+    let body_evidence = index
+        .body_evidence(body_locator.clone())
+        .expect("stable body coordinate evidence");
+    assert_eq!(body_evidence.locator(), &body_locator);
+    let body_coordinate = body_evidence.into_coordinate();
+    assert!(
+        body_coordinate
+            .canonical_bytes()
+            .unwrap()
+            .starts_with(&body_coordinate.path().canonical_bytes().unwrap())
+    );
+    assert_eq!(
+        body_coordinate.path().root(),
+        *report
+            .accepted_root_catalog()
+            .root_for_hir(body_locator.root())
+            .unwrap()
+    );
     let statement = module
         .statements()
         .map(|(owner, _)| owner)
@@ -4036,7 +4073,7 @@ flow root {
     assert!(path.steps().iter().any(|step| {
         matches!(
             step,
-            HirSemanticPathStep::ThreadBody(arcweft_lang_hir::stmt::HirStatementBodyRole::For)
+            HirSemanticPathStep::StatementBody(arcweft_lang_hir::stmt::HirStatementBodyRole::For)
         )
     }));
     assert!(path.steps().iter().any(|step| {

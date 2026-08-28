@@ -10,11 +10,14 @@ use thiserror::Error;
 
 use super::{AcceptedHirProjectSymbolGeneration, HirExecutableProjectView};
 use crate::{
-    body_edges::{HirBodyChild, HirBodyChildEdge, HirBodyChildRole},
+    body_edges::{
+        HirBodyChild, HirBodyChildEdge, HirBodyChildRole, HirBodyKind, HirBodyProjection,
+        HirBodyProjectionError,
+    },
     expr::{
-        HirCallValue, HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyRole,
-        HirExpressionOwnedChild, HirExpressionOwnedChildEdgeError, HirNestedExpressionPathSegment,
-        HirPlaceholderKind,
+        HirCallValue, HirExprKind, HirExpressionChildRole, HirExpressionOwnedBodyProjectionError,
+        HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirExpressionOwnedChildEdgeError,
+        HirNestedExpressionPathSegment, HirPlaceholderKind,
     },
     identity::{CaptureId, ExprId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId},
     item::{
@@ -26,8 +29,8 @@ use crate::{
     scope::{CaptureAccess, HirLocalKind},
     source_index::HirCallableSourceOwner,
     stmt::{
-        HirContextualStmtBody, HirSelectBranchHead, HirSelectStmt, HirStatementBodyRole,
-        HirStatementChild, HirStatementChildRole, HirStmtEvaluationStep,
+        HirContextualStmtBody, HirSelectBranchHead, HirSelectStmt, HirStatementBodyProjectionError,
+        HirStatementBodyRole, HirStatementChild, HirStatementChildRole, HirStmtEvaluationStep,
         HirStmtEvaluationStepError, HirStmtKind,
     },
     symbol::CallableDeclarationKey,
@@ -193,7 +196,7 @@ pub enum HirFlowContractRootFamily {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirItemEvaluationRoot {
     role: HirDeclarationItemRootRole,
-    child: HirDeclarationBodyRootChild,
+    projection: HirBodyProjection,
 }
 
 impl HirItemEvaluationRoot {
@@ -201,8 +204,8 @@ impl HirItemEvaluationRoot {
         &self.role
     }
 
-    pub const fn child(&self) -> &HirDeclarationBodyRootChild {
-        &self.child
+    pub const fn projection(&self) -> &HirBodyProjection {
+        &self.projection
     }
 }
 
@@ -214,7 +217,7 @@ pub enum HirSemanticPathStep {
     ExpressionOwned(HirExpressionOwnedBodyRole),
     Body(HirBodyChildRole),
     Statement(HirStatementChildRole),
-    ThreadBody(HirStatementBodyRole),
+    StatementBody(HirStatementBodyRole),
     Expression(HirExpressionChildRole),
     MatchPattern { arm: u32 },
     Pattern(HirPatternChildRole),
@@ -273,6 +276,221 @@ impl HirSemanticOwnerPath {
     }
 }
 
+/// Typed owner of one semantic body container.
+///
+/// Declaration and item roots are scoped by the containing path index, while
+/// nested expression and statement bodies carry the exact owner and role that
+/// distinguishes siblings with the same structural path.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirSemanticBodyOwner(HirSemanticBodyOwnerKind);
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum HirSemanticBodyOwnerKind {
+    Declaration(HirDeclarationBodyRootRole),
+    Item(HirDeclarationItemRootRole),
+    Expression(ExprId),
+    ExpressionOwned {
+        expression: ExprId,
+        role: HirExpressionOwnedBodyRole,
+    },
+    Statement {
+        statement: StmtId,
+        role: HirStatementBodyRole,
+    },
+}
+
+/// Raw-ID-free body owner role retained across the HIR/sema boundary.
+///
+/// This projection is exhaustive over the private owner representation, so a
+/// future owner family cannot silently degrade to an existing stable family.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirSemanticBodyOwnerRole {
+    Declaration(HirDeclarationBodyRootRole),
+    Item(HirDeclarationItemRootRole),
+    Expression,
+    ExpressionOwned(HirExpressionOwnedBodyRole),
+    Statement(HirStatementBodyRole),
+}
+
+/// Error returned when a semantic body owner is built from a role that is not
+/// a body-bearing expression-owned role.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirSemanticBodyOwnerError {
+    #[error("expression-owned role {role:?} does not identify a body container")]
+    NonBodyBearingExpressionOwnedRole { role: HirExpressionOwnedBodyRole },
+}
+
+impl HirSemanticBodyOwner {
+    pub const fn declaration(role: HirDeclarationBodyRootRole) -> Self {
+        Self(HirSemanticBodyOwnerKind::Declaration(role))
+    }
+
+    pub const fn item(role: HirDeclarationItemRootRole) -> Self {
+        Self(HirSemanticBodyOwnerKind::Item(role))
+    }
+
+    pub const fn direct_expression(expression: ExprId) -> Self {
+        Self(HirSemanticBodyOwnerKind::Expression(expression))
+    }
+
+    /// Builds an expression-owned body owner only for an actual nested body.
+    pub fn try_expression_owned(
+        expression: ExprId,
+        role: HirExpressionOwnedBodyRole,
+    ) -> Result<Self, HirSemanticBodyOwnerError> {
+        if role.is_body_bearing() {
+            Ok(Self(HirSemanticBodyOwnerKind::ExpressionOwned {
+                expression,
+                role,
+            }))
+        } else {
+            Err(HirSemanticBodyOwnerError::NonBodyBearingExpressionOwnedRole { role })
+        }
+    }
+
+    pub const fn statement_body(statement: StmtId, role: HirStatementBodyRole) -> Self {
+        Self(HirSemanticBodyOwnerKind::Statement { statement, role })
+    }
+
+    const fn kind(&self) -> &HirSemanticBodyOwnerKind {
+        &self.0
+    }
+
+    pub fn semantic_role(&self) -> HirSemanticBodyOwnerRole {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Declaration(role) => {
+                HirSemanticBodyOwnerRole::Declaration(*role)
+            }
+            HirSemanticBodyOwnerKind::Item(role) => HirSemanticBodyOwnerRole::Item(role.clone()),
+            HirSemanticBodyOwnerKind::Expression(_) => HirSemanticBodyOwnerRole::Expression,
+            HirSemanticBodyOwnerKind::ExpressionOwned { role, .. } => {
+                HirSemanticBodyOwnerRole::ExpressionOwned(role.clone())
+            }
+            HirSemanticBodyOwnerKind::Statement { role, .. } => {
+                HirSemanticBodyOwnerRole::Statement(*role)
+            }
+        }
+    }
+
+    pub const fn expression_owner(&self) -> Option<ExprId> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Expression(expression)
+            | HirSemanticBodyOwnerKind::ExpressionOwned { expression, .. } => Some(*expression),
+            HirSemanticBodyOwnerKind::Declaration(_)
+            | HirSemanticBodyOwnerKind::Item(_)
+            | HirSemanticBodyOwnerKind::Statement { .. } => None,
+        }
+    }
+
+    pub const fn statement_owner(&self) -> Option<StmtId> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Statement { statement, .. } => Some(*statement),
+            HirSemanticBodyOwnerKind::Declaration(_)
+            | HirSemanticBodyOwnerKind::Item(_)
+            | HirSemanticBodyOwnerKind::Expression(_)
+            | HirSemanticBodyOwnerKind::ExpressionOwned { .. } => None,
+        }
+    }
+
+    pub const fn declaration_role(&self) -> Option<HirDeclarationBodyRootRole> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Declaration(role) => Some(*role),
+            HirSemanticBodyOwnerKind::Item(_)
+            | HirSemanticBodyOwnerKind::Expression(_)
+            | HirSemanticBodyOwnerKind::ExpressionOwned { .. }
+            | HirSemanticBodyOwnerKind::Statement { .. } => None,
+        }
+    }
+
+    pub const fn item_role(&self) -> Option<&HirDeclarationItemRootRole> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Item(role) => Some(role),
+            HirSemanticBodyOwnerKind::Declaration(_)
+            | HirSemanticBodyOwnerKind::Expression(_)
+            | HirSemanticBodyOwnerKind::ExpressionOwned { .. }
+            | HirSemanticBodyOwnerKind::Statement { .. } => None,
+        }
+    }
+
+    pub const fn expression_owned_role(&self) -> Option<&HirExpressionOwnedBodyRole> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::ExpressionOwned { role, .. } => Some(role),
+            HirSemanticBodyOwnerKind::Declaration(_)
+            | HirSemanticBodyOwnerKind::Item(_)
+            | HirSemanticBodyOwnerKind::Expression(_)
+            | HirSemanticBodyOwnerKind::Statement { .. } => None,
+        }
+    }
+
+    pub const fn statement_role(&self) -> Option<HirStatementBodyRole> {
+        match self.kind() {
+            HirSemanticBodyOwnerKind::Statement { role, .. } => Some(*role),
+            HirSemanticBodyOwnerKind::Declaration(_)
+            | HirSemanticBodyOwnerKind::Item(_)
+            | HirSemanticBodyOwnerKind::Expression(_)
+            | HirSemanticBodyOwnerKind::ExpressionOwned { .. } => None,
+        }
+    }
+}
+
+/// One source-ordered body container and its typed HIR child edges.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirSemanticBodyRow {
+    owner: HirSemanticBodyOwner,
+    path: HirSemanticOwnerPath,
+    projection: HirBodyProjection,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+enum HirSemanticBodyRowError {
+    #[error("a semantic body row has no structural path")]
+    EmptyPath,
+}
+
+impl HirSemanticBodyRow {
+    fn try_new(
+        owner: HirSemanticBodyOwner,
+        path: HirSemanticOwnerPath,
+        projection: HirBodyProjection,
+    ) -> Result<Self, HirSemanticBodyRowError> {
+        if path.steps().is_empty() {
+            return Err(HirSemanticBodyRowError::EmptyPath);
+        }
+        Ok(Self {
+            owner,
+            path,
+            projection,
+        })
+    }
+
+    fn try_validate(&self) -> Result<(), HirSemanticBodyRowError> {
+        if self.path.steps().is_empty() {
+            return Err(HirSemanticBodyRowError::EmptyPath);
+        }
+        Ok(())
+    }
+
+    pub const fn owner(&self) -> &HirSemanticBodyOwner {
+        &self.owner
+    }
+
+    pub const fn kind(&self) -> HirBodyKind {
+        self.projection.kind()
+    }
+
+    pub const fn path(&self) -> &HirSemanticOwnerPath {
+        &self.path
+    }
+
+    pub const fn children(&self) -> &[HirBodyChildEdge] {
+        self.projection.children()
+    }
+
+    pub const fn projection(&self) -> &HirBodyProjection {
+        &self.projection
+    }
+}
+
 /// Root identity for one snapshot-bound semantic path index.
 ///
 /// Declaration indexes are keyed by their callable declaration. Item indexes
@@ -296,6 +514,7 @@ pub struct HirSemanticPathIndex {
     statements: BTreeMap<StmtId, HirSemanticOwnerPath>,
     patterns: BTreeMap<PatternId, HirSemanticOwnerPath>,
     locals: BTreeMap<LocalId, HirSemanticOwnerPath>,
+    body_rows: Box<[HirSemanticBodyRow]>,
 }
 
 /// Closed owner vocabulary for raw HIR identities that can have one accepted
@@ -362,6 +581,54 @@ pub struct HirSemanticPathLocation<'topology> {
     path: &'topology HirSemanticOwnerPath,
 }
 
+/// Exact typed key for one semantic body container in the sealed project.
+///
+/// The accepted root is part of the key because declaration and item body
+/// roles are root-relative, while nested raw owners remain generation-local
+/// lookup evidence only.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirSemanticBodyLocator {
+    root: HirSemanticPathRoot,
+    owner: HirSemanticBodyOwner,
+}
+
+impl HirSemanticBodyLocator {
+    pub const fn new(root: HirSemanticPathRoot, owner: HirSemanticBodyOwner) -> Self {
+        Self { root, owner }
+    }
+
+    pub const fn root(&self) -> &HirSemanticPathRoot {
+        &self.root
+    }
+
+    pub const fn owner(&self) -> &HirSemanticBodyOwner {
+        &self.owner
+    }
+}
+
+/// Borrowed proof that a body locator resolves to exactly one validated row in
+/// one accepted HIR snapshot.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirSemanticBodyLocation<'topology> {
+    snapshot: HirSnapshotId,
+    root: &'topology HirSemanticPathRoot,
+    row: &'topology HirSemanticBodyRow,
+}
+
+impl<'topology> HirSemanticBodyLocation<'topology> {
+    pub const fn snapshot(self) -> HirSnapshotId {
+        self.snapshot
+    }
+
+    pub const fn root(self) -> &'topology HirSemanticPathRoot {
+        self.root
+    }
+
+    pub const fn row(self) -> &'topology HirSemanticBodyRow {
+        self.row
+    }
+}
+
 impl<'topology> HirSemanticPathLocation<'topology> {
     pub const fn owner(self) -> HirSemanticPathOwnerId {
         self.owner
@@ -403,6 +670,17 @@ impl HirSemanticPathIndex {
 
     pub fn local(&self, owner: LocalId) -> Option<&HirSemanticOwnerPath> {
         self.locals.get(&owner)
+    }
+
+    /// Returns the source-ordered semantic body rows retained by this index.
+    /// Empty bodies remain rows so consumers never have to infer authored
+    /// containers from the absence of children.
+    pub const fn body_rows(&self) -> &[HirSemanticBodyRow] {
+        &self.body_rows
+    }
+
+    pub fn body_row(&self, owner: &HirSemanticBodyOwner) -> Option<&HirSemanticBodyRow> {
+        self.body_rows.iter().find(|row| row.owner() == owner)
     }
 
     /// Borrows the complete local-owner inventory without exposing the
@@ -524,7 +802,279 @@ impl HirSemanticPathIndex {
                 });
             }
         }
+        self.validate_body_rows()?;
         Ok(())
+    }
+
+    fn validate_body_rows(&self) -> Result<(), HirSemanticPathError> {
+        let mut owners = BTreeSet::new();
+        for row in &self.body_rows {
+            if !owners.insert(row.owner()) {
+                return Err(HirSemanticPathError::DuplicateBodyOwner {
+                    owner: row.owner().clone(),
+                });
+            }
+            let root_owner_valid = match &self.root {
+                HirSemanticPathRoot::Declaration(_) => row.owner().item_role().is_none(),
+                HirSemanticPathRoot::Item { .. } => row.owner().declaration_role().is_none(),
+            };
+            if !root_owner_valid {
+                return Err(HirSemanticPathError::InvalidBodyRow {
+                    owner: row.owner().clone(),
+                });
+            }
+            row.try_validate()
+                .map_err(|_| HirSemanticPathError::InvalidBodyRow {
+                    owner: row.owner().clone(),
+                })?;
+            validate_body_owner_kind(row)?;
+            validate_body_owner_path(self, row)?;
+            for edge in row.children() {
+                match edge.child() {
+                    HirBodyChild::Expression(owner) if owner.module() != self.snapshot.module() => {
+                        return Err(HirSemanticPathError::InvalidBodyRow {
+                            owner: row.owner().clone(),
+                        });
+                    }
+                    HirBodyChild::Statement(owner) if owner.module() != self.snapshot.module() => {
+                        return Err(HirSemanticPathError::InvalidBodyRow {
+                            owner: row.owner().clone(),
+                        });
+                    }
+                    HirBodyChild::Expression(_) | HirBodyChild::Statement(_) => {}
+                }
+                validate_body_child_path(self, row, edge)?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_body_owner_kind(row: &HirSemanticBodyRow) -> Result<(), HirSemanticPathError> {
+    let valid = match row.owner().kind() {
+        HirSemanticBodyOwnerKind::Declaration(HirDeclarationBodyRootRole::FlowBody) => {
+            row.kind() == HirBodyKind::Thread
+        }
+        HirSemanticBodyOwnerKind::Declaration(
+            HirDeclarationBodyRootRole::FunctionBody | HirDeclarationBodyRootRole::ImplFunctionBody,
+        )
+        | HirSemanticBodyOwnerKind::Item(
+            HirDeclarationItemRootRole::TestBody | HirDeclarationItemRootRole::BenchBody,
+        ) => row.kind() == HirBodyKind::Ordinary,
+        HirSemanticBodyOwnerKind::Declaration(HirDeclarationBodyRootRole::ViewValue { .. }) => {
+            row.kind() == HirBodyKind::Expression
+        }
+        HirSemanticBodyOwnerKind::Declaration(
+            HirDeclarationBodyRootRole::PredicateBody | HirDeclarationBodyRootRole::ProofBody,
+        ) => matches!(row.kind(), HirBodyKind::Expression | HirBodyKind::Ordinary),
+        HirSemanticBodyOwnerKind::Item(HirDeclarationItemRootRole::Recovery { .. }) => false,
+        HirSemanticBodyOwnerKind::Item(_) => row.kind() == HirBodyKind::Expression,
+        HirSemanticBodyOwnerKind::Expression(_) => {
+            matches!(row.kind(), HirBodyKind::Ordinary | HirBodyKind::Thread)
+        }
+        HirSemanticBodyOwnerKind::ExpressionOwned { role, .. } => match role {
+            HirExpressionOwnedBodyRole::AwaitBranchBody { .. } => {
+                matches!(row.kind(), HirBodyKind::Ordinary | HirBodyKind::Thread)
+            }
+            HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { .. }
+            | HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { .. }
+            | HirExpressionOwnedBodyRole::ChoicePlanCancelBody { .. }
+            | HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { .. } => {
+                row.kind() == HirBodyKind::Thread
+            }
+            _ => false,
+        },
+        HirSemanticBodyOwnerKind::Statement { role, .. } => match role {
+            HirStatementBodyRole::LetElse
+            | HirStatementBodyRole::Defer
+            | HirStatementBodyRole::On
+            | HirStatementBodyRole::UnsafeLifetime => row.kind() == HirBodyKind::Ordinary,
+            HirStatementBodyRole::MatchArm { .. } => matches!(
+                row.kind(),
+                HirBodyKind::Expression | HirBodyKind::Ordinary | HirBodyKind::Thread
+            ),
+            HirStatementBodyRole::Then
+            | HirStatementBodyRole::Else
+            | HirStatementBodyRole::While
+            | HirStatementBodyRole::WhileLet
+            | HirStatementBodyRole::For
+            | HirStatementBodyRole::SelectBranch { .. }
+            | HirStatementBodyRole::SourceLocale
+            | HirStatementBodyRole::Scope => {
+                matches!(row.kind(), HirBodyKind::Ordinary | HirBodyKind::Thread)
+            }
+        },
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(HirSemanticPathError::InvalidBodyRow {
+            owner: row.owner().clone(),
+        })
+    }
+}
+
+fn validate_body_owner_path(
+    index: &HirSemanticPathIndex,
+    row: &HirSemanticBodyRow,
+) -> Result<(), HirSemanticPathError> {
+    let path = row.path();
+    let invalid = || HirSemanticPathError::InvalidBodyRow {
+        owner: row.owner().clone(),
+    };
+    match row.owner().kind() {
+        HirSemanticBodyOwnerKind::Declaration(role) => {
+            if path.steps() != [HirSemanticPathStep::DeclarationBody(*role)]
+                || !path.hops().is_empty()
+            {
+                return Err(invalid());
+            }
+        }
+        HirSemanticBodyOwnerKind::Item(role) => {
+            if path.steps() != [HirSemanticPathStep::DeclarationItem(role.clone())]
+                || !path.hops().is_empty()
+            {
+                return Err(invalid());
+            }
+        }
+        HirSemanticBodyOwnerKind::Expression(expression) => {
+            if index.expression(*expression) != Some(path) {
+                return Err(invalid());
+            }
+        }
+        HirSemanticBodyOwnerKind::ExpressionOwned { expression, role } => {
+            if !role.is_body_bearing() {
+                return Err(invalid());
+            }
+            let Some(parent) = index.expression(*expression) else {
+                return Err(invalid());
+            };
+            if path.hops() != parent.hops()
+                || path.steps().len() != parent.steps().len() + 1
+                || path.steps().split_at(parent.steps().len()).0 != parent.steps()
+                || path.steps().last() != Some(&HirSemanticPathStep::ExpressionOwned(role.clone()))
+            {
+                return Err(invalid());
+            }
+        }
+        HirSemanticBodyOwnerKind::Statement { statement, role } => {
+            let Some(parent) = index.statement(*statement) else {
+                return Err(invalid());
+            };
+            if path.hops() != parent.hops()
+                || path.steps().len() != parent.steps().len() + 1
+                || path.steps().split_at(parent.steps().len()).0 != parent.steps()
+                || path.steps().last() != Some(&HirSemanticPathStep::StatementBody(*role))
+            {
+                return Err(invalid());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_body_child_path(
+    index: &HirSemanticPathIndex,
+    row: &HirSemanticBodyRow,
+    edge: &HirBodyChildEdge,
+) -> Result<(), HirSemanticPathError> {
+    let child_path = match edge.child() {
+        HirBodyChild::Expression(owner) => index.expression(owner),
+        HirBodyChild::Statement(owner) => index.statement(owner),
+    };
+    let Some(child_path) = child_path else {
+        return Err(HirSemanticPathError::InvalidBodyRow {
+            owner: row.owner().clone(),
+        });
+    };
+
+    let direct = |parent: &HirSemanticOwnerPath, step: HirSemanticPathStep| {
+        child_path.hops() == parent.hops()
+            && child_path.steps().len() == parent.steps().len() + 1
+            && child_path.steps()[..parent.steps().len()] == *parent.steps()
+            && child_path.steps().last() == Some(&step)
+    };
+    let joined = match row.owner().kind() {
+        HirSemanticBodyOwnerKind::Declaration(_) | HirSemanticBodyOwnerKind::Item(_) => {
+            if row.kind() == HirBodyKind::Expression {
+                child_path == row.path()
+            } else {
+                direct(row.path(), HirSemanticPathStep::Body(edge.role()))
+            }
+        }
+        HirSemanticBodyOwnerKind::Expression(expression) => match edge.role() {
+            HirBodyChildRole::Tail => {
+                let Some(HirSemanticPathStep::Expression(role)) = child_path.steps().last() else {
+                    return Err(HirSemanticPathError::InvalidBodyRow {
+                        owner: row.owner().clone(),
+                    });
+                };
+                matches!(
+                    role,
+                    HirExpressionChildRole::BlockTail | HirExpressionChildRole::LoopTail
+                ) && child_path.steps().len() == row.path().steps().len() + 1
+                    && child_path.steps()[..row.path().steps().len()] == *row.path().steps()
+                    && child_path.hops().len() == row.path().hops().len() + 1
+                    && child_path.hops()[..row.path().hops().len()] == *row.path().hops()
+                    && child_path.hops().last().is_some_and(|hop| {
+                        hop.parent() == *expression
+                            && hop.child()
+                                == match edge.child() {
+                                    HirBodyChild::Expression(child) => child,
+                                    HirBodyChild::Statement(_) => return false,
+                                }
+                            && hop.role() == role
+                    })
+            }
+            _ => direct(row.path(), HirSemanticPathStep::Body(edge.role())),
+        },
+        HirSemanticBodyOwnerKind::ExpressionOwned { .. } => {
+            direct(row.path(), HirSemanticPathStep::Body(edge.role()))
+        }
+        HirSemanticBodyOwnerKind::Statement { statement, role } => {
+            let Some(parent) = index.statement(*statement) else {
+                return Err(HirSemanticPathError::InvalidBodyRow {
+                    owner: row.owner().clone(),
+                });
+            };
+            match row.kind() {
+                HirBodyKind::Expression => {
+                    let HirStatementBodyRole::MatchArm { arm } = role else {
+                        return Err(HirSemanticPathError::InvalidBodyRow {
+                            owner: row.owner().clone(),
+                        });
+                    };
+                    direct(
+                        parent,
+                        HirSemanticPathStep::Statement(HirStatementChildRole::MatchValue {
+                            arm: *arm,
+                        }),
+                    )
+                }
+                HirBodyKind::Ordinary => {
+                    let HirBodyChildRole::Statement { ordinal } = edge.role() else {
+                        return Err(HirSemanticPathError::InvalidBodyRow {
+                            owner: row.owner().clone(),
+                        });
+                    };
+                    direct(
+                        parent,
+                        HirSemanticPathStep::Statement(HirStatementChildRole::BodyItem {
+                            body: *role,
+                            ordinal,
+                        }),
+                    )
+                }
+                HirBodyKind::Thread => direct(row.path(), HirSemanticPathStep::Body(edge.role())),
+            }
+        }
+    };
+    if joined {
+        Ok(())
+    } else {
+        Err(HirSemanticPathError::InvalidBodyRow {
+            owner: row.owner().clone(),
+        })
     }
 }
 
@@ -556,7 +1106,7 @@ pub enum HirDeclarationParameterRootChild {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirDeclarationBodyRoot {
     role: HirDeclarationBodyRootRole,
-    child: HirDeclarationBodyRootChild,
+    projection: HirBodyProjection,
 }
 
 /// One typed contract root retained separately from body roots.
@@ -1002,16 +1552,9 @@ impl HirDeclarationBodyRoot {
         self.role
     }
 
-    pub const fn child(&self) -> &HirDeclarationBodyRootChild {
-        &self.child
+    pub const fn projection(&self) -> &HirBodyProjection {
+        &self.projection
     }
-}
-
-/// Child payload of a declaration body root.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HirDeclarationBodyRootChild {
-    Body(Box<[HirBodyChildEdge]>),
-    Expression(ExprId),
 }
 
 /// Complete, snapshot-bound declaration topology and its derived path rows.
@@ -1309,6 +1852,32 @@ impl HirProjectEvaluationTopology {
         }
         Ok(found)
     }
+
+    /// Returns the sole body row named by an exact root-relative locator.
+    pub fn semantic_body(
+        &self,
+        locator: &HirSemanticBodyLocator,
+    ) -> Result<Option<HirSemanticBodyLocation<'_>>, HirSemanticBodyLookupError> {
+        let root_owner_valid = match locator.root() {
+            HirSemanticPathRoot::Declaration(_) => locator.owner().item_role().is_none(),
+            HirSemanticPathRoot::Item { .. } => locator.owner().declaration_role().is_none(),
+        };
+        if !root_owner_valid {
+            return Err(HirSemanticBodyLookupError::InvalidLocator {
+                locator: Box::new(locator.clone()),
+            });
+        }
+        let mut found = None;
+        for module in &self.modules {
+            for entry in &module.entries {
+                record_semantic_body_location(&mut found, locator, &entry.paths)?;
+                if let Some(body) = &entry.body {
+                    record_semantic_body_location(&mut found, locator, &body.paths)?;
+                }
+            }
+        }
+        Ok(found)
+    }
 }
 
 fn record_semantic_path_location<'topology>(
@@ -1333,6 +1902,44 @@ fn record_semantic_path_location<'topology>(
         snapshot: index.snapshot(),
         root: index.root(),
         path,
+    });
+    Ok(())
+}
+
+fn record_semantic_body_location<'topology>(
+    found: &mut Option<HirSemanticBodyLocation<'topology>>,
+    locator: &HirSemanticBodyLocator,
+    index: &'topology HirSemanticPathIndex,
+) -> Result<(), HirSemanticBodyLookupError> {
+    if index.root() != locator.root() {
+        return Ok(());
+    }
+    let Some(row) = index.body_row(locator.owner()) else {
+        return Ok(());
+    };
+    if row
+        .owner()
+        .expression_owner()
+        .is_some_and(|owner| owner.module() != index.snapshot().module())
+        || row
+            .owner()
+            .statement_owner()
+            .is_some_and(|owner| owner.module() != index.snapshot().module())
+    {
+        return Err(HirSemanticBodyLookupError::OwnerModuleMismatch {
+            owner: row.owner().clone(),
+            snapshot: index.snapshot(),
+        });
+    }
+    if found.is_some() {
+        return Err(HirSemanticBodyLookupError::DuplicateBody {
+            locator: Box::new(locator.clone()),
+        });
+    }
+    *found = Some(HirSemanticBodyLocation {
+        snapshot: index.snapshot(),
+        root: index.root(),
+        row,
     });
     Ok(())
 }
@@ -1463,6 +2070,16 @@ pub enum HirSemanticPathError {
         first: HirSemanticPathOwnerId,
         second: HirSemanticPathOwnerId,
     },
+    #[error("semantic body owner {owner:?} occurs more than once in one path index")]
+    DuplicateBodyOwner { owner: HirSemanticBodyOwner },
+    #[error("semantic body row for {owner:?} has invalid children or path")]
+    InvalidBodyRow { owner: HirSemanticBodyOwner },
+    #[error(transparent)]
+    BodyProjection(#[from] HirBodyProjectionError),
+    #[error(transparent)]
+    ExpressionOwnedBodyProjection(#[from] HirExpressionOwnedBodyProjectionError),
+    #[error(transparent)]
+    StatementBodyProjection(#[from] HirStatementBodyProjectionError),
     #[error("a semantic path child ordinal does not fit u32")]
     OrdinalOverflow,
     #[error("an expression-owned semantic path lacks a structural coordinate")]
@@ -1473,6 +2090,16 @@ pub enum HirSemanticPathError {
     InvalidResultOrigin,
 }
 
+impl From<HirExpressionOwnedChildEdgeError> for HirSemanticPathError {
+    fn from(error: HirExpressionOwnedChildEdgeError) -> Self {
+        match error {
+            HirExpressionOwnedChildEdgeError::OrdinalOverflow => Self::OrdinalOverflow,
+            HirExpressionOwnedChildEdgeError::EmptyNestedPath => Self::InvalidOwnedPath,
+            HirExpressionOwnedChildEdgeError::Body(error) => Self::BodyProjection(error),
+        }
+    }
+}
+
 /// Closed failure vocabulary for topology-wide borrowed path lookup.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HirSemanticPathLookupError {
@@ -1481,6 +2108,24 @@ pub enum HirSemanticPathLookupError {
     #[error("HIR semantic path owner {owner:?} disagrees with stored snapshot {snapshot:?}")]
     OwnerModuleMismatch {
         owner: HirSemanticPathOwnerId,
+        snapshot: HirSnapshotId,
+    },
+}
+
+/// Closed failure vocabulary for topology-wide borrowed body lookup.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirSemanticBodyLookupError {
+    #[error("semantic body locator has an incompatible root and owner: {locator:?}")]
+    InvalidLocator {
+        locator: Box<HirSemanticBodyLocator>,
+    },
+    #[error("semantic body locator resolves to more than one row: {locator:?}")]
+    DuplicateBody {
+        locator: Box<HirSemanticBodyLocator>,
+    },
+    #[error("semantic body owner {owner:?} disagrees with stored snapshot {snapshot:?}")]
+    OwnerModuleMismatch {
+        owner: HirSemanticBodyOwner,
         snapshot: HirSnapshotId,
     },
 }
@@ -1897,30 +2542,19 @@ fn declaration_body_roots(
         HirCallableSourceOwner::Item => match item.kind() {
             HirItemKind::Function(function) => Ok(vec![declaration_body(
                 HirDeclarationBodyRootRole::FunctionBody,
-                function
-                    .body()
-                    .try_child_edges()
-                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+                function.body().try_body_projection()?,
             )]),
             HirItemKind::Predicate(predicate) => Ok(vec![declaration_body(
                 HirDeclarationBodyRootRole::PredicateBody,
-                predicate
-                    .body()
-                    .try_child_edges()
-                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+                predicate.body().try_body_projection()?,
             )]),
             HirItemKind::Proof(proof) => Ok(vec![declaration_body(
                 HirDeclarationBodyRootRole::ProofBody,
-                proof
-                    .body()
-                    .try_child_edges()
-                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+                proof.body().try_body_projection()?,
             )]),
             HirItemKind::Flow(flow) => Ok(vec![declaration_body(
                 HirDeclarationBodyRootRole::FlowBody,
-                flow.body()
-                    .try_child_edges()
-                    .map_err(|_| HirSemanticPathError::OrdinalOverflow)?,
+                flow.body().try_body_projection()?,
             )]),
             _ => Err(HirSemanticPathError::MissingBody),
         },
@@ -1936,11 +2570,14 @@ fn declaration_body_roots(
             function
                 .body()
                 .map(|body| {
-                    body.try_child_edges()
-                        .map(|edges| {
-                            declaration_body(HirDeclarationBodyRootRole::ImplFunctionBody, edges)
+                    body.try_body_projection()
+                        .map(|projection| {
+                            declaration_body(
+                                HirDeclarationBodyRootRole::ImplFunctionBody,
+                                projection,
+                            )
                         })
-                        .map_err(|_| HirSemanticPathError::OrdinalOverflow)
+                        .map_err(HirSemanticPathError::from)
                 })
                 .transpose()
                 .map(|value| value.into_iter().collect())
@@ -1958,7 +2595,7 @@ fn declaration_body_roots(
                         role: HirDeclarationBodyRootRole::ViewValue {
                             ordinal: checked_ordinal(ordinal)?,
                         },
-                        child: HirDeclarationBodyRootChild::Expression(expression),
+                        projection: HirBodyProjection::expression(expression),
                     })
                 })
                 .collect()
@@ -2024,12 +2661,9 @@ fn declaration_contract_roots(
 
 fn declaration_body(
     role: HirDeclarationBodyRootRole,
-    edges: Vec<HirBodyChildEdge>,
+    projection: HirBodyProjection,
 ) -> HirDeclarationBodyRoot {
-    HirDeclarationBodyRoot {
-        role,
-        child: HirDeclarationBodyRootChild::Body(edges.into_boxed_slice()),
-    }
+    HirDeclarationBodyRoot { role, projection }
 }
 
 fn effect_contract_roots(
@@ -2214,13 +2848,13 @@ fn item_evaluation_roots(
         HirItemKind::Test(test) => {
             roots.push(item_body_root(
                 HirDeclarationItemRootRole::TestBody,
-                statement_body_edges(test.scope(), test.body())?,
+                statement_body_projection(test.scope(), test.body())?,
             ));
         }
         HirItemKind::Bench(bench) => {
             roots.push(item_body_root(
                 HirDeclarationItemRootRole::BenchBody,
-                statement_body_edges(bench.scope(), bench.body())?,
+                statement_body_projection(bench.scope(), bench.body())?,
             ));
         }
         HirItemKind::Resource(resource) => {
@@ -2577,28 +3211,27 @@ fn append_member_roots(
 fn item_expression_root(role: HirDeclarationItemRootRole, child: ExprId) -> HirItemEvaluationRoot {
     HirItemEvaluationRoot {
         role,
-        child: HirDeclarationBodyRootChild::Expression(child),
+        projection: HirBodyProjection::expression(child),
     }
 }
 
 fn item_body_root(
     role: HirDeclarationItemRootRole,
-    child: Vec<HirBodyChildEdge>,
+    child: HirBodyProjection,
 ) -> HirItemEvaluationRoot {
     HirItemEvaluationRoot {
         role,
-        child: HirDeclarationBodyRootChild::Body(child.into_boxed_slice()),
+        projection: child,
     }
 }
 
-fn statement_body_edges(
+fn statement_body_projection(
     scope: crate::identity::ScopeId,
     statements: &[StmtId],
-) -> Result<Vec<HirBodyChildEdge>, HirSemanticPathError> {
+) -> Result<HirBodyProjection, HirSemanticPathError> {
     let body = HirContextualStmtBody::try_ordinary(scope, statements.to_vec().into_boxed_slice())
         .map_err(|_| HirSemanticPathError::InvalidOwnedPath)?;
-    body.try_child_edges()
-        .map_err(|_| HirSemanticPathError::OrdinalOverflow)
+    body.try_body_projection().map_err(Into::into)
 }
 
 fn classify_local_origin(
@@ -2781,6 +3414,7 @@ struct HirProjectEvaluationTopologyBuilder<'module> {
     statements: BTreeMap<StmtId, HirSemanticOwnerPath>,
     patterns: BTreeMap<PatternId, HirSemanticOwnerPath>,
     locals: BTreeMap<LocalId, HirSemanticOwnerPath>,
+    body_rows: Vec<HirSemanticBodyRow>,
     local_origins: BTreeMap<LocalId, HirLocalBindingOrigin>,
     expression_uses: BTreeMap<ExprId, HirExpressionUseRow>,
     next_source_ordinal: u32,
@@ -2815,6 +3449,13 @@ struct HirPathCheckpoint {
     statements: BTreeSet<StmtId>,
     patterns: BTreeSet<PatternId>,
     locals: BTreeSet<LocalId>,
+    body_rows: usize,
+}
+
+#[derive(Clone, Copy)]
+struct HirExpressionTraversalProjection<'hir> {
+    kind: &'hir HirExprKind,
+    body: Option<&'hir HirBodyProjection>,
 }
 
 fn path_map_delta<T: Copy + Ord>(
@@ -2846,6 +3487,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             statements: BTreeMap::new(),
             patterns: BTreeMap::new(),
             locals: BTreeMap::new(),
+            body_rows: Vec::new(),
             local_origins: BTreeMap::new(),
             expression_uses: BTreeMap::new(),
             next_source_ordinal: 0,
@@ -2866,6 +3508,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             statements: self.statements.keys().copied().collect(),
             patterns: self.patterns.keys().copied().collect(),
             locals: self.locals.keys().copied().collect(),
+            body_rows: self.body_rows.len(),
         }
     }
 
@@ -2881,9 +3524,80 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             statements: path_map_delta(&self.statements, &checkpoint.statements),
             patterns: path_map_delta(&self.patterns, &checkpoint.patterns),
             locals: path_map_delta(&self.locals, &checkpoint.locals),
+            body_rows: self.body_rows[checkpoint.body_rows..]
+                .to_vec()
+                .into_boxed_slice(),
         };
         paths.validate_root_paths()?;
         Ok(paths)
+    }
+
+    fn record_body_row(
+        &mut self,
+        owner: HirSemanticBodyOwner,
+        path: &[HirSemanticPathStep],
+        hops: &[HirExpressionSemanticHop],
+        projection: HirBodyProjection,
+    ) -> Result<(), HirSemanticPathError> {
+        let row = HirSemanticBodyRow::try_new(
+            owner.clone(),
+            HirSemanticOwnerPath::new(path.into(), hops.into()),
+            projection,
+        )
+        .map_err(|_| HirSemanticPathError::InvalidBodyRow { owner })?;
+        self.body_rows.push(row);
+        Ok(())
+    }
+
+    fn record_expression_body_rows(
+        &mut self,
+        owner: ExprId,
+        path: &[HirSemanticPathStep],
+        hops: &[HirExpressionSemanticHop],
+        kind: &HirExprKind,
+    ) -> Result<Option<HirBodyProjection>, HirSemanticPathError> {
+        let direct = kind.try_body_projection()?;
+        if let Some(projection) = &direct {
+            self.record_body_row(
+                HirSemanticBodyOwner::direct_expression(owner),
+                path,
+                hops,
+                projection.clone(),
+            )?;
+        }
+        for body in kind.expression_owned_body_projections()? {
+            let role = body.role().clone();
+            let body_path = pushed(path, HirSemanticPathStep::ExpressionOwned(role.clone()));
+            self.record_body_row(
+                HirSemanticBodyOwner::try_expression_owned(owner, role)
+                    .map_err(|_| HirSemanticPathError::InvalidOwnedPath)?,
+                &body_path,
+                hops,
+                body.projection().clone(),
+            )?;
+        }
+        Ok(direct)
+    }
+
+    fn record_statement_body_rows(
+        &mut self,
+        statement: StmtId,
+        parent: &[HirSemanticPathStep],
+        hops: &[HirExpressionSemanticHop],
+        kind: &HirStmtKind,
+    ) -> Result<Vec<crate::stmt::HirStatementBodyProjection>, HirSemanticPathError> {
+        let bodies = kind.body_projections()?;
+        for body in &bodies {
+            let role = *body.role();
+            let body_path = pushed(parent, HirSemanticPathStep::StatementBody(role));
+            self.record_body_row(
+                HirSemanticBodyOwner::statement_body(statement, role),
+                &body_path,
+                hops,
+                body.projection().clone(),
+            )?;
+        }
+        Ok(bodies)
     }
 
     fn walk_declaration_body(
@@ -2891,34 +3605,24 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         root: &HirDeclarationBodyRoot,
     ) -> Result<(), HirSemanticPathError> {
         let path = [HirSemanticPathStep::DeclarationBody(root.role)];
-        match &root.child {
-            HirDeclarationBodyRootChild::Body(edges) => {
-                for edge in edges.iter().copied() {
-                    self.walk_body_root(edge, &path)?;
-                }
-                Ok(())
-            }
-            HirDeclarationBodyRootChild::Expression(owner) => {
-                self.record_selection_root(*owner);
-                self.walk_expression(*owner, &path, &[], None, CaptureAccess::Read)
-            }
-        }
+        self.record_body_row(
+            HirSemanticBodyOwner::declaration(root.role),
+            &path,
+            &[],
+            root.projection.clone(),
+        )?;
+        self.walk_root_body_projection(&root.projection, &path)
     }
 
     fn walk_item_root(&mut self, root: &HirItemEvaluationRoot) -> Result<(), HirSemanticPathError> {
         let path = [HirSemanticPathStep::DeclarationItem(root.role.clone())];
-        match &root.child {
-            HirDeclarationBodyRootChild::Expression(owner) => {
-                self.record_selection_root(*owner);
-                self.walk_expression(*owner, &path, &[], None, CaptureAccess::Read)
-            }
-            HirDeclarationBodyRootChild::Body(edges) => {
-                for edge in edges.iter().copied() {
-                    self.walk_body_root(edge, &path)?;
-                }
-                Ok(())
-            }
-        }
+        self.record_body_row(
+            HirSemanticBodyOwner::item(root.role.clone()),
+            &path,
+            &[],
+            root.projection.clone(),
+        )?;
+        self.walk_root_body_projection(&root.projection, &path)
     }
 
     fn walk_declaration_topology(
@@ -2934,6 +3638,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         let statement_keys = self.statements.keys().copied().collect::<BTreeSet<_>>();
         let pattern_keys = self.patterns.keys().copied().collect::<BTreeSet<_>>();
         let local_keys = self.locals.keys().copied().collect::<BTreeSet<_>>();
+        let body_rows_start = self.body_rows.len();
         self.binding_item = Some(item);
         self.binding_owner = Some(owner);
         self.record_declaration_result_local()?;
@@ -2973,6 +3678,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 .filter(|(id, _)| !local_keys.contains(id))
                 .map(|(id, path)| (*id, path.clone()))
                 .collect(),
+            body_rows: self.body_rows[body_rows_start..]
+                .to_vec()
+                .into_boxed_slice(),
         };
         paths.validate_root_paths()?;
         self.binding_item = None;
@@ -3339,6 +4047,27 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         self.walk_body(edge, parent, &[], None, CaptureAccess::Read)
     }
 
+    fn walk_root_body_projection(
+        &mut self,
+        projection: &HirBodyProjection,
+        path: &[HirSemanticPathStep],
+    ) -> Result<(), HirSemanticPathError> {
+        if projection.kind() == HirBodyKind::Expression {
+            let [edge] = projection.children() else {
+                return Err(HirSemanticPathError::InvalidOwnedPath);
+            };
+            let HirBodyChild::Expression(owner) = edge.child() else {
+                return Err(HirSemanticPathError::InvalidOwnedPath);
+            };
+            self.record_selection_root(owner);
+            return self.walk_expression(owner, path, &[], None, CaptureAccess::Read);
+        }
+        for edge in projection.children().iter().copied() {
+            self.walk_body_root(edge, path)?;
+        }
+        Ok(())
+    }
+
     fn walk_parameter(
         &mut self,
         root: &HirDeclarationParameterRoot,
@@ -3456,18 +4185,17 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         path: &[HirSemanticPathStep],
         hops: &[HirExpressionSemanticHop],
         access: CaptureAccess,
-        kind: &HirExprKind,
+        projection: HirExpressionTraversalProjection<'_>,
     ) -> Result<(), HirSemanticPathError> {
-        if let HirExprKind::Thread(thread) = kind {
-            for edge in thread
-                .body()
-                .try_child_edges()
-                .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
-            {
+        if let Some(body) = projection
+            .body
+            .filter(|body| body.kind() == HirBodyKind::Thread)
+        {
+            for &edge in body.children() {
                 self.walk_body(edge, path, hops, Some(owner), access)?;
             }
         }
-        if let HirExprKind::Match(matched) = kind {
+        if let HirExprKind::Match(matched) = projection.kind {
             for (arm, row) in matched.arms().iter().enumerate() {
                 let arm = checked_ordinal(arm)?;
                 self.record_pattern_binding(
@@ -3496,34 +4224,33 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         hops: &[HirExpressionSemanticHop],
         owning_parent: Option<ExprId>,
         access: CaptureAccess,
-        kind: &HirExprKind,
+        projection: HirExpressionTraversalProjection<'_>,
     ) -> Result<(), HirSemanticPathError> {
-        let owned_edges = kind
+        let owned_edges = projection
+            .kind
             .expression_owned_child_edges()
-            .map_err(|error| match error {
-                HirExpressionOwnedChildEdgeError::OrdinalOverflow => {
-                    HirSemanticPathError::OrdinalOverflow
-                }
-                HirExpressionOwnedChildEdgeError::EmptyNestedPath => {
-                    HirSemanticPathError::InvalidOwnedPath
-                }
-            })?;
+            .map_err(HirSemanticPathError::from)?;
         for edge in owned_edges {
             self.walk_expression_owned_edge(owner, &edge, path, hops, access)?;
         }
-        for (ordinal, statement) in expression_statements(kind).iter().enumerate() {
-            let role = HirBodyChildRole::Statement {
-                ordinal: checked_ordinal(ordinal)?,
-            };
-            self.walk_statement(
-                *statement,
-                &pushed(path, HirSemanticPathStep::Body(role)),
-                hops,
-                Some(owner),
-                access,
-            )?;
+        if let Some(body) = projection
+            .body
+            .filter(|body| body.kind() == HirBodyKind::Ordinary)
+        {
+            for edge in body.children() {
+                if let HirBodyChild::Statement(statement) = edge.child() {
+                    self.walk_statement(
+                        statement,
+                        &pushed(path, HirSemanticPathStep::Body(edge.role())),
+                        hops,
+                        Some(owner),
+                        access,
+                    )?;
+                }
+            }
         }
-        for edge in kind
+        for edge in projection
+            .kind
             .try_child_edges()
             .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
         {
@@ -3558,7 +4285,8 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         // Every owning direct edge must publish exactly one child row. A
         // reference-only lowered edge (currently ForSynthetic::ForInput) is
         // deliberately excluded because its source statement owns the row.
-        for edge in kind
+        for edge in projection
+            .kind
             .try_child_edges()
             .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
         {
@@ -3583,15 +4311,14 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         owner: ExprId,
         path: &[HirSemanticPathStep],
         owning_parent: Option<ExprId>,
-        kind: &HirExprKind,
+        projection: HirExpressionTraversalProjection<'_>,
     ) -> Result<Vec<HirExpressionEvaluationEdge>, HirSemanticPathError> {
         let mut selection_edges = Vec::new();
-        if let HirExprKind::Thread(thread) = kind {
-            for edge in thread
-                .body()
-                .try_child_edges()
-                .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
-            {
+        if let Some(body) = projection
+            .body
+            .filter(|body| body.kind() == HirBodyKind::Thread)
+        {
+            for &edge in body.children() {
                 append_selection_thread_body_edge(
                     self.module,
                     edge,
@@ -3600,9 +4327,10 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 )?;
             }
         }
-        for edge in kind
+        for edge in projection
+            .kind
             .expression_owned_child_edges()
-            .map_err(|_| HirSemanticPathError::InvalidOwnedPath)?
+            .map_err(HirSemanticPathError::from)?
         {
             match edge.child() {
                 HirExpressionOwnedChild::Pattern(_) => {}
@@ -3624,17 +4352,23 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 }
             }
         }
-        for (ordinal, statement) in expression_statements(kind).iter().enumerate() {
-            append_selection_statement_steps(
-                self.module,
-                *statement,
-                &mut selection_edges,
-                HirSelectionStatementContext::Body(HirBodyChildRole::Statement {
-                    ordinal: checked_ordinal(ordinal)?,
-                }),
-            )?;
+        if let Some(body) = projection
+            .body
+            .filter(|body| body.kind() == HirBodyKind::Ordinary)
+        {
+            for edge in body.children() {
+                if let HirBodyChild::Statement(statement) = edge.child() {
+                    append_selection_statement_steps(
+                        self.module,
+                        statement,
+                        &mut selection_edges,
+                        HirSelectionStatementContext::Body(edge.role()),
+                    )?;
+                }
+            }
         }
-        for edge in kind
+        for edge in projection
+            .kind
             .try_child_edges()
             .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
         {
@@ -3652,7 +4386,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             });
         }
         if matches!(
-            kind,
+            projection.kind,
             HirExprKind::Await(_)
                 | HirExprKind::Choice(_)
                 | HirExprKind::DialogueContentApplication(_)
@@ -3683,9 +4417,15 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
         let kind = expression.kind();
         self.record_expression_start(owner, owning_parent, access, kind)?;
-        self.walk_expression_special_children(owner, path, hops, access, kind)?;
-        self.walk_expression_direct_children(owner, path, hops, owning_parent, access, kind)?;
-        let selection_edges = self.record_selection_edges(owner, path, owning_parent, kind)?;
+        let direct_body = self.record_expression_body_rows(owner, path, hops, kind)?;
+        let projection = HirExpressionTraversalProjection {
+            kind,
+            body: direct_body.as_ref(),
+        };
+        self.walk_expression_special_children(owner, path, hops, access, projection)?;
+        self.walk_expression_direct_children(owner, path, hops, owning_parent, access, projection)?;
+        let selection_edges =
+            self.record_selection_edges(owner, path, owning_parent, projection)?;
         let Some(row) = self.expression_uses.get_mut(&owner) else {
             return Err(HirSemanticPathError::InvalidOwnedPath);
         };
@@ -3790,6 +4530,8 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .module
             .resolve_stmt(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        let body_projections =
+            self.record_statement_body_rows(owner, path, hops, statement.kind())?;
         self.record_statement_local_origins(owner, statement.kind(), owning_parent)?;
         for edge in statement
             .kind()
@@ -3816,13 +4558,12 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 }
             }
         }
-        for (role, edges) in statement
-            .kind()
-            .try_thread_body_edges()
-            .map_err(|_| HirSemanticPathError::OrdinalOverflow)?
+        for body in body_projections
+            .iter()
+            .filter(|body| body.projection().kind() == HirBodyKind::Thread)
         {
-            let body_path = pushed(path, HirSemanticPathStep::ThreadBody(role));
-            for edge in edges {
+            let body_path = pushed(path, HirSemanticPathStep::StatementBody(*body.role()));
+            for edge in body.projection().children().iter().copied() {
                 self.walk_body(edge, &body_path, hops, owning_parent, access)?;
             }
         }
@@ -4457,16 +5198,6 @@ fn nested_owned_role_path(
         | HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, .. }
         | HirExpressionOwnedBodyRole::DialogueLinePlanLet { path } => path.segments().to_vec(),
         _ => Vec::new(),
-    }
-}
-
-fn expression_statements(kind: &HirExprKind) -> &[StmtId] {
-    match kind {
-        HirExprKind::Block(block) => block.statements(),
-        HirExprKind::ComputationBlock(block) => block.statements(),
-        HirExprKind::NamedBlock(block) => block.statements(),
-        HirExprKind::Loop(block) => block.statements(),
-        _ => &[],
     }
 }
 

@@ -5,12 +5,12 @@ use thiserror::Error;
 use super::child_edges::extend_path;
 use super::{
     HirChoiceItem, HirChoiceOptionField, HirChoicePlanItem, HirExprKind, HirNestedExpressionPath,
-    HirNestedExpressionPathSegment,
+    HirNestedExpressionPathSegment, HirThreadBody,
 };
-use crate::body_edges::HirBodyChildEdge;
+use crate::body_edges::{HirBodyChildEdge, HirBodyProjectionError, HirBodyRoleProjection};
 use crate::dialogue_application::{HirDialogueContentApplication, HirLinePlanItem};
 use crate::identity::{PatternId, StmtId};
-use crate::stmt::HirTriggerPattern;
+use crate::stmt::{HirContextualStmtBody, HirTriggerPattern};
 
 /// One non-expression child rooted directly in an expression-owned body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -42,6 +42,11 @@ impl HirExpressionOwnedChildEdge {
         Self { child, role }
     }
 }
+
+/// One actual body container owned below an expression. Conceptual Choice and
+/// line-plan containers do not produce this row; only executable contextual or
+/// Thread bodies are retained.
+pub type HirExpressionOwnedBodyProjection = HirBodyRoleProjection<HirExpressionOwnedBodyRole>;
 
 /// Closed roles for every non-expression root retained below an expression.
 /// Nested Choice and line-plan coordinates reuse the same typed path segments
@@ -103,6 +108,25 @@ pub enum HirExpressionOwnedBodyRole {
     },
 }
 
+impl HirExpressionOwnedBodyRole {
+    /// Returns whether this role identifies an actual nested body container.
+    ///
+    /// Pattern and statement roles are retained in the same owned-edge
+    /// vocabulary, but they are not body owners. Conceptual Choice and
+    /// line-plan bodies likewise have no role here; only the embedded
+    /// statement-only Thread bodies are body-bearing.
+    pub const fn is_body_bearing(&self) -> bool {
+        matches!(
+            self,
+            Self::AwaitBranchBody { .. }
+                | Self::ChoiceOptionSelectBody { .. }
+                | Self::ChoicePlanTimeoutBody { .. }
+                | Self::ChoicePlanCancelBody { .. }
+                | Self::ChoicePlanOnSelectBody { .. }
+        )
+    }
+}
+
 /// Source role of a statement retained by a dialogue line plan.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLinePlanStatementRole {
@@ -121,6 +145,32 @@ pub enum HirExpressionOwnedChildEdgeError {
     OrdinalOverflow,
     #[error("an expression-owned child has no nested structural coordinate")]
     EmptyNestedPath,
+    #[error(transparent)]
+    Body(HirBodyProjectionError),
+}
+
+/// Construction error for the expression-owned body inventory.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirExpressionOwnedBodyProjectionError {
+    #[error("an expression-owned body ordinal does not fit u32")]
+    OrdinalOverflow,
+    #[error("an expression-owned body has no nested structural coordinate")]
+    EmptyNestedPath,
+    #[error(transparent)]
+    Body(HirBodyProjectionError),
+}
+
+enum HirExpressionOwnedEvent<'expr> {
+    Child(HirExpressionOwnedChildEdge),
+    ContextualBody {
+        body: &'expr HirContextualStmtBody,
+        role: HirExpressionOwnedBodyRole,
+        recovery: bool,
+    },
+    ThreadBody {
+        body: &'expr HirThreadBody,
+        role: HirExpressionOwnedBodyRole,
+    },
 }
 
 impl HirExprKind {
@@ -129,12 +179,86 @@ impl HirExprKind {
     pub fn expression_owned_child_edges(
         &self,
     ) -> Result<Vec<HirExpressionOwnedChildEdge>, HirExpressionOwnedChildEdgeError> {
-        let mut edges = Vec::new();
+        self.expression_owned_events()?
+            .into_iter()
+            .try_fold(Vec::new(), |mut edges, event| {
+                match event {
+                    HirExpressionOwnedEvent::Child(edge) => edges.push(edge),
+                    HirExpressionOwnedEvent::ContextualBody {
+                        body,
+                        role,
+                        recovery,
+                    } => {
+                        let projection = if recovery {
+                            Err(HirBodyProjectionError::Recovery)
+                        } else {
+                            body.try_body_projection()
+                        }
+                        .map_err(HirExpressionOwnedChildEdgeError::Body)?;
+                        edges.extend(projection.children().iter().copied().map(|edge| {
+                            HirExpressionOwnedChildEdge::new(
+                                HirExpressionOwnedChild::Body(edge),
+                                role.clone(),
+                            )
+                        }));
+                    }
+                    HirExpressionOwnedEvent::ThreadBody { body, role } => {
+                        let projection = body
+                            .try_body_projection()
+                            .map_err(HirExpressionOwnedChildEdgeError::Body)?;
+                        edges.extend(projection.children().iter().copied().map(|edge| {
+                            HirExpressionOwnedChildEdge::new(
+                                HirExpressionOwnedChild::Body(edge),
+                                role.clone(),
+                            )
+                        }));
+                    }
+                }
+                Ok(edges)
+            })
+    }
+
+    /// Returns only actual nested body containers owned below this expression.
+    /// Conceptual Choice and line-plan containers are omitted, while empty
+    /// Await and Choice Thread bodies remain represented by their projection.
+    pub fn expression_owned_body_projections(
+        &self,
+    ) -> Result<Vec<HirExpressionOwnedBodyProjection>, HirExpressionOwnedBodyProjectionError> {
+        self.expression_owned_events()
+            .map_err(map_owned_body_event_error)?
+            .into_iter()
+            .filter_map(|event| match event {
+                HirExpressionOwnedEvent::Child(_) => None,
+                HirExpressionOwnedEvent::ContextualBody {
+                    body,
+                    role,
+                    recovery,
+                } => Some(
+                    if recovery {
+                        Err(HirBodyProjectionError::Recovery)
+                    } else {
+                        body.try_body_projection()
+                    }
+                    .map(|projection| HirBodyRoleProjection::new(role, projection)),
+                ),
+                HirExpressionOwnedEvent::ThreadBody { body, role } => Some(
+                    body.try_body_projection()
+                        .map(|projection| HirBodyRoleProjection::new(role, projection)),
+                ),
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(HirExpressionOwnedBodyProjectionError::Body)
+    }
+
+    fn expression_owned_events(
+        &self,
+    ) -> Result<Vec<HirExpressionOwnedEvent<'_>>, HirExpressionOwnedChildEdgeError> {
+        let mut events = Vec::new();
         match self {
             Self::Closure(expression) => {
                 for (parameter, value) in expression.parameters().iter().enumerate() {
                     push_owned_edge(
-                        &mut edges,
+                        &mut events,
                         HirExpressionOwnedChild::Pattern(value.pattern()),
                         HirExpressionOwnedBodyRole::ClosureParameterPattern {
                             parameter: owned_ordinal(parameter)?,
@@ -144,7 +268,7 @@ impl HirExprKind {
             }
             Self::IfLet(expression) => {
                 push_owned_edge(
-                    &mut edges,
+                    &mut events,
                     HirExpressionOwnedChild::Pattern(expression.pattern()),
                     HirExpressionOwnedBodyRole::IfLetPattern,
                 );
@@ -154,24 +278,22 @@ impl HirExprKind {
                     let branch = owned_ordinal(branch)?;
                     if let Some(pattern) = value.pattern() {
                         push_owned_edge(
-                            &mut edges,
+                            &mut events,
                             HirExpressionOwnedChild::Pattern(pattern),
                             HirExpressionOwnedBodyRole::AwaitBranchPattern { branch },
                         );
                     }
-                    push_owned_body_edges(
-                        &mut edges,
-                        value
-                            .body()
-                            .try_child_edges()
-                            .map_err(|_| HirExpressionOwnedChildEdgeError::OrdinalOverflow)?,
+                    push_contextual_body_event(
+                        &mut events,
+                        value.body(),
                         &HirExpressionOwnedBodyRole::AwaitBranchBody { branch },
+                        matches!(value.kind(), super::HirAwaitBranchKind::Recovered),
                     );
                 }
             }
-            Self::Choice(expression) => append_choice_owned_edges(expression, &mut edges)?,
+            Self::Choice(expression) => append_choice_owned_events(expression, &mut events)?,
             Self::DialogueContentApplication(expression) => {
-                append_dialogue_owned_edges(expression, &mut edges)?;
+                append_dialogue_owned_events(expression, &mut events)?;
             }
             Self::Unit
             | Self::Literal(_)
@@ -207,7 +329,23 @@ impl HirExprKind {
             | Self::Error(_)
             | Self::ForSynthetic(_) => {}
         }
-        Ok(edges)
+        Ok(events)
+    }
+}
+
+fn map_owned_body_event_error(
+    error: HirExpressionOwnedChildEdgeError,
+) -> HirExpressionOwnedBodyProjectionError {
+    match error {
+        HirExpressionOwnedChildEdgeError::OrdinalOverflow => {
+            HirExpressionOwnedBodyProjectionError::OrdinalOverflow
+        }
+        HirExpressionOwnedChildEdgeError::EmptyNestedPath => {
+            HirExpressionOwnedBodyProjectionError::EmptyNestedPath
+        }
+        HirExpressionOwnedChildEdgeError::Body(error) => {
+            HirExpressionOwnedBodyProjectionError::Body(error)
+        }
     }
 }
 
@@ -233,9 +371,9 @@ enum ChoiceOwnedWork<'choice> {
     ),
 }
 
-fn append_choice_owned_edges(
-    expression: &super::HirChoiceExpr,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+fn append_choice_owned_events<'choice>(
+    expression: &'choice super::HirChoiceExpr,
+    events: &mut Vec<HirExpressionOwnedEvent<'choice>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     let mut work = vec![ChoiceOwnedWork::Body(expression.body(), Vec::new())];
     while let Some(next) = work.pop() {
@@ -254,11 +392,11 @@ fn append_choice_owned_edges(
                 }
             }
             ChoiceOwnedWork::Item(item, item_path) => {
-                append_choice_item(item, item_path, edges, &mut work)?;
+                append_choice_item(item, item_path, events, &mut work)?;
             }
             ChoiceOwnedWork::MatchArm(value, path, arm) => {
                 push_owned_edge(
-                    edges,
+                    events,
                     HirExpressionOwnedChild::Pattern(value.pattern()),
                     HirExpressionOwnedBodyRole::ChoiceMatchArmPattern {
                         path: owned_path(path.clone())?,
@@ -281,22 +419,22 @@ fn append_choice_owned_edges(
                 }
             }
             ChoiceOwnedWork::OptionField(value, path, field) => {
-                append_choice_option_field(value, path, field, edges)?;
+                append_choice_option_field(value, path, field, events)?;
             }
         }
     }
-    append_choice_plan_edges(expression, edges)
+    append_choice_plan_events(expression, events)
 }
 
 fn append_choice_item<'choice>(
     item: &'choice HirChoiceItem,
     item_path: Vec<HirNestedExpressionPathSegment>,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+    events: &mut Vec<HirExpressionOwnedEvent<'choice>>,
     work: &mut Vec<ChoiceOwnedWork<'choice>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     match item {
         HirChoiceItem::Let(statement) => push_owned_edge(
-            edges,
+            events,
             HirExpressionOwnedChild::Statement(*statement),
             HirExpressionOwnedBodyRole::ChoiceLetStatement {
                 path: owned_path(item_path)?,
@@ -323,7 +461,7 @@ fn append_choice_item<'choice>(
         }
         HirChoiceItem::For(value) => {
             push_owned_edge(
-                edges,
+                events,
                 HirExpressionOwnedChild::Pattern(value.pattern()),
                 HirExpressionOwnedBodyRole::ChoiceForPattern {
                     path: owned_path(item_path.clone())?,
@@ -353,7 +491,7 @@ fn append_choice_item<'choice>(
         )),
         HirChoiceItem::OptionFor(value) => {
             push_owned_edge(
-                edges,
+                events,
                 HirExpressionOwnedChild::Pattern(value.pattern()),
                 HirExpressionOwnedBodyRole::ChoiceOptionForPattern {
                     path: owned_path(item_path.clone())?,
@@ -369,24 +507,23 @@ fn append_choice_item<'choice>(
     Ok(())
 }
 
-fn append_choice_option_field(
-    value: &HirChoiceOptionField,
+fn append_choice_option_field<'choice>(
+    value: &'choice HirChoiceOptionField,
     path: Vec<HirNestedExpressionPathSegment>,
     field: u32,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+    events: &mut Vec<HirExpressionOwnedEvent<'choice>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     match value {
-        HirChoiceOptionField::Select(body) => push_owned_body_edges(
-            edges,
-            body.try_child_edges()
-                .map_err(|_| HirExpressionOwnedChildEdgeError::OrdinalOverflow)?,
-            &HirExpressionOwnedBodyRole::ChoiceOptionSelectBody {
+        HirChoiceOptionField::Select(body) => push_thread_body_event(
+            events,
+            body,
+            HirExpressionOwnedBodyRole::ChoiceOptionSelectBody {
                 path: owned_path(path)?,
                 field,
             },
         ),
         HirChoiceOptionField::Let(statement) => push_owned_edge(
-            edges,
+            events,
             HirExpressionOwnedChild::Statement(*statement),
             HirExpressionOwnedBodyRole::ChoiceOptionLetStatement {
                 path: owned_path(path)?,
@@ -406,9 +543,9 @@ fn append_choice_option_field(
     Ok(())
 }
 
-fn append_choice_plan_edges(
-    expression: &super::HirChoiceExpr,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+fn append_choice_plan_events<'choice>(
+    expression: &'choice super::HirChoiceExpr,
+    events: &mut Vec<HirExpressionOwnedEvent<'choice>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     let Some(plan) = expression.plan() else {
         return Ok(());
@@ -418,17 +555,16 @@ fn append_choice_plan_edges(
             ordinal: owned_ordinal(item)?,
         }])?;
         match value {
-            HirChoicePlanItem::Timeout { body, .. } => push_owned_body_edges(
-                edges,
-                body.try_child_edges()
-                    .map_err(|_| HirExpressionOwnedChildEdgeError::OrdinalOverflow)?,
-                &HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { path },
+            HirChoicePlanItem::Timeout { body, .. } => push_thread_body_event(
+                events,
+                body,
+                HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { path },
             ),
             HirChoicePlanItem::Cancel { trigger, body } => {
                 let role = HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path };
                 if let Some(pattern) = trigger_pattern(trigger) {
                     push_owned_edge(
-                        edges,
+                        events,
                         HirExpressionOwnedChild::Pattern(pattern),
                         HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger {
                             path: match &role {
@@ -440,24 +576,18 @@ fn append_choice_plan_edges(
                         },
                     );
                 }
-                push_owned_body_edges(
-                    edges,
-                    body.try_child_edges()
-                        .map_err(|_| HirExpressionOwnedChildEdgeError::OrdinalOverflow)?,
-                    &role,
-                );
+                push_thread_body_event(events, body, role);
             }
             HirChoicePlanItem::OnSelect { pattern, body, .. } => {
                 push_owned_edge(
-                    edges,
+                    events,
                     HirExpressionOwnedChild::Pattern(*pattern),
                     HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { path: path.clone() },
                 );
-                push_owned_body_edges(
-                    edges,
-                    body.try_child_edges()
-                        .map_err(|_| HirExpressionOwnedChildEdgeError::OrdinalOverflow)?,
-                    &HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path },
+                push_thread_body_event(
+                    events,
+                    body,
+                    HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path },
                 );
             }
             HirChoicePlanItem::Assignment { .. } | HirChoicePlanItem::Error(_) => {}
@@ -466,12 +596,12 @@ fn append_choice_plan_edges(
     Ok(())
 }
 
-fn append_dialogue_owned_edges(
-    expression: &HirDialogueContentApplication,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+fn append_dialogue_owned_events<'plan>(
+    expression: &'plan HirDialogueContentApplication,
+    events: &mut Vec<HirExpressionOwnedEvent<'plan>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     if let Some(plan) = expression.plan() {
-        append_line_plan_owned_edges(plan.items(), edges)?;
+        append_line_plan_owned_events(plan.items(), events)?;
     }
     Ok(())
 }
@@ -491,9 +621,9 @@ enum LinePlanOwnedWork<'plan> {
     Item(&'plan HirLinePlanItem, Vec<HirNestedExpressionPathSegment>),
 }
 
-fn append_line_plan_owned_edges(
-    items: &[HirLinePlanItem],
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+fn append_line_plan_owned_events<'plan>(
+    items: &'plan [HirLinePlanItem],
+    events: &mut Vec<HirExpressionOwnedEvent<'plan>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     let mut work = vec![LinePlanOwnedWork::Body(items, Vec::new(), None)];
     while let Some(next) = work.pop() {
@@ -517,7 +647,7 @@ fn append_line_plan_owned_edges(
                 }
             }
             LinePlanOwnedWork::Item(item, item_path) => {
-                append_line_plan_item(item, item_path, edges, &mut work)?;
+                append_line_plan_item(item, item_path, events, &mut work)?;
             }
         }
     }
@@ -527,7 +657,7 @@ fn append_line_plan_owned_edges(
 fn append_line_plan_item<'plan>(
     item: &'plan HirLinePlanItem,
     item_path: Vec<HirNestedExpressionPathSegment>,
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+    events: &mut Vec<HirExpressionOwnedEvent<'plan>>,
     work: &mut Vec<LinePlanOwnedWork<'plan>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
     let path = || owned_path(item_path.clone());
@@ -535,7 +665,7 @@ fn append_line_plan_item<'plan>(
         HirLinePlanItem::Init(statements) => {
             for (statement, owner) in statements.iter().enumerate() {
                 push_owned_edge(
-                    edges,
+                    events,
                     HirExpressionOwnedChild::Statement(*owner),
                     HirExpressionOwnedBodyRole::DialogueLinePlanStatement {
                         path: path()?,
@@ -547,43 +677,48 @@ fn append_line_plan_item<'plan>(
             }
         }
         HirLinePlanItem::Thread(statement) => {
-            push_line_plan_statement(edges, *statement, path()?, HirLinePlanStatementRole::Thread);
+            push_line_plan_statement(
+                events,
+                *statement,
+                path()?,
+                HirLinePlanStatementRole::Thread,
+            );
         }
         HirLinePlanItem::On(statement) => {
-            push_line_plan_statement(edges, *statement, path()?, HirLinePlanStatementRole::On);
+            push_line_plan_statement(events, *statement, path()?, HirLinePlanStatementRole::On);
         }
         HirLinePlanItem::Let {
             pattern, statement, ..
         } => {
             let nested_path = path()?;
             push_owned_edge(
-                edges,
+                events,
                 HirExpressionOwnedChild::Pattern(*pattern),
                 HirExpressionOwnedBodyRole::DialogueLinePlanLet {
                     path: nested_path.clone(),
                 },
             );
             push_line_plan_statement(
-                edges,
+                events,
                 *statement,
                 nested_path,
                 HirLinePlanStatementRole::Statement,
             );
         }
         HirLinePlanItem::Statement(statement) => push_line_plan_statement(
-            edges,
+            events,
             *statement,
             path()?,
             HirLinePlanStatementRole::Statement,
         ),
         HirLinePlanItem::CancelRule(statement) => push_line_plan_statement(
-            edges,
+            events,
             *statement,
             path()?,
             HirLinePlanStatementRole::CancelRule,
         ),
         HirLinePlanItem::Error(statement) => {
-            push_line_plan_statement(edges, *statement, path()?, HirLinePlanStatementRole::Error);
+            push_line_plan_statement(events, *statement, path()?, HirLinePlanStatementRole::Error);
         }
         HirLinePlanItem::StartGroup(items) => work.push(LinePlanOwnedWork::Body(
             items,
@@ -597,7 +732,7 @@ fn append_line_plan_item<'plan>(
         )),
         HirLinePlanItem::Out { statement, .. } => {
             push_line_plan_statement(
-                edges,
+                events,
                 *statement,
                 path()?,
                 HirLinePlanStatementRole::Statement,
@@ -625,34 +760,47 @@ fn trigger_pattern(trigger: &HirTriggerPattern) -> Option<PatternId> {
 }
 
 fn push_line_plan_statement(
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+    events: &mut Vec<HirExpressionOwnedEvent<'_>>,
     statement: StmtId,
     path: HirNestedExpressionPath,
     role: HirLinePlanStatementRole,
 ) {
     push_owned_edge(
-        edges,
+        events,
         HirExpressionOwnedChild::Statement(statement),
         HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, role },
     );
 }
 
-fn push_owned_body_edges(
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
-    body: impl IntoIterator<Item = HirBodyChildEdge>,
+fn push_contextual_body_event<'expr>(
+    events: &mut Vec<HirExpressionOwnedEvent<'expr>>,
+    body: &'expr HirContextualStmtBody,
     role: &HirExpressionOwnedBodyRole,
+    recovery: bool,
 ) {
-    edges.extend(body.into_iter().map(|edge| {
-        HirExpressionOwnedChildEdge::new(HirExpressionOwnedChild::Body(edge), (*role).clone())
-    }));
+    events.push(HirExpressionOwnedEvent::ContextualBody {
+        body,
+        role: role.clone(),
+        recovery,
+    });
+}
+
+fn push_thread_body_event<'expr>(
+    events: &mut Vec<HirExpressionOwnedEvent<'expr>>,
+    body: &'expr HirThreadBody,
+    role: HirExpressionOwnedBodyRole,
+) {
+    events.push(HirExpressionOwnedEvent::ThreadBody { body, role });
 }
 
 fn push_owned_edge(
-    edges: &mut Vec<HirExpressionOwnedChildEdge>,
+    events: &mut Vec<HirExpressionOwnedEvent<'_>>,
     child: HirExpressionOwnedChild,
     role: HirExpressionOwnedBodyRole,
 ) {
-    edges.push(HirExpressionOwnedChildEdge::new(child, role));
+    events.push(HirExpressionOwnedEvent::Child(
+        HirExpressionOwnedChildEdge::new(child, role),
+    ));
 }
 
 fn owned_path(

@@ -3,7 +3,8 @@ use std::{collections::BTreeMap, sync::Arc};
 use arcweft_lang_hir::{
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
-        HirProjectEvaluationTopology, HirSemanticOwnerPath, HirSemanticPathLocation,
+        HirProjectEvaluationTopology, HirSemanticBodyLocation, HirSemanticBodyLocator,
+        HirSemanticBodyLookupError, HirSemanticOwnerPath, HirSemanticPathLocation,
         HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot,
         HirSemanticPathStep,
     },
@@ -15,11 +16,12 @@ use crate::final_analysis::{CheckedItem, CheckedItemRole};
 
 use super::{
     AcceptedDeclarationSemanticId, AcceptedItemSemanticId, AcceptedSemanticRoot,
-    CheckedBindingCoordinateEvidence, CheckedExpressionChildRole,
+    CheckedBindingCoordinateEvidence, CheckedBodyCoordinateEvidence, CheckedExpressionChildRole,
     CheckedExpressionCoordinateEvidence, CheckedPatternCoordinateEvidence, CheckedSemanticPath,
     CheckedSemanticPathStep, CheckedStatementCoordinateEvidence, HirItemEvaluationEntryRole,
     HirPatternChildRole, HirStatementChildRole, StableCheckedBindingCoordinate,
-    StableCheckedPatternOwnerCoordinate, StableCheckedStatementCoordinate,
+    StableCheckedBodyCoordinate, StableCheckedPatternOwnerCoordinate,
+    StableCheckedStatementCoordinate,
 };
 
 #[derive(Debug)]
@@ -51,6 +53,8 @@ pub enum AcceptedSemanticRootCatalogError {
     LengthOverflow,
     #[error("accepted root catalog HIR path lookup failed: {0}")]
     HirLookup(#[from] HirSemanticPathLookupError),
+    #[error("accepted root catalog HIR body lookup failed: {0}")]
+    HirBodyLookup(#[from] HirSemanticBodyLookupError),
 }
 
 impl AcceptedSemanticRootCatalog {
@@ -135,6 +139,13 @@ impl AcceptedSemanticRootCatalog {
         owner: HirSemanticPathOwnerId,
     ) -> Result<Option<HirSemanticPathLocation<'_>>, AcceptedSemanticRootCatalogError> {
         self.topology.semantic_path(owner).map_err(Into::into)
+    }
+
+    pub(crate) fn semantic_body(
+        &self,
+        locator: &HirSemanticBodyLocator,
+    ) -> Result<Option<HirSemanticBodyLocation<'_>>, AcceptedSemanticRootCatalogError> {
+        self.topology.semantic_body(locator).map_err(Into::into)
     }
 }
 
@@ -232,6 +243,8 @@ pub(crate) enum SemanticCoordinateIndexError {
     RootCatalog(#[from] AcceptedSemanticRootCatalogError),
     #[error("semantic coordinate owner is absent from the HIR path index: {owner:?}")]
     MissingOwner { owner: HirSemanticPathOwnerId },
+    #[error("semantic body coordinate is absent from the HIR body index: {locator:?}")]
+    MissingBody { locator: HirSemanticBodyLocator },
     #[error("semantic coordinate local path does not end in a binding edge: {owner:?}")]
     InvalidBindingPath { owner: LocalId },
     #[error("semantic coordinate expression edge evidence is missing")]
@@ -320,6 +333,48 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .map(|coordinate| CheckedStatementCoordinateEvidence::new(owner, coordinate))
     }
 
+    #[allow(
+        dead_code,
+        reason = "the semantic transcript graph consumes this typed coordinate when body digests publish"
+    )]
+    pub(crate) fn body(
+        &self,
+        locator: &HirSemanticBodyLocator,
+    ) -> Result<StableCheckedBodyCoordinate, SemanticCoordinateIndexError> {
+        let Some(location) = self.catalog.semantic_body(locator)? else {
+            return Err(SemanticCoordinateIndexError::MissingBody {
+                locator: locator.clone(),
+            });
+        };
+        if location.root() != locator.root() || location.row().owner() != locator.owner() {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let accepted = *self.catalog.root_for_hir(location.root())?;
+        let path = checked_path_from_owner_path(
+            accepted,
+            location.root(),
+            location.row().path(),
+            self.edges,
+        )?;
+        Ok(StableCheckedBodyCoordinate::new(
+            location.row().owner(),
+            location.row().kind(),
+            path,
+        ))
+    }
+
+    #[allow(
+        dead_code,
+        reason = "checked body transcript publication consumes this affine evidence"
+    )]
+    pub(crate) fn body_evidence(
+        &self,
+        locator: HirSemanticBodyLocator,
+    ) -> Result<CheckedBodyCoordinateEvidence, SemanticCoordinateIndexError> {
+        let coordinate = self.body(&locator)?;
+        Ok(CheckedBodyCoordinateEvidence::new(locator, coordinate))
+    }
+
     pub(crate) fn binding(
         &self,
         local: LocalId,
@@ -385,7 +440,7 @@ fn is_binding_local_path(path: &HirSemanticOwnerPath) -> bool {
             | HirSemanticPathStep::ExpressionOwned(_)
             | HirSemanticPathStep::Body(_)
             | HirSemanticPathStep::Statement(_)
-            | HirSemanticPathStep::ThreadBody(_)
+            | HirSemanticPathStep::StatementBody(_)
             | HirSemanticPathStep::Expression(_)
             | HirSemanticPathStep::MatchPattern { .. }
             | HirSemanticPathStep::ParameterPattern { .. }
@@ -485,7 +540,9 @@ fn checked_path_from_owner_path(
             }
             HirSemanticPathStep::Body(role) => CheckedSemanticPathStep::Body(*role),
             HirSemanticPathStep::Statement(role) => CheckedSemanticPathStep::Statement(*role),
-            HirSemanticPathStep::ThreadBody(role) => CheckedSemanticPathStep::ThreadBody(*role),
+            HirSemanticPathStep::StatementBody(role) => {
+                CheckedSemanticPathStep::StatementBody(*role)
+            }
             HirSemanticPathStep::Expression(raw_role) => {
                 let hop = hops
                     .next()
@@ -536,9 +593,10 @@ mod tests {
         CHECKED_DECLARATION_RESULT_STEP_TAG, CHECKED_EXPRESSION_OWNED_STEP_TAG,
         HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationItemRootRole,
         HirExpressionOwnedBodyRole, HirFlowContractRootFamily, HirStatementBodyRole,
-        StableCheckedValueCoordinate, write_len,
+        StableCheckedBodyCoordinate, StableCheckedValueCoordinate, write_len,
     };
     use arcweft_lang_hir::symbol::CallablePackageId;
+    use arcweft_lang_hir::{body_edges::HirBodyKind, project::HirSemanticBodyOwner};
     use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 
     fn assert_pairwise_unique(tags: &[u8]) {
@@ -692,7 +750,7 @@ mod tests {
         let owned_one = checked_path_bytes(CheckedSemanticPathStep::ExpressionOwned(
             HirExpressionOwnedBodyRole::AwaitBranchPattern { branch: 1 },
         ));
-        let prior = checked_path_bytes(CheckedSemanticPathStep::ThreadBody(
+        let prior = checked_path_bytes(CheckedSemanticPathStep::StatementBody(
             HirStatementBodyRole::LetElse,
         ));
         assert_ne!(declaration, owned_zero);
@@ -811,6 +869,32 @@ mod tests {
         assert_eq!(
             &binding_bytes[1..],
             binding_path.canonical_bytes().unwrap().as_slice()
+        );
+    }
+
+    #[test]
+    fn checked_body_coordinates_distinguish_owner_family_and_body_kind() {
+        let path = CheckedSemanticPath::new(
+            test_declaration_root(),
+            [CheckedSemanticPathStep::DeclarationBody(
+                HirDeclarationBodyRootRole::PredicateBody,
+            )],
+        );
+        let predicate =
+            HirSemanticBodyOwner::declaration(HirDeclarationBodyRootRole::PredicateBody);
+        let item = HirSemanticBodyOwner::item(HirDeclarationItemRootRole::TestBody);
+        let expression =
+            StableCheckedBodyCoordinate::new(&predicate, HirBodyKind::Expression, path.clone());
+        let ordinary =
+            StableCheckedBodyCoordinate::new(&predicate, HirBodyKind::Ordinary, path.clone());
+        let item = StableCheckedBodyCoordinate::new(&item, HirBodyKind::Ordinary, path);
+
+        let expression_bytes = expression.canonical_bytes().unwrap();
+        assert!(expression_bytes.starts_with(&expression.path().canonical_bytes().unwrap()));
+        assert_ne!(expression_bytes, ordinary.canonical_bytes().unwrap());
+        assert_ne!(
+            ordinary.canonical_bytes().unwrap(),
+            item.canonical_bytes().unwrap()
         );
     }
 }

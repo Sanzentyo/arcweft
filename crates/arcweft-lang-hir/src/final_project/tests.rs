@@ -10,17 +10,17 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirDeclarationBodyRootChild, HirDeclarationBodyRootRole, HirDeclarationContractRootRole,
-    HirDeclarationParameterRoot, HirDeclarationParameterRootRole, HirExecutableProjectView,
-    HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder,
-    HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
-    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
-    HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
-    HirRuntimeSemanticReachabilityInput, HirSelectedExpressionInventoryError, HirSemanticOwnerPath,
-    HirSemanticPathStep, exported_parts, styles,
+    HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationParameterRoot,
+    HirDeclarationParameterRootRole, HirExecutableProjectView, HirPackageModuleKey, HirProject,
+    HirProjectBuildError, HirProjectBuilder, HirProjectExecutionError, HirProjectModule,
+    HirProjectModuleError, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
+    HirRuntimeExecutableOwner, HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityEdge,
+    HirRuntimeReachabilityError, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
+    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput,
+    HirSelectedExpressionInventoryError, HirSemanticOwnerPath, HirSemanticPathStep, exported_parts,
+    styles,
 };
-use crate::body_edges::HirBodyChild;
+use crate::body_edges::{HirBodyChild, HirBodyKind};
 use crate::database::HirDatabase;
 use crate::dialogue_application::{
     HirDialogueApplicationMetadataProjectionError, HirPostfixBracketCandidates,
@@ -226,6 +226,57 @@ fn evaluation_topology(
         .expect("project evaluation topology")
 }
 
+fn declaration_paths_for_source(
+    label: &str,
+    source: &str,
+    declaration_name: &str,
+) -> (
+    Arc<HirModule>,
+    Arc<super::HirProjectEvaluationTopology>,
+    CallableDeclarationKey,
+) {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        &format!("arcweft-test://proof/final-project/{label}"),
+        &format!("{label}.arcw"),
+        source,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:?}",
+        module.diagnostics()
+    );
+    let retained_module = Arc::clone(&module);
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .expect("executable project");
+    let symbols = symbols_for_project(&project, parsed.document(), label);
+    let declaration = symbols
+        .callable_symbols()
+        .find(|symbol| {
+            symbol.source_owner() == HirCallableSourceOwner::Item
+                && symbol.declaration().name() == declaration_name
+        })
+        .expect("item callable")
+        .declaration()
+        .clone();
+    let topology = evaluation_topology(&project, &symbols);
+    (retained_module, topology, declaration)
+}
+
 #[test]
 fn runtime_reachability_rejects_a_foreign_topology_generation() {
     let (database, package, root_path, module) = root_module_fixture("foreign-runtime-topology");
@@ -377,6 +428,218 @@ fn semantic_paths_consume_await_owned_roots() {
         ),
         |kind| matches!(kind, HirExprKind::Await(_)),
     );
+}
+
+#[test]
+fn semantic_body_rows_retain_empty_flow_item_and_direct_thread_bodies() {
+    let (module, topology, declaration) = declaration_paths_for_source(
+        "semantic-empty-body-rows",
+        concat!(
+            "flow empty_flow {}\n",
+            "test @test.empty empty {}\n",
+            "fn nested() { let worker = thread {} }\n",
+        ),
+        "nested",
+    );
+    let nested_paths = topology
+        .declaration_semantic_paths(&declaration)
+        .expect("nested declaration paths");
+    let thread_row = nested_paths
+        .body_rows()
+        .iter()
+        .find(|row| {
+            row.owner().expression_owner().is_some_and(|owner| {
+                row.owner().expression_owned_role().is_none()
+                    && module
+                        .resolve_expr(owner)
+                        .is_ok_and(|expression| matches!(expression.kind(), HirExprKind::Thread(_)))
+            })
+        })
+        .expect("direct empty Thread body row");
+    assert_eq!(thread_row.kind(), HirBodyKind::Thread);
+    assert!(thread_row.children().is_empty());
+
+    let flow_declaration = topology.modules()[0]
+        .entries()
+        .iter()
+        .filter_map(|entry| entry.body())
+        .find(|body| {
+            module
+                .resolve_item(body.source_item())
+                .is_ok_and(|item| matches!(item.kind(), HirItemKind::Flow(_)))
+        })
+        .expect("empty Flow declaration")
+        .declaration()
+        .clone();
+    let flow_paths = topology
+        .declaration_semantic_paths(&flow_declaration)
+        .expect("empty Flow paths");
+    assert!(flow_paths.body_rows().iter().any(|row| {
+        row.owner().declaration_role() == Some(HirDeclarationBodyRootRole::FlowBody)
+            && row.kind() == HirBodyKind::Thread
+            && row.children().is_empty()
+    }));
+
+    let item_row = topology.modules()[0]
+        .entries()
+        .iter()
+        .find(|entry| {
+            entry
+                .roots()
+                .iter()
+                .any(|root| matches!(root.role(), super::HirDeclarationItemRootRole::TestBody))
+        })
+        .expect("empty test item entry")
+        .paths()
+        .body_rows()
+        .iter()
+        .find(|row| row.owner().item_role() == Some(&super::HirDeclarationItemRootRole::TestBody))
+        .expect("empty item body row");
+    assert_eq!(item_row.kind(), HirBodyKind::Ordinary);
+    assert!(item_row.children().is_empty());
+}
+
+#[test]
+fn semantic_body_rows_retain_empty_await_and_choice_thread_bodies_without_conceptual_rows() {
+    let (module, topology, declaration) = declaration_paths_for_source(
+        "semantic-empty-nested-body-rows",
+        concat!(
+            "flow nested() {\n",
+            "    try await task with { pending progress => {} }\n",
+            "    choice @choice.opening {\n",
+            "        @.listen \"Listen\" -> @flow.listen\n",
+            "    } with {\n",
+            "        timeout 10s {}\n",
+            "        cancel on input(.BackToTitle) {}\n",
+            "        on select selected {}\n",
+            "    }\n",
+            "}\n",
+        ),
+        "nested",
+    );
+    let paths = topology
+        .declaration_semantic_paths(&declaration)
+        .expect("nested declaration paths");
+    let await_rows = paths
+        .body_rows()
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.owner().expression_owned_role(),
+                Some(crate::expr::HirExpressionOwnedBodyRole::AwaitBranchBody { .. })
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(await_rows.len(), 1);
+    assert!(await_rows[0].children().is_empty());
+
+    let choice_rows = paths
+        .body_rows()
+        .iter()
+        .filter(|row| {
+            matches!(
+                row.owner().expression_owned_role(),
+                Some(
+                    crate::expr::HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { .. }
+                        | crate::expr::HirExpressionOwnedBodyRole::ChoicePlanTimeoutBody { .. }
+                        | crate::expr::HirExpressionOwnedBodyRole::ChoicePlanCancelBody { .. }
+                        | crate::expr::HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { .. }
+                )
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(choice_rows.len(), 3);
+    assert!(
+        choice_rows
+            .iter()
+            .all(|row| { row.kind() == HirBodyKind::Thread && row.children().is_empty() })
+    );
+    assert!(paths.body_rows().iter().all(|row| {
+        !matches!(
+            row.owner().expression_owned_role(),
+            Some(
+                crate::expr::HirExpressionOwnedBodyRole::ChoiceLetStatement { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::ChoiceForPattern { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::ChoiceMatchArmPattern { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::ChoiceOptionForPattern { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
+                    | crate::expr::HirExpressionOwnedBodyRole::DialogueLinePlanLet { .. }
+            )
+        )
+    }));
+    assert!(
+        module
+            .expressions()
+            .any(|(_, expression)| matches!(expression.kind(), HirExprKind::Choice(_)))
+    );
+}
+
+#[test]
+fn semantic_body_rows_retain_ordinary_and_thread_statement_bodies_and_match_expression_wrappers() {
+    let (module, topology, declaration) = declaration_paths_for_source(
+        "semantic-statement-body-rows",
+        concat!(
+            "fn ordinary() {\n",
+            "    if true {}\n",
+            "    match true { true => 1 }\n",
+            "    let done = 0\n",
+            "}\n",
+            "flow threaded() {\n",
+            "    if true {}\n",
+            "    match true { true => 1 }\n",
+            "}\n",
+        ),
+        "ordinary",
+    );
+    let ordinary_paths = topology
+        .declaration_semantic_paths(&declaration)
+        .expect("ordinary declaration paths");
+    let if_statement = module
+        .statements()
+        .find_map(|(owner, value)| {
+            (matches!(value.kind(), HirStmtKind::If(_))
+                && ordinary_paths.statement(owner).is_some())
+            .then_some(owner)
+        })
+        .expect("ordinary if statement");
+    assert!(ordinary_paths.body_rows().iter().any(|row| {
+        row.owner().statement_owner() == Some(if_statement)
+            && row.owner().statement_role() == Some(crate::stmt::HirStatementBodyRole::Then)
+            && row.kind() == HirBodyKind::Ordinary
+            && row.children().is_empty()
+    }));
+    let match_statement = module
+        .statements()
+        .find_map(|(owner, value)| {
+            (matches!(value.kind(), HirStmtKind::Match(_))
+                && ordinary_paths.statement(owner).is_some())
+            .then_some(owner)
+        })
+        .expect("ordinary match statement");
+    let match_wrapper = ordinary_paths
+        .body_rows()
+        .iter()
+        .find(|row| {
+            row.owner().statement_owner() == Some(match_statement)
+                && row.owner().statement_role()
+                    == Some(crate::stmt::HirStatementBodyRole::MatchArm { arm: 0 })
+        })
+        .expect("expression match-arm wrapper");
+    assert_eq!(match_wrapper.kind(), HirBodyKind::Expression);
+    assert_eq!(match_wrapper.children().len(), 1);
+
+    let threaded_declaration = topology.modules()[0]
+        .entries()
+        .iter()
+        .filter_map(|entry| entry.body())
+        .find(|body| body.declaration().name() == "threaded")
+        .expect("threaded declaration");
+    assert!(threaded_declaration.paths().body_rows().iter().any(|row| {
+        row.owner().statement_role() == Some(crate::stmt::HirStatementBodyRole::Then)
+            && row.kind() == HirBodyKind::Thread
+            && row.children().is_empty()
+    }));
 }
 
 #[test]
@@ -665,10 +928,7 @@ fn declaration_body_topology_keeps_root_matrix_and_unified_path_index_parity() {
     );
     let roots = topology.roots();
     assert_eq!(roots.len(), 1);
-    assert!(matches!(
-        roots[0].child(),
-        HirDeclarationBodyRootChild::Body(_)
-    ));
+    assert_eq!(roots[0].projection().kind(), HirBodyKind::Ordinary);
     assert_eq!(roots[0].role(), HirDeclarationBodyRootRole::FunctionBody);
     let delegated_paths = project_topology
         .declaration_semantic_paths(&declaration)
@@ -1045,30 +1305,18 @@ fn project_item_entries_retain_rooted_paths_in_source_order() {
             super::HirSemanticPathRoot::Item { .. }
         ));
         for root in entry.roots() {
-            match root.child() {
-                super::HirDeclarationBodyRootChild::Expression(expression) => {
-                    assert!(entry.paths().expression(*expression).is_some());
-                    let location = topology
-                        .semantic_path((*expression).into())
-                        .expect("unique expression path")
-                        .expect("expression path lookup");
-                    assert_eq!(location.root(), entry.paths().root());
-                }
-                super::HirDeclarationBodyRootChild::Body(edges) => {
-                    for edge in edges {
-                        match edge.child() {
-                            HirBodyChild::Expression(expression) => {
-                                assert!(entry.paths().expression(expression).is_some());
-                                let location = topology
-                                    .semantic_path(expression.into())
-                                    .expect("unique body expression path")
-                                    .expect("body expression path lookup");
-                                assert_eq!(location.root(), entry.paths().root());
-                            }
-                            HirBodyChild::Statement(statement) => {
-                                assert!(entry.paths().statement(statement).is_some());
-                            }
-                        }
+            for edge in root.projection().children() {
+                match edge.child() {
+                    HirBodyChild::Expression(expression) => {
+                        assert!(entry.paths().expression(expression).is_some());
+                        let location = topology
+                            .semantic_path(expression.into())
+                            .expect("unique body expression path")
+                            .expect("body expression path lookup");
+                        assert_eq!(location.root(), entry.paths().root());
+                    }
+                    HirBodyChild::Statement(statement) => {
+                        assert!(entry.paths().statement(statement).is_some());
                     }
                 }
             }

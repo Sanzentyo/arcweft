@@ -1,6 +1,9 @@
 //! Typed direct-child authority for final HIR statements.
 
-use crate::body_edges::{HirBodyChildEdge, HirBodyChildEdgeError};
+use crate::body_edges::{
+    HirBodyChildEdgeError, HirBodyKind, HirBodyProjection, HirBodyProjectionError,
+    HirBodyRoleProjection, try_statement_edges,
+};
 use crate::identity::{ExprId, LocalId, PatternId, StmtId, TypeId};
 use thiserror::Error;
 
@@ -8,6 +11,38 @@ use thiserror::Error;
 pub enum HirStatementChildEdgeError {
     #[error("a statement child ordinal does not fit u32")]
     OrdinalOverflow,
+}
+
+/// One actual body container owned by a statement.
+pub type HirStatementBodyProjection = HirBodyRoleProjection<HirStatementBodyRole>;
+
+/// Construction error for the exhaustive statement body inventory.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum HirStatementBodyProjectionError {
+    #[error("a statement body ordinal does not fit u32")]
+    OrdinalOverflow,
+    #[error(transparent)]
+    Body(HirBodyProjectionError),
+}
+
+impl From<HirBodyProjectionError> for HirStatementBodyProjectionError {
+    fn from(error: HirBodyProjectionError) -> Self {
+        Self::Body(error)
+    }
+}
+
+impl From<HirBodyChildEdgeError> for HirStatementBodyProjectionError {
+    fn from(error: HirBodyChildEdgeError) -> Self {
+        Self::Body(error.into())
+    }
+}
+
+impl From<HirStatementChildEdgeError> for HirStatementBodyProjectionError {
+    fn from(error: HirStatementChildEdgeError) -> Self {
+        match error {
+            HirStatementChildEdgeError::OrdinalOverflow => Self::OrdinalOverflow,
+        }
+    }
 }
 
 use super::{
@@ -114,6 +149,139 @@ impl HirStatementChildEdge {
 }
 
 impl HirStmtKind {
+    /// Returns every actual nested body owned by this statement in semantic
+    /// source order. Empty ordinary and Thread bodies are retained. A Match
+    /// arm with an expression is an `Expression` body projection, while a
+    /// contextual arm preserves its ordinary/Thread kind.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive match is the sole body-container inventory for all statement families"
+    )]
+    pub fn body_projections(
+        &self,
+    ) -> Result<Vec<HirStatementBodyProjection>, HirStatementBodyProjectionError> {
+        let mut bodies = Vec::new();
+        match self {
+            Self::LetElse { else_body, .. } => push_ordinary_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::LetElse,
+                else_body,
+            )?,
+            Self::DeferBlock { body, .. } => {
+                push_ordinary_body_projection(&mut bodies, HirStatementBodyRole::Defer, body)?;
+            }
+            Self::On { body, .. } => {
+                push_ordinary_body_projection(&mut bodies, HirStatementBodyRole::On, body)?;
+            }
+            Self::UnsafeLifetime { body, .. } => match body {
+                HirUnsafeLifetimeBody::Block { statements, .. } => push_ordinary_body_projection(
+                    &mut bodies,
+                    HirStatementBodyRole::UnsafeLifetime,
+                    statements,
+                )?,
+                HirUnsafeLifetimeBody::Missing => {
+                    return Err(HirStatementBodyProjectionError::Body(
+                        HirBodyProjectionError::Missing,
+                    ));
+                }
+            },
+            Self::If(statement) => {
+                push_contextual_body_projection(
+                    &mut bodies,
+                    HirStatementBodyRole::Then,
+                    statement.then_body(),
+                )?;
+                push_else_body_projection(&mut bodies, statement.else_branch())?;
+            }
+            Self::IfLet(statement) => {
+                push_contextual_body_projection(
+                    &mut bodies,
+                    HirStatementBodyRole::Then,
+                    statement.then_body(),
+                )?;
+                push_else_body_projection(&mut bodies, statement.else_branch())?;
+            }
+            Self::Match(statement) => {
+                for (arm, row) in statement.arms().iter().enumerate() {
+                    let role = HirStatementBodyRole::MatchArm {
+                        arm: checked_ordinal(arm)?,
+                    };
+                    match row.body() {
+                        HirStmtMatchArmBody::Expression(expression) => {
+                            bodies.push(HirBodyRoleProjection::new(
+                                role,
+                                HirBodyProjection::expression(*expression),
+                            ));
+                        }
+                        HirStmtMatchArmBody::Body(body) => {
+                            push_contextual_body_projection(&mut bodies, role, body)?;
+                        }
+                    }
+                }
+            }
+            Self::While(statement) => push_contextual_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::While,
+                statement.body(),
+            )?,
+            Self::WhileLet(statement) => push_contextual_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::WhileLet,
+                statement.body(),
+            )?,
+            Self::For(statement) => push_contextual_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::For,
+                statement.body(),
+            )?,
+            Self::Select(HirSelectStmt::Branches { branches, .. }) => {
+                for (branch, value) in branches.iter().enumerate() {
+                    push_contextual_body_projection(
+                        &mut bodies,
+                        HirStatementBodyRole::SelectBranch {
+                            branch: checked_ordinal(branch)?,
+                        },
+                        value.body(),
+                    )?;
+                }
+            }
+            Self::SourceLocale(statement) => push_contextual_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::SourceLocale,
+                statement.body(),
+            )?,
+            Self::Scope(statement) => push_contextual_body_projection(
+                &mut bodies,
+                HirStatementBodyRole::Scope,
+                statement.body(),
+            )?,
+            Self::Select(HirSelectStmt::Operand(_))
+            | Self::Assertion { .. }
+            | Self::Let { .. }
+            | Self::Assign { .. }
+            | Self::LetChoice { .. }
+            | Self::LetScope { .. }
+            | Self::LetActionReceive { .. }
+            | Self::Return { .. }
+            | Self::Out { .. }
+            | Self::Goto { .. }
+            | Self::Defer { .. }
+            | Self::Yield { .. }
+            | Self::Signal { .. }
+            | Self::LifetimeSet { .. }
+            | Self::Wait { .. }
+            | Self::Choice { .. }
+            | Self::Close { .. }
+            | Self::Include(_)
+            | Self::Break { .. }
+            | Self::Continue { .. }
+            | Self::Expression { .. }
+            | Self::ProofCall { .. }
+            | Self::Error => {}
+        }
+        Ok(bodies)
+    }
+
     /// Returns all direct typed children in semantic/source order.
     ///
     /// # Panics
@@ -396,98 +564,38 @@ impl HirStmtKind {
         }
         Ok(edges)
     }
-
-    /// Returns heterogeneous Thread bodies nested directly in this statement.
-    /// Ordinary bodies are already represented by [`Self::child_edges`]; a
-    /// Thread body needs the HIR body-edge authority because it can retain both
-    /// statement and dialogue-application expression roots.
-    pub(crate) fn try_thread_body_edges(
-        &self,
-    ) -> Result<Vec<(HirStatementBodyRole, Vec<HirBodyChildEdge>)>, HirBodyChildEdgeError> {
-        let mut bodies = Vec::new();
-        match self {
-            Self::If(statement) => {
-                push_thread_body(
-                    &mut bodies,
-                    HirStatementBodyRole::Then,
-                    statement.then_body(),
-                )?;
-                if let Some(HirConditionalElseBranch::Body(body)) = statement.else_branch() {
-                    push_thread_body(&mut bodies, HirStatementBodyRole::Else, body)?;
-                }
-            }
-            Self::IfLet(statement) => {
-                push_thread_body(
-                    &mut bodies,
-                    HirStatementBodyRole::Then,
-                    statement.then_body(),
-                )?;
-                if let Some(HirConditionalElseBranch::Body(body)) = statement.else_branch() {
-                    push_thread_body(&mut bodies, HirStatementBodyRole::Else, body)?;
-                }
-            }
-            Self::Match(statement) => {
-                for (arm, row) in statement.arms().iter().enumerate() {
-                    if let HirStmtMatchArmBody::Body(body) = row.body() {
-                        push_thread_body(
-                            &mut bodies,
-                            HirStatementBodyRole::MatchArm {
-                                arm: u32::try_from(arm)
-                                    .map_err(|_| HirBodyChildEdgeError::OrdinalOverflow)?,
-                            },
-                            body,
-                        )?;
-                    }
-                }
-            }
-            Self::While(statement) => {
-                push_thread_body(&mut bodies, HirStatementBodyRole::While, statement.body())?;
-            }
-            Self::WhileLet(statement) => {
-                push_thread_body(
-                    &mut bodies,
-                    HirStatementBodyRole::WhileLet,
-                    statement.body(),
-                )?;
-            }
-            Self::For(statement) => {
-                push_thread_body(&mut bodies, HirStatementBodyRole::For, statement.body())?;
-            }
-            Self::Select(HirSelectStmt::Branches { branches, .. }) => {
-                for (branch, row) in branches.iter().enumerate() {
-                    push_thread_body(
-                        &mut bodies,
-                        HirStatementBodyRole::SelectBranch {
-                            branch: u32::try_from(branch)
-                                .map_err(|_| HirBodyChildEdgeError::OrdinalOverflow)?,
-                        },
-                        row.body(),
-                    )?;
-                }
-            }
-            Self::SourceLocale(statement) => {
-                push_thread_body(
-                    &mut bodies,
-                    HirStatementBodyRole::SourceLocale,
-                    statement.body(),
-                )?;
-            }
-            Self::Scope(statement) => {
-                push_thread_body(&mut bodies, HirStatementBodyRole::Scope, statement.body())?;
-            }
-            _ => {}
-        }
-        Ok(bodies)
-    }
 }
 
-fn push_thread_body(
-    bodies: &mut Vec<(HirStatementBodyRole, Vec<HirBodyChildEdge>)>,
+fn push_ordinary_body_projection(
+    bodies: &mut Vec<HirStatementBodyProjection>,
+    role: HirStatementBodyRole,
+    statements: &[StmtId],
+) -> Result<(), HirStatementBodyProjectionError> {
+    bodies.push(HirBodyRoleProjection::new(
+        role,
+        HirBodyProjection::try_new(HirBodyKind::Ordinary, try_statement_edges(statements)?)?,
+    ));
+    Ok(())
+}
+
+fn push_contextual_body_projection(
+    bodies: &mut Vec<HirStatementBodyProjection>,
     role: HirStatementBodyRole,
     body: &HirContextualStmtBody,
-) -> Result<(), HirBodyChildEdgeError> {
-    if let Some(body) = body.thread_body() {
-        bodies.push((role, body.try_child_edges()?));
+) -> Result<(), HirStatementBodyProjectionError> {
+    bodies.push(HirBodyRoleProjection::new(
+        role,
+        body.try_body_projection()?,
+    ));
+    Ok(())
+}
+
+fn push_else_body_projection(
+    bodies: &mut Vec<HirStatementBodyProjection>,
+    branch: Option<&HirConditionalElseBranch>,
+) -> Result<(), HirStatementBodyProjectionError> {
+    if let Some(HirConditionalElseBranch::Body(body)) = branch {
+        push_contextual_body_projection(bodies, HirStatementBodyRole::Else, body)?;
     }
     Ok(())
 }
