@@ -107,7 +107,9 @@ fn expression_walk_rejects_cycle_before_duplicate() {
     builder.active_expressions.insert(owner);
     assert_eq!(
         builder.walk_expression(owner, &[], &[], None, CaptureAccess::Read),
-        Err(HirSemanticPathError::CyclicPath)
+        Err(HirSemanticPathError::CyclicPath {
+            owner: owner.into()
+        })
     );
 }
 
@@ -165,7 +167,9 @@ fn expression_walk_rejects_duplicate_before_resolution() {
         .insert(owner, HirSemanticOwnerPath::new(Box::new([]), Box::new([])));
     assert_eq!(
         builder.walk_expression(owner, &[], &[], None, CaptureAccess::Read),
-        Err(HirSemanticPathError::DuplicatePath)
+        Err(HirSemanticPathError::DuplicatePath {
+            owner: owner.into()
+        })
     );
 }
 
@@ -181,7 +185,110 @@ fn insert_unique_rejects_every_second_owning_coordinate() {
             &[HirSemanticPathStep::DeclarationResult],
             &[],
         ),
-        Err(HirSemanticPathError::DuplicatePath)
+        Err(HirSemanticPathError::DuplicatePath {
+            owner: owner.into()
+        })
+    );
+}
+
+#[test]
+fn project_lookup_rejects_every_second_location_with_the_exact_owner() {
+    let (module, declaration, _) = fixture();
+    let owner = ExprId::from_raw(RawHirId::new(
+        module.snapshot_id().module(),
+        NonZeroU32::MIN,
+        ExprId::KIND,
+    ));
+    let path = HirSemanticOwnerPath::new(
+        Box::new([HirSemanticPathStep::DeclarationResult]),
+        Box::new([]),
+    );
+    let index = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(owner, path)]),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+    };
+    let owner = HirSemanticPathOwnerId::Expression(owner);
+    let mut found = None;
+    record_semantic_path_location(&mut found, owner, &index).expect("first owner location");
+    assert_eq!(found.expect("stored location").owner(), owner);
+    assert_eq!(
+        record_semantic_path_location(&mut found, owner, &index),
+        Err(HirSemanticPathLookupError::DuplicateOwner { owner })
+    );
+}
+
+#[test]
+fn path_index_rejects_cross_family_structural_aliases() {
+    let (module, declaration, _) = fixture();
+    let module_id = module.snapshot_id().module();
+    let expression = ExprId::from_raw(RawHirId::new(
+        module_id,
+        NonZeroU32::new(1).unwrap(),
+        ExprId::KIND,
+    ));
+    let statement = StmtId::from_raw(RawHirId::new(
+        module_id,
+        NonZeroU32::new(2).unwrap(),
+        StmtId::KIND,
+    ));
+    let path = || {
+        HirSemanticOwnerPath::new(
+            Box::new([HirSemanticPathStep::DeclarationResult]),
+            Box::new([]),
+        )
+    };
+    let index = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(expression, path())]),
+        statements: BTreeMap::from([(statement, path())]),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+    };
+    assert_eq!(
+        index.validate_root_paths(),
+        Err(HirSemanticPathError::DuplicateStructuralPath {
+            first: expression.into(),
+            second: statement.into(),
+        })
+    );
+}
+
+#[test]
+fn path_index_rejects_a_foreign_owner_before_issuing_a_location() {
+    let (module, declaration, foreign_owner) = fixture();
+    let index = HirSemanticPathIndex {
+        root: HirSemanticPathRoot::Declaration(declaration),
+        snapshot: module.snapshot_id(),
+        expressions: BTreeMap::from([(
+            foreign_owner,
+            HirSemanticOwnerPath::new(
+                Box::new([HirSemanticPathStep::DeclarationResult]),
+                Box::new([]),
+            ),
+        )]),
+        statements: BTreeMap::new(),
+        patterns: BTreeMap::new(),
+        locals: BTreeMap::new(),
+    };
+    assert_eq!(
+        index.validate_root_paths(),
+        Err(HirSemanticPathError::OwnerModuleMismatch {
+            owner: foreign_owner.into(),
+            snapshot: module.snapshot_id(),
+        })
+    );
+    let mut found = None;
+    assert_eq!(
+        record_semantic_path_location(&mut found, foreign_owner.into(), &index),
+        Err(HirSemanticPathLookupError::OwnerModuleMismatch {
+            owner: foreign_owner.into(),
+            snapshot: module.snapshot_id(),
+        })
     );
 }
 

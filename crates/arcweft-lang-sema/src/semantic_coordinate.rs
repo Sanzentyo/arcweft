@@ -11,7 +11,7 @@ use arcweft_lang_hir::{
         HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirNestedExpressionPath,
         HirNestedExpressionPathSegment,
     },
-    identity::{ExprId, LocalId},
+    identity::{ExprId, LocalId, PatternId, StmtId},
     pattern::HirPatternChildRole,
     project::{
         HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationItemRootRole,
@@ -628,6 +628,127 @@ impl CheckedExpressionCoordinateEvidence {
     }
 
     pub(crate) fn into_coordinate(self) -> CheckedSemanticPath {
+        self.coordinate
+    }
+}
+
+/// Stable accepted-rooted coordinate for one checked HIR pattern owner.
+///
+/// This is distinct from [`StablePatternCoordinate`], which addresses a
+/// pattern relative to one Match arm after checked field identities have been
+/// substituted. The owner coordinate names the HIR pattern's unique place in
+/// the accepted project topology.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed owner coordinate before raw pattern IDs are removed"
+)]
+pub(crate) struct StableCheckedPatternOwnerCoordinate {
+    path: CheckedSemanticPath,
+}
+
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed owner coordinate before raw pattern IDs are removed"
+)]
+impl StableCheckedPatternOwnerCoordinate {
+    fn new(path: CheckedSemanticPath) -> Self {
+        Self { path }
+    }
+
+    pub(crate) const fn path(&self) -> &CheckedSemanticPath {
+        &self.path
+    }
+
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        self.path.canonical_bytes()
+    }
+}
+
+/// Move-only proof that a generation-local pattern owner was resolved by the
+/// sealed accepted-root issuer.
+#[derive(Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "checked pattern transcript publication will consume the owner and coordinate together"
+)]
+pub(crate) struct CheckedPatternCoordinateEvidence {
+    owner: PatternId,
+    coordinate: StableCheckedPatternOwnerCoordinate,
+}
+
+#[allow(
+    dead_code,
+    reason = "checked pattern transcript publication will consume the owner and coordinate together"
+)]
+impl CheckedPatternCoordinateEvidence {
+    fn new(owner: PatternId, coordinate: StableCheckedPatternOwnerCoordinate) -> Self {
+        Self { owner, coordinate }
+    }
+
+    pub(crate) const fn owner(&self) -> PatternId {
+        self.owner
+    }
+
+    pub(crate) fn into_coordinate(self) -> StableCheckedPatternOwnerCoordinate {
+        self.coordinate
+    }
+}
+
+/// Stable accepted-rooted coordinate for one checked HIR statement owner.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed coordinate when statement digests publish"
+)]
+pub(crate) struct StableCheckedStatementCoordinate {
+    path: CheckedSemanticPath,
+}
+
+#[allow(
+    dead_code,
+    reason = "the semantic transcript graph consumes this typed coordinate when statement digests publish"
+)]
+impl StableCheckedStatementCoordinate {
+    fn new(path: CheckedSemanticPath) -> Self {
+        Self { path }
+    }
+
+    pub(crate) const fn path(&self) -> &CheckedSemanticPath {
+        &self.path
+    }
+
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        self.path.canonical_bytes()
+    }
+}
+
+/// Move-only proof that a generation-local statement owner was resolved by
+/// the sealed accepted-root issuer.
+#[derive(Debug, Eq, PartialEq)]
+#[allow(
+    dead_code,
+    reason = "checked statement transcript publication will consume the owner and coordinate together"
+)]
+pub(crate) struct CheckedStatementCoordinateEvidence {
+    owner: StmtId,
+    coordinate: StableCheckedStatementCoordinate,
+}
+
+#[allow(
+    dead_code,
+    reason = "checked statement transcript publication will consume the owner and coordinate together"
+)]
+impl CheckedStatementCoordinateEvidence {
+    fn new(owner: StmtId, coordinate: StableCheckedStatementCoordinate) -> Self {
+        Self { owner, coordinate }
+    }
+
+    pub(crate) const fn owner(&self) -> StmtId {
+        self.owner
+    }
+
+    pub(crate) fn into_coordinate(self) -> StableCheckedStatementCoordinate {
         self.coordinate
     }
 }

@@ -57,8 +57,9 @@ pub use self::semantic_paths::{
     HirItemRecoveryRootOwner, HirLayerExpressionRootField, HirLocalBindingOrigin,
     HirLocalBindingOriginIndex, HirLocalBindingStatementRole, HirLocalValueOrigin,
     HirMemberBindingRole, HirModuleEvaluationTopology, HirProjectEvaluationTopology,
-    HirSemanticOwnerPath, HirSemanticPathError, HirSemanticPathIndex, HirSemanticPathLookupError,
-    HirSemanticPathRoot, HirSemanticPathStep, HirStyleRootPath, HirStyleRootPathSegment,
+    HirSemanticOwnerPath, HirSemanticPathError, HirSemanticPathIndex, HirSemanticPathLocation,
+    HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot, HirSemanticPathStep,
+    HirStyleRootPath, HirStyleRootPathSegment,
 };
 
 /// Package-qualified canonical key for one project module.

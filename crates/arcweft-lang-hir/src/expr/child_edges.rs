@@ -108,7 +108,7 @@ pub enum HirNestedExpressionPathSegment {
 }
 
 /// HIR-only role vocabulary for one expression child edge.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirExpressionChildRole {
     Element {
         ordinal: u32,

@@ -3643,12 +3643,52 @@ flow other {}
         .find(|owner| {
             report
                 .accepted_root_catalog()
-                .semantic_path_for_local(*owner)
+                .semantic_path((*owner).into())
                 .expect("sealed local lookup")
                 .is_some()
         })
         .expect("root binding local");
     let index = SemanticCoordinateIndex::new(report.accepted_root_catalog(), &report);
+    let statement = module
+        .statements()
+        .map(|(owner, _)| owner)
+        .find(|owner| {
+            report
+                .accepted_root_catalog()
+                .semantic_path((*owner).into())
+                .expect("sealed statement lookup")
+                .is_some()
+        })
+        .expect("root statement");
+    let pattern = module
+        .patterns()
+        .map(|(owner, _)| owner)
+        .find(|owner| {
+            report
+                .accepted_root_catalog()
+                .semantic_path((*owner).into())
+                .expect("sealed pattern lookup")
+                .is_some()
+        })
+        .expect("root pattern");
+    let statement_evidence = index
+        .statement_evidence(statement)
+        .expect("stable statement coordinate evidence");
+    assert_eq!(statement_evidence.owner(), statement);
+    let statement_coordinate = statement_evidence.into_coordinate();
+    assert_eq!(
+        statement_coordinate.canonical_bytes().unwrap(),
+        statement_coordinate.path().canonical_bytes().unwrap()
+    );
+    let pattern_evidence = index
+        .pattern_evidence(pattern)
+        .expect("stable pattern coordinate evidence");
+    assert_eq!(pattern_evidence.owner(), pattern);
+    let pattern_coordinate = pattern_evidence.into_coordinate();
+    assert_eq!(
+        pattern_coordinate.canonical_bytes().unwrap(),
+        pattern_coordinate.path().canonical_bytes().unwrap()
+    );
     let binding = index
         .binding_evidence(local)
         .expect("stable binding coordinate evidence");
@@ -3662,6 +3702,28 @@ flow other {}
         step,
         crate::semantic_coordinate::CheckedSemanticPathStep::Expression(_)
     )));
+
+    let foreign_fixture =
+        crate::final_analysis::tests::fixture("fn foreign() -> i64 { 0i64 }\n", None);
+    let foreign_project = foreign_fixture
+        .project
+        .executable_view()
+        .expect("foreign executable HIR");
+    let foreign_owner = foreign_project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("foreign root module")
+        .expressions()
+        .next()
+        .expect("foreign expression")
+        .0;
+    assert_eq!(
+        index.expression(foreign_owner),
+        Err(
+            crate::semantic_coordinate::SemanticCoordinateIndexError::MissingOwner {
+                owner: foreign_owner.into()
+            }
+        )
+    );
 }
 
 #[test]
@@ -3678,10 +3740,12 @@ fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
         .find(|owner| {
             report
                 .accepted_root_catalog()
-                .semantic_path_for_expression(*owner)
+                .semantic_path((*owner).into())
                 .expect("sealed expression lookup")
-                .is_some_and(|(_, path)| {
-                    path.steps()
+                .is_some_and(|location| {
+                    location
+                        .path()
+                        .steps()
                         .iter()
                         .any(|step| matches!(step, HirSemanticPathStep::Expression(_)))
                 })

@@ -1,10 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_lang_hir::{
-    identity::{ExprId, ItemId, LocalId},
+    identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
-        HirProjectEvaluationTopology, HirSemanticOwnerPath, HirSemanticPathLookupError,
-        HirSemanticPathRoot, HirSemanticPathStep,
+        HirProjectEvaluationTopology, HirSemanticOwnerPath, HirSemanticPathLocation,
+        HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot,
+        HirSemanticPathStep,
     },
     symbol::CallableDeclarationKey,
 };
@@ -15,9 +16,10 @@ use crate::final_analysis::{CheckedItem, CheckedItemRole};
 use super::{
     AcceptedDeclarationSemanticId, AcceptedItemSemanticId, AcceptedSemanticRoot,
     CheckedBindingCoordinateEvidence, CheckedExpressionChildRole,
-    CheckedExpressionCoordinateEvidence, CheckedSemanticPath, CheckedSemanticPathStep,
-    HirItemEvaluationEntryRole, HirPatternChildRole, HirStatementChildRole,
-    StableCheckedBindingCoordinate,
+    CheckedExpressionCoordinateEvidence, CheckedPatternCoordinateEvidence, CheckedSemanticPath,
+    CheckedSemanticPathStep, CheckedStatementCoordinateEvidence, HirItemEvaluationEntryRole,
+    HirPatternChildRole, HirStatementChildRole, StableCheckedBindingCoordinate,
+    StableCheckedPatternOwnerCoordinate, StableCheckedStatementCoordinate,
 };
 
 #[derive(Debug)]
@@ -128,28 +130,11 @@ impl AcceptedSemanticRootCatalog {
             .ok_or_else(|| AcceptedSemanticRootCatalogError::MissingRoot { root: root.clone() })
     }
 
-    pub(crate) fn semantic_path_for_expression(
+    pub(crate) fn semantic_path(
         &self,
-        owner: ExprId,
-    ) -> Result<
-        Option<(&HirSemanticPathRoot, &HirSemanticOwnerPath)>,
-        AcceptedSemanticRootCatalogError,
-    > {
-        self.topology
-            .semantic_path_for_expression(owner)
-            .map_err(Into::into)
-    }
-
-    pub(crate) fn semantic_path_for_local(
-        &self,
-        owner: LocalId,
-    ) -> Result<
-        Option<(&HirSemanticPathRoot, &HirSemanticOwnerPath)>,
-        AcceptedSemanticRootCatalogError,
-    > {
-        self.topology
-            .semantic_path_for_local(owner)
-            .map_err(Into::into)
+        owner: HirSemanticPathOwnerId,
+    ) -> Result<Option<HirSemanticPathLocation<'_>>, AcceptedSemanticRootCatalogError> {
+        self.topology.semantic_path(owner).map_err(Into::into)
     }
 }
 
@@ -245,12 +230,10 @@ pub(crate) trait CheckedExpressionEdgeAuthority {
 pub(crate) enum SemanticCoordinateIndexError {
     #[error(transparent)]
     RootCatalog(#[from] AcceptedSemanticRootCatalogError),
-    #[error("semantic coordinate binding is absent from the HIR path index")]
-    MissingBinding,
-    #[error("semantic coordinate expression is absent from the HIR path index")]
-    MissingExpression,
-    #[error("semantic coordinate path does not end in a binding-local edge")]
-    InvalidBindingPath,
+    #[error("semantic coordinate owner is absent from the HIR path index: {owner:?}")]
+    MissingOwner { owner: HirSemanticPathOwnerId },
+    #[error("semantic coordinate local path does not end in a binding edge: {owner:?}")]
+    InvalidBindingPath { owner: LocalId },
     #[error("semantic coordinate expression edge evidence is missing")]
     MissingChildEdges,
     #[error("semantic coordinate HIR expression hop role disagrees with the path")]
@@ -278,11 +261,7 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         &self,
         owner: ExprId,
     ) -> Result<CheckedSemanticPath, SemanticCoordinateIndexError> {
-        let Some((root, path)) = self.catalog.semantic_path_for_expression(owner)? else {
-            return Err(SemanticCoordinateIndexError::MissingExpression);
-        };
-        let accepted = *self.catalog.root_for_hir(root)?;
-        checked_path_from_owner_path(accepted, root, path, self.edges)
+        self.coordinate(owner.into())
     }
 
     pub(crate) fn expression_evidence(
@@ -293,18 +272,68 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .map(|coordinate| CheckedExpressionCoordinateEvidence::new(owner, coordinate))
     }
 
+    #[allow(
+        dead_code,
+        reason = "the semantic transcript graph consumes this typed owner coordinate before raw pattern IDs are removed"
+    )]
+    pub(crate) fn pattern(
+        &self,
+        owner: PatternId,
+    ) -> Result<StableCheckedPatternOwnerCoordinate, SemanticCoordinateIndexError> {
+        self.coordinate(owner.into())
+            .map(StableCheckedPatternOwnerCoordinate::new)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "checked pattern transcript publication consumes this affine evidence"
+    )]
+    pub(crate) fn pattern_evidence(
+        &self,
+        owner: PatternId,
+    ) -> Result<CheckedPatternCoordinateEvidence, SemanticCoordinateIndexError> {
+        self.pattern(owner)
+            .map(|coordinate| CheckedPatternCoordinateEvidence::new(owner, coordinate))
+    }
+
+    #[allow(
+        dead_code,
+        reason = "the semantic transcript graph consumes this typed coordinate when statement digests publish"
+    )]
+    pub(crate) fn statement(
+        &self,
+        owner: StmtId,
+    ) -> Result<StableCheckedStatementCoordinate, SemanticCoordinateIndexError> {
+        self.coordinate(owner.into())
+            .map(StableCheckedStatementCoordinate::new)
+    }
+
+    #[allow(
+        dead_code,
+        reason = "checked statement transcript publication consumes this affine evidence"
+    )]
+    pub(crate) fn statement_evidence(
+        &self,
+        owner: StmtId,
+    ) -> Result<CheckedStatementCoordinateEvidence, SemanticCoordinateIndexError> {
+        self.statement(owner)
+            .map(|coordinate| CheckedStatementCoordinateEvidence::new(owner, coordinate))
+    }
+
     pub(crate) fn binding(
         &self,
         local: LocalId,
     ) -> Result<StableCheckedBindingCoordinate, SemanticCoordinateIndexError> {
-        let Some((root, path)) = self.catalog.semantic_path_for_local(local)? else {
-            return Err(SemanticCoordinateIndexError::MissingBinding);
+        let owner = HirSemanticPathOwnerId::Local(local);
+        let Some(location) = self.catalog.semantic_path(owner)? else {
+            return Err(SemanticCoordinateIndexError::MissingOwner { owner });
         };
-        if !is_binding_local_path(path) {
-            return Err(SemanticCoordinateIndexError::InvalidBindingPath);
+        if !is_binding_local_path(location.path()) {
+            return Err(SemanticCoordinateIndexError::InvalidBindingPath { owner: local });
         }
-        let accepted = *self.catalog.root_for_hir(root)?;
-        let checked_path = checked_path_from_owner_path(accepted, root, path, self.edges)?;
+        let accepted = *self.catalog.root_for_hir(location.root())?;
+        let checked_path =
+            checked_path_from_owner_path(accepted, location.root(), location.path(), self.edges)?;
         Ok(StableCheckedBindingCoordinate::new(checked_path))
     }
 
@@ -314,6 +343,20 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
     ) -> Result<CheckedBindingCoordinateEvidence, SemanticCoordinateIndexError> {
         self.binding(local)
             .map(|coordinate| CheckedBindingCoordinateEvidence::new(local, coordinate))
+    }
+
+    fn coordinate(
+        &self,
+        owner: HirSemanticPathOwnerId,
+    ) -> Result<CheckedSemanticPath, SemanticCoordinateIndexError> {
+        let Some(location) = self.catalog.semantic_path(owner)? else {
+            return Err(SemanticCoordinateIndexError::MissingOwner { owner });
+        };
+        if location.owner() != owner || location.snapshot().module() != owner.module() {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let accepted = *self.catalog.root_for_hir(location.root())?;
+        checked_path_from_owner_path(accepted, location.root(), location.path(), self.edges)
     }
 }
 

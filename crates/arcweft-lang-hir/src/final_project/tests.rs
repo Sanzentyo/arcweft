@@ -1048,22 +1048,22 @@ fn project_item_entries_retain_rooted_paths_in_source_order() {
             match root.child() {
                 super::HirDeclarationBodyRootChild::Expression(expression) => {
                     assert!(entry.paths().expression(*expression).is_some());
-                    let (root, _) = topology
-                        .semantic_path_for_expression(*expression)
+                    let location = topology
+                        .semantic_path((*expression).into())
                         .expect("unique expression path")
                         .expect("expression path lookup");
-                    assert_eq!(root, entry.paths().root());
+                    assert_eq!(location.root(), entry.paths().root());
                 }
                 super::HirDeclarationBodyRootChild::Body(edges) => {
                     for edge in edges {
                         match edge.child() {
                             HirBodyChild::Expression(expression) => {
                                 assert!(entry.paths().expression(expression).is_some());
-                                let (root, _) = topology
-                                    .semantic_path_for_expression(expression)
+                                let location = topology
+                                    .semantic_path(expression.into())
                                     .expect("unique body expression path")
                                     .expect("body expression path lookup");
-                                assert_eq!(root, entry.paths().root());
+                                assert_eq!(location.root(), entry.paths().root());
                             }
                             HirBodyChild::Statement(statement) => {
                                 assert!(entry.paths().statement(statement).is_some());
@@ -1073,6 +1073,36 @@ fn project_item_entries_retain_rooted_paths_in_source_order() {
                 }
             }
         }
+    }
+    assert!(module.statements().next().is_some());
+    for (statement, _) in module.statements() {
+        let location = topology
+            .semantic_path(statement.into())
+            .expect("unique statement path")
+            .expect("statement path lookup");
+        assert!(topology.modules()[0].entries().iter().any(|entry| {
+            (entry.paths().root() == location.root()
+                && entry.paths().statement(statement) == Some(location.path()))
+                || entry.body().is_some_and(|body| {
+                    body.paths().root() == location.root()
+                        && body.paths().statement(statement) == Some(location.path())
+                })
+        }));
+    }
+    assert!(module.patterns().next().is_some());
+    for (pattern, _) in module.patterns() {
+        let location = topology
+            .semantic_path(pattern.into())
+            .expect("unique pattern path")
+            .expect("pattern path lookup");
+        assert!(topology.modules()[0].entries().iter().any(|entry| {
+            (entry.paths().root() == location.root()
+                && entry.paths().pattern(pattern) == Some(location.path()))
+                || entry.body().is_some_and(|body| {
+                    body.paths().root() == location.root()
+                        && body.paths().pattern(pattern) == Some(location.path())
+                })
+        }));
     }
     assert!(entries[0].roots().iter().any(|root| matches!(
         root.role(),
@@ -1205,12 +1235,12 @@ fn activity_member_bindings_belong_only_to_the_primary_item_path_index() {
             .paths()
             .local(local)
             .expect("activity member local item path");
-        let (root, lookup_path) = topology
-            .semantic_path_for_local(local)
+        let location = topology
+            .semantic_path(local.into())
             .expect("unique activity local path")
             .expect("activity local path lookup");
-        assert_eq!(root, primary.paths().root());
-        assert_eq!(lookup_path, path);
+        assert_eq!(location.root(), primary.paths().root());
+        assert_eq!(location.path(), path);
         assert!(matches!(
             path.steps().first(),
             Some(HirSemanticPathStep::DeclarationMember { .. })

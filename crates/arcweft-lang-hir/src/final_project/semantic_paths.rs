@@ -206,7 +206,7 @@ impl HirItemEvaluationRoot {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirSemanticPathStep {
     DeclarationBody(HirDeclarationBodyRootRole),
     DeclarationContract(HirDeclarationContractRootRole),
@@ -298,6 +298,88 @@ pub struct HirSemanticPathIndex {
     locals: BTreeMap<LocalId, HirSemanticOwnerPath>,
 }
 
+/// Closed owner vocabulary for raw HIR identities that can have one accepted
+/// structural semantic path.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirSemanticPathOwnerId {
+    Expression(ExprId),
+    Statement(StmtId),
+    Pattern(PatternId),
+    Local(LocalId),
+}
+
+impl HirSemanticPathOwnerId {
+    pub const fn module(self) -> crate::identity::HirModuleId {
+        match self {
+            Self::Expression(owner) => owner.module(),
+            Self::Statement(owner) => owner.module(),
+            Self::Pattern(owner) => owner.module(),
+            Self::Local(owner) => owner.module(),
+        }
+    }
+
+    fn path_in(self, index: &HirSemanticPathIndex) -> Option<&HirSemanticOwnerPath> {
+        match self {
+            Self::Expression(owner) => index.expression(owner),
+            Self::Statement(owner) => index.statement(owner),
+            Self::Pattern(owner) => index.pattern(owner),
+            Self::Local(owner) => index.local(owner),
+        }
+    }
+}
+
+impl From<ExprId> for HirSemanticPathOwnerId {
+    fn from(owner: ExprId) -> Self {
+        Self::Expression(owner)
+    }
+}
+
+impl From<StmtId> for HirSemanticPathOwnerId {
+    fn from(owner: StmtId) -> Self {
+        Self::Statement(owner)
+    }
+}
+
+impl From<PatternId> for HirSemanticPathOwnerId {
+    fn from(owner: PatternId) -> Self {
+        Self::Pattern(owner)
+    }
+}
+
+impl From<LocalId> for HirSemanticPathOwnerId {
+    fn from(owner: LocalId) -> Self {
+        Self::Local(owner)
+    }
+}
+
+/// Borrowed proof that one raw HIR owner occurs at exactly one rooted path in
+/// the sealed project topology.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirSemanticPathLocation<'topology> {
+    owner: HirSemanticPathOwnerId,
+    snapshot: HirSnapshotId,
+    root: &'topology HirSemanticPathRoot,
+    path: &'topology HirSemanticOwnerPath,
+}
+
+impl<'topology> HirSemanticPathLocation<'topology> {
+    pub const fn owner(self) -> HirSemanticPathOwnerId {
+        self.owner
+    }
+
+    pub const fn snapshot(self) -> HirSnapshotId {
+        self.snapshot
+    }
+
+    pub const fn root(self) -> &'topology HirSemanticPathRoot {
+        self.root
+    }
+
+    pub const fn path(self) -> &'topology HirSemanticOwnerPath {
+        self.path
+    }
+}
+
 impl HirSemanticPathIndex {
     pub const fn root(&self) -> &HirSemanticPathRoot {
         &self.root
@@ -329,14 +411,40 @@ impl HirSemanticPathIndex {
         self.locals.iter().map(|(owner, path)| (*owner, path))
     }
 
+    fn owner_paths(&self) -> impl Iterator<Item = (HirSemanticPathOwnerId, &HirSemanticOwnerPath)> {
+        self.expressions
+            .iter()
+            .map(|(owner, path)| (HirSemanticPathOwnerId::Expression(*owner), path))
+            .chain(
+                self.statements
+                    .iter()
+                    .map(|(owner, path)| (HirSemanticPathOwnerId::Statement(*owner), path)),
+            )
+            .chain(
+                self.patterns
+                    .iter()
+                    .map(|(owner, path)| (HirSemanticPathOwnerId::Pattern(*owner), path)),
+            )
+            .chain(
+                self.locals
+                    .iter()
+                    .map(|(owner, path)| (HirSemanticPathOwnerId::Local(*owner), path)),
+            )
+    }
+
     fn validate_root_paths(&self) -> Result<(), HirSemanticPathError> {
-        let valid = self
-            .expressions
-            .values()
-            .chain(self.statements.values())
-            .chain(self.patterns.values())
-            .chain(self.locals.values())
-            .all(|path| match &self.root {
+        let mut structural_paths = BTreeMap::new();
+        for (owner, path) in self.owner_paths() {
+            if owner.module() != self.snapshot.module() {
+                return Err(HirSemanticPathError::OwnerModuleMismatch {
+                    owner,
+                    snapshot: self.snapshot,
+                });
+            }
+            if path.steps().is_empty() {
+                return Err(HirSemanticPathError::InvalidOwnerPath { owner });
+            }
+            let root_valid = match &self.root {
                 HirSemanticPathRoot::Declaration(_) => {
                     let steps = path.steps();
                     !steps.iter().any(|step| {
@@ -387,10 +495,36 @@ impl HirSemanticPathIndex {
                                 Some(HirSemanticPathStep::DeclarationMember { .. })
                             ))
                 }
-            });
-        valid
-            .then_some(())
-            .ok_or(HirSemanticPathError::InvalidOwnedPath)
+            };
+            if !root_valid {
+                return Err(HirSemanticPathError::InvalidOwnerPath { owner });
+            }
+            let mut hops = path.hops().iter();
+            for role in path.steps().iter().filter_map(|step| match step {
+                HirSemanticPathStep::Expression(role) => Some(role),
+                _ => None,
+            }) {
+                let Some(hop) = hops.next() else {
+                    return Err(HirSemanticPathError::InvalidExpressionHops { owner });
+                };
+                if hop.role() != role
+                    || hop.parent().module() != self.snapshot.module()
+                    || hop.child().module() != self.snapshot.module()
+                {
+                    return Err(HirSemanticPathError::InvalidExpressionHops { owner });
+                }
+            }
+            if hops.next().is_some() {
+                return Err(HirSemanticPathError::InvalidExpressionHops { owner });
+            }
+            if let Some(first) = structural_paths.insert(path.steps(), owner) {
+                return Err(HirSemanticPathError::DuplicateStructuralPath {
+                    first,
+                    second: owner,
+                });
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1155,65 +1289,52 @@ impl HirProjectEvaluationTopology {
         self.declaration(declaration).map(|view| view.paths())
     }
 
-    /// Returns the unique borrowed semantic path for an expression, if one
-    /// is stored in any item or declaration entry. Duplicate ownership is a
-    /// typed error, never an absence or first-match result.
-    pub fn semantic_path_for_expression(
+    /// Returns the sole accepted structural path for one path-owning HIR
+    /// identity. Lookup is constrained to the owner's module, preserves entry
+    /// source order, and rejects every second occurrence even when its path is
+    /// byte-for-byte identical to the first.
+    pub fn semantic_path(
         &self,
-        owner: ExprId,
-    ) -> Result<Option<(&HirSemanticPathRoot, &HirSemanticOwnerPath)>, HirSemanticPathLookupError>
-    {
+        owner: HirSemanticPathOwnerId,
+    ) -> Result<Option<HirSemanticPathLocation<'_>>, HirSemanticPathLookupError> {
+        let Some(module) = self.module(owner.module()) else {
+            return Ok(None);
+        };
         let mut found = None;
-        for module in &self.modules {
-            for entry in &module.entries {
-                if let Some(path) = entry.paths.expression(owner) {
-                    if found.is_some() {
-                        return Err(HirSemanticPathLookupError::DuplicateExpressionOwner { owner });
-                    }
-                    found = Some((entry.paths.root(), path));
-                }
-                if let Some(body) = &entry.body
-                    && let Some(path) = body.paths.expression(owner)
-                {
-                    if found.is_some() {
-                        return Err(HirSemanticPathLookupError::DuplicateExpressionOwner { owner });
-                    }
-                    found = Some((body.paths.root(), path));
-                }
+        for entry in &module.entries {
+            record_semantic_path_location(&mut found, owner, &entry.paths)?;
+            if let Some(body) = &entry.body {
+                record_semantic_path_location(&mut found, owner, &body.paths)?;
             }
         }
         Ok(found)
     }
+}
 
-    /// Returns the unique borrowed semantic path for a local, if one is
-    /// stored in any item or declaration entry. Duplicate ownership is a
-    /// typed error, never an absence or first-match result.
-    pub fn semantic_path_for_local(
-        &self,
-        owner: LocalId,
-    ) -> Result<Option<(&HirSemanticPathRoot, &HirSemanticOwnerPath)>, HirSemanticPathLookupError>
-    {
-        let mut found = None;
-        for module in &self.modules {
-            for entry in &module.entries {
-                if let Some(path) = entry.paths.local(owner) {
-                    if found.is_some() {
-                        return Err(HirSemanticPathLookupError::DuplicateLocalOwner { owner });
-                    }
-                    found = Some((entry.paths.root(), path));
-                }
-                if let Some(body) = &entry.body
-                    && let Some(path) = body.paths.local(owner)
-                {
-                    if found.is_some() {
-                        return Err(HirSemanticPathLookupError::DuplicateLocalOwner { owner });
-                    }
-                    found = Some((body.paths.root(), path));
-                }
-            }
-        }
-        Ok(found)
+fn record_semantic_path_location<'topology>(
+    found: &mut Option<HirSemanticPathLocation<'topology>>,
+    owner: HirSemanticPathOwnerId,
+    index: &'topology HirSemanticPathIndex,
+) -> Result<(), HirSemanticPathLookupError> {
+    let Some(path) = owner.path_in(index) else {
+        return Ok(());
+    };
+    if owner.module() != index.snapshot().module() {
+        return Err(HirSemanticPathLookupError::OwnerModuleMismatch {
+            owner,
+            snapshot: index.snapshot(),
+        });
     }
+    if found.is_some() {
+        return Err(HirSemanticPathLookupError::DuplicateOwner { owner });
+    }
+    *found = Some(HirSemanticPathLocation {
+        owner,
+        snapshot: index.snapshot(),
+        root: index.root(),
+        path,
+    });
+    Ok(())
 }
 
 impl AcceptedHirProjectSymbolGeneration<'_, '_> {
@@ -1316,10 +1437,32 @@ pub enum HirSemanticPathError {
     MissingBody,
     #[error("semantic path references an unresolved HIR owner")]
     UnresolvedOwner,
-    #[error("one HIR owner is reachable through more than one declaration-root path")]
-    DuplicatePath,
-    #[error("semantic path recursion is cyclic")]
-    CyclicPath,
+    #[error("HIR owner {owner:?} is reachable through more than one rooted semantic path")]
+    DuplicatePath { owner: HirSemanticPathOwnerId },
+    #[error("semantic path recursion is cyclic at {owner:?}")]
+    CyclicPath { owner: HirSemanticPathOwnerId },
+    #[error("expression use row is duplicated for {owner:?}")]
+    DuplicateExpressionUse { owner: ExprId },
+    #[error("closure capture range is duplicated for {owner:?}")]
+    DuplicateClosureCaptureRange { owner: ExprId },
+    #[error("capture row is duplicated for {owner:?}")]
+    DuplicateCapture { owner: CaptureId },
+    #[error("local binding origin is duplicated for {owner:?}")]
+    DuplicateLocalOrigin { owner: LocalId },
+    #[error("HIR semantic path owner {owner:?} belongs to a module other than {snapshot:?}")]
+    OwnerModuleMismatch {
+        owner: HirSemanticPathOwnerId,
+        snapshot: HirSnapshotId,
+    },
+    #[error("HIR semantic path owner {owner:?} has an invalid rooted structural path")]
+    InvalidOwnerPath { owner: HirSemanticPathOwnerId },
+    #[error("HIR semantic path owner {owner:?} has invalid expression-hop evidence")]
+    InvalidExpressionHops { owner: HirSemanticPathOwnerId },
+    #[error("HIR semantic path owners {first:?} and {second:?} share one structural path")]
+    DuplicateStructuralPath {
+        first: HirSemanticPathOwnerId,
+        second: HirSemanticPathOwnerId,
+    },
     #[error("a semantic path child ordinal does not fit u32")]
     OrdinalOverflow,
     #[error("an expression-owned semantic path lacks a structural coordinate")]
@@ -1333,10 +1476,13 @@ pub enum HirSemanticPathError {
 /// Closed failure vocabulary for topology-wide borrowed path lookup.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HirSemanticPathLookupError {
-    #[error("expression {owner:?} has more than one stored semantic path owner")]
-    DuplicateExpressionOwner { owner: ExprId },
-    #[error("local {owner:?} has more than one stored semantic path owner")]
-    DuplicateLocalOwner { owner: LocalId },
+    #[error("HIR semantic path owner {owner:?} has more than one stored rooted path")]
+    DuplicateOwner { owner: HirSemanticPathOwnerId },
+    #[error("HIR semantic path owner {owner:?} disagrees with stored snapshot {snapshot:?}")]
+    OwnerModuleMismatch {
+        owner: HirSemanticPathOwnerId,
+        snapshot: HirSnapshotId,
+    },
 }
 
 impl HirExecutableProjectView<'_> {
@@ -2528,10 +2674,14 @@ fn collect_pattern_local_ids(
     locals: &mut Vec<LocalId>,
 ) -> Result<(), HirSemanticPathError> {
     if !active.insert(pattern) {
-        return Err(HirSemanticPathError::CyclicPath);
+        return Err(HirSemanticPathError::CyclicPath {
+            owner: pattern.into(),
+        });
     }
     if !visited.insert(pattern) {
-        return Err(HirSemanticPathError::DuplicatePath);
+        return Err(HirSemanticPathError::DuplicatePath {
+            owner: pattern.into(),
+        });
     }
     let value = module
         .resolve_pattern(pattern)
@@ -2544,7 +2694,9 @@ fn collect_pattern_local_ids(
         match edge.child() {
             HirPatternChild::Local(local) => {
                 if locals.contains(&local) {
-                    return Err(HirSemanticPathError::DuplicatePath);
+                    return Err(HirSemanticPathError::DuplicatePath {
+                        owner: local.into(),
+                    });
                 }
                 locals.push(local);
             }
@@ -3266,12 +3418,12 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             )
             .is_some()
         {
-            return Err(HirSemanticPathError::DuplicatePath);
+            return Err(HirSemanticPathError::DuplicateExpressionUse { owner });
         }
         if let HirExprKind::Closure(closure) = kind {
             let start = checked_ordinal(self.capture_rows.len())?;
             if self.captures_by_closure.contains_key(&owner) {
-                return Err(HirSemanticPathError::DuplicatePath);
+                return Err(HirSemanticPathError::DuplicateClosureCaptureRange { owner });
             }
             for capture in closure.captures().iter().copied() {
                 let value = self
@@ -3283,7 +3435,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 }
                 let index = checked_ordinal(self.capture_rows.len())?;
                 if self.captures_by_capture.insert(capture, index).is_some() {
-                    return Err(HirSemanticPathError::DuplicatePath);
+                    return Err(HirSemanticPathError::DuplicateCapture { owner: capture });
                 }
                 self.capture_rows.push(HirCaptureEvaluationRow {
                     capture,
@@ -3519,7 +3671,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         access: CaptureAccess,
     ) -> Result<(), HirSemanticPathError> {
         if self.active_expressions.contains(&owner) {
-            return Err(HirSemanticPathError::CyclicPath);
+            return Err(HirSemanticPathError::CyclicPath {
+                owner: owner.into(),
+            });
         }
         insert_unique(&mut self.expressions, owner, path, hops)?;
         self.active_expressions.insert(owner);
@@ -3626,7 +3780,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         access: CaptureAccess,
     ) -> Result<(), HirSemanticPathError> {
         if self.active_statements.contains(&owner) {
-            return Err(HirSemanticPathError::CyclicPath);
+            return Err(HirSemanticPathError::CyclicPath {
+                owner: owner.into(),
+            });
         }
         insert_unique(&mut self.statements, owner, path, hops)?;
         self.active_statements.insert(owner);
@@ -3939,7 +4095,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     || existing.binding_expression != binding_expression
                     || existing.pattern != pattern
                 {
-                    return Err(HirSemanticPathError::DuplicatePath);
+                    return Err(HirSemanticPathError::DuplicateLocalOrigin { owner: local });
                 }
                 if existing.origin != origin {
                     existing.origin = HirLocalValueOrigin::Composite;
@@ -3992,7 +4148,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         hops: &[HirExpressionSemanticHop],
     ) -> Result<(), HirSemanticPathError> {
         if self.active_patterns.contains(&owner) {
-            return Err(HirSemanticPathError::CyclicPath);
+            return Err(HirSemanticPathError::CyclicPath {
+                owner: owner.into(),
+            });
         }
         insert_unique(&mut self.patterns, owner, path, hops)?;
         self.active_patterns.insert(owner);
@@ -4340,7 +4498,7 @@ fn pushed(parent: &[HirSemanticPathStep], step: HirSemanticPathStep) -> Vec<HirS
     path
 }
 
-fn insert_unique<K: Ord + Copy + std::fmt::Debug>(
+fn insert_unique<K: Into<HirSemanticPathOwnerId> + Ord + Copy>(
     rows: &mut BTreeMap<K, HirSemanticOwnerPath>,
     owner: K,
     path: &[HirSemanticPathStep],
@@ -4350,7 +4508,9 @@ fn insert_unique<K: Ord + Copy + std::fmt::Debug>(
         entry.insert(HirSemanticOwnerPath::new(path.into(), hops.into()));
         Ok(())
     } else {
-        Err(HirSemanticPathError::DuplicatePath)
+        Err(HirSemanticPathError::DuplicatePath {
+            owner: owner.into(),
+        })
     }
 }
 

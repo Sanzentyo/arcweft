@@ -99,9 +99,8 @@ impl From<SemanticCoordinateIndexError> for SemanticTranscriptError {
         match error {
             SemanticCoordinateIndexError::RootCatalog(error) => Self::AcceptedRootCatalog(error),
             SemanticCoordinateIndexError::MissingChildEdges => Self::MissingChildEdges,
-            SemanticCoordinateIndexError::MissingExpression
-            | SemanticCoordinateIndexError::MissingBinding
-            | SemanticCoordinateIndexError::InvalidBindingPath
+            SemanticCoordinateIndexError::MissingOwner { .. }
+            | SemanticCoordinateIndexError::InvalidBindingPath { .. }
             | SemanticCoordinateIndexError::ExpressionRoleMismatch
             | SemanticCoordinateIndexError::InvalidRootPath => Self::MissingIdentity,
         }
