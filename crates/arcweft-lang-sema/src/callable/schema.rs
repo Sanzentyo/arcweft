@@ -20,11 +20,12 @@ use crate::{
 
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
-    CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
-    CallableSourceError, CapacityMethodId, CollectionMethodId, DetachedCallableDeclarationId,
-    DialogueCallableId, DomainMethodId, DropCallableId, EnumVariantSignatureId,
-    FxCallableSignatureId, IntegerMethodId, LanguageDocumentationFamily, LineContextMethodId,
-    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
+    CallableGroupIndex, CallableLimits, CallableName, CallableParameterCoordinate,
+    CallableParameterIndex, CallableSchemaError, CallableSourceError, CapacityMethodId,
+    CollectionMethodId, DetachedCallableDeclarationId, DialogueCallableId, DomainMethodId,
+    DropCallableId, EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId,
+    LanguageDocumentationFamily, LineContextMethodId, OptionConstructorKind,
+    PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
     RustProvenanceField, StageMethodId,
 };
@@ -666,6 +667,62 @@ pub enum CallableEvaluatedEffect {
     Bail,
     Ensure,
     Drop(DropCallableId),
+}
+
+/// Callable-owned semantic role of one fixed evaluated-effect operand.
+///
+/// Open Log/Event fields use [`OpenArgumentId`] instead. Keeping fixed roles
+/// on the evaluated-effect owner prevents statement analysis from rematching
+/// parameter names or copying standard schemas.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum CallableEvaluatedEffectOperandRole {
+    Message,
+    Target,
+    Value,
+    Event,
+    Condition,
+    Policy,
+}
+
+impl CallableEvaluatedEffect {
+    /// Resolves an exact schema coordinate to its closed effect operand role.
+    pub(crate) const fn operand_role(
+        self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Option<CallableEvaluatedEffectOperandRole> {
+        use CallableEvaluatedEffectOperandRole::{
+            Condition, Event, Message, Policy, Target, Value,
+        };
+
+        let group = coordinate.group().get();
+        let parameter = coordinate.parameter().get();
+        match (self, group, parameter) {
+            (Self::Log(_), 0, 0) | (Self::Panic | Self::Fail | Self::Bail, 0, 0) => Some(Message),
+            (Self::SignalWrite | Self::MetricWrite, 0, 0) => Some(Target),
+            (Self::SignalWrite | Self::MetricWrite, 0, 1) => Some(Value),
+            (Self::EmitEvent, 0, 0) => Some(Event),
+            (Self::Ensure, 0, 0) => Some(Condition),
+            (Self::Ensure, 0, 1) => Some(Message),
+            (Self::Drop(DropCallableId::Drop | DropCallableId::DropOptional), 0, 0)
+            | (Self::Drop(DropCallableId::DropWithPolicy), 1, 0) => Some(Target),
+            (Self::Drop(DropCallableId::DropWithPolicy), 0, 0) => Some(Policy),
+            (Self::Drop(DropCallableId::OnDrop), _, _)
+            | (Self::Log(_), _, _)
+            | (Self::SignalWrite, _, _)
+            | (Self::MetricWrite, _, _)
+            | (Self::EmitEvent, _, _)
+            | (Self::Panic, _, _)
+            | (Self::Fail, _, _)
+            | (Self::Bail, _, _)
+            | (Self::Ensure, _, _)
+            | (Self::Drop(_), _, _) => None,
+        }
+    }
+
+    /// Whether the schema may project callable-owned open field identities.
+    pub(crate) const fn accepts_open_fields(self) -> bool {
+        matches!(self, Self::Log(_) | Self::EmitEvent)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

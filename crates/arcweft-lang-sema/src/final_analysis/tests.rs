@@ -2651,6 +2651,87 @@ fn dispose(value: i64) {
 }
 
 #[test]
+fn evaluated_effect_fields_use_selected_open_argument_identity() {
+    let fixture = fixture(
+        r#"
+fn effect_fields(zeta_value: String, alpha_value: String, payload_value: String) {
+    log.info("started", zeta = zeta_value, alpha = alpha_value);
+    event.emit("opened", payload = payload_value);
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("evaluated-effect field analysis");
+    let effects = report
+        .statements()
+        .filter_map(|(_, statement)| match statement.role() {
+            CheckedStatementRole::EvaluatedEffect(effect) => Some(effect.as_ref()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(effects.len(), 2, "log and event effects are both retained");
+
+    for (effect, expected_bindings) in effects.into_iter().filter_map(|effect| match effect {
+        CheckedEvaluatedEffect::Log { .. } => Some((effect, &["zeta", "alpha"][..])),
+        CheckedEvaluatedEffect::EmitEvent { .. } => Some((effect, &["payload"][..])),
+        _ => None,
+    }) {
+        let schema = report
+            .calls()
+            .find_map(|(_, call)| {
+                let application = call.selected_application()?;
+                (application
+                    .core()
+                    .candidates()
+                    .selected()
+                    .schema()
+                    .evaluated_effect()
+                    == Some(effect.disposition()))
+                .then_some(
+                    application
+                        .core()
+                        .candidates()
+                        .selected()
+                        .schema()
+                        .semantic_digest(),
+                )
+            })
+            .expect("selected callable schema for evaluated effect");
+        let fields = match effect {
+            CheckedEvaluatedEffect::Log { fields, .. }
+            | CheckedEvaluatedEffect::EmitEvent { fields, .. } => fields,
+            _ => unreachable!("effect filtered above"),
+        };
+        assert_eq!(
+            fields
+                .iter()
+                .map(|field| field.open_argument().binding().as_str())
+                .collect::<Vec<_>>(),
+            expected_bindings.to_vec(),
+        );
+        assert!(
+            fields
+                .iter()
+                .all(|field| field.open_argument().schema() == schema)
+        );
+        assert!(
+            fields
+                .iter()
+                .all(|field| !field.open_argument().binding().as_str().starts_with("arg"))
+        );
+    }
+}
+
+#[test]
+fn evaluated_effect_does_not_fabricate_positional_field_identity() {
+    let fixture = fixture(
+        "fn positional_field() { log.info(\"started\", 1i64); }\n",
+        None,
+    );
+    assert!(analyze(&fixture).is_err());
+}
+
+#[test]
 fn carrier_blocks_are_the_nearest_checked_try_boundaries() {
     let fixture = fixture(
         r"

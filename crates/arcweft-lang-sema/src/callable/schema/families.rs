@@ -1837,7 +1837,63 @@ const fn open_supply() -> CallableArgumentPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::callable::{CallableGroupIndex, CallableSchemaGenericRole};
+    use crate::callable::{
+        CallableGroupIndex, CallableLogLevel, CallableParameterCoordinate, CallableParameterIndex,
+        CallableSchemaGenericRole, DropCallableId,
+    };
+
+    fn effect_coordinate(group: usize, parameter: usize) -> CallableParameterCoordinate {
+        CallableParameterCoordinate::new(
+            CallableGroupIndex::try_from_usize(group).unwrap(),
+            CallableParameterIndex::try_from_usize(parameter).unwrap(),
+        )
+    }
+
+    #[test]
+    fn evaluated_effect_owner_maps_fixed_operands_without_parameter_names() {
+        use crate::callable::schema::CallableEvaluatedEffectOperandRole::{
+            Condition, Event, Message, Policy, Target, Value,
+        };
+
+        assert_eq!(
+            CallableEvaluatedEffect::Log(CallableLogLevel::Info)
+                .operand_role(effect_coordinate(0, 0)),
+            Some(Message)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::SignalWrite.operand_role(effect_coordinate(0, 0)),
+            Some(Target)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::MetricWrite.operand_role(effect_coordinate(0, 1)),
+            Some(Value)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::EmitEvent.operand_role(effect_coordinate(0, 0)),
+            Some(Event)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::Ensure.operand_role(effect_coordinate(0, 0)),
+            Some(Condition)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::Drop(DropCallableId::DropWithPolicy)
+                .operand_role(effect_coordinate(0, 0)),
+            Some(Policy)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::Drop(DropCallableId::DropWithPolicy)
+                .operand_role(effect_coordinate(1, 0)),
+            Some(Target)
+        );
+        assert_eq!(
+            CallableEvaluatedEffect::Drop(DropCallableId::OnDrop)
+                .operand_role(effect_coordinate(1, 0)),
+            None
+        );
+        assert!(CallableEvaluatedEffect::EmitEvent.accepts_open_fields());
+        assert!(!CallableEvaluatedEffect::Ensure.accepts_open_fields());
+    }
 
     #[test]
     fn character_any_reserves_look_without_closing_other_open_names() {

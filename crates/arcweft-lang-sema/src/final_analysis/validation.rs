@@ -15,7 +15,9 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    callable::{CallableCandidateId, CallableValidator, DialogueCallableId},
+    callable::{
+        CallableCandidateId, CallableValidator, CheckedCallOperandDestination, DialogueCallableId,
+    },
     types::{
         NoopTypeCompatibilityControl, TypeCompatibilityFailure, TypeCompatibilityForbidden,
         TypeCompatibilityPolicy,
@@ -1686,11 +1688,58 @@ pub(super) fn validate_statements(
                         validate_drop_effect(modules, expressions, call, effect, pipeline_target)
                     }
                     _ if pipeline_target.is_some() => false,
-                    _ => CheckedEvaluatedEffect::try_from_call(
-                        effect.disposition(),
-                        call.arguments(),
-                    )
-                    .is_some_and(|projected| projected == **effect),
+                    _ => {
+                        let execution = application.core().execution();
+                        let disposition = effect.disposition();
+                        let head = disposition
+                            .accepts_open_fields()
+                            .then(|| {
+                                execution.arguments().iter().find_map(|argument| {
+                                    argument.slots().iter().find_map(|slot| {
+                                        let CheckedCallOperandDestination::Parameter(coordinate) =
+                                            slot.destination()
+                                        else {
+                                            return None;
+                                        };
+                                        disposition.operand_role(*coordinate).and_then(|_| {
+                                            match slot.source().raw() {
+                                                CheckedCallArgumentSlotSource::Expression(source) => {
+                                                    Some(source)
+                                                }
+                                                CheckedCallArgumentSlotSource::CompactNumericElement {
+                                                    ..
+                                                } => None,
+                                            }
+                                        })
+                                    })
+                                })
+                            })
+                            .flatten();
+                        let open_arguments = execution.arguments().iter().map(|argument| {
+                            let [slot] = argument.slots() else {
+                                return None;
+                            };
+                            let source = match slot.source().raw() {
+                                CheckedCallArgumentSlotSource::Expression(source) => source,
+                                CheckedCallArgumentSlotSource::CompactNumericElement { .. } => {
+                                    return None;
+                                }
+                            };
+                            let CheckedCallOperandDestination::Open(open) = slot.destination()
+                            else {
+                                return None;
+                            };
+                            Some((source, open))
+                        });
+                        CheckedEvaluatedEffect::try_from_call(
+                            disposition,
+                            call.arguments(),
+                            selected.schema().semantic_digest(),
+                            head,
+                            open_arguments,
+                        )
+                        .is_some_and(|projected| projected == **effect)
+                    }
                 }
             }
             CheckedStatementRole::Iteration(_) => {

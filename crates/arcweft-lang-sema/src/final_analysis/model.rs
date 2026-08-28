@@ -1,5 +1,7 @@
 //! Generation-bound checked semantic fact model.
 
+use std::collections::BTreeSet;
+
 use super::match_edges::NestedPathEvidence;
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
@@ -11,8 +13,9 @@ use super::{
     TypeParameterSubstitutions,
 };
 use crate::callable::{
-    CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
-    CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId,
+    CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CallableSignatureSchemaDigest,
+    CharacterDialoguePatchContext, CheckedCallableJoin, CheckedCallableJoinDigest, DropCallableId,
+    OpenArgumentId,
 };
 pub use crate::character_dialogue::CharacterDialogueFieldCoordinate;
 use crate::checked_rich_text::CheckedDuration;
@@ -2493,20 +2496,20 @@ pub enum CheckedSuspensionStatement {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedEffectField {
-    name: String,
+    open_argument: OpenArgumentId,
     value: ExprId,
 }
 
 impl CheckedEffectField {
-    pub fn new(name: impl Into<String>, value: ExprId) -> Self {
+    pub(crate) fn new(open_argument: OpenArgumentId, value: ExprId) -> Self {
         Self {
-            name: name.into(),
+            open_argument,
             value,
         }
     }
 
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn open_argument(&self) -> &OpenArgumentId {
+        &self.open_argument
     }
 
     pub const fn value(&self) -> ExprId {
@@ -2585,13 +2588,17 @@ impl CheckedEvaluatedEffect {
         }
     }
 
-    pub(crate) fn try_from_call(
+    pub(crate) fn try_from_call<'a>(
         effect: CallableEvaluatedEffect,
         arguments: &[HirCallArgument],
+        schema: CallableSignatureSchemaDigest,
+        head: Option<ExprId>,
+        open_arguments: impl IntoIterator<Item = Option<(ExprId, &'a OpenArgumentId)>>,
     ) -> Option<Self> {
         match effect {
             CallableEvaluatedEffect::Log(level) => {
-                let (message, fields) = checked_message_and_fields(arguments, "message")?;
+                let (message, fields) =
+                    checked_message_and_fields(arguments, head, schema, open_arguments)?;
                 Some(Self::Log {
                     level,
                     message,
@@ -2599,7 +2606,8 @@ impl CheckedEvaluatedEffect {
                 })
             }
             CallableEvaluatedEffect::EmitEvent => {
-                let (event, fields) = checked_message_and_fields(arguments, "event")?;
+                let (event, fields) =
+                    checked_message_and_fields(arguments, head, schema, open_arguments)?;
                 Some(Self::EmitEvent { event, fields })
             }
             CallableEvaluatedEffect::SignalWrite => {
@@ -2641,41 +2649,47 @@ impl CheckedEvaluatedEffect {
     }
 }
 
-fn checked_message_and_fields(
+fn checked_message_and_fields<'a>(
     arguments: &[HirCallArgument],
-    head_name: &str,
+    head: Option<ExprId>,
+    schema: CallableSignatureSchemaDigest,
+    open_arguments: impl IntoIterator<Item = Option<(ExprId, &'a OpenArgumentId)>>,
 ) -> Option<(ExprId, Box<[CheckedEffectField]>)> {
-    let mut head = None;
-    let mut names = Vec::<String>::new();
+    let expected_head = head?;
+    let mut found_head = None;
+    let mut open_arguments = open_arguments.into_iter();
+    let mut identities = BTreeSet::new();
     let mut fields = Vec::new();
-    for (ordinal, argument) in arguments.iter().enumerate() {
-        match argument {
-            HirCallArgument::Spread { .. } => return None,
-            HirCallArgument::Named { .. }
-                if argument
-                    .resolved_name()
-                    .is_some_and(|name| name.as_str() == head_name) =>
-            {
-                if head.replace(argument.value()).is_some() {
-                    return None;
-                }
-            }
-            HirCallArgument::Positional { .. } if head.is_none() => {
-                head = Some(argument.value());
-            }
-            HirCallArgument::Named { .. } | HirCallArgument::Positional { .. } => {
-                let name = argument
-                    .resolved_name()
-                    .map_or_else(|| format!("arg{ordinal}"), |name| name.as_str().to_owned());
-                if names.contains(&name) {
-                    return None;
-                }
-                names.push(name.clone());
-                fields.push(CheckedEffectField::new(name, argument.value()));
-            }
+    for argument in arguments {
+        let open_argument = open_arguments.next()?;
+        if matches!(argument, HirCallArgument::Spread { .. }) {
+            return None;
         }
+        if expected_head == argument.value() {
+            if open_argument.is_some() {
+                return None;
+            }
+            if found_head.replace(argument.value()).is_some() {
+                return None;
+            }
+            continue;
+        }
+        let (source, open_argument) = open_argument?;
+        if source != argument.value()
+            || open_argument.schema() != schema
+            || !identities.insert(open_argument)
+        {
+            return None;
+        }
+        fields.push(CheckedEffectField::new(
+            open_argument.clone(),
+            argument.value(),
+        ));
     }
-    Some((head?, fields.into_boxed_slice()))
+    if open_arguments.next().is_some() {
+        return None;
+    }
+    Some((found_head?, fields.into_boxed_slice()))
 }
 
 fn checked_fixed_effect_arguments(

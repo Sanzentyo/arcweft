@@ -412,8 +412,48 @@ impl Analyzer<'_, '_, '_> {
             _ if pipeline_target.is_some() => {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            effect => CheckedEvaluatedEffect::try_from_call(effect, call.arguments())
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            effect => {
+                let mapping = node
+                    .prefix()
+                    .record()
+                    .input_projection()
+                    .authored()
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                let head = effect
+                    .accepts_open_fields()
+                    .then(|| {
+                        mapping.arguments().iter().find_map(|argument| {
+                            argument.slots().iter().find_map(|slot| {
+                                slot.coordinate()
+                                    .filter(|coordinate| effect.operand_role(*coordinate).is_some())
+                                    .map(|_| argument.source())
+                            })
+                        })
+                    })
+                    .flatten();
+                let open_arguments = mapping.arguments().iter().map(|argument| {
+                    let [slot] = argument.slots() else {
+                        return None;
+                    };
+                    let source = match slot.source() {
+                        crate::callable::CheckedCallArgumentSlotSource::Expression(source) => {
+                            source
+                        }
+                        crate::callable::CheckedCallArgumentSlotSource::CompactNumericElement {
+                            ..
+                        } => return None,
+                    };
+                    Some((source, slot.open_argument()?))
+                });
+                CheckedEvaluatedEffect::try_from_call(
+                    effect,
+                    call.arguments(),
+                    application.selected().schema().semantic_digest(),
+                    head,
+                    open_arguments,
+                )
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?
+            }
         };
         Ok(Some(effect))
     }

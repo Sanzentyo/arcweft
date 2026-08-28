@@ -3127,7 +3127,9 @@ fn runtime_effect_fields(
 ) -> Box<[RuntimeEffectFieldFact]> {
     fields
         .iter()
-        .map(|field| RuntimeEffectFieldFact::new(field.name(), field.value()))
+        .map(|field| {
+            RuntimeEffectFieldFact::new(field.open_argument().binding().as_str(), field.value())
+        })
         .collect::<Vec<_>>()
         .into_boxed_slice()
 }
