@@ -319,16 +319,14 @@ pub enum ProjectSemanticIndexError {
     MissingFlowStatement {
         owner: arcweft_lang_hir::identity::StmtId,
     },
+    #[error("checked statement payload does not match final-HIR statement {owner:?}")]
+    StatementPayloadMismatch {
+        owner: arcweft_lang_hir::identity::StmtId,
+    },
     #[error("project semantic indexing cannot resolve final-HIR expression {owner:?}")]
     MissingFlowExpression {
         owner: arcweft_lang_hir::identity::ExprId,
     },
-    #[error("accepted Flow statement {owner:?} has no authored source span")]
-    MissingFlowStatementSource {
-        owner: arcweft_lang_hir::identity::StmtId,
-    },
-    #[error("accepted Flow target lookup failed: {0}")]
-    FlowTargetLookup(Box<arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError>),
     #[error("final-HIR item {owner:?} does not match the accepted semantic entity family")]
     WrongEntityOwner {
         owner: arcweft_lang_hir::identity::ItemId,
@@ -384,14 +382,6 @@ impl From<arcweft_lang_hir::source_index::HirSourceQueryError> for ProjectSemant
 impl From<CheckedCallableLookupError> for ProjectSemanticIndexError {
     fn from(error: CheckedCallableLookupError) -> Self {
         Self::CheckedCallableLookup(Box::new(error))
-    }
-}
-
-impl From<arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError>
-    for ProjectSemanticIndexError
-{
-    fn from(error: arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError) -> Self {
-        Self::FlowTargetLookup(Box::new(error))
     }
 }
 

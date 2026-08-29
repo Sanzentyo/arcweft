@@ -25,7 +25,6 @@ use crate::expr::{
     HirNamedBlockExpr, HirNamedBlockName, HirRecoveryIssue,
 };
 use crate::identity::{ExprId, HirLimit, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner};
-use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirMatchArmSourcePart, HirSourceSite};
@@ -33,7 +32,7 @@ use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirIfLetStmt, HirIfStmt,
     HirMatchStmt, HirStmt, HirStmtChildRole, HirStmtKind, HirStmtMatchArm, HirStmtMatchArmBody,
     HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue,
-    HirUnsafeAudit, HirUnsafeLifetimeBody,
+    HirUnsafeAudit, HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 
 use super::CandidateCursor;
@@ -919,20 +918,20 @@ impl StagedHirModuleTransaction<'_> {
         let source = statement
             .unsafe_lifetime_view()
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-        let audit_id = match source.audit_id() {
+        let audit_identity = match source.audit_id() {
             AttachedCandidateUnsafeAuditId::Reference(node) => {
                 let Some(ExpressionProjection::EntityReference(reference)) =
                     node.expression_projection()
                 else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
-                crate::final_lowering::id_ref_projection::id_ref(reference)?
+                crate::final_lowering::id_ref_projection::unsafe_audit_identity(reference)?
             }
-            AttachedCandidateUnsafeAuditId::Missing(_) => HirIdRefValue::Recovered(
-                HirIdRefRecovery::new(HirIdRefShape::Missing, HirIdRefIssue::Missing),
-            ),
+            AttachedCandidateUnsafeAuditId::Missing(_) => {
+                HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
+            }
         };
-        let mut recovery = audit_id
+        let mut recovery = audit_identity
             .recovery_issue()
             .map(HirStmtRecoveryIssue::InvalidAuditId);
         let reason = source
@@ -990,7 +989,7 @@ impl StagedHirModuleTransaction<'_> {
         };
         Ok((
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id, reason, has_safety_doc),
+                audit: HirUnsafeAudit::new(audit_identity, reason, has_safety_doc),
                 body,
             },
             recovery,

@@ -210,6 +210,14 @@ impl ProofReturnProjectModuleTransaction<'_> {
 
 fn require_limit(limit: HirLimit, observed: usize) -> Result<(), HirLowerFailure> {
     let maximum = limit.maximum();
+    require_limit_with_maximum(limit, observed, maximum)
+}
+
+fn require_limit_with_maximum(
+    limit: HirLimit,
+    observed: usize,
+    maximum: usize,
+) -> Result<(), HirLowerFailure> {
     if observed <= maximum {
         Ok(())
     } else {
@@ -378,6 +386,7 @@ pub(crate) struct StagedHirModuleTransaction<'source> {
     pending_proofs: Vec<PendingProofDeclaration>,
     staged_proof_return_headers: Vec<StagedProofReturnHeader>,
     proof_return_facts: Option<Arc<HirProofReturnSemanticFactSet>>,
+    select_branch_maximum: usize,
     #[cfg(test)]
     reverse_pattern_child_insertion: bool,
 }
@@ -1042,6 +1051,7 @@ impl<'source> StagedHirModuleTransaction<'source> {
             pending_proofs: Vec::new(),
             staged_proof_return_headers: Vec::new(),
             proof_return_facts,
+            select_branch_maximum: HirLimit::SelectBranches.maximum(),
             #[cfg(test)]
             reverse_pattern_child_insertion: false,
         })
@@ -1110,6 +1120,19 @@ impl<'source> StagedHirModuleTransaction<'source> {
         &mut self,
     ) -> (&mut StagedSlotTransaction, &mut StagedHirModuleArenas) {
         (&mut self.slots, &mut self.arenas)
+    }
+
+    fn require_select_branch_limit(&self, observed: usize) -> Result<(), HirLowerFailure> {
+        require_limit_with_maximum(
+            HirLimit::SelectBranches,
+            observed,
+            self.select_branch_maximum,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_select_branch_maximum_for_test(&mut self, maximum: usize) {
+        self.select_branch_maximum = maximum;
     }
 
     pub(crate) fn stage_declaration_members(
@@ -1355,11 +1378,6 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                 .statements
                 .resolve_staged(&self.slots, id)
                 .is_ok_and(|statement| HirTypeResolver::scope_is_live(self, statement.scope())),
-            HirDialogueTransactionRequirement::Pattern(id) => self
-                .arenas
-                .patterns
-                .resolve_staged(&self.slots, id)
-                .is_ok_and(|pattern| HirPatternResolver::scope_is_live(self, pattern.scope())),
             HirDialogueTransactionRequirement::Scope(id) => {
                 HirTypeResolver::scope_is_live(self, id)
             }

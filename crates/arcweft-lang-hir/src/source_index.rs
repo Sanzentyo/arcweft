@@ -248,6 +248,7 @@ pub enum HirRichTextTagSourcePart {
     CloseDelimiter,
     InferenceInsertion,
     EndTag,
+    Marker(HirIdRefSourcePart),
 }
 
 /// Source component of one `RichText` argument.
@@ -386,6 +387,8 @@ pub(crate) enum HirStmtRecoveryOperandSlot {
     DeferExpression { insertion: usize },
     SignalTarget { insertion: usize },
     SignalValue { insertion: usize },
+    TriggerTarget { insertion: usize },
+    TriggerExpression { insertion: usize },
     ReturnValue { insertion: usize },
     YieldExpression { insertion: usize },
     WaitTarget { insertion: usize },
@@ -414,6 +417,8 @@ impl HirStmtRecoveryOperandSlot {
             | Self::DeferExpression { insertion }
             | Self::SignalTarget { insertion }
             | Self::SignalValue { insertion }
+            | Self::TriggerTarget { insertion }
+            | Self::TriggerExpression { insertion }
             | Self::ReturnValue { insertion }
             | Self::YieldExpression { insertion }
             | Self::WaitTarget { insertion }
@@ -445,6 +450,8 @@ impl HirStmtRecoveryOperandSlot {
             | Self::GotoTarget { .. }
             | Self::DeferExpression { .. }
             | Self::SignalTarget { .. }
+            | Self::TriggerTarget { .. }
+            | Self::TriggerExpression { .. }
             | Self::ReturnValue { .. }
             | Self::YieldExpression { .. }
             | Self::WaitTarget { .. }
@@ -464,6 +471,7 @@ impl HirStmtRecoveryOperandSlot {
             | Self::LifetimeSetTarget { .. }
             | Self::GotoTarget { .. }
             | Self::SignalTarget { .. }
+            | Self::TriggerTarget { .. }
             | Self::WaitTarget { .. }
             | Self::CloseTarget { .. } => HirExprSourceRole::Target,
             Self::WhileCondition { .. } => HirExprSourceRole::Condition,
@@ -481,6 +489,7 @@ impl HirStmtRecoveryOperandSlot {
             | Self::YieldExpression { .. }
             | Self::SelectOperand { .. }
             | Self::SelectBranchSource { .. }
+            | Self::TriggerExpression { .. }
             | Self::UnsafeAuditReason { .. } => HirExprSourceRole::Operand,
         }
     }

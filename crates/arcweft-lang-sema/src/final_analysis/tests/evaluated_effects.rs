@@ -21,8 +21,8 @@ fn dispose(value: i64) {
     let report = analyze(&fixture).expect("typed drop policy overload analysis");
     let drops = report
         .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::EvaluatedEffect(effect) => match effect.operation() {
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::EvaluatedEffect(effect) => match effect.operation() {
                 CheckedEvaluatedEffectOperation::Drop { invocation, .. } => Some(invocation),
                 _ => None,
             },
@@ -63,8 +63,8 @@ flow main() -> Unit {
     let report = analyze(&fixture).expect("runtime flow explicit drop policy analysis");
     let policies = report
         .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::EvaluatedEffect(effect) => match effect.operation() {
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::EvaluatedEffect(effect) => match effect.operation() {
                 CheckedEvaluatedEffectOperation::Drop { target, invocation } => {
                     Some((target, invocation))
                 }
@@ -218,8 +218,8 @@ fn effect_fields(zeta_value: String, alpha_value: String, payload_value: String)
     let report = analyze(&fixture).expect("evaluated-effect field analysis");
     let effects = report
         .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::EvaluatedEffect(effect) => Some(effect.as_ref()),
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::EvaluatedEffect(effect) => Some(effect.as_ref()),
             _ => None,
         })
         .collect::<Vec<_>>();

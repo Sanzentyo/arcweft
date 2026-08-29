@@ -11,7 +11,7 @@ use super::{
     AttachedFlowIdentity, AttachedFlowReturnSyntax, AttachedFlowSignatureRecovery,
     AttachedRequiredFlowBody, FlowItemKind,
 };
-use crate::attachment::node::{LetChoiceStatementKind, ThreadExpressionKind};
+use crate::attachment::node::{LetChoiceStatementKind, OnStatementKind, ThreadExpressionKind};
 use crate::attachment::{
     AttachedChoiceCompactAction, AttachedChoiceItem, AttachedChoiceMatchArmBody,
     AttachedChoiceOptionField, AttachedChoicePlanItem, AttachedChoiceSuiteSource,
@@ -719,11 +719,10 @@ fn select_statement_preserves_unary_and_typed_branch_forms() {
                     value: Ok(name), ..
                 },
             source: RequiredStatementExpressionNode::Expression(source),
-            propagates_error: true,
             body,
             ..
         } if name.as_str() == "value"
-            && source.source_text() == "source"
+            && source.source_text() == "source?"
             && matches!(body, AttachedRequiredNestedThreadFlowBody::Present(nested)
                 if nested.items()[0].kind() == SyntaxKind::OutStatement)
     ));
@@ -1282,6 +1281,71 @@ fn choice_lifecycle_plan_is_one_typed_source_ordered_owner() {
         if body.items()[0].kind() == SyntaxKind::ExpressionStatement)
     );
     assert!(!choice.has_recovery());
+}
+
+#[test]
+fn choice_lifecycle_mark_trigger_owns_typed_selector() {
+    let snapshot = attach(concat!(
+        "flow planned_mark_choice {\n",
+        "    choice @choice.opening {\n",
+        "        @.listen \"Listen\" -> @flow.listen\n",
+        "    }\n",
+        "    with {\n",
+        "        cancel on mark(@.checkpoint) { goto @flow.listen }\n",
+        "    }\n",
+        "}\n",
+    ));
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+        panic!("mark-choice fixture requires a Flow body");
+    };
+    let AttachedThreadFlowItem::Choice(choice) = &body.items()[0] else {
+        panic!("Choice and its plan must remain one Flow item");
+    };
+    let choice = choice.semantics().unwrap().expression().clone();
+    let plan = choice
+        .plan()
+        .expect("authored `with` plan must be attached");
+    let AttachedRequiredChoicePlanBody::Present(plan_body) = plan.body() else {
+        panic!("Choice plan body must remain present");
+    };
+    let AttachedChoicePlanItem::Cancel(cancel) = &plan_body.items()[0] else {
+        panic!("first plan item must be cancel-on");
+    };
+    assert!(matches!(
+        cancel.trigger(),
+        AttachedTriggerPattern::Mark(trigger)
+            if trigger
+                .selector()
+                .name()
+                .is_some_and(|name| name.as_str() == "checkpoint")
+                && !trigger.has_recovery()
+    ));
+    assert!(!choice.has_recovery());
+}
+
+#[test]
+fn on_statement_attachment_owns_typed_trigger_and_body() {
+    let snapshot = attach(concat!(
+        "flow on_mark {\n",
+        "    on mark(@.checkpoint) => goto @flow.next\n",
+        "}\n",
+    ));
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+        panic!("On fixture requires a Flow body");
+    };
+    let AttachedThreadFlowItem::Statement(statement) = &body.items()[0] else {
+        panic!("On fixture must remain a statement item");
+    };
+    let statement = statement.cast::<OnStatementKind>().unwrap();
+    let on = statement.semantics().unwrap();
+    assert!(matches!(
+        on.trigger(),
+        AttachedTriggerPattern::Mark(trigger)
+            if trigger.selector().name().is_some_and(|name| name.as_str() == "checkpoint")
+    ));
+    assert_eq!(on.body().kind(), SyntaxKind::GotoStatement);
 }
 
 #[test]

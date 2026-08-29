@@ -1,0 +1,52 @@
+error[E0432]: unresolved imports `arcweft_lang_sema::final_analysis::CheckedDialogueMarkHandler`, `arcweft_lang_sema::final_analysis::CheckedDialogueMarkOrdinal`, `arcweft_lang_sema::final_analysis::CheckedStatementRole`
+ --> tests/ui/removed_checked_statement_authorities.rs:4:5
+  |
+4 |     CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal, CheckedStatementRole,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^ no `CheckedStatementRole` in `final_analysis`
+  |     |                           |
+  |     |                           no `CheckedDialogueMarkOrdinal` in `final_analysis`
+  |     no `CheckedDialogueMarkHandler` in `final_analysis`
+  |
+help: a similar name exists in the module
+  |
+4 -     CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal, CheckedStatementRole,
+4 +     CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal, CheckedStatement,
+  |
+
+error[E0603]: struct `PreparedCheckedDialogueMark` is private
+ --> tests/ui/removed_checked_statement_authorities.rs:1:43
+  |
+1 | use arcweft_lang_sema::checked_rich_text::PreparedCheckedDialogueMark;
+  |                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `PreparedCheckedDialogueMark` is defined here
+ --> src/checked_rich_text.rs
+  |
+  |     PreparedCheckedDialogueContent, PreparedCheckedDialogueMark,
+  |                                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `analyzer` is private
+ --> tests/ui/removed_checked_statement_authorities.rs:2:40
+  |
+2 | use arcweft_lang_sema::final_analysis::analyzer::statement_scrutinee::StatementScrutineeTypeAuthority;
+  |                                        ^^^^^^^^  ------------------- module `statement_scrutinee` is not publicly re-exported
+  |                                        |
+  |                                        private module
+  |
+note: the module `analyzer` is defined here
+ --> src/final_analysis.rs
+  |
+  | mod analyzer;
+  | ^^^^^^^^^^^^
+
+error[E0603]: struct `PreparedEventScrutineeProof` is private
+ --> tests/ui/removed_checked_statement_authorities.rs:5:5
+  |
+5 |     PreparedEventScrutineeProof,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `PreparedEventScrutineeProof` is defined here
+ --> src/final_analysis.rs
+  |
+  |     PreparedEventScrutineeProof, PreparedExpressionFact, PreparedExpressionShell,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -133,6 +133,20 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 coordinate: semantic_coordinate,
             });
         }
+        if matches!(expected, TypeKind::StatementIngress(_))
+            && !matches!(
+                hir.kind(),
+                HirPatternKind::Binding(_)
+                    | HirPatternKind::MutableBinding(_)
+                    | HirPatternKind::Discard
+                    | HirPatternKind::WholeBinding { .. }
+                    | HirPatternKind::TypedBinding { .. }
+            )
+        {
+            return Err(CheckedMatchBuildError::InvalidCheckedRow {
+                coordinate: semantic_coordinate,
+            });
+        }
         let child_depth = checked_depth_successor(site.depth)?;
         let kind = match hir.kind() {
             HirPatternKind::Binding(_)

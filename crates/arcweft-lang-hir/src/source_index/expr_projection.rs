@@ -7,7 +7,7 @@ use super::{
     HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceQueryError,
 };
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueNodeKind, HirRichTextArgument,
+    HirDialogueContentApplication, HirDialogueNodeKind, HirRichTextArgument, HirRichTextTagPayload,
 };
 use crate::expr::{
     HirCallArgument, HirCallCallee, HirCallTypeApplication, HirCallTypeApplicationSpelling,
@@ -774,6 +774,17 @@ fn validate_dialogue_application_role(
                     | HirRichTextTagSourcePart::CloseDelimiter
                     | HirRichTextTagSourcePart::EndTag
             ) || inferred && part == HirRichTextTagSourcePart::InferenceInsertion;
+            let applicable = applicable
+                || matches!(
+                    (tag_payload.payload(), part),
+                    (
+                        HirRichTextTagPayload::Marker(_),
+                        HirRichTextTagSourcePart::Marker(
+                            HirIdRefSourcePart::Whole
+                                | HirIdRefSourcePart::SuffixSegment { ordinal: 0 }
+                        )
+                    )
+                );
             admit(owner, role, applicable)
         }
         HirExprSourceRole::RichTextArgument {

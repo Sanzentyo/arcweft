@@ -136,6 +136,8 @@ pub(crate) enum CallConstraintInvariant {
     ReplayBranchPatternFactsMismatch,
     #[error("selected call replay branch expression facts do not match the sealed probe")]
     ReplayBranchExpressionFactsMismatch,
+    #[error("selected call replay branch dialogue mark catalogs do not match the sealed probe")]
+    ReplayBranchDialogueMarkCatalogMismatch,
     #[error("selected call replay branch iteration facts do not match the sealed probe")]
     ReplayBranchIterationFactsMismatch,
     #[error("selected call replay branch implicit captures do not match the sealed probe")]

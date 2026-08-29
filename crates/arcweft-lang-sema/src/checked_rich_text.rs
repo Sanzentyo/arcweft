@@ -8,22 +8,30 @@
 mod checker;
 mod diagnostic;
 mod model;
+mod prepared;
 mod value;
 
 #[cfg(test)]
 mod tests;
 
-pub use checker::RichTextAttributeChecker;
+pub(crate) use checker::RichTextAttributeChecker;
 pub use diagnostic::{
     RichTextAttributeDiagnostic, RichTextDiagnosticCode, RichTextDiagnosticOwner,
     RichTextFailureEffect, RichTextRelatedSite,
 };
 pub use model::{
-    CheckedDialogueContent, CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken,
-    CheckedDirectStyleSpan, CheckedField, CheckedFieldOrigin, CheckedLayoutSpan, CheckedObjectSpan,
-    CheckedOwnerFields, CheckedRichTextAction, CheckedRichTextClose, CheckedRichTextOwner,
-    CheckedRichTextProperty, CheckedRichTextReport, CheckedRichTextTag, CheckedStyleSpan,
-    CheckedTransformSpan, CheckedVoiceSource, RichTextDefaultId,
+    CheckedDialogueContent, CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueMark,
+    CheckedDialogueToken, CheckedDirectStyleSpan, CheckedField, CheckedFieldOrigin,
+    CheckedLayoutSpan, CheckedObjectSpan, CheckedOwnerFields, CheckedRichTextAction,
+    CheckedRichTextClose, CheckedRichTextOwner, CheckedRichTextProperty, CheckedRichTextReport,
+    CheckedRichTextTag, CheckedStyleSpan, CheckedTransformSpan, CheckedVoiceSource,
+    RichTextDefaultId,
+};
+pub(crate) use prepared::{
+    PreparedCheckedDialogueContent, PreparedCheckedDialogueMark,
+    PreparedCheckedDialogueMarkCatalog, PreparedCheckedDialogueToken,
+    PreparedCheckedRichTextAction, PreparedCheckedRichTextCheck, PreparedCheckedRichTextReport,
+    PreparedCheckedRichTextTag,
 };
 pub use value::{
     CheckedAngle, CheckedColor, CheckedDuration, CheckedEnumValue, CheckedLength,

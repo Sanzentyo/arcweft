@@ -5,7 +5,8 @@ use crate::expr::{
     HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison,
     HirCallChildStates, HirCallExpr, HirCallTypeApplication,
 };
-use crate::identity::{HirDatabaseId, HirIdKind, HirTypedId, RawHirId};
+use crate::identity::{HirDatabaseId, HirIdKind, HirTypedId, PatternId, RawHirId};
+use crate::leaf::HirIdSuffix;
 
 fn module(database: u64, slot: u32) -> HirModuleId {
     HirModuleId::new(
@@ -26,9 +27,18 @@ fn name(value: &str) -> HirName {
     HirName::try_new(value.into()).unwrap()
 }
 
+fn suffix(value: &str) -> HirIdSuffix {
+    HirIdSuffix::try_new(value.into()).unwrap()
+}
+
 fn empty_content(owner: ExprId) -> HirDialogueContent {
-    HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
-        .unwrap()
+    HirDialogueContent::try_new(
+        HirDialogueContentId::new(owner),
+        Box::new([]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .unwrap()
 }
 
 fn call_fixture(module: HirModuleId, arguments: Box<[HirCallArgument]>) -> HirCallExpr {
@@ -199,7 +209,8 @@ fn dialogue_content_owns_contiguous_node_tag_and_argument_ids() {
     ]
     .into_boxed_slice();
 
-    let content = HirDialogueContent::try_new(content_id, nodes, Box::new([tag])).unwrap();
+    let content =
+        HirDialogueContent::try_new(content_id, nodes, Box::new([tag]), Box::new([])).unwrap();
     assert_eq!(content.id(), content_id);
     assert_eq!(content.nodes()[1].id().ordinal(), 1);
     assert_eq!(content.tags()[0].arguments()[0].id().ordinal(), 0);
@@ -209,7 +220,12 @@ fn dialogue_content_owns_contiguous_node_tag_and_argument_ids() {
         HirDialogueNodeKind::Text(HirTextFragment::new("gap".into())),
     );
     assert_eq!(
-        HirDialogueContent::try_new(content_id, Box::new([wrong_node]), Box::new([])),
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([wrong_node]),
+            Box::new([]),
+            Box::new([]),
+        ),
         Err(HirDialogueInvariantError::NonContiguousNodeOrdinal)
     );
 
@@ -220,8 +236,260 @@ fn dialogue_content_owns_contiguous_node_tag_and_argument_ids() {
         HirDialogueNodeKind::AuthoredStartTag(foreign_tag),
     );
     assert_eq!(
-        HirDialogueContent::try_new(content_id, Box::new([bad_reference]), Box::new([])),
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([bad_reference]),
+            Box::new([]),
+            Box::new([]),
+        ),
         Err(HirDialogueInvariantError::InvalidTagReference)
+    );
+}
+
+#[test]
+fn dialogue_content_mints_marker_ids_and_joins_tags_to_catalog_rows() {
+    let module = module(21, 1);
+    let owner = typed_id(module, 1);
+    let content_id = HirDialogueContentId::new(owner);
+    let first_tag = HirRichTextTagId::try_new(content_id, 0).unwrap();
+    let second_tag = HirRichTextTagId::try_new(content_id, 1).unwrap();
+    let first = HirRichTextTag::try_new(
+        first_tag,
+        HirRichTextTagIdentity::Marker,
+        Box::new([]),
+        HirRichTextTagPayload::None,
+    )
+    .unwrap();
+    let second = HirRichTextTag::try_new(
+        second_tag,
+        HirRichTextTagIdentity::Marker,
+        Box::new([]),
+        HirRichTextTagPayload::None,
+    )
+    .unwrap();
+
+    let content = HirDialogueContent::try_new(
+        content_id,
+        Box::new([]),
+        Box::new([first, second]),
+        Box::new([
+            (first_tag, HirDialogueMarkName::new(suffix("checkpoint"))),
+            (second_tag, HirDialogueMarkName::new(suffix("release"))),
+        ]),
+    )
+    .unwrap();
+
+    assert_eq!(content.marks().len(), 2);
+    assert_eq!(content.marks()[0].id().content(), content_id);
+    assert_eq!(content.marks()[0].id().ordinal().get(), 0);
+    assert_eq!(content.marks()[1].id().ordinal().get(), 1);
+    assert_eq!(content.marks()[0].tag(), first_tag);
+    assert_eq!(content.marks()[1].tag(), second_tag);
+    assert!(matches!(
+        content.tags()[0].payload(),
+        HirRichTextTagPayload::Marker(mark) if *mark == content.marks()[0].id()
+    ));
+    assert!(matches!(
+        content.tags()[1].payload(),
+        HirRichTextTagPayload::Marker(mark) if *mark == content.marks()[1].id()
+    ));
+}
+
+#[test]
+fn dialogue_content_rejects_duplicate_marker_names_transactionally() {
+    let module = module(22, 1);
+    let owner = typed_id(module, 1);
+    let content_id = HirDialogueContentId::new(owner);
+    let first_tag = HirRichTextTagId::try_new(content_id, 0).unwrap();
+    let second_tag = HirRichTextTagId::try_new(content_id, 1).unwrap();
+    let marker = |tag| {
+        HirRichTextTag::try_new(
+            tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([]),
+            HirRichTextTagPayload::None,
+        )
+        .unwrap()
+    };
+
+    assert_eq!(
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([]),
+            Box::new([marker(first_tag), marker(second_tag)]),
+            Box::new([
+                (first_tag, HirDialogueMarkName::new(suffix("same"))),
+                (second_tag, HirDialogueMarkName::new(suffix("same"))),
+            ]),
+        ),
+        Err(HirDialogueInvariantError::DuplicateMarkName)
+    );
+}
+
+#[test]
+fn dialogue_content_rejects_marker_inputs_out_of_source_order() {
+    let module = module(23, 1);
+    let owner = typed_id(module, 1);
+    let content_id = HirDialogueContentId::new(owner);
+    let first_tag = HirRichTextTagId::try_new(content_id, 0).unwrap();
+    let second_tag = HirRichTextTagId::try_new(content_id, 1).unwrap();
+    let marker = |tag| {
+        HirRichTextTag::try_new(
+            tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([]),
+            HirRichTextTagPayload::None,
+        )
+        .unwrap()
+    };
+
+    assert_eq!(
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([]),
+            Box::new([marker(first_tag), marker(second_tag)]),
+            Box::new([
+                (second_tag, HirDialogueMarkName::new(suffix("second"))),
+                (first_tag, HirDialogueMarkName::new(suffix("first"))),
+            ]),
+        ),
+        Err(HirDialogueInvariantError::NonContiguousMarkOrdinal)
+    );
+}
+
+#[test]
+fn dialogue_content_rejects_forged_marker_payloads_and_catalog_overflow() {
+    let module = module(24, 1);
+    let owner = typed_id(module, 1);
+    let content_id = HirDialogueContentId::new(owner);
+    let first_tag = HirRichTextTagId::try_new(content_id, 0).unwrap();
+    let second_tag = HirRichTextTagId::try_new(content_id, 1).unwrap();
+    let foreign_content_id = HirDialogueContentId::new(typed_id(module, 2));
+    let foreign_tag = HirRichTextTagId::try_new(foreign_content_id, 0).unwrap();
+    let foreign_marker = HirDialogueContent::try_new(
+        foreign_content_id,
+        Box::new([]),
+        Box::new([HirRichTextTag::try_new(
+            foreign_tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([]),
+            HirRichTextTagPayload::None,
+        )
+        .unwrap()]),
+        Box::new([(foreign_tag, HirDialogueMarkName::new(suffix("foreign")))]),
+    )
+    .unwrap()
+    .marks()[0]
+        .id();
+
+    assert_eq!(
+        HirRichTextTag::try_new(
+            first_tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([]),
+            HirRichTextTagPayload::Marker(foreign_marker),
+        ),
+        Err(HirDialogueInvariantError::InvalidMarkReference)
+    );
+    let argument_id = HirRichTextArgumentId::try_new(first_tag, 0).unwrap();
+    assert_eq!(
+        HirRichTextTag::try_new(
+            first_tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([HirRichTextArgument::positional(
+                argument_id,
+                HirRichTextValue::new("extra".into()),
+            )]),
+            HirRichTextTagPayload::None,
+        ),
+        Err(HirDialogueInvariantError::InvalidMarkReference)
+    );
+
+    let marker = || {
+        HirRichTextTag::try_new(
+            first_tag,
+            HirRichTextTagIdentity::Marker,
+            Box::new([]),
+            HirRichTextTagPayload::None,
+        )
+        .unwrap()
+    };
+    assert_eq!(
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([]),
+            Box::new([marker()]),
+            Box::new([
+                (first_tag, HirDialogueMarkName::new(suffix("first"))),
+                (second_tag, HirDialogueMarkName::new(suffix("second"))),
+            ]),
+        ),
+        Err(HirDialogueInvariantError::InvalidMarkReference),
+        "an N+1 catalog row must fail before any content value is published"
+    );
+    assert_eq!(
+        HirDialogueContent::try_new(
+            content_id,
+            Box::new([]),
+            Box::new([marker()]),
+            Box::new([
+                (first_tag, HirDialogueMarkName::new(suffix("first"))),
+                (first_tag, HirDialogueMarkName::new(suffix("duplicate"))),
+            ]),
+        ),
+        Err(HirDialogueInvariantError::InvalidMarkReference)
+    );
+}
+
+#[test]
+fn dialogue_mark_catalog_limit_accepts_exact_n_and_rejects_n_plus_one() {
+    fn inputs(
+        content: HirDialogueContentId,
+        count: usize,
+    ) -> (
+        Box<[HirRichTextTag]>,
+        Box<[(HirRichTextTagId, HirDialogueMarkName)]>,
+    ) {
+        let mut tags = Vec::new();
+        let mut marks = Vec::new();
+        for ordinal in 0..count {
+            let tag = HirRichTextTagId::try_new(content, ordinal).expect("mark tag ordinal");
+            tags.push(
+                HirRichTextTag::try_new(
+                    tag,
+                    HirRichTextTagIdentity::Marker,
+                    Box::new([]),
+                    HirRichTextTagPayload::None,
+                )
+                .expect("unminted marker tag"),
+            );
+            marks.push((
+                tag,
+                HirDialogueMarkName::new(suffix(&format!("mark_{ordinal}"))),
+            ));
+        }
+        (tags.into_boxed_slice(), marks.into_boxed_slice())
+    }
+
+    let content = HirDialogueContentId::new(typed_id(module(25, 1), 1));
+    let (tags, marks) = inputs(content, 2);
+    let exact =
+        HirDialogueContent::try_new_with_mark_limit_for_test(content, Box::new([]), tags, marks, 2)
+            .expect("exact mark bound publishes complete content");
+    assert_eq!(exact.marks().len(), 2);
+    assert!(exact.tags().iter().all(|tag| matches!(
+        tag.payload(),
+        HirRichTextTagPayload::Marker(mark) if mark.content() == content
+    )));
+
+    let (tags, marks) = inputs(content, 3);
+    assert_eq!(
+        HirDialogueContent::try_new_with_mark_limit_for_test(content, Box::new([]), tags, marks, 2,),
+        Err(HirDialogueInvariantError::MarkCatalogLimitExceeded {
+            observed: 3,
+            maximum: 2,
+        }),
+        "N+1 must return no partially minted content"
     );
 }
 
@@ -319,8 +587,13 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
             HirDialogueNodeKind::Interpolation(interpolation),
         ),
     ]);
-    let content =
-        HirDialogueContent::try_new(content_id, nodes, Box::new([fx_tag, dialogue_tag])).unwrap();
+    let content = HirDialogueContent::try_new(
+        content_id,
+        nodes,
+        Box::new([fx_tag, dialogue_tag]),
+        Box::new([]),
+    )
+    .unwrap();
     let application =
         HirDialogueContentApplication::try_new(owner, target, content, None, Box::new([])).unwrap();
     let mut validation = RecordingContext::default();
@@ -447,23 +720,13 @@ fn line_plan_uses_hir_owned_policy_and_existing_child_arenas() {
     let module = module(7, 1);
     let scope = typed_id(module, 1);
     let statement = typed_id(module, 2);
-    let pattern = typed_id(module, 3);
-    let value = typed_id(module, 4);
-    let condition = typed_id(module, 5);
+    let statement_two = typed_id(module, 3);
     let plan = HirLinePlan::try_new(
         scope,
         Some(name("reveal")),
         vec![
             HirLinePlanItem::Init(Box::new([statement])),
-            HirLinePlanItem::Let {
-                pattern,
-                value,
-                statement,
-            },
-            HirLinePlanItem::TimelineAssert {
-                policy: TimelineAssertPolicy::DebugOnly,
-                condition,
-            },
+            HirLinePlanItem::Statement(statement_two),
         ]
         .into_boxed_slice(),
     )
@@ -486,7 +749,7 @@ fn line_plan_uses_hir_owned_policy_and_existing_child_arenas() {
     assert!(
         context
             .requirements
-            .contains(&HirDialogueTransactionRequirement::Pattern(pattern))
+            .contains(&HirDialogueTransactionRequirement::Statement(statement))
     );
 }
 
@@ -499,8 +762,13 @@ fn recovery_is_explicit_without_defaulting_invalid_values() {
         HirDialogueNodeId::try_new(content_id, 0).unwrap(),
         HirDialogueNodeKind::Error(HirDialogueContentError::InvalidEscape),
     );
-    let content =
-        HirDialogueContent::try_new(content_id, Box::new([error_node]), Box::new([])).unwrap();
+    let content = HirDialogueContent::try_new(
+        content_id,
+        Box::new([error_node]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .unwrap();
     let application = HirDialogueContentApplication::try_new(
         owner,
         typed_id(module, 2),

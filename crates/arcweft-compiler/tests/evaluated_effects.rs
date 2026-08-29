@@ -11,7 +11,7 @@ use arcweft_core::{
     effect::{RuntimeDropPolicyExpr, RuntimeDropPolicyKind, RuntimeEffectExpr},
     line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger},
     plan::FlowOp,
-    runtime_id::RuntimeLineTaskNodeId,
+    runtime_id::{RuntimeDialogueMarkId, RuntimeLineTaskNodeId},
     time::LogicalDuration,
     value::{RuntimeExprKind, RuntimeValue},
 };
@@ -141,6 +141,139 @@ entry cli @entry.main { goto @flow.main }
     )
     .lower()
     .expect("dialogue content and delay effects lower to verified product AWBC");
+}
+
+#[test]
+fn dialogue_mark_projection_is_content_ordered_and_uses_the_exact_checked_trigger() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character @character.alice Alice as alice {}
+
+flow main() -> Unit {
+    alice[before [mark @.first] middle [mark @.second] after] with {
+        on mark(@.first) => return ()
+        on mark(@.second) => return ()
+    }
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("source-ordered dialogue markers compile");
+
+    let plan = &compiled.runtime_plan().plan;
+    let [content] = plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan");
+    };
+    assert_eq!(
+        content
+            .marks()
+            .iter()
+            .map(|mark| (mark.id().index(), mark.label()))
+            .collect::<Vec<_>>(),
+        vec![(0, "first"), (1, "second")]
+    );
+
+    let group_id = content
+        .line_task_group()
+        .expect("marker handlers publish one line-task group");
+    let group = plan
+        .line_task_groups()
+        .get(group_id.index())
+        .expect("content line-task group");
+    let mut triggers = Vec::new();
+    collect_mark_triggers(group, group.root(), &mut triggers);
+    assert_eq!(
+        triggers,
+        [
+            RuntimeDialogueMarkId::from_zero_based(0).expect("first runtime mark"),
+            RuntimeDialogueMarkId::from_zero_based(1).expect("second runtime mark"),
+        ]
+    );
+
+    let [first, second] = content.marks() else {
+        panic!("content mark inventory");
+    };
+    assert_eq!(first.id(), triggers[0]);
+    assert_eq!(second.id(), triggers[1]);
+}
+
+#[test]
+fn dialogue_mark_projection_keeps_equal_local_names_content_qualified() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character @character.alice Alice as alice {}
+
+flow main() -> Unit {
+    alice[first [mark @.same] end] with {
+        on mark(@.same) => return ()
+    }
+
+    alice[second [mark @.same] end] with {
+        on mark(@.same) => return ()
+    }
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("equal local marker names in distinct applications compile");
+
+    let contents = compiled.runtime_plan().plan.dialogue_content().rows();
+    assert_eq!(contents.len(), 2);
+    assert!(contents.iter().all(|content| {
+        content.marks().len() == 1
+            && content.marks()[0].id() == RuntimeDialogueMarkId::from_zero_based(0).unwrap()
+            && content.marks()[0].label() == "same"
+    }));
+    let groups = contents
+        .iter()
+        .map(|content| {
+            let group_id = content.line_task_group().expect("marker line-task group");
+            compiled
+                .runtime_plan()
+                .plan
+                .line_task_groups()
+                .get(group_id.index())
+                .expect("content line-task group")
+        })
+        .collect::<Vec<_>>();
+    let triggers = groups
+        .into_iter()
+        .map(|group| {
+            let mut marks = Vec::new();
+            collect_mark_triggers(group, group.root(), &mut marks);
+            marks
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        triggers,
+        vec![vec![RuntimeDialogueMarkId::from_zero_based(0).unwrap()]; 2]
+    );
+}
+
+fn collect_mark_triggers(
+    group: &LineTaskGroup,
+    node_id: RuntimeLineTaskNodeId,
+    output: &mut Vec<RuntimeDialogueMarkId>,
+) {
+    let node = group.node(node_id).expect("sealed line-task node");
+    match node {
+        LineTaskNode::Sequence(children)
+        | LineTaskNode::Start(children)
+        | LineTaskNode::Parallel { children, .. } => {
+            for child in children {
+                collect_mark_triggers(group, *child, output);
+            }
+        }
+        LineTaskNode::Child { trigger, scope, .. } => {
+            if let LineTaskTrigger::Mark(mark) = trigger {
+                output.push(*mark);
+            }
+            collect_mark_triggers(group, *scope, output);
+        }
+        LineTaskNode::Action(_) => {}
+    }
 }
 
 fn count_line_task_effects(

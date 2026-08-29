@@ -149,7 +149,7 @@ fn choice_expression_rejects_foreign_trigger_children() {
         HirChoiceBody::new(choice_scope, Box::new([])),
         Some(HirChoicePlan::new(
             vec![HirChoicePlanItem::Cancel {
-                trigger: HirTriggerPattern::Expr(foreign_trigger),
+                trigger: HirTrigger::Expression(foreign_trigger),
                 body: cancel_body,
             }]
             .into_boxed_slice(),

@@ -26,7 +26,7 @@ use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
         CharacterInventoryDigest, CharacterInventoryRevision, RegisteredExternalOwner,
-        RegisteredExternalOwnerKind,
+        RegisteredExternalOwnerKind, StatementIngressRegistrationError,
     },
     source_index::{CharacterDefinitionIndexBuildError, CharacterDefinitionIndexCode},
 };
@@ -53,6 +53,7 @@ pub enum CharacterRegistrationCode {
     CallableCatalog(CallableDiagnosticCode),
     CharacterDialogueCustomFields,
     AcceptedNominalCatalog,
+    StatementIngress,
     ExternalUnknown,
     ExternalDuplicate,
     ExternalConflict,
@@ -92,6 +93,7 @@ impl CharacterRegistrationCode {
                 "aw.character_dialogue.custom_fields.registration"
             }
             Self::AcceptedNominalCatalog => "aw.nominal.catalog.registration",
+            Self::StatementIngress => "aw.statement_ingress.registration",
             Self::ExternalUnknown => "aw.character.registration.external_unknown",
             Self::ExternalDuplicate => "aw.character.registration.external_duplicate",
             Self::ExternalConflict => "aw.character.registration.external_conflict",
@@ -194,6 +196,9 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     AcceptedNominalCatalog {
         error: AcceptedNominalCatalogError,
+    },
+    StatementIngress {
+        error: StatementIngressRegistrationError,
     },
     ExternalUnknown {
         declaration: ExternalDeclarationId,
@@ -321,6 +326,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { .. } => {
                 CharacterRegistrationCode::AcceptedNominalCatalog
+            }
+            CharacterRegistrationDiagnosticKind::StatementIngress { .. } => {
+                CharacterRegistrationCode::StatementIngress
             }
             CharacterRegistrationDiagnosticKind::ExternalUnknown { .. } => {
                 CharacterRegistrationCode::ExternalUnknown

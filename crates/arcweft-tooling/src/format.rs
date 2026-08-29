@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use arcweft_lang_syntax::{
@@ -20,8 +19,8 @@ use arcweft_lang_syntax::{
     },
     expressions::{
         ExpressionComponentRole, ExpressionProjection, SyntaxBuiltinRichTextTag,
-        SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
-        SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity, SyntaxRichTextTagSourcePart,
+        SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxRichTextTagIdentity,
+        SyntaxRichTextTagSourcePart,
     },
     grammar::SyntaxKind,
     incremental::{ParsedSource, SyntaxDatabase},
@@ -221,38 +220,30 @@ fn line_indentation(source: &str, offset: usize) -> &str {
     &prefix[..indentation_end]
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct RichTextCanonicalizationContext {
-    text_proxy_types: BTreeSet<String>,
-}
-
 fn canonical_rich_text_edits(
     source: &str,
     parsed: &ParsedSource,
 ) -> Result<Vec<TextEdit>, SyntaxAccessError> {
-    let context = RichTextCanonicalizationContext {
-        text_proxy_types: collect_text_proxy_type_names(parsed)?,
-    };
     let mut edits = Vec::new();
     for item in parsed.items()? {
         match item {
             TypedItemNode::Flow(flow) => {
                 let flow = flow.semantics()?;
                 if let AttachedRequiredFlowBody::Present(body) = flow.body() {
-                    visit_thread_flow_items(source, body.items(), &context, &mut edits)?;
+                    visit_thread_flow_items(source, body.items(), &mut edits)?;
                 }
             }
             TypedItemNode::Function(function) => {
                 let function = function.semantics()?;
                 if let AttachedFunctionBody::Block { block, .. } = function.body() {
-                    visit_value_block(source, block, &context, &mut edits)?;
+                    visit_value_block(source, block, &mut edits)?;
                 }
             }
             TypedItemNode::View(view) => {
                 let view = view.semantics()?;
                 if let Some(fragment) = view.body().fragment() {
                     for value in fragment.values() {
-                        visit_expression(source, value, &context, &mut edits)?;
+                        visit_expression(source, value, &mut edits)?;
                     }
                 }
             }
@@ -262,93 +253,66 @@ fn canonical_rich_text_edits(
     Ok(edits)
 }
 
-fn collect_text_proxy_type_names(
-    parsed: &ParsedSource,
-) -> Result<BTreeSet<String>, SyntaxAccessError> {
-    let mut names = BTreeSet::new();
-    for item in parsed.items()? {
-        let TypedItemNode::Struct(structure) = item else {
-            continue;
-        };
-        let structure = structure.semantics()?;
-        let is_proxy = structure.prefix().attributes().iter().any(|attribute| {
-            attribute.issue().is_none()
-                && matches!(attribute.path().root(), AttachedPathRoot::ImplicitCrate)
-                && attribute.path().missing_name().is_none()
-                && matches!(
-                    attribute.path().segments(),
-                    [segment]
-                        if matches!(segment.source_text(), "text_proxy" | "rich_text_proxy")
-                )
-        });
-        if is_proxy && let Some(name) = structure.name().value() {
-            names.insert(name.as_str().to_owned());
-        }
-    }
-    Ok(names)
-}
-
 fn visit_thread_flow_items(
     source: &str,
     items: &[AttachedThreadFlowItem],
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     for item in items {
         match item {
             AttachedThreadFlowItem::DialogueApplication(_) => {
                 if let Some(expression) = item.dialogue_application() {
-                    visit_expression(source, &expression, context, edits)?;
+                    visit_expression(source, &expression, edits)?;
                 }
             }
             AttachedThreadFlowItem::Statement(statement) => {
-                visit_statement(source, statement, context, edits)?;
+                visit_statement(source, statement, edits)?;
             }
             AttachedThreadFlowItem::If(conditional)
             | AttachedThreadFlowItem::IfLet(conditional) => {
-                visit_if_statement(source, conditional, context, edits, true)?;
+                visit_if_statement(source, conditional, edits, true)?;
             }
             AttachedThreadFlowItem::While(while_statement) => {
                 let statement = while_statement.semantics()?;
-                visit_required_expression(source, statement.condition(), context, edits)?;
-                visit_nested_thread_body(source, statement.body(), context, edits)?;
+                visit_required_expression(source, statement.condition(), edits)?;
+                visit_nested_thread_body(source, statement.body(), edits)?;
             }
             AttachedThreadFlowItem::WhileLet(while_statement) => {
                 let statement = while_statement.semantics()?;
-                visit_required_expression(source, statement.scrutinee(), context, edits)?;
+                visit_required_expression(source, statement.scrutinee(), edits)?;
                 if let Some(guard) = statement.guard() {
-                    visit_required_expression(source, guard, context, edits)?;
+                    visit_required_expression(source, guard, edits)?;
                 }
-                visit_nested_thread_body(source, statement.body(), context, edits)?;
+                visit_nested_thread_body(source, statement.body(), edits)?;
             }
             AttachedThreadFlowItem::For(for_statement) => {
                 let statement = for_statement.semantics()?;
-                visit_required_expression(source, statement.source(), context, edits)?;
-                visit_nested_thread_body(source, statement.body(), context, edits)?;
+                visit_required_expression(source, statement.source(), edits)?;
+                visit_nested_thread_body(source, statement.body(), edits)?;
             }
             AttachedThreadFlowItem::SourceLocale(statement) => {
-                visit_nested_thread_body(source, statement.semantics()?.body(), context, edits)?;
+                visit_nested_thread_body(source, statement.semantics()?.body(), edits)?;
             }
             AttachedThreadFlowItem::Scope(statement) => {
-                visit_nested_thread_body(source, statement.semantics()?.body(), context, edits)?;
+                visit_nested_thread_body(source, statement.semantics()?.body(), edits)?;
             }
             AttachedThreadFlowItem::Select(statement) => {
                 let statement = statement.semantics()?;
                 match statement.form() {
                     arcweft_lang_syntax::attachment::AttachedSelectStatementForm::Operand(
                         operand,
-                    ) => visit_required_expression(source, operand, context, edits)?,
+                    ) => visit_required_expression(source, operand, edits)?,
                     arcweft_lang_syntax::attachment::AttachedSelectStatementForm::Branches(
                         branches,
                     ) => {
                         for branch in branches.branches() {
-                            visit_nested_thread_body(source, branch.body(), context, edits)?;
+                            visit_nested_thread_body(source, branch.body(), edits)?;
                         }
                     }
                 }
             }
             AttachedThreadFlowItem::Match(statement) => {
-                visit_match_statement(source, statement, context, edits, true)?;
+                visit_match_statement(source, statement, edits, true)?;
             }
             AttachedThreadFlowItem::Choice(_)
             | AttachedThreadFlowItem::Include(_)
@@ -361,11 +325,10 @@ fn visit_thread_flow_items(
 fn visit_nested_thread_body(
     source: &str,
     body: &AttachedRequiredNestedThreadFlowBody,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     if let AttachedRequiredNestedThreadFlowBody::Present(body) = body {
-        visit_thread_flow_items(source, body.items(), context, edits)?;
+        visit_thread_flow_items(source, body.items(), edits)?;
     }
     Ok(())
 }
@@ -373,14 +336,13 @@ fn visit_nested_thread_body(
 fn visit_value_block(
     source: &str,
     block: &arcweft_lang_syntax::attachment::AstNode<BlockKind>,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     for statement in block.statements()? {
-        visit_statement(source, &statement, context, edits)?;
+        visit_statement(source, &statement, edits)?;
     }
     if let Some(BlockTailNode::Expression(tail)) = block.optional_tail()? {
-        visit_expression(source, &tail.semantic()?, context, edits)?;
+        visit_expression(source, &tail.semantic()?, edits)?;
     }
     Ok(())
 }
@@ -388,7 +350,6 @@ fn visit_value_block(
 fn visit_statement(
     source: &str,
     statement: &arcweft_lang_syntax::attachment::StatementNode,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     match statement.kind() {
@@ -396,7 +357,7 @@ fn visit_statement(
             if let Some(LetInitializerNode::Expression(value)) =
                 statement.cast::<LetStatementKind>()?.initializer()?
             {
-                visit_expression(source, &value.semantic()?, context, edits)?;
+                visit_expression(source, &value.semantic()?, edits)?;
             }
         }
         SyntaxKind::ExpressionStatement => visit_expression(
@@ -405,81 +366,71 @@ fn visit_statement(
                 .cast::<ExpressionStatementKind>()?
                 .expression()?
                 .semantic()?,
-            context,
             edits,
         )?,
         SyntaxKind::AssignmentStatement => {
             let statement = statement.cast::<AssignmentStatementKind>()?;
-            visit_required_expression(source, &statement.target()?, context, edits)?;
-            visit_required_expression(source, &statement.value()?, context, edits)?;
+            visit_required_expression(source, &statement.target()?, edits)?;
+            visit_required_expression(source, &statement.value()?, edits)?;
         }
         SyntaxKind::LifetimeSetStatement => {
             let statement = statement.cast::<LifetimeSetStatementKind>()?;
-            visit_required_expression(source, &statement.target()?, context, edits)?;
-            visit_required_expression(source, &statement.value()?, context, edits)?;
+            visit_required_expression(source, &statement.target()?, edits)?;
+            visit_required_expression(source, &statement.value()?, edits)?;
         }
         SyntaxKind::ReturnStatement => visit_required_expression(
             source,
             &statement.cast::<ReturnStatementKind>()?.value()?,
-            context,
             edits,
         )?,
         SyntaxKind::YieldStatement => visit_required_expression(
             source,
             &statement.cast::<YieldStatementKind>()?.expression()?,
-            context,
             edits,
         )?,
         SyntaxKind::WaitStatement => visit_required_expression(
             source,
             &statement.cast::<WaitStatementKind>()?.target()?,
-            context,
             edits,
         )?,
         SyntaxKind::CloseStatement => visit_required_expression(
             source,
             &statement.cast::<CloseStatementKind>()?.target()?,
-            context,
             edits,
         )?,
         SyntaxKind::AssertionStatement => {
             for condition in statement.cast::<AssertionStatementKind>()?.conditions()? {
-                visit_expression(source, &condition.semantic()?, context, edits)?;
+                visit_expression(source, &condition.semantic()?, edits)?;
             }
         }
         SyntaxKind::OutStatement => {
             let statement = statement.cast::<OutStatementKind>()?.semantics()?;
-            visit_required_expression(source, statement.value(), context, edits)?;
+            visit_required_expression(source, statement.value(), edits)?;
         }
         SyntaxKind::GotoStatement => {
             let statement = statement.cast::<GotoStatementKind>()?.semantics()?;
-            visit_required_expression(source, statement.target(), context, edits)?;
+            visit_required_expression(source, statement.target(), edits)?;
         }
         SyntaxKind::DeferStatement => {
             let statement = statement.cast::<DeferStatementKind>()?.semantics()?;
-            visit_required_expression(source, statement.expression(), context, edits)?;
+            visit_required_expression(source, statement.expression(), edits)?;
         }
         SyntaxKind::SignalStatement => {
             let statement = statement.cast::<SignalStatementKind>()?.semantics()?;
-            visit_required_expression(source, statement.target(), context, edits)?;
-            visit_required_expression(source, statement.value(), context, edits)?;
+            visit_required_expression(source, statement.target(), edits)?;
+            visit_required_expression(source, statement.value(), edits)?;
         }
         SyntaxKind::BreakStatement => {
             if let Some(value) = statement.cast::<BreakStatementKind>()?.semantics()?.value() {
-                visit_expression(source, value, context, edits)?;
+                visit_expression(source, value, edits)?;
             }
         }
-        SyntaxKind::IfStatement => visit_if_statement(
-            source,
-            &statement.cast::<IfStatementKind>()?,
-            context,
-            edits,
-            false,
-        )?,
+        SyntaxKind::IfStatement => {
+            visit_if_statement(source, &statement.cast::<IfStatementKind>()?, edits, false)?
+        }
         SyntaxKind::MatchStatement => visit_match_statement(
             source,
             &statement.cast::<MatchStatementKind>()?,
-            context,
             edits,
             false,
         )?,
@@ -491,40 +442,39 @@ fn visit_statement(
 fn visit_if_statement(
     source: &str,
     statement: &arcweft_lang_syntax::attachment::AstNode<IfStatementKind>,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
     thread_flow_body: bool,
 ) -> Result<(), SyntaxAccessError> {
     match statement.head()? {
         IfStatementHeadNode::Condition(condition) => {
-            visit_expression(source, &condition.semantic()?, context, edits)?;
+            visit_expression(source, &condition.semantic()?, edits)?;
         }
         IfStatementHeadNode::Let {
             scrutinee, guard, ..
         } => {
-            visit_expression(source, &scrutinee.semantic()?, context, edits)?;
+            visit_expression(source, &scrutinee.semantic()?, edits)?;
             if let Some(guard) = guard {
-                visit_expression(source, &guard.semantic()?, context, edits)?;
+                visit_expression(source, &guard.semantic()?, edits)?;
             }
         }
     }
     if thread_flow_body {
         let body = statement.then_branch()?.thread_flow_body()?;
-        visit_thread_flow_items(source, body.items(), context, edits)?;
+        visit_thread_flow_items(source, body.items(), edits)?;
     } else {
-        visit_value_block(source, &statement.then_branch()?, context, edits)?;
+        visit_value_block(source, &statement.then_branch()?, edits)?;
     }
     if let Some(otherwise) = statement.else_branch()? {
         match otherwise {
             IfStatementElseNode::Block(block) if thread_flow_body => {
                 let body = block.thread_flow_body()?;
-                visit_thread_flow_items(source, body.items(), context, edits)?;
+                visit_thread_flow_items(source, body.items(), edits)?;
             }
             IfStatementElseNode::Block(block) => {
-                visit_value_block(source, &block, context, edits)?;
+                visit_value_block(source, &block, edits)?;
             }
             IfStatementElseNode::If(statement) => {
-                visit_statement(source, &statement, context, edits)?;
+                visit_statement(source, &statement, edits)?;
             }
         }
     }
@@ -534,31 +484,30 @@ fn visit_if_statement(
 fn visit_match_statement(
     source: &str,
     statement: &arcweft_lang_syntax::attachment::AstNode<MatchStatementKind>,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
     thread_flow_body: bool,
 ) -> Result<(), SyntaxAccessError> {
     if let MatchStatementExpressionNode::Expression(scrutinee) = statement.scrutinee()? {
-        visit_expression(source, &scrutinee.semantic()?, context, edits)?;
+        visit_expression(source, &scrutinee.semantic()?, edits)?;
     }
     let body = statement.body_or_missing()?;
     for arm in body.arms()? {
         if let Some(MatchStatementExpressionNode::Expression(guard)) = arm.guard()? {
-            visit_expression(source, &guard.semantic()?, context, edits)?;
+            visit_expression(source, &guard.semantic()?, edits)?;
         }
         match arm.body()? {
             MatchStatementArmBodyNode::Expression(value) => {
-                visit_expression(source, &value.semantic()?, context, edits)?;
+                visit_expression(source, &value.semantic()?, edits)?;
             }
             MatchStatementArmBodyNode::Statement(statement) => {
-                visit_statement(source, &statement, context, edits)?;
+                visit_statement(source, &statement, edits)?;
             }
             MatchStatementArmBodyNode::Block(block) if thread_flow_body => {
                 let body = block.thread_flow_body()?;
-                visit_thread_flow_items(source, body.items(), context, edits)?;
+                visit_thread_flow_items(source, body.items(), edits)?;
             }
             MatchStatementArmBodyNode::Block(block) => {
-                visit_value_block(source, &block, context, edits)?;
+                visit_value_block(source, &block, edits)?;
             }
             MatchStatementArmBodyNode::Missing(_) => {}
         }
@@ -569,11 +518,10 @@ fn visit_match_statement(
 fn visit_required_expression(
     source: &str,
     expression: &RequiredStatementExpressionNode,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     if let RequiredStatementExpressionNode::Expression(expression) = expression {
-        visit_expression(source, &expression.semantic()?, context, edits)?;
+        visit_expression(source, &expression.semantic()?, edits)?;
     }
     Ok(())
 }
@@ -581,43 +529,42 @@ fn visit_required_expression(
 fn visit_expression(
     source: &str,
     expression: &AttachedExpressionNode,
-    context: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) -> Result<(), SyntaxAccessError> {
     if let ExpressionProjection::DialogueContentApplication(application) = expression.projection()
         && let SyntaxDialogueContentProjection::Present(content) = application.content()
     {
-        collect_dialogue_content_edits(source, expression, content, context, edits);
+        collect_dialogue_content_edits(source, expression, content, edits);
     }
     for child in expression.children() {
         if let Some(child) = child.authored_semantic()? {
-            visit_expression(source, &child, context, edits)?;
+            visit_expression(source, &child, edits)?;
         }
     }
     if let Some(arcweft_lang_syntax::attachment::AttachedAwaitBranchBody::Present(body)) =
         expression.await_branches()
     {
         for branch in body.branches() {
-            visit_nested_thread_body(source, branch.body(), context, edits)?;
+            visit_nested_thread_body(source, branch.body(), edits)?;
         }
     }
     for arm in expression.match_arms() {
         if let Some(guard) = arm.guard()
             && let Some(guard) = guard.authored_semantic()?
         {
-            visit_expression(source, &guard, context, edits)?;
+            visit_expression(source, &guard, edits)?;
         }
         if let Some(value) = arm.value().authored_semantic()? {
-            visit_expression(source, &value, context, edits)?;
+            visit_expression(source, &value, edits)?;
         }
     }
     if let Some(block) = expression.block() {
-        visit_value_block(source, block, context, edits)?;
+        visit_value_block(source, block, edits)?;
     }
     if let Some(thread) = expression.thread()
         && let AttachedRequiredThreadExpressionBody::Present(body) = thread.statement_body()?
     {
-        visit_thread_flow_items(source, body.items(), context, edits)?;
+        visit_thread_flow_items(source, body.items(), edits)?;
     }
     Ok(())
 }
@@ -626,7 +573,6 @@ fn collect_dialogue_content_edits(
     source: &str,
     expression: &AttachedExpressionNode,
     content: &arcweft_lang_syntax::expressions::SyntaxDialogueContent,
-    canonicalization: &RichTextCanonicalizationContext,
     edits: &mut Vec<TextEdit>,
 ) {
     for node in content.nodes() {
@@ -636,43 +582,28 @@ fn collect_dialogue_content_edits(
         let Some(projection) = content.tags().get(*tag as usize) else {
             continue;
         };
-        let (proxy_type, family_name) = match projection.identity() {
-            SyntaxRichTextTagIdentity::DotSelector(Ok(selector)) => {
-                let selector = selector.as_str();
-                let proxy_type =
-                    inferred_text_proxy_type(selector, projection.arguments(), canonicalization);
-                if proxy_type.is_none() {
-                    // An unresolved marker has no schema-owned canonical family.
-                    // Preserve it verbatim instead of inferring semantics from
-                    // its spelling or the presence of raw attributes.
-                    continue;
-                }
-                (proxy_type, "object")
-            }
-            SyntaxRichTextTagIdentity::Builtin(builtin) => {
-                let family_name = match builtin {
-                    SyntaxBuiltinRichTextTag::Style(_) => "style",
-                    SyntaxBuiltinRichTextTag::Layout(_) => "layout",
-                    SyntaxBuiltinRichTextTag::Transform(_) => "transform",
-                    SyntaxBuiltinRichTextTag::Object(_) => "object",
-                    SyntaxBuiltinRichTextTag::Fx(_) => "effect",
-                    SyntaxBuiltinRichTextTag::Page
-                    | SyntaxBuiltinRichTextTag::LineWait
-                    | SyntaxBuiltinRichTextTag::HardBreak
-                    | SyntaxBuiltinRichTextTag::TimedWait
-                    | SyntaxBuiltinRichTextTag::Clear
-                    | SyntaxBuiltinRichTextTag::Reset
-                    | SyntaxBuiltinRichTextTag::Speed
-                    | SyntaxBuiltinRichTextTag::Marker
-                    | SyntaxBuiltinRichTextTag::DirectStyle(_)
-                    | SyntaxBuiltinRichTextTag::HostEvent(_)
-                    | SyntaxBuiltinRichTextTag::Conditional(_) => continue,
-                };
-                (None, family_name)
-            }
-            SyntaxRichTextTagIdentity::DotSelector(Err(_))
+        let family_name = match projection.identity() {
+            SyntaxRichTextTagIdentity::DotSelector(_)
+            | SyntaxRichTextTagIdentity::Marker(_)
             | SyntaxRichTextTagIdentity::ProjectSymbol(_)
             | SyntaxRichTextTagIdentity::Invalid(_) => continue,
+            SyntaxRichTextTagIdentity::Builtin(builtin) => match builtin {
+                SyntaxBuiltinRichTextTag::Style(_) => "style",
+                SyntaxBuiltinRichTextTag::Layout(_) => "layout",
+                SyntaxBuiltinRichTextTag::Transform(_) => "transform",
+                SyntaxBuiltinRichTextTag::Object(_) => "object",
+                SyntaxBuiltinRichTextTag::Fx(_) => "effect",
+                SyntaxBuiltinRichTextTag::Page
+                | SyntaxBuiltinRichTextTag::LineWait
+                | SyntaxBuiltinRichTextTag::HardBreak
+                | SyntaxBuiltinRichTextTag::TimedWait
+                | SyntaxBuiltinRichTextTag::Clear
+                | SyntaxBuiltinRichTextTag::Reset
+                | SyntaxBuiltinRichTextTag::Speed
+                | SyntaxBuiltinRichTextTag::DirectStyle(_)
+                | SyntaxBuiltinRichTextTag::HostEvent(_)
+                | SyntaxBuiltinRichTextTag::Conditional(_) => continue,
+            },
         };
         let tag_index = *tag;
         let Some(whole) = expression.component(ExpressionComponentRole::RichTextTag {
@@ -699,24 +630,7 @@ fn collect_dialogue_content_edits(
         let Some(argument_source) = source.get(name.range().end()..close.range().start()) else {
             continue;
         };
-        let inserted_proxy_type = proxy_type.filter(|_| {
-            !projection.arguments().iter().any(|argument| {
-                matches!(
-                    argument,
-                    SyntaxRichTextArgumentProjection::Named { name: Ok(name), .. }
-                        if matches!(name.as_str(), "type" | "struct" | "proxy")
-                )
-            })
-        });
-        let argument_source = if family_name == "mark" {
-            ""
-        } else {
-            argument_source
-        };
-        let replacement = inserted_proxy_type.map_or_else(
-            || format!("[{family_name} {selector_source}{argument_source}]"),
-            |proxy| format!("[{family_name} {selector_source} type={proxy}{argument_source}]"),
-        );
+        let replacement = format!("[{family_name} {selector_source}{argument_source}]");
         push_if_changed(source, whole.range(), replacement, edits);
 
         let Some(end) = expression.component(ExpressionComponentRole::RichTextTag {
@@ -725,38 +639,9 @@ fn collect_dialogue_content_edits(
         }) else {
             continue;
         };
-        let replacement = if family_name == "mark" {
-            String::new()
-        } else {
-            format!("[/{family_name}]")
-        };
+        let replacement = format!("[/{family_name}]");
         push_if_changed(source, end.range(), replacement, edits);
     }
-}
-
-fn inferred_text_proxy_type<'a>(
-    selector: &'a str,
-    arguments: &'a [SyntaxRichTextArgumentProjection],
-    context: &'a RichTextCanonicalizationContext,
-) -> Option<&'a str> {
-    arguments
-        .iter()
-        .find_map(|argument| match argument {
-            SyntaxRichTextArgumentProjection::Named {
-                name: Ok(name),
-                value,
-            } if matches!(name.as_str(), "type" | "struct" | "proxy") => context
-                .text_proxy_types
-                .contains(value.decoded())
-                .then_some(value.decoded()),
-            _ => None,
-        })
-        .or_else(|| {
-            context
-                .text_proxy_types
-                .contains(selector)
-                .then_some(selector)
-        })
 }
 
 fn push_if_changed(

@@ -1,3 +1,4 @@
+use arcweft_id::UnsafeAuditId;
 use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use core::fmt::Debug;
@@ -9,24 +10,21 @@ use super::{
     HirIfStmt, HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSelectBindingLocal, HirSelectBranch,
     HirSelectBranchHead, HirSelectStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
     HirSourceLocaleValue, HirStatementChildRole, HirStmt, HirStmtBindingPlanKind,
-    HirStmtBranchPublicationKind, HirStmtChildRole, HirStmtDeferredBodyPlanKind,
-    HirStmtEvaluationPlan, HirStmtEvaluationPublicationRole, HirStmtEvaluationStep,
-    HirStmtInvariantError, HirStmtKind, HirStmtMatchArm, HirStmtMatchArmBody,
-    HirStmtOrderedPairPlanKind, HirStmtPoisonState, HirStmtRecoveryIssue,
-    HirStmtSelectEvaluationPlan, HirStmtSelectHeadEvaluation, HirStmtTriggerEvaluationPlan,
-    HirStmtValuePlanKind, HirThreadStmtChildRole, HirThreadStmtInvariantError,
-    HirThreadStmtRecoveryIssue, HirTriggerPattern, HirUnsafeAudit, HirUnsafeLifetimeBody,
-    HirWhileLetStmt, HirWhileStmt,
+    HirStmtBranchPublicationKind, HirStmtChildRole, HirStmtEvaluationPlan,
+    HirStmtEvaluationPublicationRole, HirStmtEvaluationStep, HirStmtInvariantError, HirStmtKind,
+    HirStmtMatchArm, HirStmtMatchArmBody, HirStmtOrderedPairPlanKind, HirStmtPoisonState,
+    HirStmtRecoveryIssue, HirStmtSelectEvaluationPlan, HirStmtSelectHeadEvaluation,
+    HirStmtTriggerEvaluationPlan, HirStmtValuePlanKind, HirThreadStmtChildRole,
+    HirThreadStmtInvariantError, HirThreadStmtRecoveryIssue, HirTrigger, HirUnsafeAudit,
+    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody, HirWhileLetStmt,
+    HirWhileStmt,
 };
 use crate::expr::{HirThreadBody, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::identity::{
     ExprId, HirDatabaseId, HirModuleId, HirTypedId, LocalId, PatternId, RawHirId, ScopeId, StmtId,
     TypeId,
 };
-use crate::leaf::{
-    HirEntityReference, HirIdRef, HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue,
-    HirName,
-};
+use crate::leaf::{HirEntityReference, HirIdRef, HirIdRefValue, HirName};
 
 fn module(database: u64) -> HirModuleId {
     HirModuleId::new(
@@ -55,6 +53,12 @@ fn audit_id() -> HirIdRefValue {
     HirIdRefValue::Resolved(HirIdRef::absolute(
         HirEntityReference::try_new("unsafe.audit".into()).expect("valid absolute audit ID"),
     ))
+}
+
+fn unsafe_audit_identity() -> HirUnsafeAuditIdentity {
+    HirUnsafeAuditIdentity::Accepted(
+        UnsafeAuditId::try_new("unsafe.audit").expect("valid unsafe-audit identity"),
+    )
 }
 
 fn assert_record_traits<T: Clone + Debug + Eq + PartialEq>() {}
@@ -258,7 +262,7 @@ fn statement_owner_rejects_foreign_ids_across_nested_payloads() {
         HirStmt::try_new(
             owner_scope,
             HirStmtKind::On {
-                trigger: HirTriggerPattern::Timeout(foreign_expr),
+                trigger: HirTrigger::Timeout(foreign_expr),
                 scope: owner_scope,
                 body: Box::new([]),
             },
@@ -269,7 +273,7 @@ fn statement_owner_rejects_foreign_ids_across_nested_payloads() {
         HirStmt::try_new(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), Some(foreign_expr), true),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), Some(foreign_expr), true),
                 body: HirUnsafeLifetimeBody::Block {
                     scope: owner_scope,
                     statements: Box::new([]),
@@ -437,9 +441,9 @@ fn evaluation_plan_preserves_binding_visibility_and_statement_metadata() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "the 35-family matrix keeps every plan payload and visibility boundary auditable"
+    reason = "the 31-family matrix keeps every plan payload and visibility boundary auditable"
 )]
-fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
+fn evaluation_plan_matrix_covers_all_thirty_one_statement_families() {
     let owner_module = module(16);
     let scope = id::<ScopeId>(owner_module, 1);
     let body_scope = id::<ScopeId>(owner_module, 2);
@@ -508,7 +512,6 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
         HirSelectBranchHead::Bind {
             binding: HirSelectBindingLocal::Resolved(first_local),
             source: first_expr,
-            propagates_error: true,
         },
         ordinary_body(select_body_scope, Box::new([second_statement])),
     )
@@ -551,30 +554,6 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 locals: Box::new([first_local]),
             },
         ),
-        (
-            "LetChoice",
-            HirStmtKind::LetChoice {
-                pattern: first_pattern,
-                choice: first_expr,
-                locals: Box::new([first_local]),
-            },
-        ),
-        (
-            "LetScope",
-            HirStmtKind::LetScope {
-                pattern: first_pattern,
-                scope_expr: first_expr,
-                locals: Box::new([first_local]),
-            },
-        ),
-        (
-            "LetActionReceive",
-            HirStmtKind::LetActionReceive {
-                pattern: first_pattern,
-                action: first_expr,
-                locals: Box::new([first_local]),
-            },
-        ),
         ("Return", HirStmtKind::Return { value: first_expr }),
         (
             "Out",
@@ -584,14 +563,6 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
             },
         ),
         ("Goto", HirStmtKind::Goto { target: first_expr }),
-        (
-            "DeferBlock",
-            HirStmtKind::DeferBlock {
-                outcome: DeferOutcome::Failed,
-                scope: body_scope,
-                body: Box::new([first_statement, second_statement]),
-            },
-        ),
         (
             "Defer",
             HirStmtKind::Defer {
@@ -623,7 +594,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
         (
             "On",
             HirStmtKind::On {
-                trigger: HirTriggerPattern::Signal {
+                trigger: HirTrigger::Signal {
                     target: first_expr,
                     value: Some(first_pattern),
                 },
@@ -634,7 +605,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
         (
             "UnsafeLifetime",
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), Some(second_expr), true),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), Some(second_expr), true),
                 body: HirUnsafeLifetimeBody::Block {
                     scope: body_scope,
                     statements: Box::new([first_statement]),
@@ -697,16 +668,17 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
         ("Error", HirStmtKind::Error),
     ];
 
-    assert_eq!(rows.len(), 35);
+    assert_eq!(rows.len(), 31);
     let tags = rows
         .iter()
         .map(|(_, statement)| statement.semantic_transcript_tag())
         .collect::<Vec<_>>();
     assert_eq!(
-        tags,
-        (0x0700_u16..=0x0722_u16).collect::<Vec<_>>(),
-        "statement transcript tags must follow the owner enum order"
+        tags[..30],
+        (0x0700_u16..=0x071D_u16).collect::<Vec<_>>(),
+        "positive statement transcript tags must follow the owner enum order"
     );
+    assert_eq!(tags[30], 0x071E, "Error must be the terminal statement tag");
     assert_eq!(
         tags.iter().collect::<BTreeSet<_>>().len(),
         tags.len(),
@@ -729,45 +701,45 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 ),
             ],
             1 | 3 => vec![(HirStatementChildRole::Initializer, first_expr)],
-            2 | 13 | 14 => vec![
+            2 | 9 | 10 => vec![
                 (HirStatementChildRole::Target, first_expr),
                 (HirStatementChildRole::Value, second_expr),
             ],
-            4..=6 | 18 => vec![(HirStatementChildRole::Input, first_expr)],
-            7 | 11 | 12 | 30 | 32 | 33 => {
-                let expression = if ordinal == 30 {
+            14 => vec![(HirStatementChildRole::Input, first_expr)],
+            4 | 7 | 8 | 26 | 28 | 29 => {
+                let expression = if ordinal == 26 {
                     third_expr
-                } else if ordinal == 32 {
+                } else if ordinal == 28 {
                     fourth_expr
                 } else {
                     first_expr
                 };
                 vec![(HirStatementChildRole::Value, expression)]
             }
-            8 => vec![(HirStatementChildRole::Value, second_expr)],
-            9 | 15 | 25 => vec![(HirStatementChildRole::Target, first_expr)],
-            16 => vec![(HirStatementChildRole::TriggerSignalTarget, first_expr)],
-            17 => vec![(HirStatementChildRole::UnsafeReason, second_expr)],
-            19 | 22 => vec![(HirStatementChildRole::Condition, first_expr)],
-            20 | 23 => vec![
+            5 => vec![(HirStatementChildRole::Value, second_expr)],
+            6 | 11 | 21 => vec![(HirStatementChildRole::Target, first_expr)],
+            12 => vec![(HirStatementChildRole::TriggerSignalTarget, first_expr)],
+            13 => vec![(HirStatementChildRole::UnsafeReason, second_expr)],
+            15 | 18 => vec![(HirStatementChildRole::Condition, first_expr)],
+            16 | 19 => vec![
                 (HirStatementChildRole::Scrutinee, first_expr),
                 (HirStatementChildRole::Guard, second_expr),
             ],
-            21 => vec![
+            17 => vec![
                 (HirStatementChildRole::Scrutinee, first_expr),
                 (HirStatementChildRole::MatchGuard { arm: 0 }, second_expr),
                 (HirStatementChildRole::MatchValue { arm: 0 }, third_expr),
             ],
-            24 => vec![
+            20 => vec![
                 (HirStatementChildRole::ForSource, first_expr),
                 (HirStatementChildRole::ForIterator, second_expr),
                 (HirStatementChildRole::ForNextValue, third_expr),
             ],
-            26 => vec![(
+            22 => vec![(
                 HirStatementChildRole::SelectSource { branch: 0 },
                 first_expr,
             )],
-            10 | 27..=29 | 31 | 34 => Vec::new(),
+            23..=25 | 27 | 30 => Vec::new(),
             _ => unreachable!("all statement family ordinals are covered"),
         };
         let actual_expression_steps = steps
@@ -824,7 +796,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                     && *statement == first_statement
                     && *locals == [first_local]
             )),
-            16 => assert!(matches!(
+            12 => assert!(matches!(
                 steps.as_slice(),
                 [
                     HirStmtEvaluationStep::Expression {
@@ -844,7 +816,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                     && *published == first_pattern
                     && locals.is_empty()
             )),
-            20 => assert!(matches!(
+            16 => assert!(matches!(
                     steps.as_slice(),
                     [
                         HirStmtEvaluationStep::Expression {
@@ -868,7 +840,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                         && *locals == [first_local]
                         && *guard == second_expr
             )),
-            21 => assert!(matches!(
+            17 => assert!(matches!(
                 steps.as_slice(),
                 [
                     HirStmtEvaluationStep::Expression {
@@ -896,7 +868,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                     && *guard == second_expr
                     && *value == third_expr
             )),
-            23 => assert!(matches!(
+            19 => assert!(matches!(
                 steps.as_slice(),
                 [
                     HirStmtEvaluationStep::Expression {
@@ -920,7 +892,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                     && *locals == [first_local]
                     && *guard == second_expr
             )),
-            26 => assert!(matches!(
+            22 => assert!(matches!(
                 steps.as_slice(),
                 [
                     HirStmtEvaluationStep::Expression {
@@ -970,7 +942,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                13,
+                9,
                 HirStmtEvaluationPlan::OrderedPair {
                     kind: HirStmtOrderedPairPlanKind::Signal,
                     first,
@@ -978,7 +950,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                14,
+                10,
                 HirStmtEvaluationPlan::OrderedPair {
                     kind: HirStmtOrderedPairPlanKind::LifetimeSet,
                     first,
@@ -1004,28 +976,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(success_locals, [first_local]);
             }
             (
-                4..=6,
-                HirStmtEvaluationPlan::Binding {
-                    kind,
-                    pattern,
-                    annotation: None,
-                    input,
-                    locals,
-                },
-            ) => {
-                let expected = match ordinal {
-                    4 => HirStmtBindingPlanKind::LetChoice,
-                    5 => HirStmtBindingPlanKind::LetScope,
-                    6 => HirStmtBindingPlanKind::LetActionReceive,
-                    _ => unreachable!(),
-                };
-                assert_eq!(kind, expected);
-                assert_eq!(pattern, first_pattern);
-                assert_eq!(input, first_expr);
-                assert_eq!(locals, [first_local]);
-            }
-            (
-                7,
+                4,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Return,
                     expression: Some(value),
@@ -1034,7 +985,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                9,
+                6,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Goto,
                     expression: Some(value),
@@ -1043,7 +994,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                11,
+                7,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Defer,
                     expression: Some(value),
@@ -1052,7 +1003,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                12,
+                8,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Yield,
                     expression: Some(value),
@@ -1061,7 +1012,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                15,
+                11,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Wait,
                     expression: Some(value),
@@ -1070,7 +1021,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                18,
+                14,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Choice,
                     expression: Some(value),
@@ -1079,7 +1030,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                25,
+                21,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Close,
                     expression: Some(value),
@@ -1088,7 +1039,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             )
             | (
-                33,
+                29,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::ProofCall,
                     expression: Some(value),
@@ -1097,7 +1048,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 },
             ) => assert_eq!(value, first_expr),
             (
-                8,
+                5,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Out,
                     expression: Some(value),
@@ -1109,19 +1060,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(label.as_str(), "out_label");
             }
             (
-                10,
-                HirStmtEvaluationPlan::DeferredBody {
-                    kind: HirStmtDeferredBodyPlanKind::DeferBlock,
-                    scope,
-                    body,
-                    outcome: DeferOutcome::Failed,
-                },
-            ) => {
-                assert_eq!(scope, body_scope);
-                assert_eq!(body, [first_statement, second_statement]);
-            }
-            (
-                16,
+                12,
                 HirStmtEvaluationPlan::EventBody {
                     trigger:
                         HirStmtTriggerEvaluationPlan::Signal {
@@ -1137,14 +1076,14 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(scope, body_scope);
                 assert_eq!(body, [first_statement]);
             }
-            (17, HirStmtEvaluationPlan::UnsafeLifetime { audit, body }) => {
+            (13, HirStmtEvaluationPlan::UnsafeLifetime { audit, body }) => {
                 assert_eq!(audit.reason(), Some(second_expr));
                 assert!(audit.has_safety_doc());
                 assert_eq!(body.scope(), Some(body_scope));
                 assert_eq!(body.statements(), [first_statement]);
             }
             (
-                19,
+                15,
                 HirStmtEvaluationPlan::If {
                     condition,
                     then_body,
@@ -1155,7 +1094,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(then_body.scope(), body_scope);
             }
             (
-                20,
+                16,
                 HirStmtEvaluationPlan::IfLet {
                     pattern,
                     scrutinee,
@@ -1171,18 +1110,18 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(branch_locals, [first_local]);
                 assert_eq!(then_body.scope(), body_scope);
             }
-            (21, HirStmtEvaluationPlan::Match { scrutinee, arms }) => {
+            (17, HirStmtEvaluationPlan::Match { scrutinee, arms }) => {
                 assert_eq!(scrutinee, first_expr);
                 assert_eq!(arms.len(), 1);
                 assert_eq!(arms[0].pattern(), first_pattern);
                 assert_eq!(arms[0].guard(), Some(second_expr));
             }
-            (22, HirStmtEvaluationPlan::While { condition, body }) => {
+            (18, HirStmtEvaluationPlan::While { condition, body }) => {
                 assert_eq!(condition, first_expr);
                 assert_eq!(body.scope(), body_scope);
             }
             (
-                23,
+                19,
                 HirStmtEvaluationPlan::WhileLet {
                     pattern,
                     scrutinee,
@@ -1198,7 +1137,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(body.scope(), body_scope);
             }
             (
-                24,
+                20,
                 HirStmtEvaluationPlan::For {
                     source,
                     iterator,
@@ -1217,7 +1156,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(body.scope(), body_scope);
             }
             (
-                26,
+                22,
                 HirStmtEvaluationPlan::Select {
                     scope: Some(scope),
                     plan: HirStmtSelectEvaluationPlan::Branches { branches },
@@ -1228,36 +1167,31 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 let mut entries = branches.entries();
                 let branch = entries.next().expect("select branch");
                 match branch.head() {
-                    HirStmtSelectHeadEvaluation::Bind {
-                        binding,
-                        source,
-                        propagates_error,
-                    } => {
+                    HirStmtSelectHeadEvaluation::Bind { binding, source } => {
                         assert_eq!(binding.resolved(), Some(first_local));
                         assert_eq!(source, first_expr);
-                        assert!(propagates_error);
                     }
                     other => panic!("unexpected select head: {other:?}"),
                 }
                 assert_eq!(branch.body().scope(), select_body_scope);
                 assert!(entries.next().is_none());
             }
-            (27, HirStmtEvaluationPlan::SourceLocale { locale, body }) => {
+            (23, HirStmtEvaluationPlan::SourceLocale { locale, body }) => {
                 assert_eq!(
                     locale,
                     &HirSourceLocaleValue::Recovered(HirSourceLocaleIssue::Missing)
                 );
                 assert_eq!(body.scope(), scope);
             }
-            (28, HirStmtEvaluationPlan::Scope { name, body }) => {
+            (24, HirStmtEvaluationPlan::Scope { name, body }) => {
                 assert_eq!(name.map(HirName::as_str), Some("scope_name"));
                 assert_eq!(body.scope(), scope);
             }
-            (29, HirStmtEvaluationPlan::Include { target }) => {
+            (25, HirStmtEvaluationPlan::Include { target }) => {
                 assert_eq!(target, &include_target);
             }
             (
-                30,
+                26,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Break,
                     expression: Some(value),
@@ -1268,11 +1202,11 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                 assert_eq!(value, third_expr);
                 assert_eq!(label.as_str(), "break_label");
             }
-            (31, HirStmtEvaluationPlan::Continue { label: Some(label) }) => {
+            (27, HirStmtEvaluationPlan::Continue { label: Some(label) }) => {
                 assert_eq!(label.as_str(), "continue_label");
             }
             (
-                32,
+                28,
                 HirStmtEvaluationPlan::Value {
                     kind: HirStmtValuePlanKind::Expression,
                     expression: Some(value),
@@ -1280,7 +1214,7 @@ fn evaluation_plan_matrix_covers_all_thirty_five_statement_families() {
                     outcome: None,
                 },
             ) => assert_eq!(value, fourth_expr),
-            (34, HirStmtEvaluationPlan::Recovered) => {}
+            (30, HirStmtEvaluationPlan::Recovered) => {}
             _ => panic!("{family} did not project its typed evaluation plan"),
         }
     }
@@ -1430,7 +1364,6 @@ fn assert_select_evaluation_steps(
         HirSelectBranchHead::Bind {
             binding: HirSelectBindingLocal::Resolved(local),
             source,
-            propagates_error: true,
         },
         ordinary_body(select_body_scope, Box::new([thread_statement])),
     )
@@ -1495,28 +1428,6 @@ fn statement_match_arm_rejects_foreign_expression_and_block_bodies() {
 }
 
 #[test]
-fn existing_assertion_and_defer_authorities_are_retained_directly() {
-    let owner_module = module(7);
-    let scope = id::<ScopeId>(owner_module, 1);
-    let body = id::<StmtId>(owner_module, 2);
-
-    let statement = HirStmt::try_new(
-        scope,
-        HirStmtKind::DeferBlock {
-            outcome: DeferOutcome::Failed,
-            scope,
-            body: Box::new([body]),
-        },
-    )
-    .expect("defer authority");
-    assert!(matches!(
-        statement.kind(),
-        HirStmtKind::DeferBlock { outcome: DeferOutcome::Failed, body: statements, .. }
-            if statements.as_ref() == [body]
-    ));
-}
-
-#[test]
 fn keyword_statement_recovery_roles_are_family_closed() {
     let owner_module = module(15);
     let scope = id::<ScopeId>(owner_module, 1);
@@ -1577,11 +1488,12 @@ fn keyword_statement_recovery_roles_are_family_closed() {
 fn unsafe_audit_retains_semantics_without_a_source_range() {
     let owner_module = module(8);
     let reason = id::<ExprId>(owner_module, 1);
-    let audit = HirUnsafeAudit::new(audit_id(), Some(reason), true);
+    let audit = HirUnsafeAudit::new(unsafe_audit_identity(), Some(reason), true);
 
     assert!(matches!(
-        audit.id(),
-        HirIdRefValue::Resolved(HirIdRef::Absolute(id)) if id.as_str() == "unsafe.audit"
+        audit.identity(),
+        HirUnsafeAuditIdentity::Accepted(id)
+            if id.as_public_id().as_str() == "unsafe.audit"
     ));
     assert_eq!(audit.reason(), Some(reason));
     assert!(audit.has_safety_doc());
@@ -1596,18 +1508,14 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         scope: body_scope,
         statements: Box::new([]),
     };
-    let missing_id = || {
-        HirIdRefValue::Recovered(HirIdRefRecovery::new(
-            HirIdRefShape::Missing,
-            HirIdRefIssue::Missing,
-        ))
-    };
+    let missing_identity =
+        || HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing);
 
     assert_eq!(
         HirStmt::try_new(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(missing_id(), None, false),
+                audit: HirUnsafeAudit::new(missing_identity(), None, false),
                 body: body(),
             },
         ),
@@ -1617,7 +1525,7 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         HirStmt::try_new(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), None, false),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), None, false),
                 body: HirUnsafeLifetimeBody::Missing,
             },
         ),
@@ -1627,7 +1535,7 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         HirStmt::try_new_with_state(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), None, false),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), None, false),
                 body: body(),
             },
             HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::MissingBody),
@@ -1638,11 +1546,11 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         HirStmt::try_new_with_state(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), None, false),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), None, false),
                 body: body(),
             },
             HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(
-                HirIdRefIssue::Missing,
+                HirUnsafeAuditIdentityIssue::Missing,
             )),
         ),
         Err(HirStmtInvariantError::InvalidPoisonState)
@@ -1652,11 +1560,11 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         HirStmt::try_new_with_state(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(missing_id(), None, false),
+                audit: HirUnsafeAudit::new(missing_identity(), None, false),
                 body: body(),
             },
             HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(
-                HirIdRefIssue::Missing,
+                HirUnsafeAuditIdentityIssue::Missing,
             )),
         )
         .is_ok()
@@ -1665,7 +1573,7 @@ fn unsafe_lifetime_constructor_rejects_payload_and_poison_state_drift() {
         HirStmt::try_new_with_state(
             owner_scope,
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id(), None, false),
+                audit: HirUnsafeAudit::new(unsafe_audit_identity(), None, false),
                 body: body(),
             },
             HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::UnclosedBody),

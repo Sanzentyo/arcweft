@@ -190,7 +190,7 @@ flow rich_text_showcase(state: GameState) -> String {
     ]
 
     alice.say(id=@say.rich_text.006, voice=auto)[
-        [.keyword]未知の dot selector は marker として残し、[reset][font "Yu Gothic"]reset 後の通常文字[/font]へ戻す。[p]
+        [mark @.keyword]明示的な marker を置き、[reset][font "Yu Gothic"]reset 後の通常文字[/font]へ戻す。[p]
     ]
 
     return "rich_text_showcase"

@@ -899,19 +899,9 @@ fn emit_select_branch_head(
             );
             parser.bump_trivia();
             let source_end = trimmed_end(parser, parser.cursor(), arrow);
-            let propagates_error =
-                source_end > parser.cursor() && token_text(parser, source_end - 1) == Some("?");
-            let expression_end = if propagates_error {
-                trimmed_end(parser, parser.cursor(), source_end - 1)
-            } else {
-                source_end
-            };
-            emit_item_expression(parser, expression_end, SyntaxRole::Initializer, item_kind);
+            emit_item_expression(parser, source_end, SyntaxRole::Initializer, item_kind);
             bump_until(parser, arrow);
-            PendingSelectBranchProjection::Bind {
-                name,
-                propagates_error,
-            }
+            PendingSelectBranchProjection::Bind { name }
         }
     }
 }
@@ -1632,7 +1622,7 @@ fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: 
     parser.bump();
     parser.bump_trivia();
     let arrow = top_level_operator(parser, parser.cursor(), end, "=>").unwrap_or(end);
-    emit_expression(parser, arrow, SyntaxRole::Condition);
+    trigger::emit_trigger_pattern(parser, arrow, SyntaxRole::Condition);
     bump_until(parser, arrow);
     if parser.cursor() < end {
         parser.bump();

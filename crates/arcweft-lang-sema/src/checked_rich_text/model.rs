@@ -3,7 +3,8 @@ use arcweft_dialogue::rich_text::{
 };
 use arcweft_id::PublicId;
 use arcweft_lang_hir::dialogue_application::{
-    HirDialogueContentId, HirLineBreakKind, HirRichTextArgumentId, HirRichTextTagId,
+    HirDialogueContentId, HirDialogueMarkName, HirLineBreakKind, HirRichTextArgumentId,
+    HirRichTextTagId,
 };
 use arcweft_lang_hir::identity::ExprId;
 use arcweft_lang_hir::source_index::HirSourceSite;
@@ -18,6 +19,7 @@ use super::{
     CheckedAngle, CheckedColor, CheckedDuration, CheckedEnumValue, CheckedLength,
     CheckedRichTextValue, Milli, RatioMilli, RichTextAttributeDiagnostic,
 };
+use crate::semantic_coordinate::StableCheckedDialogueMarkCoordinate;
 
 /// Stable identity of one materialized owner-schema default.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -340,7 +342,7 @@ pub enum CheckedRichTextAction {
         action: CheckedDialogueHostEvent,
         fields: CheckedOwnerFields,
     },
-    Marker(PublicId),
+    Marker(CheckedDialogueMark),
 }
 
 impl CheckedRichTextAction {
@@ -356,6 +358,63 @@ impl CheckedRichTextAction {
             | Self::Host { fields, .. } => Some(fields),
             Self::Marker(_) => None,
         }
+    }
+}
+
+/// Final accepted identity of one dialogue-content marker.
+///
+/// Equality, ordering, and hashing deliberately exclude the display-only
+/// diagnostic name. The accepted-rooted coordinate is the sole semantic
+/// identity consumed by compiler projection and transcripts.
+#[derive(Clone, Debug)]
+pub struct CheckedDialogueMark {
+    coordinate: StableCheckedDialogueMarkCoordinate,
+    diagnostic_name: HirDialogueMarkName,
+}
+
+impl CheckedDialogueMark {
+    pub(crate) const fn new(
+        coordinate: StableCheckedDialogueMarkCoordinate,
+        diagnostic_name: HirDialogueMarkName,
+    ) -> Self {
+        Self {
+            coordinate,
+            diagnostic_name,
+        }
+    }
+
+    pub const fn coordinate(&self) -> &StableCheckedDialogueMarkCoordinate {
+        &self.coordinate
+    }
+
+    pub const fn diagnostic_name(&self) -> &HirDialogueMarkName {
+        &self.diagnostic_name
+    }
+}
+
+impl PartialEq for CheckedDialogueMark {
+    fn eq(&self, other: &Self) -> bool {
+        self.coordinate == other.coordinate
+    }
+}
+
+impl Eq for CheckedDialogueMark {}
+
+impl PartialOrd for CheckedDialogueMark {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CheckedDialogueMark {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.coordinate.cmp(&other.coordinate)
+    }
+}
+
+impl std::hash::Hash for CheckedDialogueMark {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.coordinate.hash(state);
     }
 }
 

@@ -1,14 +1,21 @@
 //! Type resolution and local-binding preparation.
 
-use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
-use arcweft_lang_hir::item::{HirCapabilityFunction, HirCapabilityMember};
+use arcweft_lang_hir::{
+    dialogue_application::HirLinePlanItem,
+    expr::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
+    identity::LocalId,
+    item::{HirCapabilityFunction, HirCapabilityMember},
+    project::HirSemanticPathOwnerId,
+};
 
 use crate::{
     callable::{CallableName, CallablePath, associated_scope_for},
     nominal::AssociatedTypeScope,
+    types::EntityKind,
 };
 
 use super::super::report::merge_type_resolution_fact;
+use super::state::SemanticFactState;
 use super::{
     Analyzer, BTreeMap, BTreeSet, ExprId, FinalSemanticAnalysisError, GenericTypeScope,
     HirCallArgument, HirExprKind, HirFunctionBody, HirImplMember, HirItemKind, HirModule,
@@ -22,7 +29,9 @@ use super::{
     statements::{enclosing_item, generic_scope},
 };
 
-fn simple_binding_source(statement: &HirStmtKind) -> Option<(PatternId, ExprId, Option<TypeId>)> {
+pub(super) fn simple_binding_source(
+    statement: &HirStmtKind,
+) -> Option<(PatternId, ExprId, Option<TypeId>)> {
     match statement {
         HirStmtKind::Let {
             pattern,
@@ -36,17 +45,6 @@ fn simple_binding_source(statement: &HirStmtKind) -> Option<(PatternId, ExprId, 
             initializer,
             ..
         } => Some((*pattern, *initializer, *annotation)),
-        HirStmtKind::LetChoice {
-            pattern, choice, ..
-        } => Some((*pattern, *choice, None)),
-        HirStmtKind::LetScope {
-            pattern,
-            scope_expr,
-            ..
-        } => Some((*pattern, *scope_expr, None)),
-        HirStmtKind::LetActionReceive {
-            pattern, action, ..
-        } => Some((*pattern, *action, None)),
         _ => None,
     }
 }
@@ -410,16 +408,7 @@ impl Analyzer<'_, '_, '_> {
                                 &mut locals,
                                 &mut patterns,
                             )?;
-                            for (owner, ty) in locals {
-                                self.facts
-                                    .set_local_type(owner, ty)
-                                    .map_err(FinalSemanticAnalysisError::from)?;
-                            }
-                            for (owner, ty) in patterns {
-                                self.facts
-                                    .set_pattern_type(owner, ty)
-                                    .map_err(FinalSemanticAnalysisError::from)?;
-                            }
+                            Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                         }
                     }
                     HirExprKind::Await(awaited) => {
@@ -446,35 +435,78 @@ impl Analyzer<'_, '_, '_> {
                                 &mut locals,
                                 &mut patterns,
                             )?;
-                            for (owner, ty) in locals {
-                                self.facts
-                                    .set_local_type(owner, ty)
-                                    .map_err(FinalSemanticAnalysisError::from)?;
-                            }
-                            for (owner, ty) in patterns {
-                                self.facts
-                                    .set_pattern_type(owner, ty)
-                                    .map_err(FinalSemanticAnalysisError::from)?;
-                            }
+                            Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                         }
                     }
                     _ => {}
+                }
+                for edge in expression
+                    .kind()
+                    .expression_owned_child_edges()
+                    .map_err(|_| FinalSemanticAnalysisError::RecoveredOwner)?
+                {
+                    let HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { .. } = edge.role()
+                    else {
+                        continue;
+                    };
+                    let HirExpressionOwnedChild::Pattern(pattern) = edge.child() else {
+                        continue;
+                    };
+                    let ty = TypeKind::entity_ref(EntityKind::ChoiceOption);
+                    let mut locals = BTreeMap::new();
+                    let mut patterns = BTreeMap::new();
+                    seed_pattern_locals(
+                        PatternSeedContext {
+                            module,
+                            types: &self.types,
+                            symbols: self.symbols,
+                            environment: self.catalogs.world.environment().typecheck_env(),
+                        },
+                        pattern,
+                        &ty,
+                        &mut locals,
+                        &mut patterns,
+                    )?;
+                    Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
                 }
             }
         }
         Ok(())
     }
 
-    pub(super) fn infer_statement_bindings(&mut self) -> Result<(), FinalSemanticAnalysisError> {
-        let statements = self
-            .modules
+    fn publish_seeded_pattern_facts(
+        facts: &mut SemanticFactState,
+        locals: BTreeMap<LocalId, TypeKind>,
+        patterns: BTreeMap<PatternId, TypeKind>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        for (owner, ty) in locals {
+            facts
+                .set_local_type(owner, ty)
+                .map_err(FinalSemanticAnalysisError::from)?;
+        }
+        for (owner, ty) in patterns {
+            facts
+                .set_pattern_type(owner, ty)
+                .map_err(FinalSemanticAnalysisError::from)?;
+        }
+        Ok(())
+    }
+
+    fn statement_inventory(&self) -> Vec<(StmtId, HirStmtKind)> {
+        self.modules
             .values()
             .flat_map(|module| {
                 module
                     .statements()
                     .map(|(owner, statement)| (owner, statement.kind().clone()))
             })
-            .collect::<Vec<_>>();
+            .collect()
+    }
+
+    fn infer_statement_inventory(
+        &mut self,
+        statements: Vec<(StmtId, HirStmtKind)>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
         for (owner, statement) in statements {
             self.control.check()?;
             if let Some((pattern, initializer, annotation)) = simple_binding_source(&statement) {
@@ -483,36 +515,29 @@ impl Analyzer<'_, '_, '_> {
                 self.infer_control_statement_bindings(owner, statement)?;
             }
         }
-        let line_plan_bindings = self
-            .modules
-            .values()
-            .flat_map(|module| module.expressions())
-            .filter_map(|(_, expression)| {
-                let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
-                    return None;
-                };
-                application.plan().map(|plan| plan.items())
-            })
-            .flat_map(line_plan_let_bindings)
-            .collect::<Vec<_>>();
-        for (pattern, initializer) in line_plan_bindings {
-            self.infer_line_plan_binding(pattern, initializer)?;
-        }
         Ok(())
     }
 
-    fn infer_line_plan_binding(
-        &mut self,
-        pattern: PatternId,
-        initializer: ExprId,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        self.infer_nested_expression_bindings(initializer)?;
-        let actual = self.check_expression_published(initializer, None)?;
-        let module = self.module(pattern.module())?;
-        self.seed_contextual_pattern_locals(module, pattern, actual.ty())
+    #[cfg(test)]
+    pub(super) fn infer_statement_bindings(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+        self.infer_statement_inventory(self.statement_inventory())
     }
 
-    fn infer_simple_statement_binding(
+    pub(super) fn infer_residual_statement_bindings(
+        &mut self,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut residual = Vec::new();
+        for (owner, statement) in self.statement_inventory() {
+            if !self
+                .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Statement(owner))?
+            {
+                residual.push((owner, statement));
+            }
+        }
+        self.infer_statement_inventory(residual)
+    }
+
+    pub(super) fn infer_simple_statement_binding(
         &mut self,
         owner: StmtId,
         pattern: PatternId,
@@ -560,31 +585,27 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         owner: ExprId,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let (statements, line_plan_bindings) = {
+        let statements = {
             let module = self.module(owner.module())?;
             let expression = module
                 .resolve_expr(owner)
                 .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
             match expression.kind() {
-                HirExprKind::Block(block) => (block.statements().to_vec(), Vec::new()),
-                HirExprKind::ComputationBlock(block) => (block.statements().to_vec(), Vec::new()),
-                HirExprKind::NamedBlock(block) => (block.statements().to_vec(), Vec::new()),
-                HirExprKind::Loop(loop_expression) => {
-                    (loop_expression.statements().to_vec(), Vec::new())
-                }
-                HirExprKind::DialogueContentApplication(application) => (
-                    Vec::new(),
-                    application
-                        .plan()
-                        .map(|plan| line_plan_let_bindings(plan.items()))
-                        .unwrap_or_default(),
-                ),
+                HirExprKind::Block(block) => block.statements().to_vec(),
+                HirExprKind::ComputationBlock(block) => block.statements().to_vec(),
+                HirExprKind::NamedBlock(block) => block.statements().to_vec(),
+                HirExprKind::Loop(loop_expression) => loop_expression.statements().to_vec(),
+                HirExprKind::DialogueContentApplication(application) => application
+                    .plan()
+                    .map(|plan| {
+                        let mut statements = Vec::new();
+                        append_line_plan_statements(plan.items(), &mut statements);
+                        statements
+                    })
+                    .unwrap_or_default(),
                 _ => return Ok(()),
             }
         };
-        for (pattern, initializer) in line_plan_bindings {
-            self.infer_line_plan_binding(pattern, initializer)?;
-        }
         for statement in statements {
             let kind = self
                 .module(statement.module())?
@@ -601,7 +622,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn infer_control_statement_bindings(
+    pub(super) fn infer_control_statement_bindings(
         &mut self,
         owner: StmtId,
         statement: HirStmtKind,
@@ -643,7 +664,17 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    pub(super) fn analyze_all_expressions(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+    fn expression_inventory(&self) -> BTreeSet<ExprId> {
+        self.modules
+            .values()
+            .flat_map(|module| module.expressions().map(|(owner, _)| owner))
+            .collect()
+    }
+
+    fn analyze_expression_inventory(
+        &mut self,
+        inventory: BTreeSet<ExprId>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
         // Call arguments are context-owned by their enclosing Call.  Walking
         // them again as context-free roots would perform one extra physical
         // evaluation outside the candidate transaction and could publish a
@@ -651,24 +682,27 @@ impl Analyzer<'_, '_, '_> {
         let contextual_call_arguments = self
             .modules
             .values()
-            .flat_map(|module| module.expressions().map(|(_, expression)| expression))
+            .flat_map(|module| module.expressions())
+            .filter_map(|(owner, expression)| inventory.contains(&owner).then_some(expression))
             .filter_map(|expression| match expression.kind() {
                 HirExprKind::Call(call) => Some(call.arguments()),
                 _ => None,
             })
             .flatten()
             .map(HirCallArgument::value)
+            .filter(|owner| inventory.contains(owner))
             .collect::<BTreeSet<_>>();
         let expression_children = self
             .modules
             .values()
-            .flat_map(|module| module.expressions().map(|(_, expression)| expression))
+            .flat_map(|module| module.expressions())
+            .filter_map(|(owner, expression)| inventory.contains(&owner).then_some(expression))
             .flat_map(|expression| expression.kind().direct_expression_children())
+            .filter(|owner| inventory.contains(owner))
             .collect::<BTreeSet<_>>();
-        let owners = self
-            .modules
-            .values()
-            .flat_map(|module| module.expressions().map(|(owner, _)| owner))
+        let owners = inventory
+            .iter()
+            .copied()
             .filter(|owner| !expression_children.contains(owner))
             .collect::<BTreeSet<_>>();
         for owner in owners {
@@ -687,6 +721,26 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(super) fn analyze_all_expressions(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+        self.analyze_expression_inventory(self.expression_inventory())
+    }
+
+    pub(super) fn analyze_residual_expressions(
+        &mut self,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut residual = BTreeSet::new();
+        for owner in self.expression_inventory() {
+            if !self
+                .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Expression(owner))?
+            {
+                residual.insert(owner);
+            }
+        }
+        self.analyze_expression_inventory(residual)
+    }
+
+    #[cfg(test)]
     pub(super) fn validate_callable_body_results(
         &mut self,
     ) -> Result<(), FinalSemanticAnalysisError> {
@@ -695,7 +749,8 @@ impl Analyzer<'_, '_, '_> {
             for (_, item) in module.items() {
                 match item.kind() {
                     HirItemKind::Function(function) => {
-                        let (yield_count, _) = function_body_roles(module, function.body())?;
+                        let (yield_count, _) =
+                            function_body_roles(module, function.body(), self.facts.expressions())?;
                         let expected = if yield_count == 0 {
                             resolved_callable_result(function.return_type(), &self.types)?
                         } else {
@@ -724,7 +779,8 @@ impl Analyzer<'_, '_, '_> {
                             let Some(body) = function.body() else {
                                 continue;
                             };
-                            let (yield_count, _) = function_body_roles(module, body)?;
+                            let (yield_count, _) =
+                                function_body_roles(module, body, self.facts.expressions())?;
                             let expected = if yield_count == 0 {
                                 resolved_callable_result(function.return_type(), &self.types)?
                             } else {
@@ -751,9 +807,115 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    pub(super) fn finalize_unannotated_locals(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+    /// Checks result-bearing roots for one exact executable declaration.
+    ///
+    /// Entry-contextual checking calls this after seeding the declaration's
+    /// Event patterns and before evaluating its remaining expression roots.
+    pub(super) fn validate_declaration_body_result(
+        &mut self,
+        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let view = self
+            .topology
+            .declaration(declaration)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let module = self.module(view.module().module())?;
+        let item = module
+            .resolve_item(view.body().source_item())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let mut expectations = Vec::new();
+        match (view.body().source_owner(), item.kind()) {
+            (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+                HirItemKind::Function(function),
+            ) => {
+                let (yield_count, _) =
+                    function_body_roles(module, function.body(), self.facts.expressions())?;
+                let expected = if yield_count == 0 {
+                    resolved_callable_result(function.return_type(), &self.types)?
+                } else {
+                    TypeKind::Unit
+                };
+                append_function_body_result_expectations(
+                    module,
+                    function.body(),
+                    expected,
+                    &mut expectations,
+                )?;
+            }
+            (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+                HirItemKind::Predicate(predicate),
+            ) => {
+                expectations.push((
+                    predicate_body_tail(predicate.body())?,
+                    resolved_required_result(predicate.return_type(), &self.types)?,
+                ));
+            }
+            (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+                HirItemKind::Proof(proof),
+            ) => {
+                expectations.push((
+                    proof_body_tail(proof.body())?,
+                    resolved_required_result(proof.return_type(), &self.types)?,
+                ));
+            }
+            (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::ImplFunction { member },
+                HirItemKind::Impl(implementation),
+            ) => {
+                let function = implementation
+                    .members()
+                    .get(usize::from(member))
+                    .and_then(|member| match member {
+                        HirImplMember::Function(function) => Some(function),
+                        HirImplMember::AssociatedType(_) | HirImplMember::Error => None,
+                    })
+                    .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+                if let Some(body) = function.body() {
+                    let (yield_count, _) =
+                        function_body_roles(module, body, self.facts.expressions())?;
+                    let expected = if yield_count == 0 {
+                        resolved_callable_result(function.return_type(), &self.types)?
+                    } else {
+                        TypeKind::Unit
+                    };
+                    append_function_body_result_expectations(
+                        module,
+                        body,
+                        expected,
+                        &mut expectations,
+                    )?;
+                }
+            }
+            (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+                HirItemKind::Flow(_),
+            )
+            | (
+                arcweft_lang_hir::source_index::HirCallableSourceOwner::ViewItem,
+                HirItemKind::View(_),
+            ) => {}
+            _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
+        }
+        for (owner, expected) in expectations {
+            let checked = self.check_expression_published(owner, Some(&expected))?;
+            if !expected.accepts(checked.ty()) {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn finalize_residual_locals(&mut self) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values().copied() {
             for (owner, local) in module.locals() {
+                if self
+                    .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Local(owner))?
+                {
+                    continue;
+                }
                 if local.is_poisoned() {
                     return Err(FinalSemanticAnalysisError::RecoveredOwner);
                 }
@@ -789,23 +951,20 @@ impl Analyzer<'_, '_, '_> {
     }
 }
 
-fn line_plan_let_bindings(items: &[HirLinePlanItem]) -> Vec<(PatternId, ExprId)> {
-    let mut bindings = Vec::new();
-    let mut pending = vec![items];
-    while let Some(items) = pending.pop() {
-        for item in items {
-            match item {
-                HirLinePlanItem::Let { pattern, value, .. } => {
-                    bindings.push((*pattern, *value));
-                }
-                HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
-                    pending.push(items);
-                }
-                _ => {}
+fn append_line_plan_statements(items: &[HirLinePlanItem], output: &mut Vec<StmtId>) {
+    for item in items {
+        match item {
+            HirLinePlanItem::Init(statements) => output.extend(statements.iter().copied()),
+            HirLinePlanItem::Thread(statement)
+            | HirLinePlanItem::On(statement)
+            | HirLinePlanItem::Statement(statement)
+            | HirLinePlanItem::CancelRule(statement)
+            | HirLinePlanItem::Error(statement) => output.push(*statement),
+            HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
+                append_line_plan_statements(items, output);
             }
         }
     }
-    bindings
 }
 
 fn type_report_root_has_wrong_arity(report: &super::TypeResolutionReport, owner: TypeId) -> bool {

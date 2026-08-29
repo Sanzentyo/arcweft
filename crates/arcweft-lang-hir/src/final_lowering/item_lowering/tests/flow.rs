@@ -32,7 +32,7 @@ fn resolve_flow(
 }
 
 #[test]
-fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
+fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
     let parsed = parse(
         "arcweft-test://proof/dialogue-line-plan-final-hir",
         concat!(
@@ -91,30 +91,22 @@ fn dialogue_line_plan_owns_typed_let_callback_and_out_items() {
         .plan()
         .expect("Dialogue application owns its line plan");
     assert_eq!(plan.items().len(), 6);
-    assert!(matches!(plan.items()[0], HirLinePlanItem::Let { .. }));
-    for item in &plan.items()[1..3] {
+    for item in plan.items() {
         let HirLinePlanItem::Statement(statement) = item else {
-            panic!("bare line-plan callback remains statement-owned")
+            panic!("line-plan item must retain its statement owner")
         };
-        let HirStmtKind::Expression { expression } =
-            module.resolve_stmt(*statement).unwrap().kind()
-        else {
-            panic!("bare line-plan statement retains its expression payload")
-        };
-        assert!(matches!(
-            module.resolve_expr(*expression).unwrap().kind(),
-            HirExprKind::Call(_)
-        ));
+        match module.resolve_stmt(*statement).unwrap().kind() {
+            HirStmtKind::Let { initializer, .. }
+            | HirStmtKind::Expression {
+                expression: initializer,
+            } => assert!(matches!(
+                module.resolve_expr(*initializer).unwrap().kind(),
+                HirExprKind::Call(_)
+            )),
+            HirStmtKind::Out { .. } => {}
+            kind => panic!("unexpected line-plan statement kind: {kind:?}"),
+        }
     }
-    let HirLinePlanItem::Let { value: cue, .. } = plan.items()[3] else {
-        panic!("timed cue binding remains a typed line-plan Let")
-    };
-    assert!(matches!(
-        module.resolve_expr(cue).unwrap().kind(),
-        HirExprKind::Call(_)
-    ));
-    assert!(matches!(plan.items()[4], HirLinePlanItem::Let { .. }));
-    assert!(matches!(plan.items()[5], HirLinePlanItem::Out { .. }));
 }
 
 #[test]

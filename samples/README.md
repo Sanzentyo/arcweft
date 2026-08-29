@@ -15,7 +15,7 @@ run with `arcw`.
   overrides for Agent observe provenance checks.
 - [rich-text-full-grammar.arcw](rich-text-full-grammar.arcw) - broad
   rich-text grammar sample covering ruby forms, interpolation, control tags,
-  inferred dot selectors, explicit tag families, family-relative dialogue
+  recognized dot selectors, explicit tag families, family-relative dialogue
   defaults, and line option overrides.
 - [rich-text-fx.arcw](rich-text-fx.arcw) - typed reusable presentation Fx with
   required/default named parameters, ordered composition, View `.fx(...)`, and

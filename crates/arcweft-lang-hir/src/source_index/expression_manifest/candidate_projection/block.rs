@@ -20,14 +20,15 @@ use crate::expr::{HirExpressionRecoveryIssue, HirRecoveryIssue};
 use crate::identity::{
     ExprId, LocalGeneration, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner,
 };
-use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirName};
+use crate::leaf::HirName;
 use crate::scope::{HirPatternBindingPolicy, HirScopeKind, HirScopeOwner};
 use crate::slot::HirOrigin;
 use crate::source_index::{HirExprSourceRole, HirMatchArmSourcePart, HirSourceSite};
 use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirStmtChildRole,
     HirStmtKind, HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
-    HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirUnsafeLifetimeBody,
+    HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirUnsafeAuditIdentity,
+    HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 
 #[derive(Clone, Copy)]
@@ -797,20 +798,20 @@ impl CandidateValidationCursor<'_> {
                 matches: false,
             });
         };
-        let audit_id = match source.audit_id() {
+        let audit_identity = match source.audit_id() {
             AttachedCandidateUnsafeAuditId::Reference(node) => {
                 let Some(ExpressionProjection::EntityReference(reference)) =
                     node.expression_projection()
                 else {
                     return None;
                 };
-                crate::final_lowering::id_ref_projection::id_ref(reference).ok()?
+                crate::final_lowering::id_ref_projection::unsafe_audit_identity(reference).ok()?
             }
-            AttachedCandidateUnsafeAuditId::Missing(_) => HirIdRefValue::Recovered(
-                HirIdRefRecovery::new(HirIdRefShape::Missing, HirIdRefIssue::Missing),
-            ),
+            AttachedCandidateUnsafeAuditId::Missing(_) => {
+                HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
+            }
         };
-        let mut recovery = audit_id
+        let mut recovery = audit_identity
             .recovery_issue()
             .map(HirStmtRecoveryIssue::InvalidAuditId);
         let reason = match source.reason() {
@@ -860,7 +861,7 @@ impl CandidateValidationCursor<'_> {
         };
         Some(CandidateStatementExpectation {
             recovery,
-            matches: actual_audit.id() == &audit_id
+            matches: actual_audit.identity() == &audit_identity
                 && actual_audit.reason() == reason.map(|reason| reason.id)
                 && actual_audit.has_safety_doc() == has_safety_doc
                 && actual_body == &body,

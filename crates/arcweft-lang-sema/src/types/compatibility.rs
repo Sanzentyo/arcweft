@@ -250,6 +250,9 @@ where
         | (TypeKind::ViewValue, TypeKind::ViewValue)
         | (TypeKind::Unit, TypeKind::Unit)
         | (TypeKind::Never, TypeKind::Never) => Ok(true),
+        (TypeKind::StatementIngress(expected), TypeKind::StatementIngress(actual)) => {
+            Ok(expected == actual)
+        }
         (TypeKind::StageApi(expected), TypeKind::StageApi(actual)) => Ok(expected == actual),
         (
             TypeKind::StageActorHandle(super::StageActorHandleType::Any),
@@ -994,6 +997,7 @@ mod tests {
         NoopTypeCompatibilityControl, TypeCompatibilityControl, TypeCompatibilityFailure,
         TypeCompatibilityPolicy, TypeKind,
     };
+    use crate::registration::StandardStatementIngressTypeId;
     use crate::types::{
         ArrayLength, DetachedGenericOwnerId, EntityKind, GenericConstParameterId,
         GenericParameterOwnerId, StageActorHandleType, TypePoisonId,
@@ -1085,6 +1089,23 @@ mod tests {
         assert!(!alice.accepts(&any));
         assert!(!alice.accepts(&bob));
         assert!(alice.first_mismatch(&any).is_some());
+    }
+
+    #[test]
+    fn statement_ingress_compatibility_requires_the_exact_closed_id() {
+        let task = TypeKind::StatementIngress(StandardStatementIngressTypeId::TaskEvent);
+        let scope = TypeKind::StatementIngress(StandardStatementIngressTypeId::ScopeExit);
+        let frame = TypeKind::StatementIngress(StandardStatementIngressTypeId::FrameBoundary);
+
+        for policy in [
+            TypeCompatibilityPolicy::Recovery,
+            TypeCompatibilityPolicy::SelectedCall,
+            TypeCompatibilityPolicy::Invariant,
+        ] {
+            assert!(accepts_with(&task, &task, policy).unwrap());
+            assert!(!accepts_with(&task, &scope, policy).unwrap());
+            assert!(!accepts_with(&task, &frame, policy).unwrap());
+        }
     }
 
     #[test]

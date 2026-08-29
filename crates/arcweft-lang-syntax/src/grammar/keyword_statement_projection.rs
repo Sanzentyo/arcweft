@@ -19,7 +19,6 @@ pub enum SyntaxSelectStatementForm {
 pub(crate) enum PendingSelectBranchProjection {
     Bind {
         name: Result<SyntaxName, SyntaxNameIssue>,
-        propagates_error: bool,
     },
     Frame,
     Event,

@@ -904,6 +904,8 @@ pub enum HirLimit {
     CallArguments,
     AssertionConditions,
     RichTextCallArguments,
+    DialogueMarksPerContent,
+    SelectBranches,
     CallTypeArguments,
     StyleNestingDepth,
 }
@@ -923,10 +925,11 @@ impl HirLimit {
             | Self::DecimalCoefficientDigits
             | Self::DecimalScale
             | Self::NumericSequenceElements
-            | Self::ThreadFlowItems => 65_536,
+            | Self::ThreadFlowItems
+            | Self::SelectBranches => 65_536,
             Self::Expressions | Self::NumericSequenceTotalDigits => 262_144,
             Self::Types | Self::Patterns => 131_072,
-            Self::LocalsPerScope => 4_096,
+            Self::LocalsPerScope | Self::DialogueMarksPerContent => 4_096,
             Self::DeclarationMembers
             | Self::Diagnostics
             | Self::SyntheticDescendantsPerOwner

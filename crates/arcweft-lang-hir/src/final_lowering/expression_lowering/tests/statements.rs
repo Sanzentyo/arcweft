@@ -4,7 +4,6 @@ use crate::stmt::{HirMatchStmt, HirStmtMatchArm};
 
 use crate::expr::{HirForSyntheticExpr, HirThreadBodyOwner, HirThreadFlowItem, HirThreadIssue};
 use crate::identity::StmtId;
-use crate::leaf::{HirIdRef, HirIdRefShape, HirIdRefValue};
 use crate::scope::LocalLookup;
 use crate::source_index::{
     HirSourceRequirement, HirStmtSourceRole, HirThreadBodySourceRole, HirThreadFlowItemSourcePart,
@@ -12,7 +11,7 @@ use crate::source_index::{
 use crate::stmt::{
     HirConditionalElseBranch, HirSelectStmt, HirStmt, HirStmtChildRole, HirStmtMatchArmBody,
     HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue,
-    HirUnsafeLifetimeBody,
+    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 
 fn block_statement(module: &HirModule, root: ExprId, ordinal: usize) -> (StmtId, &HirStmt) {
@@ -68,7 +67,7 @@ fn thread_control_families_lower_in_exact_source_order() {
             "    select {\n",
             "        frame frame => {}\n",
             "        event .Back => {}\n",
-            "        value = source? => {}\n",
+            "        value = source => {}\n",
             "    }\n",
             "    try await task with {\n",
             "        pending progress => {}\n",
@@ -141,6 +140,67 @@ fn thread_control_families_lower_in_exact_source_order() {
                     && key.ordinal() == 0
         ));
     }
+}
+
+#[test]
+fn select_branch_limit_accepts_exact_n_and_rejects_n_plus_one_before_branch_lowering() {
+    fn source(branches: &str) -> ParsedSource {
+        parsed_source(
+            "select-branch-private-limit",
+            &[format!("thread {{ select {{ {branches} }} }}")],
+        )
+    }
+
+    let exact = source("frame frame => {} event event => {}");
+    let attached = attached_expressions(&exact);
+    let mut database = HirDatabase::try_new().expect("Select exact-limit database");
+    let mut transaction = stage(&database, &exact);
+    transaction.set_select_branch_maximum_for_test(2);
+    let scope = allocate_module_scope(&mut transaction, &exact);
+    let owner = transaction
+        .lower_attached_expression(&attached[0], scope)
+        .expect("exact Select branch inventory lowers");
+    let module = transaction
+        .finish(&mut database)
+        .expect("exact Select branch inventory publishes")
+        .into_module();
+    let HirExprKind::Thread(thread) = expression(&module, owner).kind() else {
+        panic!("exact fixture remains a Thread expression")
+    };
+    let [HirThreadFlowItem::Select(select)] = thread.body().items() else {
+        panic!("exact fixture retains one Select statement")
+    };
+    let statement = module
+        .resolve_stmt(*select)
+        .expect("exact Select statement resolves");
+    let HirStmtKind::Select(HirSelectStmt::Branches { branches, .. }) = statement.kind() else {
+        panic!("exact Select retains its branch inventory")
+    };
+    assert_eq!(branches.len(), 2);
+
+    let one_over = source("frame frame => {} event event => {} value = source => {}");
+    let attached = attached_expressions(&one_over);
+    let mut database = HirDatabase::try_new().expect("Select N+1 database");
+    let mut rejected = stage(&database, &one_over);
+    rejected.set_select_branch_maximum_for_test(2);
+    let scope = allocate_module_scope(&mut rejected, &one_over);
+    assert!(matches!(
+        rejected.lower_attached_expression(&attached[0], scope),
+        Err(HirLowerFailure::Limit(error))
+            if error.limit() == HirLimit::SelectBranches
+                && error.observed() == 3
+                && error.maximum() == 2
+    ));
+    drop(rejected);
+
+    let mut retry = stage(&database, &one_over);
+    let scope = allocate_module_scope(&mut retry, &one_over);
+    retry
+        .lower_attached_expression(&attached[0], scope)
+        .expect("failed private-limit transaction publishes no partial module state");
+    retry
+        .finish(&mut database)
+        .expect("same source retries under the production bound");
 }
 
 #[test]
@@ -402,7 +462,7 @@ fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_sour
             "    select {\n",
             "        frame frame => {}\n",
             "        event .Back => {}\n",
-            "        value = source? => {}\n",
+            "        value = source => {}\n",
             "    }\n",
             "    source locale en-US {}\n",
             "    scope local {}\n",
@@ -1276,9 +1336,9 @@ fn unsafe_lifetime_retains_typed_audit_block_and_required_insertion() {
         panic!("unsafe lifetime must retain its dedicated statement payload");
     };
     assert!(matches!(
-        audit.id(),
-        HirIdRefValue::Resolved(HirIdRef::Absolute(reference))
-            if reference.as_str() == "unsafe.audit"
+        audit.identity(),
+        HirUnsafeAuditIdentity::Accepted(id)
+            if id.as_public_id().as_str() == "unsafe.audit"
     ));
     assert!(audit.reason().is_some());
     assert!(audit.has_safety_doc());
@@ -1348,10 +1408,8 @@ fn unsafe_lifetime_missing_identity_wins_over_reason_recovery_and_keeps_body() {
         panic!("recovered unsafe lifetime payload");
     };
     assert!(matches!(
-        audit.id(),
-        HirIdRefValue::Recovered(recovery)
-            if recovery.shape() == HirIdRefShape::Missing
-                && recovery.issue() == HirIdRefIssue::Missing
+        audit.identity(),
+        HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
     ));
     let reason = audit
         .reason()
@@ -1367,9 +1425,9 @@ fn unsafe_lifetime_missing_identity_wins_over_reason_recovery_and_keeps_body() {
     );
     assert_eq!(
         statement.state(),
-        &HirStmtPoisonState::Poisoned(
-            HirStmtRecoveryIssue::InvalidAuditId(HirIdRefIssue::Missing,)
-        )
+        &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(
+            HirUnsafeAuditIdentityIssue::Missing,
+        ))
     );
     assert_unsafe_insertion_manifest(
         &parsed,
@@ -1379,6 +1437,38 @@ fn unsafe_lifetime_missing_identity_wins_over_reason_recovery_and_keeps_body() {
         HirSourceOwnerStatus::Poisoned,
         false,
     );
+}
+
+#[test]
+fn unsafe_lifetime_identity_rejects_every_non_absolute_or_invalid_family() {
+    let cases = [
+        ("@.audit", HirUnsafeAuditIdentityIssue::NonAbsolute),
+        ("@unsafe:.audit", HirUnsafeAuditIdentityIssue::NonAbsolute),
+        ("@proof.audit", HirUnsafeAuditIdentityIssue::WrongFamily),
+        ("@unsafe.", HirUnsafeAuditIdentityIssue::InvalidReference),
+    ];
+
+    for (ordinal, (reference, expected)) in cases.into_iter().enumerate() {
+        let parsed = parsed_source(
+            &format!("unsafe-lifetime-invalid-identity-{ordinal}"),
+            &[format!(
+                "{{ unsafe lifetime {reference} {{ value; }}; () }}"
+            )],
+        );
+        let (module, owners, _) = lower_and_publish(&parsed);
+        let (_, statement) = block_statement(&module, owners[0], 0);
+        let HirStmtKind::UnsafeLifetime { audit, .. } = statement.kind() else {
+            panic!("invalid unsafe identity must retain the unsafe statement family");
+        };
+        assert_eq!(
+            audit.identity(),
+            &HirUnsafeAuditIdentity::Recovered(expected)
+        );
+        assert_eq!(
+            statement.state(),
+            &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(expected))
+        );
+    }
 }
 
 #[test]

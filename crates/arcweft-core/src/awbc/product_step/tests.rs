@@ -665,6 +665,43 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
 }
 
 #[test]
+fn wait_effect_mapping_accepts_only_a_typed_duration_target() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Wait);
+
+    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    assert!(matches!(
+        mapped,
+        MappedEffect::Line(LineEffectRequest::Wait(
+            crate::effect::RuntimeWaitTarget::Duration(duration)
+        )) if duration.as_nanos() == 5
+    ));
+
+    let non_duration = constant_string(&mut program, ".checkpoint");
+    program.effect_plans[effect.index()].static_args[0] = non_duration;
+    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("a non-Duration wait target must not become a runtime wait request");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Type);
+    assert_eq!(
+        diagnostic.message,
+        "AWBC wait target must evaluate to Duration"
+    );
+
+    program.effect_plans[effect.index()].static_args.clear();
+    let mapped = AwbcEffectKind::Wait.map_product_effect(&program, effect, &[]);
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("a missing wait target must not become an empty runtime expression");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Internal);
+    assert_eq!(
+        diagnostic.message,
+        "AWBC wait effect is missing its Duration target"
+    );
+}
+
+#[test]
 fn assertion_effect_mapping_retains_typed_guard_and_payload() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
@@ -1171,6 +1208,9 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
     };
     let static_args = (0..static_arg_count)
         .map(|index| {
+            if kind == AwbcEffectKind::Wait && index == 0 {
+                return constant_duration(program, 5);
+            }
             if kind == AwbcEffectKind::Assert && index == 0 {
                 return constant_bytes(program, &[7; 16]);
             }
@@ -1197,6 +1237,14 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
         resources: Vec::new(),
     });
     effect
+}
+
+fn constant_duration(program: &mut AwbcProgram, nanos: u64) -> crate::awbc::schema::AwbcConstantId {
+    let id = crate::awbc::schema::AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant index fits u32"),
+    );
+    program.constants.push(AwbcConstant::DurationNanos(nanos));
+    id
 }
 
 fn constant_bytes(program: &mut AwbcProgram, value: &[u8]) -> crate::awbc::schema::AwbcConstantId {

@@ -8,7 +8,7 @@ use crate::callable::{EnvironmentCallableOwner, ProjectCallablePath, StandardEnv
 use super::{
     AcceptedNominalSource, AcceptedNominalVisibilityIndex, AcceptedNominalWorld,
     CharacterInventoryDigest, CharacterInventoryRevision, EnvironmentPublicationItemId,
-    ProjectRegistrationFacts, RegisteredEnvironmentDigest,
+    ProjectRegistrationFacts, RegisteredEnvironmentDigest, RegisteredStatementIngressTypes,
 };
 
 const ENVIRONMENT_DOMAIN: &[u8] = b"arcweft.registered-semantic-environment.v1\0";
@@ -22,6 +22,7 @@ pub(super) fn derive(
     rust_metadata_digest: &[u8; 32],
     callable_catalog_digest: &[u8; 32],
     character_dialogue_fields_digest: &[u8; 32],
+    statement_ingress: &RegisteredStatementIngressTypes,
     facts: &ProjectRegistrationFacts,
     character_digest: CharacterInventoryDigest,
     character_revision: CharacterInventoryRevision,
@@ -36,6 +37,30 @@ pub(super) fn derive(
     encoder.bytes(rust_metadata_digest);
     encoder.bytes(callable_catalog_digest);
     encoder.bytes(character_dialogue_fields_digest);
+    encoder.bytes(
+        statement_ingress
+            .input()
+            .semantic_identity_digest()
+            .as_bytes(),
+    );
+    encoder.bytes(
+        statement_ingress
+            .task()
+            .semantic_identity_digest()
+            .as_bytes(),
+    );
+    encoder.bytes(
+        statement_ingress
+            .scope()
+            .semantic_identity_digest()
+            .as_bytes(),
+    );
+    encoder.bytes(
+        statement_ingress
+            .frame()
+            .semantic_identity_digest()
+            .as_bytes(),
+    );
 
     let mut manifests = facts
         .environment_inputs()

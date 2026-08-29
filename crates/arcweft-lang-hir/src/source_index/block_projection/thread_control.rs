@@ -500,15 +500,14 @@ fn select_branch_evidence(
             AttachedSelectBranch::Bind {
                 name: attached_name,
                 source,
-                propagates_error,
                 ..
             },
             HirSelectBranchHead::Bind {
                 binding,
                 source: semantic_source,
-                propagates_error: semantic_propagation,
+                ..
             },
-        ) if propagates_error == semantic_propagation => {
+        ) => {
             let (prefix, binding_poisoned) = select_binding_matches(
                 slots,
                 arenas,

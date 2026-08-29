@@ -721,7 +721,7 @@ alice.say()[
 
 ## Local behavior inside dialogue text
 
-`#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark .name]` with `with: on mark(.name):` or a dialogue-safe `[call ...]`.
+`#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark @.name]` with `with: on mark(@.name):` or a dialogue-safe `[call ...]`.
 
 ```arcw
 alice.say()[
@@ -745,9 +745,9 @@ Use:
 
 ```arcw
 alice.say()[
-    変な夢[mark .keyword][p]
+    変な夢[mark @.keyword][p]
 with:
-    on mark(.keyword):
+    on mark(@.keyword):
         mark_keyword(word="夢", color=@color.dream)
 ]
 ```
@@ -890,7 +890,7 @@ anticipate @flow.alice_intro {
 5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
-8. Dialogue text uses `[mark .name]` with line-plan `on mark(.name):` handlers or `[call ...]`; pure content insertion uses `#[...]`.
+8. Dialogue text uses `[mark @.name]` with line-plan `on mark(@.name):` handlers or `[call ...]`; pure content insertion uses `#[...]`.
 9. Characters define default text/name colors and may attach read/unread style hooks.
 10. Character stage methods provide object-oriented sugar for show/face/move/animate/preload.
 11. Character preload and memoization policies are explicit and observable by Agent Debug Bus.

@@ -872,9 +872,13 @@ fn path_builder_consumes_nested_start_and_together_owned_edge() {
         ]))]),
     )
     .expect("nested line plan");
-    let content =
-        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
-            .expect("empty dialogue content");
+    let content = HirDialogueContent::try_new(
+        HirDialogueContentId::new(owner),
+        Box::new([]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .expect("empty dialogue content");
     let dialogue = HirExprKind::DialogueContentApplication(
         HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
             .expect("dialogue application"),

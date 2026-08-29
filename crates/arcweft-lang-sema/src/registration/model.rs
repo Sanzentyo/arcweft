@@ -34,7 +34,7 @@ use crate::{
         },
     },
     registration::{EnvironmentHostCallContractInput, EnvironmentPublicationItemId},
-    types::{CharacterNominalType, TypeKind},
+    types::{CharacterNominalType, EntityKind, TypeKind},
 };
 
 use super::environment_input::{
@@ -124,6 +124,7 @@ pub struct ProofReturnRegistrationPrelude {
     pub(crate) symbols: Arc<ProjectSymbolTable>,
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
+    pub(crate) statement_ingress: RegisteredStatementIngressTypes,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
@@ -199,6 +200,52 @@ pub struct CharacterInventoryRevision(pub(crate) u64);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RegisteredEnvironmentDigest(pub(crate) [u8; 32]);
 
+/// Closed standard semantic atoms available to contextual statement patterns.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StandardStatementIngressTypeId {
+    TaskEvent,
+    ScopeExit,
+    FrameBoundary,
+}
+
+/// Closed registration roles for standard statement ingress types.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StatementIngressTypeRoleId {
+    Task,
+    Scope,
+    Frame,
+}
+
+/// One fixed base-environment contribution consumed by registration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct StatementIngressTypePublicationInput {
+    role: StatementIngressTypeRoleId,
+    ty: StandardStatementIngressTypeId,
+}
+
+/// The exact standard statement-ingress types accepted with one environment.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisteredStatementIngressTypes {
+    input: TypeKind,
+    task: TypeKind,
+    scope: TypeKind,
+    frame: TypeKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, Ord, PartialEq, PartialOrd)]
+pub enum StatementIngressRegistrationError {
+    #[error("standard statement-ingress role {role:?} is missing")]
+    Missing { role: StatementIngressTypeRoleId },
+    #[error("standard statement-ingress role {role:?} is duplicated")]
+    Duplicate { role: StatementIngressTypeRoleId },
+    #[error("standard statement-ingress role {role:?} maps to {actual:?}, not {expected:?}")]
+    Mismapped {
+        role: StatementIngressTypeRoleId,
+        expected: StandardStatementIngressTypeId,
+        actual: StandardStatementIngressTypeId,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterInventoryDescriptorV1 {
     pub(crate) characters: Vec<(CharacterId, CharacterManifestFingerprint)>,
@@ -211,6 +258,7 @@ pub struct RegisteredTypeCheckEnv {
     pub(crate) character_dialogue_fields: Arc<CharacterDialogueCustomFieldRegistry>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
+    pub(crate) statement_ingress: RegisteredStatementIngressTypes,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
@@ -854,10 +902,111 @@ impl RegisteredEnvironmentDigest {
     }
 }
 
+impl StandardStatementIngressTypeId {
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::TaskEvent => 0,
+            Self::ScopeExit => 1,
+            Self::FrameBoundary => 2,
+        }
+    }
+}
+
+impl StatementIngressTypeRoleId {
+    const fn expected_type(self) -> StandardStatementIngressTypeId {
+        match self {
+            Self::Task => StandardStatementIngressTypeId::TaskEvent,
+            Self::Scope => StandardStatementIngressTypeId::ScopeExit,
+            Self::Frame => StandardStatementIngressTypeId::FrameBoundary,
+        }
+    }
+}
+
+impl StatementIngressTypePublicationInput {
+    pub(crate) const fn new(
+        role: StatementIngressTypeRoleId,
+        ty: StandardStatementIngressTypeId,
+    ) -> Self {
+        Self { role, ty }
+    }
+
+    pub const fn role(&self) -> StatementIngressTypeRoleId {
+        self.role
+    }
+
+    pub const fn ty(&self) -> StandardStatementIngressTypeId {
+        self.ty
+    }
+}
+
+impl RegisteredStatementIngressTypes {
+    pub(crate) fn try_new(
+        inputs: Box<[StatementIngressTypePublicationInput]>,
+    ) -> Result<Self, StatementIngressRegistrationError> {
+        let mut task = None;
+        let mut scope = None;
+        let mut frame = None;
+        for input in &inputs {
+            let expected = input.role.expected_type();
+            if input.ty != expected {
+                return Err(StatementIngressRegistrationError::Mismapped {
+                    role: input.role,
+                    expected,
+                    actual: input.ty,
+                });
+            }
+            let slot = match input.role {
+                StatementIngressTypeRoleId::Task => &mut task,
+                StatementIngressTypeRoleId::Scope => &mut scope,
+                StatementIngressTypeRoleId::Frame => &mut frame,
+            };
+            if slot.replace(input.ty).is_some() {
+                return Err(StatementIngressRegistrationError::Duplicate { role: input.role });
+            }
+        }
+        let task = task.ok_or(StatementIngressRegistrationError::Missing {
+            role: StatementIngressTypeRoleId::Task,
+        })?;
+        let scope = scope.ok_or(StatementIngressRegistrationError::Missing {
+            role: StatementIngressTypeRoleId::Scope,
+        })?;
+        let frame = frame.ok_or(StatementIngressRegistrationError::Missing {
+            role: StatementIngressTypeRoleId::Frame,
+        })?;
+        Ok(Self {
+            input: TypeKind::entity_ref(EntityKind::Input),
+            task: TypeKind::StatementIngress(task),
+            scope: TypeKind::StatementIngress(scope),
+            frame: TypeKind::StatementIngress(frame),
+        })
+    }
+
+    pub const fn input(&self) -> &TypeKind {
+        &self.input
+    }
+
+    pub const fn task(&self) -> &TypeKind {
+        &self.task
+    }
+
+    pub const fn scope(&self) -> &TypeKind {
+        &self.scope
+    }
+
+    pub const fn frame(&self) -> &TypeKind {
+        &self.frame
+    }
+}
+
 impl RegisteredTypeCheckEnv {
     /// Immutable callable catalog accepted with this exact semantic world.
     pub fn callable_catalog(&self) -> &RegisteredCallableCatalog {
         &self.callables
+    }
+
+    /// Exact registered contextual statement-ingress types.
+    pub const fn statement_ingress(&self) -> &RegisteredStatementIngressTypes {
+        &self.statement_ingress
     }
 
     /// Exact accepted callable-catalog allocation retained by this world.
@@ -1165,5 +1314,83 @@ fn validate_span(
             span.clone(),
             [full_span(document)],
         ));
+    }
+}
+
+#[cfg(test)]
+mod statement_ingress_tests {
+    use super::*;
+
+    fn exact_inputs() -> [StatementIngressTypePublicationInput; 3] {
+        [
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Task,
+                StandardStatementIngressTypeId::TaskEvent,
+            ),
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Scope,
+                StandardStatementIngressTypeId::ScopeExit,
+            ),
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Frame,
+                StandardStatementIngressTypeId::FrameBoundary,
+            ),
+        ]
+    }
+
+    #[test]
+    fn exact_statement_ingress_rows_seal_the_registered_record() {
+        let registered = RegisteredStatementIngressTypes::try_new(exact_inputs().into())
+            .expect("the exact language-owned ingress publication must seal");
+        assert_eq!(registered.input(), &TypeKind::entity_ref(EntityKind::Input));
+        assert_eq!(
+            registered.task(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::TaskEvent)
+        );
+        assert_eq!(
+            registered.scope(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::ScopeExit)
+        );
+        assert_eq!(
+            registered.frame(),
+            &TypeKind::StatementIngress(StandardStatementIngressTypeId::FrameBoundary)
+        );
+    }
+
+    #[test]
+    fn statement_ingress_registration_rejects_missing_duplicate_and_mismapped_rows() {
+        let exact = exact_inputs();
+        assert_eq!(
+            RegisteredStatementIngressTypes::try_new(exact[..2].to_vec().into_boxed_slice()),
+            Err(StatementIngressRegistrationError::Missing {
+                role: StatementIngressTypeRoleId::Frame,
+            })
+        );
+        assert_eq!(
+            RegisteredStatementIngressTypes::try_new(Box::new([
+                exact[0].clone(),
+                exact[0].clone(),
+                exact[1].clone(),
+                exact[2].clone(),
+            ])),
+            Err(StatementIngressRegistrationError::Duplicate {
+                role: StatementIngressTypeRoleId::Task,
+            })
+        );
+        assert_eq!(
+            RegisteredStatementIngressTypes::try_new(Box::new([
+                StatementIngressTypePublicationInput::new(
+                    StatementIngressTypeRoleId::Task,
+                    StandardStatementIngressTypeId::ScopeExit,
+                ),
+                exact[1].clone(),
+                exact[2].clone(),
+            ])),
+            Err(StatementIngressRegistrationError::Mismapped {
+                role: StatementIngressTypeRoleId::Task,
+                expected: StandardStatementIngressTypeId::TaskEvent,
+                actual: StandardStatementIngressTypeId::ScopeExit,
+            })
+        );
     }
 }

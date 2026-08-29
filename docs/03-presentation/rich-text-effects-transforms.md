@@ -32,7 +32,7 @@ alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
 ```
 
 `[/]` closes the most recent inferred span. Zero-width markers canonicalize to
-`[mark .name]` and do not retain a closing tag.
+`[mark @.name]` and do not retain a closing tag.
 
 Reusable presentation is authored as a typed `#[fx] fn ... -> Fx`. The same Fx
 value applies to a View with `.fx(value)` or to a rich-text span with

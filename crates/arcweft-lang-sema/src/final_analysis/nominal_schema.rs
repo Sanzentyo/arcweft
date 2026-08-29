@@ -22,21 +22,19 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 
-use super::report::FinalSemanticAnalysisDraft;
+use super::report::{FinalSemanticAnalysisDraft, FinalSemanticAnalysisPostEntryDraft};
 use crate::{
     env::nominal::AcceptedNominalId,
     final_analysis::{
-        CheckedAssignment, CheckedAssignmentPlace, CheckedExpression, CheckedExpressionRecordField,
-        CheckedExpressionResolution, CheckedFieldSelection, CheckedPattern,
-        CheckedPatternResolution, CheckedProjectNominal, CheckedRecordBindingSource,
-        CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,
-        CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSource,
-        CheckedRecordValueSource, CheckedStatement, CheckedStatementRole, CheckedVariantOwner,
+        CheckedExpression, CheckedExpressionRecordField, CheckedExpressionResolution,
+        CheckedFieldSelection, CheckedPattern, CheckedPatternResolution, CheckedProjectNominal,
+        CheckedRecordBindingSource, CheckedRecordExpressionSource, CheckedRecordPattern,
+        CheckedRecordPatternField, CheckedRecordPatternOwner, CheckedRecordPatternRest,
+        CheckedRecordPatternSource, CheckedRecordValueSource, CheckedVariantOwner,
         CheckedVariantResolution, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
         FinalSemanticAnalysisError, FinalSemanticProjectError, PreparedExpressionFact,
         PreparedPatternFact, PreparedRecordPatternFieldIdentity, PreparedRecordPatternOwner,
         PreparedRecordPatternRest, PreparedRecordPatternSource, PreparedRecordValueSource,
-        PreparedStatementFact,
     },
     nominal::{
         NominalAggregationLimitKind, NominalAggregationLimits, NominalResolutionLimitKind,
@@ -459,6 +457,50 @@ impl RuntimeNominalProjectionRequestInventory {
                 Err(error) => {
                     error.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
                 }
+            }
+        }
+        draft
+            .checked_callables
+            .visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        Ok(inventory)
+    }
+
+    /// Recomputes the exact nominal request inventory after Entry sealing and
+    /// before the affine statement/effect seal. The post-Entry draft retains
+    /// no executable-ingress fallback authority.
+    pub(crate) fn from_post_entry(
+        draft: &FinalSemanticAnalysisPostEntryDraft,
+        symbols: &ProjectSymbolTable,
+    ) -> Result<Self, NominalSchemaProjectionError> {
+        let mut inventory = Self::default();
+        for ty in draft.types.values() {
+            inventory.visit_type(symbols, ty)?;
+        }
+        for report in draft.type_resolutions.values() {
+            report.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for binding in draft.locals.values().chain(draft.captures.values()) {
+            binding.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for fact in draft.expressions.values() {
+            fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for fact in draft.patterns.values() {
+            fact.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for statement in draft.statements.values() {
+            statement.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for item in draft.items.values() {
+            item.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for call in draft.calls.values() {
+            call.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?;
+        }
+        for joined in draft.callable_joins.values() {
+            match joined {
+                Ok(join) => join.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?,
+                Err(error) => error.visit_types(&mut |ty| inventory.visit_type(symbols, ty))?,
             }
         }
         draft
@@ -1118,34 +1160,27 @@ pub(super) fn seal_runtime_nominal_draft(
     if !sealed_record_patterns.is_empty() {
         return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
     }
+    let (entry_ingress, mut draft) = parts.into_post_entry();
     let checked_entries = {
         let authority = crate::entry::PreparedEntrySemanticAuthority::new(
-            &parts.types,
-            &parts.items,
-            &parts.calls,
-            parts.checked_callables.as_ref(),
+            &draft.types,
+            &draft.items,
+            &draft.calls,
+            draft.checked_callables.as_ref(),
             &seal,
         );
-        crate::entry::check_prepared_project_entries(project, symbols, &authority)
+        crate::entry::check_prepared_project_entries(project, symbols, &authority, entry_ingress)
             .map_err(|diagnostics| FinalSemanticProjectError::Entry(diagnostics.into()))?
     };
-    parts.expressions = parts
+    draft.expressions = draft
         .expressions
         .into_iter()
         .map(|(owner, fact)| {
             seal_prepared_entry_expression(fact, &checked_entries).map(|fact| (owner, fact))
         })
         .collect::<Result<_, _>>()?;
-    let prepared_statements = std::mem::take(&mut parts.statements);
-    parts.statements = prepared_statements
-        .into_iter()
-        .map(|(owner, fact)| {
-            seal_prepared_statement(fact, &parts.locals, &parts.expressions)
-                .map(|fact| (owner, fact))
-        })
-        .collect::<Result<_, _>>()?;
-    let draft = FinalSemanticAnalysisDraft::from_parts(parts);
-    let final_inventory = RuntimeNominalProjectionRequestInventory::from_prepared(&draft, symbols)?;
+    let final_inventory =
+        RuntimeNominalProjectionRequestInventory::from_post_entry(&draft, symbols)?;
     project_nominals.validate_inventory(final_inventory.nominals())?;
     let runtime_nominals = seal.validate_final_inventory(final_inventory)?.finish();
     Ok(draft.seal(
@@ -1157,52 +1192,6 @@ pub(super) fn seal_runtime_nominal_draft(
         runtime_nominals,
         control,
     )?)
-}
-
-fn seal_prepared_statement(
-    fact: PreparedStatementFact,
-    locals: &BTreeMap<arcweft_lang_hir::identity::LocalId, crate::final_analysis::CheckedBinding>,
-    expressions: &BTreeMap<arcweft_lang_hir::identity::ExprId, PreparedExpressionFact>,
-) -> Result<PreparedStatementFact, FinalSemanticAnalysisError> {
-    let PreparedStatementFact::Assignment(prepared) = fact else {
-        return Ok(fact);
-    };
-    let (effects, local, nominal, target, value, field_type) = prepared.into_parts();
-    if !effects.is_empty()
-        || locals
-            .get(&local)
-            .map(crate::final_analysis::CheckedBinding::ty)
-            != Some(&nominal.ty())
-    {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-    let target = expressions
-        .get(&target)
-        .and_then(PreparedExpressionFact::complete)
-        .ok_or(FinalSemanticAnalysisError::UnsealedPreparedC2Owner)?;
-    let Some(CheckedExpressionResolution::Select(
-        crate::final_analysis::CheckedSelectResolution::Field(selection),
-    )) = Some(target.resolution())
-    else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    let value = expressions
-        .get(&value)
-        .and_then(PreparedExpressionFact::complete)
-        .ok_or(FinalSemanticAnalysisError::UnsealedPreparedC2Owner)?;
-    if target.ty() != &field_type || value.ty() != &field_type {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-    let place = CheckedAssignmentPlace::try_new(local, nominal, selection.clone(), field_type)
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-    Ok(CheckedStatement::new(
-        effects,
-        CheckedStatementRole::Assignment(Box::new(CheckedAssignment::new(
-            place,
-            value.ty().clone(),
-        ))),
-    )
-    .into())
 }
 
 fn seal_prepared_entry_expression(

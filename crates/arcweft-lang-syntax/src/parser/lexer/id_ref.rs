@@ -9,7 +9,7 @@ use crate::id_ref::{
 };
 use crate::name::{SyntaxName, is_identifier_continue};
 
-use super::{LexToken, take_while, token_local_range};
+use super::{LexToken, take_while};
 
 /// One source component emitted by the entity-reference token projection.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -95,7 +95,23 @@ pub(in crate::parser) fn typed_entity_reference(
     token: LexToken,
     spelling: &str,
 ) -> EntityReferenceLexemeProjection {
-    let components = entity_reference_components(token, spelling);
+    let spelling = (token.kind() == SyntaxKind::EntityReferenceToken
+        && spelling.len() == token.range().end().saturating_sub(token.range().start())
+        && spelling.starts_with('@'))
+    .then_some(spelling)
+    .unwrap_or("");
+    typed_entity_reference_source(token.range(), spelling)
+}
+
+/// Projects an entity-reference spelling selected by a non-token grammar
+/// owner, such as a RichText marker argument. The lexical shape and authored
+/// value remain owned by this module; callers provide only the exact source
+/// range selected by their surrounding grammar.
+pub(in crate::parser) fn typed_entity_reference_source(
+    source: SourceRange,
+    spelling: &str,
+) -> EntityReferenceLexemeProjection {
+    let components = entity_reference_components(source, spelling);
     let absolute = components
         .iter()
         .any(|component| component.part() == SyntaxIdRefPart::AbsoluteMarker);
@@ -182,32 +198,29 @@ pub(in crate::parser) fn typed_entity_reference(
 }
 
 fn entity_reference_components(
-    token: LexToken,
+    source: SourceRange,
     spelling: &str,
 ) -> Vec<EntityReferenceLexemeComponent> {
-    if token.kind() != SyntaxKind::EntityReferenceToken
-        || spelling.len() != token.range().end().saturating_sub(token.range().start())
-        || !spelling.starts_with('@')
-    {
+    if !spelling.starts_with('@') {
         return Vec::new();
     }
 
     let mut output = Vec::new();
     push_component(
         &mut output,
-        token,
+        source,
         SyntaxIdRefPart::Whole,
         0,
         spelling.len(),
     );
     if spelling.starts_with("@<") {
-        push_component(&mut output, token, SyntaxIdRefPart::AbsoluteMarker, 0, 2);
+        push_component(&mut output, source, SyntaxIdRefPart::AbsoluteMarker, 0, 2);
         let body_end = if spelling.ends_with('>') {
             spelling.len().saturating_sub(1)
         } else {
             spelling.len()
         };
-        push_suffix_segments(&mut output, token, spelling, 2, body_end);
+        push_suffix_segments(&mut output, source, spelling, 2, body_end);
         return output;
     }
 
@@ -222,30 +235,30 @@ fn entity_reference_components(
     {
         push_component(
             &mut output,
-            token,
+            source,
             SyntaxIdRefPart::Family,
             '@'.len_utf8(),
             family_end,
         );
         push_component(
             &mut output,
-            token,
+            source,
             SyntaxIdRefPart::FamilySeparator,
             family_end,
             family_end + ':'.len_utf8(),
         );
         let dots_start = family_end + ':'.len_utf8();
         let dots_end = dots_start + take_while(&spelling[dots_start..], |ch| ch == '.');
-        push_dot_parent_markers(&mut output, token, dots_start, dots_end);
-        push_suffix_segments(&mut output, token, spelling, dots_end, spelling.len());
+        push_dot_parent_markers(&mut output, source, dots_start, dots_end);
+        push_suffix_segments(&mut output, source, spelling, dots_end, spelling.len());
         return output;
     }
 
     if after_at.starts_with('.') {
         let dots_start = '@'.len_utf8();
         let dots_end = dots_start + take_while(after_at, |ch| ch == '.');
-        push_dot_parent_markers(&mut output, token, dots_start, dots_end);
-        push_suffix_segments(&mut output, token, spelling, dots_end, spelling.len());
+        push_dot_parent_markers(&mut output, source, dots_start, dots_end);
+        push_suffix_segments(&mut output, source, spelling, dots_end, spelling.len());
         return output;
     }
 
@@ -259,7 +272,7 @@ fn entity_reference_components(
             let marker_end = cursor + "super".len();
             push_component(
                 &mut output,
-                token,
+                source,
                 SyntaxIdRefPart::ParentMarker {
                     ordinal: checked_ordinal(ordinal),
                 },
@@ -271,31 +284,46 @@ fn entity_reference_components(
                 .expect("source token length bounds entity parent ordinals");
             cursor = marker_end + '.'.len_utf8();
         }
-        push_suffix_segments(&mut output, token, spelling, cursor, spelling.len());
+        push_suffix_segments(&mut output, source, spelling, cursor, spelling.len());
         return output;
     }
 
     push_component(
         &mut output,
-        token,
+        source,
         SyntaxIdRefPart::AbsoluteMarker,
         0,
         '@'.len_utf8(),
     );
-    push_suffix_segments(&mut output, token, spelling, '@'.len_utf8(), spelling.len());
+    push_suffix_segments(
+        &mut output,
+        source,
+        spelling,
+        '@'.len_utf8(),
+        spelling.len(),
+    );
     output
 }
 
 fn push_component(
     output: &mut Vec<EntityReferenceLexemeComponent>,
-    token: LexToken,
+    source: SourceRange,
     part: SyntaxIdRefPart,
     start: usize,
     end: usize,
 ) {
     output.push(EntityReferenceLexemeComponent {
         part,
-        range: token_local_range(token, start, end),
+        range: SourceRange::new(
+            source
+                .start()
+                .checked_add(start)
+                .expect("entity-reference component start remains in source"),
+            source
+                .start()
+                .checked_add(end)
+                .expect("entity-reference component end remains in source"),
+        ),
         local_start: start,
         local_end: end,
     });
@@ -303,14 +331,14 @@ fn push_component(
 
 fn push_dot_parent_markers(
     output: &mut Vec<EntityReferenceLexemeComponent>,
-    token: LexToken,
+    source: SourceRange,
     dots_start: usize,
     dots_end: usize,
 ) {
     for (ordinal, marker) in (dots_start + '.'.len_utf8()..dots_end).enumerate() {
         push_component(
             output,
-            token,
+            source,
             SyntaxIdRefPart::ParentMarker {
                 ordinal: checked_ordinal(ordinal),
             },
@@ -322,7 +350,7 @@ fn push_dot_parent_markers(
 
 fn push_suffix_segments(
     output: &mut Vec<EntityReferenceLexemeComponent>,
-    token: LexToken,
+    source: SourceRange,
     spelling: &str,
     start: usize,
     end: usize,
@@ -336,7 +364,7 @@ fn push_suffix_segments(
         let separator = start + relative;
         push_component(
             output,
-            token,
+            source,
             SyntaxIdRefPart::SuffixSegment {
                 ordinal: checked_ordinal(ordinal),
             },
@@ -350,7 +378,7 @@ fn push_suffix_segments(
     }
     push_component(
         output,
-        token,
+        source,
         SyntaxIdRefPart::SuffixSegment {
             ordinal: checked_ordinal(ordinal),
         },

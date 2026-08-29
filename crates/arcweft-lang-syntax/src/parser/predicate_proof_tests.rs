@@ -1073,6 +1073,27 @@ fn shared_statement_families_keep_typed_identity_and_children() {
 }
 
 #[test]
+fn on_mark_statement_uses_the_typed_mark_trigger_shape() {
+    let source = "{ on mark(@.checkpoint) => lemma(); }\n";
+    let built = parse_test_statement_block(&document(source)).unwrap();
+    let mark = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| {
+            entry.kind() == SyntaxKind::MarkTriggerPattern && entry.role() == SyntaxRole::Condition
+        })
+        .expect("on mark condition remains a typed trigger node");
+    let mark_path = mark.path().elements();
+    assert!(built.index().entries().iter().any(|child| {
+        child.kind() == SyntaxKind::EntityReferencePattern
+            && child.role() == SyntaxRole::Pattern
+            && child.path().elements().starts_with(mark_path)
+    }));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation() {
     let authored = "{ return 'lease; yield @entity.value; wait(target); close resource; select choice.member; }\n";
     let built = super::statement::parse_test_flow_statement_block(&document(authored)).unwrap();

@@ -1,12 +1,11 @@
-use arcweft_id::PublicId;
 use arcweft_lang_hir::identity::ExprId;
 
-use crate::checked_rich_text::CheckedRichTextReport;
+use crate::checked_rich_text::PreparedCheckedRichTextReport;
 
 use super::super::match_edges::{CheckedChildEdgeError, NestedPathEvidence};
 use super::super::{
     CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget,
-    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger, CheckedDialogueMarkHandler,
+    CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
 };
 use super::{PreparedEvaluatedEffect, PreparedExpressionShell, TypeKind};
 
@@ -52,37 +51,23 @@ impl PreparedDialogueEffectSite {
     }
 }
 
-/// Private line-plan carrier. Marks and handlers are already closed against
-/// the checked content; effect sites retain only callable preparation until
-/// the project-wide call seal.
+/// Private line-plan carrier. Marker actions remain part of the checked rich
+/// text content; only effect sites retain callable preparation until the
+/// project-wide call seal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedDialogueLinePlan {
-    marks: Box<[PublicId]>,
-    mark_handlers: Box<[CheckedDialogueMarkHandler]>,
     effect_sites: Box<[PreparedDialogueEffectSite]>,
 }
 
 impl PreparedDialogueLinePlan {
-    pub(crate) fn new(
-        marks: impl Into<Box<[PublicId]>>,
-        mark_handlers: impl Into<Box<[CheckedDialogueMarkHandler]>>,
-        effect_sites: impl Into<Box<[PreparedDialogueEffectSite]>>,
-    ) -> Self {
+    pub(crate) fn new(effect_sites: impl Into<Box<[PreparedDialogueEffectSite]>>) -> Self {
         Self {
-            marks: marks.into(),
-            mark_handlers: mark_handlers.into(),
             effect_sites: effect_sites.into(),
         }
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        Box<[PublicId]>,
-        Box<[CheckedDialogueMarkHandler]>,
-        Box<[PreparedDialogueEffectSite]>,
-    ) {
-        (self.marks, self.mark_handlers, self.effect_sites)
+    pub(crate) fn into_parts(self) -> Box<[PreparedDialogueEffectSite]> {
+        self.effect_sites
     }
 }
 
@@ -95,7 +80,7 @@ pub(crate) struct PreparedDialogueApplication {
     shell: PreparedExpressionShell,
     target: CheckedCharacterDialogueTarget,
     application_patch: Option<CheckedCharacterDialoguePatch>,
-    rich_text: Box<CheckedRichTextReport>,
+    rich_text: Box<PreparedCheckedRichTextReport>,
     line_plan: PreparedDialogueLinePlan,
     line_result: TypeKind,
     nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
@@ -106,7 +91,7 @@ impl PreparedDialogueApplication {
         shell: PreparedExpressionShell,
         target: CheckedCharacterDialogueTarget,
         application_patch: Option<CheckedCharacterDialoguePatch>,
-        rich_text: Box<CheckedRichTextReport>,
+        rich_text: Box<PreparedCheckedRichTextReport>,
         line_plan: PreparedDialogueLinePlan,
         line_result: TypeKind,
         nested_path_evidence: Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,
@@ -153,7 +138,7 @@ impl PreparedDialogueApplication {
         PreparedExpressionShell,
         CheckedCharacterDialogueTarget,
         Option<CheckedCharacterDialoguePatch>,
-        Box<CheckedRichTextReport>,
+        Box<PreparedCheckedRichTextReport>,
         PreparedDialogueLinePlan,
         TypeKind,
         Option<Result<NestedPathEvidence, CheckedChildEdgeError>>,

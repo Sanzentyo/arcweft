@@ -47,6 +47,7 @@ impl TypeKind {
                 (Self::StageActorHandle(left), Self::StageActorHandle(right)) => {
                     stage_actor_handle_ordering(left, right)
                 }
+                (Self::StatementIngress(left), Self::StatementIngress(right)) => left.cmp(right),
                 (
                     Self::Array {
                         item: left_item,
@@ -481,5 +482,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::CueHandle => 84,
         TypeKind::VoiceHandle => 85,
         TypeKind::VariantPayload(_) => 86,
+        TypeKind::StatementIngress(_) => 87,
     }
 }

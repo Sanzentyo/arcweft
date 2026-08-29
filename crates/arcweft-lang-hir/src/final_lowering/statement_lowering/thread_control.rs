@@ -251,6 +251,7 @@ impl StagedHirModuleTransaction<'_> {
                     }
                     AttachedSelectStatementForm::Branches(block) => {
                         Self::require_thread_statement_context(context)?;
+                        self.require_select_branch_limit(block.branches().len())?;
                         let select_scope = self.allocate_statement_scope(
                             block.syntax(),
                             owner,
@@ -313,7 +314,6 @@ impl StagedHirModuleTransaction<'_> {
             AttachedSelectBranch::Bind {
                 name: attached_name,
                 source,
-                propagates_error,
                 body,
                 ..
             } => {
@@ -399,11 +399,7 @@ impl StagedHirModuleTransaction<'_> {
                     })
                     .or(body_recovery);
                 (
-                    HirSelectBranchHead::Bind {
-                        binding,
-                        source,
-                        propagates_error: *propagates_error,
-                    },
+                    HirSelectBranchHead::Bind { binding, source },
                     body,
                     recovery,
                 )

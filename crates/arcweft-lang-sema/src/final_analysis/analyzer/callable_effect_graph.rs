@@ -2,17 +2,18 @@
 
 use super::{
     BTreeMap, BTreeSet, CallableDeclarationOwner, CallableEffectSchema, CheckedCallableId,
-    EffectSet, ExprId, FinalSemanticAnalysisControl, FinalSemanticAnalysisError, HirModule,
-    HirModuleId, RecursiveCallableContractEdge, ScopeId, StagedCallableBody,
-    calls::AnalyzerPreparedCallGraph, statements::scope_executes_within,
+    EffectSet, ExprId, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
+    RecursiveCallableContractEdge, StagedCallableBody, calls::AnalyzerPreparedCallGraph,
+};
+use crate::{
+    callable::CheckedCallableDeclaration,
+    final_analysis::statement_effects::PreparedExecutionEffectCatalog,
 };
 
 type CallableEdges = BTreeMap<CheckedCallableId, BTreeMap<CheckedCallableId, BTreeSet<ExprId>>>;
 
 struct IndexedCallableCall {
-    scope: ScopeId,
     target: CheckedCallableId,
-    expression: ExprId,
 }
 
 /// Sole owner of project-call edges used by callable effect inference.
@@ -22,14 +23,14 @@ struct IndexedCallableCall {
 pub(super) struct CallableEffectGraph {
     owners: BTreeMap<CheckedCallableId, CallableDeclarationOwner>,
     edges: CallableEdges,
-    calls_by_module: BTreeMap<HirModuleId, Vec<IndexedCallableCall>>,
+    calls_by_expression: BTreeMap<ExprId, IndexedCallableCall>,
 }
 
 impl CallableEffectGraph {
     pub(super) fn build(
         bodies: &[StagedCallableBody],
         prepared_calls: &AnalyzerPreparedCallGraph,
-        modules: &BTreeMap<HirModuleId, &HirModule>,
+        execution: &PreparedExecutionEffectCatalog,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let owners = bodies
@@ -40,7 +41,7 @@ impl CallableEffectGraph {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         let body_ids = owners.keys().cloned().collect::<BTreeSet<_>>();
-        let mut calls_by_module = BTreeMap::<HirModuleId, Vec<IndexedCallableCall>>::new();
+        let mut calls_by_expression = BTreeMap::<ExprId, IndexedCallableCall>::new();
 
         for node in prepared_calls.selected_nodes() {
             control.check()?;
@@ -61,18 +62,17 @@ impl CallableEffectGraph {
                 crate::callable::CheckedCallSite::HirCall(owner)
                 | crate::callable::CheckedCallSite::DialogueApplication(owner) => owner,
             };
-            let module = resolve_module(modules, owner.module())?;
-            let expression = module
-                .resolve_expr(owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            calls_by_module
-                .entry(module.module_id())
-                .or_default()
-                .push(IndexedCallableCall {
-                    scope: expression.scope(),
-                    target: target.clone(),
-                    expression: owner,
-                });
+            if calls_by_expression
+                .insert(
+                    owner,
+                    IndexedCallableCall {
+                        target: target.clone(),
+                    },
+                )
+                .is_some()
+            {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
         }
 
         let mut edges = body_ids
@@ -81,16 +81,21 @@ impl CallableEffectGraph {
             .collect::<CallableEdges>();
         for body in bodies {
             control.check()?;
-            let module = resolve_module(modules, body.module)?;
+            let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            };
             let targets = edges
                 .get_mut(&body.id)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            for call in calls_by_module.get(&body.module).into_iter().flatten() {
-                if scope_executes_within(module, call.scope, body.scope)? {
+            let expressions = execution
+                .declaration_expressions(declaration)
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            for expression in expressions {
+                if let Some(call) = calls_by_expression.get(&expression) {
                     targets
                         .entry(call.target.clone())
                         .or_default()
-                        .insert(call.expression);
+                        .insert(expression);
                 }
             }
         }
@@ -98,7 +103,7 @@ impl CallableEffectGraph {
         Ok(Self {
             owners,
             edges,
-            calls_by_module,
+            calls_by_expression,
         })
     }
 
@@ -154,6 +159,7 @@ impl CallableEffectGraph {
     pub(super) fn close_effect_rows(
         &self,
         rows: &mut BTreeMap<CheckedCallableId, EffectSet>,
+        bounded_call_rows: &BTreeMap<CheckedCallableId, EffectSet>,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         for iteration in 0..=self.owners.len() {
@@ -165,7 +171,10 @@ impl CallableEffectGraph {
                     .get_mut(caller)
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 for target in targets.keys() {
-                    if let Some(target_row) = previous.get(target) {
+                    if let Some(target_row) = bounded_call_rows
+                        .get(target)
+                        .or_else(|| previous.get(target))
+                    {
                         changed |= row.union_with(target_row);
                     }
                 }
@@ -180,23 +189,17 @@ impl CallableEffectGraph {
         Ok(())
     }
 
-    pub(super) fn close_scope_effects(
+    pub(super) fn close_selected_expression_effects(
         &self,
-        module: &HirModule,
-        scope: ScopeId,
+        expressions: impl IntoIterator<Item = ExprId>,
         base: &EffectSet,
         rows: &BTreeMap<CheckedCallableId, EffectSet>,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<EffectSet, FinalSemanticAnalysisError> {
         let mut effects = base.clone();
-        for call in self
-            .calls_by_module
-            .get(&module.module_id())
-            .into_iter()
-            .flatten()
-        {
+        for expression in expressions {
             control.check()?;
-            if scope_executes_within(module, call.scope, scope)?
+            if let Some(call) = self.calls_by_expression.get(&expression)
                 && let Some(target_row) = rows.get(&call.target)
             {
                 effects.union_with(target_row);
@@ -267,14 +270,4 @@ fn strongly_connected_components(edges: &CallableEdges) -> Vec<BTreeSet<CheckedC
         components.push(component);
     }
     components
-}
-
-fn resolve_module<'a>(
-    modules: &BTreeMap<HirModuleId, &'a HirModule>,
-    owner: HirModuleId,
-) -> Result<&'a HirModule, FinalSemanticAnalysisError> {
-    modules
-        .get(&owner)
-        .copied()
-        .ok_or(FinalSemanticAnalysisError::InvalidOwner)
 }

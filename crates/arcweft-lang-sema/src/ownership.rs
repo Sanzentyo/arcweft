@@ -1088,6 +1088,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | TypeKind::CaptureRef
             | TypeKind::AgentResource
             | TypeKind::RagContextPack
+            | TypeKind::StatementIngress(_)
             | TypeKind::Shared(_) => {
                 rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
             }

@@ -439,6 +439,9 @@ impl AnalyzerCallSealedBranch {
             CandidateSemanticReplayMismatch::Expressions => {
                 CallConstraintInvariant::ReplayBranchExpressionFactsMismatch
             }
+            CandidateSemanticReplayMismatch::DialogueMarkCatalogs => {
+                CallConstraintInvariant::ReplayBranchDialogueMarkCatalogMismatch
+            }
             CandidateSemanticReplayMismatch::Iterations => {
                 CallConstraintInvariant::ReplayBranchIterationFactsMismatch
             }

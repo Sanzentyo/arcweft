@@ -1,0 +1,17 @@
+error[E0432]: unresolved import `arcweft_runtime_plan::semantic_facts::RuntimeDialogueMarkHandler`
+ --> tests/ui/removed_runtime_mark_handler_authority.rs:2:33
+  |
+2 |     RuntimeDialogueApplication, RuntimeDialogueMarkHandler,
+  |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^ no `RuntimeDialogueMarkHandler` in `semantic_facts`
+  |
+help: a similar name exists in the module
+  |
+2 -     RuntimeDialogueApplication, RuntimeDialogueMarkHandler,
+2 +     RuntimeDialogueApplication, RuntimeDialogueMarkId,
+  |
+
+error[E0609]: no field `mark_handlers` on type `&RuntimeDialogueApplication`
+ --> tests/ui/removed_runtime_mark_handler_authority.rs:6:25
+  |
+6 |     let _ = application.mark_handlers;
+  |                         ^^^^^^^^^^^^^ unknown field

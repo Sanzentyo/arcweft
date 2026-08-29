@@ -75,3 +75,15 @@ fn unpublished_final_semantic_draft_is_not_an_external_authority() {
     cases.compile_fail("tests/ui/final_semantic_draft_is_private.rs");
     cases.compile_fail("tests/ui/prepared_method_expression_is_private.rs");
 }
+
+#[test]
+fn checked_statement_authorities_have_no_external_constructors() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/checked_statement_authorities_are_not_constructible.rs");
+}
+
+#[test]
+fn removed_checked_statement_authorities_and_prepared_proofs_are_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/removed_checked_statement_authorities.rs");
+}

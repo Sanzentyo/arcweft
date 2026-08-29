@@ -310,9 +310,6 @@ impl PreparedCallInputProjection {
         )
     }
 
-    /// Expression-backed semantic dependencies in source order. Structural
-    /// content/line-plan markers are site-relative and therefore do not mint
-    /// fake expression owners.
     pub(crate) fn expression_sources(&self) -> Box<[ExprId]> {
         match self {
             Self::Authored(mapping) => mapping.owned_expression_sources(),

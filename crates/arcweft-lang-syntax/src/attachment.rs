@@ -179,7 +179,8 @@ pub use snapshot::{
 pub use source_file::{AttachedPath, AttachedPathRoot};
 pub use statement::{
     AttachedBreakStatement, AttachedContinueStatement, AttachedControlLabel,
-    AttachedDeferStatement, AttachedGotoStatement, AttachedOutStatement, AttachedSignalStatement,
+    AttachedDeferStatement, AttachedGotoStatement, AttachedOnStatement, AttachedOutStatement,
+    AttachedSignalStatement,
 };
 pub use style::{
     AttachedStyleAssignment, AttachedStyleAssignmentState, AttachedStyleBody,
@@ -216,7 +217,7 @@ pub use trait_impl::{
     AttachedTraitFunction, AttachedTraitMember,
 };
 pub use trigger::{
-    AttachedExpressionTrigger, AttachedPatternTrigger, AttachedSignalTrigger,
+    AttachedExpressionTrigger, AttachedMarkTrigger, AttachedPatternTrigger, AttachedSignalTrigger,
     AttachedTriggerDelimiters, AttachedTriggerPattern,
 };
 pub use type_ref::{

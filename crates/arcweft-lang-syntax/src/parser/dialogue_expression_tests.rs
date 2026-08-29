@@ -4,10 +4,11 @@ use super::document::parse_document;
 use crate::expressions::{
     ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueApplicationForm,
     SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxExpressionSlot,
-    SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
+    SyntaxPostfixBracketProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
 };
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
+use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefPart};
 use crate::text::{
     MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS,
     MAX_RICH_TEXT_TAG_BODY_BYTES,
@@ -352,10 +353,10 @@ fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity()
 }
 
 #[test]
-fn explicit_mark_selector_retains_one_typed_positional_argument() {
+fn explicit_mark_selector_is_one_typed_identity_without_generic_arguments() {
     let source = concat!(
         "flow opening {\n",
-        "    let line = alice[本文。[mark .checkpoint]]\n",
+        "    let line = alice[本文。[mark @.checkpoint]]\n",
         "}\n",
     );
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
@@ -379,13 +380,28 @@ fn explicit_mark_selector_retains_one_typed_positional_argument() {
     };
     assert!(matches!(
         tag.identity(),
-        SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Marker)
+        SyntaxRichTextTagIdentity::Marker(selector)
+            if selector
+                .name()
+                .is_some_and(|name| name.as_str() == "checkpoint")
+                && matches!(
+                    selector.reference().value(),
+                    Ok(reference)
+                        if matches!(reference.root(), AuthoredIdRoot::Relative { parent_depth: 0 })
+                            && reference.segments().len() == 1
+                            && reference.segments()[0].as_str() == "checkpoint"
+                )
+                && selector
+                    .components()
+                    .iter()
+                    .map(|component| component.part())
+                    .eq([
+                        SyntaxIdRefPart::Whole,
+                        SyntaxIdRefPart::SuffixSegment { ordinal: 0 },
+                    ])
+                && !selector.has_recovery()
     ));
-    assert!(matches!(
-        tag.arguments(),
-        [SyntaxRichTextArgumentProjection::Positional { value }]
-            if value.decoded() == ".checkpoint"
-    ));
+    assert!(tag.arguments().is_empty());
 
     assert_eq!(
         built
@@ -403,7 +419,7 @@ fn explicit_mark_selector_retains_one_typed_positional_argument() {
             .iter()
             .filter(|entry| entry.kind() == SyntaxKind::RichTextPositionalArgument)
             .count(),
-        1
+        0
     );
     assert_eq!(
         built
@@ -412,8 +428,183 @@ fn explicit_mark_selector_retains_one_typed_positional_argument() {
             .iter()
             .filter(|entry| entry.kind() == SyntaxKind::RichTextArgumentPayload)
             .count(),
-        1
+        0
     );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn explicit_mark_rejects_noncanonical_entity_reference_shapes() {
+    let cases = [
+        (" .point", "missing-reference"),
+        (" @point", "invalid-root"),
+        (" @flow:.point", "invalid-root"),
+        (" @super.point", "invalid-root"),
+        (" @.point.more", "multiple-segments"),
+        (" \"@.point\"", "quoted"),
+        (" type=@.point", "attributed"),
+        ("", "missing-suffix"),
+        (" @.point @.other", "multiple-arguments"),
+    ];
+    for (authored, expected) in cases {
+        let source = format!("flow opening {{\n    let line = alice[本文.[mark{authored}]]\n}}\n");
+        let built =
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+        let projection = built
+            .index()
+            .entries()
+            .iter()
+            .find(|entry| entry.kind() == SyntaxKind::PostfixBracketExpression)
+            .and_then(UnattachedGrammarEntry::expression_projection)
+            .expect("noncanonical marker retains a bounded postfix recovery projection");
+        let ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
+            dialogue,
+            ..
+        }) = projection.projection()
+        else {
+            panic!("noncanonical marker retains the dialogue candidate");
+        };
+        let SyntaxDialogueContentProjection::Present(content) = dialogue.content() else {
+            panic!("mark Dialogue application retains content");
+        };
+        let [tag] = content.tags() else {
+            panic!("one explicit marker tag");
+        };
+        let SyntaxRichTextTagIdentity::Marker(selector) = tag.identity() else {
+            panic!("explicit mark remains a Marker identity");
+        };
+        assert!(
+            selector.has_recovery(),
+            "{authored:?} accepted unexpectedly"
+        );
+        let issue = match selector.issue() {
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MissingReference) => {
+                "missing-reference"
+            }
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::InvalidReference(_))
+            | Some(crate::expressions::SyntaxDialogueMarkNameIssue::InvalidRoot) => "invalid-root",
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MultipleSegments) => {
+                "multiple-segments"
+            }
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Quoted) => "quoted",
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Attributed) => "attributed",
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MissingSuffix) => {
+                "missing-suffix"
+            }
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MultipleArguments) => {
+                "multiple-arguments"
+            }
+            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Malformed) | None => "other",
+        };
+        assert_eq!(issue, expected, "unexpected mark issue for {authored:?}");
+        assert!(tag.arguments().is_empty());
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
+fn inferred_dot_selectors_remain_unresolved_and_retain_arguments() {
+    let source = concat!(
+        "flow opening {\n",
+        "    let line = alice[本文.[.checkpoint]word[/]]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("unresolved dot selector remains inside one typed Dialogue application");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("selected Dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("unresolved dot selector Dialogue application retains content");
+    };
+    let [tag] = content.tags() else {
+        panic!("one unresolved dot-selector tag");
+    };
+    assert!(matches!(
+        tag.identity(),
+        SyntaxRichTextTagIdentity::DotSelector(Ok(selector))
+            if selector.as_str() == "checkpoint"
+    ));
+    assert!(tag.arguments().is_empty());
+    assert!(matches!(
+        tag.payload(),
+        crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
+    ));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+
+    let source = concat!(
+        "flow opening {\n",
+        "    let line = alice[本文。[.checkpoint]]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.rich_text.tag.unclosed")
+    );
+    assert_eq!(built.green().to_string(), source);
+
+    let source = concat!(
+        "flow opening {\n",
+        "    let line = alice[本文.[.hotspot type=KeywordHit channel=inventory]proxy[/]]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("attributed dot selector remains inside one typed Dialogue application");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("selected Dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("attributed dot selector retains content");
+    };
+    let [tag] = content.tags() else {
+        panic!("one attributed dot-selector tag");
+    };
+    assert!(matches!(
+        tag.identity(),
+        SyntaxRichTextTagIdentity::DotSelector(Ok(selector))
+            if selector.as_str() == "hotspot"
+    ));
+    let [first, second] = tag.arguments() else {
+        panic!("dot-selector arguments retain source order");
+    };
+    assert!(matches!(
+        first,
+        SyntaxRichTextArgumentProjection::Named {
+            name: Ok(name),
+            value,
+        } if name.as_str() == "type" && value.decoded() == "KeywordHit"
+    ));
+    assert!(matches!(
+        second,
+        SyntaxRichTextArgumentProjection::Named {
+            name: Ok(name),
+            value,
+        } if name.as_str() == "channel" && value.decoded() == "inventory"
+    ));
+    assert!(matches!(
+        tag.payload(),
+        crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
+    ));
+    assert!(!tag.has_recovery());
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
 

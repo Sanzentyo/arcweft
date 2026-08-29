@@ -518,8 +518,6 @@ pub struct RuntimeCall {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum RuntimeWaitTarget {
     Duration(LogicalDuration),
-    Mark(String),
-    Expr(String),
 }
 
 /// Structured log request preserved for defmt-style template interning later.

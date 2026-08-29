@@ -598,7 +598,6 @@ pub enum HirSelectBranchHead {
     Bind {
         binding: HirSelectBindingLocal,
         source: ExprId,
-        propagates_error: bool,
     },
     Frame {
         pattern: PatternId,
@@ -614,9 +613,7 @@ pub enum HirSelectBranchHead {
 impl HirSelectBranchHead {
     fn validate_module(&self, expected: HirModuleId) -> Result<(), HirThreadStmtInvariantError> {
         match self {
-            Self::Bind {
-                binding, source, ..
-            } => {
+            Self::Bind { binding, source } => {
                 binding.validate_module(expected)?;
                 validate_module(expected, source.module())
             }

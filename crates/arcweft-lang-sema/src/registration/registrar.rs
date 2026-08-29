@@ -50,7 +50,7 @@ use super::{
         AcceptedNominalVisibilityIndex, AcceptedNominalWorld, CharacterInventoryRevision,
         CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
         ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest, RegisteredExternalOwner,
-        RegisteredSemanticWorld, RegisteredTypeCheckEnv,
+        RegisteredSemanticWorld, RegisteredStatementIngressTypes, RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
 };
@@ -186,7 +186,7 @@ impl CharacterRegistrar {
             ]));
         }
 
-        let (accepted_base, visibility) =
+        let (accepted_base, statement_ingress_inputs, visibility) =
             match accepted_external_environment(&request.base, request.facts, &link, &owners) {
                 Ok(environment) => environment,
                 Err(error) => {
@@ -199,6 +199,8 @@ impl CharacterRegistrar {
                     ]));
                 }
             };
+        let statement_ingress = RegisteredStatementIngressTypes::try_new(statement_ingress_inputs)
+            .map_err(|error| statement_ingress_registration_report(error, fallback.clone()))?;
         let nominal_world = AcceptedNominalWorld::new(
             accepted_base,
             request.facts.world().clone(),
@@ -280,6 +282,7 @@ impl CharacterRegistrar {
             symbols,
             nominal_world,
             rust_metadata,
+            statement_ingress,
             characters,
             character_variants,
             character_descriptor: descriptor,
@@ -340,6 +343,7 @@ impl CharacterRegistrar {
             symbols,
             nominal_world,
             rust_metadata,
+            statement_ingress,
             characters,
             character_variants,
             character_descriptor,
@@ -458,6 +462,7 @@ impl CharacterRegistrar {
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
+            &statement_ingress,
             facts,
             character_digest,
             character_revision,
@@ -467,6 +472,7 @@ impl CharacterRegistrar {
             character_dialogue_fields,
             rust_metadata,
             callables,
+            statement_ingress,
             characters,
             character_variants,
             character_descriptor,
@@ -637,7 +643,7 @@ impl CharacterRegistrar {
             ]));
         }
 
-        let (accepted_base, visibility) =
+        let (accepted_base, statement_ingress_inputs, visibility) =
             match accepted_external_environment(&request.base, request.facts, &link, &owners) {
                 Ok(environment) => environment,
                 Err(error) => {
@@ -650,6 +656,8 @@ impl CharacterRegistrar {
                     ]));
                 }
             };
+        let statement_ingress = RegisteredStatementIngressTypes::try_new(statement_ingress_inputs)
+            .map_err(|error| statement_ingress_registration_report(error, fallback.clone()))?;
         let nominal_world = AcceptedNominalWorld::new(
             accepted_base,
             request.facts.world().clone(),
@@ -845,6 +853,7 @@ impl CharacterRegistrar {
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
+            &statement_ingress,
             request.facts,
             digest,
             revision,
@@ -856,6 +865,7 @@ impl CharacterRegistrar {
             character_dialogue_fields,
             rust_metadata,
             callables,
+            statement_ingress,
             characters,
             character_variants,
             character_descriptor: descriptor,
@@ -935,6 +945,17 @@ fn build_character_dialogue_fields(
         })
 }
 
+fn statement_ingress_registration_report(
+    error: super::model::StatementIngressRegistrationError,
+    fallback: SourceSpan,
+) -> CharacterRegistrationReport {
+    CharacterRegistrationReport::from_diagnostics(vec![CharacterRegistrationDiagnostic::new(
+        CharacterRegistrationDiagnosticKind::StatementIngress { error },
+        fallback,
+        [],
+    )])
+}
+
 fn environment_projection_registration_report(
     report: EnvironmentPublicationProjectionReport,
 ) -> CharacterRegistrationReport {
@@ -989,10 +1010,18 @@ fn accepted_external_environment(
     facts: &super::model::ProjectRegistrationFacts,
     link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
     owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
-) -> Result<(Arc<TypeCheckEnv>, AcceptedNominalVisibilityIndex), AcceptedNominalCatalogError> {
+) -> Result<
+    (
+        Arc<TypeCheckEnv>,
+        Box<[super::model::StatementIngressTypePublicationInput]>,
+        AcceptedNominalVisibilityIndex,
+    ),
+    AcceptedNominalCatalogError,
+> {
     base.nominal_catalog()
         .validate_scopes_for(OpenNominalEnvironment::Accepted)?;
     let mut environment = base.as_ref().clone();
+    let statement_ingress_inputs = environment.take_statement_ingress_inputs();
     let mut visible = BTreeMap::new();
     let mut inaccessible = BTreeMap::new();
     for input in facts.environment_inputs() {
@@ -1049,6 +1078,7 @@ fn accepted_external_environment(
     }
     Ok((
         Arc::new(environment),
+        statement_ingress_inputs,
         AcceptedNominalVisibilityIndex::from_parts(visible, inaccessible),
     ))
 }

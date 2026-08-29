@@ -21,7 +21,7 @@ use arcweft_lang_hir::{
     database::HirDatabase,
     dialogue_application::HirPostfixBracketCandidates,
     expr::{HirCallCallee, HirExprKind, HirSelectedMember},
-    item::{HirFunctionBody, HirItemKind},
+    item::{HirEntryKind, HirFunctionBody, HirItemKind},
     lowering::{HirModuleKey, LoweringRequest},
     module::HirModule,
     pattern::HirPatternKind,
@@ -33,7 +33,7 @@ use arcweft_lang_hir::{
     source_index::{
         HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
     },
-    stmt::HirStmtKind,
+    stmt::{HirStatementChild, HirStatementChildRole, HirStmtKind, HirUnsafeAuditIdentity},
     symbol::{
         CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolTable,
         ProjectSymbolWorldId,
@@ -65,17 +65,26 @@ use super::{
     CheckedExpression, CheckedExpressionEdgeError, CheckedExpressionResolution,
     CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
     CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedPatternResolution, CheckedSelectResolution, CheckedStatementPayload,
     CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
     CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalCallSealLocation,
     FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
     FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
-    PostfixBracketResolution, RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
+    PostfixBracketResolution, PreparedExecutableIngressSeal, PreparedStatementPayload,
+    RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/dialogue_mark_authority.rs"]
+mod dialogue_mark_authority;
 #[path = "tests/evaluated_effects.rs"]
 mod evaluated_effects;
+#[path = "tests/executable_ingress.rs"]
+mod executable_ingress;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
+#[path = "tests/statement_contextual.rs"]
+mod statement_contextual;
+#[path = "tests/statement_producers.rs"]
+mod statement_producers;
 use crate::{
     CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -910,6 +919,58 @@ fn analyze_with_assertion_profile(
 }
 
 #[test]
+fn checked_unsafe_audit_owns_identity_and_uses_checked_reason_child() {
+    let fixture = fixture(
+        concat!(
+            "fn audited() {\n",
+            "    unsafe lifetime @unsafe.audit reason = \"bounded\" {\n",
+            "        /// SAFETY: the empty audit body has no escaping value.\n",
+            "    };\n",
+            "}\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("typed unsafe audit final analysis");
+    let executable = fixture.project.executable_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root module");
+    let (owner, statement) = module
+        .statements()
+        .find(|(_, statement)| matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }))
+        .expect("unsafe statement");
+    let HirStmtKind::UnsafeLifetime { audit, .. } = statement.kind() else {
+        unreachable!("selected unsafe statement family");
+    };
+    assert!(matches!(
+        audit.identity(),
+        HirUnsafeAuditIdentity::Accepted(id)
+            if id.as_public_id().as_str() == "unsafe.audit"
+    ));
+
+    let checked = report.statement(owner).expect("checked unsafe statement");
+    let CheckedStatementPayload::UnsafeAudit(checked_audit) = checked.payload() else {
+        panic!("unsafe statement must publish the typed unsafe payload");
+    };
+    assert_eq!(checked_audit.id().as_public_id().as_str(), "unsafe.audit");
+    assert!(checked_audit.has_safety_doc());
+
+    let reason = statement
+        .kind()
+        .try_child_edges()
+        .expect("typed unsafe child inventory")
+        .into_iter()
+        .find_map(|edge| match (edge.role(), edge.child()) {
+            (HirStatementChildRole::UnsafeReason, HirStatementChild::Expression(reason)) => {
+                Some(reason)
+            }
+            _ => None,
+        })
+        .expect("unsafe reason child");
+    let checked_reason = report.expression(reason).expect("checked unsafe reason");
+    assert_eq!(checked_reason.ty(), &TypeKind::String);
+    assert!(checked_reason.effects().is_empty());
+}
+
+#[test]
 #[allow(
     clippy::too_many_lines,
     reason = "one integration fixture proves source-order line-plan calls, bindings, output, and checked edges together"
@@ -1021,7 +1082,7 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
             TypeKind::CueHandle,
         ]))),
     );
-    assert_dialogue_line_plan_edges(&report, module);
+    assert_dialogue_application_edges(&report, module);
 }
 
 fn assert_dialogue_application_result_authority(
@@ -1042,7 +1103,7 @@ fn assert_dialogue_application_result_authority(
     );
 }
 
-fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirModule) {
+fn assert_dialogue_application_edges(report: &FinalSemanticAnalysis, module: &HirModule) {
     let (dialogue_owner, _) = module
         .expressions()
         .find(|(_, expression)| {
@@ -1055,16 +1116,11 @@ fn assert_dialogue_line_plan_edges(report: &FinalSemanticAnalysis, module: &HirM
     let dialogue_edges = report
         .checked_child_edges(dialogue_owner)
         .expect("Dialogue line-plan child edges have checked evidence");
-    assert!(dialogue_edges.iter().any(|(_, role)| {
-        matches!(
-            role,
-            CheckedExpressionChildRole::LinePlanOptionValue { .. }
-                | CheckedExpressionChildRole::LinePlanLetValue { .. }
-                | CheckedExpressionChildRole::LinePlanOut { .. }
-                | CheckedExpressionChildRole::LinePlanTimelineAssert { .. }
-                | CheckedExpressionChildRole::LinePlanExpression { .. }
-        )
-    }));
+    assert!(
+        dialogue_edges
+            .iter()
+            .all(|(_, role)| matches!(role, CheckedExpressionChildRole::DialogueTarget))
+    );
 }
 
 #[test]
@@ -1146,8 +1202,8 @@ fn assignment_semantics_admit_only_one_direct_local_nominal_field() {
     let report = analyze(&fixture).expect("direct local nominal field assignment is accepted");
     let assignment = report
         .statements()
-        .find_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::Assignment(assignment) => Some(assignment),
+        .find_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::Assignment(assignment) => Some(assignment),
             _ => None,
         })
         .expect("assignment statement retains one checked place");
@@ -1341,6 +1397,22 @@ fn set_expression_effect(
 }
 
 fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInput {
+    assert!(
+        !report
+            .checked_entries()
+            .entries()
+            .any(|entry| matches!(entry, crate::entry::CheckedEntryBinding::Stateful(_))),
+        "the empty executable-ingress fixture cannot erase a stateful Entry proof"
+    );
+    assert!(
+        !report.statements().any(|(_, statement)| matches!(
+            statement.payload(),
+            CheckedStatementPayload::Trigger(_)
+                | CheckedStatementPayload::Select(_)
+                | CheckedStatementPayload::Include(_)
+        )),
+        "the empty executable-ingress fixture cannot erase On, Select, or Include proof rows"
+    );
     let mut input = FinalSemanticAnalysisInput::new();
     let mut callable_joins = BTreeMap::new();
     for (owner, fact) in report.types() {
@@ -1359,7 +1431,32 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
         input.push_pattern(owner, fact.clone());
     }
     for (owner, fact) in report.statements() {
-        input.push_statement(owner, fact.clone());
+        let prepared = match fact.payload() {
+            CheckedStatementPayload::Structural => PreparedStatementPayload::HirOwned,
+            CheckedStatementPayload::Assertion(disposition) => {
+                PreparedStatementPayload::Assertion(*disposition)
+            }
+            CheckedStatementPayload::EvaluatedEffect(effect) => {
+                PreparedStatementPayload::SealedEvaluatedEffect(effect.clone())
+            }
+            CheckedStatementPayload::Iteration(iteration) => {
+                PreparedStatementPayload::Iteration(iteration.clone())
+            }
+            CheckedStatementPayload::Suspension(suspension) => {
+                PreparedStatementPayload::Suspension(suspension.clone())
+            }
+            CheckedStatementPayload::Yield => PreparedStatementPayload::Yield,
+            CheckedStatementPayload::Assignment(_)
+            | CheckedStatementPayload::Defer(_)
+            | CheckedStatementPayload::ControlTransfer(_)
+            | CheckedStatementPayload::Trigger(_)
+            | CheckedStatementPayload::UnsafeAudit(_)
+            | CheckedStatementPayload::Select(_)
+            | CheckedStatementPayload::SourceLocale(_)
+            | CheckedStatementPayload::Scope(_)
+            | CheckedStatementPayload::Include(_) => PreparedStatementPayload::HirOwned,
+        };
+        input.push_prepared_statement(owner, prepared);
     }
     for (owner, fact) in report.items() {
         input.push_item(owner, fact.clone());
@@ -1375,10 +1472,33 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
     }
     input.set_callable_joins(callable_joins);
     input
+        .set_ingress_seal(PreparedExecutableIngressSeal::empty_for_call_free_fixture())
+        .expect("one concrete call-free ingress seal");
+    input
 }
 
 fn complete_input(fixture: &Fixture) -> FinalSemanticAnalysisInput {
     let executable = fixture.project.executable_view().expect("executable HIR");
+    assert!(
+        !executable.modules().any(|(_, module)| {
+            module.items().any(|(_, item)| {
+                matches!(
+                    item.kind(),
+                    HirItemKind::Entry(entry)
+                        if matches!(
+                            entry.kind(),
+                            HirEntryKind::Game | HirEntryKind::Editor | HirEntryKind::Test
+                        )
+                )
+            }) || module.statements().any(|(_, statement)| {
+                matches!(
+                    statement.kind(),
+                    HirStmtKind::Include(_) | HirStmtKind::On { .. } | HirStmtKind::Select(_)
+                )
+            })
+        }),
+        "the empty executable-ingress fixture requires no stateful Entry, Include, On, or Select"
+    );
     let mut input = FinalSemanticAnalysisInput::new();
     for (_, module) in executable.modules() {
         for (id, _) in module.types() {
@@ -1395,6 +1515,9 @@ fn complete_input(fixture: &Fixture) -> FinalSemanticAnalysisInput {
         push_complete_statement_facts(module, &mut input);
         push_complete_item_facts(module, &mut input);
     }
+    input
+        .set_ingress_seal(PreparedExecutableIngressSeal::empty_for_call_free_fixture())
+        .expect("one concrete call-free ingress seal");
     input
 }
 
@@ -1440,25 +1563,52 @@ fn push_complete_pattern_facts(module: &HirModule, input: &mut FinalSemanticAnal
 
 fn push_complete_statement_facts(module: &HirModule, input: &mut FinalSemanticAnalysisInput) {
     for (id, statement) in module.statements() {
-        let role = match statement.kind() {
+        let fact = match statement.kind() {
             HirStmtKind::Assertion { .. } => {
-                CheckedStatementRole::Assertion(CheckedAssertionDisposition::Discharged)
+                PreparedStatementPayload::Assertion(CheckedAssertionDisposition::Discharged)
             }
             HirStmtKind::For(_) => {
-                CheckedStatementRole::Iteration(Box::new(CheckedIteration::Builtin {
+                PreparedStatementPayload::Iteration(Box::new(CheckedIteration::Builtin {
                     family: CheckedIteratorFamily::Seq,
                     item: TypeKind::Unit,
                 }))
             }
-            HirStmtKind::Yield { .. } => CheckedStatementRole::Yield,
-            HirStmtKind::UnsafeLifetime { .. } => CheckedStatementRole::UnsafeAudit,
+            HirStmtKind::Yield { .. } => PreparedStatementPayload::Yield,
             HirStmtKind::Wait { .. } => {
-                CheckedStatementRole::Suspension(Box::new(CheckedSuspensionStatement::Wait))
+                PreparedStatementPayload::Suspension(Box::new(CheckedSuspensionStatement::Wait))
+            }
+            HirStmtKind::Let { .. }
+            | HirStmtKind::LetElse { .. }
+            | HirStmtKind::Return { .. }
+            | HirStmtKind::Out { .. }
+            | HirStmtKind::Goto { .. }
+            | HirStmtKind::Defer { .. }
+            | HirStmtKind::Signal { .. }
+            | HirStmtKind::LifetimeSet { .. }
+            | HirStmtKind::On { .. }
+            | HirStmtKind::UnsafeLifetime { .. }
+            | HirStmtKind::Choice { .. }
+            | HirStmtKind::If(_)
+            | HirStmtKind::IfLet(_)
+            | HirStmtKind::Match(_)
+            | HirStmtKind::While(_)
+            | HirStmtKind::WhileLet(_)
+            | HirStmtKind::Close { .. }
+            | HirStmtKind::SourceLocale(_)
+            | HirStmtKind::Scope(_)
+            | HirStmtKind::Break { .. }
+            | HirStmtKind::Continue { .. }
+            | HirStmtKind::ProofCall { .. }
+            | HirStmtKind::Expression { .. } => PreparedStatementPayload::HirOwned,
+            HirStmtKind::Assign { .. } => {
+                panic!("call-free complete input does not admit typed assignment")
+            }
+            HirStmtKind::Select(_) | HirStmtKind::Include(_) => {
+                panic!("call-free complete input does not admit contextual statement")
             }
             HirStmtKind::Error => panic!("executable fixture contains poisoned statement"),
-            _ => CheckedStatementRole::Ordinary,
         };
-        input.push_statement(id, CheckedStatement::new(EffectSet::new(), role));
+        input.push_prepared_statement(id, fact);
     }
 }
 
@@ -1519,8 +1669,8 @@ fn assertion_dispositions_require_typed_build_and_proof_admission() {
     let dispositions = |analysis: &FinalSemanticAnalysis| {
         analysis
             .statements()
-            .filter_map(|(_, statement)| match statement.role() {
-                CheckedStatementRole::Assertion(disposition) => Some(*disposition),
+            .filter_map(|(_, statement)| match statement.payload() {
+                CheckedStatementPayload::Assertion(disposition) => Some(*disposition),
                 _ => None,
             })
             .collect::<Vec<_>>()
@@ -1551,8 +1701,8 @@ fn proof_runtime_assertions_are_context_errors() {
     assert_eq!(
         ordinary
             .statements()
-            .filter_map(|(_, statement)| match statement.role() {
-                CheckedStatementRole::Assertion(disposition) => Some(*disposition),
+            .filter_map(|(_, statement)| match statement.payload() {
+                CheckedStatementPayload::Assertion(disposition) => Some(*disposition),
                 _ => None,
             })
             .collect::<Vec<_>>(),
@@ -1566,8 +1716,8 @@ fn proof_runtime_assertions_are_context_errors() {
     assert_eq!(
         proof
             .statements()
-            .filter_map(|(_, statement)| match statement.role() {
-                CheckedStatementRole::Assertion(disposition) => Some(*disposition),
+            .filter_map(|(_, statement)| match statement.payload() {
+                CheckedStatementPayload::Assertion(disposition) => Some(*disposition),
                 _ => None,
             })
             .collect::<Vec<_>>(),
@@ -2874,15 +3024,17 @@ fn root() {
 fn incomplete_or_duplicate_fact_sets_never_publish() {
     let fixture = fixture("fn root() {}\n", None);
     let executable = fixture.project.executable_view().expect("executable HIR");
+    let complete = complete_input(&fixture);
+    let (topology, checked_catalog) = checked_callables(&fixture, &complete);
+
     let mut missing = complete_input(&fixture);
     missing.expressions.pop();
-    let (missing_topology, missing_catalog) = checked_callables(&fixture, &missing);
     assert!(matches!(
         FinalSemanticAnalysis::try_new(
             executable,
             &fixture.symbols,
-            missing_topology,
-            missing_catalog,
+            Arc::clone(&topology),
+            Arc::clone(&checked_catalog),
             missing
         ),
         Err(FinalSemanticAnalysisError::MissingFact { .. })
@@ -2891,13 +3043,12 @@ fn incomplete_or_duplicate_fact_sets_never_publish() {
     let mut duplicate = complete_input(&fixture);
     let expression = duplicate.expressions[0].clone();
     duplicate.expressions.push(expression);
-    let (duplicate_topology, duplicate_catalog) = checked_callables(&fixture, &duplicate);
     assert!(matches!(
         FinalSemanticAnalysis::try_new(
             executable,
             &fixture.symbols,
-            duplicate_topology,
-            duplicate_catalog,
+            topology,
+            checked_catalog,
             duplicate
         ),
         Err(FinalSemanticAnalysisError::DuplicateFact { .. })
@@ -2934,13 +3085,13 @@ fn every_call_expression_requires_one_sealed_shared_resolver_fact() {
             matches!(expression.kind(), HirExprKind::Call(_)).then_some(owner)
         })
         .expect("fixture call owner");
+    let accepted = analyze(&fixture).expect("complete call fixture analysis");
     let input = complete_input(&fixture);
-    let (topology, checked_callables) = checked_callables(&fixture, &input);
     let result = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
-        topology,
-        checked_callables,
+        Arc::clone(accepted.hir_topology()),
+        accepted.checked_callables().clone(),
         input,
     );
     let Err(FinalSemanticAnalysisError::CallSeal(failure)) = result else {

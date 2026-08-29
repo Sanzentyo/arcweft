@@ -13,20 +13,26 @@ use arcweft_lang_hir::{
     item::HirItemKind,
     leaf::{HirIdRef, HirIdRefValue},
     module::HirModule,
-    project::{HirExecutableProjectView, HirPackageModuleKey, HirProjectItemRef},
+    project::{
+        HirExecutableProjectView, HirPackageModuleKey, HirProjectItemRef, HirSemanticPathOwnerId,
+        HirSemanticPathRoot, HirSemanticPathStep,
+    },
     source_index::{
         HirEntrySourcePart, HirExprSourceRole, HirFlowSourceRole, HirItemSourceRole,
-        HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole, HirStyleSourceRole,
+        HirSourcePresence, HirSourceQuery, HirSourceSite, HirStyleSourceRole,
     },
-    stmt::{HirSelectStmt, HirStmtKind},
-    symbol::{CallableDeclarationKey, ProjectSymbolTable, ResolvedProjectSymbol},
+    stmt::HirStmtKind,
+    symbol::{CallableDeclarationKey, ProjectSymbolTable},
 };
 use arcweft_source::{SourceAnchor, SourceSpan};
 
 use crate::{
     callable::CheckedCallableDeclaration,
     entry::CheckedEntryCatalog,
-    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
+    final_analysis::{
+        CheckedExpressionResolution, CheckedSelectStatementView, CheckedStatementPayload,
+        CheckedValueResolution, FinalSemanticAnalysis, FinalSemanticAnalysisError,
+    },
     types::{
         EntityKind, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
         ProjectNominalType, TypeKind,
@@ -257,10 +263,12 @@ fn index_flow(
     let symbol = symbols
         .flow_symbol_for_item(item.id())
         .ok_or(ProjectSemanticIndexError::MissingFlowSymbol { owner: item.id() })?;
-    let arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(flow) = symbol.declaration() else {
+    let arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(flow_declaration) =
+        symbol.declaration()
+    else {
         unreachable!("Flow item lookup only publishes structural Flow declarations")
     };
-    let identity = ProjectEntityId::structural_flow(flow.clone());
+    let identity = ProjectEntityId::structural_flow(flow_declaration.clone());
     index_nonretained_entity(
         index,
         item,
@@ -270,17 +278,11 @@ fn index_flow(
         analysis,
     )?;
 
-    let HirItemKind::Flow(flow) = item.item().kind() else {
+    let HirItemKind::Flow(_) = item.item().kind() else {
         return Err(ProjectSemanticIndexError::WrongEntityOwner { owner: item.id() });
     };
-    let summary = summarize_flow(
-        index,
-        item.module(),
-        flow.body().scope(),
-        &identity,
-        symbols,
-        analysis,
-    )?;
+    let declaration = CallableDeclarationKey::Flow(flow_declaration.clone());
+    let summary = summarize_flow(index, item.module(), &declaration, &identity, analysis)?;
     index.flow_control_summaries.insert(identity, summary);
     Ok(())
 }
@@ -346,37 +348,33 @@ fn absolute_public_id(
 fn summarize_flow(
     index: &mut ProjectSemanticIndex,
     module: &HirModule,
-    root_scope: arcweft_lang_hir::identity::ScopeId,
+    declaration: &CallableDeclarationKey,
     flow_id: &ProjectEntityId,
-    symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<ProjectFlowControlSummary, ProjectSemanticIndexError> {
     let mut summary = ProjectFlowControlSummary::default();
-    let mut statement_owned_control = std::collections::BTreeSet::new();
 
     for (statement_id, statement) in module.statements() {
-        if !scope_is_within(module, statement.scope(), root_scope) {
+        if !is_declaration_body_owner(
+            analysis,
+            declaration,
+            HirSemanticPathOwnerId::Statement(statement_id),
+        )? {
             continue;
         }
-        match statement.kind() {
-            HirStmtKind::Goto { target } => {
-                if let Some(target) = checked_flow_target(analysis, *target)? {
-                    summary.record_static_goto();
-                    push_relation(
-                        index,
-                        ProjectGraphRelation::new(
-                            flow_id.clone(),
-                            target,
-                            ProjectGraphRelationKind::FlowGoto,
-                        ),
-                    );
-                } else {
-                    summary.record_dynamic_goto();
+        let checked = analysis.statement(statement_id).ok_or(
+            ProjectSemanticIndexError::MissingFlowStatement {
+                owner: statement_id,
+            },
+        )?;
+        match checked.payload() {
+            CheckedStatementPayload::Include(target) => {
+                if !matches!(statement.kind(), HirStmtKind::Include(_)) {
+                    return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                        owner: statement_id,
+                    });
                 }
-            }
-            HirStmtKind::Include(include) => {
-                let target =
-                    resolved_include_flow_target(module, statement_id, include.target(), symbols)?;
+                let target = checked_include_flow_target(analysis, target)?;
                 push_relation(
                     index,
                     ProjectGraphRelation::new(
@@ -386,32 +384,134 @@ fn summarize_flow(
                     ),
                 );
             }
-            HirStmtKind::LetChoice { .. }
-            | HirStmtKind::Choice { .. }
-            | HirStmtKind::If(_)
-            | HirStmtKind::IfLet(_)
-            | HirStmtKind::Match(_)
-            | HirStmtKind::LetElse { .. } => summary.record_branch(),
-            HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
+            CheckedStatementPayload::Select(select) => {
+                if !matches!(statement.kind(), HirStmtKind::Select(_)) {
+                    return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                        owner: statement_id,
+                    });
+                }
+                match select.view() {
+                    CheckedSelectStatementView::Operand => {}
+                    CheckedSelectStatementView::Branches(branches) => {
+                        summary.record_branch();
+                        summary.add_select_branches(branches.len());
+                    }
+                }
+            }
+            CheckedStatementPayload::Suspension(_) => {
+                if !matches!(statement.kind(), HirStmtKind::Wait { .. }) {
+                    return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                        owner: statement_id,
+                    });
+                }
+                summary.record_await();
+            }
+            CheckedStatementPayload::Iteration(_) => {
+                if !matches!(statement.kind(), HirStmtKind::For(_)) {
+                    return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                        owner: statement_id,
+                    });
+                }
                 summary.record_loop()
             }
-            HirStmtKind::Select(HirSelectStmt::Branches { branches, .. }) => {
-                summary.record_branch();
-                summary.add_select_branches(branches.len());
+            CheckedStatementPayload::Structural => match statement.kind() {
+                HirStmtKind::Goto { target } => {
+                    if let Some(target) = checked_flow_target(analysis, *target)? {
+                        summary.record_static_goto();
+                        push_relation(
+                            index,
+                            ProjectGraphRelation::new(
+                                flow_id.clone(),
+                                target,
+                                ProjectGraphRelationKind::FlowGoto,
+                            ),
+                        );
+                    } else {
+                        summary.record_dynamic_goto();
+                    }
+                }
+                HirStmtKind::Choice { .. }
+                | HirStmtKind::If(_)
+                | HirStmtKind::IfLet(_)
+                | HirStmtKind::Match(_)
+                | HirStmtKind::LetElse { .. } => summary.record_branch(),
+                HirStmtKind::While(_) | HirStmtKind::WhileLet(_) => summary.record_loop(),
+                HirStmtKind::Let { .. }
+                | HirStmtKind::Return { .. }
+                | HirStmtKind::Signal { .. }
+                | HirStmtKind::LifetimeSet { .. }
+                | HirStmtKind::Close { .. }
+                | HirStmtKind::Expression { .. }
+                | HirStmtKind::ProofCall { .. } => {}
+                HirStmtKind::Assertion { .. }
+                | HirStmtKind::Assign { .. }
+                | HirStmtKind::Out { .. }
+                | HirStmtKind::Defer { .. }
+                | HirStmtKind::Yield { .. }
+                | HirStmtKind::Wait { .. }
+                | HirStmtKind::On { .. }
+                | HirStmtKind::UnsafeLifetime { .. }
+                | HirStmtKind::For(_)
+                | HirStmtKind::Select(_)
+                | HirStmtKind::SourceLocale(_)
+                | HirStmtKind::Scope(_)
+                | HirStmtKind::Include(_)
+                | HirStmtKind::Break { .. }
+                | HirStmtKind::Continue { .. }
+                | HirStmtKind::Error => {
+                    return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                        owner: statement_id,
+                    });
+                }
+            },
+            CheckedStatementPayload::Assignment(_)
+                if matches!(statement.kind(), HirStmtKind::Assign { .. }) => {}
+            CheckedStatementPayload::Assertion(_)
+                if matches!(statement.kind(), HirStmtKind::Assertion { .. }) => {}
+            CheckedStatementPayload::Defer(_)
+                if matches!(statement.kind(), HirStmtKind::Defer { .. }) => {}
+            CheckedStatementPayload::EvaluatedEffect(_)
+                if matches!(statement.kind(), HirStmtKind::Expression { .. }) => {}
+            CheckedStatementPayload::ControlTransfer(_)
+                if matches!(
+                    statement.kind(),
+                    HirStmtKind::Out { .. }
+                        | HirStmtKind::Break { .. }
+                        | HirStmtKind::Continue { .. }
+                ) => {}
+            CheckedStatementPayload::Trigger(_)
+                if matches!(statement.kind(), HirStmtKind::On { .. }) => {}
+            CheckedStatementPayload::UnsafeAudit(_)
+                if matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. }) => {}
+            CheckedStatementPayload::SourceLocale(_)
+                if matches!(statement.kind(), HirStmtKind::SourceLocale(_)) => {}
+            CheckedStatementPayload::Scope(_)
+                if matches!(statement.kind(), HirStmtKind::Scope(_)) => {}
+            CheckedStatementPayload::Yield
+                if matches!(statement.kind(), HirStmtKind::Yield { .. }) => {}
+            CheckedStatementPayload::Assignment(_)
+            | CheckedStatementPayload::Assertion(_)
+            | CheckedStatementPayload::Defer(_)
+            | CheckedStatementPayload::EvaluatedEffect(_)
+            | CheckedStatementPayload::ControlTransfer(_)
+            | CheckedStatementPayload::Trigger(_)
+            | CheckedStatementPayload::UnsafeAudit(_)
+            | CheckedStatementPayload::SourceLocale(_)
+            | CheckedStatementPayload::Scope(_)
+            | CheckedStatementPayload::Yield => {
+                return Err(ProjectSemanticIndexError::StatementPayloadMismatch {
+                    owner: statement_id,
+                });
             }
-            HirStmtKind::Wait { .. } => summary.record_await(),
-            HirStmtKind::LetActionReceive { action, .. } => {
-                summary.record_await();
-                statement_owned_control.insert(*action);
-            }
-            _ => {}
         }
     }
 
     for (owner, expression) in module.expressions() {
-        if statement_owned_control.contains(&owner)
-            || !scope_is_within(module, expression.scope(), root_scope)
-        {
+        if !is_declaration_body_owner(
+            analysis,
+            declaration,
+            HirSemanticPathOwnerId::Expression(owner),
+        )? {
             continue;
         }
         match expression.kind() {
@@ -448,66 +548,35 @@ fn checked_flow_target(
     Ok(Some(ProjectEntityId::structural_flow(declaration.clone())))
 }
 
-fn resolved_include_flow_target(
-    module: &HirModule,
-    owner: arcweft_lang_hir::identity::StmtId,
-    target: &HirIdRefValue,
-    symbols: &ProjectSymbolTable,
+fn checked_include_flow_target(
+    analysis: &FinalSemanticAnalysis,
+    target: &crate::final_analysis::CheckedIncludeFlowTarget,
 ) -> Result<ProjectEntityId, ProjectSemanticIndexError> {
-    let reference =
-        target
-            .as_resolved()
-            .ok_or_else(|| ProjectSemanticIndexError::InvalidEntityIdentity {
-                id: "<recovered>".to_owned(),
-                family: DeclarationIdentityFamily::Flow.prefix(),
-                message: "include target has a recovered identity".to_owned(),
-            })?;
-    let source = module.source_site(
-        module.provenance().source_identity(),
-        HirSourceQuery::Stmt {
-            owner,
-            role: HirStmtSourceRole::Whole,
-        },
-    )?;
-    let HirSourcePresence::Present(HirSourceSite::Span(source)) = source.presence() else {
-        return Err(ProjectSemanticIndexError::MissingFlowStatementSource { owner });
-    };
-    let resolved =
-        symbols.resolve_entity_reference(module.key().path(), reference, source.clone())?;
-    let ResolvedProjectSymbol::StructuralCallable(symbol) = resolved else {
-        return Err(ProjectSemanticIndexError::InvalidEntityIdentity {
-            id: format!("{reference:?}"),
-            family: DeclarationIdentityFamily::Flow.prefix(),
-            message: "include target does not resolve to a structural Flow".to_owned(),
-        });
-    };
-    let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
-        return Err(ProjectSemanticIndexError::InvalidEntityIdentity {
-            id: format!("{reference:?}"),
-            family: DeclarationIdentityFamily::Flow.prefix(),
-            message: "include target does not resolve to a structural Flow".to_owned(),
-        });
-    };
+    let declaration = analysis
+        .checked_callables()
+        .project_flow_by_declaration_digest(target.declaration())
+        .map_err(|error| ProjectSemanticIndexError::CheckedCallableLookup(Box::new(error)))?;
     Ok(ProjectEntityId::structural_flow(declaration.clone()))
 }
 
-fn scope_is_within(
-    module: &HirModule,
-    mut candidate: arcweft_lang_hir::identity::ScopeId,
-    root: arcweft_lang_hir::identity::ScopeId,
-) -> bool {
-    loop {
-        if candidate == root {
-            return true;
-        }
-        let Ok(scope) = module.resolve_scope(candidate) else {
-            return false;
-        };
-        let Some(parent) = scope.parent() else {
-            return false;
-        };
-        candidate = parent;
-    }
+fn is_declaration_body_owner(
+    analysis: &FinalSemanticAnalysis,
+    declaration: &CallableDeclarationKey,
+    owner: HirSemanticPathOwnerId,
+) -> Result<bool, ProjectSemanticIndexError> {
+    let location = analysis
+        .accepted_root_catalog()
+        .topology()
+        .semantic_path(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+    Ok({
+        location.root() == &HirSemanticPathRoot::Declaration(declaration.clone())
+            && matches!(
+                location.path().steps().first(),
+                Some(HirSemanticPathStep::DeclarationBody(_))
+            )
+    })
 }
 
 fn push_relation(index: &mut ProjectSemanticIndex, relation: ProjectGraphRelation) {

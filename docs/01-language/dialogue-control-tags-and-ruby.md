@@ -58,7 +58,7 @@ Arcweft has four tag-like forms in dialogue text:
 | `[ruby rt="..."]...[/ruby]`, `[rb rt=...]...[/rb]` | enclosing rich-text/control tags |
 | `#[expr]`, `#[fmt(...)]`, `$(expr)` | pure content interpolation |
 | `[call ...]`, `[! ...]` | dialogue-safe function dispatch |
-| `[mark .name]`, `[.name]` | zero-width line-local marker for `with` handlers and waits |
+| `[mark @.name]` | explicit zero-width line-local marker for `with` handlers and waits |
 | `[fx name(arg=value)]...[/fx]` | a typed reusable presentation-Fx span |
 
 Double brackets are not dialogue tags:
@@ -144,28 +144,24 @@ Known selector families are style (`.italic`, `.oblique`), layout
 (`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
 selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
 effect (`.wave`, `.shake`, `.arc`, `.spin`, `.pulse`, `.motion`,
-`.typewriter`, `.jitter`, `.sparkle`, `.shader`, `.host`). Unknown dot selectors without attributes are markers and canonicalize
-to `[mark .name]`. If an unknown marker-like selector was accidentally written
-with a following `[/]`, canonical tooling removes that inferred close because
-markers are zero-width, not spans. Unknown dot selectors with attributes
-canonicalize to custom effect spans, for example
-`[.custom_glow amp=2px]...[/]` becomes
-`[effect .custom_glow amp=2px]...[/effect]`. Arcweft-owned builtins such as
-`.sparkle` remain effect spans whether or not attributes are present.
+`.typewriter`, `.jitter`, `.sparkle`, `.shader`, `.host`). These ordinary dot
+selectors remain valid only for their declared family. An unknown dot selector
+does not become a marker, object, or custom effect by inference: use the
+explicit `[mark @.name]` form for a marker and the explicit family tag for a
+registered effect.
 
 Text presentation object proxies are explicit object-family spans:
 `[object .name ...]...[/object]`. They preserve custom proxy metadata for
 hit-testing, depth ordering, object-id capture, and renderer/tooling registries
 without reinterpreting the span as a visual effect. The declaration-time proxy
 type may be marked with normal Arcweft attributes such as `#[text_proxy(...)]`;
-inline dialogue text refers to it with `type=Name`, `struct=Name`, or
-`proxy=Name` so it does not conflict with `#[expr]` interpolation. Canonical
-tooling may infer the object family from `[.id type=Name]...[/]` or
-`[.Name]...[/]` only when `Name` is a visible `#[text_proxy]` /
-`#[rich_text_proxy]` struct, and rewrites that surface to explicit
-`[object ...]...[/object]` form. Runtime-plan lowering uses the struct attribute
-as proxy defaults: `kind` becomes the default role, `default_hit` becomes the
-default hit-test policy, `depth` / `z` / `z_index` becomes default local depth,
+inline dialogue text refers to it with `type=Name` inside the explicit object
+family, so it does not conflict with `#[expr]` interpolation. The object family
+is not inferred from a dot selector. Author proxy spans with the explicit
+`[object .id type=Name ...]...[/object]` form. Runtime-plan lowering uses
+declaration attributes as proxy defaults: `kind` becomes the default role,
+`default_hit` becomes the default hit-test policy, `depth` / `z` / `z_index`
+becomes default local depth,
 and any remaining attribute arguments become default typed proxy params unless
 the inline object span overrides them.
 
@@ -468,7 +464,7 @@ formatting call. For `fmt(score, style="number")`, it renders `score`.
 `InlineFallback.value_plain` is reserved for formatter failures where the runtime
 value was available but formatter/style application failed.
 
-Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark .name]` plus `with: on mark(.name):`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
+Pure interpolation cannot emit commands, mutate state, play audio, or trigger stage effects. Use `[call]`, `[mark @.name]` plus `with: on mark(@.name):`, or line-plan `at(...) { ... }` for side-effecting dialogue behavior.
 
 ---
 
@@ -505,23 +501,21 @@ alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
 The short form `[! flash(color=#ffffff, time=90ms)]` is accepted for the same
 dialogue-safe call.
 
-Use `[mark .name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
+Use `[mark @.name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
 ```arcw
-alice: 変な夢[.keyword][p]
+alice: 変な夢[mark @.keyword][p]
 with:
-    on mark(.keyword):
+    on mark(@.keyword):
         mark_keyword(word="夢", color=@color.dream)
 ```
 
-Dot-prefixed authoring tags are inferred only when the family is unambiguous.
-Known rich-text selectors such as `[.vertical_rl]...[/]` and
-`[.shake amp=1px]...[/]` lower as `layout` / `effect` spans. Unknown selectors
-without attributes, such as `[.keyword]`, lower as zero-width marks. Unknown
-selectors with attributes, such as `[.custom_glow amp=2px]...[/]`, lower as custom
-rich-text effects because markers do not carry parameters. Tooling can
-canonicalize these inferred forms back to `[layout .vertical_rl]...[/layout]`,
-`[mark .keyword]`, and `[effect .custom_glow amp=2px]...[/effect]`.
+Recognized dot-prefixed authoring selectors such as
+`[.vertical_rl]...[/]` and `[.shake amp=1px]...[/]` retain their declared
+`layout` / `effect` families. Unknown or attributed dot selectors do not infer
+markers, objects, or custom effects. Use `[mark @.keyword]` for a marker,
+`[object .id type=Type ...]...[/object]` for a typed object span, and an
+explicit registered `[effect .custom_glow ...]...[/effect]` for a custom effect.
 
 A dialogue-safe function must declare its effects:
 
@@ -548,8 +542,8 @@ pub fn mark_keyword(
 }
 ```
 
-Dialogue text declares local synchronization points with `[mark .name]` and
-handles them with line-plan `on mark(.name):` clauses. Top-level
+Dialogue text declares local synchronization points with `[mark @.name]` and
+handles them with line-plan `on mark(@.name):` clauses. Top-level
 `hook @hook...` declarations are a separate engine-phase construct.
 
 ---

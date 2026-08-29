@@ -15,7 +15,7 @@ use crate::{
 
 use super::{
     CheckedExpression, CheckedExpressionResolution, CheckedPattern, CheckedProjectNominal,
-    CheckedStatement, CheckedTypeSelection,
+    CheckedTypeSelection,
 };
 
 #[path = "prepared/evaluated_effect.rs"]
@@ -25,6 +25,13 @@ pub(crate) use evaluated_effect::PreparedEvaluatedEffect;
 mod dialogue;
 pub(crate) use dialogue::{
     PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedDialogueLinePlan,
+};
+#[path = "prepared/statement.rs"]
+mod statement;
+pub(crate) use statement::{
+    PreparedAssignmentStatement, PreparedEventScrutineeProof, PreparedIncludeFlowProof,
+    PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof, PreparedStatementPayload,
+    PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof,
 };
 
 /// Common checked expression state retained while a projection-dependent row
@@ -591,123 +598,6 @@ impl PreparedExpressionFact {
                 }
                 Ok(())
             }
-        }
-    }
-}
-
-/// One direct-local project-field assignment awaiting the project-wide field
-/// coordinate seal.
-///
-/// The analyzer has already admitted the direct local, its exact checked
-/// project nominal, and equal target/value types. The runtime field coordinate
-/// remains deliberately absent until the same seal that finalizes the target
-/// [`PreparedExpressionFact::ProjectField`] row.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedAssignmentStatement {
-    effects: EffectSet,
-    local: LocalId,
-    nominal: CheckedProjectNominal,
-    target: ExprId,
-    value: ExprId,
-    field_type: TypeKind,
-}
-
-impl PreparedAssignmentStatement {
-    pub(crate) const fn new(
-        effects: EffectSet,
-        local: LocalId,
-        nominal: CheckedProjectNominal,
-        target: ExprId,
-        value: ExprId,
-        field_type: TypeKind,
-    ) -> Self {
-        Self {
-            effects,
-            local,
-            nominal,
-            target,
-            value,
-            field_type,
-        }
-    }
-
-    pub(crate) const fn effects(&self) -> &EffectSet {
-        &self.effects
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        EffectSet,
-        LocalId,
-        CheckedProjectNominal,
-        ExprId,
-        ExprId,
-        TypeKind,
-    ) {
-        (
-            self.effects,
-            self.local,
-            self.nominal,
-            self.target,
-            self.value,
-            self.field_type,
-        )
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        self.nominal.visit_types(visitor)?;
-        visitor(&self.field_type)
-    }
-}
-
-/// Analyzer-owned statement fact. Only `Complete` may enter the published
-/// report; an assignment is consumed after its target field receives the
-/// issuer-backed runtime coordinate.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PreparedStatementFact {
-    Complete(CheckedStatement),
-    Assignment(PreparedAssignmentStatement),
-    EvaluatedEffect(PreparedEvaluatedEffect),
-}
-
-impl From<CheckedStatement> for PreparedStatementFact {
-    fn from(value: CheckedStatement) -> Self {
-        Self::Complete(value)
-    }
-}
-
-impl PreparedStatementFact {
-    pub(crate) fn extend_effects(&self, effects: &mut EffectSet) {
-        match self {
-            Self::Complete(value) => {
-                effects.union_with(value.effects());
-            }
-            Self::Assignment(value) => {
-                effects.union_with(value.effects());
-            }
-            Self::EvaluatedEffect(_) => {}
-        }
-    }
-
-    pub(crate) fn into_complete(self) -> Result<CheckedStatement, Self> {
-        match self {
-            Self::Complete(value) => Ok(value),
-            other => Err(other),
-        }
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        match self {
-            Self::Complete(value) => value.visit_types(visitor),
-            Self::Assignment(value) => value.visit_types(visitor),
-            Self::EvaluatedEffect(_) => Ok(()),
         }
     }
 }

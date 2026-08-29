@@ -197,6 +197,9 @@ pub(super) fn rich_text_tag_identity_projection_matches(
         (HirRichTextTagIdentity::Builtin(actual), SyntaxRichTextTagIdentity::Builtin(expected)) => {
             *actual == (*expected).into()
         }
+        (HirRichTextTagIdentity::Marker, SyntaxRichTextTagIdentity::Marker(expected)) => {
+            !expected.has_recovery()
+        }
         (
             HirRichTextTagIdentity::Unresolved(actual),
             SyntaxRichTextTagIdentity::DotSelector(Ok(expected)),
@@ -293,6 +296,9 @@ pub(super) const fn rich_text_payload_projection_matches(
         ) | (
             HirRichTextTagPayload::Condition(_),
             SyntaxRichTextTagPayloadProjection::Condition(_)
+        ) | (
+            HirRichTextTagPayload::Marker(_),
+            SyntaxRichTextTagPayloadProjection::None
         ) | (
             HirRichTextTagPayload::None,
             SyntaxRichTextTagPayloadProjection::None

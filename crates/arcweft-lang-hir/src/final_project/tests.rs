@@ -609,7 +609,6 @@ fn semantic_body_rows_retain_empty_await_and_choice_thread_bodies_without_concep
                     | crate::expr::HirExpressionOwnedBodyRole::ChoiceOptionForPattern { .. }
                     | crate::expr::HirExpressionOwnedBodyRole::ChoiceOptionLetStatement { .. }
                     | crate::expr::HirExpressionOwnedBodyRole::DialogueLinePlanStatement { .. }
-                    | crate::expr::HirExpressionOwnedBodyRole::DialogueLinePlanLet { .. }
             )
         )
     }));

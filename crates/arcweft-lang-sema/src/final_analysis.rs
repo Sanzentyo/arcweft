@@ -6,7 +6,7 @@
 //! identities, a linked `HirModule`, or positional sidecar evidence.
 
 use crate::{
-    assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
+    assertion::{AssertionBuildProfile, AssertionContext},
     callable::{
         CallAnalysisOutcome, CallCalleeClassificationFact, CallTargetFacts,
         CallableArgumentSlotIndex, CallableCandidateId, CallableDiagnosticSubject,
@@ -38,7 +38,6 @@ use arcweft_lang_hir::{
     module::HirModule,
     pattern::HirPatternKind,
     project::HirExecutableProjectView,
-    stmt::HirStmtKind,
     symbol::{
         CallableDeclarationKey, CallableDeclarationOwner, ProjectHirSymbolLookupError,
         ProjectSymbolResolutionError, ProjectSymbolTable,
@@ -64,6 +63,8 @@ mod recovery_diagnostics;
 mod report;
 mod semantic_shapes;
 mod semantic_transcript;
+mod statement_effects;
+mod statement_seal;
 mod transcript_writer;
 mod type_rules;
 mod validation;
@@ -79,6 +80,10 @@ pub(crate) use accounting::{
 };
 pub use accounting::{FinalSemanticAnalysisControl, FinalSemanticAnalysisWork};
 pub use analyzer::{FinalSemanticCatalogs, analyze_final_project};
+pub(crate) use analyzer::{
+    PreparedEntryIngressSeal, PreparedExecutableIngressFacts, PreparedExecutableIngressSeal,
+    PreparedStatementIngressSeal,
+};
 pub use error::{
     CandidateFactTransactionViolation, FinalCallConstraintFailure, FinalCallFrameInvariant,
     FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysisError,
@@ -98,27 +103,28 @@ pub use model::{
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedChoice, CheckedChoiceGoto, CheckedClosure,
     CheckedCoverageDomainDigest, CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger, CheckedDialogueLinePlan, CheckedDialogueMarkHandler,
-    CheckedDialogueMarkOrdinal, CheckedDropFade, CheckedDropFadeOperand, CheckedDropInvocation,
-    CheckedDropPolicySource, CheckedEffectField, CheckedEntryReference, CheckedEvaluatedEffect,
-    CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
-    CheckedExpression, CheckedExpressionRecordField, CheckedExpressionResolution,
-    CheckedExpressionSemanticDigest, CheckedFieldSelection, CheckedFunctionExecution,
-    CheckedImplicitCallable, CheckedImplicitCaptureUse, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact,
-    CheckedMatchRef, CheckedMatchSemanticDigest, CheckedMethodSelection,
-    CheckedOrdinaryFunctionEmission, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedPatternSemanticDigest, CheckedPipe, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedRecordBindingSource,
-    CheckedRecordExpressionSource, CheckedRecordPattern, CheckedRecordPatternField,
-    CheckedRecordPatternOwner, CheckedRecordPatternRest, CheckedRecordPatternSource,
-    CheckedRecordPatternSourceRef, CheckedRecordValueSource, CheckedSelectResolution,
-    CheckedStageLook, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedTypedBinding, CheckedValueResolution, CheckedVariantCase, CheckedVariantOwner,
-    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
-    RegisteredSemanticValueId,
+    CheckedDialogueEffectTrigger, CheckedDialogueLinePlan, CheckedDropFade, CheckedDropFadeOperand,
+    CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField, CheckedEntryReference,
+    CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
+    CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionRecordField,
+    CheckedExpressionResolution, CheckedExpressionSemanticDigest, CheckedFieldSelection,
+    CheckedFunctionExecution, CheckedImplicitCallable, CheckedImplicitCaptureUse,
+    CheckedIncludeFlowTarget, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchArmFact, CheckedMatchFact, CheckedMatchRef,
+    CheckedMatchSemanticDigest, CheckedMethodSelection, CheckedOrdinaryFunctionEmission,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPatternSemanticDigest,
+    CheckedPipe, CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner,
+    CheckedProjectNominal, CheckedRecordBindingSource, CheckedRecordExpressionSource,
+    CheckedRecordPattern, CheckedRecordPatternField, CheckedRecordPatternOwner,
+    CheckedRecordPatternRest, CheckedRecordPatternSource, CheckedRecordPatternSourceRef,
+    CheckedRecordValueSource, CheckedScopeIdentity, CheckedSelectBranchHead,
+    CheckedSelectResolution, CheckedSelectStatement, CheckedSelectStatementView, CheckedStageLook,
+    CheckedStatement, CheckedStatementPayload, CheckedStyleCallee, CheckedSuspensionRole,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity, CheckedTrigger,
+    CheckedTriggerView, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedTypedBinding, CheckedUnsafeAudit, CheckedValueResolution, CheckedVariantCase,
+    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
+    PostfixBracketResolution, RegisteredSemanticValueId,
 };
 pub(crate) use nominal_schema::RuntimeNominalProjectionSeal;
 pub use nominal_schema::{
@@ -129,13 +135,15 @@ pub use nominal_schema::{
 };
 pub(crate) use prepared::{
     PreparedAssignmentStatement, PreparedEntryExpression, PreparedEntryReference,
-    PreparedExpressionFact, PreparedExpressionShell, PreparedMethodExpression, PreparedPatternFact,
+    PreparedEventScrutineeProof, PreparedExpressionFact, PreparedExpressionShell,
+    PreparedIncludeFlowProof, PreparedMethodExpression, PreparedPatternFact,
     PreparedProjectFieldExpression, PreparedProjectRecordExpression,
     PreparedProjectRecordExpressionField, PreparedProjectVariantExpression,
     PreparedProjectVariantOwnerSeed, PreparedProjectVariantPattern, PreparedRecordPattern,
     PreparedRecordPatternField, PreparedRecordPatternFieldIdentity, PreparedRecordPatternOwner,
     PreparedRecordPatternRest, PreparedRecordPatternSource, PreparedRecordValueSource,
-    PreparedStatementFact, PreparedVariantCaseSeed,
+    PreparedSelectBranchHeadProof, PreparedSelectScrutineeProof, PreparedStatementPayload,
+    PreparedStatementScrutineeProof, PreparedTriggerScrutineeProof, PreparedVariantCaseSeed,
 };
 pub(crate) use prepared::{
     PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedDialogueLinePlan,
@@ -145,7 +153,10 @@ pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,
     project_callable_tail_recovery_diagnostics,
 };
-pub use report::FinalSemanticAnalysis;
+pub use report::{
+    CheckedCallRuntimeCalleeDisposition, CheckedExpressionRuntimeDisposition,
+    CheckedExpressionRuntimeDispositionError, FinalSemanticAnalysis,
+};
 pub(crate) use semantic_shapes::AcceptedSemanticShapeCatalog;
 pub(crate) use semantic_transcript::write_len;
 pub(crate) use transcript_writer::{

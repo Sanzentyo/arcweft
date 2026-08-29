@@ -263,7 +263,7 @@ fn canonical_rich_text_attached_bracket_matrix_uses_typed_tag_families() {
 }
 
 #[test]
-fn canonical_rich_text_attached_bracket_matrix_expands_typed_proxy_objects() {
+fn canonical_rich_text_preserves_explicit_typed_proxy_objects() {
     let source = concat!(
         "#[text_proxy(kind=\"keyword\", default_hit=true)]\n",
         "pub struct KeywordHit {\n",
@@ -274,8 +274,8 @@ fn canonical_rich_text_attached_bracket_matrix_expands_typed_proxy_objects() {
         "    layer: String\n",
         "}\n\n",
         "flow opening {\n",
-        "    let line = alice[[.hotspot type=KeywordHit channel=inventory]",
-        "[.HoverHit tone=alert]multi[/][/][p]]\n",
+        "    let line = alice[[object .hotspot type=KeywordHit channel=inventory]",
+        "[object .HoverHit type=HoverHit tone=alert]multi[/object][/object][p]]\n",
         "}\n",
     );
     let report = format_fixture(
@@ -286,16 +286,8 @@ fn canonical_rich_text_attached_bracket_matrix_expands_typed_proxy_objects() {
     )
     .expect("format report");
 
-    assert!(
-        report
-            .output
-            .contains("[object .hotspot type=KeywordHit channel=inventory]",)
-    );
-    assert!(
-        report
-            .output
-            .contains("[object .HoverHit type=HoverHit tone=alert]multi[/object][/object]",)
-    );
+    assert!(!report.changed);
+    assert_eq!(report.output, source);
 }
 
 #[test]
@@ -422,8 +414,8 @@ fn canonical_rich_text_projects_multiline_dialogue_application_across_crlf() {
 }
 
 #[test]
-fn canonical_rich_text_expands_nested_typed_proxy_objects() {
-    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[rich_text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow opening {\n    let line = alice[[.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][.sparkle amp=2px]effect[/][p]]\n}\n";
+fn canonical_rich_text_does_not_infer_typed_proxy_objects_from_dot_selectors() {
+    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[rich_text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow opening {\n    let line = alice[[.hotspot type=KeywordHit channel=inventory]proxy[/][.HoverHit]typed[/][/][p]]\n}\n";
     let report = format_fixture(
         source,
         FormatOptions {
@@ -432,19 +424,14 @@ fn canonical_rich_text_expands_nested_typed_proxy_objects() {
     )
     .expect("format report");
 
-    assert!(report.output.contains(
-        "[object .hotspot type=KeywordHit channel=inventory][object .HoverHit type=HoverHit tone=alert]multi[/object][/object]"
-    ));
-    assert!(
-        report
-            .output
-            .contains("[effect .sparkle amp=2px]effect[/effect]")
-    );
-    assert!(!report.output.contains("[/]"));
+    assert!(!report.changed);
+    assert_eq!(report.output, source);
+    assert!(!report.output.contains("[object .hotspot"));
+    assert!(!report.output.contains("[object .HoverHit"));
 }
 
 #[test]
-fn canonical_rich_text_preserves_unknown_dot_selectors_without_marker_inference() {
+fn canonical_rich_text_preserves_explicit_markers_and_unresolved_dot_selectors() {
     let source = "flow opening {\n    let line = alice[[.keyword]word[/][.mark ignored=value]mark[/][mark .checkpoint][.shake]there[/][p]]\n}\n";
     let report = format_fixture(
         source,

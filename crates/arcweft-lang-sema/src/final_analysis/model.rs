@@ -2,13 +2,12 @@
 
 use super::match_edges::NestedPathEvidence;
 use super::{
-    AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
-    CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
-    DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
-    ExprId, GenericParameterOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily,
-    HirLiteral, HirSnapshotId, ItemId, LocalId, PatternId, ProjectNominalDeclaration,
-    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
-    TypeParameterSubstitutions,
+    CallableDeclarationKey, CharacterDialogueCharacterType, CharacterDialogueType, CharacterId,
+    CharacterNominalType, CheckedRichTextReport, DeclarationIdentityFamily, DialogueLineId,
+    DialogueTextKey, EffectSet, EnvironmentBindingId, ExprId, GenericParameterOwnerId,
+    GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral, HirSnapshotId, ItemId,
+    LocalId, PatternId, ProjectNominalDeclaration, ProjectNominalDeclarationId, PublicId,
+    SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
 };
 use crate::callable::{
     CallableEvaluatedEffect, CallableLogLevel, CallableReceiverMode, CharacterDialoguePatchContext,
@@ -20,10 +19,7 @@ use crate::types::{
     VariantPayloadShape, VariantPayloadType,
 };
 use arcweft_core::value::RuntimeAgentField;
-use arcweft_lang_hir::project::HirRuntimeIteratorWitnessMethodRole;
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationDigest, ExternalDeclarationId, ImplMethodDeclarationId,
-};
+use arcweft_lang_hir::symbol::{CallableDeclarationDigest, ExternalDeclarationId};
 use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1273,7 +1269,7 @@ pub use capture::{
 mod dialogue_line_plan;
 pub use dialogue_line_plan::{
     CheckedDialogueEffectSite, CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger,
-    CheckedDialogueLinePlan, CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal,
+    CheckedDialogueLinePlan,
 };
 
 /// Semantic payload needed in addition to the final-HIR expression family.
@@ -1998,6 +1994,14 @@ impl CheckedExpression {
         &self.effects
     }
 
+    /// Replaces the analyzer's prepared effect row with the completed
+    /// bottom-up execution fold while preserving every other checked atom.
+    #[must_use]
+    pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
+        self.effects = effects;
+        self
+    }
+
     pub const fn resolution(&self) -> &CheckedExpressionResolution {
         &self.resolution
     }
@@ -2099,265 +2103,6 @@ impl CheckedPattern {
     }
 }
 
-/// Built-in iteration families whose runtime behavior is language-owned.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedIteratorFamily {
-    Range,
-    Seq,
-    Stream,
-    Vec,
-    Array,
-    Slice,
-}
-
-/// Generation-bound identity of the selected trait authority.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedTraitIdentity {
-    Project(ItemId),
-    StandardIterator,
-    StandardIntoIterator,
-}
-
-/// Generation-bound trait conformance used by iteration lowering.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedTraitConformance {
-    implementation: ItemId,
-    trait_identity: CheckedTraitIdentity,
-    method: u16,
-    declaration: Box<ImplMethodDeclarationId>,
-}
-
-impl CheckedTraitConformance {
-    pub fn new(
-        implementation: ItemId,
-        trait_identity: CheckedTraitIdentity,
-        method: u16,
-        declaration: ImplMethodDeclarationId,
-    ) -> Self {
-        Self {
-            implementation,
-            trait_identity,
-            method,
-            declaration: Box::new(declaration),
-        }
-    }
-
-    pub const fn implementation(&self) -> ItemId {
-        self.implementation
-    }
-
-    pub const fn trait_identity(&self) -> &CheckedTraitIdentity {
-        &self.trait_identity
-    }
-
-    pub const fn method(&self) -> u16 {
-        self.method
-    }
-
-    pub const fn declaration(&self) -> &ImplMethodDeclarationId {
-        &self.declaration
-    }
-}
-
-/// Checked iteration dispatch for one final-HIR `for` statement.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedIteration {
-    Builtin {
-        family: CheckedIteratorFamily,
-        item: TypeKind,
-    },
-    Witness {
-        source: TypeKind,
-        item: TypeKind,
-        into_iter: TypeKind,
-        into_iterator: CheckedTraitConformance,
-        iterator: CheckedTraitConformance,
-    },
-    IteratorWitness {
-        source: TypeKind,
-        item: TypeKind,
-        iterator: CheckedTraitConformance,
-    },
-}
-
-impl CheckedIteration {
-    /// Iterates the exact checked method rows required by this witness.
-    ///
-    /// Roles are assigned by the checked iteration variant itself. In
-    /// particular, an identity `Iterator` witness emits only `IteratorNext`;
-    /// consumers must never infer roles from array positions or method names.
-    pub fn witness_methods(
-        &self,
-    ) -> impl Iterator<
-        Item = (
-            HirRuntimeIteratorWitnessMethodRole,
-            &CheckedTraitConformance,
-            &TypeKind,
-        ),
-    > + '_ {
-        let rows = match self {
-            Self::Builtin { .. } => [None, None],
-            Self::Witness {
-                source,
-                into_iter,
-                into_iterator,
-                iterator,
-                ..
-            } => [
-                Some((
-                    HirRuntimeIteratorWitnessMethodRole::IntoIterator,
-                    into_iterator,
-                    source,
-                )),
-                Some((
-                    HirRuntimeIteratorWitnessMethodRole::IteratorNext,
-                    iterator,
-                    into_iter,
-                )),
-            ],
-            Self::IteratorWitness {
-                source, iterator, ..
-            } => [
-                Some((
-                    HirRuntimeIteratorWitnessMethodRole::IteratorNext,
-                    iterator,
-                    source,
-                )),
-                None,
-            ],
-        };
-        rows.into_iter().flatten()
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        match self {
-            Self::Builtin { item, .. } => visitor(item),
-            Self::Witness {
-                source,
-                item,
-                into_iter,
-                ..
-            } => {
-                visitor(source)?;
-                visitor(item)?;
-                visitor(into_iter)
-            }
-            Self::IteratorWitness { source, item, .. } => {
-                visitor(source)?;
-                visitor(item)
-            }
-        }
-    }
-}
-
-/// Final assertion disposition after proof/debug policy admission.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum CheckedAssertionDisposition {
-    /// Awaiting compile-time verifier admission. This never enters runtime lowering.
-    PendingProof,
-    Discharged,
-    Runtime(AssertionRuntimePolicy),
-    OmittedDebug,
-}
-
-/// Closed writable place admitted for one final-HIR assignment.
-///
-/// Assignment never defers place interpretation to runtime lowering.  The
-/// accepted language surface is deliberately narrow: a direct local binding
-/// projected through one field of its checked project nominal record.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAssignmentPlace {
-    local: LocalId,
-    nominal: CheckedProjectNominal,
-    field: CheckedFieldSelection,
-    field_type: TypeKind,
-}
-
-impl CheckedAssignmentPlace {
-    pub fn try_new(
-        local: LocalId,
-        nominal: CheckedProjectNominal,
-        field: CheckedFieldSelection,
-        field_type: TypeKind,
-    ) -> Option<Self> {
-        if field.owner_type() != nominal.identity()
-            || field.runtime_field().is_none()
-            || field.field_type() != field_type.semantic_identity_digest()
-        {
-            return None;
-        }
-        Some(Self {
-            local,
-            nominal,
-            field,
-            field_type,
-        })
-    }
-
-    pub const fn local(&self) -> LocalId {
-        self.local
-    }
-
-    pub const fn nominal(&self) -> &CheckedProjectNominal {
-        &self.nominal
-    }
-
-    pub const fn field(&self) -> &CheckedFieldSelection {
-        &self.field
-    }
-
-    pub const fn runtime_field(&self) -> Option<arcweft_core::value::RuntimeRecordFieldId> {
-        self.field.runtime_field()
-    }
-
-    pub const fn field_type(&self) -> &TypeKind {
-        &self.field_type
-    }
-}
-
-/// Complete semantic assignment fact for one final-HIR statement.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAssignment {
-    place: CheckedAssignmentPlace,
-    value_type: TypeKind,
-}
-
-impl CheckedAssignment {
-    pub const fn new(place: CheckedAssignmentPlace, value_type: TypeKind) -> Self {
-        Self { place, value_type }
-    }
-
-    pub const fn place(&self) -> &CheckedAssignmentPlace {
-        &self.place
-    }
-
-    pub const fn value_type(&self) -> &TypeKind {
-        &self.value_type
-    }
-}
-
-/// Semantic role that changes statement lowering.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedStatementRole {
-    Ordinary,
-    Assignment(Box<CheckedAssignment>),
-    Assertion(CheckedAssertionDisposition),
-    EvaluatedEffect(Box<CheckedEvaluatedEffect>),
-    Iteration(Box<CheckedIteration>),
-    Suspension(Box<CheckedSuspensionStatement>),
-    Yield,
-    UnsafeAudit,
-}
-
-/// Complete semantic disposition for one suspension statement.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedSuspensionStatement {
-    Wait,
-}
-
 #[path = "model/evaluated_effect.rs"]
 mod evaluated_effect;
 pub use evaluated_effect::{
@@ -2366,46 +2111,15 @@ pub use evaluated_effect::{
     CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
 };
 
-/// Closed checked fact for one live statement.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedStatement {
-    effects: EffectSet,
-    role: CheckedStatementRole,
-}
-
-impl CheckedStatement {
-    pub const fn new(effects: EffectSet, role: CheckedStatementRole) -> Self {
-        Self { effects, role }
-    }
-
-    pub const fn effects(&self) -> &EffectSet {
-        &self.effects
-    }
-
-    pub const fn role(&self) -> &CheckedStatementRole {
-        &self.role
-    }
-
-    pub(crate) fn visit_types<E>(
-        &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
-    ) -> Result<(), E> {
-        match self.role() {
-            CheckedStatementRole::Assignment(assignment) => {
-                assignment.place().nominal().visit_types(visitor)?;
-                visitor(assignment.place().field_type())?;
-                visitor(assignment.value_type())
-            }
-            CheckedStatementRole::Iteration(iteration) => iteration.visit_types(visitor),
-            CheckedStatementRole::EvaluatedEffect(effect) => effect.visit_types(visitor),
-            CheckedStatementRole::Ordinary
-            | CheckedStatementRole::Assertion(_)
-            | CheckedStatementRole::Suspension(_)
-            | CheckedStatementRole::Yield
-            | CheckedStatementRole::UnsafeAudit => Ok(()),
-        }
-    }
-}
+#[path = "model/statement.rs"]
+mod statement;
+pub use statement::{
+    CheckedAssertionDisposition, CheckedAssignment, CheckedAssignmentPlace,
+    CheckedIncludeFlowTarget, CheckedIteration, CheckedIteratorFamily, CheckedScopeIdentity,
+    CheckedSelectBranchHead, CheckedSelectStatement, CheckedSelectStatementView, CheckedStatement,
+    CheckedStatementPayload, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTrigger, CheckedTriggerView, CheckedUnsafeAudit,
+};
 
 /// Invocation behavior of one ordinary function.
 #[derive(Clone, Debug, Eq, PartialEq)]

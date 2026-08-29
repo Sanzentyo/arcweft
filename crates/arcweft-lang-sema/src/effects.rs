@@ -8,6 +8,8 @@ use arcweft_lang_hir::{
 };
 use thiserror::Error;
 
+const CONTROL_SUSPEND_EFFECT_ID: &str = "control.suspend";
+
 /// Canonical identity for one Arcweft effect capability.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EffectId(String);
@@ -70,6 +72,12 @@ pub struct EffectSetParseError {
 pub struct EffectSet(BTreeSet<EffectId>);
 
 impl EffectId {
+    /// Canonical language-owned suspension capability.
+    #[must_use]
+    pub fn control_suspend() -> Self {
+        Self(CONTROL_SUSPEND_EFFECT_ID.to_owned())
+    }
+
     pub fn parse(value: impl AsRef<str>) -> Result<Self, EffectIdError> {
         value.as_ref().parse()
     }
@@ -155,7 +163,7 @@ impl EffectId {
 
     /// Returns whether this is the canonical direct-style suspension effect.
     pub fn is_control_suspend(&self) -> bool {
-        self.0 == "control.suspend"
+        self.0 == CONTROL_SUSPEND_EFFECT_ID
     }
 
     pub fn family(&self) -> &str {

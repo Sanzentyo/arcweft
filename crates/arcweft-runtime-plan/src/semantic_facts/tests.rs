@@ -48,8 +48,8 @@ use super::{
     RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
     RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
     RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
-    RuntimeTraitMethodFact, RuntimeTypeProjectionStep, RuntimeTypeShape,
-    RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
+    RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind, RuntimeTypeProjectionStep,
+    RuntimeTypeShape, RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -485,6 +485,36 @@ fn assignment_fact_fixture(
     (project, input, statement, extra_statement, fact)
 }
 
+fn trigger_fact_fixture(
+    label: &str,
+) -> (
+    HirProject,
+    RuntimePlanSemanticFactInput,
+    arcweft_lang_hir::identity::StmtId,
+    arcweft_lang_hir::identity::StmtId,
+) {
+    let project = project_fixture(
+        label,
+        "flow trigger_owner {\n    on true => defer ()\n    return unit\n}\n",
+    );
+    let executable = project.executable_view().expect("trigger fixture");
+    let (_, module) = executable.modules().next().expect("root trigger module");
+    let trigger = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::On { .. }).then_some(owner)
+        })
+        .expect("trigger fixture On statement");
+    let non_trigger = module
+        .statements()
+        .find_map(|(owner, statement)| {
+            matches!(statement.kind(), HirStmtKind::Return { .. }).then_some(owner)
+        })
+        .expect("trigger fixture non-On statement");
+    let input = complete_type_input(&project);
+    (project, input, trigger, non_trigger)
+}
+
 fn assignment_nominal(
     project: &HirProject,
     module: &arcweft_lang_hir::module::HirModule,
@@ -591,6 +621,68 @@ fn assignment_facts_are_complete_unique_and_bound_to_assignment_statements() {
             expected: RuntimeSemanticFactFamily::Assignment,
         }
     );
+}
+
+#[test]
+fn trigger_admissions_are_complete_unique_generation_bound_and_opaque() {
+    let (project, input, trigger, _) = trigger_fact_fixture("trigger-fact-missing");
+    assert_eq!(
+        runtime_facts(&project, input).expect_err("every reachable On requires one admission"),
+        RuntimeSemanticFactsError::MissingTriggerFact { statement: trigger }
+    );
+
+    let (project, mut input, trigger, _) = trigger_fact_fixture("trigger-fact-accepted");
+    input
+        .push_expression_trigger(trigger)
+        .expect("the sole checked trigger row stages");
+    let facts = runtime_facts(&project, input).expect("complete trigger projection");
+    assert!(matches!(
+        facts.trigger(trigger).map(|admission| admission.kind),
+        Some(RuntimeTriggerAdmissionKind::Expression)
+    ));
+
+    let (_project, mut input, trigger, _) = trigger_fact_fixture("trigger-fact-duplicate");
+    input
+        .push_expression_trigger(trigger)
+        .expect("first trigger row stages");
+    assert_eq!(
+        input
+            .push_input_trigger(trigger)
+            .expect_err("a second variant cannot replace the accepted row"),
+        RuntimeSemanticFactsError::DuplicateFact {
+            family: RuntimeSemanticFactFamily::Trigger,
+        }
+    );
+
+    let (project, mut input, trigger, non_trigger) = trigger_fact_fixture("trigger-fact-extra");
+    input
+        .push_expression_trigger(trigger)
+        .expect("required trigger row stages");
+    input
+        .push_input_trigger(non_trigger)
+        .expect("the staging boundary defers owner-set validation to the atomic seal");
+    assert_eq!(
+        runtime_facts(&project, input).expect_err("a non-On extra is rejected"),
+        RuntimeSemanticFactsError::WrongStatementFamily {
+            statement: non_trigger,
+            expected: RuntimeSemanticFactFamily::Trigger,
+        }
+    );
+
+    let (project, mut input, trigger, _) = trigger_fact_fixture("trigger-fact-foreign-owner");
+    input
+        .push_expression_trigger(trigger)
+        .expect("required trigger row stages");
+    let (foreign, _, foreign_trigger, _) = trigger_fact_fixture("trigger-fact-foreign-generation");
+    input
+        .push_input_trigger(foreign_trigger)
+        .expect("the typed input accepts a qualified owner before generation sealing");
+    assert!(matches!(
+        runtime_facts(&project, input),
+        Err(RuntimeSemanticFactsError::UnknownModule { module })
+            if module == foreign_trigger.module()
+    ));
+    drop(foreign);
 }
 
 #[test]

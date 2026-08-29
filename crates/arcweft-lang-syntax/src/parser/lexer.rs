@@ -6,7 +6,7 @@ mod literal;
 
 use arcweft_source::SourceRange;
 
-pub(super) use id_ref::typed_entity_reference;
+pub(super) use id_ref::{typed_entity_reference, typed_entity_reference_source};
 pub(super) use lifetime::typed_lifetime_registry_path;
 pub(super) use literal::typed_literal;
 

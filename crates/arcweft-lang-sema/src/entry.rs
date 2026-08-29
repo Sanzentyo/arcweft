@@ -2,6 +2,7 @@
 
 mod checker;
 mod digest;
+mod prepared;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -30,6 +31,10 @@ use crate::types::SemanticTypeDigest;
 
 pub use checker::CheckedEntryDiagnostic;
 pub(crate) use checker::{PreparedEntrySemanticAuthority, check_prepared_project_entries};
+pub(crate) use prepared::{
+    PreparedEntryFlowTarget, PreparedEntryRootCatalog, PreparedEntryRootSeed,
+    prepare_entry_root_seeds,
+};
 
 /// Canonical public identity of one checked source entry.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -279,7 +284,7 @@ impl CheckedEntryId {
 }
 
 impl CheckedFlowId {
-    fn from_declaration(declaration: &FlowDeclarationId) -> Self {
+    pub(super) fn from_declaration(declaration: &FlowDeclarationId) -> Self {
         Self {
             declaration_digest: declaration.semantic_digest(),
             public_id: declaration.public_id().clone(),

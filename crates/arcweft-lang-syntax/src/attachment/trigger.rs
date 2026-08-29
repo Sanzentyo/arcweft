@@ -11,7 +11,10 @@ use super::node::{
 };
 use super::source_file::AttachedDelimiterState;
 use super::{AttachedPatternNode, SyntaxAccessError, SyntaxNodeHandle};
+use crate::expressions::{SyntaxDialogueMarkName, SyntaxDialogueMarkNameIssue};
 use crate::grammar::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
+use crate::id_ref::{SyntaxIdRefComponent, SyntaxIdRefPart};
+use crate::patterns::{PatternComponentRole, PatternSyntaxKind};
 
 /// Exact delimiters and typed recovery retained by one trigger call.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -61,6 +64,33 @@ pub struct AttachedPatternTrigger {
     syntax: SyntaxNodeHandle,
     delimiters: AttachedTriggerDelimiters,
     pattern: AttachedPatternNode,
+}
+
+/// Typed marker trigger payload. Marker triggers own a selector, never a
+/// pattern/local child that a later layer would need to reinterpret.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedMarkTrigger {
+    syntax: SyntaxNodeHandle,
+    delimiters: AttachedTriggerDelimiters,
+    selector: SyntaxDialogueMarkName,
+}
+
+impl AttachedMarkTrigger {
+    pub fn syntax(&self) -> SyntaxNodeHandle {
+        self.syntax.clone()
+    }
+
+    pub const fn delimiters(&self) -> &AttachedTriggerDelimiters {
+        &self.delimiters
+    }
+
+    pub const fn selector(&self) -> &SyntaxDialogueMarkName {
+        &self.selector
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.delimiters.has_recovery() || self.selector.has_recovery()
+    }
 }
 
 impl AttachedPatternTrigger {
@@ -147,7 +177,7 @@ pub enum AttachedTriggerPattern {
     Event(AttachedPatternTrigger),
     Signal(AttachedSignalTrigger),
     Timeout(AttachedExpressionTrigger),
-    Mark(AttachedPatternTrigger),
+    Mark(AttachedMarkTrigger),
     Select(AttachedPatternTrigger),
     Task(AttachedPatternTrigger),
     Scope(AttachedPatternTrigger),
@@ -159,10 +189,10 @@ impl AttachedTriggerPattern {
         match self {
             Self::Input(value)
             | Self::Event(value)
-            | Self::Mark(value)
             | Self::Select(value)
             | Self::Task(value)
             | Self::Scope(value) => value.syntax(),
+            Self::Mark(value) => value.syntax(),
             Self::Signal(value) => value.syntax(),
             Self::Timeout(value) => value.syntax(),
             Self::Expr(value) => value.syntax().syntax(),
@@ -173,10 +203,10 @@ impl AttachedTriggerPattern {
         match self {
             Self::Input(value)
             | Self::Event(value)
-            | Self::Mark(value)
             | Self::Select(value)
             | Self::Task(value)
             | Self::Scope(value) => value.has_recovery(),
+            Self::Mark(value) => value.has_recovery(),
             Self::Signal(value) => value.has_recovery(),
             Self::Timeout(value) => value.has_recovery(),
             Self::Expr(value) => syntax_has_recovery(&value.syntax().syntax()),
@@ -200,7 +230,7 @@ pub(super) fn attach_trigger_pattern(
         SyntaxKind::TimeoutTriggerPattern => Ok(AttachedTriggerPattern::Timeout(
             attach_expression_trigger(&syntax.cast()?)?,
         )),
-        SyntaxKind::MarkTriggerPattern => Ok(AttachedTriggerPattern::Mark(attach_pattern_trigger(
+        SyntaxKind::MarkTriggerPattern => Ok(AttachedTriggerPattern::Mark(attach_mark_trigger(
             &syntax.cast::<MarkTriggerPatternKind>()?,
         )?)),
         SyntaxKind::SelectTriggerPattern => Ok(AttachedTriggerPattern::Select(
@@ -217,6 +247,68 @@ pub(super) fn attach_trigger_pattern(
         ))),
         _ => Err(SyntaxAccessError::InvalidTriggerShape { id: syntax.id() }),
     }
+}
+
+fn attach_mark_trigger(
+    syntax: &AstNode<MarkTriggerPatternKind>,
+) -> Result<AttachedMarkTrigger, SyntaxAccessError> {
+    validate_roles(
+        syntax,
+        &[
+            SyntaxRole::OpenDelimiter,
+            SyntaxRole::Pattern,
+            SyntaxRole::CloseDelimiter,
+        ],
+    )?;
+    let pattern = syntax
+        .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
+        .semantic()?;
+    let delimiters = attach_delimiters(syntax)?;
+    let selector = mark_selector(&pattern);
+    let selector = if !selector.has_recovery()
+        && (!delimiters.recovery().is_empty() || delimiters.trailing_recovery().is_some())
+    {
+        SyntaxDialogueMarkName::recovered(
+            SyntaxDialogueMarkNameIssue::MultipleArguments,
+            selector.range(),
+        )
+    } else {
+        selector
+    };
+    Ok(AttachedMarkTrigger {
+        selector,
+        delimiters,
+        syntax: syntax.syntax(),
+    })
+}
+
+fn mark_selector(pattern: &AttachedPatternNode) -> SyntaxDialogueMarkName {
+    let range = pattern
+        .component(PatternComponentRole::EntityReference(
+            SyntaxIdRefPart::Whole,
+        ))
+        .map_or_else(|| pattern.whole_source_span().range(), |span| span.range());
+    let PatternSyntaxKind::EntityReference(reference) = pattern.value().kind() else {
+        return SyntaxDialogueMarkName::recovered(
+            SyntaxDialogueMarkNameIssue::MissingReference,
+            range,
+        );
+    };
+    if !pattern.value().state().is_valid() && reference.value().is_ok() {
+        return SyntaxDialogueMarkName::recovered(SyntaxDialogueMarkNameIssue::Malformed, range);
+    }
+    let components = pattern
+        .components()
+        .into_iter()
+        .filter_map(|component| match component.role() {
+            PatternComponentRole::EntityReference(part) => Some(SyntaxIdRefComponent::new(
+                part,
+                component.source_span().range(),
+            )),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    SyntaxDialogueMarkName::from_reference(reference.clone(), range, components)
 }
 
 fn attach_pattern_trigger<K: AstKind>(

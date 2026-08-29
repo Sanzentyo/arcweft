@@ -308,6 +308,8 @@ fn owned_identity_vocabularies_have_stable_behavior() {
     assert_eq!(HirLimit::NumericSequenceElements.maximum(), 65_536);
     assert_eq!(HirLimit::NumericSequenceTotalDigits.maximum(), 262_144);
     assert_eq!(HirLimit::ThreadFlowItems.maximum(), 65_536);
+    assert_eq!(HirLimit::DialogueMarksPerContent.maximum(), 4_096);
+    assert_eq!(HirLimit::SelectBranches.maximum(), 65_536);
     assert_eq!(HirLimit::StyleNestingDepth.maximum(), 64);
     assert_eq!(SyntheticRole::ElidedRegion.as_str(), "elided_region");
     assert_eq!(SyntheticRole::ClosureCapture.as_str(), "closure_capture");

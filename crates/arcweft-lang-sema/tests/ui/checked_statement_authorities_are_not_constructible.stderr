@@ -1,0 +1,69 @@
+error[E0451]: fields `application` and `ordinal` of struct `StableCheckedDialogueMarkCoordinate` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:14:9
+   |
+13 |     StableCheckedDialogueMarkCoordinate {
+   |     ----------------------------------- in this type
+14 |         application: any(),
+   |         ^^^^^^^^^^^ private field
+15 |         ordinal: any(),
+   |         ^^^^^^^ private field
+
+error[E0451]: fields `coordinate` and `diagnostic_name` of struct `CheckedDialogueMark` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:21:9
+   |
+20 |     CheckedDialogueMark {
+   |     ------------------- in this type
+21 |         coordinate: any(),
+   |         ^^^^^^^^^^ private field
+22 |         diagnostic_name: any(),
+   |         ^^^^^^^^^^^^^^^ private field
+
+error[E0451]: field `kind` of struct `CheckedTrigger` is private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:27:22
+   |
+27 |     CheckedTrigger { kind: any() }
+   |                      ^^^^ private field
+
+error[E0451]: field `kind` of struct `CheckedSelectStatement` is private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:31:30
+   |
+31 |     CheckedSelectStatement { kind: any() }
+   |                              ^^^^ private field
+
+error[E0451]: fields `id` and `has_safety_doc` of struct `CheckedUnsafeAudit` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:36:9
+   |
+35 |     CheckedUnsafeAudit {
+   |     ------------------ in this type
+36 |         id: any(),
+   |         ^^ private field
+37 |         has_safety_doc: false,
+   |         ^^^^^^^^^^^^^^ private field
+
+error[E0451]: field `declaration` of struct `CheckedIncludeFlowTarget` is private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:42:32
+   |
+42 |     CheckedIncludeFlowTarget { declaration: any() }
+   |                                ^^^^^^^^^^^ private field
+
+error[E0451]: fields `effects` and `payload` of struct `CheckedStatement` are private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:47:9
+   |
+46 |     CheckedStatement {
+   |     ---------------- in this type
+47 |         effects: any(),
+   |         ^^^^^^^ private field
+48 |         payload: any(),
+   |         ^^^^^^^ private field
+
+error: type `final_analysis::model::statement::CheckedTriggerKind` is private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:27:28
+   |
+27 |     CheckedTrigger { kind: any() }
+   |                            ^^^^^ private type
+
+error: type `final_analysis::model::statement::CheckedSelectStatementKind` is private
+  --> tests/ui/checked_statement_authorities_are_not_constructible.rs:31:36
+   |
+31 |     CheckedSelectStatement { kind: any() }
+   |                                    ^^^^^ private type

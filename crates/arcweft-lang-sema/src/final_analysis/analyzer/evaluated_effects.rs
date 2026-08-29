@@ -20,10 +20,16 @@ use crate::{
         CheckedDropFadeOperand, CheckedDropInvocation, CheckedDropPolicySource, CheckedEffectField,
         CheckedEvaluatedEffect, CheckedEvaluatedEffectOperand, CheckedEvaluatedEffectOperation,
         CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionResolution,
-        CheckedStatement, CheckedStatementRole, CheckedValueResolution,
-        PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedEvaluatedEffect,
-        PreparedExpressionFact, PreparedStatementFact,
+        CheckedValueResolution, PreparedDialogueApplication, PreparedDialogueEffectSite,
+        PreparedEvaluatedEffect, PreparedExpressionFact, PreparedStatementPayload,
     },
+    semantic_coordinate::SemanticCoordinateIndex,
+};
+
+use crate::checked_rich_text::{
+    CheckedDialogueContent, CheckedDialogueMark, CheckedDialogueToken, CheckedRichTextAction,
+    CheckedRichTextReport, CheckedRichTextTag, PreparedCheckedDialogueMarkCatalog,
+    PreparedCheckedDialogueToken, PreparedCheckedRichTextAction, PreparedCheckedRichTextReport,
 };
 
 use arcweft_lang_hir::{expr::HirExprKind, identity::ExprId, module::HirModule};
@@ -138,34 +144,38 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn finalize_evaluated_effects(
         &mut self,
         input: &mut FinalSemanticAnalysisInput,
+        coordinates: &SemanticCoordinateIndex<'_, '_>,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let dialogue_applications = self
             .facts
             .expressions()
             .iter()
             .filter_map(|(owner, fact)| match fact {
-                PreparedExpressionFact::DialogueApplication(prepared) => {
-                    Some((*owner, prepared.clone()))
-                }
+                PreparedExpressionFact::DialogueApplication(_) => Some(*owner),
                 _ => None,
             })
             .collect::<Vec<_>>();
-        for (owner, prepared) in dialogue_applications {
-            let sealed = self.seal_dialogue_application(prepared)?;
+        for owner in dialogue_applications {
+            let taken = self
+                .facts
+                .take_dialogue_application(owner)
+                .map_err(FinalSemanticAnalysisError::from)?;
+            let (prepared, markers, replacement) = taken.into_parts();
+            let sealed = self.seal_dialogue_application(prepared, markers, coordinates)?;
             self.facts
-                .replace_existing_expression(owner, sealed)
+                .publish_sealed_dialogue_application(replacement, sealed)
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        }
+        if !self.facts.dialogue_mark_catalogs_are_empty() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let statements = std::mem::take(&mut input.statements)
             .into_iter()
             .map(|(owner, fact)| {
                 let fact = match fact {
-                    PreparedStatementFact::EvaluatedEffect(prepared) => {
+                    PreparedStatementPayload::EvaluatedEffect(prepared) => {
                         let effect = self.seal_evaluated_effect(prepared)?;
-                        PreparedStatementFact::Complete(CheckedStatement::new(
-                            crate::effects::EffectSet::new(),
-                            CheckedStatementRole::EvaluatedEffect(Box::new(effect)),
-                        ))
+                        PreparedStatementPayload::SealedEvaluatedEffect(Box::new(effect))
                     }
                     fact => fact,
                 };
@@ -179,17 +189,20 @@ impl Analyzer<'_, '_, '_> {
     fn seal_dialogue_application(
         &self,
         prepared: PreparedDialogueApplication,
+        markers: PreparedCheckedDialogueMarkCatalog,
+        coordinates: &SemanticCoordinateIndex<'_, '_>,
     ) -> Result<PreparedExpressionFact, FinalSemanticAnalysisError> {
         let (shell, target, application_patch, rich_text, line_plan, line_result, nested_path) =
             prepared.into_parts();
-        let (marks, mark_handlers, effect_sites) = line_plan.into_parts();
+        let rich_text = self.seal_checked_rich_text(*rich_text, markers, coordinates)?;
+        let effect_sites = line_plan.into_parts();
         let effect_sites = effect_sites
             .into_vec()
             .into_iter()
             .map(|site| self.seal_dialogue_effect_site(site))
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
-        let line_plan = CheckedDialogueLinePlan::new(marks, mark_handlers, effect_sites);
+        let line_plan = CheckedDialogueLinePlan::new(effect_sites);
         let (ty, type_selection, effects) = shell.into_parts();
         if ty != crate::types::TypeKind::DialogueLine(Box::new(line_result.clone())) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
@@ -197,7 +210,7 @@ impl Analyzer<'_, '_, '_> {
         let resolution = CheckedExpressionResolution::DialogueApplication {
             target,
             application_patch,
-            rich_text,
+            rich_text: Box::new(rich_text),
             line_plan,
             line_result,
         };
@@ -208,6 +221,156 @@ impl Analyzer<'_, '_, '_> {
             }
             None => PreparedExpressionFact::Complete(expression),
         })
+    }
+
+    fn seal_checked_rich_text(
+        &self,
+        prepared: PreparedCheckedRichTextReport,
+        mut markers: PreparedCheckedDialogueMarkCatalog,
+        coordinates: &SemanticCoordinateIndex<'_, '_>,
+    ) -> Result<CheckedRichTextReport, FinalSemanticAnalysisError> {
+        let (content, diagnostics) = prepared.into_parts();
+        let (content_id, tokens, diagnostics_complete) = content.into_parts();
+        if !diagnostics_complete || !diagnostics.is_empty() || markers.content() != content_id {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let mut marker_count = 0_usize;
+        let tokens = tokens
+            .into_vec()
+            .into_iter()
+            .map(|token| {
+                Ok(match token {
+                    PreparedCheckedDialogueToken::Text(text) => CheckedDialogueToken::Text(text),
+                    PreparedCheckedDialogueToken::RawText(text) => {
+                        CheckedDialogueToken::RawText(text)
+                    }
+                    PreparedCheckedDialogueToken::Escape(value) => {
+                        CheckedDialogueToken::Escape(value)
+                    }
+                    PreparedCheckedDialogueToken::Ruby { base, ruby } => {
+                        CheckedDialogueToken::Ruby { base, ruby }
+                    }
+                    PreparedCheckedDialogueToken::Open(tag) => {
+                        let (id, owner, action, source) = tag.into_parts();
+                        let action = match action {
+                            PreparedCheckedRichTextAction::Control { action, fields } => {
+                                CheckedRichTextAction::Control { action, fields }
+                            }
+                            PreparedCheckedRichTextAction::DirectStyle {
+                                owner,
+                                action,
+                                fields,
+                            } => CheckedRichTextAction::DirectStyle {
+                                owner,
+                                action,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Style {
+                                owner,
+                                action,
+                                fields,
+                            } => CheckedRichTextAction::Style {
+                                owner,
+                                action,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Layout {
+                                owner,
+                                action,
+                                fields,
+                            } => CheckedRichTextAction::Layout {
+                                owner,
+                                action,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Transform {
+                                owner,
+                                action,
+                                fields,
+                            } => CheckedRichTextAction::Transform {
+                                owner,
+                                action,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Object { action, fields } => {
+                                CheckedRichTextAction::Object { action, fields }
+                            }
+                            PreparedCheckedRichTextAction::BuiltinFx {
+                                effect,
+                                phase,
+                                fields,
+                            } => CheckedRichTextAction::BuiltinFx {
+                                effect,
+                                phase,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Host {
+                                owner,
+                                action,
+                                fields,
+                            } => CheckedRichTextAction::Host {
+                                owner,
+                                action,
+                                fields,
+                            },
+                            PreparedCheckedRichTextAction::Marker => {
+                                let mark = markers
+                                    .take(id)
+                                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                                let (hir, diagnostic_name) = mark.into_parts();
+                                let expected = u32::try_from(marker_count)
+                                    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                                if hir.content() != content_id || hir.ordinal().get() != expected {
+                                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                                }
+                                marker_count = marker_count
+                                    .checked_add(1)
+                                    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+                                let coordinate = coordinates
+                                    .dialogue_mark(self.executable, hir)
+                                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                                CheckedRichTextAction::Marker(CheckedDialogueMark::new(
+                                    coordinate,
+                                    diagnostic_name,
+                                ))
+                            }
+                        };
+                        CheckedDialogueToken::Open(CheckedRichTextTag::new(
+                            id, owner, action, source,
+                        ))
+                    }
+                    PreparedCheckedDialogueToken::Close(close) => {
+                        CheckedDialogueToken::Close(close)
+                    }
+                    PreparedCheckedDialogueToken::InvalidTag { .. } => {
+                        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                    }
+                    PreparedCheckedDialogueToken::Interpolation(expression) => {
+                        CheckedDialogueToken::Interpolation(expression)
+                    }
+                    PreparedCheckedDialogueToken::LineBreak(kind) => {
+                        CheckedDialogueToken::LineBreak(kind)
+                    }
+                })
+            })
+            .collect::<Result<Vec<_>, FinalSemanticAnalysisError>>()?;
+        let module = self.module(content_id.owner().module())?;
+        let expression = module
+            .resolve_expr(content_id.owner())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        };
+        if application.content().id() != content_id
+            || application.content().marks().len() != marker_count
+            || !markers.is_empty()
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(CheckedRichTextReport::new(
+            CheckedDialogueContent::new(content_id, tokens, true),
+            diagnostics.into_vec(),
+        ))
     }
 
     fn seal_dialogue_effect_site(

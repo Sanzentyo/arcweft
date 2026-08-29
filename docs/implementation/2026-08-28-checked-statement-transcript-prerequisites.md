@@ -274,3 +274,173 @@ Blocked environment validation:
 
 Tier 2 was not run because this sema-private coordinate cut does not change a
 runtime, renderer, Agent, MCP, capture, protocol, or persisted public contract.
+
+## Checked statement, executable ingress, and canonical mark cut
+
+Implementation evidence was refreshed on 2026-08-29 from Git
+`a8234b4d2c695aeea6121f1a6d846334f7df17b6`. The implementation was performed
+directly on the existing `main` checkout. Unrelated user WIP in Agent, CLI,
+player, renderer, compiler project infrastructure, documentation, and samples
+remained in the working tree and was not used as an authority for this cut.
+
+The sparse statement role has been replaced by one sealed checked-statement
+authority. `CheckedStatementPayload` covers the complete live success algebra:
+structural, assignment, assertion, defer, evaluated effect, iteration, output,
+loop control, trigger, Select, unsafe audit, source locale, scope, Include,
+suspension, and yield. Its expression, pattern, type, local, body, and target
+rows are issued from the final HIR topology and accepted semantic roots. The
+older independently writable Trigger, Select, mark, unsafe, and sparse-role
+carriers are deleted; public consumers receive opaque read-only views.
+
+The accepted executable ingress is also typed end to end. Entry and Include
+use prepared seed, worklist, SCC, and delta authorities rather than reparsing
+names or rooting every declaration. Choice `OnSelect` enters through the same
+typed statement seeding path. `AcceptedDeclarationSemanticId` deliberately
+excludes revision-bound fact digests so declaration identity and accepted
+generation evidence remain separate.
+
+Sol-max structural review found and closed an under-accounted draft worklist
+before this cut was committed. The final worklist keeps one pending contributor
+delta per declaration, extracts each declaration's source-owned typed call and
+Include candidates once, caches its adjacency once, and propagates each
+edge/contributor pair exactly once. Every candidate probe, retained edge,
+declaration row, contextual statement visit, contributor fact, pending-delta
+write, queue push/pop, and propagation visit is checked and charged before its
+allocation or write. With `D` declarations, `S` statement rows, `X` expression
+probes, `I` Include rows, `M = X + I`, and `K` Entry contributors, the production
+bound is the checked `D + 2S + X + M + 4DK + MK` sum. N+1 rejects before a
+partial fact, queue row, cached edge, or seal can publish.
+
+The completed-graph verifier owns fresh facts, pending deltas, adjacency, and
+accounting and repeats the traversal from immutable typed evidence. It does not
+read the mutable worklist cache; equality is checked before the move-only seal
+can be split for statement and Entry consumers. A checked call site whose
+prepared graph node is missing rejects as a typed invariant, while a structural
+HIR carrier without an expression fact is correctly not a call candidate.
+
+The ingress implementation is physically divided into the parent orchestration
+and seal facade plus declaration inventory, worklist/accounting, independent
+verification, and unit-test child modules. The analyzer's embedded test module
+was also moved to `analyzer/tests.rs`, reducing the production orchestrator from
+2,566 to 917 physical lines without widening visibility or changing semantics.
+
+The remaining new statement owners are cohesive domain boundaries:
+`statement_scrutinee.rs` is one short-lived select/seed/validate/proof
+transaction, `statement_seal.rs` is one exhaustive late producer, and
+`statement_effects.rs` contains the pre-call preparation and post-call final
+fold of the same move-only effect authority. `semantic_coordinate.rs` remains
+the sole accepted coordinate grammar. Compiler `lower.rs` and runtime-plan
+`semantic_facts.rs` extend their existing atomic sema-to-runtime projection and
+schema transactions; trigger facts now enter the same constructor as dialogue
+facts, and the post-hoc dialogue projection mutation is deleted. No parallel
+trigger classifier, mark-name join, sparse statement catalog, or fallback
+`Any` path remains.
+
+Final HIR now has 31 statement variants: 30 success shapes plus `Error`.
+Unproduced `LetChoice`, `LetScope`, `LetActionReceive`, and `DeferBlock`
+families and their consumers were removed instead of being retained as
+compatibility scaffolding. Resource accounting uses exact checked limits with
+charge-before-write behavior; no saturating or partial-publication path
+remains.
+
+Runtime reachability is a lazy query over reached expressions. Final sema owns
+the typed `Structural` versus `Call(Static | RuntimeReceiver)` disposition,
+and a call edge is admitted only from the exact `CheckedCallSite::HirCall`.
+Presentation-owned or unreachable Call-shaped syntax therefore does not need
+a selected call, while a reached unselected HIR Call rejects. The previous
+eager projection map, raw `is_hir_call` flag, and trait-method-wide plan
+fallback are deleted. Checked `for` iterator witnesses retain their exact
+statement-origin semantic edges, so required Impl-method bodies become
+reachable without rooting unrelated trait methods.
+
+The maintained language surface is the authority for dialogue marks. The only
+authored forms are `[mark @.point]` and `on mark(@.point)`; the reserved wait
+form is `wait(mark(@.point))`. Syntax projects the shared lexer-owned
+entity-reference grammar, HIR retains a typed relative suffix, and sema issues
+the accepted mark identity. Removed `.point` and inferred `[.point]` forms do
+not receive a compatibility reader. Unknown dot heads never become marker,
+proxy, or custom-effect identities. Formatter proxy inference, raw declaration
+scans, and `type|struct|proxy` shorthand discovery were deleted; explicit
+object syntax remains.
+
+The accepted frozen design package predates this maintained-surface correction
+and still contains `.point` examples. That package was not edited. Current
+maintained grammar, typed source topology, and executable tests resolve the
+conflict in favor of the canonical `@.` reference form.
+
+Explicit text-proxy declarations are intentionally not implemented by this
+cut. Sol-max review closed the next authority as a
+`FinalSemanticAnalysis`-owned `CheckedTextProxyCatalog`, keyed by
+`ProjectNominalDeclarationId`, with registered scalar identities, typed
+defaults, two-phase object validation, and compiler-only materialization into
+`RichTextStyle::Object`. That work is a separate reviewable cut because it
+replaces the remaining explicit object metadata boundary; it must not be
+combined with the completed removal of unknown-dot inference.
+
+## Validation of the checked statement and canonical mark cut
+
+Passed on 2026-08-29:
+
+- `cargo fmt --all -- --check` and `git diff --check`;
+- `cargo test -p arcweft-lang-syntax -p arcweft-lang-hir --all-targets
+  --all-features`: syntax 681 library tests plus public API suites, and HIR 915
+  passed with eight ignored plus its public API suites;
+- `cargo test -p arcweft-lang-sema -p arcweft-runtime-plan -p arcweft-tooling
+  --all-targets --all-features`: sema 603 library tests, runtime-plan 55
+  library tests, tooling 31 library tests, and all API/integration suites;
+- the focused executable-ingress suite: 15 tests covering delta-only pending
+  state, local call/Include probes, cached-edge accounting, exact/one-over work,
+  overflow/preallocation atomicity, traversal-order convergence, and consuming
+  phase seals;
+- `cargo test -p arcweft-compiler --all-targets --all-features`: compiler 55
+  library tests and every API/integration suite, including the two checked
+  iterator-witness tests;
+- `cargo check --workspace --all-targets --all-features`;
+- `cargo clippy --workspace --all-targets --all-features`, with the
+  repository's existing warning inventory and no command failure; and
+- `just structure-audit` plus `just structure-audit-gate`: 2,296 files, 95
+  workspace packages, 275 review triggers, and zero blocking violations.
+
+The normal `just test-workspace` push gate did not complete under the host's
+parallel link load. `rustc 1.96.0` first produced an internal compiler error
+while resolving imports in `iterator_witness_source.rs`; already scheduled
+jobs subsequently reported a missing rlib. The exact
+`cargo test -p arcweft-compiler --test iterator_witness_source` rerun passed
+both tests after the build lock was released, and the same test binary had
+already passed in the complete compiler all-target run. This is recorded as a
+host/compiler failure, not an Arcweft test failure.
+
+After the ingress correction and complete sema/compiler revalidation, the
+normal gate was retried. It again exhausted the Windows paging-file mapping
+capacity while many test binaries linked: rustc reported OS error 1455 while
+mapping the already built bundle and sema rlibs, followed by delayed import ICEs
+in bundle/player tests. No Arcweft assertion or ordinary compile diagnostic
+preceded the host failure. The final isolated compiler all-target run, including
+the iterator-witness binary, passed after this retry point.
+
+The first `just test-tier2` attempt stopped before test execution because the
+build volume had only 430 MiB free while creating the CLI archive. The verified
+`D:\git\arcweft\target` contained 136,837 generated files totaling 270.9 GiB;
+`cargo clean` removed only those rebuildable artifacts. The clean-state Tier 2
+rerun completed compilation and ran four slow MCP cases. Three passed; the
+unrelated in-progress Agent Product path failed
+`agent_mcp_stdio_reads_agent_trace_resource` while lowering its existing
+Agent-script fixture with an AWBC pattern-binding type mismatch (`expected 9,
+found 20`). The aggregate recipe stopped there, before later Agent/capture and
+language production-boundary recipes. This cut does not change Agent Product,
+MCP trace publication, or that fixture, and none of those paths were staged.
+
+The language production-boundary recipes were therefore run directly. Both
+ignored Flow exact/one-over cases passed. All six ignored Select cases passed:
+the exact and one-over total-slot transactions, syntax-expression limit, HIR
+expression limit with scope tail, source-byte preflight, and real parser
+diagnostic limit.
+
+The first Select one-over run exposed a stale test lookup: it queried
+`HirDatabase::current` with the initial source revision after several later
+revisions had published. Sol-max review confirmed that the database and
+transaction rollback were correct and that `current` must remain exact-keyed.
+Both total-slot helpers now assert that the accepted prefill's exact key remains
+current and the rejected candidate's exact key does not. The production-sized
+one-over and exact counterparts then passed in 193.63 and 194.61 seconds,
+respectively; no database or transaction production code changed.

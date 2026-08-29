@@ -2,30 +2,32 @@
 
 use super::{
     Analyzer, AssertionContext, BTreeMap, BTreeSet, CallableDeclarationKey, CallableEffectContract,
-    CheckedAssertionDisposition, CheckedCallableExecution, CheckedCallableId, CheckedClosureId,
-    CheckedExpression, CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
-    CheckedStatement, CheckedStatementRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, EffectClauseSource,
-    EffectId, EffectItemSource, EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, GenericParameterOwnerId, GenericTypeBinding,
-    GenericTypeParameterId, GenericTypeScope, HirAssertionMode, HirCallableEffectSourcePart,
-    HirCallableSourceOwner, HirCallableSourceRole, HirExprKind, HirExprSourceRole, HirFunctionItem,
-    HirGenericParameter, HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule,
-    HirName, HirPatternSourceRole, HirScopeKind, HirScopeOwner, HirScopeSourceRole,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeKind, ItemId,
-    ModuleSegment, PatternId, PreparedAssignmentStatement, PreparedExpressionFact,
-    PreparedStatementFact, ProjectSymbolTable, ScopeId, SourceSpan, TypeId, TypeKind,
-    TypeSourceEvidence,
+    CheckedAssertionDisposition, CheckedCallableExecution, CheckedExpression,
+    CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
+    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity,
+    CheckedTypeSelection, CheckedValueResolution, EffectClauseSource, EffectId, EffectItemSource,
+    EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    GenericParameterOwnerId, GenericTypeBinding, GenericTypeParameterId, GenericTypeScope,
+    HirAssertionMode, HirCallableEffectSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+    HirExprKind, HirExprSourceRole, HirFunctionItem, HirGenericParameter, HirImplMember, HirItem,
+    HirItemKind, HirItemSourceRole, HirModule, HirName, HirPatternSourceRole, HirScopeKind,
+    HirScopeOwner, HirScopeSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    HirStmtKind, HirTypeKind, ItemId, ModuleSegment, PatternId, PreparedAssignmentStatement,
+    PreparedExpressionFact, PreparedStatementPayload, ProjectSymbolTable, ScopeId, SourceSpan,
+    TypeId, TypeKind, TypeSourceEvidence,
     calls::checked_project_nominal,
     expression_types::builtin_iteration,
     items::{SourceCallableShell, checked_catalog_error},
 };
-
 impl Analyzer<'_, '_, '_> {
     pub(super) fn analyze_statements(
-        &self,
+        &mut self,
         input: &mut FinalSemanticAnalysisInput,
     ) -> Result<(), FinalSemanticAnalysisError> {
+        let mut iteration_facts = self
+            .facts
+            .take_iteration_facts_for_statements()
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         for module in self.modules.values() {
             for (owner, statement) in module.statements() {
                 if statement.is_poisoned() {
@@ -36,9 +38,13 @@ impl Analyzer<'_, '_, '_> {
                     owner,
                     statement.scope(),
                     statement.kind(),
+                    &mut iteration_facts,
                 )?;
                 input.push_prepared_statement(owner, fact);
             }
+        }
+        if !iteration_facts.is_empty() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(())
     }
@@ -211,26 +217,25 @@ impl Analyzer<'_, '_, '_> {
         owner: super::StmtId,
         scope: ScopeId,
         statement: &HirStmtKind,
-    ) -> Result<PreparedStatementFact, FinalSemanticAnalysisError> {
-        let role = match statement {
-            HirStmtKind::Assertion { mode, conditions } => {
-                self.checked_assertion_role(module, owner, scope, *mode, conditions)
-            }
+        iteration_facts: &mut BTreeMap<ExprId, CheckedIteration>,
+    ) -> Result<PreparedStatementPayload, FinalSemanticAnalysisError> {
+        let prepared = match statement {
+            HirStmtKind::Assertion { mode, conditions } => self
+                .checked_assertion_role(module, owner, scope, *mode, conditions)
+                .map(PreparedStatementPayload::Assertion),
             HirStmtKind::For(statement) => {
                 let source = self.facts.expressions().get(&statement.source()).ok_or(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: statement.source(),
                     },
                 )?;
-                let iteration = self
-                    .facts
-                    .iteration_facts()
-                    .get(&statement.iterator())
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                let iteration = iteration_facts.remove(&statement.iterator()).ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: statement.iterator(),
-                    })?;
-                let item = iteration_item(iteration);
-                if !iteration_accepts_source(iteration, source.ty()) {
+                    },
+                )?;
+                let item = iteration_item(&iteration);
+                if !iteration_accepts_source(&iteration, source.ty()) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 let iterator = self.facts.expressions().get(&statement.iterator()).ok_or(
@@ -238,7 +243,7 @@ impl Analyzer<'_, '_, '_> {
                         owner: statement.iterator(),
                     },
                 )?;
-                let expected_iterator = iteration_iterator(iteration);
+                let expected_iterator = iteration_iterator(&iteration);
                 let next_value = self
                     .facts
                     .expressions()
@@ -249,91 +254,113 @@ impl Analyzer<'_, '_, '_> {
                 if iterator.ty() != &expected_iterator || next_value.ty() != item {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-                Ok(CheckedStatementRole::Iteration(Box::new(iteration.clone())))
+                Ok(PreparedStatementPayload::Iteration(Box::new(iteration)))
             }
             HirStmtKind::Assign { target, value } => {
                 return self
                     .prepared_assignment_statement(module, *target, *value)
-                    .map(PreparedStatementFact::Assignment);
+                    .map(PreparedStatementPayload::Assignment);
             }
             HirStmtKind::Expression { expression } => {
                 if let Some(effect) =
                     self.prepare_evaluated_effect_expression(module, *expression)?
                 {
-                    return Ok(PreparedStatementFact::EvaluatedEffect(effect));
+                    return Ok(PreparedStatementPayload::EvaluatedEffect(effect));
                 }
-                Ok(CheckedStatementRole::Ordinary)
+                Ok(PreparedStatementPayload::HirOwned)
             }
-            HirStmtKind::Break { label, value } => {
-                self.checked_break_role(module, owner, scope, label.as_ref(), *value)
+            HirStmtKind::Break { value, .. } => {
+                self.validate_break_statement(module, owner, *value)?;
+                Ok(PreparedStatementPayload::HirOwned)
             }
-            HirStmtKind::Yield { .. } => Ok(CheckedStatementRole::Yield),
-            HirStmtKind::UnsafeLifetime { .. } => Ok(CheckedStatementRole::UnsafeAudit),
-            HirStmtKind::Wait { .. } => Ok(CheckedStatementRole::Suspension(Box::new(
-                CheckedSuspensionStatement::Wait,
-            ))),
+            HirStmtKind::Yield { .. } => Ok(PreparedStatementPayload::Yield),
+            HirStmtKind::Wait { target } => {
+                let target_fact = self.facts.expressions().get(target).ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                )?;
+                if target_fact.ty() != &TypeKind::Duration {
+                    return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
+                        statement: owner,
+                        owner: *target,
+                        expected: Box::new(TypeKind::Duration),
+                        actual: Box::new(target_fact.ty().clone()),
+                    });
+                }
+                Ok(PreparedStatementPayload::Suspension(Box::new(
+                    CheckedSuspensionStatement::Wait,
+                )))
+            }
+            HirStmtKind::Let { .. }
+            | HirStmtKind::LetElse { .. }
+            | HirStmtKind::Return { .. }
+            | HirStmtKind::Out { .. }
+            | HirStmtKind::Goto { .. }
+            | HirStmtKind::Defer { .. }
+            | HirStmtKind::Signal { .. }
+            | HirStmtKind::LifetimeSet { .. }
+            | HirStmtKind::On { .. }
+            | HirStmtKind::UnsafeLifetime { .. }
+            | HirStmtKind::Choice { .. }
+            | HirStmtKind::If(_)
+            | HirStmtKind::IfLet(_)
+            | HirStmtKind::Match(_)
+            | HirStmtKind::While(_)
+            | HirStmtKind::WhileLet(_)
+            | HirStmtKind::Close { .. }
+            | HirStmtKind::Select(_)
+            | HirStmtKind::SourceLocale(_)
+            | HirStmtKind::Scope(_)
+            | HirStmtKind::Include(_)
+            | HirStmtKind::Continue { .. }
+            | HirStmtKind::ProofCall { .. } => Ok(PreparedStatementPayload::HirOwned),
             HirStmtKind::Error => Err(FinalSemanticAnalysisError::RecoveredOwner),
-            _ => Ok(CheckedStatementRole::Ordinary),
         }?;
-        Ok(CheckedStatement::new(statement_role_effects(&role), role).into())
+        Ok(prepared)
     }
 
-    fn checked_break_role(
+    fn validate_break_statement(
         &self,
         module: &HirModule,
         owner: super::StmtId,
-        mut scope: ScopeId,
-        label: Option<&HirName>,
         value: Option<ExprId>,
-    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
-        if label.is_some() {
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let target = self
+            .topology
+            .control_transfer(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if target.kind() != arcweft_lang_hir::project::HirControlTransferKind::Break {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let Some(value) = value else {
-            return Ok(CheckedStatementRole::Ordinary);
+            return Ok(());
         };
-        loop {
-            let current = module
-                .resolve_scope(scope)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            if let HirScopeOwner::Stmt(target) = current.owner() {
-                let statement = module
-                    .resolve_stmt(*target)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                match statement.kind() {
-                    HirStmtKind::While(_) | HirStmtKind::WhileLet(_) | HirStmtKind::For(_) => {
-                        return Err(FinalSemanticAnalysisError::BreakValueRequiresLoop {
-                            owner,
-                            value,
-                            target: *target,
-                            value_source: expression_span(module, value)?,
-                            target_source: source_span(
-                                module,
-                                HirSourceQuery::Stmt {
-                                    owner: *target,
-                                    role: arcweft_lang_hir::source_index::HirStmtSourceRole::Whole,
-                                },
-                            )?,
-                        });
-                    }
-                    _ => {}
-                }
+        match target.target().loop_family() {
+            Some(arcweft_lang_hir::project::HirLoopTargetFamily::LoopExpression) => Ok(()),
+            Some(
+                arcweft_lang_hir::project::HirLoopTargetFamily::WhileStatement
+                | arcweft_lang_hir::project::HirLoopTargetFamily::WhileLetStatement
+                | arcweft_lang_hir::project::HirLoopTargetFamily::ForStatement,
+            ) => {
+                let target = target
+                    .target()
+                    .loop_body_owner()
+                    .and_then(arcweft_lang_hir::project::HirSemanticBodyOwner::statement_owner)
+                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                Err(FinalSemanticAnalysisError::BreakValueRequiresLoop {
+                    owner,
+                    value,
+                    target,
+                    value_source: expression_span(module, value)?,
+                    target_source: source_span(
+                        module,
+                        HirSourceQuery::Stmt {
+                            owner: target,
+                            role: arcweft_lang_hir::source_index::HirStmtSourceRole::Whole,
+                        },
+                    )?,
+                })
             }
-            if let HirScopeOwner::Expr(target) = current.owner()
-                && matches!(
-                    module
-                        .resolve_expr(*target)
-                        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                        .kind(),
-                    HirExprKind::Loop(_)
-                )
-            {
-                return Ok(CheckedStatementRole::Ordinary);
-            }
-            let Some(parent) = current.parent() else {
-                return Err(FinalSemanticAnalysisError::InvalidOwner);
-            };
-            scope = parent;
+            None => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         }
     }
 
@@ -402,7 +429,6 @@ impl Analyzer<'_, '_, '_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(PreparedAssignmentStatement::new(
-            EffectSet::new(),
             *local,
             nominal,
             target,
@@ -418,7 +444,7 @@ impl Analyzer<'_, '_, '_> {
         scope: ScopeId,
         mode: HirAssertionMode,
         conditions: &[ExprId],
-    ) -> Result<CheckedStatementRole, FinalSemanticAnalysisError> {
+    ) -> Result<CheckedAssertionDisposition, FinalSemanticAnalysisError> {
         let mode = match mode {
             HirAssertionMode::Resolved(mode) => mode,
             HirAssertionMode::Recovered => {
@@ -477,7 +503,7 @@ impl Analyzer<'_, '_, '_> {
                 CheckedAssertionDisposition::OmittedDebug
             }
         };
-        Ok(CheckedStatementRole::Assertion(disposition))
+        Ok(disposition)
     }
 }
 
@@ -526,20 +552,6 @@ fn iteration_accepts_source(iteration: &CheckedIteration, source: &TypeKind) -> 
             source: expected, ..
         } => expected == source,
     }
-}
-
-fn statement_role_effects(role: &CheckedStatementRole) -> EffectSet {
-    let mut effects = EffectSet::new();
-    if matches!(
-        role,
-        CheckedStatementRole::Suspension(_) | CheckedStatementRole::Yield
-    ) {
-        effects.insert(
-            EffectId::parse("control.suspend")
-                .expect("the language-owned suspension effect is a valid effect identity"),
-        );
-    }
-    effects
 }
 
 pub(super) fn function_effect_contract(
@@ -637,147 +649,6 @@ pub(super) fn checked_effect_expression(
         })
         .collect();
     Ok((effect, facts))
-}
-
-pub(super) fn closure_effect_rows(
-    module: &HirModule,
-    body_scope: ScopeId,
-    owner: &CheckedCallableId,
-    input: &FinalSemanticAnalysisInput,
-) -> Result<Vec<(CheckedClosureId, ScopeId, EffectRow)>, FinalSemanticAnalysisError> {
-    let mut rows = Vec::new();
-    for (expression_id, expression) in module.expressions() {
-        let HirExprKind::Closure(closure) = expression.kind() else {
-            continue;
-        };
-        if !scope_is_within(module, expression.scope(), body_scope)? {
-            continue;
-        }
-        let id = CheckedClosureId::from_checked_expression(
-            owner.clone(),
-            expression_span(module, expression_id)?,
-        )
-        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        rows.push((
-            id,
-            closure.scope(),
-            EffectRow::closed(execution_effects(module, closure.scope(), input)?),
-        ));
-    }
-    Ok(rows)
-}
-
-/// Collects effects performed by one execution body. A nested closure body is
-/// a latent callable row, not an eager effect of creating the closure value.
-/// The closure literal expression itself remains in the enclosing scope and is
-/// therefore still observed if value creation ever gains an intrinsic effect.
-pub(super) fn execution_effects(
-    module: &HirModule,
-    body_scope: ScopeId,
-    input: &FinalSemanticAnalysisInput,
-) -> Result<EffectSet, FinalSemanticAnalysisError> {
-    let mut effects = EffectSet::new();
-    for (owner, checked) in &input.expressions {
-        if owner.module() == module.module_id()
-            && scope_executes_within(
-                module,
-                module
-                    .resolve_expr(*owner)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                    .scope(),
-                body_scope,
-            )?
-        {
-            effects.union_with(checked.effects());
-        }
-    }
-    for (owner, checked) in &input.statements {
-        if owner.module() == module.module_id()
-            && scope_executes_within(
-                module,
-                module
-                    .resolve_stmt(*owner)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                    .scope(),
-                body_scope,
-            )?
-        {
-            checked.extend_effects(&mut effects);
-        }
-    }
-    Ok(effects)
-}
-
-pub(super) fn scope_executes_within(
-    module: &HirModule,
-    mut candidate: ScopeId,
-    root: ScopeId,
-) -> Result<bool, FinalSemanticAnalysisError> {
-    loop {
-        if candidate == root {
-            return Ok(true);
-        }
-        let scope = module
-            .resolve_scope(candidate)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        if scope.kind() == HirScopeKind::Closure
-            || scope_starts_independent_execution(module, scope.owner())?
-        {
-            return Ok(false);
-        }
-        let Some(parent) = scope.parent() else {
-            return Ok(false);
-        };
-        candidate = parent;
-    }
-}
-
-fn scope_starts_independent_execution(
-    module: &HirModule,
-    owner: &HirScopeOwner,
-) -> Result<bool, FinalSemanticAnalysisError> {
-    match owner {
-        HirScopeOwner::Expr(owner) => {
-            let expression = module
-                .resolve_expr(*owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            Ok(matches!(
-                expression.kind(),
-                HirExprKind::Closure(_)
-                    | HirExprKind::ComputationBlock(_)
-                    | HirExprKind::Thread(_)
-                    | HirExprKind::Choice(_)
-                    | HirExprKind::DialogueContentApplication(_)
-                    | HirExprKind::PostfixBracket(_)
-            ))
-        }
-        HirScopeOwner::Stmt(owner) => {
-            let statement = module
-                .resolve_stmt(*owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            Ok(matches!(statement.kind(), HirStmtKind::On { .. }))
-        }
-        HirScopeOwner::Module(_) | HirScopeOwner::Item(_) => Ok(false),
-    }
-}
-
-pub(super) fn scope_is_within(
-    module: &HirModule,
-    mut candidate: ScopeId,
-    root: ScopeId,
-) -> Result<bool, FinalSemanticAnalysisError> {
-    loop {
-        if candidate == root {
-            return Ok(true);
-        }
-        let scope = module
-            .resolve_scope(candidate)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let Some(parent) = scope.parent() else {
-            return Ok(false);
-        };
-        candidate = parent;
-    }
 }
 
 pub(super) fn generic_scope(

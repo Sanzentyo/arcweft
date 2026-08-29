@@ -14,10 +14,48 @@ use crate::callable::{
     CheckedCallSite, PreparedCallContinuationRef, PreparedCallGraph, PreparedCallGraphCheckpoint,
     PreparedCallGraphDelta, PreparedCallGraphReplayMismatch, PreparedCallGraphSiteState,
 };
-use crate::final_analysis::PreparedExpressionFact;
+use crate::{
+    checked_rich_text::PreparedCheckedDialogueMarkCatalog,
+    final_analysis::{PreparedDialogueApplication, PreparedExpressionFact},
+};
 
 #[derive(Debug)]
 struct CandidateFactIssuer;
+
+/// Affine authority to replace one dialogue application after its marker
+/// catalog and prepared shell have been moved into the late coordinate seal.
+pub(super) struct TakenDialogueApplication {
+    owner: ExprId,
+    site: CheckedCallSite,
+    application: PreparedDialogueApplication,
+    markers: PreparedCheckedDialogueMarkCatalog,
+}
+
+impl TakenDialogueApplication {
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        PreparedDialogueApplication,
+        PreparedCheckedDialogueMarkCatalog,
+        DialogueApplicationReplacementProof,
+    ) {
+        (
+            self.application,
+            self.markers,
+            DialogueApplicationReplacementProof {
+                owner: self.owner,
+                site: self.site,
+            },
+        )
+    }
+}
+
+/// Move-only proof that the late seal took the exact prior call-correlated
+/// dialogue row and may publish only its same-site final replacement.
+pub(super) struct DialogueApplicationReplacementProof {
+    owner: ExprId,
+    site: CheckedCallSite,
+}
 
 /// A move-only token naming one candidate transaction.
 ///
@@ -226,6 +264,7 @@ pub(super) struct SemanticFactState {
     locals: BTreeMap<LocalId, TypeKind>,
     patterns: BTreeMap<PatternId, TypeKind>,
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
+    dialogue_mark_catalogs: BTreeMap<ExprId, PreparedCheckedDialogueMarkCatalog>,
     expression_stack: BTreeSet<ExprId>,
     iteration_facts: BTreeMap<ExprId, CheckedIteration>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, LocalId>,
@@ -260,6 +299,7 @@ pub(super) struct CandidateSemanticProjection {
     locals: BTreeMap<LocalId, Option<TypeKind>>,
     patterns: BTreeMap<PatternId, Option<TypeKind>>,
     expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
+    dialogue_mark_catalogs: BTreeMap<ExprId, Option<PreparedCheckedDialogueMarkCatalog>>,
     iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
@@ -400,6 +440,7 @@ impl std::fmt::Debug for CandidateSemanticProjection {
             .field("locals", &self.locals.len())
             .field("patterns", &self.patterns.len())
             .field("expressions", &self.expressions.len())
+            .field("dialogue_mark_catalogs", &self.dialogue_mark_catalogs.len())
             .field("iterations", &self.iterations.len())
             .field("implicit_capture_uses", &self.implicit_capture_uses.len())
             .field(
@@ -426,6 +467,7 @@ pub(super) enum CandidateSemanticReplayMismatch {
     Locals,
     Patterns,
     Expressions,
+    DialogueMarkCatalogs,
     Iterations,
     ImplicitCaptureUses,
     PhysicalCandidateEvaluations,
@@ -469,6 +511,9 @@ impl CandidateSemanticProjection {
         if self.expressions != other.expressions {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
+        if self.dialogue_mark_catalogs != other.dialogue_mark_catalogs {
+            return Some(CandidateSemanticReplayMismatch::DialogueMarkCatalogs);
+        }
         if self.iterations != other.iterations {
             return Some(CandidateSemanticReplayMismatch::Iterations);
         }
@@ -484,6 +529,7 @@ struct CandidateProjectionOwners {
     locals: BTreeSet<LocalId>,
     patterns: BTreeSet<PatternId>,
     expressions: BTreeSet<ExprId>,
+    dialogue_mark_catalogs: BTreeSet<ExprId>,
     iterations: BTreeSet<ExprId>,
     implicit_capture_uses: BTreeSet<ImplicitCaptureUseKey>,
 }
@@ -500,6 +546,10 @@ enum SemanticFactMutation {
     Expression {
         owner: ExprId,
         previous: Option<Box<PreparedExpressionFact>>,
+    },
+    DialogueMarkCatalog {
+        owner: ExprId,
+        previous: Option<Box<PreparedCheckedDialogueMarkCatalog>>,
     },
     Iteration {
         owner: ExprId,
@@ -518,6 +568,7 @@ impl SemanticFactState {
             locals: BTreeMap::new(),
             patterns: BTreeMap::new(),
             expressions: BTreeMap::new(),
+            dialogue_mark_catalogs: BTreeMap::new(),
             expression_stack: BTreeSet::new(),
             iteration_facts: BTreeMap::new(),
             implicit_capture_uses: BTreeMap::new(),
@@ -814,8 +865,89 @@ impl SemanticFactState {
         &self.expressions
     }
 
+    pub(super) fn take_dialogue_application(
+        &mut self,
+        owner: ExprId,
+    ) -> Result<TakenDialogueApplication, CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        if self.prepared_calls.is_some()
+            || !self.candidate_checkpoints.is_empty()
+            || !self.candidate_journal.is_empty()
+        {
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+        }
+        if !matches!(
+            self.expressions.get(&owner),
+            Some(PreparedExpressionFact::DialogueApplication(_))
+        ) {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        let site = self
+            .expressions
+            .get(&owner)
+            .and_then(|fact| fact.checked_call_site(owner))
+            .filter(|site| *site == CheckedCallSite::DialogueApplication(owner))
+            .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
+        let PreparedExpressionFact::DialogueApplication(application) = self
+            .expressions
+            .remove(&owner)
+            .expect("the checked variant test proves the row exists")
+        else {
+            unreachable!("the checked variant test proves the row family")
+        };
+        let catalog = self
+            .dialogue_mark_catalogs
+            .remove(&owner)
+            .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
+        if catalog.content().owner() != owner {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        Ok(TakenDialogueApplication {
+            owner,
+            site,
+            application,
+            markers: catalog,
+        })
+    }
+
+    pub(super) fn publish_sealed_dialogue_application(
+        &mut self,
+        proof: DialogueApplicationReplacementProof,
+        value: PreparedExpressionFact,
+    ) -> Result<(), ExpressionFactWriteViolation> {
+        self.ensure_healthy()
+            .map_err(ExpressionFactWriteViolation::Candidate)?;
+        if self.prepared_calls.is_some()
+            || !self.candidate_checkpoints.is_empty()
+            || !self.candidate_journal.is_empty()
+            || self.expressions.contains_key(&proof.owner)
+            || proof.site != CheckedCallSite::DialogueApplication(proof.owner)
+            || value.checked_call_site(proof.owner) != Some(proof.site)
+        {
+            return Err(ExpressionFactWriteViolation::Candidate(
+                Self::call_graph_mismatch(),
+            ));
+        }
+        self.write_expression(proof.owner, value);
+        Ok(())
+    }
+
+    pub(super) fn dialogue_mark_catalogs_are_empty(&self) -> bool {
+        self.dialogue_mark_catalogs.is_empty()
+    }
+
     pub(super) const fn iteration_facts(&self) -> &BTreeMap<ExprId, CheckedIteration> {
         &self.iteration_facts
+    }
+
+    /// Moves the completed iterator-selection inventory into statement
+    /// preparation after candidate evaluation has closed. No checked
+    /// iteration row is copied into the affine statement payload.
+    pub(super) fn take_iteration_facts_for_statements(
+        &mut self,
+    ) -> Result<BTreeMap<ExprId, CheckedIteration>, CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        Ok(std::mem::take(&mut self.iteration_facts))
     }
 
     /// Returns the currently pending use rows without creating a second
@@ -1220,6 +1352,11 @@ impl SemanticFactState {
                 .into_iter()
                 .map(|owner| (owner, self.expressions.remove(&owner)))
                 .collect(),
+            dialogue_mark_catalogs: owners
+                .dialogue_mark_catalogs
+                .into_iter()
+                .map(|owner| (owner, self.dialogue_mark_catalogs.remove(&owner)))
+                .collect(),
             iterations: owners
                 .iterations
                 .into_iter()
@@ -1291,6 +1428,7 @@ impl SemanticFactState {
             locals,
             patterns,
             expressions,
+            dialogue_mark_catalogs,
             iterations,
             implicit_capture_uses,
             physical_candidate_argument_evaluations,
@@ -1319,6 +1457,7 @@ impl SemanticFactState {
                     locals,
                     patterns,
                     expressions,
+                    dialogue_mark_catalogs,
                     iterations,
                     implicit_capture_uses,
                     physical_candidate_argument_evaluations,
@@ -1344,6 +1483,7 @@ impl SemanticFactState {
                         locals,
                         patterns,
                         expressions,
+                        dialogue_mark_catalogs,
                         iterations,
                         implicit_capture_uses,
                         physical_candidate_argument_evaluations,
@@ -1359,6 +1499,7 @@ impl SemanticFactState {
             locals,
             patterns,
             expressions,
+            dialogue_mark_catalogs,
             iterations,
             implicit_capture_uses,
         );
@@ -1604,6 +1745,27 @@ impl SemanticFactState {
         Ok(())
     }
 
+    pub(super) fn publish_dialogue_mark_catalog(
+        &mut self,
+        owner: ExprId,
+        catalog: PreparedCheckedDialogueMarkCatalog,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        if catalog.content().owner() != owner || self.dialogue_mark_catalogs.contains_key(&owner) {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        }
+        let previous = self.dialogue_mark_catalogs.insert(owner, catalog);
+        debug_assert!(previous.is_none());
+        if !self.candidate_checkpoints.is_empty() {
+            self.candidate_journal
+                .push(SemanticFactMutation::DialogueMarkCatalog {
+                    owner,
+                    previous: None,
+                });
+        }
+        Ok(())
+    }
+
     pub(super) fn replace_contextual_expression(
         &mut self,
         owner: ExprId,
@@ -1791,6 +1953,9 @@ impl SemanticFactState {
                 SemanticFactMutation::Expression { owner, .. } => {
                     owners.expressions.insert(*owner);
                 }
+                SemanticFactMutation::DialogueMarkCatalog { owner, .. } => {
+                    owners.dialogue_mark_catalogs.insert(*owner);
+                }
                 SemanticFactMutation::Iteration { owner, .. } => {
                     owners.iterations.insert(*owner);
                 }
@@ -1823,6 +1988,13 @@ impl SemanticFactState {
                         previous.map(|previous| *previous),
                     );
                 }
+                SemanticFactMutation::DialogueMarkCatalog { owner, previous } => {
+                    restore_map_entry(
+                        &mut self.dialogue_mark_catalogs,
+                        owner,
+                        previous.map(|previous| *previous),
+                    );
+                }
                 SemanticFactMutation::Iteration { owner, previous } => {
                     restore_map_entry(
                         &mut self.iteration_facts,
@@ -1842,6 +2014,7 @@ impl SemanticFactState {
         locals: BTreeMap<LocalId, Option<TypeKind>>,
         patterns: BTreeMap<PatternId, Option<TypeKind>>,
         expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
+        dialogue_mark_catalogs: BTreeMap<ExprId, Option<PreparedCheckedDialogueMarkCatalog>>,
         iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
         implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
     ) {
@@ -1853,6 +2026,9 @@ impl SemanticFactState {
         }
         for (owner, value) in expressions {
             self.apply_expression(owner, value);
+        }
+        for (owner, value) in dialogue_mark_catalogs {
+            self.apply_dialogue_mark_catalog(owner, value);
         }
         for (owner, value) in iterations {
             self.apply_iteration(owner, value);
@@ -1883,6 +2059,24 @@ impl SemanticFactState {
             self.write_expression(owner, value);
         } else {
             self.remove_expression(owner);
+        }
+    }
+
+    fn apply_dialogue_mark_catalog(
+        &mut self,
+        owner: ExprId,
+        value: Option<PreparedCheckedDialogueMarkCatalog>,
+    ) {
+        let previous = match value {
+            Some(value) => self.dialogue_mark_catalogs.insert(owner, value),
+            None => self.dialogue_mark_catalogs.remove(&owner),
+        };
+        if !self.candidate_checkpoints.is_empty() {
+            self.candidate_journal
+                .push(SemanticFactMutation::DialogueMarkCatalog {
+                    owner,
+                    previous: previous.map(Box::new),
+                });
         }
     }
 

@@ -1,5 +1,6 @@
 //! Shared typed entity-reference projection into final HIR.
 
+use arcweft_id::{UnsafeAuditId, UnsafeAuditIdError};
 use arcweft_lang_syntax::id_ref::{
     AuthoredIdRef, AuthoredIdRoot, AuthoredIdSegment, SyntaxIdRefIssue, SyntaxIdRefSyntax,
 };
@@ -9,6 +10,7 @@ use crate::leaf::{
     HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirIdSuffix, HirRelativeId,
 };
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
+use crate::stmt::{HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue};
 
 pub(crate) fn id_ref(value: &SyntaxIdRefSyntax) -> Result<HirIdRefValue, HirLowerFailure> {
     match value.value() {
@@ -26,6 +28,53 @@ pub(crate) fn id_ref(value: &SyntaxIdRefSyntax) -> Result<HirIdRefValue, HirLowe
             },
         ))),
     }
+}
+
+/// Projects the one accepted local dialogue-mark identity from the shared
+/// entity-reference authority. Mark selectors deliberately retain the typed
+/// one-segment suffix rather than reparsing it as a HIR name or string.
+pub(crate) fn dialogue_mark_suffix(
+    value: &SyntaxIdRefSyntax,
+) -> Result<HirIdSuffix, HirLowerFailure> {
+    match id_ref(value)? {
+        HirIdRefValue::Resolved(HirIdRef::Relative(relative))
+            if relative.parent_depth() == 0 && relative.suffix().segment_count() == 1 =>
+        {
+            Ok(relative.suffix().clone())
+        }
+        HirIdRefValue::Resolved(_) | HirIdRefValue::Recovered(_) => {
+            Err(HirInvariantFailure::InvalidArenaCommit.into())
+        }
+    }
+}
+
+/// Projects the one accepted absolute `@unsafe.*` identity family.
+///
+/// The general ID-reference shape is intentionally consumed inside this HIR
+/// boundary so no successful raw reference reaches sema or the verifier.
+pub(crate) fn unsafe_audit_identity(
+    value: &SyntaxIdRefSyntax,
+) -> Result<HirUnsafeAuditIdentity, HirLowerFailure> {
+    let identity = match id_ref(value)? {
+        HirIdRefValue::Resolved(HirIdRef::Absolute(reference)) => {
+            match UnsafeAuditId::try_new(reference.as_str().to_owned()) {
+                Ok(id) => HirUnsafeAuditIdentity::Accepted(id),
+                Err(UnsafeAuditIdError::InvalidPublicId(_)) => {
+                    HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::InvalidReference)
+                }
+                Err(UnsafeAuditIdError::WrongFamily) => {
+                    HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::WrongFamily)
+                }
+            }
+        }
+        HirIdRefValue::Resolved(HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_)) => {
+            HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::NonAbsolute)
+        }
+        HirIdRefValue::Recovered(_) => {
+            HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::InvalidReference)
+        }
+    };
+    Ok(identity)
 }
 
 fn resolved_id_ref(value: &AuthoredIdRef) -> Result<HirIdRef, HirLowerFailure> {

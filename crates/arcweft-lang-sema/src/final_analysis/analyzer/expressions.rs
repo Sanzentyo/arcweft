@@ -11,19 +11,18 @@ use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CallableDeclarationKey,
     CandidateSemanticProjection, CheckedAwait, CheckedAwaitPendingObserver, CheckedChoice,
     CheckedChoiceGoto, CheckedClosure, CheckedDialogueEffectSiteOrdinal,
-    CheckedDialogueEffectTrigger, CheckedDialogueMarkHandler, CheckedDialogueMarkOrdinal,
-    CheckedExpression, CheckedExpressionResolution, CheckedImplicitCallable, CheckedPipe,
-    CheckedProjectItem, CheckedStageLook, CheckedStyleCallee, CheckedTry, CheckedTryBoundary,
-    CheckedTryCarrier, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload,
-    ExprId, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
-    HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument, HirChoiceCompactAction,
-    HirChoiceItem, HirComputationBlockKind, HirExpr, HirExprKind, HirIdRef, HirIdRefValue,
-    HirIntegerLiteral, HirItemKind, HirLinePlanItem, HirLiteral, HirModule, HirPathRoot,
-    HirPathSegment, HirPatternKind, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
+    CheckedDialogueEffectTrigger, CheckedExpression, CheckedExpressionResolution,
+    CheckedImplicitCallable, CheckedPipe, CheckedProjectItem, CheckedStageLook, CheckedStyleCallee,
+    CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedViewCall, CheckedViewCallee, EffectId,
+    EffectSet, EntityKind, EnumVariantPayload, ExprId, FinalSemanticAnalysisError,
+    GenericParameterOwnerId, GenericTypeParameterId, HirAwaitBranchKind, HirBinaryOp,
+    HirBorrowKind, HirCallArgument, HirChoiceCompactAction, HirChoiceItem, HirComputationBlockKind,
+    HirExpr, HirExprKind, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral, HirModule,
+    HirPathRoot, HirPathSegment, HirPostfixBracket, HirPostfixBracketCandidates, HirRecordField,
     HirRecoveredName, HirScopeKind, HirScopeOwner, HirSelectedMember, HirSourcePresence,
-    HirSourceQuery, HirSourceSite, HirStmtKind, HirTriggerPattern, HirTypeSourceRole, HirUnaryOp,
-    LocalLookup, PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectSite,
+    HirSourceQuery, HirSourceSite, HirStmtKind, HirTypeSourceRole, HirUnaryOp, LocalLookup,
+    PostfixBracketResolution, PreparedDialogueApplication, PreparedDialogueEffectSite,
     PreparedDialogueLinePlan, PreparedExpressionFact, PreparedExpressionShell,
     ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
     ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, RegisteredSemanticValueId,
@@ -42,12 +41,13 @@ use crate::callable::{
     ResolverWork, resolve_call_target,
 };
 use crate::checked_rich_text::{
-    CheckedDialogueHostEvent, CheckedDialogueToken, CheckedRichTextAction,
+    CheckedDialogueHostEvent, PreparedCheckedDialogueToken, PreparedCheckedRichTextAction,
 };
 use crate::final_analysis::type_rules::integer_suffix_type;
 use crate::registration::RegisteredExternalOwner;
-use arcweft_id::PublicId;
-use arcweft_lang_hir::expr::HirPlaceholderKind;
+use arcweft_lang_hir::expr::{
+    HirChoicePlanItem, HirExpressionOwnedBodyRole, HirExpressionOwnedChild, HirPlaceholderKind,
+};
 
 use super::expression_error::{AnalyzerExpressionContext, AnalyzerExpressionError};
 use super::state::{
@@ -1280,11 +1280,12 @@ impl Analyzer<'_, '_, '_> {
                         return Err(AnalyzerExpressionError::rejected(owner));
                     }
                 };
+                let mut effects = EffectSet::new();
+                effects.insert(EffectId::control_suspend());
                 Ok(CheckedExpression::new(
                     ty,
                     CheckedTypeSelection::Inferred,
-                    EffectSet::from_labels(["control.suspend"])
-                        .expect("the language-owned suspension effect is valid"),
+                    effects,
                     resolution,
                 ))
             }
@@ -2042,6 +2043,7 @@ impl Analyzer<'_, '_, '_> {
         if expected.is_some_and(|expected| !expected.accepts(&ty)) {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
+        self.validate_choice_owned_plan_patterns(expression, choice)?;
         Ok(CheckedExpression::new(
             ty,
             if expected.is_some() {
@@ -2052,6 +2054,61 @@ impl Analyzer<'_, '_, '_> {
             effects,
             CheckedExpressionResolution::Choice(CheckedChoice::new(public_id, option_ids, gotos)),
         ))
+    }
+
+    fn validate_choice_owned_plan_patterns(
+        &self,
+        expression: &HirExpr,
+        choice: &arcweft_lang_hir::expr::HirChoiceExpr,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let expected = TypeKind::entity_ref(EntityKind::ChoiceOption);
+        let edges = expression
+            .kind()
+            .expression_owned_child_edges()
+            .map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RecoveredOwner)
+            })?;
+        for edge in edges {
+            if !matches!(
+                edge.role(),
+                HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { .. }
+            ) {
+                continue;
+            }
+            let HirExpressionOwnedChild::Pattern(pattern) = edge.child() else {
+                continue;
+            };
+            if self.facts.patterns().get(&pattern) != Some(&expected) {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::PatternTypeUnavailable { owner: pattern },
+                ));
+            }
+            let locals = choice.plan().and_then(|plan| {
+                plan.items().iter().find_map(|item| match item {
+                    HirChoicePlanItem::OnSelect {
+                        pattern: candidate,
+                        locals,
+                        ..
+                    } if *candidate == pattern => Some(locals.as_ref()),
+                    HirChoicePlanItem::Assignment { .. }
+                    | HirChoicePlanItem::Timeout { .. }
+                    | HirChoicePlanItem::Cancel { .. }
+                    | HirChoicePlanItem::OnSelect { .. }
+                    | HirChoicePlanItem::Error(_) => None,
+                })
+            });
+            let locals = locals.ok_or_else(|| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
+            })?;
+            for local in locals {
+                if self.facts.locals().get(local) != Some(&expected) {
+                    return Err(AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local },
+                    ));
+                }
+            }
+        }
+        Ok(())
     }
 
     fn resolve_choice_goto(

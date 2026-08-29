@@ -5,7 +5,10 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_lang_hir::{project::AcceptedHirProjectGeneration, symbol::CallableDeclarationKey};
+use arcweft_lang_hir::{
+    project::AcceptedHirProjectGeneration,
+    symbol::{CallableDeclarationDigest, CallableDeclarationKey, FlowDeclarationId},
+};
 use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 
 use crate::{
@@ -656,6 +659,63 @@ impl CheckedCallableCatalog {
         Ok(facts)
     }
 
+    /// Test-only transaction mutation for proving that late semantic joins
+    /// reject an absent checked project row. The immutable production catalog
+    /// has no corresponding mutation surface.
+    #[cfg(test)]
+    pub(crate) fn remove_project_candidate_for_test(
+        &mut self,
+        declaration: &CallableDeclarationKey,
+    ) -> bool {
+        self.checked_by_candidate
+            .remove(&CallableCandidateId::Project(declaration.clone()))
+            .is_some()
+    }
+
+    /// Test-only transaction mutation for proving foreign/stale checked-row
+    /// rejection at consumers that join an affine prepared declaration.
+    #[cfg(test)]
+    pub(crate) fn replace_project_candidate_for_test(
+        &mut self,
+        declaration: &CallableDeclarationKey,
+        replacement: CheckedCallableId,
+    ) -> bool {
+        let key = CallableCandidateId::Project(declaration.clone());
+        let Some(retained) = self.checked_by_candidate.get_mut(&key) else {
+            return false;
+        };
+        if retained == &replacement {
+            return false;
+        }
+        *retained = replacement;
+        true
+    }
+
+    /// Joins one accepted declaration digest to its exact checked Flow row.
+    ///
+    /// This scans only the immutable checked catalog. It never reopens an HIR
+    /// target, source spelling, or project-symbol lookup.
+    pub(crate) fn project_flow_by_declaration_digest(
+        &self,
+        digest: CallableDeclarationDigest,
+    ) -> Result<&FlowDeclarationId, CheckedCallableLookupError> {
+        let mut matched = None;
+        for facts in self.records() {
+            let CheckedCallableDeclaration::Project(CallableDeclarationKey::Flow(flow)) =
+                facts.id().declaration()
+            else {
+                continue;
+            };
+            if flow.semantic_digest() != digest {
+                continue;
+            }
+            if matched.replace(flow).is_some() {
+                return Err(CheckedCallableLookupError::CandidateMismatch);
+            }
+        }
+        matched.ok_or(CheckedCallableLookupError::Missing)
+    }
+
     pub fn callable_at_source(
         &self,
         key: &CheckedCallableSourceKey,
@@ -705,6 +765,12 @@ impl CheckedCallableCatalog {
         self.closure_rows
             .get(id)
             .ok_or(CheckedCallableLookupError::Missing)
+    }
+
+    pub(crate) fn closure_rows(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CheckedClosureId, &EffectRow)> {
+        self.closure_rows.iter()
     }
 
     /// Resolves the latent row of one closure through its exact accepted

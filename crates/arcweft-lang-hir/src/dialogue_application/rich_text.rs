@@ -1,6 +1,6 @@
 //! Rich-text tag, argument, identity, payload, and issue records.
 
-use super::content::HirDialogueContentId;
+use super::content::{HirDialogueContentId, HirDialogueMarkId};
 use super::{
     HirDialogueExpressionExpectation, HirDialogueInvariantError, HirDialogueOrdinalError,
     HirDialogueTransactionContext, HirDialogueTransactionError, HirDialogueTransactionRequirement,
@@ -149,6 +149,18 @@ impl HirRichTextTag {
         payload: HirRichTextTagPayload,
     ) -> Result<Self, HirDialogueInvariantError> {
         validate_argument_ids(id, &arguments)?;
+        match (&identity, &payload) {
+            (HirRichTextTagIdentity::Marker, _) if !arguments.is_empty() => {
+                return Err(HirDialogueInvariantError::InvalidMarkReference);
+            }
+            (HirRichTextTagIdentity::Marker, HirRichTextTagPayload::Marker(mark))
+                if mark.content() == id.content() => {}
+            (HirRichTextTagIdentity::Marker, HirRichTextTagPayload::None) => {}
+            (HirRichTextTagIdentity::Marker, _) | (_, HirRichTextTagPayload::Marker(_)) => {
+                return Err(HirDialogueInvariantError::InvalidMarkReference);
+            }
+            _ => {}
+        }
         let tag = Self {
             id,
             identity,
@@ -183,9 +195,26 @@ impl HirRichTextTag {
         &self.payload
     }
 
+    pub(super) fn set_marker_id(
+        &mut self,
+        mark: HirDialogueMarkId,
+    ) -> Result<(), HirDialogueInvariantError> {
+        if !matches!(&self.identity, HirRichTextTagIdentity::Marker)
+            || !matches!(&self.payload, HirRichTextTagPayload::None)
+            || mark.content() != self.id.content()
+        {
+            return Err(HirDialogueInvariantError::InvalidMarkReference);
+        }
+        self.payload = HirRichTextTagPayload::Marker(mark);
+        Ok(())
+    }
+
     pub(super) fn validate_module(&self, expected: HirModuleId) -> Result<(), HirModuleId> {
         validate_module(expected, self.id.content.owner().module())?;
         self.identity.validate_module(expected)?;
+        if let HirRichTextTagPayload::Marker(mark) = &self.payload {
+            validate_module(expected, mark.content().owner().module())?;
+        }
         if let Some(expression) = self.payload.expression() {
             validate_module(expected, expression.module())?;
         }
@@ -238,7 +267,9 @@ impl HirRichTextTag {
                 HirRichTextTagPayload::Condition(_) => {
                     HirDialogueExpressionExpectation::Unrestricted
                 }
-                HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => unreachable!(),
+                HirRichTextTagPayload::Arguments
+                | HirRichTextTagPayload::Marker(_)
+                | HirRichTextTagPayload::None => unreachable!(),
             };
             context
                 .require(HirDialogueTransactionRequirement::Expression {
@@ -263,6 +294,7 @@ impl HirRichTextTag {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirRichTextTagIdentity {
     Builtin(HirBuiltinRichTextTag),
+    Marker,
     Registered(HirRegisteredRichTextTagId),
     Unresolved(HirUnresolvedRichTextTag),
 }
@@ -286,7 +318,6 @@ pub enum HirBuiltinRichTextTag {
     Clear,
     Reset,
     Speed,
-    Marker,
     DirectStyle(HirRichTextDirectStyle),
     Style(HirRichTextStyleSelector),
     Layout(HirRichTextLayoutSelector),
@@ -436,6 +467,7 @@ pub enum HirRichTextTagPayload {
     FxCall(ExprId),
     DialogueCall(ExprId),
     Condition(ExprId),
+    Marker(HirDialogueMarkId),
     None,
 }
 
@@ -450,7 +482,7 @@ impl HirRichTextTagPayload {
             Self::FxCall(expression)
             | Self::DialogueCall(expression)
             | Self::Condition(expression) => Some(*expression),
-            Self::Arguments | Self::None => None,
+            Self::Arguments | Self::Marker(_) | Self::None => None,
         }
     }
 }
@@ -604,7 +636,6 @@ impl From<SyntaxBuiltinRichTextTag> for HirBuiltinRichTextTag {
             SyntaxBuiltinRichTextTag::Clear => Self::Clear,
             SyntaxBuiltinRichTextTag::Reset => Self::Reset,
             SyntaxBuiltinRichTextTag::Speed => Self::Speed,
-            SyntaxBuiltinRichTextTag::Marker => Self::Marker,
             SyntaxBuiltinRichTextTag::DirectStyle(value) => Self::DirectStyle(value.into()),
             SyntaxBuiltinRichTextTag::Style(value) => Self::Style(value.into()),
             SyntaxBuiltinRichTextTag::Layout(value) => Self::Layout(value.into()),

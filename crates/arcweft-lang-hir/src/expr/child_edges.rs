@@ -10,11 +10,10 @@ use super::{
     HirRecordField,
 };
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueNodeKind, HirLinePlanItem,
-    HirPostfixBracketCandidates,
+    HirDialogueContentApplication, HirDialogueNodeKind, HirPostfixBracketCandidates,
 };
 use crate::identity::ExprId;
-use crate::stmt::HirTriggerPattern;
+use crate::stmt::HirTrigger;
 use thiserror::Error;
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -154,21 +153,6 @@ pub enum HirExpressionChildRole {
     },
     DialogueTagPayload {
         ordinal: u32,
-    },
-    LinePlanOptionValue {
-        path: HirNestedExpressionPath,
-    },
-    LinePlanLetValue {
-        path: HirNestedExpressionPath,
-    },
-    LinePlanOut {
-        path: HirNestedExpressionPath,
-    },
-    LinePlanTimelineAssert {
-        path: HirNestedExpressionPath,
-    },
-    LinePlanExpression {
-        path: HirNestedExpressionPath,
     },
     PostfixIndexCandidate,
     PostfixDialogueCandidate,
@@ -686,87 +670,6 @@ fn append_dialogue_application_edges(
             );
         }
     }
-    if let Some(plan) = application.plan() {
-        append_line_plan_edges(plan.items(), edges)?;
-    }
-    Ok(())
-}
-
-fn append_line_plan_edges(
-    items: &[HirLinePlanItem],
-    edges: &mut Vec<HirExpressionChildEdge>,
-) -> Result<(), HirExpressionChildEdgeError> {
-    #[derive(Clone, Copy)]
-    enum GroupKind {
-        Start,
-        Together,
-    }
-
-    let mut pending = vec![(items, Vec::new(), None)];
-    while let Some((items, prefix, group)) = pending.pop() {
-        for (ordinal, item) in items.iter().enumerate() {
-            let item_path = match group {
-                None => extend_path(
-                    &prefix,
-                    HirNestedExpressionPathSegment::LinePlanItem {
-                        ordinal: ordinal_u32(ordinal)?,
-                    },
-                ),
-                Some(GroupKind::Start) => extend_path(
-                    &prefix,
-                    HirNestedExpressionPathSegment::LinePlanStartGroupItem {
-                        ordinal: ordinal_u32(ordinal)?,
-                    },
-                ),
-                Some(GroupKind::Together) => extend_path(
-                    &prefix,
-                    HirNestedExpressionPathSegment::LinePlanTogetherGroupItem {
-                        ordinal: ordinal_u32(ordinal)?,
-                    },
-                ),
-            };
-            let path = || HirNestedExpressionPath::from_segments(item_path.clone());
-            match item {
-                HirLinePlanItem::Option { value, .. } => push_edge(
-                    edges,
-                    *value,
-                    HirExpressionChildRole::LinePlanOptionValue { path: path() },
-                ),
-                HirLinePlanItem::Let { value, .. } => push_edge(
-                    edges,
-                    *value,
-                    HirExpressionChildRole::LinePlanLetValue { path: path() },
-                ),
-                HirLinePlanItem::Out { value, .. } => push_edge(
-                    edges,
-                    *value,
-                    HirExpressionChildRole::LinePlanOut { path: path() },
-                ),
-                HirLinePlanItem::TimelineAssert { condition, .. } => push_edge(
-                    edges,
-                    *condition,
-                    HirExpressionChildRole::LinePlanTimelineAssert { path: path() },
-                ),
-                HirLinePlanItem::Expression(value) => push_edge(
-                    edges,
-                    *value,
-                    HirExpressionChildRole::LinePlanExpression { path: path() },
-                ),
-                HirLinePlanItem::StartGroup(nested) => {
-                    pending.push((nested, item_path, Some(GroupKind::Start)));
-                }
-                HirLinePlanItem::TogetherGroup(nested) => {
-                    pending.push((nested, item_path, Some(GroupKind::Together)));
-                }
-                HirLinePlanItem::Init(_)
-                | HirLinePlanItem::Thread(_)
-                | HirLinePlanItem::On(_)
-                | HirLinePlanItem::Statement(_)
-                | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::Error(_) => {}
-            }
-        }
-    }
     Ok(())
 }
 
@@ -1045,32 +948,33 @@ fn append_choice_option_edges(
 }
 
 fn append_choice_trigger_edge(
-    trigger: &HirTriggerPattern,
+    trigger: &HirTrigger,
     item: u32,
     edges: &mut Vec<HirExpressionChildEdge>,
 ) {
     match trigger {
-        HirTriggerPattern::Signal { target, .. } => push_edge(
+        HirTrigger::Signal { target, .. } => push_edge(
             edges,
             *target,
             HirExpressionChildRole::ChoicePlanCancelSignal { item },
         ),
-        HirTriggerPattern::Timeout(target) => push_edge(
+        HirTrigger::Timeout(target) => push_edge(
             edges,
             *target,
             HirExpressionChildRole::ChoicePlanCancelTimeout { item },
         ),
-        HirTriggerPattern::Expr(target) => push_edge(
+        HirTrigger::Expression(target) => push_edge(
             edges,
             *target,
             HirExpressionChildRole::ChoicePlanCancelExpr { item },
         ),
-        HirTriggerPattern::Input(_)
-        | HirTriggerPattern::Event(_)
-        | HirTriggerPattern::Mark(_)
-        | HirTriggerPattern::Select(_)
-        | HirTriggerPattern::Task(_)
-        | HirTriggerPattern::Scope(_) => {}
+        HirTrigger::Input(_)
+        | HirTrigger::Event(_)
+        | HirTrigger::Mark(_)
+        | HirTrigger::Select(_)
+        | HirTrigger::Task(_)
+        | HirTrigger::Scope(_)
+        | HirTrigger::Recovered(_) => {}
     }
 }
 

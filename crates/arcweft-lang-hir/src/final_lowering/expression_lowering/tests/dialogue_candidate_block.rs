@@ -1,11 +1,10 @@
 use super::*;
 use crate::dialogue_application::HirPostfixBracketCandidates;
 use crate::expr::{HirCallCallee, HirComputationBlockKind, HirNamedBlockName};
-use crate::leaf::{HirIdRefIssue, HirIdRefShape, HirIdRefValue};
 use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirStmtChildRole, HirStmtMatchArmBody,
     HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue,
-    HirUnsafeLifetimeBody,
+    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
@@ -435,18 +434,48 @@ fn candidate_statement_recovery_preserves_typed_families_and_priority() {
         panic!("recovered candidate unsafe-lifetime payload");
     };
     assert!(matches!(
-        audit.id(),
-        HirIdRefValue::Recovered(recovery)
-            if recovery.shape() == HirIdRefShape::Missing
-                && recovery.issue() == HirIdRefIssue::Missing
+        audit.identity(),
+        HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
     ));
     assert!(matches!(body, HirUnsafeLifetimeBody::Block { .. }));
     assert_eq!(
         unsafe_statement.state(),
-        &HirStmtPoisonState::Poisoned(
-            HirStmtRecoveryIssue::InvalidAuditId(HirIdRefIssue::Missing,)
-        )
+        &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(
+            HirUnsafeAuditIdentityIssue::Missing,
+        ))
     );
+}
+
+#[test]
+fn candidate_unsafe_identity_uses_the_closed_absolute_projection() {
+    let cases = [
+        ("@.audit", HirUnsafeAuditIdentityIssue::NonAbsolute),
+        ("@unsafe:.audit", HirUnsafeAuditIdentityIssue::NonAbsolute),
+        ("@proof.audit", HirUnsafeAuditIdentityIssue::WrongFamily),
+        ("@unsafe.", HirUnsafeAuditIdentityIssue::InvalidReference),
+    ];
+
+    for (ordinal, (reference, expected)) in cases.into_iter().enumerate() {
+        let parsed = parsed_source(
+            &format!("dialogue-candidate-invalid-unsafe-id-{ordinal}"),
+            &[format!(
+                "items[{{ unsafe lifetime {reference} {{ marker; }}; marker }}]"
+            )],
+        );
+        let (module, owners, _) = lower_and_publish(&parsed);
+        let (_, statement) = candidate_statement(&module, owners[0], 0);
+        let HirStmtKind::UnsafeLifetime { audit, .. } = statement.kind() else {
+            panic!("invalid candidate unsafe identity must retain its statement family");
+        };
+        assert_eq!(
+            audit.identity(),
+            &HirUnsafeAuditIdentity::Recovered(expected)
+        );
+        assert_eq!(
+            statement.state(),
+            &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAuditId(expected))
+        );
+    }
 }
 
 #[test]

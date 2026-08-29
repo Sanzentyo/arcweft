@@ -2093,6 +2093,9 @@ fn recovery_diagnostic_primary(
         HirExprSourceRole::Content => attached
             .component(ExpressionComponentRole::Content)
             .ok_or(HirInvariantFailure::InvalidSourceSpan)?,
+        HirExprSourceRole::Plan => attached
+            .component(ExpressionComponentRole::Plan)
+            .ok_or(HirInvariantFailure::InvalidSourceSpan)?,
         HirExprSourceRole::CloseBracket => attached
             .component(ExpressionComponentRole::CloseBracket)
             .ok_or(HirInvariantFailure::InvalidSourceSpan)?,

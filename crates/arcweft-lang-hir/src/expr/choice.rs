@@ -10,7 +10,7 @@ use super::{
 };
 use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId};
 use crate::leaf::{HirIdRefValue, HirName};
-use crate::stmt::{HirStmtInvariantError, HirTriggerPattern};
+use crate::stmt::{HirStmtInvariantError, HirTrigger};
 
 /// One Choice expression shared by direct Choice and `let ... = choice ...`.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -179,17 +179,17 @@ impl HirChoiceExpr {
                     }
                 },
                 HirChoiceRequiredExpressionWork::Trigger(trigger) => match trigger {
-                    HirTriggerPattern::Signal { target, .. }
-                    | HirTriggerPattern::Timeout(target) => {
+                    HirTrigger::Signal { target, .. } | HirTrigger::Timeout(target) => {
                         work.push(HirChoiceRequiredExpressionWork::retained(*target));
                     }
-                    HirTriggerPattern::Input(_)
-                    | HirTriggerPattern::Event(_)
-                    | HirTriggerPattern::Mark(_)
-                    | HirTriggerPattern::Select(_)
-                    | HirTriggerPattern::Task(_)
-                    | HirTriggerPattern::Scope(_)
-                    | HirTriggerPattern::Expr(_) => {}
+                    HirTrigger::Input(_)
+                    | HirTrigger::Event(_)
+                    | HirTrigger::Mark(_)
+                    | HirTrigger::Select(_)
+                    | HirTrigger::Task(_)
+                    | HirTrigger::Scope(_)
+                    | HirTrigger::Expression(_)
+                    | HirTrigger::Recovered(_) => {}
                 },
             }
         }
@@ -233,7 +233,7 @@ enum HirChoiceRequiredExpressionWork<'choice> {
     OptionBody(&'choice HirChoiceOptionBody),
     Plan(&'choice HirChoicePlan),
     PlanItem(&'choice HirChoicePlanItem),
-    Trigger(&'choice HirTriggerPattern),
+    Trigger(&'choice HirTrigger),
 }
 
 impl HirChoiceRequiredExpressionWork<'_> {
@@ -896,7 +896,7 @@ pub enum HirChoicePlanItem {
         body: HirThreadBody,
     },
     Cancel {
-        trigger: HirTriggerPattern,
+        trigger: HirTrigger,
         body: HirThreadBody,
     },
     OnSelect {

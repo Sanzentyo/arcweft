@@ -5,10 +5,65 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use super::*;
 use crate::final_analysis::tests::{analyze, fixture};
+use crate::registration::StandardStatementIngressTypeId;
 
 fn literal_domain_limits(max_transcript_bytes: u64) -> CheckedMatchLimits {
     CheckedMatchLimits::PRODUCTION
         .with_limit(CheckedMatchLimitKind::TranscriptBytes, max_transcript_bytes)
+}
+
+#[test]
+fn statement_ingress_domain_has_only_the_closed_opaque_residual_constructor() {
+    let fixture = fixture("fn root() -> i64 { 0i64 }\n", None);
+    let analysis = analyze(&fixture).expect("checked statement-ingress domain fixture");
+    let project = fixture.project.executable_view().expect("executable HIR");
+    let module = project
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let expression = module
+        .expressions()
+        .next()
+        .map(|(owner, _)| owner)
+        .expect("fixture expression");
+    let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+        analysis.accepted_root_catalog(),
+        &analysis,
+    );
+    let cancellation = AtomicBool::new(false);
+    let mut budget = CheckedMatchBudget::new(CheckedMatchLimits::PRODUCTION);
+    let coordinate = StableSemanticCoordinate::new(
+        coordinates
+            .expression(expression)
+            .expect("accepted fixture expression path"),
+    );
+    let mut analyzer = MatchCoverageAnalyzer::new(
+        &analysis,
+        module,
+        FinalSemanticAnalysisControl::new(&cancellation),
+        &mut budget,
+        coordinate.clone(),
+        Vec::new(),
+    );
+
+    for ingress in [
+        StandardStatementIngressTypeId::TaskEvent,
+        StandardStatementIngressTypeId::ScopeExit,
+        StandardStatementIngressTypeId::FrameBoundary,
+    ] {
+        let ty = TypeKind::StatementIngress(ingress);
+        let CoverageTypeDomain::Constructors(constructors) = analyzer
+            .domain(&ty, &coordinate)
+            .expect("closed opaque statement-ingress domain")
+        else {
+            panic!("statement ingress is inhabited");
+        };
+        assert_eq!(constructors.len(), 1);
+        assert!(matches!(
+            constructors[0].identity,
+            CoverageConstructorId::Other(owner) if owner == ty.semantic_identity_digest()
+        ));
+        assert!(constructors[0].field_types.is_empty());
+    }
 }
 
 fn exercise_duplicate_literal_domain(

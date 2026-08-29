@@ -102,10 +102,18 @@ impl AwbcEffectKind {
                 Some(RuntimeValue::Duration(duration)) => {
                     LineEffectRequest::Wait(RuntimeWaitTarget::Duration(*duration))
                 }
-                Some(value) => {
-                    LineEffectRequest::Wait(RuntimeWaitTarget::Mark(runtime_value_label(value)))
+                Some(_) => {
+                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Type,
+                        "AWBC wait target must evaluate to Duration",
+                    ));
                 }
-                None => LineEffectRequest::Wait(RuntimeWaitTarget::Expr(String::new())),
+                None => {
+                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Internal,
+                        "AWBC wait effect is missing its Duration target",
+                    ));
+                }
             },
             Self::Audio => match plan
                 .audio

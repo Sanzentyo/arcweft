@@ -6,6 +6,8 @@ use arcweft_lang_syntax::{
 };
 use core::fmt;
 
+use crate::registration::StandardStatementIngressTypeId;
+
 mod agent_fields;
 mod character_nominal;
 mod compatibility;
@@ -612,6 +614,8 @@ pub enum TypeKind {
     CueHandle,
     /// Affine handle for the active dialogue voice lease.
     VoiceHandle,
+    /// Closed standard atom used only by contextual statement ingress.
+    StatementIngress(StandardStatementIngressTypeId),
     Range(Box<TypeKind>),
     IteratorState {
         family: IteratorStateKind,
@@ -912,6 +916,11 @@ impl TypeKind {
             Self::LineContext => "LineContext",
             Self::CueHandle => "CueHandle",
             Self::VoiceHandle => "VoiceHandle",
+            Self::StatementIngress(StandardStatementIngressTypeId::TaskEvent) => "TaskEvent",
+            Self::StatementIngress(StandardStatementIngressTypeId::ScopeExit) => "ScopeExit",
+            Self::StatementIngress(StandardStatementIngressTypeId::FrameBoundary) => {
+                "FrameBoundary"
+            }
             Self::DisplayText => "DisplayText",
             Self::DebugStatePath => "DebugStatePath",
             Self::ObservationFieldPath => "ObservationFieldPath",

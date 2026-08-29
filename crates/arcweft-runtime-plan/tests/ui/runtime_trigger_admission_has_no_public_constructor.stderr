@@ -1,0 +1,10 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/runtime_trigger_admission_has_no_public_constructor.rs:4:30
+  |
+4 |     RuntimeTriggerAdmission::new(std::iter::empty().next().expect("fixture must not run"))
+  |                              ^^^ private associated function
+  |
+ ::: src/semantic_facts.rs
+  |
+  |     const fn new(kind: RuntimeTriggerAdmissionKind) -> Self {
+  |     ------------------------------------------------------- private associated function defined here

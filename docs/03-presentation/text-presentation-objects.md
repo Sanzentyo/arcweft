@@ -51,19 +51,17 @@ alice.say[
 ]
 ```
 
-The selector after `object` is the proxy id. `type`, `struct`, or `proxy`
-selects the authored proxy type. Other attributes are preserved as typed
+The selector after `object` is the proxy id. `type` selects the authored proxy
+type. Other attributes are preserved as typed
 rich-text parameters. The proxy is not a visual effect by itself. It is metadata
 that renderers, hit-test systems, depth sorting, Agent observation, and custom
 effect/shader registries may consume.
 
-Unknown dot selectors with attributes still infer to custom effects. This keeps
-`[.sparkle amp=2px]...[/]` unambiguous. Text object proxy spans use
-`[object .name ...]...[/object]` as their canonical form. Tooling may infer that
-family from `[.id type=ProxyType]...[/]`, `[.id struct=ProxyType]...[/]`,
-`[.id proxy=ProxyType]...[/]`, or `[.ProxyType]...[/]` only when `ProxyType` is
-a visible `#[text_proxy]` / `#[rich_text_proxy]` struct; the canonical output
-still writes the explicit `object` family.
+Dot selectors do not infer a proxy or custom effect from their attributes.
+Text object proxy spans use the explicit
+`[object .id type=Type ...]...[/object]` form, and custom effects use their
+registered explicit effect family. An unknown or attributed dot selector is
+not a proxy fallback and should be diagnosed rather than reclassified.
 
 ## Attribute-Defined Proxy Types
 
@@ -81,7 +79,7 @@ The declaration metadata is collected into the rich-text proxy registry during
 runtime-plan lowering. Inline text does not overload `#[...]`, because dialogue
 text already uses `#[expr]` for interpolation and source items use `#[...]` for
 attributes. Inline spans refer to the proxy type by name through
-`type=KeywordHit` or `proxy=KeywordHit`:
+`type=KeywordHit`:
 
 ```arcw
 alice.say[

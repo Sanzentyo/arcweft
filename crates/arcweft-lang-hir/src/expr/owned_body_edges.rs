@@ -10,7 +10,7 @@ use super::{
 use crate::body_edges::{HirBodyChildEdge, HirBodyProjectionError, HirBodyRoleProjection};
 use crate::dialogue_application::{HirDialogueContentApplication, HirLinePlanItem};
 use crate::identity::{PatternId, StmtId};
-use crate::stmt::{HirContextualStmtBody, HirTriggerPattern};
+use crate::stmt::{HirContextualStmtBody, HirTrigger};
 
 /// One non-expression child rooted directly in an expression-owned body.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -102,9 +102,6 @@ pub enum HirExpressionOwnedBodyRole {
     DialogueLinePlanStatement {
         path: HirNestedExpressionPath,
         role: HirLinePlanStatementRole,
-    },
-    DialogueLinePlanLet {
-        path: HirNestedExpressionPath,
     },
 }
 
@@ -687,24 +684,6 @@ fn append_line_plan_item<'plan>(
         HirLinePlanItem::On(statement) => {
             push_line_plan_statement(events, *statement, path()?, HirLinePlanStatementRole::On);
         }
-        HirLinePlanItem::Let {
-            pattern, statement, ..
-        } => {
-            let nested_path = path()?;
-            push_owned_edge(
-                events,
-                HirExpressionOwnedChild::Pattern(*pattern),
-                HirExpressionOwnedBodyRole::DialogueLinePlanLet {
-                    path: nested_path.clone(),
-                },
-            );
-            push_line_plan_statement(
-                events,
-                *statement,
-                nested_path,
-                HirLinePlanStatementRole::Statement,
-            );
-        }
         HirLinePlanItem::Statement(statement) => push_line_plan_statement(
             events,
             *statement,
@@ -730,31 +709,22 @@ fn append_line_plan_item<'plan>(
             item_path,
             Some(LinePlanGroupKind::Together),
         )),
-        HirLinePlanItem::Out { statement, .. } => {
-            push_line_plan_statement(
-                events,
-                *statement,
-                path()?,
-                HirLinePlanStatementRole::Statement,
-            );
-        }
-        HirLinePlanItem::Option { .. }
-        | HirLinePlanItem::TimelineAssert { .. }
-        | HirLinePlanItem::Expression(_) => {}
     }
     Ok(())
 }
 
-fn trigger_pattern(trigger: &HirTriggerPattern) -> Option<PatternId> {
+fn trigger_pattern(trigger: &HirTrigger) -> Option<PatternId> {
     match trigger {
-        HirTriggerPattern::Input(pattern)
-        | HirTriggerPattern::Event(pattern)
-        | HirTriggerPattern::Mark(pattern)
-        | HirTriggerPattern::Select(pattern)
-        | HirTriggerPattern::Task(pattern)
-        | HirTriggerPattern::Scope(pattern) => Some(*pattern),
-        HirTriggerPattern::Signal { value, .. } => *value,
-        HirTriggerPattern::Timeout(_) | HirTriggerPattern::Expr(_) => None,
+        HirTrigger::Input(pattern)
+        | HirTrigger::Event(pattern)
+        | HirTrigger::Select(pattern)
+        | HirTrigger::Task(pattern)
+        | HirTrigger::Scope(pattern) => Some(*pattern),
+        HirTrigger::Signal { value, .. } => *value,
+        HirTrigger::Mark(_)
+        | HirTrigger::Timeout(_)
+        | HirTrigger::Expression(_)
+        | HirTrigger::Recovered(_) => None,
     }
 }
 

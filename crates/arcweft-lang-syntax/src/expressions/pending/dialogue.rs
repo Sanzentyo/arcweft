@@ -6,9 +6,12 @@ use super::super::{
     ExpressionComponentRole, SyntaxDialogueApplicationForm, SyntaxDialogueApplicationProjection,
     SyntaxDialogueContent, SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
     SyntaxDialogueNodeSourcePart, SyntaxRichTextArgumentProjection,
-    SyntaxRichTextArgumentSourcePart, SyntaxRichTextTagProjection, SyntaxRichTextTagSourcePart,
+    SyntaxRichTextArgumentSourcePart, SyntaxRichTextTagIdentity, SyntaxRichTextTagProjection,
+    SyntaxRichTextTagSourcePart,
 };
 use super::PendingExpressionComponent;
+use crate::expressions::SyntaxDialogueMarkName;
+use crate::id_ref::SyntaxIdRefPart;
 
 pub(super) fn components_validate(
     application: &SyntaxDialogueApplicationProjection,
@@ -132,6 +135,17 @@ fn validate_rich_text_tags(
             return None;
         }
         expected = expected.checked_add(tag_parts.len())?;
+        if let SyntaxRichTextTagIdentity::Marker(selector) = projection.identity() {
+            for part in marker_source_parts(selector) {
+                if !roles.contains(&ExpressionComponentRole::RichTextTag {
+                    tag,
+                    part: SyntaxRichTextTagSourcePart::Marker(part),
+                }) {
+                    return None;
+                }
+                expected = expected.checked_add(1)?;
+            }
+        }
         expected = validate_tag_arguments(tag, projection, roles, expected)?;
     }
     Some(expected)
@@ -190,6 +204,13 @@ fn dialogue_component_is_expected(
                         })
                         || part == SyntaxRichTextTagSourcePart::EndTag
                             && projection.paired_end_node().is_some()
+                        || matches!(
+                            (part, projection.identity()),
+                            (
+                                SyntaxRichTextTagSourcePart::Marker(marker_part),
+                                super::super::SyntaxRichTextTagIdentity::Marker(selector)
+                            ) if marker_source_parts(selector).contains(&marker_part)
+                        )
                 }),
             ExpressionComponentRole::RichTextArgument {
                 tag,
@@ -202,6 +223,14 @@ fn dialogue_component_is_expected(
                 .is_some_and(|argument| rich_text_argument_source_parts(argument).contains(&part)),
             _ => false,
         }
+}
+
+fn marker_source_parts(selector: &SyntaxDialogueMarkName) -> Vec<SyntaxIdRefPart> {
+    selector
+        .components()
+        .iter()
+        .map(|component| component.part())
+        .collect()
 }
 
 fn dialogue_node_source_parts(

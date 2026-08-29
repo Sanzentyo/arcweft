@@ -34,7 +34,7 @@ use arcweft_core::plan::{
     RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode,
     RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
 };
-use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
+use arcweft_core::runtime_id::{RuntimeDialogueMarkId, RuntimeDialogueValueSlotId};
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
     RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
@@ -3192,6 +3192,49 @@ pub enum RuntimeAssertionAdmission {
     OmittedDebug,
 }
 
+/// Opaque, read-only compiler admission for one reachable `On` statement.
+///
+/// The compiler-to-runtime-plan staging boundary is the only constructor.
+/// Callers cannot manufacture or change the admitted trigger meaning after
+/// the single semantic-fact transaction has been sealed.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeTriggerAdmission {
+    kind: RuntimeTriggerAdmissionKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+enum RuntimeTriggerAdmissionKind {
+    Input,
+    Event,
+    Signal,
+    Timeout,
+    Mark(RuntimeDialogueMarkId),
+    Select,
+    Task,
+    Scope,
+    Expression,
+}
+
+impl RuntimeTriggerAdmission {
+    const fn new(kind: RuntimeTriggerAdmissionKind) -> Self {
+        Self { kind }
+    }
+
+    pub(crate) const fn dialogue_mark(self) -> Option<RuntimeDialogueMarkId> {
+        match self.kind {
+            RuntimeTriggerAdmissionKind::Mark(mark) => Some(mark),
+            RuntimeTriggerAdmissionKind::Input
+            | RuntimeTriggerAdmissionKind::Event
+            | RuntimeTriggerAdmissionKind::Signal
+            | RuntimeTriggerAdmissionKind::Timeout
+            | RuntimeTriggerAdmissionKind::Select
+            | RuntimeTriggerAdmissionKind::Task
+            | RuntimeTriggerAdmissionKind::Scope
+            | RuntimeTriggerAdmissionKind::Expression => None,
+        }
+    }
+}
+
 /// Checked capture metadata that is not derivable from lexical HIR alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeCheckedCapture {
@@ -3206,7 +3249,6 @@ pub struct RuntimeDialogueApplication {
     line_result: RuntimeNormalizedType,
     values: Box<[RuntimeDialogueValueExpression]>,
     effects: Box<[RuntimeDialogueEffectExpression]>,
-    mark_handlers: Box<[RuntimeDialogueMarkHandler]>,
 }
 
 impl RuntimeDialogueApplication {
@@ -3215,14 +3257,12 @@ impl RuntimeDialogueApplication {
         line_result: RuntimeNormalizedType,
         values: impl IntoIterator<Item = RuntimeDialogueValueExpression>,
         effects: impl IntoIterator<Item = RuntimeDialogueEffectExpression>,
-        mark_handlers: impl IntoIterator<Item = RuntimeDialogueMarkHandler>,
     ) -> Self {
         Self {
             content,
             line_result,
             values: values.into_iter().collect(),
             effects: effects.into_iter().collect(),
-            mark_handlers: mark_handlers.into_iter().collect(),
         }
     }
 
@@ -3240,33 +3280,6 @@ impl RuntimeDialogueApplication {
 
     pub const fn effects(&self) -> &[RuntimeDialogueEffectExpression] {
         &self.effects
-    }
-
-    pub const fn mark_handlers(&self) -> &[RuntimeDialogueMarkHandler] {
-        &self.mark_handlers
-    }
-}
-
-/// Exact final-HIR statement to source-ordered checked content-mark mapping.
-/// Runtime lowering projects the ordinal through the builder-issued content
-/// handle and never joins on a label.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RuntimeDialogueMarkHandler {
-    statement: StmtId,
-    ordinal: u32,
-}
-
-impl RuntimeDialogueMarkHandler {
-    pub const fn new(statement: StmtId, ordinal: u32) -> Self {
-        Self { statement, ordinal }
-    }
-
-    pub const fn statement(self) -> StmtId {
-        self.statement
-    }
-
-    pub const fn ordinal(self) -> u32 {
-        self.ordinal
     }
 }
 
@@ -3515,6 +3528,7 @@ pub struct RuntimePlanSemanticFactInput {
     trait_methods: Vec<RuntimeTraitMethodFact>,
     iterations: Vec<(StmtId, RuntimeIteratorFact)>,
     assertions: Vec<(StmtId, RuntimeAssertionAdmission)>,
+    triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: Vec<(StmtId, RuntimeAssignmentFact)>,
     evaluated_effects: Vec<(StmtId, RuntimeEvaluatedEffectFact)>,
     choices: Vec<(ExprId, RuntimeChoiceFact)>,
@@ -3524,6 +3538,8 @@ pub struct RuntimePlanSemanticFactInput {
     pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
     pure_programs: Vec<RuntimePureProgramFact>,
+    dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+    character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
 }
 
 impl RuntimePlanSemanticFactInput {
@@ -3548,6 +3564,7 @@ impl RuntimePlanSemanticFactInput {
             trait_methods: Vec::new(),
             iterations: Vec::new(),
             assertions: Vec::new(),
+            triggers: BTreeMap::new(),
             assignments: Vec::new(),
             evaluated_effects: Vec::new(),
             choices: Vec::new(),
@@ -3557,6 +3574,8 @@ impl RuntimePlanSemanticFactInput {
             pipes: Vec::new(),
             captures: Vec::new(),
             pure_programs: Vec::new(),
+            dialogue_applications: BTreeMap::new(),
+            character_presentation_catalog: None,
         }
     }
 
@@ -3648,6 +3667,67 @@ impl RuntimePlanSemanticFactInput {
         self.assertions.push((owner, admission));
     }
 
+    pub fn push_input_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Input)
+    }
+
+    pub fn push_event_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Event)
+    }
+
+    pub fn push_signal_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Signal)
+    }
+
+    pub fn push_timeout_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Timeout)
+    }
+
+    pub fn push_mark_trigger(
+        &mut self,
+        owner: StmtId,
+        mark: RuntimeDialogueMarkId,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Mark(mark))
+    }
+
+    pub fn push_select_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Select)
+    }
+
+    pub fn push_task_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Task)
+    }
+
+    pub fn push_scope_trigger(&mut self, owner: StmtId) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Scope)
+    }
+
+    pub fn push_expression_trigger(
+        &mut self,
+        owner: StmtId,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Expression)
+    }
+
+    fn insert_trigger(
+        &mut self,
+        owner: StmtId,
+        kind: RuntimeTriggerAdmissionKind,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        match self.triggers.entry(owner) {
+            std::collections::btree_map::Entry::Vacant(entry) => {
+                entry.insert(RuntimeTriggerAdmission::new(kind));
+                Ok(())
+            }
+            std::collections::btree_map::Entry::Occupied(_) => {
+                Err(RuntimeSemanticFactsError::DuplicateFact {
+                    family: RuntimeSemanticFactFamily::Trigger,
+                })
+            }
+        }
+    }
+
     /// Stages the sole checked writable place for one assignment statement.
     pub fn push_assignment(&mut self, owner: StmtId, assignment: RuntimeAssignmentFact) {
         self.assignments.push((owner, assignment));
@@ -3684,6 +3764,26 @@ impl RuntimePlanSemanticFactInput {
     pub fn push_pure_program(&mut self, program: RuntimePureProgramFact) {
         self.pure_programs.push(program);
     }
+
+    /// Stages the complete dialogue projection for the same single
+    /// `RuntimePlanSemanticFacts::try_new` transaction as all other facts.
+    pub fn attach_dialogue_projection(
+        &mut self,
+        catalog: Option<Arc<CharacterPresentationCatalogData>>,
+        applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+    ) -> Result<(), RuntimeSemanticFactsError> {
+        if !self.dialogue_applications.is_empty() || self.character_presentation_catalog.is_some() {
+            return Err(RuntimeSemanticFactsError::DuplicateFact {
+                family: RuntimeSemanticFactFamily::DialogueApplication,
+            });
+        }
+        if applications.is_empty() != catalog.is_none() {
+            return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
+        }
+        self.dialogue_applications = applications;
+        self.character_presentation_catalog = catalog;
+        Ok(())
+    }
 }
 
 impl Default for RuntimePlanSemanticFactInput {
@@ -3719,6 +3819,7 @@ pub struct RuntimePlanSemanticFacts {
     trait_methods: BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodFact>,
     iterations: BTreeMap<StmtId, RuntimeIteratorFact>,
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
+    triggers: BTreeMap<StmtId, RuntimeTriggerAdmission>,
     assignments: BTreeMap<StmtId, RuntimeAssignmentFact>,
     evaluated_effects: BTreeMap<StmtId, RuntimeEvaluatedEffectFact>,
     choices: BTreeMap<ExprId, RuntimeChoiceFact>,
@@ -4714,6 +4815,40 @@ impl RuntimePlanSemanticFacts {
             )?;
         }
 
+        let triggers = input.triggers;
+        let expected_triggers = modules
+            .values()
+            .flat_map(|module| module.statements().map(|(statement, _)| statement))
+            .filter(|statement| runtime_owners.contains_statement(*statement))
+            .filter(|statement| {
+                matches!(
+                    resolve_stmt(&modules, *statement),
+                    Ok(HirStmtKind::On { .. })
+                )
+            })
+            .collect::<BTreeSet<_>>();
+        for statement in triggers.keys() {
+            // HIR participates only in the reachable `On` owner-set check.
+            // The checked trigger variant and payload were selected by the
+            // compiler's exhaustive projection and are never reclassified
+            // from `HirTrigger` here.
+            require_stmt_family(
+                &modules,
+                runtime_owners,
+                *statement,
+                RuntimeSemanticFactFamily::Trigger,
+                |kind| matches!(kind, HirStmtKind::On { .. }),
+            )?;
+        }
+        if let Some(statement) = expected_triggers
+            .iter()
+            .find(|statement| !triggers.contains_key(statement))
+        {
+            return Err(RuntimeSemanticFactsError::MissingTriggerFact {
+                statement: *statement,
+            });
+        }
+
         let evaluated_effects = collect_unique(
             input.evaluated_effects,
             RuntimeSemanticFactFamily::EvaluatedEffect,
@@ -4803,8 +4938,13 @@ impl RuntimePlanSemanticFacts {
             &captures,
             input.pure_programs,
         )?;
+        let dialogue_applications = input.dialogue_applications;
+        let character_presentation_catalog = input.character_presentation_catalog;
+        if dialogue_applications.is_empty() != character_presentation_catalog.is_none() {
+            return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
+        }
 
-        Ok(Self {
+        let facts = Self {
             reachability: runtime_owners.runtime.identity().clone(),
             view_value_reachability: runtime_owners
                 .view_values
@@ -4831,6 +4971,7 @@ impl RuntimePlanSemanticFacts {
             trait_methods,
             iterations,
             assertions,
+            triggers,
             assignments,
             evaluated_effects,
             choices,
@@ -4840,59 +4981,34 @@ impl RuntimePlanSemanticFacts {
             pipes,
             captures,
             pure_programs,
-            dialogue_applications: BTreeMap::new(),
-            character_presentation_catalog: None,
-        })
-    }
-
-    /// Binds the complete dialogue projection to this exact accepted HIR generation.
-    pub fn with_dialogue_projection(
-        mut self,
-        project: HirExecutableProjectView<'_>,
-        runtime_owners: &HirRuntimeSemanticReachability<'_>,
-        catalog: Option<Arc<CharacterPresentationCatalogData>>,
-        applications: impl IntoIterator<Item = (ExprId, RuntimeDialogueApplication)>,
-    ) -> Result<Self, RuntimeSemanticFactsError> {
-        self.validate_generation(project)?;
-        if self.reachability != *runtime_owners.identity() {
-            return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
-        }
-        let applications =
-            collect_unique(applications, RuntimeSemanticFactFamily::DialogueApplication)?;
-        if applications.is_empty() != catalog.is_none() {
-            return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
-        }
-        let modules = project
-            .modules()
-            .map(|(_, module)| (module.module_id(), module.as_ref()))
-            .collect::<BTreeMap<_, _>>();
-        if let Some(catalog_data) = catalog.as_ref() {
-            for (owner, application) in &applications {
-                self.validate_dialogue_application(
+            dialogue_applications,
+            character_presentation_catalog,
+        };
+        if let Some(catalog) = facts.character_presentation_catalog.as_ref() {
+            let dialogue_owners = RuntimeSemanticOwnerSet::runtime_only(runtime_owners.runtime);
+            for (owner, application) in &facts.dialogue_applications {
+                facts.validate_dialogue_application(
                     project,
                     &modules,
-                    runtime_owners,
-                    catalog_data,
+                    dialogue_owners,
+                    catalog,
                     *owner,
                     application,
                 )?;
             }
         }
-        self.dialogue_applications = applications;
-        self.character_presentation_catalog = catalog;
-        Ok(self)
+        Ok(facts)
     }
 
     fn validate_dialogue_application(
         &self,
         project: HirExecutableProjectView<'_>,
         modules: &BTreeMap<HirModuleId, &HirModule>,
-        runtime_owners: &HirRuntimeSemanticReachability<'_>,
+        runtime_owners: RuntimeSemanticOwnerSet<'_>,
         catalog: &CharacterPresentationCatalogData,
         owner: ExprId,
         application: &RuntimeDialogueApplication,
     ) -> Result<(), RuntimeSemanticFactsError> {
-        let runtime_owners = RuntimeSemanticOwnerSet::runtime_only(runtime_owners);
         require_expr_family(
             modules,
             runtime_owners,
@@ -5269,6 +5385,10 @@ impl RuntimePlanSemanticFacts {
         self.assertions.get(&statement).copied()
     }
 
+    pub(crate) fn trigger(&self, statement: StmtId) -> Option<RuntimeTriggerAdmission> {
+        self.triggers.get(&statement).copied()
+    }
+
     /// Returns the sole compiler-admitted writable place for an assignment.
     pub fn assignment(&self, statement: StmtId) -> Option<&RuntimeAssignmentFact> {
         self.assignments.get(&statement)
@@ -5484,6 +5604,8 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("accepted runtime semantic facts omit an assignment fact for {statement:?}")]
     MissingAssignmentFact { statement: StmtId },
+    #[error("accepted runtime semantic facts omit a Trigger fact for {statement:?}")]
+    MissingTriggerFact { statement: StmtId },
     #[error("assignment fact for {statement:?} does not match its checked direct record field")]
     InvalidAssignmentFact { statement: StmtId },
     #[error("evaluated-effect fact for {statement:?} does not match its selected call")]
@@ -5653,6 +5775,7 @@ pub enum RuntimeSemanticFactFamily {
     TraitMethod,
     Iteration,
     Assertion,
+    Trigger,
     Assignment,
     EvaluatedEffect,
     Choice,

@@ -38,7 +38,7 @@ use crate::source_index::{
     HirExprSourceRole, HirInsertionPoint, HirSourceSite, expression_component_role,
 };
 
-use super::{paired_start_tags, postfix_failure, project_node, project_tag};
+use super::{paired_start_tags, postfix_failure, project_mark_inputs, project_node, project_tag};
 use crate::final_lowering::StagedHirModuleTransaction;
 use crate::final_lowering::id_ref_projection::id_ref;
 use crate::final_lowering::literal_projection::literal;
@@ -214,6 +214,7 @@ impl StagedHirModuleTransaction<'_> {
                     HirDialogueContentId::new(root),
                     Box::new([]),
                     Box::new([]),
+                    Box::new([]),
                 )
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }
@@ -311,6 +312,7 @@ impl StagedHirModuleTransaction<'_> {
         }
 
         let content = HirDialogueContentId::new(owner);
+        let mark_inputs = project_mark_inputs(content, source)?;
         let mut tags = Vec::with_capacity(source.tags().len());
         for (ordinal, source_tag) in source.tags().iter().enumerate() {
             let id = HirRichTextTagId::try_new(content, ordinal)
@@ -340,8 +342,13 @@ impl StagedHirModuleTransaction<'_> {
                 )?,
             ));
         }
-        HirDialogueContent::try_new(content, nodes.into_boxed_slice(), tags.into_boxed_slice())
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
+        HirDialogueContent::try_new(
+            content,
+            nodes.into_boxed_slice(),
+            tags.into_boxed_slice(),
+            mark_inputs,
+        )
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit.into())
     }
 
     fn lower_nested_ambiguous_postfix_candidates(

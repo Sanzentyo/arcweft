@@ -6,6 +6,13 @@
 
 use std::collections::BTreeSet;
 
+use crate::assertion_identity::RuntimeAssertionSite;
+use crate::errors::RuntimePlanLowerError;
+use crate::final_pattern::FinalPatternLowerer;
+use crate::semantic_facts::{
+    RuntimeDialogueEffectTrigger, RuntimeLineCallable, RuntimeNormalizedType, RuntimeResolvedCall,
+    RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeTypeShape,
+};
 use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy, ParallelPolicy, RuntimeLineHandleScope,
     RuntimeLineHandleSiteKind,
@@ -21,16 +28,9 @@ use arcweft_core::runtime_id::RuntimeLineHandleSiteId;
 use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
 use arcweft_lang_hir::expr::HirExprKind;
-use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
-use arcweft_lang_hir::stmt::{HirStmtKind, HirTriggerPattern};
-use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
-
-use crate::assertion_identity::RuntimeAssertionSite;
-use crate::errors::RuntimePlanLowerError;
-use crate::final_pattern::FinalPatternLowerer;
-use crate::semantic_facts::{
-    RuntimeDialogueEffectTrigger, RuntimeLineCallable, RuntimeNormalizedType, RuntimeResolvedCall,
-    RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeTypeShape,
+use arcweft_lang_hir::identity::{ExprId, LocalId, PatternId, StmtId};
+use arcweft_lang_hir::stmt::{
+    HirStmtBindingPlanKind, HirStmtEvaluationPlan, HirStmtKind, HirStmtValuePlanKind,
 };
 
 use super::{FinalFlowLowerer, FinalLoweringContext, RuntimeAssertionOwner, module_by_id};
@@ -125,6 +125,13 @@ struct LinePlanLowerer<'a, 'project, 'data> {
     cleanup_failed: Vec<FlowDraft>,
     next_child: usize,
     committed_result: bool,
+}
+
+enum LinePlanStatementProjection {
+    Let { pattern: PatternId, input: ExprId },
+    Out { value: ExprId },
+    Expression { expression: ExprId },
+    Other,
 }
 
 pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
@@ -252,59 +259,6 @@ impl LinePlanLowerer<'_, '_, '_> {
     fn lower_items(&mut self, items: &[HirLinePlanItem]) -> Result<(), RuntimePlanLowerError> {
         for item in items {
             match item {
-                HirLinePlanItem::Let { pattern, value, .. } => {
-                    let binding = FinalPatternLowerer::new(
-                        self.module,
-                        self.context.facts,
-                        self.context.locals,
-                    )
-                    .lower(*pattern)
-                    .map_err(RuntimePlanLowerError::new)?;
-                    if self.line_call(*value)?.is_some() {
-                        let operation = self.lower_line_call(*value, Some(binding))?;
-                        self.activation_ops.push(operation);
-                    } else {
-                        self.activation_ops
-                            .push(FlowDraft::Flow(RuntimeFlowOpSeed::Let {
-                                pattern: binding,
-                                expr: self
-                                    .context
-                                    .expr_lowerer(self.module)
-                                    .lower(*value)
-                                    .map_err(RuntimePlanLowerError::new)?,
-                            }));
-                    }
-                }
-                HirLinePlanItem::Out { value, .. } => {
-                    if self.committed_result {
-                        return Err(RuntimePlanLowerError::new(format!(
-                            "dialogue application {:?} commits its line result more than once",
-                            self.owner
-                        )));
-                    }
-                    self.activation_ops.push(FlowDraft::Flow(
-                        RuntimeFlowOpSeed::CommitDialogueResult {
-                            value: self
-                                .context
-                                .expr_lowerer(self.module)
-                                .lower(*value)
-                                .map_err(RuntimePlanLowerError::new)?,
-                        },
-                    ));
-                    self.committed_result = true;
-                }
-                HirLinePlanItem::Expression(expression) => {
-                    if self.line_call(*expression)?.is_some() {
-                        let operation = self.lower_line_call(*expression, None)?;
-                        self.activation_ops.push(operation);
-                    } else if let Some(child) = self.lower_thread_expression(*expression)? {
-                        self.root_children.push(child);
-                    } else {
-                        return Err(RuntimePlanLowerError::new(format!(
-                            "line-plan expression {expression:?} has no typed operation disposition"
-                        )));
-                    }
-                }
                 HirLinePlanItem::Statement(statement) => {
                     self.lower_top_level_statement(*statement)?;
                 }
@@ -322,9 +276,7 @@ impl LinePlanLowerer<'_, '_, '_> {
                 HirLinePlanItem::Init(_)
                 | HirLinePlanItem::Thread(_)
                 | HirLinePlanItem::On(_)
-                | HirLinePlanItem::Option { .. }
                 | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimelineAssert { .. }
                 | HirLinePlanItem::Error(_) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "line-plan item {item:?} has no complete typed runtime projection"
@@ -340,29 +292,46 @@ impl LinePlanLowerer<'_, '_, '_> {
         statement: StmtId,
     ) -> Result<(), RuntimePlanLowerError> {
         let kind = self.resolve_statement(statement)?.kind().clone();
-        match kind {
-            HirStmtKind::On { trigger, body, .. } => {
-                let trigger = self.mark_trigger(statement, &trigger)?;
-                let actions = self.lower_statement_actions(&body)?;
-                let id = self.allocate_child()?;
-                self.root_children.push(NodeDraft::Child {
-                    id,
-                    trigger: TriggerDraft::Mark(trigger),
-                    join_policy: ChildJoinPolicy::Join,
-                    cancel_policy: ChildCancelPolicy::CancelAndJoin,
-                    scope: Box::new(NodeDraft::Action(actions)),
-                });
+        match self.statement_projection(statement)? {
+            LinePlanStatementProjection::Let { pattern, input } => {
+                let binding =
+                    FinalPatternLowerer::new(self.module, self.context.facts, self.context.locals)
+                        .lower(pattern)
+                        .map_err(RuntimePlanLowerError::new)?;
+                if self.line_call(input)?.is_some() {
+                    let operation = self.lower_line_call(input, Some(binding))?;
+                    self.activation_ops.push(operation);
+                } else {
+                    self.activation_ops
+                        .push(FlowDraft::Flow(RuntimeFlowOpSeed::Let {
+                            pattern: binding,
+                            expr: self
+                                .context
+                                .expr_lowerer(self.module)
+                                .lower(input)
+                                .map_err(RuntimePlanLowerError::new)?,
+                        }));
+                }
             }
-            HirStmtKind::DeferBlock { outcome, body, .. } => {
-                let actions = self.lower_statement_actions(&body)?;
-                self.register_cleanup(outcome, actions);
+            LinePlanStatementProjection::Out { value } => {
+                if self.committed_result {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "dialogue application {:?} commits its line result more than once",
+                        self.owner
+                    )));
+                }
+                self.activation_ops.push(FlowDraft::Flow(
+                    RuntimeFlowOpSeed::CommitDialogueResult {
+                        value: self
+                            .context
+                            .expr_lowerer(self.module)
+                            .lower(value)
+                            .map_err(RuntimePlanLowerError::new)?,
+                    },
+                ));
+                self.committed_result = true;
             }
-            HirStmtKind::Defer { .. } => {
-                return Err(RuntimePlanLowerError::new(format!(
-                    "line-plan defer expression {statement:?} has no expression-owned checked effect disposition"
-                )));
-            }
-            HirStmtKind::Expression { expression } => {
+            LinePlanStatementProjection::Expression { expression } => {
                 if let Some(child) = self.lower_thread_expression(expression)? {
                     self.root_children.push(child);
                 } else {
@@ -370,10 +339,37 @@ impl LinePlanLowerer<'_, '_, '_> {
                     self.activation_ops.extend(actions);
                 }
             }
-            _ => {
-                let actions = self.lower_statement_action(statement, &kind)?;
-                self.activation_ops.extend(actions);
-            }
+            LinePlanStatementProjection::Other => match kind {
+                HirStmtKind::On { body, .. } => {
+                    let trigger = self.admitted_dialogue_mark(statement)?;
+                    let actions = self.lower_statement_actions(&body)?;
+                    let id = self.allocate_child()?;
+                    self.root_children.push(NodeDraft::Child {
+                        id,
+                        trigger: TriggerDraft::Mark(trigger),
+                        join_policy: ChildJoinPolicy::Join,
+                        cancel_policy: ChildCancelPolicy::CancelAndJoin,
+                        scope: Box::new(NodeDraft::Action(actions)),
+                    });
+                }
+                HirStmtKind::Defer { .. } => {
+                    return Err(RuntimePlanLowerError::new(format!(
+                        "line-plan defer expression {statement:?} has no expression-owned checked effect disposition"
+                    )));
+                }
+                HirStmtKind::Expression { expression } => {
+                    if let Some(child) = self.lower_thread_expression(expression)? {
+                        self.root_children.push(child);
+                    } else {
+                        let actions = self.lower_statement_action(statement, &kind)?;
+                        self.activation_ops.extend(actions);
+                    }
+                }
+                _ => {
+                    let actions = self.lower_statement_action(statement, &kind)?;
+                    self.activation_ops.extend(actions);
+                }
+            },
         }
         Ok(())
     }
@@ -385,74 +381,8 @@ impl LinePlanLowerer<'_, '_, '_> {
         let mut nodes = Vec::new();
         for item in items {
             match item {
-                HirLinePlanItem::Let { pattern, value, .. } => {
-                    let binding = FinalPatternLowerer::new(
-                        self.module,
-                        self.context.facts,
-                        self.context.locals,
-                    )
-                    .lower(*pattern)
-                    .map_err(RuntimePlanLowerError::new)?;
-                    let action = if self.line_call(*value)?.is_some() {
-                        self.lower_line_call(*value, Some(binding))?
-                    } else {
-                        FlowDraft::Flow(RuntimeFlowOpSeed::Let {
-                            pattern: binding,
-                            expr: self
-                                .context
-                                .expr_lowerer(self.module)
-                                .lower(*value)
-                                .map_err(RuntimePlanLowerError::new)?,
-                        })
-                    };
-                    nodes.push(NodeDraft::Action(vec![action]));
-                }
-                HirLinePlanItem::Expression(expression) => {
-                    if self.line_call(*expression)?.is_some() {
-                        nodes.push(NodeDraft::Action(vec![
-                            self.lower_line_call(*expression, None)?,
-                        ]));
-                    } else if let Some(child) = self.lower_thread_expression(*expression)? {
-                        nodes.push(child);
-                    } else {
-                        return Err(RuntimePlanLowerError::new(format!(
-                            "line-plan grouped expression {expression:?} has no typed operation disposition"
-                        )));
-                    }
-                }
                 HirLinePlanItem::Statement(statement) => {
-                    let kind = self.resolve_statement(*statement)?.kind().clone();
-                    match kind {
-                        HirStmtKind::On { trigger, body, .. } => {
-                            let trigger = self.mark_trigger(*statement, &trigger)?;
-                            let actions = self.lower_statement_actions(&body)?;
-                            let id = self.allocate_child()?;
-                            nodes.push(NodeDraft::Child {
-                                id,
-                                trigger: TriggerDraft::Mark(trigger),
-                                join_policy: ChildJoinPolicy::Join,
-                                cancel_policy: ChildCancelPolicy::CancelAndJoin,
-                                scope: Box::new(NodeDraft::Action(actions)),
-                            });
-                        }
-                        HirStmtKind::Expression { expression } => {
-                            if let Some(child) = self.lower_thread_expression(expression)? {
-                                nodes.push(child);
-                            } else {
-                                nodes.push(NodeDraft::Action(
-                                    self.lower_statement_action(*statement, &kind)?,
-                                ));
-                            }
-                        }
-                        HirStmtKind::DeferBlock { .. } | HirStmtKind::Defer { .. } => {
-                            return Err(RuntimePlanLowerError::new(format!(
-                                "nested line-plan cleanup {statement:?} requires scope-owned cleanup topology"
-                            )));
-                        }
-                        _ => nodes.push(NodeDraft::Action(
-                            self.lower_statement_action(*statement, &kind)?,
-                        )),
-                    }
+                    nodes.push(self.lower_node_statement(*statement)?);
                 }
                 HirLinePlanItem::StartGroup(children) => {
                     nodes.push(NodeDraft::Start(self.lower_node_items(children)?));
@@ -463,11 +393,6 @@ impl LinePlanLowerer<'_, '_, '_> {
                         children: self.lower_node_items(children)?,
                     });
                 }
-                HirLinePlanItem::Out { .. } => {
-                    return Err(RuntimePlanLowerError::new(
-                        "a child line-task scope cannot commit the dialogue result",
-                    ));
-                }
                 HirLinePlanItem::Error(statement) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "recovered line-plan statement {statement:?} cannot enter runtime lowering"
@@ -476,9 +401,7 @@ impl LinePlanLowerer<'_, '_, '_> {
                 HirLinePlanItem::Init(_)
                 | HirLinePlanItem::Thread(_)
                 | HirLinePlanItem::On(_)
-                | HirLinePlanItem::Option { .. }
-                | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimelineAssert { .. } => {
+                | HirLinePlanItem::CancelRule(_) => {
                     return Err(RuntimePlanLowerError::new(format!(
                         "shadow line-plan item {item:?} reached final runtime lowering"
                     )));
@@ -486,6 +409,109 @@ impl LinePlanLowerer<'_, '_, '_> {
             }
         }
         Ok(nodes)
+    }
+
+    fn lower_node_statement(
+        &mut self,
+        statement: StmtId,
+    ) -> Result<NodeDraft, RuntimePlanLowerError> {
+        let kind = self.resolve_statement(statement)?.kind().clone();
+        match self.statement_projection(statement)? {
+            LinePlanStatementProjection::Let { pattern, input } => {
+                let binding =
+                    FinalPatternLowerer::new(self.module, self.context.facts, self.context.locals)
+                        .lower(pattern)
+                        .map_err(RuntimePlanLowerError::new)?;
+                let action = if self.line_call(input)?.is_some() {
+                    self.lower_line_call(input, Some(binding))?
+                } else {
+                    FlowDraft::Flow(RuntimeFlowOpSeed::Let {
+                        pattern: binding,
+                        expr: self
+                            .context
+                            .expr_lowerer(self.module)
+                            .lower(input)
+                            .map_err(RuntimePlanLowerError::new)?,
+                    })
+                };
+                Ok(NodeDraft::Action(vec![action]))
+            }
+            LinePlanStatementProjection::Out { .. } => Err(RuntimePlanLowerError::new(
+                "a child line-task scope cannot commit the dialogue result",
+            )),
+            LinePlanStatementProjection::Expression { expression } => {
+                if let Some(child) = self.lower_thread_expression(expression)? {
+                    Ok(child)
+                } else {
+                    Ok(NodeDraft::Action(
+                        self.lower_statement_action(statement, &kind)?,
+                    ))
+                }
+            }
+            LinePlanStatementProjection::Other => match kind {
+                HirStmtKind::On { body, .. } => {
+                    let trigger = self.admitted_dialogue_mark(statement)?;
+                    let actions = self.lower_statement_actions(&body)?;
+                    let id = self.allocate_child()?;
+                    Ok(NodeDraft::Child {
+                        id,
+                        trigger: TriggerDraft::Mark(trigger),
+                        join_policy: ChildJoinPolicy::Join,
+                        cancel_policy: ChildCancelPolicy::CancelAndJoin,
+                        scope: Box::new(NodeDraft::Action(actions)),
+                    })
+                }
+                HirStmtKind::Defer { .. } => Err(RuntimePlanLowerError::new(format!(
+                    "nested line-plan cleanup {statement:?} requires scope-owned cleanup topology"
+                ))),
+                _ => Ok(NodeDraft::Action(
+                    self.lower_statement_action(statement, &kind)?,
+                )),
+            },
+        }
+    }
+
+    fn statement_projection(
+        &self,
+        statement: StmtId,
+    ) -> Result<LinePlanStatementProjection, RuntimePlanLowerError> {
+        let kind = self.resolve_statement(statement)?.kind().evaluation_plan();
+        Ok(match kind {
+            HirStmtEvaluationPlan::Binding {
+                kind: HirStmtBindingPlanKind::Let,
+                pattern,
+                input,
+                ..
+            } => LinePlanStatementProjection::Let { pattern, input },
+            HirStmtEvaluationPlan::Value {
+                kind: HirStmtValuePlanKind::Out,
+                expression: Some(value),
+                ..
+            } => LinePlanStatementProjection::Out { value },
+            HirStmtEvaluationPlan::Value {
+                kind: HirStmtValuePlanKind::Expression,
+                expression: Some(expression),
+                ..
+            } => LinePlanStatementProjection::Expression { expression },
+            HirStmtEvaluationPlan::Assertion { .. }
+            | HirStmtEvaluationPlan::OrderedPair { .. }
+            | HirStmtEvaluationPlan::Value { .. }
+            | HirStmtEvaluationPlan::EventBody { .. }
+            | HirStmtEvaluationPlan::UnsafeLifetime { .. }
+            | HirStmtEvaluationPlan::LetElse { .. }
+            | HirStmtEvaluationPlan::If { .. }
+            | HirStmtEvaluationPlan::IfLet { .. }
+            | HirStmtEvaluationPlan::Match { .. }
+            | HirStmtEvaluationPlan::While { .. }
+            | HirStmtEvaluationPlan::WhileLet { .. }
+            | HirStmtEvaluationPlan::For { .. }
+            | HirStmtEvaluationPlan::Select { .. }
+            | HirStmtEvaluationPlan::SourceLocale { .. }
+            | HirStmtEvaluationPlan::Scope { .. }
+            | HirStmtEvaluationPlan::Include { .. }
+            | HirStmtEvaluationPlan::Continue { .. }
+            | HirStmtEvaluationPlan::Recovered => LinePlanStatementProjection::Other,
+        })
     }
 
     fn resolve_statement(
@@ -531,12 +557,11 @@ impl LinePlanLowerer<'_, '_, '_> {
             HirStmtKind::Expression { expression } if self.line_call(*expression)?.is_some() => {
                 Ok(vec![self.lower_line_call(*expression, None)?])
             }
-            HirStmtKind::On { .. }
-            | HirStmtKind::Defer { .. }
-            | HirStmtKind::DeferBlock { .. }
-            | HirStmtKind::Out { .. } => Err(RuntimePlanLowerError::new(format!(
-                "line-plan statement {statement:?} requires a scope-owned disposition"
-            ))),
+            HirStmtKind::On { .. } | HirStmtKind::Defer { .. } | HirStmtKind::Out { .. } => {
+                Err(RuntimePlanLowerError::new(format!(
+                    "line-plan statement {statement:?} requires a scope-owned disposition"
+                )))
+            }
             _ => self
                 .flow
                 .lower_statement(statement, kind)
@@ -586,56 +611,23 @@ impl LinePlanLowerer<'_, '_, '_> {
         }))
     }
 
-    fn mark_trigger(
+    fn admitted_dialogue_mark(
         &self,
         statement: StmtId,
-        trigger: &HirTriggerPattern,
     ) -> Result<arcweft_core::plan::RuntimeDialogueMarkSeedId, RuntimePlanLowerError> {
-        let HirTriggerPattern::Mark(_) = trigger else {
-            return Err(RuntimePlanLowerError::new(
-                "line-task event handlers currently require one checked dialogue mark trigger",
-            ));
-        };
-        let application = self
+        let Some(mark) = self
             .context
             .facts
-            .dialogue_application(self.owner)
-            .ok_or_else(|| {
-                RuntimePlanLowerError::new("dialogue application fact disappeared during lowering")
-            })?;
-        let mut matches = application
-            .mark_handlers()
-            .iter()
-            .filter(|handler| handler.statement() == statement);
-        let handler = matches.next().ok_or_else(|| {
-            RuntimePlanLowerError::new(format!(
-                "line-plan mark handler {statement:?} has no checked content coordinate"
-            ))
-        })?;
-        if matches.next().is_some() {
+            .trigger(statement)
+            .and_then(crate::semantic_facts::RuntimeTriggerAdmission::dialogue_mark)
+        else {
             return Err(RuntimePlanLowerError::new(format!(
-                "line-plan mark handler {statement:?} repeats its checked content coordinate"
+                "line-task event handler {statement:?} is not admitted by a checked dialogue mark Trigger"
             )));
-        }
-        let mark_index = usize::try_from(handler.ordinal()).map_err(|_| {
-            RuntimePlanLowerError::new("checked dialogue mark ordinal does not fit usize")
-        })?;
-        self.content_plan.mark(mark_index).ok_or_else(|| {
+        };
+        self.content_plan.mark(mark.index()).ok_or_else(|| {
             RuntimePlanLowerError::new("dialogue mark count exceeds the runtime identity domain")
         })
-    }
-
-    fn register_cleanup(&mut self, outcome: DeferOutcome, actions: Vec<FlowDraft>) {
-        match outcome {
-            DeferOutcome::Always => {
-                self.cleanup_completed.extend(actions.iter().cloned());
-                self.cleanup_cancelled.extend(actions.iter().cloned());
-                self.cleanup_failed.extend(actions);
-            }
-            DeferOutcome::Completed => self.cleanup_completed.extend(actions),
-            DeferOutcome::Cancelled => self.cleanup_cancelled.extend(actions),
-            DeferOutcome::Failed => self.cleanup_failed.extend(actions),
-        }
     }
 
     fn allocate_child(&mut self) -> Result<ChildDraftId, RuntimePlanLowerError> {

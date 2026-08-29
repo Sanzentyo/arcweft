@@ -13,13 +13,14 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken, CheckedDirectStyleSpan,
-    CheckedFieldOrigin, CheckedLength, CheckedRichTextAction, CheckedRichTextOwner,
-    CheckedRichTextProperty, CheckedRichTextReport, CheckedRichTextTag, CheckedRichTextValue,
-    LengthUnit, Milli, RichTextAttributeChecker, RichTextDiagnosticCode,
+    CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDirectStyleSpan, CheckedFieldOrigin,
+    CheckedLength, CheckedRichTextOwner, CheckedRichTextProperty, CheckedRichTextValue, LengthUnit,
+    Milli, PreparedCheckedDialogueToken, PreparedCheckedRichTextAction,
+    PreparedCheckedRichTextCheck, PreparedCheckedRichTextReport, PreparedCheckedRichTextTag,
+    RichTextAttributeChecker, RichTextDiagnosticCode,
 };
 
-fn check(content: &str) -> super::CheckedRichTextReport {
+fn check(content: &str) -> PreparedCheckedRichTextCheck {
     let package = CallablePackageId::try_new("checked-rich-text-tests").expect("package ID");
     let name = SourceName::path("checked-rich-text.arcw");
     let document = Arc::new(
@@ -86,13 +87,13 @@ fn check(content: &str) -> super::CheckedRichTextReport {
         .expect("final-HIR source manifest is complete")
 }
 
-fn open_tags(report: &CheckedRichTextReport) -> Vec<&CheckedRichTextTag> {
+fn open_tags(report: &PreparedCheckedRichTextReport) -> Vec<&PreparedCheckedRichTextTag> {
     report
         .content()
         .tokens()
         .iter()
         .filter_map(|token| match token {
-            CheckedDialogueToken::Open(tag) => Some(tag),
+            PreparedCheckedDialogueToken::Open(tag) => Some(tag),
             _ => None,
         })
         .collect()
@@ -114,7 +115,7 @@ fn builtin_fx_defaults_are_materialized_only_for_absent_properties() {
             ..
         }
     ));
-    let CheckedRichTextAction::BuiltinFx { fields, .. } = tag.action() else {
+    let PreparedCheckedRichTextAction::BuiltinFx { fields, .. } = tag.action() else {
         panic!("one checked builtin Fx action");
     };
     assert!(!fields.fields().is_empty());
@@ -132,7 +133,7 @@ fn authored_fx_value_is_checked_and_not_replaced_by_its_default() {
 
     assert!(report.is_valid(), "{:?}", report.diagnostics());
     let tags = open_tags(&report);
-    let CheckedRichTextAction::BuiltinFx { fields, .. } = tags[0].action() else {
+    let PreparedCheckedRichTextAction::BuiltinFx { fields, .. } = tags[0].action() else {
         panic!("one checked builtin Fx action");
     };
     let amp = fields
@@ -209,7 +210,7 @@ fn point_controls_and_explicit_markers_publish_typed_open_actions() {
     );
     assert!(matches!(
         page.action(),
-        CheckedRichTextAction::Control {
+        PreparedCheckedRichTextAction::Control {
             action: CheckedDialogueControl::Page,
             ..
         }
@@ -221,16 +222,25 @@ fn point_controls_and_explicit_markers_publish_typed_open_actions() {
             .any(|diagnostic| diagnostic.code() == RichTextDiagnosticCode::UnclosedSpan)
     );
 
-    let marker = check("before[mark .release]after");
-    assert!(marker.is_valid(), "{:?}", marker.diagnostics());
-    let marker_tags = open_tags(&marker);
+    let marker_check = check("before[mark @.release]after");
+    assert!(marker_check.is_valid(), "{:?}", marker_check.diagnostics());
+    let marker_tags = open_tags(&marker_check);
     let [marker] = marker_tags.as_slice() else {
         panic!("one checked explicit marker");
     };
-    let CheckedRichTextAction::Marker(marker) = marker.action() else {
+    let PreparedCheckedRichTextAction::Marker = marker.action() else {
         panic!("explicit marker action");
     };
-    assert_eq!(marker.as_str(), "release");
+    let marker_tag = marker.id();
+    let expected_content = marker_tag.content();
+    drop(marker_tags);
+    let (_report, mut markers) = marker_check.into_parts();
+    let marker = markers
+        .take(marker_tag)
+        .expect("marker position consumes one affine marker row");
+    assert_eq!(marker.id().content(), expected_content);
+    assert_eq!(marker.id().ordinal().get(), 0);
+    assert!(markers.is_empty());
 }
 
 #[test]
@@ -241,8 +251,8 @@ fn family_close_uses_the_exact_paired_start_identity() {
     let mut close = None;
     for token in report.content().tokens() {
         match token {
-            CheckedDialogueToken::Open(tag) => open = Some(tag.id()),
-            CheckedDialogueToken::Close(tag) => close = Some(tag.open()),
+            PreparedCheckedDialogueToken::Open(tag) => open = Some(tag.id()),
+            PreparedCheckedDialogueToken::Close(tag) => close = Some(tag.open()),
             _ => {}
         }
     }
@@ -252,7 +262,7 @@ fn family_close_uses_the_exact_paired_start_identity() {
 
 #[test]
 fn invalid_selector_keeps_child_text_without_open_semantics() {
-    let report = check("[.typo]visible[/]");
+    let report = check("[effect .typo]visible[/effect]");
     assert!(!report.is_valid());
     assert!(open_tags(&report).is_empty());
     assert!(
@@ -266,10 +276,10 @@ fn invalid_selector_keeps_child_text_without_open_semantics() {
             .content()
             .tokens()
             .iter()
-            .any(|token| { matches!(token, CheckedDialogueToken::InvalidTag { .. }) })
+            .any(|token| { matches!(token, PreparedCheckedDialogueToken::InvalidTag { .. }) })
     );
     assert!(report.content().tokens().iter().any(|token| {
-        matches!(token, CheckedDialogueToken::Text(text) if text.as_ref() == "visible")
+        matches!(token, PreparedCheckedDialogueToken::Text(text) if text.as_ref() == "visible")
     }));
 }
 
@@ -280,7 +290,7 @@ fn direct_style_and_host_defaults_remain_family_typed() {
     let size_tags = open_tags(&size);
     assert!(matches!(
         size_tags[0].action(),
-        CheckedRichTextAction::DirectStyle {
+        PreparedCheckedRichTextAction::DirectStyle {
             action: CheckedDirectStyleSpan::Size {
                 value: CheckedLength {
                     milli: 12_000,
@@ -294,7 +304,7 @@ fn direct_style_and_host_defaults_remain_family_typed() {
     let scale = check("before[scale x=2]after");
     assert!(scale.is_valid(), "{:?}", scale.diagnostics());
     let scale_tags = open_tags(&scale);
-    let CheckedRichTextAction::Host { action, fields, .. } = scale_tags[0].action() else {
+    let PreparedCheckedRichTextAction::Host { action, fields, .. } = scale_tags[0].action() else {
         panic!("typed scale host action");
     };
     assert_eq!(

@@ -15,6 +15,7 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
+use thiserror::Error;
 
 #[cfg(test)]
 use std::sync::atomic::AtomicBool;
@@ -35,6 +36,7 @@ use super::{
         validate_statements, validate_types,
     },
 };
+use crate::callable::{CheckedCallCalleeExecution, CheckedCallReceiverProjection, CheckedCallSite};
 use crate::entry::CheckedEntryCatalog;
 use crate::semantic_coordinate::AcceptedSemanticRootCatalog;
 
@@ -71,6 +73,44 @@ pub struct FinalSemanticAnalysis {
     work: FinalSemanticAnalysisWork,
 }
 
+/// Typed runtime-emission disposition for one checked expression.
+///
+/// Structural expressions do not participate in the callable application
+/// graph. Ordinary final-HIR calls carry the selected callee disposition
+/// derived from their sealed call application.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedExpressionRuntimeDisposition {
+    Structural,
+    Call(CheckedCallRuntimeCalleeDisposition),
+}
+
+/// Runtime callee handling selected by one sealed ordinary call application.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedCallRuntimeCalleeDisposition {
+    Static,
+    RuntimeReceiver,
+}
+
+/// Failure to join one checked expression's call resolution with its exact
+/// final call fact.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum CheckedExpressionRuntimeDispositionError {
+    #[error("checked expression {owner:?} is absent from the final analysis")]
+    MissingExpression { owner: ExprId },
+    #[error("checked HirCall expression {owner:?} has no call fact")]
+    MissingCallFacts { owner: ExprId },
+    #[error("checked HirCall expression {owner:?} has no selected call application")]
+    UnselectedCall { owner: ExprId },
+    #[error(
+        "checked HirCall expression {owner:?} has a mismatched call fact site: expected {expected:?}, actual {actual:?}"
+    )]
+    CallSiteMismatch {
+        owner: ExprId,
+        expected: CheckedCallSite,
+        actual: CheckedCallSite,
+    },
+}
+
 /// Complete, unpublished semantic generation awaiting the consuming Entry and
 /// runtime-nominal seal. This owner is deliberately non-Clone.
 pub(crate) struct FinalSemanticAnalysisDraft {
@@ -82,12 +122,13 @@ pub(crate) struct FinalSemanticAnalysisDraft {
     pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
     pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
     pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
-    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementFact>,
+    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementPayload>,
     pub(super) items: BTreeMap<ItemId, CheckedItem>,
     pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
     pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
     pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
     pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
+    pub(super) ingress: super::PreparedExecutableIngressSeal,
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
 }
@@ -103,12 +144,13 @@ pub(crate) struct FinalSemanticAnalysisDraftParts {
     pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
     pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
     pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
-    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementFact>,
+    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementPayload>,
     pub(super) items: BTreeMap<ItemId, CheckedItem>,
     pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
     pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
     pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
     pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
+    pub(super) ingress: super::PreparedExecutableIngressSeal,
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
 }
@@ -130,6 +172,7 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
+            ingress,
             physical_candidate_argument_evaluations,
         } = self;
         FinalSemanticAnalysisDraftParts {
@@ -147,11 +190,41 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
+            ingress,
             physical_candidate_argument_evaluations,
         }
     }
+}
 
-    pub(crate) fn from_parts(parts: FinalSemanticAnalysisDraftParts) -> Self {
+/// Post-Entry unpublished state. The full executable ingress worklist has
+/// already been split and consumed; only the affine statement half remains.
+pub(crate) struct FinalSemanticAnalysisPostEntryDraft {
+    pub(super) checked_callables: Arc<CheckedCallableCatalog>,
+    pub(super) accepted_roots: Arc<AcceptedSemanticRootCatalog>,
+    pub(super) types: BTreeMap<TypeId, TypeKind>,
+    pub(super) type_resolutions: BTreeMap<TypeId, TypeResolutionReport>,
+    pub(super) locals: BTreeMap<LocalId, CheckedBinding>,
+    pub(super) captures: BTreeMap<CaptureId, CheckedBinding>,
+    pub(super) expressions: BTreeMap<ExprId, super::PreparedExpressionFact>,
+    pub(super) patterns: BTreeMap<PatternId, super::PreparedPatternFact>,
+    pub(super) statements: BTreeMap<StmtId, super::PreparedStatementPayload>,
+    pub(super) items: BTreeMap<ItemId, CheckedItem>,
+    pub(super) calls: BTreeMap<ExprId, CallTargetFacts>,
+    pub(super) callable_joins: super::match_edges::PreparedCallableJoins,
+    pub(super) selected_expressions: super::match_edges::CheckedSelectedExpressionGraph,
+    pub(super) structural_edges: super::match_edges::CheckedStructuralEdgeDraft,
+    pub(super) statement_ingress: super::PreparedStatementIngressSeal,
+    pub(super) physical_candidate_argument_evaluations:
+        BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
+}
+
+impl FinalSemanticAnalysisDraftParts {
+    pub(crate) fn into_post_entry(
+        self,
+    ) -> (
+        super::PreparedEntryIngressSeal,
+        FinalSemanticAnalysisPostEntryDraft,
+    ) {
         let FinalSemanticAnalysisDraftParts {
             checked_callables,
             accepted_roots,
@@ -167,27 +240,35 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
+            ingress,
             physical_candidate_argument_evaluations,
-        } = parts;
-        Self {
-            checked_callables,
-            accepted_roots,
-            types,
-            type_resolutions,
-            locals,
-            captures,
-            expressions,
-            patterns,
-            statements,
-            items,
-            calls,
-            callable_joins,
-            selected_expressions,
-            structural_edges,
-            physical_candidate_argument_evaluations,
-        }
+        } = self;
+        let (entry_ingress, statement_ingress) = ingress.into_phase_seals();
+        (
+            entry_ingress,
+            FinalSemanticAnalysisPostEntryDraft {
+                checked_callables,
+                accepted_roots,
+                types,
+                type_resolutions,
+                locals,
+                captures,
+                expressions,
+                patterns,
+                statements,
+                items,
+                calls,
+                callable_joins,
+                selected_expressions,
+                structural_edges,
+                statement_ingress,
+                physical_candidate_argument_evaluations,
+            },
+        )
     }
+}
 
+impl FinalSemanticAnalysisPostEntryDraft {
     pub(crate) fn seal(
         self,
         project: HirExecutableProjectView<'_>,
@@ -213,16 +294,43 @@ impl FinalSemanticAnalysisDraft {
             callable_joins,
             selected_expressions,
             structural_edges,
+            statement_ingress,
             physical_candidate_argument_evaluations,
         } = self;
         control.check()?;
         let expressions = collect_sealed_expressions(prepared_expressions)?;
-        validate_checked_entry_references(&expressions, &checked_entries)?;
         let patterns = collect_sealed_patterns(prepared_patterns)?;
-        let statements = collect_sealed_statements(prepared_statements)?;
         let evaluation_topology = Arc::clone(accepted_roots.topology());
         let modules = project_generation_modules(project);
         let dialogue_lines = project.dialogue_lines();
+        let completed = {
+            let coordinates = crate::semantic_coordinate::SemanticCoordinateIndex::new(
+                accepted_roots.as_ref(),
+                &structural_edges,
+            );
+            let payloads = super::statement_seal::CheckedStatementSeal::new(
+                prepared_statements,
+                statement_ingress,
+                &locals,
+                checked_callables.as_ref(),
+                &coordinates,
+                project,
+            );
+            super::statement_effects::seal_statement_effects(
+                super::statement_effects::StatementEffectSealInput {
+                    modules: &modules,
+                    topology: evaluation_topology.as_ref(),
+                    selected: &selected_expressions,
+                    calls: &calls,
+                    callables: checked_callables.as_ref(),
+                    expressions,
+                    payloads,
+                    control,
+                },
+            )?
+        };
+        let (expressions, statements) = completed.into_parts();
+        validate_checked_entry_references(&expressions, &checked_entries)?;
 
         let type_owners = if type_resolutions.is_empty() {
             None
@@ -270,7 +378,7 @@ impl FinalSemanticAnalysisDraft {
         control.check()?;
         validate_patterns(symbols, &modules, &types, &patterns)?;
         control.check()?;
-        validate_statements(&modules, &locals, &expressions, &statements, &calls)?;
+        validate_statements(&modules, &locals, &statements, &calls)?;
         control.check()?;
         validate_items(&modules, &items)?;
         control.check()?;
@@ -501,6 +609,10 @@ impl FinalSemanticAnalysis {
             .structural_edges
             .take()
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let ingress = input
+            .ingress_seal
+            .take()
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         control.check()?;
         let prepared_patterns = collect_unique(input.patterns, SemanticFactFamily::Pattern)?;
         control.check()?;
@@ -535,6 +647,7 @@ impl FinalSemanticAnalysis {
             callable_joins,
             selected_expressions,
             structural_edges,
+            ingress,
             physical_candidate_argument_evaluations,
         };
         super::nominal_schema::seal_runtime_nominal_draft(
@@ -663,6 +776,67 @@ impl FinalSemanticAnalysis {
         self.expressions.get(&owner)
     }
 
+    /// Returns the sole typed runtime-emission disposition for one checked
+    /// expression. Only a checked final-HIR Call joins the call-fact ledger;
+    /// dialogue, view, style, and other structural expressions remain
+    /// structural at this boundary.
+    pub fn runtime_expression_disposition(
+        &self,
+        owner: ExprId,
+    ) -> Result<CheckedExpressionRuntimeDisposition, CheckedExpressionRuntimeDispositionError> {
+        let expression = self
+            .expression(owner)
+            .ok_or(CheckedExpressionRuntimeDispositionError::MissingExpression { owner })?;
+        let Some(site) = expression.resolution().checked_call_site(owner) else {
+            return Ok(CheckedExpressionRuntimeDisposition::Structural);
+        };
+        let CheckedCallSite::HirCall(call) = site else {
+            return Ok(CheckedExpressionRuntimeDisposition::Structural);
+        };
+        let expected = CheckedCallSite::HirCall(owner);
+        if call != owner {
+            return Err(CheckedExpressionRuntimeDispositionError::CallSiteMismatch {
+                owner,
+                expected,
+                actual: site,
+            });
+        }
+        let facts = self
+            .call(owner)
+            .ok_or(CheckedExpressionRuntimeDispositionError::MissingCallFacts { owner })?;
+        let actual = facts.outcome().site();
+        if actual != expected {
+            return Err(CheckedExpressionRuntimeDispositionError::CallSiteMismatch {
+                owner,
+                expected,
+                actual,
+            });
+        }
+        let application = facts
+            .selected_application()
+            .ok_or(CheckedExpressionRuntimeDispositionError::UnselectedCall { owner })?;
+        let application_site = application.core().site();
+        if application_site != expected {
+            return Err(CheckedExpressionRuntimeDispositionError::CallSiteMismatch {
+                owner,
+                expected,
+                actual: application_site,
+            });
+        }
+        let callee = if matches!(
+            application.core().callee(),
+            CheckedCallCalleeExecution::Value { .. }
+        ) || matches!(
+            application.core().execution().receiver(),
+            CheckedCallReceiverProjection::Operand { .. }
+        ) {
+            CheckedCallRuntimeCalleeDisposition::RuntimeReceiver
+        } else {
+            CheckedCallRuntimeCalleeDisposition::Static
+        };
+        Ok(CheckedExpressionRuntimeDisposition::Call(callee))
+    }
+
     pub fn pattern(&self, owner: PatternId) -> Option<&CheckedPattern> {
         self.patterns.get(&owner)
     }
@@ -767,19 +941,6 @@ fn collect_sealed_expressions(
 fn collect_sealed_patterns(
     prepared: BTreeMap<PatternId, super::PreparedPatternFact>,
 ) -> Result<BTreeMap<PatternId, CheckedPattern>, FinalSemanticAnalysisError> {
-    prepared
-        .into_iter()
-        .map(|(owner, fact)| {
-            fact.into_complete()
-                .map(|fact| (owner, fact))
-                .map_err(|_| FinalSemanticAnalysisError::UnsealedPreparedC2Owner)
-        })
-        .collect()
-}
-
-fn collect_sealed_statements(
-    prepared: BTreeMap<StmtId, super::PreparedStatementFact>,
-) -> Result<BTreeMap<StmtId, CheckedStatement>, FinalSemanticAnalysisError> {
     prepared
         .into_iter()
         .map(|(owner, fact)| {

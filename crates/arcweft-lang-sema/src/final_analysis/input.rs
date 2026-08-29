@@ -2,16 +2,17 @@
 
 use std::{collections::BTreeMap, sync::Arc};
 
+#[cfg(test)]
+use super::CheckedExpression;
 use super::match_edges::{
     CheckedSelectedExpressionGraph, CheckedStructuralEdgeDraft, PreparedCallableJoins,
 };
 use super::{
     CallTargetFacts, CaptureId, CheckedBinding, CheckedItem, CheckedPattern, ExprId, ItemId,
-    LocalId, PatternId, PhysicalCandidateArgumentEvaluation, PreparedExpressionFact,
-    PreparedPatternFact, PreparedStatementFact, StmtId, TypeId, TypeKind,
+    LocalId, PatternId, PhysicalCandidateArgumentEvaluation, PreparedExecutableIngressSeal,
+    PreparedExpressionFact, PreparedPatternFact, PreparedStatementPayload, StmtId, TypeId,
+    TypeKind,
 };
-#[cfg(test)]
-use super::{CheckedExpression, CheckedStatement};
 
 /// Mutable staging owner for the independent semantic passes.
 ///
@@ -24,7 +25,7 @@ pub(crate) struct FinalSemanticAnalysisInput {
     pub(super) captures: Vec<(CaptureId, CheckedBinding)>,
     pub(super) expressions: Vec<(ExprId, PreparedExpressionFact)>,
     pub(super) patterns: Vec<(PatternId, PreparedPatternFact)>,
-    pub(super) statements: Vec<(StmtId, PreparedStatementFact)>,
+    pub(super) statements: Vec<(StmtId, PreparedStatementPayload)>,
     pub(super) items: Vec<(ItemId, CheckedItem)>,
     pub(super) calls: Vec<CallTargetFacts>,
     pub(super) callable_joins: PreparedCallableJoins,
@@ -32,6 +33,7 @@ pub(crate) struct FinalSemanticAnalysisInput {
     pub(super) structural_edges: Option<CheckedStructuralEdgeDraft>,
     pub(super) physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
+    pub(super) ingress_seal: Option<PreparedExecutableIngressSeal>,
 }
 
 impl FinalSemanticAnalysisInput {
@@ -72,15 +74,10 @@ impl FinalSemanticAnalysisInput {
         self.patterns.push((owner, pattern));
     }
 
-    #[cfg(test)]
-    pub(crate) fn push_statement(&mut self, owner: StmtId, statement: CheckedStatement) {
-        self.push_prepared_statement(owner, statement.into());
-    }
-
     pub(crate) fn push_prepared_statement(
         &mut self,
         owner: StmtId,
-        statement: PreparedStatementFact,
+        statement: PreparedStatementPayload,
     ) {
         self.statements.push((owner, statement));
     }
@@ -124,5 +121,15 @@ impl FinalSemanticAnalysisInput {
         evaluations: BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     ) {
         self.physical_candidate_argument_evaluations = evaluations;
+    }
+
+    pub(crate) fn set_ingress_seal(
+        &mut self,
+        seal: PreparedExecutableIngressSeal,
+    ) -> Result<(), super::FinalSemanticAnalysisError> {
+        if self.ingress_seal.replace(seal).is_some() {
+            return Err(super::FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        Ok(())
     }
 }

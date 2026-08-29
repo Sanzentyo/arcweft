@@ -30,13 +30,14 @@ use arcweft_rich_text_schema::{
 
 use super::value::{checked_default, parse_checked_value, parse_public_id};
 use super::{
-    CheckedDialogueContent, CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken,
-    CheckedDirectStyleSpan, CheckedField, CheckedFieldOrigin, CheckedLayoutSpan, CheckedObjectSpan,
-    CheckedOwnerFields, CheckedRichTextAction, CheckedRichTextClose, CheckedRichTextOwner,
-    CheckedRichTextProperty, CheckedRichTextReport, CheckedRichTextTag, CheckedRichTextValue,
-    CheckedStyleSpan, CheckedTransformSpan, CheckedVoiceSource, RichTextAttributeDiagnostic,
-    RichTextDefaultId, RichTextDiagnosticCode, RichTextDiagnosticOwner, RichTextFailureEffect,
-    RichTextRelatedSite,
+    CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDirectStyleSpan, CheckedField,
+    CheckedFieldOrigin, CheckedLayoutSpan, CheckedObjectSpan, CheckedOwnerFields,
+    CheckedRichTextClose, CheckedRichTextOwner, CheckedRichTextProperty, CheckedRichTextValue,
+    CheckedStyleSpan, CheckedTransformSpan, CheckedVoiceSource, PreparedCheckedDialogueContent,
+    PreparedCheckedDialogueMark, PreparedCheckedDialogueMarkCatalog, PreparedCheckedDialogueToken,
+    PreparedCheckedRichTextAction, PreparedCheckedRichTextCheck, PreparedCheckedRichTextReport,
+    PreparedCheckedRichTextTag, RichTextAttributeDiagnostic, RichTextDefaultId,
+    RichTextDiagnosticCode, RichTextDiagnosticOwner, RichTextFailureEffect, RichTextRelatedSite,
 };
 
 const MAX_CHECKED_SPAN_DEPTH: usize = 64;
@@ -51,34 +52,53 @@ impl RichTextAttributeChecker {
     /// All source evidence is obtained through the module's revision-bound
     /// source-role manifest. The checker never reads a source document or
     /// reconstructs syntax from a source range.
-    pub fn check(
+    pub(crate) fn check(
         module: &HirModule,
         content: &HirDialogueContent,
-    ) -> Result<CheckedRichTextReport, HirSourceQueryError> {
+    ) -> Result<PreparedCheckedRichTextCheck, HirSourceQueryError> {
         let mut diagnostics = Vec::new();
         let mut tags = BTreeMap::new();
+        let mut markers = BTreeMap::new();
 
         for tag in content.tags() {
-            let result = Self::check_tag(module, tag)?;
+            let result = Self::check_tag(module, content, tag)?;
             diagnostics.extend(result.diagnostics);
+            if let TagCheckMarker::Marker {
+                tag: marker_tag,
+                mark,
+            } = result.marker
+            {
+                if markers.insert(marker_tag, mark).is_some() {
+                    diagnostics.push(tag_diagnostic(
+                        module,
+                        tag,
+                        RichTextDiagnosticCode::InvalidSelector,
+                    )?);
+                }
+            }
             if let Some(tag) = result.checked {
                 tags.insert(tag.id(), tag);
             }
         }
 
         let tokens = assemble_tokens(module, content, tags, &mut diagnostics)?;
-        Ok(CheckedRichTextReport::new(
-            CheckedDialogueContent::new(content.id(), tokens, true),
-            diagnostics,
+        Ok(PreparedCheckedRichTextCheck::new(
+            PreparedCheckedRichTextReport::new(
+                PreparedCheckedDialogueContent::new(content.id(), tokens, true),
+                diagnostics,
+            ),
+            PreparedCheckedDialogueMarkCatalog::new(content.id(), markers),
         ))
     }
 
     fn check_tag(
         module: &HirModule,
+        content: &HirDialogueContent,
         tag: &HirRichTextTag,
     ) -> Result<TagCheckResult, HirSourceQueryError> {
         match tag.identity() {
             HirRichTextTagIdentity::Builtin(builtin) => Self::check_builtin(module, tag, *builtin),
+            HirRichTextTagIdentity::Marker => Self::check_marker(module, content, tag),
             HirRichTextTagIdentity::Registered(_) => Ok(TagCheckResult::diagnostic(
                 tag_diagnostic(module, tag, RichTextDiagnosticCode::SchemaUnavailable)?,
             )),
@@ -130,7 +150,6 @@ impl RichTextAttributeChecker {
                 DialogueRichTextControl::RevealRate,
                 Some(DialogueControlProperty::Cps),
             ),
-            HirBuiltinRichTextTag::Marker => Self::check_marker(module, tag),
             HirBuiltinRichTextTag::DirectStyle(style) => {
                 let owner = direct_style(style);
                 let positional = match owner {
@@ -216,47 +235,47 @@ impl RichTextAttributeChecker {
 
     fn check_marker(
         module: &HirModule,
+        content: &HirDialogueContent,
         tag: &HirRichTextTag,
     ) -> Result<TagCheckResult, HirSourceQueryError> {
-        let [HirRichTextArgument::Positional { value, .. }] = tag.arguments() else {
-            let diagnostic = tag.arguments().first().map_or_else(
-                || tag_diagnostic(module, tag, RichTextDiagnosticCode::RequiredMissing),
-                |argument| {
-                    argument_diagnostic(
-                        module,
-                        tag,
-                        argument,
-                        RichTextDiagnosticCode::PositionalArity,
-                    )
-                },
-            )?;
-            return Ok(TagCheckResult::diagnostic(diagnostic));
-        };
-        let Some(selector) = value.as_str().strip_prefix('.') else {
-            return Ok(TagCheckResult::diagnostic(argument_diagnostic(
+        if !tag.arguments().is_empty() {
+            return Ok(TagCheckResult::diagnostic(tag_diagnostic(
                 module,
                 tag,
-                &tag.arguments()[0],
+                RichTextDiagnosticCode::PositionalArity,
+            )?));
+        }
+        let HirRichTextTagPayload::Marker(marker) = tag.payload() else {
+            return Ok(TagCheckResult::diagnostic(tag_diagnostic(
+                module,
+                tag,
                 RichTextDiagnosticCode::InvalidSelector,
             )?));
         };
-        let marker = match parse_public_id(selector) {
-            Ok(marker) => marker,
-            Err(code) => {
-                return Ok(TagCheckResult::diagnostic(argument_diagnostic(
-                    module,
-                    tag,
-                    &tag.arguments()[0],
-                    code,
-                )?));
-            }
+        let Some(row) = content.marks().iter().find(|row| row.tag() == tag.id()) else {
+            return Ok(TagCheckResult::diagnostic(tag_diagnostic(
+                module,
+                tag,
+                RichTextDiagnosticCode::InvalidSelector,
+            )?));
         };
-        Ok(TagCheckResult::checked(CheckedRichTextTag::new(
+        if marker.content() != content.id() || row.id() != *marker {
+            return Ok(TagCheckResult::diagnostic(tag_diagnostic(
+                module,
+                tag,
+                RichTextDiagnosticCode::InvalidSelector,
+            )?));
+        }
+        Ok(TagCheckResult::checked_marker(
+            PreparedCheckedRichTextTag::new(
+                tag.id(),
+                CheckedRichTextOwner::Marker,
+                PreparedCheckedRichTextAction::Marker,
+                tag_site(module, tag.id(), HirRichTextTagSourcePart::Whole)?,
+            ),
             tag.id(),
-            CheckedRichTextOwner::Marker,
-            CheckedRichTextAction::Marker(marker),
-            tag_site(module, tag.id(), HirRichTextTagSourcePart::Whole)?,
-        )))
+            PreparedCheckedDialogueMark::new(*marker, row.name().clone()),
+        ))
     }
 
     fn check_object(
@@ -407,14 +426,36 @@ impl RichTextAttributeChecker {
 }
 
 struct TagCheckResult {
-    checked: Option<CheckedRichTextTag>,
+    checked: Option<PreparedCheckedRichTextTag>,
+    marker: TagCheckMarker,
     diagnostics: Vec<RichTextAttributeDiagnostic>,
 }
 
+enum TagCheckMarker {
+    None,
+    Marker {
+        tag: HirRichTextTagId,
+        mark: PreparedCheckedDialogueMark,
+    },
+}
+
 impl TagCheckResult {
-    fn checked(checked: CheckedRichTextTag) -> Self {
+    fn checked(checked: PreparedCheckedRichTextTag) -> Self {
         Self {
             checked: Some(checked),
+            marker: TagCheckMarker::None,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn checked_marker(
+        checked: PreparedCheckedRichTextTag,
+        tag: HirRichTextTagId,
+        mark: PreparedCheckedDialogueMark,
+    ) -> Self {
+        Self {
+            checked: Some(checked),
+            marker: TagCheckMarker::Marker { tag, mark },
             diagnostics: Vec::new(),
         }
     }
@@ -422,6 +463,7 @@ impl TagCheckResult {
     fn diagnostic(diagnostic: RichTextAttributeDiagnostic) -> Self {
         Self {
             checked: None,
+            marker: TagCheckMarker::None,
             diagnostics: vec![diagnostic],
         }
     }
@@ -444,7 +486,7 @@ impl SchemaCheckResult {
             let fields = CheckedOwnerFields::new(self.fields);
             if let Some(action) = checked_action(owner, fields, self.object_selector, tag.payload())
             {
-                Ok(TagCheckResult::checked(CheckedRichTextTag::new(
+                Ok(TagCheckResult::checked(PreparedCheckedRichTextTag::new(
                     tag.id(),
                     owner,
                     action,
@@ -460,6 +502,7 @@ impl SchemaCheckResult {
         } else {
             Ok(TagCheckResult {
                 checked: None,
+                marker: TagCheckMarker::None,
                 diagnostics: self.diagnostics,
             })
         }
@@ -813,44 +856,46 @@ fn checked_action(
     fields: CheckedOwnerFields,
     object_selector: Option<arcweft_id::PublicId>,
     payload: &HirRichTextTagPayload,
-) -> Option<CheckedRichTextAction> {
+) -> Option<PreparedCheckedRichTextAction> {
     match owner {
-        CheckedRichTextOwner::Control(owner) => Some(CheckedRichTextAction::Control {
+        CheckedRichTextOwner::Control(owner) => Some(PreparedCheckedRichTextAction::Control {
             action: checked_control(owner, &fields)?,
             fields,
         }),
-        CheckedRichTextOwner::DirectStyle(owner) => Some(CheckedRichTextAction::DirectStyle {
-            owner,
-            action: checked_direct_style(owner, &fields)?,
-            fields,
-        }),
-        CheckedRichTextOwner::Style(owner) => Some(CheckedRichTextAction::Style {
+        CheckedRichTextOwner::DirectStyle(owner) => {
+            Some(PreparedCheckedRichTextAction::DirectStyle {
+                owner,
+                action: checked_direct_style(owner, &fields)?,
+                fields,
+            })
+        }
+        CheckedRichTextOwner::Style(owner) => Some(PreparedCheckedRichTextAction::Style {
             owner,
             action: checked_style(owner, &fields)?,
             fields,
         }),
-        CheckedRichTextOwner::Layout(owner) => Some(CheckedRichTextAction::Layout {
+        CheckedRichTextOwner::Layout(owner) => Some(PreparedCheckedRichTextAction::Layout {
             owner,
             action: checked_layout(owner, &fields)?,
             fields,
         }),
-        CheckedRichTextOwner::Transform(owner) => Some(CheckedRichTextAction::Transform {
+        CheckedRichTextOwner::Transform(owner) => Some(PreparedCheckedRichTextAction::Transform {
             owner,
             action: checked_transform(owner, &fields)?,
             fields,
         }),
-        CheckedRichTextOwner::Object => Some(CheckedRichTextAction::Object {
+        CheckedRichTextOwner::Object => Some(PreparedCheckedRichTextAction::Object {
             action: checked_object(object_selector?, &fields)?,
             fields,
         }),
         CheckedRichTextOwner::BuiltinFx { effect, phase } => {
-            Some(CheckedRichTextAction::BuiltinFx {
+            Some(PreparedCheckedRichTextAction::BuiltinFx {
                 effect,
                 phase,
                 fields,
             })
         }
-        CheckedRichTextOwner::Host(owner) => Some(CheckedRichTextAction::Host {
+        CheckedRichTextOwner::Host(owner) => Some(PreparedCheckedRichTextAction::Host {
             owner,
             action: checked_host_event(owner, &fields, payload)?,
             fields,
@@ -1243,9 +1288,9 @@ fn checked_host_event(
 fn assemble_tokens(
     module: &HirModule,
     content: &HirDialogueContent,
-    mut checked_tags: BTreeMap<HirRichTextTagId, CheckedRichTextTag>,
+    mut checked_tags: BTreeMap<HirRichTextTagId, PreparedCheckedRichTextTag>,
     diagnostics: &mut Vec<RichTextAttributeDiagnostic>,
-) -> Result<Vec<CheckedDialogueToken>, HirSourceQueryError> {
+) -> Result<Vec<PreparedCheckedDialogueToken>, HirSourceQueryError> {
     let tags = content
         .tags()
         .iter()
@@ -1256,13 +1301,15 @@ fn assemble_tokens(
     for node in content.nodes() {
         match node.kind() {
             HirDialogueNodeKind::Text(text) => {
-                tokens.push(CheckedDialogueToken::Text(text.as_str().into()));
+                tokens.push(PreparedCheckedDialogueToken::Text(text.as_str().into()));
             }
             HirDialogueNodeKind::Raw(text) => {
-                tokens.push(CheckedDialogueToken::RawText(text.as_str().into()));
+                tokens.push(PreparedCheckedDialogueToken::RawText(text.as_str().into()));
             }
-            HirDialogueNodeKind::Escape(value) => tokens.push(CheckedDialogueToken::Escape(*value)),
-            HirDialogueNodeKind::Ruby(ruby) => tokens.push(CheckedDialogueToken::Ruby {
+            HirDialogueNodeKind::Escape(value) => {
+                tokens.push(PreparedCheckedDialogueToken::Escape(*value));
+            }
+            HirDialogueNodeKind::Ruby(ruby) => tokens.push(PreparedCheckedDialogueToken::Ruby {
                 base: ruby.base().into(),
                 ruby: ruby.ruby().into(),
             }),
@@ -1286,9 +1333,9 @@ fn assemble_tokens(
                     stack.push((*tag, accepted));
                 }
                 if let Some(tag) = checked_tags.remove(tag) {
-                    tokens.push(CheckedDialogueToken::Open(tag));
+                    tokens.push(PreparedCheckedDialogueToken::Open(tag));
                 } else {
-                    tokens.push(CheckedDialogueToken::InvalidTag {
+                    tokens.push(PreparedCheckedDialogueToken::InvalidTag {
                         tag: *tag,
                         source: tag_site(module, *tag, HirRichTextTagSourcePart::Whole)?,
                     });
@@ -1309,12 +1356,14 @@ fn assemble_tokens(
                     Some(index) if index + 1 == stack.len() => {
                         let (open, accepted) = stack.pop().expect("matching stack top exists");
                         if accepted {
-                            tokens.push(CheckedDialogueToken::Close(CheckedRichTextClose::new(
-                                open,
-                                node_site(module, content.id().owner(), node)?,
-                                node.id().ordinal(),
-                                end.is_inferred(),
-                            )));
+                            tokens.push(PreparedCheckedDialogueToken::Close(
+                                CheckedRichTextClose::new(
+                                    open,
+                                    node_site(module, content.id().owner(), node)?,
+                                    node.id().ordinal(),
+                                    end.is_inferred(),
+                                ),
+                            ));
                         }
                     }
                     Some(_) => diagnostics.push(node_diagnostic(
@@ -1332,10 +1381,10 @@ fn assemble_tokens(
                 }
             }
             HirDialogueNodeKind::Interpolation(expression) => {
-                tokens.push(CheckedDialogueToken::Interpolation(*expression));
+                tokens.push(PreparedCheckedDialogueToken::Interpolation(*expression));
             }
             HirDialogueNodeKind::LineBreak(kind) => {
-                tokens.push(CheckedDialogueToken::LineBreak(*kind));
+                tokens.push(PreparedCheckedDialogueToken::LineBreak(*kind));
             }
             HirDialogueNodeKind::Error(issue) => {
                 if !matches!(issue, HirDialogueContentError::UnclosedTag) {
@@ -1379,6 +1428,7 @@ fn tag_opens_span(identity: &HirRichTextTagIdentity) -> bool {
                 | HirBuiltinRichTextTag::Object(_)
                 | HirBuiltinRichTextTag::Fx(_)
         ),
+        HirRichTextTagIdentity::Marker => false,
         HirRichTextTagIdentity::Registered(_) | HirRichTextTagIdentity::Unresolved(_) => true,
     }
 }

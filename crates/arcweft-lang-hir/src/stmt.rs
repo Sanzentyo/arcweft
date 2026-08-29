@@ -22,13 +22,15 @@ pub use self::thread::{
     HirThreadStmtChildRole, HirThreadStmtRecoveryIssue, HirWhileLetStmt, HirWhileStmt,
 };
 
+use arcweft_id::UnsafeAuditId;
 use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_lang_syntax::ast::line_plan::DeferOutcome;
 use thiserror::Error;
 
 use crate::body_edges::HirBodyChildEdge;
+use crate::dialogue_application::HirDialogueMarkId;
 use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId};
-use crate::leaf::{HirIdRefIssue, HirIdRefValue, HirName, HirNameInvariantError};
+use crate::leaf::{HirIdRefValue, HirName, HirNameInvariantError};
 
 /// One immutable statement-arena record.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -218,7 +220,7 @@ fn state_matches_kind(kind: &HirStmtKind, state: &HirStmtPoisonState) -> bool {
         );
     };
 
-    match audit.id().recovery_issue() {
+    match audit.identity().recovery_issue() {
         Some(issue) => {
             return matches!(
                 state,
@@ -337,7 +339,7 @@ pub enum HirStmtRecoveryIssue {
     #[error("statement child {role:?} contains recovery")]
     RecoveredChild { role: HirStmtChildRole },
     #[error("unsafe-audit identity is invalid")]
-    InvalidAuditId(HirIdRefIssue),
+    InvalidAuditId(HirUnsafeAuditIdentityIssue),
     #[error("unsafe lifetime statement is missing its required body")]
     MissingBody,
     #[error("unsafe lifetime statement body is missing its closing delimiter")]
@@ -413,21 +415,6 @@ pub enum HirStmtKind {
         else_body: Box<[StmtId]>,
         locals: Box<[LocalId]>,
     },
-    LetChoice {
-        pattern: PatternId,
-        choice: ExprId,
-        locals: Box<[LocalId]>,
-    },
-    LetScope {
-        pattern: PatternId,
-        scope_expr: ExprId,
-        locals: Box<[LocalId]>,
-    },
-    LetActionReceive {
-        pattern: PatternId,
-        action: ExprId,
-        locals: Box<[LocalId]>,
-    },
     Return {
         value: ExprId,
     },
@@ -437,11 +424,6 @@ pub enum HirStmtKind {
     },
     Goto {
         target: ExprId,
-    },
-    DeferBlock {
-        outcome: DeferOutcome,
-        scope: ScopeId,
-        body: Box<[StmtId]>,
     },
     Defer {
         outcome: DeferOutcome,
@@ -462,7 +444,7 @@ pub enum HirStmtKind {
         target: ExprId,
     },
     On {
-        trigger: HirTriggerPattern,
+        trigger: HirTrigger,
         scope: ScopeId,
         body: Box<[StmtId]>,
     },
@@ -528,12 +510,6 @@ pub enum HirStmtEvaluationPlan<'stmt> {
         expression: Option<ExprId>,
         label: Option<&'stmt HirName>,
         outcome: Option<DeferOutcome>,
-    },
-    DeferredBody {
-        kind: HirStmtDeferredBodyPlanKind,
-        scope: ScopeId,
-        body: &'stmt [StmtId],
-        outcome: DeferOutcome,
     },
     EventBody {
         trigger: HirStmtTriggerEvaluationPlan,
@@ -782,9 +758,6 @@ impl<'stmt> HirStmtEvaluationPlan<'stmt> {
                         expression: *expression,
                     });
                 }
-            }
-            Self::DeferredBody { body, .. } => {
-                visit_statement_steps(&mut visitor, HirStatementBodyRole::Defer, body)?;
             }
             Self::EventBody { trigger, body, .. } => {
                 visit_trigger_steps(&mut visitor, trigger);
@@ -1120,6 +1093,7 @@ fn visit_trigger_steps<'stmt>(
                 locals: &[],
             });
         }
+        HirStmtTriggerEvaluationPlan::Mark { .. } | HirStmtTriggerEvaluationPlan::Recovered => {}
         HirStmtTriggerEvaluationPlan::Signal { target, value } => {
             visitor(HirStmtEvaluationStep::Expression {
                 role: HirStatementChildRole::TriggerSignalTarget,
@@ -1169,7 +1143,6 @@ pub enum HirStmtSelectHeadEvaluation<'stmt> {
     Bind {
         binding: &'stmt HirSelectBindingLocal,
         source: ExprId,
-        propagates_error: bool,
     },
     Frame {
         pattern: PatternId,
@@ -1188,14 +1161,9 @@ impl HirSelectBranch {
     /// this wrapper is the typed evaluation view.
     pub fn evaluation_head(&self) -> HirStmtSelectHeadEvaluation<'_> {
         match self.head() {
-            HirSelectBranchHead::Bind {
-                binding,
-                source,
-                propagates_error,
-            } => HirStmtSelectHeadEvaluation::Bind {
+            HirSelectBranchHead::Bind { binding, source } => HirStmtSelectHeadEvaluation::Bind {
                 binding,
                 source: *source,
-                propagates_error: *propagates_error,
             },
             HirSelectBranchHead::Frame { pattern, locals } => HirStmtSelectHeadEvaluation::Frame {
                 pattern: *pattern,
@@ -1219,6 +1187,9 @@ pub enum HirStmtTriggerEvaluationPlan {
     Pattern {
         pattern: PatternId,
     },
+    Mark {
+        mark: HirDialogueMarkId,
+    },
     Signal {
         target: ExprId,
         value: Option<PatternId>,
@@ -1226,14 +1197,12 @@ pub enum HirStmtTriggerEvaluationPlan {
     Expression {
         expression: ExprId,
     },
+    Recovered,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirStmtBindingPlanKind {
     Let,
-    LetChoice,
-    LetScope,
-    LetActionReceive,
 }
 
 impl HirStmtBindingPlanKind {
@@ -1241,9 +1210,6 @@ impl HirStmtBindingPlanKind {
     pub const fn input_role(self) -> HirStatementChildRole {
         match self {
             Self::Let => HirStatementChildRole::Initializer,
-            Self::LetChoice | Self::LetScope | Self::LetActionReceive => {
-                HirStatementChildRole::Input
-            }
         }
     }
 }
@@ -1287,30 +1253,24 @@ impl HirStmtValuePlanKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirStmtDeferredBodyPlanKind {
-    DeferBlock,
-}
-
-fn trigger_evaluation_plan(trigger: &HirTriggerPattern) -> HirStmtTriggerEvaluationPlan {
+fn trigger_evaluation_plan(trigger: &HirTrigger) -> HirStmtTriggerEvaluationPlan {
     match trigger {
-        HirTriggerPattern::Input(pattern)
-        | HirTriggerPattern::Event(pattern)
-        | HirTriggerPattern::Mark(pattern)
-        | HirTriggerPattern::Select(pattern)
-        | HirTriggerPattern::Task(pattern)
-        | HirTriggerPattern::Scope(pattern) => {
-            HirStmtTriggerEvaluationPlan::Pattern { pattern: *pattern }
-        }
-        HirTriggerPattern::Signal { target, value } => HirStmtTriggerEvaluationPlan::Signal {
+        HirTrigger::Input(pattern)
+        | HirTrigger::Event(pattern)
+        | HirTrigger::Select(pattern)
+        | HirTrigger::Task(pattern)
+        | HirTrigger::Scope(pattern) => HirStmtTriggerEvaluationPlan::Pattern { pattern: *pattern },
+        HirTrigger::Mark(mark) => HirStmtTriggerEvaluationPlan::Mark { mark: *mark },
+        HirTrigger::Signal { target, value } => HirStmtTriggerEvaluationPlan::Signal {
             target: *target,
             value: *value,
         },
-        HirTriggerPattern::Timeout(expression) | HirTriggerPattern::Expr(expression) => {
+        HirTrigger::Timeout(expression) | HirTrigger::Expression(expression) => {
             HirStmtTriggerEvaluationPlan::Expression {
                 expression: *expression,
             }
         }
+        HirTrigger::Recovered(_) => HirStmtTriggerEvaluationPlan::Recovered,
     }
 }
 
@@ -1350,37 +1310,33 @@ impl HirStmtKind {
             Self::Let { .. } => 0x0701,
             Self::Assign { .. } => 0x0702,
             Self::LetElse { .. } => 0x0703,
-            Self::LetChoice { .. } => 0x0704,
-            Self::LetScope { .. } => 0x0705,
-            Self::LetActionReceive { .. } => 0x0706,
-            Self::Return { .. } => 0x0707,
-            Self::Out { .. } => 0x0708,
-            Self::Goto { .. } => 0x0709,
-            Self::DeferBlock { .. } => 0x070A,
-            Self::Defer { .. } => 0x070B,
-            Self::Yield { .. } => 0x070C,
-            Self::Signal { .. } => 0x070D,
-            Self::LifetimeSet { .. } => 0x070E,
-            Self::Wait { .. } => 0x070F,
-            Self::On { .. } => 0x0710,
-            Self::UnsafeLifetime { .. } => 0x0711,
-            Self::Choice { .. } => 0x0712,
-            Self::If(_) => 0x0713,
-            Self::IfLet(_) => 0x0714,
-            Self::Match(_) => 0x0715,
-            Self::While(_) => 0x0716,
-            Self::WhileLet(_) => 0x0717,
-            Self::For(_) => 0x0718,
-            Self::Close { .. } => 0x0719,
-            Self::Select(_) => 0x071A,
-            Self::SourceLocale(_) => 0x071B,
-            Self::Scope(_) => 0x071C,
-            Self::Include(_) => 0x071D,
-            Self::Break { .. } => 0x071E,
-            Self::Continue { .. } => 0x071F,
-            Self::Expression { .. } => 0x0720,
-            Self::ProofCall { .. } => 0x0721,
-            Self::Error => 0x0722,
+            Self::Return { .. } => 0x0704,
+            Self::Out { .. } => 0x0705,
+            Self::Goto { .. } => 0x0706,
+            Self::Defer { .. } => 0x0707,
+            Self::Yield { .. } => 0x0708,
+            Self::Signal { .. } => 0x0709,
+            Self::LifetimeSet { .. } => 0x070A,
+            Self::Wait { .. } => 0x070B,
+            Self::On { .. } => 0x070C,
+            Self::UnsafeLifetime { .. } => 0x070D,
+            Self::Choice { .. } => 0x070E,
+            Self::If(_) => 0x070F,
+            Self::IfLet(_) => 0x0710,
+            Self::Match(_) => 0x0711,
+            Self::While(_) => 0x0712,
+            Self::WhileLet(_) => 0x0713,
+            Self::For(_) => 0x0714,
+            Self::Close { .. } => 0x0715,
+            Self::Select(_) => 0x0716,
+            Self::SourceLocale(_) => 0x0717,
+            Self::Scope(_) => 0x0718,
+            Self::Include(_) => 0x0719,
+            Self::Break { .. } => 0x071A,
+            Self::Continue { .. } => 0x071B,
+            Self::Expression { .. } => 0x071C,
+            Self::ProofCall { .. } => 0x071D,
+            Self::Error => 0x071E,
         }
     }
 
@@ -1392,9 +1348,9 @@ impl HirStmtKind {
     /// only to their matching guard/body steps.
     #[allow(
         clippy::too_many_lines,
-        reason = "the closed 35-family statement algebra has one explicit evaluation-order authority"
+        reason = "the closed 31-family statement algebra has one explicit evaluation-order authority"
     )]
-    /// Returns the closed typed evaluation plan for all 35 statement
+    /// Returns the closed typed evaluation plan for all 31 statement
     /// families. Branch-bearing rows retain their success/failure binding
     /// scopes instead of flattening them into a visibility-tagged sequence.
     pub fn evaluation_plan(&self) -> HirStmtEvaluationPlan<'_> {
@@ -1436,39 +1392,6 @@ impl HirStmtKind {
                 else_body,
                 success_locals: locals,
             },
-            Self::LetChoice {
-                pattern,
-                choice,
-                locals,
-            } => Plan::Binding {
-                kind: HirStmtBindingPlanKind::LetChoice,
-                pattern: *pattern,
-                annotation: None,
-                input: *choice,
-                locals,
-            },
-            Self::LetScope {
-                pattern,
-                scope_expr,
-                locals,
-            } => Plan::Binding {
-                kind: HirStmtBindingPlanKind::LetScope,
-                pattern: *pattern,
-                annotation: None,
-                input: *scope_expr,
-                locals,
-            },
-            Self::LetActionReceive {
-                pattern,
-                action,
-                locals,
-            } => Plan::Binding {
-                kind: HirStmtBindingPlanKind::LetActionReceive,
-                pattern: *pattern,
-                annotation: None,
-                input: *action,
-                locals,
-            },
             Self::Return { value } => Plan::Value {
                 kind: HirStmtValuePlanKind::Return,
                 expression: Some(*value),
@@ -1486,16 +1409,6 @@ impl HirStmtKind {
                 expression: Some(*target),
                 label: None,
                 outcome: None,
-            },
-            Self::DeferBlock {
-                outcome,
-                scope,
-                body,
-            } => Plan::DeferredBody {
-                kind: HirStmtDeferredBodyPlanKind::DeferBlock,
-                scope: *scope,
-                body,
-                outcome: *outcome,
             },
             Self::Defer {
                 outcome,
@@ -1653,11 +1566,7 @@ impl HirStmtKind {
     /// here.
     pub(crate) fn post_statement_locals(&self) -> &[LocalId] {
         match self {
-            Self::Let { locals, .. }
-            | Self::LetElse { locals, .. }
-            | Self::LetChoice { locals, .. }
-            | Self::LetScope { locals, .. }
-            | Self::LetActionReceive { locals, .. } => locals,
+            Self::Let { locals, .. } | Self::LetElse { locals, .. } => locals,
             _ => &[],
         }
     }
@@ -1719,32 +1628,9 @@ impl HirStmtKind {
                 validate_statements(expected, else_body)?;
                 validate_locals(expected, locals)
             }
-            Self::LetChoice {
-                pattern,
-                choice,
-                locals,
-            }
-            | Self::LetScope {
-                pattern,
-                scope_expr: choice,
-                locals,
-            }
-            | Self::LetActionReceive {
-                pattern,
-                action: choice,
-                locals,
-            } => {
-                validate_pattern(expected, *pattern)?;
-                validate_expr(expected, *choice)?;
-                validate_locals(expected, locals)
-            }
             Self::Return { value } | Self::Out { value, .. } => validate_expr(expected, *value),
             Self::Goto { target } | Self::Wait { target } | Self::Close { target } => {
                 validate_expr(expected, *target)
-            }
-            Self::DeferBlock { scope, body, .. } => {
-                validate_scope(expected, *scope)?;
-                validate_statements(expected, body)
             }
             Self::Defer { expression, .. }
             | Self::Yield { expression }
@@ -1783,7 +1669,7 @@ impl HirStmtKind {
 
 /// Typed-ID projection of the closed trigger-pattern authority.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirTriggerPattern {
+pub enum HirTrigger {
     Input(PatternId),
     Event(PatternId),
     Signal {
@@ -1791,14 +1677,24 @@ pub enum HirTriggerPattern {
         value: Option<PatternId>,
     },
     Timeout(ExprId),
-    Mark(PatternId),
+    Mark(HirDialogueMarkId),
     Select(PatternId),
     Task(PatternId),
     Scope(PatternId),
-    Expr(ExprId),
+    Expression(ExprId),
+    Recovered(HirTriggerIssue),
 }
 
-impl HirTriggerPattern {
+/// Typed recovery retained by an invalid trigger shape.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirTriggerIssue {
+    Missing,
+    Malformed,
+    UnknownDialogueMark,
+    MarkOutsideDialogueApplication,
+}
+
+impl HirTrigger {
     pub(crate) fn validate_module(
         &self,
         expected: HirModuleId,
@@ -1806,10 +1702,10 @@ impl HirTriggerPattern {
         match self {
             Self::Input(pattern)
             | Self::Event(pattern)
-            | Self::Mark(pattern)
             | Self::Select(pattern)
             | Self::Task(pattern)
             | Self::Scope(pattern) => validate_pattern(expected, *pattern),
+            Self::Mark(mark) => validate_module(expected, mark.content().owner().module()),
             Self::Signal { target, value } => {
                 validate_expr(expected, *target)?;
                 if let Some(value) = value {
@@ -1817,17 +1713,43 @@ impl HirTriggerPattern {
                 }
                 Ok(())
             }
-            Self::Timeout(expression) | Self::Expr(expression) => {
+            Self::Timeout(expression) | Self::Expression(expression) => {
                 validate_expr(expected, *expression)
             }
+            Self::Recovered(_) => Ok(()),
         }
     }
+}
+
+/// Accepted unsafe-audit identity or one closed recovery reason.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirUnsafeAuditIdentity {
+    Accepted(UnsafeAuditId),
+    Recovered(HirUnsafeAuditIdentityIssue),
+}
+
+impl HirUnsafeAuditIdentity {
+    pub(crate) const fn recovery_issue(&self) -> Option<HirUnsafeAuditIdentityIssue> {
+        match self {
+            Self::Accepted(_) => None,
+            Self::Recovered(issue) => Some(*issue),
+        }
+    }
+}
+
+/// Closed reason that an unsafe-audit identity was not admitted.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirUnsafeAuditIdentityIssue {
+    Missing,
+    InvalidReference,
+    NonAbsolute,
+    WrongFamily,
 }
 
 /// Semantic unsafe-lifetime audit data without revision-bound source ranges.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirUnsafeAudit {
-    id: HirIdRefValue,
+    identity: HirUnsafeAuditIdentity,
     reason: Option<ExprId>,
     has_safety_doc: bool,
 }
@@ -1874,20 +1796,20 @@ impl HirUnsafeLifetimeBody {
 
 impl HirUnsafeAudit {
     pub(crate) const fn new(
-        id: HirIdRefValue,
+        identity: HirUnsafeAuditIdentity,
         reason: Option<ExprId>,
         has_safety_doc: bool,
     ) -> Self {
         Self {
-            id,
+            identity,
             reason,
             has_safety_doc,
         }
     }
 
     /// Returns the typed unsafe-audit identity.
-    pub const fn id(&self) -> &HirIdRefValue {
-        &self.id
+    pub const fn identity(&self) -> &HirUnsafeAuditIdentity {
+        &self.identity
     }
 
     /// Returns the optional typed reason expression.

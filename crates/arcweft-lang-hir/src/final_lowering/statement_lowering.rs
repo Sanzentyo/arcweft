@@ -12,20 +12,22 @@ mod thread_control;
 use arcweft_lang_syntax::attachment::node::{
     AssertionStatementKind, BlockKind, ChoiceStatementKind, ExpressionStatementKind,
     IfStatementKind, IncludeStatementKind, LetElseStatementKind, LetStatementKind, MatchArmKind,
-    MatchStatementKind, PredicateBlockKind, ProofBlockKind, ProofCallStatementKind,
-    ScopeStatementKind, SourceLocaleStatementKind, UnsafeLifetimeStatementKind,
+    MatchStatementKind, OnStatementKind, PredicateBlockKind, ProofBlockKind,
+    ProofCallStatementKind, ScopeStatementKind, SourceLocaleStatementKind,
+    UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
     AstKind, AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredIncludeTarget,
-    AttachedRequiredNestedThreadFlowBody, AttachedSourceLocaleValue, BlockTailNode,
-    IfStatementElseNode, IfStatementHeadNode, LetInitializerNode, MatchStatementArmBodyNode,
-    MatchStatementBodyNode, MatchStatementExpressionNode, StatementNode, UnsafeAuditBodyNode,
-    UnsafeAuditIdNode, UnsafeAuditReasonNode,
+    AttachedRequiredNestedThreadFlowBody, AttachedSourceLocaleValue, AttachedTriggerPattern,
+    BlockTailNode, IfStatementElseNode, IfStatementHeadNode, LetInitializerNode,
+    MatchStatementArmBodyNode, MatchStatementBodyNode, MatchStatementExpressionNode, StatementNode,
+    UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };
 use arcweft_lang_syntax::expressions::ExpressionProjection;
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
+use crate::dialogue_application::{HirDialogueContent, HirDialogueMarkName};
 use crate::expr::{
     HirBlockExpr, HirExpr, HirExprError, HirExprKind, HirExpressionRecoveryIssue,
     HirGenericExprIssue, HirPoisonState, HirRecoveryIssue, HirThreadIssue,
@@ -43,7 +45,8 @@ use crate::stmt::{
     HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
     HirSourceLocaleValue, HirStatementContext, HirStmt, HirStmtChildRole, HirStmtKind,
     HirStmtMatchArm, HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
-    HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirUnsafeAudit, HirUnsafeLifetimeBody,
+    HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue, HirTrigger, HirTriggerIssue, HirUnsafeAudit,
+    HirUnsafeAuditIdentity, HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 
 use super::{StagedHirModuleTransaction, require_limit};
@@ -125,6 +128,25 @@ impl StagedHirModuleTransaction<'_> {
     ) -> Result<LoweredThreadFlowStatement, HirLowerFailure> {
         let lowered =
             self.lower_attached_statement(statement, scope, HirStatementContext::Thread)?;
+        Ok(LoweredThreadFlowStatement {
+            owner: lowered.owner,
+            locals: lowered.locals,
+            poisoned: lowered.poisoned,
+        })
+    }
+
+    pub(super) fn lower_attached_dialogue_line_plan_statement(
+        &mut self,
+        statement: &StatementNode,
+        scope: ScopeId,
+        content: &HirDialogueContent,
+    ) -> Result<LoweredThreadFlowStatement, HirLowerFailure> {
+        let lowered = self.lower_attached_statement_with_mark_catalog(
+            statement,
+            scope,
+            HirStatementContext::Thread,
+            Some(content),
+        )?;
         Ok(LoweredThreadFlowStatement {
             owner: lowered.owner,
             locals: lowered.locals,
@@ -501,6 +523,16 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         context: HirStatementContext,
     ) -> Result<LoweredStatement, HirLowerFailure> {
+        self.lower_attached_statement_with_mark_catalog(attached, scope, context, None)
+    }
+
+    fn lower_attached_statement_with_mark_catalog(
+        &mut self,
+        attached: &StatementNode,
+        scope: ScopeId,
+        context: HirStatementContext,
+        mark_catalog: Option<&HirDialogueContent>,
+    ) -> Result<LoweredStatement, HirLowerFailure> {
         self.validate_attached_statement(attached, scope)?;
         let reservation = self.arenas.statements().reserve_source(
             &mut self.slots,
@@ -770,6 +802,15 @@ impl StagedHirModuleTransaction<'_> {
                     self.lower_attached_thread_control_statement(attached, owner, scope, context)?;
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
+            SyntaxKind::OnStatement => {
+                Self::require_thread_statement_context(context)?;
+                let statement = attached
+                    .cast::<OnStatementKind>()
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                let (kind, locals, recovery) =
+                    self.lower_attached_on_statement(&statement, owner, scope, mark_catalog)?;
+                (kind, locals, recovery)
+            }
             SyntaxKind::ExpressionStatement => {
                 let statement = attached
                     .cast::<ExpressionStatementKind>()
@@ -891,6 +932,175 @@ impl StagedHirModuleTransaction<'_> {
         } else {
             Err(HirInvariantFailure::InvalidArenaCommit.into())
         }
+    }
+
+    fn lower_attached_on_statement(
+        &mut self,
+        attached: &AstNode<OnStatementKind>,
+        owner: StmtId,
+        outer_scope: ScopeId,
+        mark_catalog: Option<&HirDialogueContent>,
+    ) -> Result<(HirStmtKind, Box<[LocalId]>, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
+        let attached = attached
+            .semantics()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let scope = self.allocate_statement_scope(
+            attached.syntax(),
+            owner,
+            outer_scope,
+            HirScopeKind::Block,
+        )?;
+        let (trigger, trigger_locals, trigger_recovery) =
+            self.lower_attached_trigger(attached.trigger(), owner, scope, mark_catalog)?;
+        let lowered_body = self.lower_attached_statement_with_mark_catalog(
+            attached.body(),
+            scope,
+            HirStatementContext::Thread,
+            mark_catalog,
+        )?;
+        let mut locals = Vec::with_capacity(trigger_locals.len() + lowered_body.locals.len());
+        locals.extend_from_slice(&trigger_locals);
+        locals.extend_from_slice(&lowered_body.locals);
+        require_limit(HirLimit::LocalsPerScope, locals.len())?;
+        self.close_scope_members(scope, locals.clone().into_boxed_slice())?;
+
+        let recovery = if trigger_recovery || lowered_body.poisoned || attached.has_recovery() {
+            Some(HirStmtRecoveryIssue::RecoveredChild {
+                role: HirStmtChildRole::Condition,
+            })
+        } else {
+            None
+        };
+        Ok((
+            HirStmtKind::On {
+                trigger,
+                scope,
+                body: Box::new([lowered_body.owner]),
+            },
+            Box::new([]),
+            recovery,
+        ))
+    }
+
+    fn lower_attached_trigger(
+        &mut self,
+        attached: &AttachedTriggerPattern,
+        owner: StmtId,
+        scope: ScopeId,
+        mark_catalog: Option<&HirDialogueContent>,
+    ) -> Result<(HirTrigger, Box<[LocalId]>, bool), HirLowerFailure> {
+        let mut recovered = attached.has_recovery();
+        let (trigger, locals) = match attached {
+            AttachedTriggerPattern::Input(pattern) => {
+                let lowered = self.lower_attached_pattern_binding(
+                    pattern.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                recovered |= lowered.poisoned;
+                (HirTrigger::Input(lowered.owner), lowered.locals)
+            }
+            AttachedTriggerPattern::Event(pattern) => {
+                let lowered = self.lower_attached_pattern_binding(
+                    pattern.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                recovered |= lowered.poisoned;
+                (HirTrigger::Event(lowered.owner), lowered.locals)
+            }
+            AttachedTriggerPattern::Mark(mark) => {
+                let trigger = if mark.has_recovery() {
+                    recovered = true;
+                    HirTrigger::Recovered(HirTriggerIssue::Malformed)
+                } else {
+                    let suffix = super::id_ref_projection::dialogue_mark_suffix(
+                        mark.selector().reference(),
+                    )?;
+                    let name = HirDialogueMarkName::new(suffix);
+                    match mark_catalog.and_then(|content| content.mark_by_name(&name)) {
+                        Some(mark) => HirTrigger::Mark(mark),
+                        None if mark_catalog.is_some() => {
+                            recovered = true;
+                            HirTrigger::Recovered(HirTriggerIssue::UnknownDialogueMark)
+                        }
+                        None => {
+                            recovered = true;
+                            HirTrigger::Recovered(HirTriggerIssue::MarkOutsideDialogueApplication)
+                        }
+                    }
+                };
+                (trigger, Box::<[LocalId]>::from([]))
+            }
+            AttachedTriggerPattern::Select(pattern) => {
+                let lowered = self.lower_attached_pattern_binding(
+                    pattern.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                recovered |= lowered.poisoned;
+                (HirTrigger::Select(lowered.owner), lowered.locals)
+            }
+            AttachedTriggerPattern::Task(pattern) => {
+                let lowered = self.lower_attached_pattern_binding(
+                    pattern.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                recovered |= lowered.poisoned;
+                (HirTrigger::Task(lowered.owner), lowered.locals)
+            }
+            AttachedTriggerPattern::Scope(pattern) => {
+                let lowered = self.lower_attached_pattern_binding(
+                    pattern.pattern(),
+                    scope,
+                    HirPatternBindingPolicy::PatternBinding,
+                )?;
+                recovered |= lowered.poisoned;
+                (HirTrigger::Scope(lowered.owner), lowered.locals)
+            }
+            AttachedTriggerPattern::Signal(signal) => {
+                let target = self.lower_required_statement_operand(
+                    owner,
+                    signal.target(),
+                    scope,
+                    |insertion| HirStmtRecoveryOperandSlot::TriggerTarget { insertion },
+                )?;
+                recovered |= self.staged_expression_is_poisoned(target)?;
+                let (value, locals) = match signal.value() {
+                    Some(value) => {
+                        let lowered = self.lower_attached_pattern_binding(
+                            value,
+                            scope,
+                            HirPatternBindingPolicy::PatternBinding,
+                        )?;
+                        recovered |= lowered.poisoned;
+                        (Some(lowered.owner), lowered.locals)
+                    }
+                    None => (None, Box::<[LocalId]>::from([])),
+                };
+                (HirTrigger::Signal { target, value }, locals)
+            }
+            AttachedTriggerPattern::Timeout(timeout) => {
+                let expression = self.lower_required_statement_operand(
+                    owner,
+                    timeout.expression(),
+                    scope,
+                    |insertion| HirStmtRecoveryOperandSlot::TriggerExpression { insertion },
+                )?;
+                recovered |= self.staged_expression_is_poisoned(expression)?;
+                (HirTrigger::Timeout(expression), Box::<[LocalId]>::from([]))
+            }
+            AttachedTriggerPattern::Expr(expression) => {
+                let expression = self.lower_attached_expression(expression, scope)?;
+                recovered |= self.staged_expression_is_poisoned(expression)?;
+                (
+                    HirTrigger::Expression(expression),
+                    Box::<[LocalId]>::from([]),
+                )
+            }
+        };
+        Ok((trigger, locals, recovered))
     }
 
     fn lower_attached_source_locale_statement(
@@ -1494,7 +1704,7 @@ impl StagedHirModuleTransaction<'_> {
         outer_scope: ScopeId,
         context: HirStatementContext,
     ) -> Result<(HirStmtKind, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
-        let audit_id = match attached
+        let audit_identity = match attached
             .audit_id()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
         {
@@ -1505,14 +1715,13 @@ impl StagedHirModuleTransaction<'_> {
                 let ExpressionProjection::EntityReference(reference) = semantic.projection() else {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 };
-                super::id_ref_projection::id_ref(reference)?
+                super::id_ref_projection::unsafe_audit_identity(reference)?
             }
-            UnsafeAuditIdNode::Missing(_) => HirIdRefValue::Recovered(HirIdRefRecovery::new(
-                HirIdRefShape::Missing,
-                HirIdRefIssue::Missing,
-            )),
+            UnsafeAuditIdNode::Missing(_) => {
+                HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
+            }
         };
-        let mut recovery = audit_id
+        let mut recovery = audit_identity
             .recovery_issue()
             .map(HirStmtRecoveryIssue::InvalidAuditId);
 
@@ -1587,7 +1796,7 @@ impl StagedHirModuleTransaction<'_> {
 
         Ok((
             HirStmtKind::UnsafeLifetime {
-                audit: HirUnsafeAudit::new(audit_id, reason, has_safety_doc),
+                audit: HirUnsafeAudit::new(audit_identity, reason, has_safety_doc),
                 body,
             },
             recovery,

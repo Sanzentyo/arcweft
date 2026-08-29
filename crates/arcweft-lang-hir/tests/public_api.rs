@@ -39,3 +39,9 @@ fn removed_and_session_identity_public_api_contract() {
     cases.compile_fail("tests/ui/final_flow_not_serde.rs");
     cases.compile_fail("tests/ui/removed_flow_compatibility_v2.rs");
 }
+
+#[test]
+fn removed_statement_trigger_select_unsafe_apis_and_untyped_identity_are_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/removed_statement_trigger_select_unsafe_apis.rs");
+}

@@ -324,8 +324,8 @@ defer on failed             -> current scope failed_defer_stack
 start { ... }               -> LineTaskNode::Start
 together { ... }            -> LineTaskNode::Parallel(JoinAll)
 at(0.35s) { ... }           -> child task with trigger Delay(0.35s)
-on mark(.mark) { ... }            -> child task with trigger Mark(".mark")
-wait(mark(.x))              -> LineEffectRequest::Wait(RuntimeWaitTarget::Mark(".x"))
+on mark(@.mark) { ... }      -> child task with typed RuntimeDialogueMarkId trigger
+wait(mark(@.x))              -> rejected before executable runtime-plan publication
 wait(0.35s)                 -> LineEffectRequest::Wait(RuntimeWaitTarget::Duration(...))
 'line.key <- expr           -> LineEffectRequest::RegisterHandle
 'line.key |> drop           -> LineEffectRequest::DropHandle
@@ -341,6 +341,10 @@ out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
 cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo
 ```
+
+Ordinary line-plan `wait(...)` currently admits only `Duration`. Mark waits are
+reserved for a later typed suspension cut and cannot fall through to a string
+runtime target.
 
 `yield` is not a line effect. It lowers only through Stream generation plans;
 a dialogue line plan must use `out` for line-scope values.
@@ -416,9 +420,9 @@ to replayable state-update events and require explicit capabilities.
 flow opening(state: GameState)
 effects { state.write('flow), state.write('global) }
 {
-    alice[見たことにする。[mark .seen][p]]
+    alice[見たことにする。[mark @.seen][p]]
     with {
-        on mark(.seen) {
+        on mark(@.seen) {
             'flow.flags.seen_alice_intro <- true
             'global.settings.skip_seen <- true
         }

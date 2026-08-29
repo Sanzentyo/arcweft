@@ -4,8 +4,9 @@ use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::expressions::{
     ExpressionProjection, SyntaxDialogueApplicationForm, SyntaxDialogueContentProjection,
-    SyntaxDialogueNodeProjection, SyntaxRichTextArgumentProjection,
+    SyntaxDialogueNodeProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
 };
+use arcweft_lang_syntax::id_ref::SyntaxIdRefPart;
 
 use super::leaf::id_ref_source_shape;
 use crate::dialogue_application::HirDialogueContentApplication;
@@ -746,6 +747,22 @@ fn add_dialogue_content_requirements(
                 HirSourceRequirement::Optional
             },
         );
+        if let SyntaxRichTextTagIdentity::Marker(selector) = projection.identity() {
+            for part in selector
+                .components()
+                .iter()
+                .map(|component| component.part())
+            {
+                add_expression_requirement(
+                    requirements,
+                    HirExprSourceRole::RichTextTag {
+                        tag,
+                        part: HirRichTextTagSourcePart::Marker(hir_id_ref_source_part(part)),
+                    },
+                    HirSourceRequirement::Required,
+                );
+            }
+        }
         for (argument, projection) in projection.arguments().iter().enumerate() {
             let argument =
                 u16::try_from(argument).expect("bounded RichText argument ordinal fits u16");
@@ -761,6 +778,17 @@ fn add_dialogue_content_requirements(
                 );
             }
         }
+    }
+}
+
+fn hir_id_ref_source_part(part: SyntaxIdRefPart) -> HirIdRefSourcePart {
+    match part {
+        SyntaxIdRefPart::Whole => HirIdRefSourcePart::Whole,
+        SyntaxIdRefPart::AbsoluteMarker => HirIdRefSourcePart::AbsoluteMarker,
+        SyntaxIdRefPart::Family => HirIdRefSourcePart::Family,
+        SyntaxIdRefPart::FamilySeparator => HirIdRefSourcePart::FamilySeparator,
+        SyntaxIdRefPart::ParentMarker { ordinal } => HirIdRefSourcePart::ParentMarker { ordinal },
+        SyntaxIdRefPart::SuffixSegment { ordinal } => HirIdRefSourcePart::SuffixSegment { ordinal },
     }
 }
 

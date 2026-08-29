@@ -7,6 +7,7 @@
 use crate::record_field::CheckedRecordFieldSemanticId;
 use arcweft_lang_hir::{
     body_edges::{HirBodyChildRole, HirBodyKind},
+    dialogue_application::HirDialogueMarkOrdinal,
     expr::{
         HirExpressionOwnedBodyRole, HirLinePlanStatementRole, HirNestedExpressionPath,
         HirNestedExpressionPathSegment,
@@ -42,6 +43,16 @@ const CHECKED_BODY_COORDINATE_SUFFIX_TAG: u8 = 0;
 const CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG: u8 = 1;
 #[allow(dead_code)]
 const CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG: u8 = 0;
+#[allow(
+    dead_code,
+    reason = "consumed by the version-one statement transcript cut"
+)]
+const CHECKED_DIALOGUE_MARK_COORDINATE_SUFFIX_TAG: u8 = 2;
+#[allow(
+    dead_code,
+    reason = "consumed by the version-one statement transcript cut"
+)]
+const CHECKED_DIALOGUE_CONTENT_MARK_FAMILY_TAG: u8 = 0;
 
 /// Stable semantic identity of one accepted declaration root.
 ///
@@ -242,21 +253,6 @@ pub(crate) enum CheckedExpressionChildRole {
     DialogueTagPayload {
         ordinal: u32,
     },
-    LinePlanOptionValue {
-        path: CheckedNestedPathV1,
-    },
-    LinePlanLetValue {
-        path: CheckedNestedPathV1,
-    },
-    LinePlanOut {
-        path: CheckedNestedPathV1,
-    },
-    LinePlanTimelineAssert {
-        path: CheckedNestedPathV1,
-    },
-    LinePlanExpression {
-        path: CheckedNestedPathV1,
-    },
     PostfixIndexCandidate,
     PostfixDialogueCandidate,
     ForInput,
@@ -376,11 +372,6 @@ impl CheckedExpressionChildRole {
             Self::DialogueCoordinate { .. } => 0x101A,
             Self::DialogueInterpolation { .. } => 0x101B,
             Self::DialogueTagPayload { .. } => 0x101C,
-            Self::LinePlanOptionValue { .. } => 0x101D,
-            Self::LinePlanLetValue { .. } => 0x101E,
-            Self::LinePlanOut { .. } => 0x101F,
-            Self::LinePlanTimelineAssert { .. } => 0x1020,
-            Self::LinePlanExpression { .. } => 0x1021,
             Self::PostfixIndexCandidate => 0x1024,
             Self::PostfixDialogueCandidate => 0x1025,
             Self::ForInput => 0x1026,
@@ -446,12 +437,7 @@ impl CheckedExpressionChildRole {
                 output.extend_from_slice(&arm.to_le_bytes());
                 path.write_transcript(output)?;
             }
-            Self::LinePlanOptionValue { path }
-            | Self::LinePlanLetValue { path }
-            | Self::LinePlanOut { path }
-            | Self::LinePlanTimelineAssert { path }
-            | Self::LinePlanExpression { path }
-            | Self::ChoiceForSource { path }
+            Self::ChoiceForSource { path }
             | Self::ChoiceMatchScrutinee { path }
             | Self::ChoiceOptionId { path }
             | Self::ChoiceOptionForSource { path }
@@ -761,7 +747,7 @@ impl CheckedStatementCoordinateEvidence {
     dead_code,
     reason = "the semantic transcript graph consumes this typed coordinate when body digests publish"
 )]
-pub(crate) struct StableCheckedBodyCoordinate {
+pub struct StableCheckedBodyCoordinate {
     owner: HirSemanticBodyOwnerRole,
     kind: HirBodyKind,
     path: CheckedSemanticPath,
@@ -780,11 +766,11 @@ impl StableCheckedBodyCoordinate {
         }
     }
 
-    pub(crate) const fn path(&self) -> &CheckedSemanticPath {
+    pub const fn path(&self) -> &CheckedSemanticPath {
         &self.path
     }
 
-    pub(crate) const fn kind(&self) -> HirBodyKind {
+    pub const fn kind(&self) -> HirBodyKind {
         self.kind
     }
 
@@ -811,7 +797,7 @@ impl StableCheckedBodyCoordinate {
     dead_code,
     reason = "the control-transfer coordinate is consumed by the subsequent checked statement cut"
 )]
-pub(crate) struct StableCheckedOutputTargetCoordinate {
+pub struct StableCheckedOutputTargetCoordinate {
     application: CheckedSemanticPath,
 }
 
@@ -824,7 +810,7 @@ impl StableCheckedOutputTargetCoordinate {
         Self { application }
     }
 
-    pub(crate) const fn application(&self) -> &CheckedSemanticPath {
+    pub const fn application(&self) -> &CheckedSemanticPath {
         &self.application
     }
 
@@ -832,6 +818,46 @@ impl StableCheckedOutputTargetCoordinate {
         let mut output = self.application.canonical_bytes()?;
         output.push(CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG);
         output.push(CHECKED_OUTPUT_TARGET_DIALOGUE_LINE_PLAN_FAMILY_TAG);
+        Ok(output)
+    }
+}
+
+/// Stable accepted-rooted coordinate for one marker in dialogue content.
+///
+/// Marker names, source locations, HIR tag identities, and runtime IDs are
+/// intentionally excluded. The accepted application path plus source-ordered
+/// content-local ordinal is the whole identity.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StableCheckedDialogueMarkCoordinate {
+    application: CheckedSemanticPath,
+    ordinal: HirDialogueMarkOrdinal,
+}
+
+impl StableCheckedDialogueMarkCoordinate {
+    fn new(application: CheckedSemanticPath, ordinal: HirDialogueMarkOrdinal) -> Self {
+        Self {
+            application,
+            ordinal,
+        }
+    }
+
+    pub const fn application(&self) -> &CheckedSemanticPath {
+        &self.application
+    }
+
+    pub const fn ordinal(&self) -> HirDialogueMarkOrdinal {
+        self.ordinal
+    }
+
+    #[allow(
+        dead_code,
+        reason = "consumed by the version-one statement transcript cut"
+    )]
+    pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+        let mut output = self.application.canonical_bytes()?;
+        output.push(CHECKED_DIALOGUE_MARK_COORDINATE_SUFFIX_TAG);
+        output.push(CHECKED_DIALOGUE_CONTENT_MARK_FAMILY_TAG);
+        output.extend_from_slice(&self.ordinal.get().to_le_bytes());
         Ok(output)
     }
 }
@@ -905,7 +931,7 @@ impl CheckedBodyCoordinateEvidence {
     dead_code,
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
-pub(crate) struct CheckedOutputTarget {
+pub struct CheckedOutputTarget {
     coordinate: StableCheckedOutputTargetCoordinate,
 }
 
@@ -918,7 +944,7 @@ impl CheckedOutputTarget {
         Self { coordinate }
     }
 
-    pub(crate) const fn coordinate(&self) -> &StableCheckedOutputTargetCoordinate {
+    pub const fn coordinate(&self) -> &StableCheckedOutputTargetCoordinate {
         &self.coordinate
     }
 }
@@ -929,7 +955,7 @@ impl CheckedOutputTarget {
     dead_code,
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
-pub(crate) struct CheckedLoopControlTarget {
+pub struct CheckedLoopControlTarget {
     family: HirLoopTargetFamily,
     body: StableCheckedBodyCoordinate,
 }
@@ -943,11 +969,11 @@ impl CheckedLoopControlTarget {
         Self { family, body }
     }
 
-    pub(crate) const fn family(&self) -> HirLoopTargetFamily {
+    pub const fn family(&self) -> HirLoopTargetFamily {
         self.family
     }
 
-    pub(crate) const fn body(&self) -> &StableCheckedBodyCoordinate {
+    pub const fn body(&self) -> &StableCheckedBodyCoordinate {
         &self.body
     }
 }
@@ -958,7 +984,7 @@ impl CheckedLoopControlTarget {
     dead_code,
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
-pub(crate) enum CheckedControlTransferTarget {
+pub enum CheckedControlTransferTarget {
     Output(CheckedOutputTarget),
     Loop(CheckedLoopControlTarget),
 }
@@ -968,14 +994,14 @@ pub(crate) enum CheckedControlTransferTarget {
     reason = "the control-transfer target is consumed by the subsequent checked statement cut"
 )]
 impl CheckedControlTransferTarget {
-    pub(crate) const fn output(&self) -> Option<&CheckedOutputTarget> {
+    pub const fn output(&self) -> Option<&CheckedOutputTarget> {
         match self {
             Self::Output(target) => Some(target),
             Self::Loop(_) => None,
         }
     }
 
-    pub(crate) const fn loop_target(&self) -> Option<&CheckedLoopControlTarget> {
+    pub const fn loop_target(&self) -> Option<&CheckedLoopControlTarget> {
         match self {
             Self::Output(_) => None,
             Self::Loop(target) => Some(target),
@@ -1494,10 +1520,6 @@ fn write_expression_owned_role(
             write_hir_nested_path(output, path)?;
             write_line_plan_statement_role(output, *role);
         }
-        HirExpressionOwnedBodyRole::DialogueLinePlanLet { path } => {
-            output.push(13);
-            write_hir_nested_path(output, path)?;
-        }
     }
     Ok(())
 }
@@ -1663,18 +1685,17 @@ fn write_statement_role_payload(output: &mut Vec<u8>, role: HirStatementChildRol
 fn statement_body_tag(role: HirStatementBodyRole) -> u8 {
     match role {
         HirStatementBodyRole::LetElse => 0,
-        HirStatementBodyRole::Defer => 1,
-        HirStatementBodyRole::On => 2,
-        HirStatementBodyRole::UnsafeLifetime => 3,
-        HirStatementBodyRole::Then => 4,
-        HirStatementBodyRole::Else => 5,
-        HirStatementBodyRole::MatchArm { .. } => 6,
-        HirStatementBodyRole::While => 7,
-        HirStatementBodyRole::WhileLet => 8,
-        HirStatementBodyRole::For => 9,
-        HirStatementBodyRole::SelectBranch { .. } => 10,
-        HirStatementBodyRole::SourceLocale => 11,
-        HirStatementBodyRole::Scope => 12,
+        HirStatementBodyRole::On => 1,
+        HirStatementBodyRole::UnsafeLifetime => 2,
+        HirStatementBodyRole::Then => 3,
+        HirStatementBodyRole::Else => 4,
+        HirStatementBodyRole::MatchArm { .. } => 5,
+        HirStatementBodyRole::While => 6,
+        HirStatementBodyRole::WhileLet => 7,
+        HirStatementBodyRole::For => 8,
+        HirStatementBodyRole::SelectBranch { .. } => 9,
+        HirStatementBodyRole::SourceLocale => 10,
+        HirStatementBodyRole::Scope => 11,
     }
 }
 
@@ -1685,7 +1706,6 @@ fn write_statement_body_payload(output: &mut Vec<u8>, role: HirStatementBodyRole
             output.extend_from_slice(&branch.to_le_bytes());
         }
         HirStatementBodyRole::LetElse
-        | HirStatementBodyRole::Defer
         | HirStatementBodyRole::On
         | HirStatementBodyRole::UnsafeLifetime
         | HirStatementBodyRole::Then

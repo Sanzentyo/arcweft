@@ -749,7 +749,9 @@ fn dialogue_application_children_match(
                         HirRichTextTagPayload::FxCall(expression)
                         | HirRichTextTagPayload::DialogueCall(expression)
                         | HirRichTextTagPayload::Condition(expression) => Some(*expression),
-                        HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => None,
+                        HirRichTextTagPayload::Arguments
+                        | HirRichTextTagPayload::Marker(_)
+                        | HirRichTextTagPayload::None => None,
                     })
             }),
             _ => None,

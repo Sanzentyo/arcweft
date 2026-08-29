@@ -2,6 +2,7 @@ use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use arcweft_id::UnsafeAuditId;
 use arcweft_lang_syntax::attachment::node::{FunctionBodyKind, LetStatementKind};
 use arcweft_lang_syntax::attachment::{
     AttachedExpressionNode, AttachedPatternNode, AttachedRequiredNestedThreadFlowBody,
@@ -37,8 +38,8 @@ use crate::identity::{
     SyntheticRole, TypeId,
 };
 use crate::leaf::{
-    HirEntityReference, HirIdRef, HirIdRefInvariantError, HirIdRefIssue, HirIdRefRecovery,
-    HirIdRefShape, HirIdRefValue, HirName, HirPath, HirPathIssue, HirPathRoot, HirPathSegment,
+    HirIdRefInvariantError, HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirName,
+    HirPath, HirPathIssue, HirPathRoot, HirPathSegment,
 };
 use crate::pattern::{
     HirPattern, HirPatternBinding, HirPatternBindingIssue, HirPatternField, HirPatternFieldIssue,
@@ -51,7 +52,7 @@ use crate::scope::{HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner
 use crate::slot::{SlotSnapshot, StagedSlotTransaction};
 use crate::stmt::{
     HirStmt, HirStmtKind, HirStmtPoisonState, HirStmtRecoveryIssue, HirUnsafeAudit,
-    HirUnsafeLifetimeBody,
+    HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
 };
 use crate::type_ref::{HirType, HirTypeKind, HirTypeResolver};
 
@@ -305,9 +306,9 @@ fn parsed_statement_source(document_id: &str, source: &str) -> (ParsedSource, St
 fn unsafe_stmt_kind(body_scope: ScopeId) -> HirStmtKind {
     HirStmtKind::UnsafeLifetime {
         audit: HirUnsafeAudit::new(
-            HirIdRefValue::Resolved(HirIdRef::absolute(
-                HirEntityReference::try_new("unsafe.audit".into()).expect("test unsafe audit ID"),
-            )),
+            HirUnsafeAuditIdentity::Accepted(
+                UnsafeAuditId::try_new("unsafe.audit").expect("test unsafe audit ID"),
+            ),
             None,
             false,
         ),
@@ -2961,10 +2962,9 @@ fn recovered_unsafe_statement_publishes_no_fabricated_edit_row() {
         scope(owner_module, 2),
         HirStmtKind::UnsafeLifetime {
             audit: HirUnsafeAudit::new(
-                HirIdRefValue::Resolved(HirIdRef::absolute(
-                    HirEntityReference::try_new("unsafe.audit".into())
-                        .expect("test unsafe audit ID"),
-                )),
+                HirUnsafeAuditIdentity::Accepted(
+                    UnsafeAuditId::try_new("unsafe.audit").expect("test unsafe audit ID"),
+                ),
                 None,
                 false,
             ),

@@ -31,14 +31,14 @@ use semantics::{
 
 use super::expression_types::value_resolution_type;
 use super::preparation::AssociatedReceiverTypeResolution;
-use super::statements::{expression_span, scope_is_within, source_span};
+use super::statements::{expression_span, source_span};
 use super::{
     AcceptedCandidateRank, Analyzer, AnalyzerExpressionContext, BTreeMap,
     CallCalleeClassificationFact, CallResolverAuthority, CallResolverRequest,
     CallableDeclarationKey, CallableDeclarationOwner, CallableGroupIndex, CallableInstantiation,
     CandidateSelection, CharacterDialogueCharacterType, CharacterDialogueFieldCoordinate,
     CharacterDialoguePatchContext, CharacterOwnerSource, CheckedCallArgumentSlotSource,
-    CheckedCallableDeclaration, CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
+    CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedExpression, CheckedExpressionResolution,
     CheckedPatchOperation, CheckedTypeSelection, CheckedValueResolution, EffectRow, EffectSet,
@@ -504,32 +504,25 @@ impl Analyzer<'_, '_, '_> {
         module: &HirModule,
         expression: ExprId,
     ) -> Result<Option<CallableDeclarationKey>, FinalSemanticAnalysisError> {
-        let scope = module
-            .resolve_expr(expression)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-            .scope();
-        let staged = self
-            .staged_callables
-            .as_ref()
-            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let mut enclosing = None;
-        for body in &staged.bodies {
-            if body.module != module.module_id()
-                || body.owner != CallableDeclarationOwner::Function
-                || !scope_is_within(module, scope, body.scope)?
-            {
-                continue;
-            }
-            let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            };
-            if declaration.owner() != CallableDeclarationOwner::Function
-                || enclosing.replace(declaration.clone()).is_some()
-            {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            }
+        if module.module_id() != expression.module() || module.resolve_expr(expression).is_err() {
+            return Err(FinalSemanticAnalysisError::InvalidOwner);
         }
-        Ok(enclosing)
+        let location = self
+            .topology
+            .semantic_path(
+                arcweft_lang_hir::project::HirSemanticPathOwnerId::Expression(expression),
+            )
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        match location.root() {
+            arcweft_lang_hir::project::HirSemanticPathRoot::Declaration(declaration)
+                if declaration.owner() == CallableDeclarationOwner::Function =>
+            {
+                Ok(Some(declaration.clone()))
+            }
+            arcweft_lang_hir::project::HirSemanticPathRoot::Declaration(_)
+            | arcweft_lang_hir::project::HirSemanticPathRoot::Item { .. } => Ok(None),
+        }
     }
 
     pub(super) fn check_call_expression_in_context(

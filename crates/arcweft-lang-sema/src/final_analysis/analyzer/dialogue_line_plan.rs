@@ -1,5 +1,8 @@
 use super::*;
 
+use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
+use arcweft_lang_hir::identity::StmtId;
+
 impl Analyzer<'_, '_, '_> {
     pub(super) fn prepare_dialogue_content_application(
         &mut self,
@@ -68,17 +71,18 @@ impl Analyzer<'_, '_, '_> {
             }
             _ => None,
         };
-        let rich_text =
-            RichTextAttributeChecker::check(module, application.content()).map_err(|_| {
+        let rich_text_check = RichTextAttributeChecker::check(module, application.content())
+            .map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::RichTextSourceQuery {
                     owner,
                 })
             })?;
+        let rich_text = rich_text_check.report();
         if !rich_text.is_valid() {
             return Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::InvalidRichTextAttributes {
                     owner,
-                    report: Box::new(rich_text),
+                    diagnostics: rich_text.diagnostics().to_vec().into_boxed_slice(),
                 },
             ));
         }
@@ -93,9 +97,9 @@ impl Analyzer<'_, '_, '_> {
             }
         }
 
-        let line_plan = self.prepared_dialogue_line_plan(module, application.plan(), &rich_text)?;
+        let line_plan = self.prepared_dialogue_line_plan(module, rich_text)?;
         let line_result = application.plan().map_or(Ok(TypeKind::Unit), |plan| {
-            self.check_dialogue_line_plan_output(context, plan.items())
+            self.check_dialogue_line_plan_output(context, owner, plan.items())
         })?;
         let call_target = target.clone();
         let ty = self.publish_dialogue_content_application_call(
@@ -113,8 +117,8 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         };
-        let nested_path_evidence = self.dialogue_nested_path_evidence(owner);
         let shell = PreparedExpressionShell::new(ty, selection, EffectSet::new());
+        let (rich_text, marker_catalog) = rich_text_check.into_parts();
         let prepared = PreparedDialogueApplication::try_new(
             shell,
             target,
@@ -122,70 +126,30 @@ impl Analyzer<'_, '_, '_> {
             Box::new(rich_text),
             line_plan,
             line_result,
-            nested_path_evidence,
+            None,
         )
         .ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily)
         })?;
+        self.facts
+            .publish_dialogue_mark_catalog(owner, marker_catalog)
+            .map_err(AnalyzerExpressionError::fact)?;
         Ok(PreparedExpressionFact::DialogueApplication(prepared))
-    }
-
-    fn dialogue_nested_path_evidence(
-        &self,
-        owner: ExprId,
-    ) -> Option<
-        Result<
-            crate::final_analysis::NestedPathEvidence,
-            crate::final_analysis::CheckedChildEdgeError,
-        >,
-    > {
-        let edges = self
-            .topology
-            .expression_edges(owner)
-            .iter()
-            .filter_map(|edge| match edge {
-                arcweft_lang_hir::project::HirExpressionEvaluationEdge::Expression {
-                    role,
-                    ownership: arcweft_lang_hir::expr::HirExpressionChildOwnership::Owning,
-                    child,
-                } => Some((*child, role.clone())),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        crate::final_analysis::match_edges::build_line_plan_nested_path_evidence(
-            &edges,
-            self.facts.expressions(),
-        )
     }
 
     fn prepared_dialogue_line_plan(
         &self,
         module: &HirModule,
-        plan: Option<&arcweft_lang_hir::dialogue_application::HirLinePlan>,
-        rich_text: &crate::checked_rich_text::CheckedRichTextReport,
+        rich_text: &crate::checked_rich_text::PreparedCheckedRichTextReport,
     ) -> Result<PreparedDialogueLinePlan, AnalyzerExpressionError> {
-        let mut marks = Vec::<PublicId>::new();
-        let mut mark_ordinals = std::collections::BTreeMap::<PublicId, u32>::new();
         let mut effect_sites = Vec::new();
         for token in rich_text.content().tokens() {
-            let CheckedDialogueToken::Open(tag) = token else {
+            let PreparedCheckedDialogueToken::Open(tag) = token else {
                 continue;
             };
             match tag.action() {
-                CheckedRichTextAction::Marker(mark) => {
-                    let ordinal = u32::try_from(marks.len()).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::AccountingOverflow,
-                        )
-                    })?;
-                    if mark_ordinals.insert(mark.clone(), ordinal).is_some() {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    marks.push(mark.clone());
-                }
-                CheckedRichTextAction::Host {
+                PreparedCheckedRichTextAction::Marker => {}
+                PreparedCheckedRichTextAction::Host {
                     action:
                         event @ (CheckedDialogueHostEvent::TimedCue { .. }
                         | CheckedDialogueHostEvent::Call { .. }),
@@ -219,103 +183,17 @@ impl Analyzer<'_, '_, '_> {
                         id, trigger, expression, effect,
                     ));
                 }
-                CheckedRichTextAction::DirectStyle { .. }
-                | CheckedRichTextAction::Control { .. }
-                | CheckedRichTextAction::Style { .. }
-                | CheckedRichTextAction::Layout { .. }
-                | CheckedRichTextAction::Transform { .. }
-                | CheckedRichTextAction::Object { .. }
-                | CheckedRichTextAction::BuiltinFx { .. }
-                | CheckedRichTextAction::Host { .. } => {}
+                PreparedCheckedRichTextAction::DirectStyle { .. }
+                | PreparedCheckedRichTextAction::Control { .. }
+                | PreparedCheckedRichTextAction::Style { .. }
+                | PreparedCheckedRichTextAction::Layout { .. }
+                | PreparedCheckedRichTextAction::Transform { .. }
+                | PreparedCheckedRichTextAction::Object { .. }
+                | PreparedCheckedRichTextAction::BuiltinFx { .. }
+                | PreparedCheckedRichTextAction::Host { .. } => {}
             }
         }
-        let mut handlers = Vec::new();
-        if let Some(plan) = plan {
-            self.collect_dialogue_mark_handlers(
-                module,
-                plan.items(),
-                &mark_ordinals,
-                &mut handlers,
-            )?;
-        }
-        Ok(PreparedDialogueLinePlan::new(marks, handlers, effect_sites))
-    }
-
-    fn collect_dialogue_mark_handlers(
-        &self,
-        module: &HirModule,
-        items: &[HirLinePlanItem],
-        marks: &std::collections::BTreeMap<PublicId, u32>,
-        handlers: &mut Vec<CheckedDialogueMarkHandler>,
-    ) -> Result<(), AnalyzerExpressionError> {
-        for item in items {
-            match item {
-                HirLinePlanItem::Statement(statement) | HirLinePlanItem::On(statement) => {
-                    let statement_payload = module.resolve_stmt(*statement).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let HirStmtKind::On {
-                        trigger: HirTriggerPattern::Mark(pattern),
-                        ..
-                    } = statement_payload.kind()
-                    else {
-                        continue;
-                    };
-                    let pattern = module.resolve_pattern(*pattern).map_err(|_| {
-                        AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                    let HirPatternKind::EntityReference(HirIdRefValue::Resolved(
-                        HirIdRef::Relative(mark),
-                    )) = pattern.kind()
-                    else {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    };
-                    if mark.parent_depth() != 0 || mark.suffix().as_str().contains('.') {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    let mark = PublicId::try_new(mark.suffix().as_str()).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                    let ordinal = marks.get(&mark).copied().ok_or_else(|| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        )
-                    })?;
-                    if handlers
-                        .iter()
-                        .any(|handler| handler.statement() == *statement)
-                    {
-                        return Err(AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::WrongPayloadFamily,
-                        ));
-                    }
-                    handlers.push(CheckedDialogueMarkHandler::new(
-                        *statement,
-                        CheckedDialogueMarkOrdinal::new(ordinal),
-                    ));
-                }
-                HirLinePlanItem::StartGroup(children)
-                | HirLinePlanItem::TogetherGroup(children) => {
-                    self.collect_dialogue_mark_handlers(module, children, marks, handlers)?
-                }
-                HirLinePlanItem::Init(_)
-                | HirLinePlanItem::Thread(_)
-                | HirLinePlanItem::Option { .. }
-                | HirLinePlanItem::Let { .. }
-                | HirLinePlanItem::Out { .. }
-                | HirLinePlanItem::CancelRule(_)
-                | HirLinePlanItem::TimelineAssert { .. }
-                | HirLinePlanItem::Expression(_)
-                | HirLinePlanItem::Error(_) => {}
-            }
-        }
-        Ok(())
+        Ok(PreparedDialogueLinePlan::new(effect_sites))
     }
 
     fn publish_dialogue_content_application_call(
@@ -433,35 +311,70 @@ impl Analyzer<'_, '_, '_> {
     fn check_dialogue_line_plan_output(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
-        items: &[arcweft_lang_hir::dialogue_application::HirLinePlanItem],
+        application: ExprId,
+        items: &[HirLinePlanItem],
     ) -> Result<TypeKind, AnalyzerExpressionError> {
-        use arcweft_lang_hir::dialogue_application::HirLinePlanItem;
-
         let mut output: Option<TypeKind> = None;
         let mut output_statements = BTreeSet::new();
+        let mut check_statement = |statement: StmtId| {
+            let module = self
+                .module(statement.module())
+                .map_err(AnalyzerExpressionError::fatal)?;
+            let payload = module.resolve_stmt(statement).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            let arcweft_lang_hir::stmt::HirStmtEvaluationPlan::Value {
+                kind: arcweft_lang_hir::stmt::HirStmtValuePlanKind::Out,
+                expression: Some(value),
+                ..
+            } = payload.kind().evaluation_plan()
+            else {
+                return Ok(());
+            };
+            let transfer = self.topology.control_transfer_row(statement).map_err(|_| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
+                || transfer.target().output_application() != Some(application)
+            {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                ));
+            }
+            if !output_statements.insert(statement) {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                ));
+            }
+            let checked = self.evaluate_expression(context, value, output.as_ref())?;
+            match &output {
+                Some(expected) if !expected.accepts(checked.ty()) => {
+                    Err(AnalyzerExpressionError::rejected(value))
+                }
+                Some(_) => Ok(()),
+                None => {
+                    output = Some(checked.ty().clone());
+                    Ok(())
+                }
+            }
+        };
         let mut pending = vec![items];
         while let Some(items) = pending.pop() {
             for item in items {
                 match item {
-                    HirLinePlanItem::Out { value, statement } => {
-                        if !output_statements.insert(*statement) {
-                            return Err(AnalyzerExpressionError::fatal(
-                                FinalSemanticAnalysisError::WrongPayloadFamily,
-                            ));
-                        }
-                        let checked = self.evaluate_expression(context, *value, output.as_ref())?;
-                        match &output {
-                            Some(expected) if !expected.accepts(checked.ty()) => {
-                                return Err(AnalyzerExpressionError::rejected(*value));
-                            }
-                            Some(_) => {}
-                            None => output = Some(checked.ty().clone()),
+                    HirLinePlanItem::Init(statements) => {
+                        for statement in statements {
+                            check_statement(*statement)?;
                         }
                     }
+                    HirLinePlanItem::Thread(statement)
+                    | HirLinePlanItem::On(statement)
+                    | HirLinePlanItem::Statement(statement)
+                    | HirLinePlanItem::CancelRule(statement)
+                    | HirLinePlanItem::Error(statement) => check_statement(*statement)?,
                     HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                         pending.push(items)
                     }
-                    _ => {}
                 }
             }
         }

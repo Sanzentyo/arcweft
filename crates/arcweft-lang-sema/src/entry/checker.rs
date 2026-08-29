@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_core::entry::FlowParameterCoordinate;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
-    identity::{ExprId, ItemId, TypeId},
+    identity::{ExprId, ItemId, StmtId, TypeId},
     item::{
         HirEntryDeclaration, HirEntryId, HirEntryKind, HirEntryMember, HirEntryPathValue,
         HirEntryRoute, HirEntryRouteBindings, HirEntryTarget, HirFlowItem, HirFunctionItem,
@@ -16,7 +16,7 @@ use arcweft_lang_hir::{
     project::HirExecutableProjectView,
     source_index::{
         HirEntrySourcePart, HirExprSourceRole, HirItemSourceRole, HirSourcePresence,
-        HirSourceQuery, HirSourceSite,
+        HirSourceQuery, HirSourceSite, HirStmtSourceRole,
     },
     symbol::{
         CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallableSymbol,
@@ -32,9 +32,12 @@ use arcweft_source::SourceSpan;
 use crate::{
     callable::{
         CallAnalysisOutcome, CallTargetFacts, CallableCandidateId, CallableFamily,
-        CheckedCallableCatalog, CheckedCallableFacts,
+        CheckedCallableCatalog, CheckedCallableDeclaration, CheckedCallableFacts,
     },
-    final_analysis::{CheckedItem, CheckedProjectNominal, RuntimeNominalProjectionSeal},
+    final_analysis::{
+        CheckedItem, CheckedProjectNominal, PreparedEntryIngressSeal, PreparedEventScrutineeProof,
+        PreparedExecutableIngressFacts, RuntimeNominalProjectionSeal,
+    },
     types::TypeKind,
 };
 
@@ -44,7 +47,7 @@ use super::{
     CheckedEntryFlowTarget, CheckedEntryId, CheckedEntryKind, CheckedEntryRoute,
     CheckedEntryRouteBinding, CheckedEntryRouteBindingSource, CheckedExistingEntry,
     CheckedExistingEntryTarget, CheckedFlowId, CheckedInitialFlowRole, CheckedNominalRole,
-    CheckedStatefulEntry, CheckedStatefulEntryKind, digest,
+    CheckedStatefulEntry, CheckedStatefulEntryKind, PreparedEntryFlowTarget, digest,
 };
 
 mod contract;
@@ -61,7 +64,7 @@ pub struct CheckedEntryDiagnostic {
 }
 
 impl CheckedEntryDiagnostic {
-    fn new(code: &'static str, message: impl Into<String>, primary: SourceSpan) -> Self {
+    pub(super) fn new(code: &'static str, message: impl Into<String>, primary: SourceSpan) -> Self {
         Self {
             code,
             message: message.into(),
@@ -70,7 +73,7 @@ impl CheckedEntryDiagnostic {
         }
     }
 
-    fn with_related(mut self, related: impl IntoIterator<Item = SourceSpan>) -> Self {
+    pub(super) fn with_related(mut self, related: impl IntoIterator<Item = SourceSpan>) -> Self {
         self.related.extend(related);
         self.related.sort_by(|left, right| {
             left.source()
@@ -162,14 +165,18 @@ pub(crate) fn check_prepared_project_entries(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     authority: &PreparedEntrySemanticAuthority<'_>,
+    ingress: PreparedEntryIngressSeal,
 ) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
-    EntryCheckContext::new(project, symbols, authority).check()
+    EntryCheckContext::new(project, symbols, authority, ingress).check()
 }
 
 struct EntryCheckContext<'a> {
     project: HirExecutableProjectView<'a>,
     symbols: &'a ProjectSymbolTable,
     authority: &'a PreparedEntrySemanticAuthority<'a>,
+    ingress_facts: PreparedExecutableIngressFacts,
+    roots: super::PreparedEntryRootCatalog,
+    event_proofs: BTreeMap<arcweft_lang_hir::identity::StmtId, PreparedEventScrutineeProof>,
 }
 
 struct ResolvedCallable<'a> {
@@ -227,20 +234,26 @@ impl<'a> EntryCheckContext<'a> {
         project: HirExecutableProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
         authority: &'a PreparedEntrySemanticAuthority<'a>,
+        ingress: PreparedEntryIngressSeal,
     ) -> Self {
+        let (ingress_facts, roots, event_proofs) = ingress.into_parts();
         Self {
             project,
             symbols,
             authority,
+            ingress_facts,
+            roots,
+            event_proofs,
         }
     }
 
-    fn check(self) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
+    fn check(mut self) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
         let mut diagnostics = Vec::new();
         let mut entries = Vec::new();
         let mut ids = BTreeMap::<PublicId, SourceSpan>::new();
 
-        for item in self.project.items() {
+        let project = self.project;
+        for item in project.items() {
             let HirItemKind::Entry(entry) = item.item().kind() else {
                 continue;
             };
@@ -273,8 +286,22 @@ impl<'a> EntryCheckContext<'a> {
         self.validate_function_role_attributes(&selected_controllers, &mut diagnostics);
         self.validate_agent_callable_roles(&selected_controllers, &mut diagnostics);
 
+        if diagnostics.is_empty() && !self.roots.is_empty() {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unconsumed_root",
+                "one or more prepared stateful Entry roots were not consumed",
+                self.project
+                    .items()
+                    .find_map(|item| {
+                        self.roots.get(item.id()).map(|_| {
+                            entry_source(item.module(), item.id(), HirEntrySourcePart::Whole)
+                        })
+                    })
+                    .expect("an unconsumed accepted Entry root retains its source item"),
+            ));
+        }
         if diagnostics.is_empty() {
-            CheckedEntryCatalog::try_new(entries).map_err(|error| {
+            let catalog = CheckedEntryCatalog::try_new(entries).map_err(|error| {
                 vec![CheckedEntryDiagnostic::new(
                     "sema.entry.duplicate_id",
                     error.to_string(),
@@ -283,7 +310,9 @@ impl<'a> EntryCheckContext<'a> {
                         .expect("a duplicate checked ID requires one source Entry")
                         .clone(),
                 )]
-            })
+            })?;
+            self.validate_event_proofs(&catalog)?;
+            Ok(catalog)
         } else {
             Err(diagnostics)
         }
@@ -334,7 +363,7 @@ impl<'a> EntryCheckContext<'a> {
     }
 
     fn check_entry(
-        &self,
+        &mut self,
         module_path: &CanonicalModulePath,
         module: &'a HirModule,
         owner: ItemId,
@@ -472,7 +501,7 @@ impl<'a> EntryCheckContext<'a> {
         reason = "stateful Entry checking atomically resolves and seals all required roles"
     )]
     fn check_stateful(
-        &self,
+        &mut self,
         module_path: &CanonicalModulePath,
         module: &'a HirModule,
         owner: ItemId,
@@ -585,8 +614,27 @@ impl<'a> EntryCheckContext<'a> {
             contract_digest: digest::callable_contract(&reducer_contract),
             source: reducer.source,
         };
+        let Some(root) = self.roots.take(owner) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.missing_prepared_root",
+                "stateful Entry is absent from the completed executable-ingress root seal",
+                entry_source(module, owner, HirEntrySourcePart::Whole),
+            ));
+            return Err(diagnostics);
+        };
+        if root.event_digest() != event.semantic_type() {
+            diagnostics.push(
+                CheckedEntryDiagnostic::new(
+                    "sema.entry.event_ingress_mismatch",
+                    "the completed Entry event type differs from its prepared executable-ingress root",
+                    event.source().clone(),
+                )
+                .with_related([root.target().source().clone()]),
+            );
+            return Err(diagnostics);
+        }
         let Some(initial_flow) =
-            self.resolve_initial_flow(module, owner, entry, state.key(), &mut diagnostics)
+            self.check_prepared_initial_flow(root.into_target(), state.key(), &mut diagnostics)
         else {
             return Err(diagnostics);
         };
@@ -1482,47 +1530,68 @@ impl<'a> EntryCheckContext<'a> {
         })
     }
 
-    #[expect(
-        clippy::too_many_lines,
-        reason = "initial-flow resolution keeps project lookup, checked callable identity, suspension role, and diagnostics adjacent"
-    )]
-    fn resolve_initial_flow(
+    fn check_prepared_initial_flow(
         &self,
-        module: &HirModule,
-        owner: ItemId,
-        entry: &HirEntryDeclaration,
+        target: PreparedEntryFlowTarget,
         state: &BoundNominalTypeKey,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedInitialFlowRole> {
-        let gotos = entry
-            .members()
-            .iter()
-            .enumerate()
-            .filter_map(|(ordinal, member)| match member {
-                HirEntryMember::Goto(target) => Some((ordinal, target)),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        let [(ordinal, target)] = gotos.as_slice() else {
-            diagnostics.push(
-                CheckedEntryDiagnostic::new(
-                    "sema.entry.goto_cardinality",
-                    "stateful entry must contain exactly one initial `goto` target",
-                    entry_source(module, owner, HirEntrySourcePart::Whole),
-                )
-                .with_related(
-                    gotos
-                        .iter()
-                        .map(|(ordinal, _)| entry_member_source(module, owner, *ordinal)),
-                ),
-            );
+        let (source_item, declaration, id, source) = target.into_parts();
+        let checked_declaration = CallableDeclarationKey::Flow(declaration.clone());
+        let checked = self
+            .authority
+            .checked_callables()
+            .project_callable(&checked_declaration);
+        let Ok(checked) = checked else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.initial_flow_not_checked",
+                "prepared initial Flow is absent from the accepted checked callable catalog",
+                source,
+            ));
             return None;
         };
-        let source = entry_member_source(module, owner, *ordinal);
-        let resolved =
-            self.resolve_flow_target(module, target.target(), source.clone(), diagnostics)?;
+        if !matches!(
+            checked.id().declaration(),
+            CheckedCallableDeclaration::Project(retained) if retained == &checked_declaration
+        ) {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.initial_flow_not_checked",
+                "prepared initial Flow differs from its accepted checked callable row",
+                source,
+            ));
+            return None;
+        }
+        let Some(flow_module) = self
+            .project
+            .modules()
+            .map(|(_, module)| module.as_ref())
+            .find(|module| module.module_id() == source_item.module())
+        else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unknown_flow",
+                "prepared initial Flow belongs to no module in the accepted HIR generation",
+                source,
+            ));
+            return None;
+        };
+        let Ok(item) = flow_module.resolve_item(source_item) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unknown_flow",
+                "prepared initial Flow is absent from the accepted HIR generation",
+                source,
+            ));
+            return None;
+        };
+        let HirItemKind::Flow(flow) = item.kind() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_family",
+                "prepared initial Flow identity no longer denotes a Flow",
+                source,
+            ));
+            return None;
+        };
         let contracts = EntryContractBuilder::new(self.authority, self.project.package());
-        let contract = match contracts.flow(resolved.source_item, resolved.flow, state) {
+        let contract = match contracts.flow(source_item, flow, state) {
             Ok(contract) => contract,
             Err(message) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
@@ -1533,12 +1602,11 @@ impl<'a> EntryCheckContext<'a> {
                 return None;
             }
         };
-        let [parameter] = resolved.flow.parameters() else {
+        let [parameter] = flow.parameters() else {
             unreachable!("accepted initial Flow contract has exactly one parameter")
         };
         debug_assert_eq!(parameter.kind(), HirParameterKind::Fixed);
-        let pattern = resolved
-            .module
+        let pattern = flow_module
             .resolve_pattern(parameter.pattern())
             .expect("accepted initial Flow parameter pattern remains live");
         let HirPatternKind::Binding(HirPatternBinding::Bound { name, .. }) = pattern.kind() else {
@@ -1550,13 +1618,87 @@ impl<'a> EntryCheckContext<'a> {
             return None;
         };
         Some(CheckedInitialFlowRole {
-            source_item: resolved.source_item,
-            declaration: resolved.declaration,
-            contract_digest: digest::flow_contract(&resolved.id, &contract),
+            source_item,
+            declaration,
+            contract_digest: digest::flow_contract(&id, &contract),
             state_parameter_name: name.as_str().to_owned(),
-            id: resolved.id,
+            id,
             source,
         })
+    }
+
+    fn validate_event_proofs(
+        mut self,
+        catalog: &CheckedEntryCatalog,
+    ) -> Result<(), Vec<CheckedEntryDiagnostic>> {
+        let stateful_entries = catalog
+            .entries()
+            .filter_map(CheckedEntryBinding::stateful)
+            .map(|entry| (entry.source_item(), entry))
+            .collect::<BTreeMap<_, _>>();
+        let mut diagnostics = Vec::new();
+        for (statement, proof) in std::mem::take(&mut self.event_proofs) {
+            let source = self.statement_source(statement);
+            if proof.statement() != statement || proof.contributors().is_empty() {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_event_ingress_proof",
+                    "prepared Event scrutinee proof has no exact Entry contributor identity",
+                    source,
+                ));
+                continue;
+            }
+            for contributor in proof.contributors() {
+                let Some(entry) = stateful_entries.get(contributor) else {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_event_ingress_proof",
+                        "prepared Event scrutinee proof names no checked stateful Entry",
+                        source.clone(),
+                    ));
+                    continue;
+                };
+                if entry.event().semantic_type() != proof.event_digest() {
+                    diagnostics.push(
+                        CheckedEntryDiagnostic::new(
+                            "sema.entry.event_ingress_mismatch",
+                            "Event scrutinee type differs from a contributing checked Entry event type",
+                            source.clone(),
+                        )
+                        .with_related([entry.event().source().clone()]),
+                    );
+                }
+            }
+        }
+        let _consumed_ingress_facts = self.ingress_facts;
+        if diagnostics.is_empty() {
+            Ok(())
+        } else {
+            Err(diagnostics)
+        }
+    }
+
+    fn statement_source(&self, owner: StmtId) -> SourceSpan {
+        let module = self
+            .project
+            .modules()
+            .map(|(_, module)| module.as_ref())
+            .find(|module| module.module_id() == owner.module())
+            .expect("prepared Event proof retains an accepted statement module");
+        let lookup = module
+            .source_site(
+                module.provenance().source_identity(),
+                HirSourceQuery::Stmt {
+                    owner,
+                    role: HirStmtSourceRole::Whole,
+                },
+            )
+            .expect("prepared Event proof retains an accepted statement source role");
+        match lookup.presence() {
+            HirSourcePresence::Present(HirSourceSite::Span(span)) => span.clone(),
+            HirSourcePresence::Present(HirSourceSite::Insertion(_))
+            | HirSourcePresence::AbsentOptional => {
+                unreachable!("executable Event scrutinee statements retain authored source")
+            }
+        }
     }
 
     fn flow_for_symbol(

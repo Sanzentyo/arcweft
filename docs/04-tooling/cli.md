@@ -1371,21 +1371,12 @@ arcw fmt game/routes/opening.arcw
 arcw fmt --canonical-rich-text game/routes/opening.arcw
 ```
 
-`fmt --canonical-rich-text` rewrites only inferred dot rich-text selectors such
+`fmt --canonical-rich-text` rewrites only recognized dot rich-text selectors such
 as `[.shake]...[/]` to explicit family tags such as
-`[effect .shake]...[/effect]`. Unknown dot selectors without attributes become
-zero-width `[mark .name]` tags, removing a paired `[/]` when the selector was
-written as a span. Unknown dot selectors with attributes become custom effect
-spans such as `[effect .sparkle amp=2px]...[/effect]`, because markers do not
-carry parameters. When a visible `#[text_proxy]` / `#[rich_text_proxy]` struct
-is referenced by `type=`, `struct=`, or `proxy=`, the selector canonicalizes to
-a text presentation object span instead, for example
-`[.hotspot type=KeywordHit]...[/]` becomes
-`[object .hotspot type=KeywordHit]...[/object]`. If the selector itself names a
-visible proxy struct, `[.KeywordHit]...[/]` becomes
-`[object .KeywordHit type=KeywordHit]...[/object]`; existing parameters are
-preserved while adding the inferred `type`, so `[.HoverHit tone=alert]...[/]`
-becomes `[object .HoverHit type=HoverHit tone=alert]...[/object]`. It does not
+`[effect .shake]...[/effect]`. Unknown dot selectors are preserved as authored
+or reported as unresolved; they do not become marker, object, or custom-effect
+tags by inference. Markers must use `[mark @.name]`, and typed text objects must
+use the explicit `[object .id type=Type ...]...[/object]` form. It does not
 expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand, `[page]`,
 colon content application, or parenthesized `CharacterDialogue` construction.
 The runtime/debug form keeps the originating proxy declaration as typed
@@ -1428,7 +1419,7 @@ The former sema-backed `arcw canonicalize` command was deleted. It deepened the
 provisional `SpeakerLine` / `SpeakerPreset` / `.say` model that is superseded by
 typed `CharacterDialogue` construction and content application. The CLI does
 not retain an alias, dual reader, or replacement string-based canonicalizer.
-`fmt --canonical-rich-text` changes only the inferred rich-text tag family
+`fmt --canonical-rich-text` changes only the recognized rich-text tag family
 described above.
 
 The formatting command must preserve IDs, source anchors where possible, comments,

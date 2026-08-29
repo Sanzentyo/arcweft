@@ -1879,11 +1879,6 @@ fn effect_static_args(
         | LineEffectRequest::Bail(key)
         | LineEffectRequest::Close(key)
         | LineEffectRequest::Select(key) => vec![inventory.constant_string(key)],
-        LineEffectRequest::Wait(
-            RuntimeWaitTarget::Mark(value) | RuntimeWaitTarget::Expr(value),
-        ) => {
-            vec![inventory.constant_string(value)]
-        }
         LineEffectRequest::Wait(RuntimeWaitTarget::Duration(duration)) => {
             vec![inventory.constant_runtime_value(&RuntimeValue::Duration(*duration))]
         }

@@ -28,12 +28,13 @@
 - Rich-text canonicalization code action:
   - action id: `arcweft.canonicalRichText`; the action carries a revision-bound
     `WorkspaceEdit` directly and is not an advertised execute-command alias
-  - rewrites inferred dot selectors such as `[.shake]...[/]` into explicit
+  - rewrites recognized dot selectors such as `[.shake]...[/]` into explicit
     family tags such as `[effect .shake]...[/effect]`
-  - rewrites unknown dot selectors to `[mark .name]`
-  - rewrites inferred text proxy object selectors to `[object ...]` when the
-    selector references a visible `#[text_proxy]` / `#[rich_text_proxy]` struct
-    through `type=`, `struct=`, `proxy=`, or by using the struct name itself
+  - preserves unknown dot selectors as authored and reports them when the
+    checked rich-text registry cannot resolve them; it does not infer markers,
+    objects, or custom effects
+  - preserves explicit `[mark @.name]` markers and typed object spans rather
+    than inferring either form from a dot selector
   - does not expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand,
     `[page]`, colon content application, or parenthesized construction
 - Typed ID actions are future work and are not part of the current server:

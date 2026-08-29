@@ -4,10 +4,12 @@ use super::SyntaxAccessError;
 use super::access::RequiredStatementExpressionNode;
 use super::expression::AttachedExpressionNode;
 use super::family::ExpressionFamily;
+use super::family::{StatementFamily, StatementNode};
 use super::node::{
     AstKind, AstNode, BreakStatementKind, ContinueStatementKind, DeferStatementKind, ErrorNodeKind,
-    GotoStatementKind, NameReferenceKind, OutStatementKind, SignalStatementKind,
+    GotoStatementKind, NameReferenceKind, OnStatementKind, OutStatementKind, SignalStatementKind,
 };
+use super::trigger::{AttachedTriggerPattern, attach_trigger_pattern};
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::{SyntaxRole, SyntaxRoleClass};
 use crate::name::{SyntaxName, SyntaxNameIssue};
@@ -150,6 +152,38 @@ pub struct AttachedContinueStatement {
     forbidden_suffix: Option<AstNode<ErrorNodeKind>>,
 }
 
+/// Complete typed `on TRIGGER => STATEMENT` relation.
+///
+/// The trigger attachment retains a typed marker selector when the trigger is
+/// `mark`; final HIR resolves that selector against the owning dialogue
+/// content catalog and never reconstructs it from source text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedOnStatement {
+    syntax: AstNode<OnStatementKind>,
+    trigger: AttachedTriggerPattern,
+    body: StatementNode,
+}
+
+impl AttachedOnStatement {
+    pub const fn syntax(&self) -> &AstNode<OnStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn trigger(&self) -> &AttachedTriggerPattern {
+        &self.trigger
+    }
+
+    /// The one statement evaluated when the trigger is accepted.
+    pub const fn body(&self) -> &StatementNode {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.trigger.has_recovery()
+            || matches!(self.body.kind(), crate::grammar::SyntaxKind::ErrorStatement)
+    }
+}
+
 impl AttachedContinueStatement {
     pub const fn syntax(&self) -> &AstNode<ContinueStatementKind> {
         &self.syntax
@@ -256,6 +290,29 @@ impl AstNode<ContinueStatementKind> {
             syntax: self.clone(),
             label: attach_label(self, label)?,
             forbidden_suffix: optional_recovery(self)?,
+        })
+    }
+}
+
+impl AstNode<OnStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedOnStatement, SyntaxAccessError> {
+        let trigger = self
+            .syntax()
+            .optional_unique_child(SyntaxRole::Condition)?
+            .ok_or(SyntaxAccessError::InvalidTriggerShape { id: self.id() })?;
+        let body = self.required_family_child::<StatementFamily>(SyntaxRole::Statement(0))?;
+        if self.syntax().children().iter().any(|child| {
+            !matches!(
+                child.role(),
+                SyntaxRole::Condition | SyntaxRole::Statement(0) | SyntaxRole::Recovery(_)
+            )
+        }) {
+            return Err(SyntaxAccessError::InvalidTriggerShape { id: self.id() });
+        }
+        Ok(AttachedOnStatement {
+            syntax: self.clone(),
+            trigger: attach_trigger_pattern(trigger)?,
+            body,
         })
     }
 }

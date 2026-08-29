@@ -550,6 +550,10 @@ impl Encoder {
             }
             TypeKind::CueHandle => self.tag(85),
             TypeKind::VoiceHandle => self.tag(86),
+            TypeKind::StatementIngress(ingress) => {
+                self.tag(88);
+                self.byte(ingress.semantic_tag());
+            }
         }
     }
 
@@ -912,6 +916,7 @@ impl Encoder {
 #[cfg(test)]
 mod tests {
     use arcweft_character::id::CharacterId;
+    use arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder;
     use arcweft_lang_syntax::{
         ast::{
             module_path::ModulePathRoot,
@@ -925,6 +930,7 @@ mod tests {
             identity::EnvironmentBindingId,
             nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
         },
+        registration::StandardStatementIngressTypeId,
         types::{AcceptedNominalType, CharacterDialogueType, TypeKind},
     };
 
@@ -999,5 +1005,24 @@ mod tests {
                 .as_bytes(),
             any.runtime_semantic_identity().as_bytes()
         );
+    }
+
+    #[test]
+    fn statement_ingress_uses_the_reserved_outer_and_exact_inner_tags() {
+        for (ingress, inner_tag) in [
+            (StandardStatementIngressTypeId::TaskEvent, 0),
+            (StandardStatementIngressTypeId::ScopeExit, 1),
+            (StandardStatementIngressTypeId::FrameBoundary, 2),
+        ] {
+            let mut expected = RuntimeSemanticTypeIdentityEncoder::new();
+            expected.write_tag(88);
+            expected.write_u8(inner_tag);
+            assert_eq!(
+                TypeKind::StatementIngress(ingress)
+                    .semantic_identity_digest()
+                    .as_bytes(),
+                expected.finish().as_bytes()
+            );
+        }
     }
 }

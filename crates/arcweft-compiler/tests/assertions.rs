@@ -20,7 +20,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{
     assertion::AssertionRuntimePolicy,
     env::TypeCheckEnv,
-    final_analysis::{CheckedAssertionDisposition, CheckedItemRole, CheckedStatementRole},
+    final_analysis::{CheckedAssertionDisposition, CheckedItemRole, CheckedStatementPayload},
     registration::ProjectRegistrationFacts,
 };
 use arcweft_lang_syntax::{
@@ -367,8 +367,8 @@ fn assertion_dispositions(project: &CompiledProject) -> Vec<CheckedAssertionDisp
     project
         .final_analysis()
         .statements()
-        .filter_map(|(_, statement)| match statement.role() {
-            CheckedStatementRole::Assertion(disposition) => Some(*disposition),
+        .filter_map(|(_, statement)| match statement.payload() {
+            CheckedStatementPayload::Assertion(disposition) => Some(*disposition),
             _ => None,
         })
         .collect()

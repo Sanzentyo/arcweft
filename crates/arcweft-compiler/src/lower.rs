@@ -43,7 +43,7 @@ use arcweft_core::{
         FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
         RuntimeLocalDeclarationTableError,
     },
-    runtime_id::RuntimeDialogueValueSlotId,
+    runtime_id::{RuntimeDialogueMarkId, RuntimeDialogueValueSlotId},
     step::RuntimeHostCallMode,
     time::LogicalDuration,
     value::{
@@ -77,6 +77,7 @@ use arcweft_lang_hir::{
         nominal::ProjectNominalDeclarationId,
     },
 };
+use arcweft_lang_sema::semantic_coordinate::StableCheckedDialogueMarkCoordinate;
 use arcweft_lang_sema::{
     assertion::AssertionRuntimePolicy,
     callable::{
@@ -106,9 +107,9 @@ use arcweft_lang_sema::{
         CheckedIteratorFamily, CheckedPatternResolution, CheckedProjectItemOwner,
         CheckedProjectNominal, CheckedRecordPattern, CheckedRecordPatternOwner,
         CheckedRecordPatternRest, CheckedRecordPatternSourceRef, CheckedRecordValueSource,
-        CheckedSelectResolution, CheckedStatementRole, CheckedTraitConformance,
-        CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier,
-        CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+        CheckedSelectResolution, CheckedStatementPayload, CheckedTraitConformance,
+        CheckedTraitIdentity, CheckedTriggerView, CheckedTry, CheckedTryBoundary,
+        CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
         NominalSchemaProjectionError,
     },
@@ -129,28 +130,28 @@ use arcweft_runtime_plan::{
         RuntimeCallParameterCoordinate, RuntimeCallResultShape, RuntimeCheckedCapture,
         RuntimeCheckedTypeProjectionError, RuntimeChoiceFact, RuntimeChoiceGotoFact,
         RuntimeDialogueApplication, RuntimeDialogueEffectExpression, RuntimeDialogueEffectTrigger,
-        RuntimeDialogueMarkHandler, RuntimeDialogueValueExpression, RuntimeDropFadeFact,
-        RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
-        RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact,
-        RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-        RuntimeLineCallable, RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError,
-        RuntimeNormalizedType, RuntimeNormalizedVariantCase, RuntimePipeFact,
-        RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts, RuntimePositionedCallOperand,
-        RuntimeProjectCallable, RuntimeProjectItem, RuntimePureProgramCaptureFact,
-        RuntimePureProgramFact, RuntimeRecordExpressionFact, RuntimeRecordExpressionField,
-        RuntimeRecordExpressionSource, RuntimeRecordPatternFact, RuntimeRecordPatternField,
-        RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeRecordPlanError,
-        RuntimeRecordTypeField, RuntimeReductionConstructor, RuntimeRegisteredValueId,
-        RuntimeResolvedCall, RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand,
-        RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
-        RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource,
-        RuntimeResolvedHostCall, RuntimeResolvedNominal, RuntimeResolvedNominalRecord,
-        RuntimeResolvedSelect, RuntimeResolvedSpreadContainer, RuntimeResolvedStaticCallTarget,
-        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
-        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeStandardMapCall,
-        RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeTraitIdentity,
-        RuntimeTraitMethodFact, RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact,
-        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
+        RuntimeDialogueValueExpression, RuntimeDropFadeFact, RuntimeDropPolicyFact,
+        RuntimeEffectFieldFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+        RuntimeEvaluatedEffectOperandFact, RuntimeImplicitCallableFact, RuntimeIteratorFact,
+        RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact, RuntimeLineCallable,
+        RuntimeLogLevel, RuntimeMapKind, RuntimeNominalRecordFactError, RuntimeNormalizedType,
+        RuntimeNormalizedVariantCase, RuntimePipeFact, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimePositionedCallOperand, RuntimeProjectCallable,
+        RuntimeProjectItem, RuntimePureProgramCaptureFact, RuntimePureProgramFact,
+        RuntimeRecordExpressionFact, RuntimeRecordExpressionField, RuntimeRecordExpressionSource,
+        RuntimeRecordPatternFact, RuntimeRecordPatternField, RuntimeRecordPatternRest,
+        RuntimeRecordPatternSource, RuntimeRecordPlanError, RuntimeRecordTypeField,
+        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
+        RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+        RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
+        RuntimeResolvedCallOperandSource, RuntimeResolvedHostCall, RuntimeResolvedNominal,
+        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedSpreadContainer,
+        RuntimeResolvedStaticCallTarget, RuntimeResolvedValue, RuntimeResolvedVariant,
+        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+        RuntimeStandardMapCall, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTryBoundaryOwner,
+        RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeProjectionPath,
+        RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -742,23 +743,23 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        match statement.role() {
-            CheckedStatementRole::Assignment(assignment) => {
+        match statement.payload() {
+            CheckedStatementPayload::Assignment(assignment) => {
                 input.push_assignment(
                     owner,
                     runtime_assignment(owner, assignment, symbols, world, analysis)?,
                 );
             }
-            CheckedStatementRole::Assertion(disposition) => {
+            CheckedStatementPayload::Assertion(disposition) => {
                 input.push_assertion(owner, runtime_assertion(owner, *disposition)?);
             }
-            CheckedStatementRole::EvaluatedEffect(effect) => {
+            CheckedStatementPayload::EvaluatedEffect(effect) => {
                 input.push_evaluated_effect(
                     owner,
                     runtime_evaluated_effect(effect, symbols, world, analysis)?,
                 );
             }
-            CheckedStatementRole::Iteration(iteration) => {
+            CheckedStatementPayload::Iteration(iteration) => {
                 input.push_iteration(
                     owner,
                     runtime_iteration(
@@ -771,10 +772,17 @@ fn project_runtime_semantic_fact_inventories(
                     )?,
                 );
             }
-            CheckedStatementRole::Suspension(_)
-            | CheckedStatementRole::Ordinary
-            | CheckedStatementRole::Yield
-            | CheckedStatementRole::UnsafeAudit => {}
+            CheckedStatementPayload::Structural
+            | CheckedStatementPayload::Defer(_)
+            | CheckedStatementPayload::ControlTransfer(_)
+            | CheckedStatementPayload::Trigger(_)
+            | CheckedStatementPayload::UnsafeAudit(_)
+            | CheckedStatementPayload::Select(_)
+            | CheckedStatementPayload::SourceLocale(_)
+            | CheckedStatementPayload::Scope(_)
+            | CheckedStatementPayload::Include(_)
+            | CheckedStatementPayload::Suspension(_)
+            | CheckedStatementPayload::Yield => {}
         }
     }
 
@@ -817,16 +825,7 @@ fn project_runtime_semantic_fact_inventories(
         ));
     }
 
-    let facts = match view_value_owners {
-        Some(view_value_owners) => RuntimePlanSemanticFacts::try_new_with_view_value_programs(
-            project,
-            runtime_owners,
-            view_value_owners,
-            input,
-        )?,
-        None => RuntimePlanSemanticFacts::try_new(project, runtime_owners, input)?,
-    };
-    project_dialogue_semantic_facts(
+    attach_dialogue_and_trigger_semantic_facts(
         project,
         symbols,
         world,
@@ -834,8 +833,18 @@ fn project_runtime_semantic_fact_inventories(
         dialogue_profile,
         character_name_policy,
         runtime_owners,
-        facts,
-    )
+        view_value_owners,
+        &mut input,
+    )?;
+    Ok(match view_value_owners {
+        Some(view_value_owners) => RuntimePlanSemanticFacts::try_new_with_view_value_programs(
+            project,
+            runtime_owners,
+            view_value_owners,
+            input,
+        )?,
+        None => RuntimePlanSemanticFacts::try_new(project, runtime_owners, input)?,
+    })
 }
 
 fn validate_executable_record_projections(
@@ -1060,7 +1069,11 @@ fn dialogue_application_owned_calls(
         })
 }
 
-fn project_dialogue_semantic_facts(
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the single runtime-fact input transaction joins accepted dialogue presentation and checked trigger authority"
+)]
+fn attach_dialogue_and_trigger_semantic_facts(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
@@ -1068,56 +1081,105 @@ fn project_dialogue_semantic_facts(
     dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
     policy: Option<&CharacterNameLocalePolicySpec>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
-    facts: RuntimePlanSemanticFacts,
-) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
+    view_value_owners: Option<&HirRuntimeSemanticReachability<'_>>,
+    input: &mut RuntimePlanSemanticFactInput,
+) -> Result<(), RuntimeSemanticProjectionError> {
     let applications = executable_dialogue_applications(project, analysis, runtime_owners)?;
-    if applications.is_empty() {
-        return facts
-            .with_dialogue_projection(project, runtime_owners, None, [])
-            .map_err(Into::into);
-    }
-    let (dialogue_profile, dialogue_profile_revision) =
-        dialogue_profile.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
-            owner: None,
-            reason:
-                "an executable dialogue product requires one compiler-admitted dialogue profile"
-                    .to_owned(),
-        })?;
-    let policy = policy
-        .map(character_name_locale_policy)
-        .transpose()?
-        .unwrap_or_else(CharacterNameLocalePolicy::engine_default);
-    let catalog = Arc::new(build_character_presentation_catalog(
-        project, analysis, policy,
-    )?);
-    let generation = CharacterPresentationCatalogGeneration::new(
-        CharacterPresentationCatalogRevision::INITIAL,
-        catalog.semantic_digest(),
-        catalog.locale_policy_digest(),
-    );
-    let presentation = DialoguePresentationSnapshot::new(
-        dialogue_profile.clone(),
-        dialogue_profile_revision.clone(),
-    );
-    let mut projected = Vec::with_capacity(applications.len());
-    for (owner, target, rich_text, line_plan, line_result) in applications {
-        projected.push(project_dialogue_application(
-            project,
-            owner,
-            target,
-            rich_text,
-            line_plan,
-            line_result,
-            symbols,
-            world,
-            analysis,
-            generation,
-            presentation.clone(),
+    let mut projected = BTreeMap::new();
+    let mut projected_marks = BTreeMap::new();
+    let catalog = if applications.is_empty() {
+        None
+    } else {
+        let (dialogue_profile, dialogue_profile_revision) =
+            dialogue_profile.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                owner: None,
+                reason:
+                    "an executable dialogue product requires one compiler-admitted dialogue profile"
+                        .to_owned(),
+            })?;
+        let policy = policy
+            .map(character_name_locale_policy)
+            .transpose()?
+            .unwrap_or_else(CharacterNameLocalePolicy::engine_default);
+        let catalog = Arc::new(build_character_presentation_catalog(
+            project, analysis, policy,
         )?);
+        let generation = CharacterPresentationCatalogGeneration::new(
+            CharacterPresentationCatalogRevision::INITIAL,
+            catalog.semantic_digest(),
+            catalog.locale_policy_digest(),
+        );
+        let presentation = DialoguePresentationSnapshot::new(
+            dialogue_profile.clone(),
+            dialogue_profile_revision.clone(),
+        );
+        for (owner, target, rich_text, line_plan, line_result) in applications {
+            let (owner, application, marks) = project_dialogue_application(
+                project,
+                owner,
+                target,
+                rich_text,
+                line_plan,
+                line_result,
+                symbols,
+                world,
+                analysis,
+                generation,
+                presentation.clone(),
+            )?;
+            if projected.insert(owner, application).is_some() {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "checked dialogue application was projected more than once".to_owned(),
+                });
+            }
+            for (coordinate, runtime) in marks {
+                if projected_marks.insert(coordinate, runtime).is_some() {
+                    return Err(RuntimeSemanticProjectionError::Dialogue {
+                        owner: Some(owner),
+                        reason: "checked dialogue marker coordinate was projected more than once"
+                            .to_owned(),
+                    });
+                }
+            }
+        }
+        Some(catalog)
+    };
+
+    input.attach_dialogue_projection(catalog, projected)?;
+    for (owner, statement) in analysis.statements() {
+        if !runtime_owners.contains_statement(owner)
+            && !view_value_owners.is_some_and(|owners| owners.contains_statement(owner))
+        {
+            continue;
+        }
+        let CheckedStatementPayload::Trigger(trigger) = statement.payload() else {
+            continue;
+        };
+        match trigger.view() {
+            CheckedTriggerView::Input => input.push_input_trigger(owner)?,
+            CheckedTriggerView::Event => input.push_event_trigger(owner)?,
+            CheckedTriggerView::Signal => input.push_signal_trigger(owner)?,
+            CheckedTriggerView::Timeout => input.push_timeout_trigger(owner)?,
+            CheckedTriggerView::Mark(coordinate) => {
+                let mark = projected_marks.get(coordinate).copied().ok_or_else(|| {
+                    RuntimeSemanticProjectionError::Dialogue {
+                        owner: None,
+                        reason: format!(
+                            "reachable mark Trigger {owner:?} has no owning checked content projection"
+                        ),
+                    }
+                })?;
+                input.push_mark_trigger(owner, mark)?;
+            }
+            CheckedTriggerView::Select => input.push_select_trigger(owner)?,
+            CheckedTriggerView::Task => input.push_task_trigger(owner)?,
+            CheckedTriggerView::Scope => input.push_scope_trigger(owner)?,
+            CheckedTriggerView::Expression => input.push_expression_trigger(owner)?,
+        }
     }
-    facts
-        .with_dialogue_projection(project, runtime_owners, Some(catalog), projected)
-        .map_err(Into::into)
+    drop(projected_marks);
+    Ok(())
 }
 
 type CheckedDialogueApplication<'analysis> = (
@@ -1174,7 +1236,14 @@ fn project_dialogue_application(
     analysis: &FinalSemanticAnalysis,
     generation: CharacterPresentationCatalogGeneration,
     presentation: DialoguePresentationSnapshot,
-) -> Result<(ExprId, RuntimeDialogueApplication), RuntimeSemanticProjectionError> {
+) -> Result<
+    (
+        ExprId,
+        RuntimeDialogueApplication,
+        BTreeMap<StableCheckedDialogueMarkCoordinate, RuntimeDialogueMarkId>,
+    ),
+    RuntimeSemanticProjectionError,
+> {
     let character = target.character().exact().cloned().ok_or_else(|| {
         RuntimeSemanticProjectionError::Dialogue {
             owner: Some(owner),
@@ -1204,7 +1273,7 @@ fn project_dialogue_application(
             }
         })?;
     let cue_handle_type = runtime_type(&TypeKind::CueHandle, symbols, world, analysis)?;
-    let (content, values, effects) = lower_checked_rich_text(
+    let (content, values, effects, marks) = lower_checked_rich_text(
         owner,
         rich_text,
         line_plan,
@@ -1233,10 +1302,8 @@ fn project_dialogue_application(
             runtime_type(line_result, symbols, world, analysis)?,
             values,
             effects,
-            line_plan.mark_handlers().iter().map(|handler| {
-                RuntimeDialogueMarkHandler::new(handler.statement(), handler.mark().get())
-            }),
         ),
+        marks,
     ))
 }
 
@@ -1429,6 +1496,7 @@ fn lower_checked_rich_text(
         RichTextDocument,
         Vec<RuntimeDialogueValueExpression>,
         Vec<RuntimeDialogueEffectExpression>,
+        BTreeMap<StableCheckedDialogueMarkCoordinate, RuntimeDialogueMarkId>,
     ),
     RuntimeSemanticProjectionError,
 > {
@@ -1437,6 +1505,7 @@ fn lower_checked_rich_text(
     let mut effects = Vec::new();
     let mut next_effect = 0_usize;
     let mut next_mark = 0_usize;
+    let mut marks = BTreeMap::new();
     let mut spans = BTreeMap::new();
     for token in report.content().tokens() {
         match token {
@@ -1494,8 +1563,8 @@ fn lower_checked_rich_text(
                     &mut effects,
                     line_plan.effect_sites(),
                     &mut next_effect,
-                    line_plan.marks(),
                     &mut next_mark,
+                    &mut marks,
                     cue_handle_type,
                     symbols,
                     world,
@@ -1523,13 +1592,13 @@ fn lower_checked_rich_text(
             reason: "checked RichText effect-site inventory was not consumed exactly".to_owned(),
         });
     }
-    if next_mark != line_plan.marks().len() {
+    if next_mark != marks.len() {
         return Err(RuntimeSemanticProjectionError::Dialogue {
             owner: Some(owner),
-            reason: "checked RichText mark inventory was not consumed exactly".to_owned(),
+            reason: "checked RichText marker coordinates were not projected bijectively".to_owned(),
         });
     }
-    Ok((RichTextDocument::new(nodes), values, effects))
+    Ok((RichTextDocument::new(nodes), values, effects, marks))
 }
 
 fn next_dialogue_slot(
@@ -1552,8 +1621,8 @@ fn lower_rich_text_action(
     effects: &mut Vec<RuntimeDialogueEffectExpression>,
     effect_sites: &[CheckedDialogueEffectSite],
     next_effect: &mut usize,
-    marks: &[arcweft_id::PublicId],
     next_mark: &mut usize,
+    marks: &mut BTreeMap<StableCheckedDialogueMarkCoordinate, RuntimeDialogueMarkId>,
     cue_handle_type: &RuntimeNormalizedType,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
@@ -1642,25 +1711,30 @@ fn lower_rich_text_action(
             None
         }
         CheckedRichTextAction::Marker(marker) => {
-            let checked =
-                marks
-                    .get(*next_mark)
-                    .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
-                        owner: Some(owner),
-                        reason: "RichText mark has no checked source-ordered coordinate".to_owned(),
-                    })?;
-            if checked.as_str() != marker.as_str() {
+            let expected = u32::try_from(*next_mark).map_err(|_| {
+                RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "checked RichText mark ordinal exceeds u32".to_owned(),
+                }
+            })?;
+            if marker.coordinate().ordinal().get() != expected {
                 return Err(RuntimeSemanticProjectionError::Dialogue {
                     owner: Some(owner),
-                    reason: "RichText mark differs from its checked source-ordered coordinate"
-                        .to_owned(),
+                    reason: "checked RichText marker coordinate is not in content order".to_owned(),
                 });
             }
-            let mark = arcweft_core::runtime_id::RuntimeDialogueMarkId::from_zero_based(*next_mark)
-                .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+            let mark = RuntimeDialogueMarkId::from_zero_based(*next_mark).ok_or_else(|| {
+                RuntimeSemanticProjectionError::Dialogue {
                     owner: Some(owner),
                     reason: "checked RichText mark ordinal exceeds the runtime domain".to_owned(),
-                })?;
+                }
+            })?;
+            if marks.insert(marker.coordinate().clone(), mark).is_some() {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "checked RichText marker coordinate occurs more than once".to_owned(),
+                });
+            }
             *next_mark = next_mark.checked_add(1).ok_or_else(|| {
                 RuntimeSemanticProjectionError::Dialogue {
                     owner: Some(owner),
@@ -1670,7 +1744,7 @@ fn lower_rich_text_action(
             nodes.push(RichTextNode::Control {
                 control: RichTextControl::Mark {
                     mark,
-                    diagnostic_name: marker.as_str().to_owned(),
+                    diagnostic_name: marker.diagnostic_name().as_str().to_owned(),
                 },
             });
             None
@@ -2343,6 +2417,7 @@ fn runtime_type_at(
         | TypeKind::DisplayText
         | TypeKind::StageApi(_)
         | TypeKind::LineContext
+        | TypeKind::StatementIngress(_)
         | TypeKind::Handle { .. }
         | TypeKind::GenericParam(_)
         | TypeKind::OpenNominal(_)
@@ -3019,7 +3094,7 @@ fn runtime_iteration_methods(
         {
             continue;
         }
-        let CheckedStatementRole::Iteration(iteration) = statement.role() else {
+        let CheckedStatementPayload::Iteration(iteration) = statement.payload() else {
             continue;
         };
         for (_, conformance, self_type) in iteration.witness_methods() {

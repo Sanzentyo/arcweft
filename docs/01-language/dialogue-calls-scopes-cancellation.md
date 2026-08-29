@@ -328,7 +328,7 @@ Line plan statements are scoped to the line and cannot leak variables outward.
 Line-plan block heads may use the canonical brace form, indentation sugar, or
 flat fence sugar. For example, `start { ... }`, `start:`, and
 `=== start === ... === /start ===` all lower through the same line-plan item
-model. The same rule applies to `init`, `thread`, `on mark(...)`,
+model. The same rule applies to `init`, `thread`, `on mark(@.point)`,
 `cancel on ...`, `defer on ...`, `start`, `together`, and `scope` block items.
 Malformed flat fences are not migration syntax: unknown fence kinds, close
 mismatches, and missing close fences are parser diagnostics before HIR lowering.
@@ -339,7 +339,7 @@ Scoped cleanup uses `defer { ... }` on the current runtime scope. Line-wide
 cleanup is also modeled as line-scope `defer`. Use `defer on completed`,
 `defer on cancelled`, or `defer on failed` when cleanup should run only for a
 specific scope-exit outcome.
-Line-local events use `[mark .name]` in text and `on mark(.name)` in the line plan.
+Line-local events use `[mark @.name]` in text and `on mark(@.name)` in the line plan.
 Registered `defer` blocks run when their owning scope exits, including normal
 completion, early control transfer, line cancellation, and child-task
 cancellation. A cancelled child task must unwind its defer stack before it is
@@ -347,20 +347,19 @@ considered joined.
 
 ```arcw
 alice.say(look=smile, focus=.soft)[
-    今日は少しだけ、変な夢を見たんだ。[mark .release_focus][p]
+    今日は少しだけ、変な夢を見たんだ。[mark @.release_focus][p]
 ]
 with {
     init {
         'line.focus.main <- acquire_focus()
     }
 
-    on mark(.release_focus) {
+    on mark(@.release_focus) {
         'line.focus |> drop
         out .Released
     }
 
     thread motion {
-        wait(mark(.release_focus))
         wait(0.35s)
         alice.stage.look(worried)
 
@@ -589,7 +588,7 @@ Allowed in dialogue content:
 - `#[expr]` expressions returning Content/String/Option/Result or Display-compatible values
 - `fmt(expr, ...)`
 - dialogue-safe function calls
-- `[mark .name]` zero-width line-local markers
+- `[mark @.name]` zero-width line-local markers
 ```
 
 Allowed in line plan blocks:
@@ -598,8 +597,9 @@ Allowed in line plan blocks:
 - init blocks
 - scoped `defer` cleanup on line, init, thread, and handler scopes
 - line-scope `defer` cleanup
-- line-local `on mark(.mark):` handlers
-- `wait(mark(.name))` and duration waits
+- line-local `on mark(@.mark):` handlers
+- duration waits; `wait(mark(@.name))` is reserved and rejected before
+  executable publication until the typed suspension cut
 - line options
 - cancellation rules
 - at(...) cue blocks
@@ -689,9 +689,9 @@ alice: きゃっ。[shake target=alice strength=0.4 time=160ms][p]
 Hook dispatch:
 
 ```arcw
-alice: #[player_name]、聞いて。[mark .important][p]
+alice: #[player_name]、聞いて。[mark @.important][p]
 with:
-    on mark(.important):
+    on mark(@.important):
         mark_important()
 ```
 

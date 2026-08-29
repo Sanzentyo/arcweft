@@ -78,3 +78,20 @@ The other changed Rust files remain below their applicable size triggers. The
 dependency direction is unchanged: sema consumes HIR, never the reverse.
 Current workspace direct dependency fan-in/fan-out is 11/3 for
 `arcweft-lang-hir` and 10/14 for `arcweft-lang-sema`.
+
+## 2026-08-29 live statement-inventory correction
+
+The 35-family statement count above is historical evidence for the 2026-08-28
+baseline, not the current accepted final-HIR authority. The checked-statement
+cut audited every producer and removed the four final-HIR families that had no
+successful producer: `LetChoice`, `LetScope`, `LetActionReceive`, and
+`DeferBlock`. Their authored surface constructs continue to lower through the
+live generic statement/body owners that actually carry their semantics; the
+runtime-only `FlowOp::LetScope` is a different layer-owned operation and was
+not removed.
+
+The live final-HIR inventory is therefore 31 variants: 30 successful statement
+families plus terminal `Error`. Semantic body projection, checked statement
+payload sealing, statement transcript tags, compiler lowering, and verifier
+consumers use that live inventory directly. No tombstone, zero-production
+compatibility variant, or parallel 35-family reader remains.

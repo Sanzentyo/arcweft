@@ -15,7 +15,7 @@ use crate::identity::{ExprId, ScopeId};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{HirExprSourceRole, expression_component_role};
 
-use super::{CandidateCursor, paired_start_tags, project_node, project_tag};
+use super::{CandidateCursor, paired_start_tags, project_mark_inputs, project_node, project_tag};
 use crate::final_lowering::StagedHirModuleTransaction;
 
 impl StagedHirModuleTransaction<'_> {
@@ -77,7 +77,7 @@ impl StagedHirModuleTransaction<'_> {
                 recovery.get_or_insert(HirRecoveryIssue::MissingOperand {
                     role: HirExprSourceRole::Content,
                 });
-                HirDialogueContent::try_new(content_id, Box::new([]), Box::new([]))
+                HirDialogueContent::try_new(content_id, Box::new([]), Box::new([]), Box::new([]))
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }
             SyntaxDialogueContentProjection::Present(source) => {
@@ -130,6 +130,7 @@ impl StagedHirModuleTransaction<'_> {
                     }
                 }
 
+                let mark_inputs = project_mark_inputs(content_id, source)?;
                 let mut tags = Vec::with_capacity(source.tags().len());
                 for (ordinal, source_tag) in source.tags().iter().enumerate() {
                     let id = HirRichTextTagId::try_new(content_id, ordinal)
@@ -163,6 +164,7 @@ impl StagedHirModuleTransaction<'_> {
                     content_id,
                     nodes.into_boxed_slice(),
                     tags.into_boxed_slice(),
+                    mark_inputs,
                 )
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }

@@ -14,6 +14,10 @@ use crate::grammar::event::{PendingPatternProjection, PendingTypeProjection};
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::grammar::source_projection::PendingPathProjection;
+use crate::id_ref::{
+    AuthoredIdRoot, AuthoredIdSegment, SyntaxIdRefComponent, SyntaxIdRefIssue, SyntaxIdRefShape,
+    SyntaxIdRefSyntax,
+};
 use crate::name::{SyntaxName, SyntaxNameIssue};
 use crate::patterns::PatternNodePath;
 use crate::text::RichTextArgumentIssue;
@@ -330,6 +334,10 @@ impl SyntaxRichTextTagProjection {
 
     pub fn has_recovery(&self) -> bool {
         matches!(self.identity, SyntaxRichTextTagIdentity::Invalid(_))
+            || matches!(
+                &self.identity,
+                SyntaxRichTextTagIdentity::Marker(marker) if marker.has_recovery()
+            )
             || self
                 .arguments
                 .iter()
@@ -338,9 +346,129 @@ impl SyntaxRichTextTagProjection {
     }
 }
 
+/// One marker selector admitted by a dialogue surface or trigger pattern.
+///
+/// Marker selectors reuse the lexer-owned entity-reference projection. The
+/// marker boundary only accepts a zero-depth relative reference with one
+/// suffix segment; all other reference shapes remain attached as typed
+/// recovery instead of being reduced to a source string.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SyntaxDialogueMarkName {
+    reference: SyntaxIdRefSyntax,
+    range: SourceRange,
+    components: Box<[SyntaxIdRefComponent]>,
+    recovery: Option<SyntaxDialogueMarkNameIssue>,
+}
+
+/// Typed recovery for a marker selector's required entity-reference shape.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntaxDialogueMarkNameIssue {
+    /// The authored selector omitted the required `@` entity-reference root.
+    MissingReference,
+    /// The authored selector omitted its suffix segment.
+    MissingSuffix,
+    /// The entity-reference lexer retained a malformed reference value.
+    InvalidReference(SyntaxIdRefIssue),
+    /// The selector used an absolute or family-qualified root, or a non-zero
+    /// parent depth, rather than a mark-local relative root.
+    InvalidRoot,
+    /// The selector used more than one suffix segment.
+    MultipleSegments,
+    /// A quoted value cannot be a marker entity reference.
+    Quoted,
+    Attributed,
+    MultipleArguments,
+    Malformed,
+}
+
+impl SyntaxDialogueMarkName {
+    /// Wraps one lexer-owned entity-reference projection and applies the
+    /// marker-specific root and suffix cardinality contract.
+    pub(crate) fn from_reference(
+        reference: SyntaxIdRefSyntax,
+        range: SourceRange,
+        components: impl Into<Box<[SyntaxIdRefComponent]>>,
+    ) -> Self {
+        let recovery = match reference.value() {
+            Err(issue) => Some(SyntaxDialogueMarkNameIssue::InvalidReference(issue.clone())),
+            Ok(reference)
+                if !matches!(
+                    reference.root(),
+                    AuthoredIdRoot::Relative { parent_depth: 0 }
+                ) =>
+            {
+                Some(SyntaxDialogueMarkNameIssue::InvalidRoot)
+            }
+            Ok(reference) if reference.segments().len() != 1 => {
+                Some(SyntaxDialogueMarkNameIssue::MultipleSegments)
+            }
+            Ok(_) => None,
+        };
+        Self {
+            reference,
+            range,
+            components: components.into(),
+            recovery,
+        }
+    }
+
+    pub(crate) fn recovered(issue: SyntaxDialogueMarkNameIssue, range: SourceRange) -> Self {
+        Self {
+            reference: SyntaxIdRefSyntax::new(
+                Err(SyntaxIdRefIssue::MissingSuffix),
+                SyntaxIdRefShape::new(false, false, 0, 0),
+            ),
+            range,
+            components: Box::new([]),
+            recovery: Some(issue),
+        }
+    }
+
+    /// Returns the lexer-owned entity-reference projection.
+    pub const fn reference(&self) -> &SyntaxIdRefSyntax {
+        &self.reference
+    }
+
+    /// Returns the exact lexer-owned entity-reference components retained for
+    /// this selector. Recovery without an authored entity reference has no
+    /// fabricated components.
+    pub fn components(&self) -> &[SyntaxIdRefComponent] {
+        &self.components
+    }
+
+    /// Returns the accepted one-segment suffix, when the marker shape is
+    /// valid. The returned segment is the original typed ID component rather
+    /// than a reparsed `SyntaxName`.
+    pub fn name(&self) -> Option<&AuthoredIdSegment> {
+        if self.recovery.is_some() {
+            return None;
+        }
+        match self.reference.value() {
+            Ok(reference) => match reference.segments() {
+                [segment] => Some(segment),
+                _ => None,
+            },
+            Err(_) => None,
+        }
+    }
+
+    pub const fn issue(&self) -> Option<&SyntaxDialogueMarkNameIssue> {
+        self.recovery.as_ref()
+    }
+
+    pub const fn range(&self) -> SourceRange {
+        self.range
+    }
+
+    pub const fn has_recovery(&self) -> bool {
+        self.recovery.is_some()
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxRichTextTagIdentity {
     Builtin(SyntaxBuiltinRichTextTag),
+    Marker(SyntaxDialogueMarkName),
     DotSelector(Result<SyntaxName, SyntaxNameIssue>),
     ProjectSymbol(SyntaxProjectSymbolPath),
     Invalid(SyntaxRichTextIssue),
@@ -370,6 +498,7 @@ impl SyntaxRichTextTagIdentity {
     pub(crate) fn opens_span(&self) -> bool {
         match self {
             Self::Builtin(builtin) => builtin.opens_span(),
+            Self::Marker(_) => false,
             Self::DotSelector(_) | Self::ProjectSymbol(_) => true,
             Self::Invalid(_) => false,
         }
@@ -524,7 +653,6 @@ pub enum SyntaxBuiltinRichTextTag {
     Clear,
     Reset,
     Speed,
-    Marker,
     DirectStyle(SyntaxRichTextDirectStyle),
     Style(SyntaxRichTextStyleSelector),
     Layout(SyntaxRichTextLayoutSelector),
@@ -546,7 +674,6 @@ impl SyntaxBuiltinRichTextTag {
             b"clear" | b"er" | b"cm" => Some(Self::Clear),
             b"reset" => Some(Self::Reset),
             b"speed" => Some(Self::Speed),
-            b"mark" => Some(Self::Marker),
             b"em" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Emphasis)),
             b"strong" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Strong)),
             b"i" | b"italic" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Italic)),
@@ -1130,6 +1257,7 @@ pub enum SyntaxRichTextTagSourcePart {
     CloseDelimiter,
     InferenceInsertion,
     EndTag,
+    Marker(crate::id_ref::SyntaxIdRefPart),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

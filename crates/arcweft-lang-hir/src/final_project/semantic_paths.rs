@@ -684,6 +684,31 @@ pub struct HirSemanticPathLocation<'topology> {
     path: &'topology HirSemanticOwnerPath,
 }
 
+/// Typed context proving that a statement is owned by exactly one accepted
+/// Choice lifecycle `on select` body.
+///
+/// The path is copied from the sealed topology row so callers cannot retain a
+/// detached parent guess or a borrow into one particular root index.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirChoiceLifecycleContext {
+    choice: ExprId,
+    owner: HirSemanticOwnerPath,
+}
+
+impl HirChoiceLifecycleContext {
+    const fn new(choice: ExprId, owner: HirSemanticOwnerPath) -> Self {
+        Self { choice, owner }
+    }
+
+    pub const fn choice(&self) -> ExprId {
+        self.choice
+    }
+
+    pub const fn owner(&self) -> &HirSemanticOwnerPath {
+        &self.owner
+    }
+}
+
 /// Exact typed key for one semantic body container in the sealed project.
 ///
 /// The accepted root is part of the key because declaration and item body
@@ -1149,7 +1174,6 @@ fn validate_body_owner_kind(row: &HirSemanticBodyRow) -> Result<(), HirSemanticP
         },
         HirSemanticBodyOwnerKind::Statement { role, .. } => match role {
             HirStatementBodyRole::LetElse
-            | HirStatementBodyRole::Defer
             | HirStatementBodyRole::On
             | HirStatementBodyRole::UnsafeLifetime => row.kind() == HirBodyKind::Ordinary,
             HirStatementBodyRole::MatchArm { .. } => matches!(
@@ -1457,9 +1481,6 @@ pub enum HirExpressionBindingRole {
     ChoicePlanCancelTrigger {
         path: crate::expr::HirNestedExpressionPath,
     },
-    DialogueLinePlanLet {
-        path: crate::expr::HirNestedExpressionPath,
-    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1527,9 +1548,6 @@ impl HirLocalBindingOrigin {
 pub enum HirLocalBindingStatementRole {
     Let,
     LetElse,
-    LetChoice,
-    LetScope,
-    LetActionReceive,
     IfLet,
     MatchArm { arm: u32 },
     WhileLet,
@@ -2170,6 +2188,64 @@ impl HirProjectEvaluationTopology {
         }
         Ok(found)
     }
+
+    /// Returns the sole accepted Choice lifecycle that encloses one statement.
+    ///
+    /// Choice lifecycle ownership is derived only from the sealed typed body
+    /// rows. A statement outside an `on select` body, a statement reachable
+    /// through multiple such owners, or a statement absent from this exact
+    /// topology is rejected; no source scan or raw parent map participates.
+    pub fn enclosing_choice_lifecycle(
+        &self,
+        statement: StmtId,
+    ) -> Result<HirChoiceLifecycleContext, HirChoiceLifecycleContextError> {
+        let Some(module) = self.module(statement.module()) else {
+            return Err(HirChoiceLifecycleContextError::Missing { statement });
+        };
+        let Some(location) = self
+            .semantic_path(statement.into())
+            .map_err(HirChoiceLifecycleContextError::PathLookup)?
+        else {
+            return Err(HirChoiceLifecycleContextError::Missing { statement });
+        };
+
+        let mut found = None;
+        let mut count = 0usize;
+        let mut visit_index = |index: &HirSemanticPathIndex| {
+            if index.root() != location.root()
+                || index.statement(statement) != Some(location.path())
+            {
+                return;
+            }
+            for row in index.body_rows() {
+                let Some(choice) = row.owner().expression_owner() else {
+                    continue;
+                };
+                if !matches!(
+                    row.owner().expression_owned_role(),
+                    Some(HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { .. })
+                ) || !path_is_prefix(row.path(), location.path())
+                {
+                    continue;
+                }
+                count = count.saturating_add(1);
+                if count == 1 {
+                    found = Some(HirChoiceLifecycleContext::new(choice, row.path().clone()));
+                }
+            }
+        };
+        for entry in module.entries() {
+            visit_index(entry.paths());
+            if let Some(body) = entry.body() {
+                visit_index(body.paths());
+            }
+        }
+        match (count, found) {
+            (1, Some(context)) => Ok(context),
+            (0, None) => Err(HirChoiceLifecycleContextError::Missing { statement }),
+            (_, _) => Err(HirChoiceLifecycleContextError::Multiple { statement }),
+        }
+    }
 }
 
 fn record_semantic_path_location<'topology>(
@@ -2459,6 +2535,17 @@ pub enum HirSemanticPathLookupError {
         owner: HirSemanticPathOwnerId,
         snapshot: HirSnapshotId,
     },
+}
+
+/// Closed failure vocabulary for the typed Choice lifecycle query.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirChoiceLifecycleContextError {
+    #[error("statement {statement:?} has no accepted enclosing Choice lifecycle")]
+    Missing { statement: StmtId },
+    #[error("statement {statement:?} has multiple accepted enclosing Choice lifecycles")]
+    Multiple { statement: StmtId },
+    #[error(transparent)]
+    PathLookup(#[from] HirSemanticPathLookupError),
 }
 
 /// Closed failure vocabulary for topology-wide borrowed control-transfer
@@ -3736,9 +3823,6 @@ fn expression_binding_role(role: &HirExpressionOwnedBodyRole) -> Option<HirExpre
         HirExpressionOwnedBodyRole::ChoicePlanCancelTrigger { path } => {
             Some(HirExpressionBindingRole::ChoicePlanCancelTrigger { path: path.clone() })
         }
-        HirExpressionOwnedBodyRole::DialogueLinePlanLet { path } => {
-            Some(HirExpressionBindingRole::DialogueLinePlanLet { path: path.clone() })
-        }
         HirExpressionOwnedBodyRole::AwaitBranchBody { .. }
         | HirExpressionOwnedBodyRole::ChoiceLetStatement { .. }
         | HirExpressionOwnedBodyRole::ChoiceOptionSelectBody { .. }
@@ -3750,18 +3834,18 @@ fn expression_binding_role(role: &HirExpressionOwnedBodyRole) -> Option<HirExpre
     }
 }
 
-fn trigger_pattern_id(trigger: &crate::stmt::HirTriggerPattern) -> Option<PatternId> {
+fn trigger_pattern_id(trigger: &crate::stmt::HirTrigger) -> Option<PatternId> {
     match trigger {
-        crate::stmt::HirTriggerPattern::Input(pattern)
-        | crate::stmt::HirTriggerPattern::Event(pattern)
-        | crate::stmt::HirTriggerPattern::Mark(pattern)
-        | crate::stmt::HirTriggerPattern::Select(pattern)
-        | crate::stmt::HirTriggerPattern::Task(pattern)
-        | crate::stmt::HirTriggerPattern::Scope(pattern) => Some(*pattern),
-        crate::stmt::HirTriggerPattern::Signal { value, .. } => *value,
-        crate::stmt::HirTriggerPattern::Timeout(_) | crate::stmt::HirTriggerPattern::Expr(_) => {
-            None
-        }
+        crate::stmt::HirTrigger::Input(pattern)
+        | crate::stmt::HirTrigger::Event(pattern)
+        | crate::stmt::HirTrigger::Select(pattern)
+        | crate::stmt::HirTrigger::Task(pattern)
+        | crate::stmt::HirTrigger::Scope(pattern) => Some(*pattern),
+        crate::stmt::HirTrigger::Signal { value, .. } => *value,
+        crate::stmt::HirTrigger::Mark(_)
+        | crate::stmt::HirTrigger::Timeout(_)
+        | crate::stmt::HirTrigger::Expression(_)
+        | crate::stmt::HirTrigger::Recovered(_) => None,
     }
 }
 
@@ -4873,35 +4957,8 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         owning_parent: ExprId,
         access: CaptureAccess,
     ) -> Result<(), HirSemanticPathError> {
-        let statement = self
-            .module
-            .resolve_stmt(owner)
-            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
         self.line_plan_applications.push(owning_parent);
-        let result = (|| match statement.kind() {
-            HirStmtKind::Let {
-                pattern,
-                initializer,
-                locals,
-                ..
-            } if self.patterns.contains_key(pattern)
-                && locals.iter().all(|local| self.locals.contains_key(local)) =>
-            {
-                insert_unique(&mut self.statements, owner, path, hops)?;
-                for local in locals {
-                    self.merge_local_origin(
-                        *local,
-                        HirLocalValueOrigin::DirectInitializer(*initializer),
-                    )?;
-                }
-                Ok(())
-            }
-            HirStmtKind::Out { .. } => {
-                insert_unique(&mut self.statements, owner, path, hops)?;
-                self.record_control_transfer(owner, statement.kind())
-            }
-            _ => self.walk_statement(owner, path, hops, Some(owning_parent), access),
-        })();
+        let result = self.walk_statement(owner, path, hops, Some(owning_parent), access);
         self.line_plan_applications.pop();
         result
     }
@@ -5165,39 +5222,6 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 locals,
                 false,
                 HirLocalBindingStatementRole::LetElse,
-            )),
-            HirStmtKind::LetChoice {
-                pattern,
-                choice,
-                locals,
-            } => Some((
-                *pattern,
-                *choice,
-                locals,
-                false,
-                HirLocalBindingStatementRole::LetChoice,
-            )),
-            HirStmtKind::LetScope {
-                pattern,
-                scope_expr,
-                locals,
-            } => Some((
-                *pattern,
-                *scope_expr,
-                locals,
-                false,
-                HirLocalBindingStatementRole::LetScope,
-            )),
-            HirStmtKind::LetActionReceive {
-                pattern,
-                action,
-                locals,
-            } => Some((
-                *pattern,
-                *action,
-                locals,
-                false,
-                HirLocalBindingStatementRole::LetActionReceive,
             )),
             _ => None,
         };
@@ -5743,12 +5767,7 @@ fn nested_expression_role_path(
     role: &HirExpressionChildRole,
 ) -> Vec<HirNestedExpressionPathSegment> {
     match role {
-        HirExpressionChildRole::LinePlanOptionValue { path }
-        | HirExpressionChildRole::LinePlanLetValue { path }
-        | HirExpressionChildRole::LinePlanOut { path }
-        | HirExpressionChildRole::LinePlanTimelineAssert { path }
-        | HirExpressionChildRole::LinePlanExpression { path }
-        | HirExpressionChildRole::ChoiceIfCondition { path, .. }
+        HirExpressionChildRole::ChoiceIfCondition { path, .. }
         | HirExpressionChildRole::ChoiceForSource { path }
         | HirExpressionChildRole::ChoiceMatchScrutinee { path }
         | HirExpressionChildRole::ChoiceOptionId { path }
@@ -5792,8 +5811,9 @@ fn nested_owned_role_path(
         | HirExpressionOwnedBodyRole::ChoicePlanCancelBody { path }
         | HirExpressionOwnedBodyRole::ChoicePlanOnSelectPattern { path }
         | HirExpressionOwnedBodyRole::ChoicePlanOnSelectBody { path }
-        | HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, .. }
-        | HirExpressionOwnedBodyRole::DialogueLinePlanLet { path } => path.segments().to_vec(),
+        | HirExpressionOwnedBodyRole::DialogueLinePlanStatement { path, .. } => {
+            path.segments().to_vec()
+        }
         _ => Vec::new(),
     }
 }

@@ -32,6 +32,7 @@ pub(crate) enum MatchDomainFamily<'a> {
     Choice(&'a [TypeKind]),
     VariantPayload(&'a VariantPayloadType),
     RequiresClosedVariant,
+    ClosedOpaqueAtomic,
     OpenOrOpaque,
 }
 
@@ -167,6 +168,9 @@ impl TypeKind {
             }
             Self::Choice(alternatives) => MatchDomainInput::Choice(alternatives),
             Self::VariantPayload(payload) => MatchDomainInput::VariantPayload(payload),
+            Self::StatementIngress(_) => {
+                MatchDomainInput::Immediate(MatchDomainFamily::ClosedOpaqueAtomic)
+            }
             Self::CharacterNominal(_) | Self::AgentResourceBody => {
                 MatchDomainInput::Immediate(MatchDomainFamily::RequiresClosedVariant)
             }
@@ -324,6 +328,22 @@ mod tests {
             assert!(matches!(
                 TypeKind::AgentBuiltin(builtin).match_domain_family(),
                 Ok(MatchDomainFamily::OpenOrOpaque)
+            ));
+        }
+    }
+
+    #[test]
+    fn statement_ingress_match_domains_are_closed_opaque_atoms() {
+        use crate::registration::StandardStatementIngressTypeId;
+
+        for ingress in [
+            StandardStatementIngressTypeId::TaskEvent,
+            StandardStatementIngressTypeId::ScopeExit,
+            StandardStatementIngressTypeId::FrameBoundary,
+        ] {
+            assert!(matches!(
+                TypeKind::StatementIngress(ingress).match_domain_family(),
+                Ok(MatchDomainFamily::ClosedOpaqueAtomic)
             ));
         }
     }

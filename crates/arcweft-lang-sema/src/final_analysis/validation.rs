@@ -25,18 +25,18 @@ use crate::{
 use super::type_rules::compact_numeric_element_type;
 use super::{
     CallAnalysisOutcome, CallCalleeClassificationFact, CallTargetFacts, CallableDeclarationOwner,
-    CallableDiagnosticSubject, CaptureId, CheckedAssignment, CheckedBinding, CheckedBindingRole,
+    CallableDiagnosticSubject, CaptureId, CheckedBinding, CheckedBindingRole,
     CheckedCallArgumentSlotSource, CheckedCallCalleeExecution, CheckedCallResult,
     CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedChoice,
     CheckedEntryReference, CheckedExpression, CheckedExpressionResolution,
     CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem, CheckedItemRole,
     CheckedIteration, CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipe,
     CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedTraitConformance,
+    CheckedSelectResolution, CheckedStatement, CheckedStatementPayload, CheckedTraitConformance,
     CheckedTryBoundary, CheckedTryCarrier, CheckedValueResolution, CheckedVariantOwner,
     CheckedVariantResolution, DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError,
     FinalSemanticAnalysisWork, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
-    HirPatternKind, HirStmtKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
+    HirPatternKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
     PostfixBracketResolution, ProjectNominalBody, ProjectSymbolTable, ResolvedCallable,
     ResolvedCallableOrigin, SemanticFactFamily, StmtId, TypeId, TypeKind, TypeResolutionReport,
 };
@@ -1618,7 +1618,6 @@ fn validate_project_item(
 pub(super) fn validate_statements(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     locals: &BTreeMap<LocalId, CheckedBinding>,
-    expressions: &BTreeMap<ExprId, CheckedExpression>,
     statements: &BTreeMap<StmtId, CheckedStatement>,
     calls: &BTreeMap<ExprId, CallTargetFacts>,
 ) -> Result<(), FinalSemanticAnalysisError> {
@@ -1629,138 +1628,48 @@ pub(super) fn validate_statements(
         if statement.is_poisoned() {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         }
-        let compatible = match fact.role() {
-            CheckedStatementRole::Assignment(assignment) => {
-                let HirStmtKind::Assign { target, value } = statement.kind() else {
+        match fact.payload() {
+            CheckedStatementPayload::Assignment(assignment) => {
+                let place = assignment.place();
+                if locals.get(&place.local()).map(CheckedBinding::ty) != Some(&place.nominal().ty())
+                    || place.field_type() != assignment.value_type()
+                {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                validate_assignment(modules, locals, expressions, assignment, *target, *value)?;
-                true
+                }
             }
-            CheckedStatementRole::Assertion(_) => {
-                matches!(statement.kind(), HirStmtKind::Assertion { .. })
-            }
-            CheckedStatementRole::EvaluatedEffect(effect) => {
-                let HirStmtKind::Expression { expression } = statement.kind() else {
-                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                };
-                let statement_expression = resolve_module(modules, expression.module())?
-                    .resolve_expr(*expression)
-                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                let call_owner = match statement_expression.kind() {
-                    HirExprKind::Call(_) => *expression,
-                    HirExprKind::Pipe(authored) => {
-                        let Some(CheckedExpressionResolution::Pipe(checked)) = expressions
-                            .get(expression)
-                            .map(CheckedExpression::resolution)
-                        else {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        };
-                        if checked.left() != authored.left() || checked.right() != authored.right()
-                        {
-                            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-                        }
-                        checked.right()
-                    }
-                    _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
-                };
+            CheckedStatementPayload::EvaluatedEffect(effect) => {
+                let site = effect.application().raw();
                 let call = calls
-                    .get(&call_owner)
+                    .get(&site.expression())
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
                 let Some(application) = call.selected_application() else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
                 let selected = application.core().candidates().selected();
-                application.core().site() == crate::callable::CheckedCallSite::HirCall(call_owner)
-                    && application.core().application_site() == effect.application()
-                    && selected.schema().evaluated_effect() == Some(effect.disposition())
-                    && matches!(application.result(), CheckedCallResult::Value(_))
-            }
-            CheckedStatementRole::Iteration(_) => {
-                matches!(statement.kind(), HirStmtKind::For(_))
-            }
-            CheckedStatementRole::Yield => matches!(statement.kind(), HirStmtKind::Yield { .. }),
-            CheckedStatementRole::UnsafeAudit => {
-                matches!(statement.kind(), HirStmtKind::UnsafeLifetime { .. })
-            }
-            CheckedStatementRole::Suspension(suspension) => match suspension.as_ref() {
-                super::CheckedSuspensionStatement::Wait => {
-                    matches!(statement.kind(), HirStmtKind::Wait { .. })
+                if application.core().site() != site
+                    || application.core().application_site() != effect.application()
+                    || selected.schema().evaluated_effect() != Some(effect.disposition())
+                    || !matches!(application.result(), CheckedCallResult::Value(_))
+                {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
-            },
-            CheckedStatementRole::Ordinary => !matches!(
-                statement.kind(),
-                HirStmtKind::Assign { .. }
-                    | HirStmtKind::Assertion { .. }
-                    | HirStmtKind::For(_)
-                    | HirStmtKind::Yield { .. }
-                    | HirStmtKind::UnsafeLifetime { .. }
-                    | HirStmtKind::Wait { .. }
-                    | HirStmtKind::Error
-            ),
-        };
-        if !compatible {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            CheckedStatementPayload::Iteration(iteration) => {
+                validate_iteration(modules, iteration)?;
+            }
+            CheckedStatementPayload::Structural
+            | CheckedStatementPayload::Assertion(_)
+            | CheckedStatementPayload::Defer(_)
+            | CheckedStatementPayload::ControlTransfer(_)
+            | CheckedStatementPayload::Trigger(_)
+            | CheckedStatementPayload::UnsafeAudit(_)
+            | CheckedStatementPayload::Select(_)
+            | CheckedStatementPayload::SourceLocale(_)
+            | CheckedStatementPayload::Scope(_)
+            | CheckedStatementPayload::Include(_)
+            | CheckedStatementPayload::Suspension(_)
+            | CheckedStatementPayload::Yield => {}
         }
-        if let CheckedStatementRole::Iteration(iteration) = fact.role() {
-            validate_iteration(modules, iteration)?;
-        }
-    }
-    Ok(())
-}
-
-fn validate_assignment(
-    modules: &BTreeMap<HirModuleId, &HirModule>,
-    locals: &BTreeMap<LocalId, CheckedBinding>,
-    expressions: &BTreeMap<ExprId, CheckedExpression>,
-    assignment: &CheckedAssignment,
-    target: ExprId,
-    value: ExprId,
-) -> Result<(), FinalSemanticAnalysisError> {
-    let target_expression = resolve_module(modules, target.module())?
-        .resolve_expr(target)
-        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-    let HirExprKind::Select(select) = target_expression.kind() else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    let base_expression = resolve_module(modules, select.target().module())?
-        .resolve_expr(select.target())
-        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-    if !matches!(base_expression.kind(), HirExprKind::Path(_)) {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    }
-    let base = expressions.get(&select.target()).ok_or(
-        FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-            owner: select.target(),
-        },
-    )?;
-    let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
-        base.resolution()
-    else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    let target = expressions
-        .get(&target)
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
-    let CheckedExpressionResolution::Select(CheckedSelectResolution::Field(selection)) =
-        target.resolution()
-    else {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-    };
-    let value = expressions
-        .get(&value)
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
-    let place = assignment.place();
-    if place.local() != *local
-        || place.nominal().identity() != base.ty().semantic_identity_digest()
-        || place.field() != selection
-        || place.runtime_field().is_none()
-        || place.field_type() != target.ty()
-        || assignment.value_type() != value.ty()
-        || target.ty() != value.ty()
-        || locals.get(local).map(CheckedBinding::ty) != Some(base.ty())
-    {
-        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
     }
     Ok(())
 }
@@ -2023,7 +1932,7 @@ fn validate_call_result(
     let effects = application.core().effects();
     if application.result().ty() != checked.ty()
         || !effects.is_known()
-        || effects.concrete() != checked.effects()
+        || !effects.concrete().is_subset(checked.effects())
     {
         return Err(FinalSemanticAnalysisError::CallFactMismatch);
     }

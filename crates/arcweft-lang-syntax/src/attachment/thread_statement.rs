@@ -408,7 +408,6 @@ pub enum AttachedSelectBranch {
         name: AttachedSelectBindingName,
         equals: AstNode<EqualsKind>,
         source: RequiredStatementExpressionNode,
-        propagates_error: bool,
         body: AttachedRequiredNestedThreadFlowBody,
     },
     Frame {
@@ -675,10 +674,7 @@ fn attach_select_branch(
 ) -> Result<AttachedSelectBranch, SyntaxAccessError> {
     let body = required_nested_thread_flow_body(&syntax)?;
     match projection {
-        PendingSelectBranchProjection::Bind {
-            name,
-            propagates_error,
-        } => {
+        PendingSelectBranchProjection::Bind { name } => {
             require_roles(
                 &syntax,
                 &[
@@ -712,7 +708,6 @@ fn attach_select_branch(
                 name,
                 equals: syntax.required_exact_child::<EqualsKind>(SyntaxRole::Equals)?,
                 source: required_statement_expression(&syntax, SyntaxRole::Initializer)?,
-                propagates_error: *propagates_error,
                 syntax,
                 body,
             })

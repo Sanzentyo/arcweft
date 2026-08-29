@@ -9,7 +9,7 @@ use std::collections::BTreeSet;
 use crate::expr::{
     HirCallArgument, HirCallArgumentOrdinal, HirCallArgumentOrdinalError, HirExprKind,
 };
-use crate::identity::{ExprId, HirModuleId, ItemId, PatternId, ScopeId, StmtId, SyntheticRole};
+use crate::identity::{ExprId, HirModuleId, ItemId, ScopeId, StmtId, SyntheticRole};
 use crate::leaf::HirName;
 use crate::module::HirModule;
 
@@ -18,6 +18,7 @@ mod rich_text;
 
 pub use self::content::{
     HirDialogueContent, HirDialogueContentError, HirDialogueContentId, HirDialogueIssue,
+    HirDialogueMark, HirDialogueMarkId, HirDialogueMarkName, HirDialogueMarkOrdinal,
     HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLineBreakKind, HirRuby,
     HirTextFragment,
 };
@@ -362,7 +363,7 @@ impl HirLinePlan {
         report_line_plan_items(&self.items, context)
     }
 
-    fn has_recovery(&self) -> bool {
+    pub(crate) fn has_recovery(&self) -> bool {
         line_plan_items_have_recovery(&self.items)
     }
 }
@@ -373,36 +374,11 @@ pub enum HirLinePlanItem {
     Init(Box<[StmtId]>),
     Thread(StmtId),
     On(StmtId),
-    Option {
-        name: HirName,
-        value: ExprId,
-    },
-    Let {
-        pattern: PatternId,
-        value: ExprId,
-        statement: StmtId,
-    },
     Statement(StmtId),
-    Out {
-        value: ExprId,
-        statement: StmtId,
-    },
     CancelRule(StmtId),
     StartGroup(Box<[HirLinePlanItem]>),
     TogetherGroup(Box<[HirLinePlanItem]>),
-    TimelineAssert {
-        policy: TimelineAssertPolicy,
-        condition: ExprId,
-    },
-    Expression(ExprId),
     Error(StmtId),
-}
-
-/// Runtime policy retained by a line-timeline assertion.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TimelineAssertPolicy {
-    Always,
-    DebugOnly,
 }
 
 /// One generic postfix bracket with exactly two bounded interpretations.
@@ -566,6 +542,7 @@ pub(crate) enum HirDialogueOrdinalError {
     Node { ordinal: usize },
     Tag { ordinal: usize },
     Argument { ordinal: usize },
+    Mark { ordinal: usize },
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -600,7 +577,6 @@ pub(crate) enum HirDialogueTransactionRequirement {
         expected: HirDialogueExpressionExpectation,
     },
     Statement(StmtId),
-    Pattern(PatternId),
     Scope(ScopeId),
     Item(ItemId),
     RichTextCharge(HirRichTextCharge),
@@ -632,10 +608,17 @@ pub(crate) enum HirDialogueInvariantError {
     InvalidContentOwner,
     InvalidEndTagInference,
     InvalidPostfixCandidate,
+    InvalidMarkReference,
     InvalidTagReference,
     NonContiguousArgumentOrdinal,
+    NonContiguousMarkOrdinal,
     NonContiguousNodeOrdinal,
     NonContiguousTagOrdinal,
+    DuplicateMarkName,
+    MarkCatalogLimitExceeded {
+        observed: usize,
+        maximum: usize,
+    },
     UnorderedCoordinates,
 }
 
@@ -670,21 +653,6 @@ fn validate_line_plan_items(
             | HirLinePlanItem::Error(statement) => {
                 validate_module(expected, statement.module())?;
             }
-            HirLinePlanItem::Option { value, .. }
-            | HirLinePlanItem::Out { value, .. }
-            | HirLinePlanItem::Expression(value)
-            | HirLinePlanItem::TimelineAssert {
-                condition: value, ..
-            } => validate_module(expected, value.module())?,
-            HirLinePlanItem::Let {
-                pattern,
-                value,
-                statement,
-            } => {
-                validate_module(expected, pattern.module())?;
-                validate_module(expected, value.module())?;
-                validate_module(expected, statement.module())?;
-            }
             HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                 validate_line_plan_items(expected, items)?;
             }
@@ -713,35 +681,6 @@ fn report_line_plan_items<C: HirDialogueTransactionContext>(
             | HirLinePlanItem::Error(statement) => context
                 .require(HirDialogueTransactionRequirement::Statement(*statement))
                 .map_err(HirDialogueTransactionError::Context)?,
-            HirLinePlanItem::Option { value, .. }
-            | HirLinePlanItem::Out { value, .. }
-            | HirLinePlanItem::Expression(value)
-            | HirLinePlanItem::TimelineAssert {
-                condition: value, ..
-            } => context
-                .require(HirDialogueTransactionRequirement::Expression {
-                    id: *value,
-                    expected: HirDialogueExpressionExpectation::Unrestricted,
-                })
-                .map_err(HirDialogueTransactionError::Context)?,
-            HirLinePlanItem::Let {
-                pattern,
-                value,
-                statement,
-            } => {
-                context
-                    .require(HirDialogueTransactionRequirement::Pattern(*pattern))
-                    .map_err(HirDialogueTransactionError::Context)?;
-                context
-                    .require(HirDialogueTransactionRequirement::Expression {
-                        id: *value,
-                        expected: HirDialogueExpressionExpectation::Unrestricted,
-                    })
-                    .map_err(HirDialogueTransactionError::Context)?;
-                context
-                    .require(HirDialogueTransactionRequirement::Statement(*statement))
-                    .map_err(HirDialogueTransactionError::Context)?;
-            }
             HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
                 report_line_plan_items(items, context)?;
             }

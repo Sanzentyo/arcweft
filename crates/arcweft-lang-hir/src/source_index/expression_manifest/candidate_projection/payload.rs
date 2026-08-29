@@ -145,7 +145,9 @@ pub(super) fn dialogue_content_matches(
             HirRichTextTagPayload::FxCall(value)
             | HirRichTextTagPayload::DialogueCall(value)
             | HirRichTextTagPayload::Condition(value) => Some(*value),
-            HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => None,
+            HirRichTextTagPayload::Arguments
+            | HirRichTextTagPayload::Marker(_)
+            | HirRichTextTagPayload::None => None,
         };
         if actual_value != tag_values.get(&ordinal).copied() {
             return false;

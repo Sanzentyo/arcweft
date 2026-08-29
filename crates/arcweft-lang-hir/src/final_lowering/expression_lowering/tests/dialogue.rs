@@ -1,10 +1,12 @@
 use super::*;
 use crate::dialogue_application::{
-    HirBuiltinRichTextTag, HirDialogueCoordinateKind, HirDialogueNodeKind,
+    HirBuiltinRichTextTag, HirDialogueCoordinateKind, HirDialogueNodeKind, HirLinePlanItem,
     HirPostfixBracketCandidates, HirRichTextDirectStyle, HirRichTextIssue, HirRichTextTagIdentity,
     HirRichTextTagPayload,
 };
+use crate::expr::HirThreadFlowItem;
 use crate::source_index::{HirDialogueNodeSourcePart, HirRichTextTagSourcePart, HirSourcePresence};
+use crate::stmt::{HirStmtKind, HirTrigger};
 use crate::type_ref::HirTypeKind;
 
 fn ambiguous_tuple_candidate(element_count: usize) -> String {
@@ -111,6 +113,261 @@ fn selected_bracket_dialogue_lowers_typed_content_and_exact_sources() {
                 .presence(),
             HirSourcePresence::Present(_)
         ));
+    }
+}
+
+#[test]
+fn selected_bracket_dialogue_lowers_marker_tags_into_the_content_catalog() {
+    let parsed = parsed_source(
+        "dialogue-marker-catalog",
+        &["alice[before [mark @.checkpoint] after]".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let owner = owners[0];
+    let HirExprKind::DialogueContentApplication(application) = expression(&module, owner).kind()
+    else {
+        panic!("marker dialogue must publish E33");
+    };
+    assert_eq!(application.content().marks().len(), 1);
+    let mark = &application.content().marks()[0];
+    assert_eq!(mark.id().content(), application.content().id());
+    assert_eq!(mark.id().ordinal().get(), 0);
+    assert_eq!(mark.name().as_str(), "checkpoint");
+    let marker_tag = application
+        .content()
+        .tags()
+        .iter()
+        .find(|tag| matches!(tag.identity(), HirRichTextTagIdentity::Marker))
+        .expect("marker tag");
+    assert!(matches!(
+        marker_tag.payload(),
+        HirRichTextTagPayload::Marker(id) if *id == mark.id()
+    ));
+}
+
+#[test]
+fn dialogue_line_plan_resolves_marker_trigger_against_content_catalog() {
+    let parsed = parsed_source(
+        "dialogue-line-plan-marker-trigger",
+        &[
+            "alice[before [mark @.checkpoint] after] with { on mark(@.checkpoint) => return unit }"
+                .into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let HirExprKind::DialogueContentApplication(application) =
+        expression(&module, owners[0]).kind()
+    else {
+        panic!("dialogue line-plan fixture must publish E33");
+    };
+    let mark = application
+        .content()
+        .marks()
+        .first()
+        .expect("dialogue content marker catalog row");
+    let plan = application.plan().expect("line plan");
+    let [HirLinePlanItem::Statement(statement)] = plan.items() else {
+        panic!("line plan must retain one direct On statement");
+    };
+    let statement = module
+        .resolve_stmt(*statement)
+        .expect("line-plan On statement");
+    let HirStmtKind::On { trigger, .. } = statement.kind() else {
+        panic!("line-plan item must lower as On");
+    };
+    assert_eq!(trigger, &HirTrigger::Mark(mark.id()));
+}
+
+#[test]
+fn dialogue_line_plan_resolves_nested_marker_triggers_without_a_handler_table() {
+    let parsed = parsed_source(
+        "dialogue-line-plan-nested-marker-triggers",
+        &["alice[before [mark @.outer] middle [mark @.inner] after] with { on mark(@.outer) => on mark(@.inner) => return unit }".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let HirExprKind::DialogueContentApplication(application) =
+        expression(&module, owners[0]).kind()
+    else {
+        panic!("nested marker dialogue must publish E33");
+    };
+    let [outer_mark, inner_mark] = application.content().marks() else {
+        panic!("nested marker fixture must publish two source-ordered marks");
+    };
+    let plan = application.plan().expect("nested line plan");
+    let [HirLinePlanItem::Statement(outer_statement)] = plan.items() else {
+        panic!("nested line plan must retain one outer On statement");
+    };
+    let outer = module
+        .resolve_stmt(*outer_statement)
+        .expect("outer marker handler statement");
+    let HirStmtKind::On {
+        trigger: HirTrigger::Mark(outer_trigger),
+        body,
+        ..
+    } = outer.kind()
+    else {
+        panic!("outer line-plan item must retain a checked Mark trigger");
+    };
+    assert_eq!(*outer_trigger, outer_mark.id());
+    let [inner_statement] = body.as_ref() else {
+        panic!("outer marker handler must retain one nested statement");
+    };
+    let inner = module
+        .resolve_stmt(*inner_statement)
+        .expect("inner marker handler statement");
+    let HirStmtKind::On {
+        trigger: HirTrigger::Mark(inner_trigger),
+        ..
+    } = inner.kind()
+    else {
+        panic!("nested line-plan item must retain a checked Mark trigger");
+    };
+    assert_eq!(*inner_trigger, inner_mark.id());
+}
+
+#[test]
+fn dialogue_line_plan_rejects_unknown_marker_trigger_without_a_fallback_id() {
+    let parsed = parsed_source(
+        "dialogue-line-plan-unknown-marker-trigger",
+        &[
+            "alice[before [mark @.checkpoint] after] with { on mark(@.missing) => return unit }"
+                .into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let HirExprKind::DialogueContentApplication(application) =
+        expression(&module, owners[0]).kind()
+    else {
+        panic!("dialogue line-plan fixture must publish E33");
+    };
+    let plan = application.plan().expect("line plan");
+    let [HirLinePlanItem::Error(statement)] = plan.items() else {
+        panic!("recovered line plan must retain one poisoned On statement");
+    };
+    let statement = module
+        .resolve_stmt(*statement)
+        .expect("line-plan On statement");
+    let HirStmtKind::On { trigger, .. } = statement.kind() else {
+        panic!("line-plan item must lower as On");
+    };
+    assert_eq!(
+        trigger,
+        &HirTrigger::Recovered(crate::stmt::HirTriggerIssue::UnknownDialogueMark)
+    );
+}
+
+#[test]
+fn dialogue_external_on_mark_trigger_has_no_content_owner() {
+    let parsed = parsed_source(
+        "thread-external-marker-trigger",
+        &["thread { on mark(@.checkpoint) => return unit }".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let HirExprKind::Thread(thread) = expression(&module, owners[0]).kind() else {
+        panic!("Thread fixture must remain a Thread expression");
+    };
+    let [HirThreadFlowItem::Statement(statement)] = thread.body().items() else {
+        panic!("Thread fixture must retain one On statement");
+    };
+    let statement = module
+        .resolve_stmt(*statement)
+        .expect("Thread On statement");
+    let HirStmtKind::On { trigger, .. } = statement.kind() else {
+        panic!("Thread item must lower as On");
+    };
+    assert_eq!(
+        trigger,
+        &HirTrigger::Recovered(crate::stmt::HirTriggerIssue::MarkOutsideDialogueApplication)
+    );
+}
+
+fn lower_first(parsed: &ParsedSource) -> Result<ExprId, HirLowerFailure> {
+    let attached = attached_expressions(parsed);
+    let database = HirDatabase::try_new().expect("malformed-marker HIR database");
+    let mut transaction = stage(&database, parsed);
+    let scope = allocate_module_scope(&mut transaction, parsed);
+    transaction.lower_attached_expression(&attached[0], scope)
+}
+
+fn lower_first_published(
+    parsed: &ParsedSource,
+) -> Result<(std::sync::Arc<HirModule>, ExprId), HirLowerFailure> {
+    let attached = attached_expressions(parsed);
+    let mut database = HirDatabase::try_new().expect("malformed-marker HIR database");
+    let mut transaction = stage(&database, parsed);
+    let scope = allocate_module_scope(&mut transaction, parsed);
+    let owner = transaction.lower_attached_expression(&attached[0], scope)?;
+    let module = transaction.finish(&mut database)?.into_module();
+    Ok((module, owner))
+}
+
+#[test]
+fn malformed_marker_selectors_are_rejected_before_hir_catalog_publication() {
+    for (label, content) in [
+        ("missing-reference", "before [mark .release] after"),
+        ("attributes", "before [mark name=value] after"),
+        ("multiple", "before [mark @.release @.other] after"),
+        ("missing-name", "before [mark] after"),
+        ("recovered", "before [mark \"@.quoted\"] after"),
+    ] {
+        let parsed = parsed_source(
+            &format!("dialogue-marker-malformed-{label}"),
+            &[format!("alice[{content}]")],
+        );
+        assert!(
+            lower_first(&parsed).is_err(),
+            "{label} selector must be rejected before publishing a marker catalog"
+        );
+    }
+}
+
+#[test]
+fn malformed_marker_triggers_are_rejected_without_a_fabricated_mark_identity() {
+    for (label, trigger) in [
+        ("missing-reference", "mark(checkpoint)"),
+        ("attributes", "mark(@.checkpoint, value=true)"),
+        ("multiple", "mark(@.checkpoint, @.release)"),
+        ("missing-name", "mark(@.)"),
+        ("missing-selector", "mark()"),
+    ] {
+        let parsed = parsed_source(
+            &format!("dialogue-trigger-malformed-{label}"),
+            &[format!(
+                "alice[before [mark @.checkpoint] after] with {{ on {trigger} => return unit }}"
+            )],
+        );
+        match lower_first_published(&parsed) {
+            Err(_) => {}
+            Ok((module, owner)) => {
+                let HirExprKind::DialogueContentApplication(application) =
+                    expression(&module, owner).kind()
+                else {
+                    panic!("{label} trigger must retain its dialogue owner");
+                };
+                let [item] = application
+                    .plan()
+                    .expect("malformed trigger line plan")
+                    .items()
+                else {
+                    panic!("{label} trigger must retain one line-plan item");
+                };
+                let statement = match item {
+                    HirLinePlanItem::Error(statement)
+                    | HirLinePlanItem::On(statement)
+                    | HirLinePlanItem::Statement(statement) => module
+                        .resolve_stmt(*statement)
+                        .expect("malformed trigger statement"),
+                    _ => panic!("{label} trigger must lower as a statement item"),
+                };
+                let HirStmtKind::On { trigger, .. } = statement.kind() else {
+                    panic!("{label} line-plan item must remain an On statement");
+                };
+                assert!(
+                    matches!(trigger, HirTrigger::Recovered(_)),
+                    "{label} trigger must not fabricate a Mark identity"
+                );
+            }
+        }
     }
 }
 

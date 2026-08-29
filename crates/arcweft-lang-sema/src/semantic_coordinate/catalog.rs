@@ -1,14 +1,16 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_lang_hir::{
+    dialogue_application::{HirDialogueMarkId, HirRichTextTagIdentity, HirRichTextTagPayload},
+    expr::HirExprKind,
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
         HirControlTransferKind, HirControlTransferLookupError, HirControlTransferTarget,
-        HirLoopTargetFamily, HirProjectEvaluationTopology, HirSemanticBodyLocation,
-        HirSemanticBodyLocator, HirSemanticBodyLookupError, HirSemanticBodyOwner,
-        HirSemanticBodyOwnerRole, HirSemanticOwnerPath, HirSemanticPathLocation,
-        HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot,
-        HirSemanticPathStep,
+        HirExecutableProjectView, HirLoopTargetFamily, HirProjectEvaluationTopology,
+        HirSemanticBodyLocation, HirSemanticBodyLocator, HirSemanticBodyLookupError,
+        HirSemanticBodyOwner, HirSemanticBodyOwnerRole, HirSemanticOwnerPath,
+        HirSemanticPathLocation, HirSemanticPathLookupError, HirSemanticPathOwnerId,
+        HirSemanticPathRoot, HirSemanticPathStep,
     },
     stmt::HirStatementBodyRole,
     symbol::CallableDeclarationKey,
@@ -25,8 +27,8 @@ use super::{
     CheckedPatternCoordinateEvidence, CheckedSemanticPath, CheckedSemanticPathStep,
     CheckedStatementCoordinateEvidence, HirItemEvaluationEntryRole, HirPatternChildRole,
     HirStatementChildRole, StableCheckedBindingCoordinate, StableCheckedBodyCoordinate,
-    StableCheckedOutputTargetCoordinate, StableCheckedPatternOwnerCoordinate,
-    StableCheckedStatementCoordinate,
+    StableCheckedDialogueMarkCoordinate, StableCheckedOutputTargetCoordinate,
+    StableCheckedPatternOwnerCoordinate, StableCheckedStatementCoordinate,
 };
 
 #[derive(Debug)]
@@ -51,6 +53,13 @@ pub enum AcceptedSemanticRootCatalogError {
     CallableLookup {
         declaration: CallableDeclarationKey,
         error: crate::callable::CheckedCallableLookupError,
+    },
+    #[error(
+        "accepted root catalog checked callable declaration disagrees with HIR declaration: expected {expected:?}, retained {retained:?}"
+    )]
+    CallableDeclarationMismatch {
+        expected: CallableDeclarationKey,
+        retained: crate::callable::CheckedCallableDeclaration,
     },
     #[error("accepted root catalog contains an unrecoverable digest collision for {root:?}")]
     DigestCollision { root: HirSemanticPathRoot },
@@ -113,7 +122,7 @@ impl AcceptedSemanticRootCatalog {
                     let accepted = AcceptedSemanticRoot::Declaration(accepted_declaration_id(
                         &declaration,
                         facts,
-                    ));
+                    )?);
                     insert_root(
                         &mut roots,
                         &mut accepted_to_hir,
@@ -174,13 +183,31 @@ fn insert_root(
 fn accepted_declaration_id(
     declaration: &CallableDeclarationKey,
     facts: &crate::callable::CheckedCallableFacts,
-) -> AcceptedDeclarationSemanticId {
+) -> Result<AcceptedDeclarationSemanticId, AcceptedSemanticRootCatalogError> {
+    let crate::callable::CheckedCallableDeclaration::Project(retained) = facts.id().declaration()
+    else {
+        return Err(
+            AcceptedSemanticRootCatalogError::CallableDeclarationMismatch {
+                expected: declaration.clone(),
+                retained: facts.id().declaration().clone(),
+            },
+        );
+    };
+    if retained != declaration {
+        return Err(
+            AcceptedSemanticRootCatalogError::CallableDeclarationMismatch {
+                expected: declaration.clone(),
+                retained: facts.id().declaration().clone(),
+            },
+        );
+    }
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.lang.accepted-declaration-semantic.v1\0");
     hasher.update(declaration.semantic_digest().as_bytes());
-    hasher.update(facts.id().semantic_digest().as_bytes());
     hasher.update(facts.interface_digest().as_bytes());
-    AcceptedDeclarationSemanticId::from_bytes(*hasher.finalize().as_bytes())
+    Ok(AcceptedDeclarationSemanticId::from_bytes(
+        *hasher.finalize().as_bytes(),
+    ))
 }
 
 fn accepted_item_id(
@@ -290,6 +317,67 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
     ) -> Result<CheckedExpressionCoordinateEvidence, SemanticCoordinateIndexError> {
         self.expression(owner)
             .map(|coordinate| CheckedExpressionCoordinateEvidence::new(owner, coordinate))
+    }
+
+    /// Issues the sole stable coordinate for an exact HIR dialogue marker.
+    ///
+    /// The executable-project borrow is mandatory so issuance checks the
+    /// content owner, source ordinal, and tag-payload back-reference against
+    /// the same module generation as the accepted-root catalog.
+    pub(crate) fn dialogue_mark(
+        &self,
+        project: HirExecutableProjectView<'_>,
+        mark: HirDialogueMarkId,
+    ) -> Result<StableCheckedDialogueMarkCoordinate, SemanticCoordinateIndexError> {
+        let owner = mark.content().owner();
+        let topology_module = self
+            .catalog
+            .topology()
+            .module(owner.module())
+            .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+        let module = project
+            .modules()
+            .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))
+            .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+        if module.snapshot_id() != topology_module.snapshot() {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let expression =
+            module
+                .resolve_expr(owner)
+                .map_err(|_| SemanticCoordinateIndexError::MissingOwner {
+                    owner: HirSemanticPathOwnerId::Expression(owner),
+                })?;
+        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        };
+        let content = application.content();
+        if content.id() != mark.content() {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        let ordinal = usize::try_from(mark.ordinal().get())
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        let row = content
+            .marks()
+            .get(ordinal)
+            .filter(|row| row.id() == mark)
+            .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+        let tag_ordinal = usize::try_from(row.tag().ordinal())
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        let tag = content
+            .tags()
+            .get(tag_ordinal)
+            .filter(|tag| tag.id() == row.tag())
+            .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
+        if tag.identity() != &HirRichTextTagIdentity::Marker
+            || tag.payload() != &HirRichTextTagPayload::Marker(mark)
+        {
+            return Err(SemanticCoordinateIndexError::InvalidRootPath);
+        }
+        Ok(StableCheckedDialogueMarkCoordinate::new(
+            self.expression(owner)?,
+            mark.ordinal(),
+        ))
     }
 
     #[allow(

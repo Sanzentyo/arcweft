@@ -47,7 +47,7 @@ impl From<HirStatementChildEdgeError> for HirStatementBodyProjectionError {
 
 use super::{
     HirConditionalElseBranch, HirContextualStmtBody, HirSelectBranchHead, HirSelectStmt,
-    HirStmtKind, HirStmtMatchArmBody, HirTriggerPattern, HirUnsafeLifetimeBody,
+    HirStmtKind, HirStmtMatchArmBody, HirTrigger, HirUnsafeLifetimeBody,
 };
 
 /// One typed child owned directly by a statement.
@@ -64,7 +64,6 @@ pub enum HirStatementChild {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirStatementBodyRole {
     LetElse,
-    Defer,
     On,
     UnsafeLifetime,
     Then,
@@ -167,9 +166,6 @@ impl HirStmtKind {
                 HirStatementBodyRole::LetElse,
                 else_body,
             )?,
-            Self::DeferBlock { body, .. } => {
-                push_ordinary_body_projection(&mut bodies, HirStatementBodyRole::Defer, body)?;
-            }
             Self::On { body, .. } => {
                 push_ordinary_body_projection(&mut bodies, HirStatementBodyRole::On, body)?;
             }
@@ -259,9 +255,6 @@ impl HirStmtKind {
             | Self::Assertion { .. }
             | Self::Let { .. }
             | Self::Assign { .. }
-            | Self::LetChoice { .. }
-            | Self::LetScope { .. }
-            | Self::LetActionReceive { .. }
             | Self::Return { .. }
             | Self::Out { .. }
             | Self::Goto { .. }
@@ -347,32 +340,11 @@ impl HirStmtKind {
                 push_expression(&mut edges, *initializer, HirStatementChildRole::Initializer);
                 push_statements(&mut edges, HirStatementBodyRole::LetElse, else_body)?;
             }
-            Self::LetChoice {
-                pattern,
-                choice,
-                locals: _,
-            }
-            | Self::LetScope {
-                pattern,
-                scope_expr: choice,
-                locals: _,
-            }
-            | Self::LetActionReceive {
-                pattern,
-                action: choice,
-                locals: _,
-            } => {
-                push_pattern(&mut edges, *pattern, HirStatementChildRole::Pattern);
-                push_expression(&mut edges, *choice, HirStatementChildRole::Input);
-            }
             Self::Return { value } | Self::Out { value, .. } => {
                 push_expression(&mut edges, *value, HirStatementChildRole::Value);
             }
             Self::Goto { target } | Self::Wait { target } | Self::Close { target } => {
                 push_expression(&mut edges, *target, HirStatementChildRole::Target);
-            }
-            Self::DeferBlock { body, .. } => {
-                push_statements(&mut edges, HirStatementBodyRole::Defer, body)?;
             }
             Self::Defer { expression, .. }
             | Self::Yield { expression }
@@ -682,23 +654,23 @@ fn push_else(
     Ok(())
 }
 
-fn push_trigger(edges: &mut Vec<HirStatementChildEdge>, trigger: &HirTriggerPattern) {
+fn push_trigger(edges: &mut Vec<HirStatementChildEdge>, trigger: &HirTrigger) {
     match trigger {
-        HirTriggerPattern::Input(pattern)
-        | HirTriggerPattern::Event(pattern)
-        | HirTriggerPattern::Mark(pattern)
-        | HirTriggerPattern::Select(pattern)
-        | HirTriggerPattern::Task(pattern)
-        | HirTriggerPattern::Scope(pattern) => {
+        HirTrigger::Input(pattern)
+        | HirTrigger::Event(pattern)
+        | HirTrigger::Select(pattern)
+        | HirTrigger::Task(pattern)
+        | HirTrigger::Scope(pattern) => {
             push_pattern(edges, *pattern, HirStatementChildRole::TriggerPattern);
         }
-        HirTriggerPattern::Signal { target, value } => {
+        HirTrigger::Mark(_) | HirTrigger::Recovered(_) => {}
+        HirTrigger::Signal { target, value } => {
             push_expression(edges, *target, HirStatementChildRole::TriggerSignalTarget);
             if let Some(value) = value {
                 push_pattern(edges, *value, HirStatementChildRole::TriggerSignalValue);
             }
         }
-        HirTriggerPattern::Timeout(expression) | HirTriggerPattern::Expr(expression) => {
+        HirTrigger::Timeout(expression) | HirTrigger::Expression(expression) => {
             push_expression(edges, *expression, HirStatementChildRole::TriggerExpression);
         }
     }

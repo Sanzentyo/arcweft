@@ -535,8 +535,8 @@ Inside dialogue text mode, Arcweft recognizes:
 [ruby]   ruby annotation
 #[...]   embedded Arcweft expression/content, requiring DisplayText or fmt(...)
 [call]   dialogue-safe function call
-[mark .name]
-         line-local marker consumed by `with: on mark(.name):`
+[mark @.name]
+         line-local marker consumed by `with: on mark(@.name):`
 ```
 
 Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It remains normal Arcweft syntax such as indexing, lists, attributes, or parser-specific syntax.

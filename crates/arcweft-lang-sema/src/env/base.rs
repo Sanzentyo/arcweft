@@ -24,6 +24,10 @@ use crate::dialogue_view::{
     DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
+use crate::registration::{
+    StandardStatementIngressTypeId, StatementIngressTypePublicationInput,
+    StatementIngressTypeRoleId,
+};
 use crate::types::{
     CharacterNominalType, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
     LanguageIntrinsicGenericOwner, TypeKind, direct_type_name,
@@ -234,6 +238,7 @@ pub struct TypeCheckEnv {
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
+    statement_ingress_inputs: Box<[StatementIngressTypePublicationInput]>,
 }
 
 /// Invalid construction of a base semantic environment.
@@ -495,9 +500,34 @@ impl TypeCheckEnv {
     /// Creates the core source environment with always-available runtime callables.
     pub fn new() -> Self {
         Self::default()
+            .with_standard_statement_ingress_types()
             .with_standard_accepted_nominals()
             .with_standard_runtime_value_enums()
             .with_standard_runtime_callables()
+    }
+
+    fn with_standard_statement_ingress_types(mut self) -> Self {
+        self.statement_ingress_inputs = Box::new([
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Task,
+                StandardStatementIngressTypeId::TaskEvent,
+            ),
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Scope,
+                StandardStatementIngressTypeId::ScopeExit,
+            ),
+            StatementIngressTypePublicationInput::new(
+                StatementIngressTypeRoleId::Frame,
+                StandardStatementIngressTypeId::FrameBoundary,
+            ),
+        ]);
+        self
+    }
+
+    pub(crate) fn take_statement_ingress_inputs(
+        &mut self,
+    ) -> Box<[StatementIngressTypePublicationInput]> {
+        std::mem::take(&mut self.statement_ingress_inputs)
     }
 
     /// Creates the standard source type-checking environment.

@@ -8,14 +8,15 @@ use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
 use super::expression::{completed_slot, emit_expression_node};
+use super::lexer::typed_entity_reference_source;
 use super::shadow_recovery::{emit_close_delimiter, emit_open_delimiter};
 use crate::ast::common::TextRange;
 use crate::expressions::{
     ExpressionComponentRole, PendingExpressionComponent, SyntaxBuiltinRichTextTag,
     SyntaxDialogueContent, SyntaxDialogueContentIssue, SyntaxDialogueContentProjection,
-    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueNodeProjection,
-    SyntaxDialogueNodeSourcePart, SyntaxExpressionSlot, SyntaxLineBreakKind,
-    SyntaxRichTextArgumentParts, SyntaxRichTextArgumentProjection,
+    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueMarkName, SyntaxDialogueMarkNameIssue,
+    SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart, SyntaxExpressionSlot,
+    SyntaxLineBreakKind, SyntaxRichTextArgumentParts, SyntaxRichTextArgumentProjection,
     SyntaxRichTextArgumentSourcePart, SyntaxRichTextDirectStyle, SyntaxRichTextEndTagProjection,
     SyntaxRichTextIssue, SyntaxRichTextTagIdentity, SyntaxRichTextTagPayloadProjection,
     SyntaxRichTextTagProjection, SyntaxRichTextTagSourcePart, SyntaxRichTextValue,
@@ -1559,9 +1560,16 @@ fn emit_open_tag(
     content_argument_count: &mut usize,
     argument_limit_exhausted: &mut bool,
 ) -> EmittedOpenTag {
-    let identity = tag_identity_with_arguments(open.source_name, scanned_arguments.as_ref());
+    let (identity, marker_components) = tag_identity_with_arguments(
+        parser,
+        open.source_name,
+        source_range(open.name_range),
+        scanned_arguments.as_ref(),
+        ordinal,
+    );
     let inferred = open.source_name.starts_with('.');
     let mut components = open_tag_components(surface, open, ordinal, inferred);
+    components.extend(marker_components);
     parser.start(SyntaxKind::RichTextTag, SyntaxRole::RichTextTag(ordinal));
     emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
     bump_to_range_start(parser, open.name_range);
@@ -1690,6 +1698,13 @@ fn emit_open_tag_payload(
     let mut payload = SyntaxRichTextTagPayloadProjection::None;
     if let Some(timed_cue) = open.timed_cue.as_ref() {
         return emit_timed_cue_payload(parser, open, timed_cue, state);
+    }
+    if matches!(identity, SyntaxRichTextTagIdentity::Marker(_)) {
+        // Marker selectors are a typed identity, not generic RichText
+        // arguments. The source is still consumed by the enclosing tag close
+        // so malformed attributes remain lossless without becoming a String
+        // success payload.
+        return (arguments, payload);
     }
     if !open.attrs.is_empty() {
         bump_to_range_start(parser, open.attrs_range);
@@ -1862,9 +1877,15 @@ fn tag_identity(source: &str) -> SyntaxRichTextTagIdentity {
 }
 
 fn tag_identity_with_arguments(
+    parser: &DocumentParser<'_, '_>,
     source: &str,
+    source_range: SourceRange,
     arguments: Option<&ScannedTagArguments>,
-) -> SyntaxRichTextTagIdentity {
+    tag: u32,
+) -> (SyntaxRichTextTagIdentity, Vec<PendingExpressionComponent>) {
+    if source == "mark" {
+        return marker_identity(parser, arguments, source_range, tag);
+    }
     let Some(selector) = arguments
         .and_then(|arguments| arguments.entries().first())
         .and_then(|argument| match argument {
@@ -1872,10 +1893,10 @@ fn tag_identity_with_arguments(
             ScannedTagArgument::Named { .. } | ScannedTagArgument::Invalid { .. } => None,
         })
     else {
-        return tag_identity(source);
+        return (tag_identity(source), Vec::new());
     };
     let Some(builtin) = SyntaxBuiltinRichTextTag::from_source_name(selector) else {
-        return tag_identity(source);
+        return (tag_identity(source), Vec::new());
     };
     let belongs_to_family = matches!(
         (source, builtin),
@@ -1885,9 +1906,103 @@ fn tag_identity_with_arguments(
             | ("effect", SyntaxBuiltinRichTextTag::Fx(_))
     );
     if belongs_to_family {
-        SyntaxRichTextTagIdentity::Builtin(builtin)
+        (SyntaxRichTextTagIdentity::Builtin(builtin), Vec::new())
     } else {
-        tag_identity(source)
+        (tag_identity(source), Vec::new())
+    }
+}
+
+fn marker_identity(
+    parser: &DocumentParser<'_, '_>,
+    arguments: Option<&ScannedTagArguments>,
+    fallback_range: SourceRange,
+    tag: u32,
+) -> (SyntaxRichTextTagIdentity, Vec<PendingExpressionComponent>) {
+    let Some(arguments) = arguments else {
+        return (
+            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                SyntaxDialogueMarkNameIssue::MissingSuffix,
+                fallback_range,
+            )),
+            Vec::new(),
+        );
+    };
+    if arguments.entries().len() != 1 {
+        let issue = if arguments.entries().is_empty() {
+            SyntaxDialogueMarkNameIssue::MissingSuffix
+        } else {
+            SyntaxDialogueMarkNameIssue::MultipleArguments
+        };
+        return (
+            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                issue,
+                arguments
+                    .entries()
+                    .first()
+                    .map_or(fallback_range, |argument| source_range(argument.range())),
+            )),
+            Vec::new(),
+        );
+    }
+    let argument = &arguments.entries()[0];
+    match argument {
+        ScannedTagArgument::Positional { value, .. } => {
+            let range = source_range(value.token_range());
+            if value.opening_quote_range().is_some() {
+                return (
+                    SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                        SyntaxDialogueMarkNameIssue::Quoted,
+                        range,
+                    )),
+                    Vec::new(),
+                );
+            }
+            let spelling = parser.source().get(range.as_range()).unwrap_or("");
+            if !spelling.starts_with('@') {
+                return (
+                    SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                        SyntaxDialogueMarkNameIssue::MissingReference,
+                        range,
+                    )),
+                    Vec::new(),
+                );
+            }
+            let projection = typed_entity_reference_source(range, spelling);
+            let identity =
+                SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::from_reference(
+                    projection.syntax().clone(),
+                    range,
+                    projection.components().to_vec(),
+                ));
+            let components = projection
+                .components()
+                .iter()
+                .map(|component| {
+                    PendingExpressionComponent::new(
+                        ExpressionComponentRole::RichTextTag {
+                            tag,
+                            part: SyntaxRichTextTagSourcePart::Marker(component.part()),
+                        },
+                        component.range(),
+                    )
+                })
+                .collect();
+            (identity, components)
+        }
+        ScannedTagArgument::Named { range, .. } => (
+            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                SyntaxDialogueMarkNameIssue::Attributed,
+                source_range(*range),
+            )),
+            Vec::new(),
+        ),
+        ScannedTagArgument::Invalid { range, .. } => (
+            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                SyntaxDialogueMarkNameIssue::Malformed,
+                source_range(*range),
+            )),
+            Vec::new(),
+        ),
     }
 }
 

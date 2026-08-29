@@ -1,7 +1,7 @@
 //! Choice lifecycle-plan and trigger lowering.
 
 use arcweft_lang_syntax::attachment::{
-    AttachedChoicePlan, AttachedChoicePlanItem, AttachedPatternTrigger,
+    AttachedChoicePlan, AttachedChoicePlanItem, AttachedPatternNode,
     AttachedRequiredChoicePlanBody, AttachedSignalTrigger, AttachedTriggerPattern,
 };
 
@@ -9,7 +9,7 @@ use crate::expr::{HirChoicePlan, HirChoicePlanError, HirChoicePlanItem};
 use crate::identity::{LocalId, PatternId, ScopeId};
 use crate::lowering::HirLowerFailure;
 use crate::scope::{HirPatternBindingPolicy, HirScopeOwner};
-use crate::stmt::HirTriggerPattern;
+use crate::stmt::HirTrigger;
 
 use super::super::super::StagedHirModuleTransaction;
 use super::super::super::name_projection::{name, require_attempted_name_limit};
@@ -146,31 +146,41 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedTriggerPattern,
         scope: ScopeId,
         state: &mut ChoiceLoweringState,
-    ) -> Result<(HirTriggerPattern, Box<[LocalId]>), HirLowerFailure> {
+    ) -> Result<(HirTrigger, Box<[LocalId]>), HirLowerFailure> {
         let (trigger, locals) = match attached {
             AttachedTriggerPattern::Input(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Input(pattern), locals)
+                let (pattern, locals) =
+                    self.lower_choice_trigger_pattern(pattern.pattern(), scope, state)?;
+                (HirTrigger::Input(pattern), locals)
             }
             AttachedTriggerPattern::Event(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Event(pattern), locals)
+                let (pattern, locals) =
+                    self.lower_choice_trigger_pattern(pattern.pattern(), scope, state)?;
+                (HirTrigger::Event(pattern), locals)
             }
-            AttachedTriggerPattern::Mark(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Mark(pattern), locals)
+            AttachedTriggerPattern::Mark(mark) => {
+                state.mark_recovered();
+                let issue = if mark.selector().has_recovery() {
+                    crate::stmt::HirTriggerIssue::Malformed
+                } else {
+                    crate::stmt::HirTriggerIssue::MarkOutsideDialogueApplication
+                };
+                (HirTrigger::Recovered(issue), Box::<[LocalId]>::from([]))
             }
             AttachedTriggerPattern::Select(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Select(pattern), locals)
+                let (pattern, locals) =
+                    self.lower_choice_trigger_pattern(pattern.pattern(), scope, state)?;
+                (HirTrigger::Select(pattern), locals)
             }
             AttachedTriggerPattern::Task(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Task(pattern), locals)
+                let (pattern, locals) =
+                    self.lower_choice_trigger_pattern(pattern.pattern(), scope, state)?;
+                (HirTrigger::Task(pattern), locals)
             }
             AttachedTriggerPattern::Scope(pattern) => {
-                let (pattern, locals) = self.lower_choice_trigger_pattern(pattern, scope, state)?;
-                (HirTriggerPattern::Scope(pattern), locals)
+                let (pattern, locals) =
+                    self.lower_choice_trigger_pattern(pattern.pattern(), scope, state)?;
+                (HirTrigger::Scope(pattern), locals)
             }
             AttachedTriggerPattern::Signal(signal) => {
                 self.lower_choice_signal_trigger(signal, scope, state)?
@@ -178,16 +188,13 @@ impl StagedHirModuleTransaction<'_> {
             AttachedTriggerPattern::Timeout(timeout) => {
                 let expression =
                     self.lower_choice_required_expression(timeout.expression(), scope, state)?;
-                (
-                    HirTriggerPattern::Timeout(expression),
-                    Box::<[LocalId]>::from([]),
-                )
+                (HirTrigger::Timeout(expression), Box::<[LocalId]>::from([]))
             }
             AttachedTriggerPattern::Expr(expression) => {
                 let expression = self.lower_attached_expression(expression, scope)?;
                 self.mark_choice_expression_recovery(expression, state)?;
                 (
-                    HirTriggerPattern::Expr(expression),
+                    HirTrigger::Expression(expression),
                     Box::<[LocalId]>::from([]),
                 )
             }
@@ -200,12 +207,12 @@ impl StagedHirModuleTransaction<'_> {
 
     fn lower_choice_trigger_pattern(
         &mut self,
-        attached: &AttachedPatternTrigger,
+        attached: &AttachedPatternNode,
         scope: ScopeId,
         state: &mut ChoiceLoweringState,
     ) -> Result<(PatternId, Box<[LocalId]>), HirLowerFailure> {
         let pattern = self.lower_attached_pattern_binding(
-            attached.pattern(),
+            attached,
             scope,
             HirPatternBindingPolicy::PatternBinding,
         )?;
@@ -220,7 +227,7 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedSignalTrigger,
         scope: ScopeId,
         state: &mut ChoiceLoweringState,
-    ) -> Result<(HirTriggerPattern, Box<[LocalId]>), HirLowerFailure> {
+    ) -> Result<(HirTrigger, Box<[LocalId]>), HirLowerFailure> {
         let target = self.lower_choice_required_expression(attached.target(), scope, state)?;
         let (value, locals) = attached
             .value()
@@ -237,6 +244,6 @@ impl StagedHirModuleTransaction<'_> {
             })
             .transpose()?
             .unwrap_or((None, Box::new([])));
-        Ok((HirTriggerPattern::Signal { target, value }, locals))
+        Ok((HirTrigger::Signal { target, value }, locals))
     }
 }

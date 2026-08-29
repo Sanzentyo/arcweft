@@ -8,26 +8,26 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_hir::{
+    body_edges::{HirBodyChild, HirBodyChildRole},
     identity::{ExprId, ItemId, StmtId},
     item::{HirItemKind, HirPredicateBody, HirProofBody},
-    leaf::{HirIdRef, HirIdRefValue},
     module::HirModule,
     project::HirExecutableProjectView,
     source_index::{
         HirDeclarationSourceRole, HirItemSourceRole, HirSourcePresence, HirSourceQuery,
         HirSourceQueryError, HirSourceSite, HirStmtSourceRole,
     },
-    stmt::{HirAssertionMode, HirStmtKind},
+    stmt::{HirStatementBodyRole, HirStatementChild, HirStatementChildRole, HirStmtKind},
     symbol::{
         CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ProofArtifactId,
         ProofArtifactIdentityError,
     },
 };
 use arcweft_lang_sema::final_analysis::{
-    CheckedAssertionDisposition, CheckedItemRole, CheckedStatementRole, FinalSemanticAnalysis,
-    FinalSemanticAnalysisError,
+    CheckedAssertionDisposition, CheckedItemRole, CheckedStatementPayload, CheckedUnsafeAudit,
+    FinalSemanticAnalysis, FinalSemanticAnalysisError,
 };
-use arcweft_lang_syntax::assertion::AssertionMode;
+use arcweft_lang_sema::types::TypeKind;
 use arcweft_source::{
     Diagnostic as SourceDiagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,
     DiagnosticSeverity, DiagnosticSuggestion, SourceDocument, SourceDocumentIdentity, SourceEdit,
@@ -752,79 +752,215 @@ impl ProjectVerifier<'_, '_> {
             .semantics
             .statement(owner)
             .ok_or(VerificationInputError::MissingStatementFact { owner })?;
-        match statement {
-            HirStmtKind::Assertion { mode, conditions } => {
-                let CheckedStatementRole::Assertion(disposition) = checked.role() else {
-                    return Err(VerificationInputError::StatementRoleMismatch { owner });
-                };
-                self.validate_expressions(conditions)?;
-                let HirAssertionMode::Resolved(AssertionMode::Prove) = mode else {
-                    return Ok(());
-                };
-                if !matches!(disposition, CheckedAssertionDisposition::PendingProof) {
-                    return Err(VerificationInputError::StatementRoleMismatch { owner });
-                }
-                let source = statement_source(module, owner)?;
-                for (index, _) in conditions.iter().enumerate() {
-                    let obligation = ProofObligation {
-                        id: format!("assertion.{owner:?}.condition.{index}"),
-                        kind: ProofObligationKind::AssertionProof,
-                        message: format!(
-                            "assert.prove condition {index} requires compile-time discharge"
-                        ),
-                        subject: Some(format!("condition.{index}")),
-                        source: Some(source.clone()),
-                        insertion_target: None,
-                        discharge: ProofDischarge::Missing,
-                        smt: None,
-                        proof_artifact: None,
-                        statement: Some(owner),
-                    };
-                    self.report
-                        .diagnostics
-                        .push(unresolved_prove_diagnostic(&obligation));
-                    self.report.obligations.push(obligation);
-                }
+        match checked.payload() {
+            CheckedStatementPayload::Assertion(disposition) => {
+                self.collect_assertion(module, owner, statement, *disposition)
             }
-            HirStmtKind::UnsafeLifetime { audit, .. } => {
-                if !matches!(checked.role(), CheckedStatementRole::UnsafeAudit) {
-                    return Err(VerificationInputError::StatementRoleMismatch { owner });
-                }
-                let source = statement_source(module, owner)?;
-                let id = id_ref_label(audit.id());
-                let complete = audit.reason().is_some() && audit.has_safety_doc();
-                self.report.unsafe_audits.push(UnsafeAuditSummary {
-                    id: id.clone(),
-                    source: Some(source.clone()),
-                    has_reason: audit.reason().is_some(),
-                    has_safety_doc: audit.has_safety_doc(),
-                    statement: Some(owner),
-                });
-                if !complete {
-                    let obligation = ProofObligation {
-                        id: format!("unsafe_audit.{owner:?}"),
-                        kind: ProofObligationKind::UnsafeLifetimeAudit,
-                        message: format!(
-                            "unsafe lifetime audit `{id}` requires reason and SAFETY documentation"
-                        ),
-                        subject: Some(id),
-                        source: Some(source),
-                        insertion_target: None,
-                        discharge: ProofDischarge::Missing,
-                        smt: None,
-                        proof_artifact: None,
-                        statement: Some(owner),
-                    };
-                    self.report.diagnostics.push(missing_obligation_diagnostic(
-                        &obligation,
-                        self.report.policy.mode,
-                    ));
-                    self.report.obligations.push(obligation);
-                }
+            CheckedStatementPayload::UnsafeAudit(audit) => {
+                let audit = audit.clone();
+                self.collect_unsafe_audit(module, owner, statement, &audit)
             }
-            _ => {}
+            _ if matches!(
+                statement,
+                HirStmtKind::Assertion { .. } | HirStmtKind::UnsafeLifetime { .. }
+            ) =>
+            {
+                Err(VerificationInputError::StatementRoleMismatch { owner })
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn collect_assertion(
+        &mut self,
+        module: &HirModule,
+        owner: StmtId,
+        statement: &HirStmtKind,
+        disposition: CheckedAssertionDisposition,
+    ) -> Result<(), VerificationInputError> {
+        if !matches!(statement, HirStmtKind::Assertion { .. }) {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        }
+        let conditions = self.checked_assertion_conditions(owner, statement)?;
+        if !matches!(disposition, CheckedAssertionDisposition::PendingProof) {
+            return Ok(());
+        }
+        let source = statement_source(module, owner)?;
+        for (index, _) in conditions.iter().enumerate() {
+            let obligation = ProofObligation {
+                id: format!("assertion.{owner:?}.condition.{index}"),
+                kind: ProofObligationKind::AssertionProof,
+                message: format!("assert.prove condition {index} requires compile-time discharge"),
+                subject: Some(format!("condition.{index}")),
+                source: Some(source.clone()),
+                insertion_target: None,
+                discharge: ProofDischarge::Missing,
+                smt: None,
+                proof_artifact: None,
+                statement: Some(owner),
+            };
+            self.report
+                .diagnostics
+                .push(unresolved_prove_diagnostic(&obligation));
+            self.report.obligations.push(obligation);
         }
         Ok(())
+    }
+
+    fn checked_assertion_conditions(
+        &self,
+        owner: StmtId,
+        statement: &HirStmtKind,
+    ) -> Result<Vec<ExprId>, VerificationInputError> {
+        let edges = statement
+            .try_child_edges()
+            .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?;
+        if edges.is_empty() {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        }
+        edges
+            .into_iter()
+            .enumerate()
+            .map(|(index, edge)| {
+                let expected = u32::try_from(index)
+                    .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?;
+                let (
+                    HirStatementChildRole::AssertionCondition { ordinal },
+                    HirStatementChild::Expression(expression),
+                ) = (edge.role(), edge.child())
+                else {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                };
+                if ordinal != expected {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                }
+                let checked = self
+                    .semantics
+                    .expression(expression)
+                    .ok_or(VerificationInputError::MissingExpressionFact { owner: expression })?;
+                if checked.ty() != &TypeKind::Bool || !checked.effects().is_empty() {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                }
+                Ok(expression)
+            })
+            .collect()
+    }
+
+    fn collect_unsafe_audit(
+        &mut self,
+        module: &HirModule,
+        owner: StmtId,
+        statement: &HirStmtKind,
+        audit: &CheckedUnsafeAudit,
+    ) -> Result<(), VerificationInputError> {
+        let has_reason = self.checked_unsafe_audit_children(owner, statement)?;
+        let source = statement_source(module, owner)?;
+        let id = audit.id().as_public_id().as_str().to_owned();
+        let complete = has_reason && audit.has_safety_doc();
+        self.report.unsafe_audits.push(UnsafeAuditSummary {
+            id: id.clone(),
+            source: Some(source.clone()),
+            has_reason,
+            has_safety_doc: audit.has_safety_doc(),
+            statement: Some(owner),
+        });
+        if !complete {
+            let obligation = ProofObligation {
+                id: format!("unsafe_audit.{owner:?}"),
+                kind: ProofObligationKind::UnsafeLifetimeAudit,
+                message: format!(
+                    "unsafe lifetime audit `{id}` requires reason and SAFETY documentation"
+                ),
+                subject: Some(id),
+                source: Some(source),
+                insertion_target: None,
+                discharge: ProofDischarge::Missing,
+                smt: None,
+                proof_artifact: None,
+                statement: Some(owner),
+            };
+            self.report.diagnostics.push(missing_obligation_diagnostic(
+                &obligation,
+                self.report.policy.mode,
+            ));
+            self.report.obligations.push(obligation);
+        }
+        Ok(())
+    }
+
+    fn checked_unsafe_audit_children(
+        &self,
+        owner: StmtId,
+        statement: &HirStmtKind,
+    ) -> Result<bool, VerificationInputError> {
+        let bodies = statement
+            .body_projections()
+            .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?;
+        let [body] = bodies.as_slice() else {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        };
+        if body.role() != &HirStatementBodyRole::UnsafeLifetime {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        }
+        let body_statements = body
+            .children()
+            .iter()
+            .enumerate()
+            .map(|(index, edge)| {
+                let expected = u32::try_from(index)
+                    .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?;
+                let (HirBodyChildRole::Statement { ordinal }, HirBodyChild::Statement(child)) =
+                    (edge.role(), edge.child())
+                else {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                };
+                if ordinal != expected {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                }
+                self.semantics
+                    .statement(child)
+                    .ok_or(VerificationInputError::MissingStatementFact { owner: child })?;
+                Ok(child)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        let mut reason = None;
+        let mut next_body = 0_usize;
+        for edge in statement
+            .try_child_edges()
+            .map_err(|_| VerificationInputError::StatementRoleMismatch { owner })?
+        {
+            match (edge.role(), edge.child()) {
+                (
+                    HirStatementChildRole::UnsafeReason,
+                    HirStatementChild::Expression(expression),
+                ) if reason.is_none() => {
+                    let checked = self.semantics.expression(expression).ok_or(
+                        VerificationInputError::MissingExpressionFact { owner: expression },
+                    )?;
+                    if checked.ty() != &TypeKind::String || !checked.effects().is_empty() {
+                        return Err(VerificationInputError::StatementRoleMismatch { owner });
+                    }
+                    reason = Some(expression);
+                }
+                (
+                    HirStatementChildRole::BodyItem {
+                        body: HirStatementBodyRole::UnsafeLifetime,
+                        ordinal,
+                    },
+                    HirStatementChild::Statement(child),
+                ) if u32::try_from(next_body).ok() == Some(ordinal)
+                    && body_statements.get(next_body) == Some(&child) =>
+                {
+                    next_body += 1;
+                }
+                _ => return Err(VerificationInputError::StatementRoleMismatch { owner }),
+            }
+        }
+        if next_body != body_statements.len() {
+            return Err(VerificationInputError::StatementRoleMismatch { owner });
+        }
+        Ok(reason.is_some())
     }
 
     fn validate_statements(
@@ -946,24 +1082,6 @@ fn source_sort_key(source: Option<&SourceSpan>) -> (&str, usize, usize) {
     source.map_or(("", 0, 0), |source| {
         (source.source.id().as_str(), source.start, source.end)
     })
-}
-
-fn id_ref_label(value: &HirIdRefValue) -> String {
-    match value.as_resolved() {
-        Some(HirIdRef::Absolute(reference)) => reference.as_str().to_owned(),
-        Some(HirIdRef::Relative(relative)) => format!(
-            "relative:{}:{}",
-            relative.parent_depth(),
-            relative.suffix().as_str()
-        ),
-        Some(HirIdRef::FamilyRelative(relative)) => format!(
-            "{}:relative:{}:{}",
-            relative.family().as_str(),
-            relative.relative().parent_depth(),
-            relative.relative().suffix().as_str()
-        ),
-        None => "recovered-audit".to_owned(),
-    }
 }
 
 impl VerificationReport {

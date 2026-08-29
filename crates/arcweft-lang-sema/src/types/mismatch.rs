@@ -313,6 +313,12 @@ impl TypeKind {
                 };
                 None
             }
+            Self::StatementIngress(expected) => {
+                let Self::StatementIngress(actual_ingress) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_ingress).then(|| TypeMismatch::outer(self, actual))
+            }
             Self::Range(expected) => {
                 let Self::Range(actual) = actual else {
                     unreachable!("equal discriminants")

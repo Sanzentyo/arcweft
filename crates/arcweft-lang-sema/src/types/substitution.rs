@@ -158,6 +158,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::StageActorHandle(_)
         | TypeKind::CueHandle
         | TypeKind::VoiceHandle
+        | TypeKind::StatementIngress(_)
         | TypeKind::DisplayText
         | TypeKind::DebugStatePath
         | TypeKind::ObservationFieldPath

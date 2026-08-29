@@ -1,0 +1,101 @@
+error[E0432]: unresolved import `arcweft_lang_hir::stmt::HirTriggerPattern`
+ --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:4:38
+  |
+4 |     HirSelectBranchHead, HirTrigger, HirTriggerPattern, HirUnsafeAudit, HirUnsafeAuditIdentity,
+  |                                      ^^^^^^^^^^^^^^^^^ no `HirTriggerPattern` in `stmt`
+
+error[E0026]: variant `arcweft_lang_hir::stmt::HirSelectBranchHead::Bind` does not have a field named `propagates_error`
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:14:13
+   |
+14 |             propagates_error, ..
+   |             ^^^^^^^^^^^^^^^^ variant `arcweft_lang_hir::stmt::HirSelectBranchHead::Bind` does not have this field
+
+error[E0599]: no method named `id_ref_label` found for reference `&HirUnsafeAudit` in the current scope
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:25:19
+   |
+25 |     let _ = audit.id_ref_label();
+   |                   ^^^^^^^^^^^^ method not found in `&HirUnsafeAudit`
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:29:30
+   |
+29 |     let _ = HirTrigger::Mark(any::<String>());
+   |             ---------------- ^^^^^^^^^^^^^^^ expected `HirDialogueMarkId`, found `String`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Mark(HirDialogueMarkId),
+   |     ^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:30:30
+   |
+30 |     let _ = HirTrigger::Mark(any::<PublicId>());
+   |             ---------------- ^^^^^^^^^^^^^^^^^ expected `HirDialogueMarkId`, found `PublicId`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Mark(HirDialogueMarkId),
+   |     ^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:31:30
+   |
+31 |     let _ = HirTrigger::Mark(any::<ExprId>());
+   |             ---------------- ^^^^^^^^^^^^^^^ expected `HirDialogueMarkId`, found `ExprId`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Mark(HirDialogueMarkId),
+   |     ^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:32:46
+   |
+32 |     let _ = HirUnsafeAuditIdentity::Accepted(any::<String>());
+   |             -------------------------------- ^^^^^^^^^^^^^^^ expected `UnsafeAuditId`, found `String`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Accepted(UnsafeAuditId),
+   |     ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:33:46
+   |
+33 |     let _ = HirUnsafeAuditIdentity::Accepted(any::<PublicId>());
+   |             -------------------------------- ^^^^^^^^^^^^^^^^^ expected `UnsafeAuditId`, found `PublicId`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Accepted(UnsafeAuditId),
+   |     ^^^^^^^^
+
+error[E0308]: mismatched types
+  --> tests/ui/removed_statement_trigger_select_unsafe_apis.rs:34:46
+   |
+34 |     let _ = HirUnsafeAuditIdentity::Accepted(any::<ExprId>());
+   |             -------------------------------- ^^^^^^^^^^^^^^^ expected `UnsafeAuditId`, found `ExprId`
+   |             |
+   |             arguments to this enum variant are incorrect
+   |
+note: tuple variant defined here
+  --> src/stmt.rs
+   |
+   |     Accepted(UnsafeAuditId),
+   |     ^^^^^^^^

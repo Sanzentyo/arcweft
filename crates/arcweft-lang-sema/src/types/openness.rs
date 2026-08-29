@@ -30,6 +30,7 @@ macro_rules! atomic_type_kind_pattern {
             | Self::StageActorHandle(_)
             | Self::CueHandle
             | Self::VoiceHandle
+            | Self::StatementIngress(_)
             | Self::DisplayText
             | Self::DebugStatePath
             | Self::ObservationFieldPath

@@ -341,7 +341,6 @@ fn exercise_lowered_total_slot_case(third_batch: &[&str], prefill: usize, exact:
     const LOWERED_MAXIMUM: usize = 14;
     let (mut syntax, mut parsed) =
         initial_expression_revision("total-slots-lowered", &["a.b", "c.d"]);
-    let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().expect("lowered total-slot database");
 
     let first = publish_slot_limited_revision(&mut database, &parsed, LOWERED_MAXIMUM);
@@ -411,9 +410,10 @@ fn exercise_lowered_total_slot_case(third_batch: &[&str], prefill: usize, exact:
         ));
         assert!(transaction.finish(&mut database).is_err());
         let current = database
-            .current_lineage(&key)
+            .current(accepted_before_direct.key())
             .expect("retired revision stays current");
         assert!(Arc::ptr_eq(&current, &accepted_before_direct));
+        assert!(database.current(&module_key(&parsed)).is_none());
         assert_eq!(current.slots().committed_slot_count(), prefill);
         assert_eq!(expression_inventory_len(&current), 0);
     }
@@ -444,7 +444,6 @@ fn exercise_production_total_slot_case(document_id: &str, third_terminal: &str, 
         document_id,
         shallow_select_batch_source(statement_maximum, "a.b.c.d", "a.b.c.d"),
     );
-    let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().expect("production total-slot database");
 
     let first = publish_production_revision(&mut database, &parsed);
@@ -548,9 +547,10 @@ fn exercise_production_total_slot_case(document_id: &str, third_terminal: &str, 
         ));
         assert!(transaction.finish(&mut database).is_err());
         let current = database
-            .current(&key)
+            .current(accepted_before_direct.key())
             .expect("retired prefill revision stays current");
         assert!(Arc::ptr_eq(&current, &accepted_before_direct));
+        assert!(database.current(&module_key(&parsed)).is_none());
         assert_eq!(current.slots().committed_slot_count(), expected_prefill);
         assert_eq!(expression_inventory_len(&current), 0);
     }

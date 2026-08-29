@@ -54,11 +54,6 @@ const _: () = {
 /// accepted evidence.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedNestedEvidenceRole {
-    LinePlanOptionValue,
-    LinePlanLetValue,
-    LinePlanOut,
-    LinePlanTimelineAssert,
-    LinePlanExpression,
     ChoiceIfCondition { branch: u32 },
     ChoiceForSource,
     ChoiceMatchScrutinee,
@@ -86,13 +81,6 @@ pub type NestedPathEvidence =
 impl CheckedNestedEvidenceRole {
     pub(super) fn from_checked_role(role: &CheckedExpressionChildRole) -> Option<Self> {
         Some(match role {
-            CheckedExpressionChildRole::LinePlanOptionValue { .. } => Self::LinePlanOptionValue,
-            CheckedExpressionChildRole::LinePlanLetValue { .. } => Self::LinePlanLetValue,
-            CheckedExpressionChildRole::LinePlanOut { .. } => Self::LinePlanOut,
-            CheckedExpressionChildRole::LinePlanTimelineAssert { .. } => {
-                Self::LinePlanTimelineAssert
-            }
-            CheckedExpressionChildRole::LinePlanExpression { .. } => Self::LinePlanExpression,
             CheckedExpressionChildRole::ChoiceIfCondition { branch, .. } => {
                 Self::ChoiceIfCondition { branch: *branch }
             }
@@ -148,11 +136,6 @@ impl CheckedNestedEvidenceRole {
     /// Stable semantic tag used only for transcript serialization.
     pub const fn semantic_tag(&self) -> u16 {
         match self {
-            Self::LinePlanOptionValue => 0x101D,
-            Self::LinePlanLetValue => 0x101E,
-            Self::LinePlanOut => 0x101F,
-            Self::LinePlanTimelineAssert => 0x1020,
-            Self::LinePlanExpression => 0x1021,
             Self::ChoiceIfCondition { .. } => 0x1027,
             Self::ChoiceForSource => 0x1028,
             Self::ChoiceMatchScrutinee => 0x1029,

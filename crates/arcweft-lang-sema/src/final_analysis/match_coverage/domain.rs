@@ -309,6 +309,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     coordinate: coordinate.clone(),
                 });
             }
+            MatchDomainFamily::ClosedOpaqueAtomic => Self::closed_opaque_atomic_constructors(ty),
             MatchDomainFamily::OpenOrOpaque => self.open_constructors(ty)?,
         };
         Ok(CoverageTypeDomain::Constructors(
@@ -573,6 +574,12 @@ impl MatchCoverageAnalyzer<'_, '_> {
             semantic_type,
         )));
         Ok(constructors)
+    }
+
+    fn closed_opaque_atomic_constructors(ty: &TypeKind) -> Vec<CoverageConstructor> {
+        vec![CoverageConstructor::nullary(CoverageConstructorId::Other(
+            ty.semantic_identity_digest(),
+        ))]
     }
 
     fn sequence_constructors(

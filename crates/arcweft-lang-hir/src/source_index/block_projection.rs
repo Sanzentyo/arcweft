@@ -9,14 +9,15 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::{
     AssertionStatementKind, BlockKind, ExpressionStatementKind, IfStatementKind,
-    LetElseStatementKind, LetStatementKind, MatchStatementKind, PredicateBlockKind, ProofBlockKind,
-    ProofCallStatementKind, UnsafeLifetimeStatementKind,
+    LetElseStatementKind, LetStatementKind, MatchStatementKind, OnStatementKind,
+    PredicateBlockKind, ProofBlockKind, ProofCallStatementKind, UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredNestedThreadFlowBody,
-    BlockTailNode, IfStatementElseNode, IfStatementHeadNode, LetInitializerNode,
-    MatchStatementArmBodyNode, MatchStatementBodyNode, MatchStatementExpressionNode, StatementNode,
-    SyntaxNodeId, UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
+    AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedOnStatement,
+    AttachedRequiredNestedThreadFlowBody, AttachedTriggerPattern, BlockTailNode,
+    IfStatementElseNode, IfStatementHeadNode, LetInitializerNode, MatchStatementArmBodyNode,
+    MatchStatementBodyNode, MatchStatementExpressionNode, RequiredStatementExpressionNode,
+    StatementNode, SyntaxNodeId, UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };
 use arcweft_lang_syntax::expressions::ExpressionProjection;
 use arcweft_lang_syntax::grammar::SyntaxKind;
@@ -26,6 +27,7 @@ use super::control_projection::canonical_pattern_locals;
 use super::pattern_projection::{BindingLocalValidation, binding_locals_match};
 use super::{HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::arena::ArenaSnapshot;
+use crate::dialogue_application::{HirDialogueMarkId, HirDialogueMarkName};
 use crate::expr::{
     HirBlockExpr, HirComputationBlockExpr, HirComputationBlockKind, HirExpr, HirExprKind,
     HirExpressionRecoveryIssue, HirGenericExprIssue, HirLoopExpr, HirNamedBlockExpr,
@@ -35,7 +37,7 @@ use crate::identity::{
     ExprId, HirTypedId, ItemId, LocalGeneration, LocalId, PatternId, ScopeId, StmtId, SyntheticKey,
     SyntheticOwner, SyntheticRole,
 };
-use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirName};
+use crate::leaf::HirName;
 use crate::pattern::HirPattern;
 use crate::proof_return::HirProofReturnSemanticClass;
 use crate::scope::{
@@ -46,7 +48,8 @@ use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirIfLetStmt, HirIfStmt, HirMatchStmt,
     HirSelectStmt, HirStatementContext, HirStmt, HirStmtChildRole, HirStmtKind,
     HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole,
-    HirThreadStmtRecoveryIssue, HirUnsafeLifetimeBody,
+    HirThreadStmtRecoveryIssue, HirTrigger, HirTriggerIssue, HirUnsafeAuditIdentity,
+    HirUnsafeAuditIdentityIssue, HirUnsafeLifetimeBody,
 };
 
 use assignment::assignment_statement_evidence;
@@ -1171,6 +1174,28 @@ pub(super) fn statement_matches(
                 },
             })
         }
+        (
+            SyntaxKind::OnStatement,
+            HirStmtKind::On {
+                trigger,
+                scope: trigger_scope,
+                body,
+            },
+        ) => {
+            let attached = attached.cast::<OnStatementKind>().ok()?.semantics().ok()?;
+            on_statement_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                &attached,
+                scope,
+                trigger,
+                *trigger_scope,
+                body,
+                generations,
+            )
+        }
         (SyntaxKind::AssertionStatement, HirStmtKind::Assertion { mode, conditions }) => {
             let assertion = attached
                 .cast::<AssertionStatementKind>()
@@ -1253,6 +1278,314 @@ pub(super) fn statement_matches(
         _ => None,
     }?;
     (statement.state() == &evidence.state).then_some(evidence)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn on_statement_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    attached: &AttachedOnStatement,
+    outer_scope: ScopeId,
+    trigger: &HirTrigger,
+    trigger_scope: ScopeId,
+    body: &[StmtId],
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<StatementEvidence> {
+    let [body_owner] = body else {
+        return None;
+    };
+    let trigger = trigger_evidence(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        attached.trigger(),
+        trigger,
+        trigger_scope,
+        generations,
+    )?;
+    let scope = arenas.scopes.resolve_prepared(slots, trigger_scope).ok()?;
+    let parent = arenas.scopes.resolve_prepared(slots, outer_scope).ok()?;
+    if scope.kind() != HirScopeKind::Block
+        || scope.parent() != Some(outer_scope)
+        || scope.owner() != &HirScopeOwner::Stmt(owner)
+        || !parent.children().contains(&trigger_scope)
+        || !source_owner_matches(
+            slots,
+            trigger_scope,
+            attached.syntax().id(),
+            &HirSourceSite::Span(attached.syntax().source_span()),
+        )
+    {
+        return None;
+    }
+
+    let body = statement_matches(
+        parsed,
+        slots,
+        arenas,
+        *body_owner,
+        attached.body(),
+        trigger_scope,
+        generations,
+        HirStatementContext::Thread,
+    )?;
+    let mut expected_locals = trigger.0.to_vec();
+    expected_locals.extend_from_slice(&body.locals);
+    if scope.locals() != expected_locals {
+        return None;
+    }
+    let state = if trigger.1 || body.is_poisoned() || attached.has_recovery() {
+        HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+            role: HirStmtChildRole::Condition,
+        })
+    } else {
+        HirStmtPoisonState::Clean
+    };
+    Some(StatementEvidence {
+        locals: Box::new([]),
+        state,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn trigger_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    attached: &AttachedTriggerPattern,
+    trigger: &HirTrigger,
+    scope: ScopeId,
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<(Box<[LocalId]>, bool)> {
+    match (attached, trigger) {
+        (AttachedTriggerPattern::Input(attached), HirTrigger::Input(pattern))
+        | (AttachedTriggerPattern::Event(attached), HirTrigger::Event(pattern))
+        | (AttachedTriggerPattern::Select(attached), HirTrigger::Select(pattern))
+        | (AttachedTriggerPattern::Task(attached), HirTrigger::Task(pattern))
+        | (AttachedTriggerPattern::Scope(attached), HirTrigger::Scope(pattern)) => {
+            trigger_pattern_evidence(
+                slots,
+                arenas,
+                scope,
+                attached.pattern(),
+                *pattern,
+                generations,
+            )
+        }
+        (AttachedTriggerPattern::Signal(attached), HirTrigger::Signal { target, value }) => {
+            let (_, target_poisoned) = trigger_expression_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                attached.target(),
+                *target,
+                scope,
+                |insertion| HirStmtRecoveryOperandSlot::TriggerTarget { insertion },
+            )?;
+            let (locals, value_poisoned) = match (attached.value(), value) {
+                (None, None) => (Box::<[LocalId]>::from([]), false),
+                (Some(attached), Some(pattern)) => {
+                    trigger_pattern_evidence(slots, arenas, scope, attached, *pattern, generations)?
+                }
+                _ => return None,
+            };
+            Some((locals, target_poisoned || value_poisoned))
+        }
+        (AttachedTriggerPattern::Timeout(attached), HirTrigger::Timeout(expression)) => {
+            trigger_expression_evidence(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                attached.expression(),
+                *expression,
+                scope,
+                |insertion| HirStmtRecoveryOperandSlot::TriggerExpression { insertion },
+            )
+        }
+        (AttachedTriggerPattern::Expr(attached), HirTrigger::Expression(expression)) => {
+            let attached = attached.as_ref();
+            if !source_expression_matches(slots, arenas.expressions, *expression, attached, scope) {
+                None
+            } else {
+                Some((
+                    Box::<[LocalId]>::from([]),
+                    arenas
+                        .expressions
+                        .resolve_prepared(slots, *expression)
+                        .is_ok_and(HirExpr::is_poisoned),
+                ))
+            }
+        }
+        (AttachedTriggerPattern::Mark(attached), HirTrigger::Mark(mark)) => {
+            mark_trigger_matches(slots, arenas, scope, attached, *mark)
+                .then_some((Box::new([]), false))
+        }
+        (AttachedTriggerPattern::Mark(attached), HirTrigger::Recovered(issue)) => {
+            (mark_trigger_recovery_issue(slots, arenas, scope, attached)? == *issue)
+                .then_some((Box::new([]), true))
+        }
+        _ => None,
+    }
+}
+
+fn trigger_pattern_evidence(
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    scope: ScopeId,
+    attached: &arcweft_lang_syntax::attachment::AttachedPatternNode,
+    pattern: PatternId,
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<(Box<[LocalId]>, bool)> {
+    if !source_owner_matches(
+        slots,
+        pattern,
+        attached.id(),
+        &HirSourceSite::Span(attached.whole_source_span()),
+    ) {
+        return None;
+    }
+    let payload = arenas.patterns.resolve_prepared(slots, pattern).ok()?;
+    let expected = canonical_pattern_locals(slots, arenas, pattern, pattern, scope)?;
+    let locals = expected
+        .iter()
+        .map(|expected| expected.local)
+        .collect::<Vec<_>>();
+    let mut validation = BindingLocalValidation::new(
+        scope,
+        HirPatternBindingPolicy::PatternBinding,
+        generations,
+        slots,
+        arenas.patterns,
+        arenas.locals,
+    );
+    if payload.scope() != scope
+        || locals.iter().copied().collect::<BTreeSet<_>>().len() != locals.len()
+        || !binding_locals_match(attached, &expected, &mut validation)
+        || expected.iter().any(|expected| {
+            !arenas
+                .locals
+                .resolve_prepared(slots, expected.local)
+                .is_ok_and(|local| {
+                    local.scope() == scope
+                        && local.kind() == HirLocalKind::PatternBinding
+                        && local.pattern() == Some(expected.pattern)
+                })
+        })
+    {
+        return None;
+    }
+    Some((
+        locals.into_boxed_slice(),
+        payload.is_poisoned() || validation.is_poisoned(),
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn trigger_expression_evidence(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    statement: StmtId,
+    attached: &RequiredStatementExpressionNode,
+    expression: ExprId,
+    scope: ScopeId,
+    slot: fn(usize) -> HirStmtRecoveryOperandSlot,
+) -> Option<(Box<[LocalId]>, bool)> {
+    match attached {
+        RequiredStatementExpressionNode::Expression(attached) => {
+            let attached = attached.semantic().ok()?;
+            if !source_expression_matches(slots, arenas.expressions, expression, &attached, scope) {
+                None
+            } else {
+                Some((
+                    Box::<[LocalId]>::from([]),
+                    arenas
+                        .expressions
+                        .resolve_prepared(slots, expression)
+                        .is_ok_and(HirExpr::is_poisoned),
+                ))
+            }
+        }
+        RequiredStatementExpressionNode::Missing(missing) => missing_statement_expression_matches(
+            parsed,
+            slots,
+            arenas.expressions,
+            statement,
+            expression,
+            scope,
+            slot(missing.range().start()),
+        )
+        .then(|| (Box::<[LocalId]>::from([]), true)),
+    }
+}
+
+fn mark_trigger_matches(
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    scope: ScopeId,
+    attached: &arcweft_lang_syntax::attachment::AttachedMarkTrigger,
+    mark: HirDialogueMarkId,
+) -> bool {
+    let Ok(suffix) = crate::final_lowering::id_ref_projection::dialogue_mark_suffix(
+        attached.selector().reference(),
+    ) else {
+        return false;
+    };
+    let name = HirDialogueMarkName::new(suffix);
+    let Some(content) = enclosing_dialogue_content(slots, arenas, scope) else {
+        return false;
+    };
+    content.id() == mark.content()
+        && content
+            .marks()
+            .iter()
+            .find(|candidate| candidate.name() == &name)
+            .is_some_and(|candidate| candidate.id() == mark)
+}
+
+fn mark_trigger_recovery_issue(
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    scope: ScopeId,
+    attached: &arcweft_lang_syntax::attachment::AttachedMarkTrigger,
+) -> Option<HirTriggerIssue> {
+    if attached.has_recovery() {
+        return Some(HirTriggerIssue::Malformed);
+    }
+    let suffix = crate::final_lowering::id_ref_projection::dialogue_mark_suffix(
+        attached.selector().reference(),
+    )
+    .ok()?;
+    let name = HirDialogueMarkName::new(suffix);
+    let content = enclosing_dialogue_content(slots, arenas, scope);
+    match content {
+        Some(content) if content.marks().iter().any(|mark| mark.name() == &name) => None,
+        Some(_) => Some(HirTriggerIssue::UnknownDialogueMark),
+        None => Some(HirTriggerIssue::MarkOutsideDialogueApplication),
+    }
+}
+
+fn enclosing_dialogue_content<'arena>(
+    slots: &SlotSnapshot,
+    arenas: &'arena BlockValidationArenas<'arena>,
+    mut scope: ScopeId,
+) -> Option<&'arena crate::dialogue_application::HirDialogueContent> {
+    loop {
+        let payload = arenas.scopes.resolve_prepared(slots, scope).ok()?;
+        if let HirScopeOwner::Expr(owner) = *payload.owner() {
+            let expression = arenas.expressions.resolve_prepared(slots, owner).ok()?;
+            if let HirExprKind::DialogueContentApplication(application) = expression.kind() {
+                return Some(application.content());
+            }
+        }
+        scope = payload.parent()?;
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1617,23 +1950,22 @@ fn unsafe_lifetime_statement_matches(
     body: &HirUnsafeLifetimeBody,
 ) -> Option<StatementEvidence> {
     let attached = attached.cast::<UnsafeLifetimeStatementKind>().ok()?;
-    let expected_id = match attached.audit_id().ok()? {
+    let expected_identity = match attached.audit_id().ok()? {
         UnsafeAuditIdNode::Reference(reference) => {
             let semantic = reference.semantic().ok()?;
             let ExpressionProjection::EntityReference(reference) = semantic.projection() else {
                 return None;
             };
-            crate::final_lowering::id_ref_projection::id_ref(reference).ok()?
+            crate::final_lowering::id_ref_projection::unsafe_audit_identity(reference).ok()?
         }
-        UnsafeAuditIdNode::Missing(_) => HirIdRefValue::Recovered(HirIdRefRecovery::new(
-            HirIdRefShape::Missing,
-            HirIdRefIssue::Missing,
-        )),
+        UnsafeAuditIdNode::Missing(_) => {
+            HirUnsafeAuditIdentity::Recovered(HirUnsafeAuditIdentityIssue::Missing)
+        }
     };
-    if audit.id() != &expected_id {
+    if audit.identity() != &expected_identity {
         return None;
     }
-    let mut recovery = expected_id
+    let mut recovery = expected_identity
         .recovery_issue()
         .map(HirStmtRecoveryIssue::InvalidAuditId);
 

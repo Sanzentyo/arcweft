@@ -10,8 +10,8 @@ use thiserror::Error;
 use super::analyzer::{CallAnalysisFailure, CallFrameInvariant};
 use super::{
     AssertionContext, AssertionMode, CharacterDialogueFieldCoordinate,
-    CheckedCaptureAuthorityViolation, CheckedRichTextReport, EffectSet, ExprId, ItemId, LocalId,
-    PatternId, StmtId, TypeId, TypeKind,
+    CheckedCaptureAuthorityViolation, EffectSet, ExprId, ItemId, LocalId, PatternId, StmtId,
+    TypeId, TypeKind,
 };
 use crate::callable::{
     CallConstraintInvariant, CheckedCallSite, CheckedCallableId, CheckedCallableJoinError,
@@ -349,6 +349,13 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("semantic expression {owner:?} has no admissible final type")]
     ExpressionTypeUnavailable { owner: ExprId },
+    #[error("statement {statement:?} operand {owner:?} expects {expected:?}, found {actual:?}")]
+    StatementOperandTypeMismatch {
+        statement: StmtId,
+        owner: ExprId,
+        expected: Box<TypeKind>,
+        actual: Box<TypeKind>,
+    },
     #[error("postfix-bracket expression {owner:?} has more than one admissible interpretation")]
     AmbiguousPostfixBracket { owner: ExprId },
     #[error("postfix-bracket expression {owner:?} has no admissible interpretation")]
@@ -356,7 +363,7 @@ pub enum FinalSemanticAnalysisError {
     #[error("dialogue content {owner:?} has invalid typed RichText attributes")]
     InvalidRichTextAttributes {
         owner: ExprId,
-        report: Box<CheckedRichTextReport>,
+        diagnostics: Box<[crate::checked_rich_text::RichTextAttributeDiagnostic]>,
     },
     #[error("dialogue content {owner:?} has inconsistent final-HIR source-role evidence")]
     RichTextSourceQuery { owner: ExprId },
@@ -540,6 +547,7 @@ impl FinalSemanticAnalysisError {
             Self::AssertionConditionNotPure { .. } => "sema.assert.condition_not_pure",
             Self::RecursiveCallableContract { .. } => "sema.callable.recursive_contract",
             Self::BreakValueRequiresLoop { .. } => "sema.break.value_target",
+            Self::StatementOperandTypeMismatch { .. } => "sema.statement.operand_type",
             Self::UnknownCallTarget { .. } => "sema.call.unknown_target",
             Self::PropagationErrorMismatch { .. } => "sema.try.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",

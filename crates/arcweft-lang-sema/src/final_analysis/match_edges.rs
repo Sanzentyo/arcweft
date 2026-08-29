@@ -31,7 +31,7 @@ use super::{
     HirExecutableProjectView, HirModuleId, SemanticFactFamily, TypeKind,
 };
 use crate::callable::{
-    CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
+    CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
     validate_selected_application,
 };
 use crate::record_field::{AcceptedRecordFieldSemanticId, CheckedRecordFieldSemanticId};
@@ -283,6 +283,10 @@ impl CheckedSelectedExpressionGraph {
     pub(super) fn owners(&self) -> impl Iterator<Item = ExprId> + '_ {
         self.graph.expression_owners()
     }
+
+    pub(super) fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
+        self.graph.expression_edges(owner)
+    }
 }
 
 fn selected_expression_edges(
@@ -392,13 +396,13 @@ impl CheckedStructuralEdgeDraft {
                 facts.insert(owner, Err(CheckedChildEdgeError::MissingExpression));
                 continue;
             };
-            if matches!(owner_expression.kind(), HirExprKind::Call(_)) {
-                call_owners.insert(owner);
-            }
             let Some(checked_owner) = expressions.get(&owner) else {
                 facts.insert(owner, Err(CheckedChildEdgeError::MissingExpression));
                 continue;
             };
+            if checked_owner.checked_call_site(owner) == Some(CheckedCallSite::HirCall(owner)) {
+                call_owners.insert(owner);
+            }
             match (
                 matches!(
                     owner_expression.kind(),
@@ -818,11 +822,10 @@ fn validate_match_edge(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum NestedPathFamily {
     Choice,
-    LinePlan,
 }
 
 impl CheckedNestedPathSegmentV1 {
-    fn family(&self) -> NestedPathFamily {
+    fn family(&self) -> Option<NestedPathFamily> {
         match self {
             Self::ChoiceBodyItem { .. }
             | Self::ChoiceIfBranch { .. }
@@ -832,10 +835,10 @@ impl CheckedNestedPathSegmentV1 {
             | Self::ChoiceOptionBody
             | Self::ChoiceOptionField { .. }
             | Self::ChoiceViewEntry { .. }
-            | Self::ChoicePlanItem { .. } => NestedPathFamily::Choice,
+            | Self::ChoicePlanItem { .. } => Some(NestedPathFamily::Choice),
             Self::LinePlanItem { .. }
             | Self::LinePlanStartGroupItem { .. }
-            | Self::LinePlanTogetherGroupItem { .. } => NestedPathFamily::LinePlan,
+            | Self::LinePlanTogetherGroupItem { .. } => None,
         }
     }
 }
@@ -844,11 +847,6 @@ fn nested_path_role(
     role: &HirExpressionChildRole,
 ) -> Option<(&HirNestedExpressionPath, NestedPathFamily)> {
     Some(match role {
-        HirExpressionChildRole::LinePlanOptionValue { path }
-        | HirExpressionChildRole::LinePlanLetValue { path }
-        | HirExpressionChildRole::LinePlanOut { path }
-        | HirExpressionChildRole::LinePlanTimelineAssert { path }
-        | HirExpressionChildRole::LinePlanExpression { path } => (path, NestedPathFamily::LinePlan),
         HirExpressionChildRole::ChoiceIfCondition { path, .. }
         | HirExpressionChildRole::ChoiceForSource { path }
         | HirExpressionChildRole::ChoiceMatchScrutinee { path }
@@ -886,21 +884,10 @@ pub(crate) fn build_nested_path_evidence(
         (
             HirExprKind::DialogueContentApplication(_),
             CheckedExpressionResolution::DialogueApplication { .. },
-        ) => NestedPathFamily::LinePlan,
+        ) => return None,
         _ => return None,
     };
     build_nested_path_evidence_for_family(owner_family, edges, expressions)
-}
-
-/// Builds line-plan nested-path evidence while the dialogue expression is
-/// still private and awaiting its callable seal.  The optional outer result
-/// is intentional: the prepared owner may be observed before the structural
-/// edge issuer has selected a path-bearing family.
-pub(crate) fn build_line_plan_nested_path_evidence(
-    edges: &[SelectedHirExpressionEdge],
-    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
-) -> Option<Result<NestedPathEvidence, CheckedChildEdgeError>> {
-    build_nested_path_evidence_for_family(NestedPathFamily::LinePlan, edges, expressions)
 }
 
 fn build_nested_path_evidence_for_family(
@@ -924,7 +911,7 @@ fn build_nested_path_evidence_for_family(
         let path_family = path
             .segments()
             .first()
-            .map(CheckedNestedPathSegmentV1::family)
+            .and_then(CheckedNestedPathSegmentV1::family)
             .ok_or(CheckedChildEdgeError::MissingNestedPath);
         let Ok(path_family) = path_family else {
             return Some(Err(CheckedChildEdgeError::MissingNestedPath));
@@ -933,7 +920,7 @@ fn build_nested_path_evidence_for_family(
             || path
                 .segments()
                 .iter()
-                .any(|segment| segment.family() != path_family)
+                .any(|segment| segment.family() != Some(path_family))
         {
             return Some(Err(CheckedChildEdgeError::StaleNestedPath));
         }
@@ -985,26 +972,13 @@ fn validate_nested_path_evidence(
 
 fn validate_prepared_nested_path_evidence(
     prepared: &super::PreparedDialogueApplication,
-    edges: &[SelectedHirExpressionEdge],
-    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+    _edges: &[SelectedHirExpressionEdge],
+    _expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<(), CheckedChildEdgeError> {
-    // A prepared owner may legitimately reach this draft before the issuer
-    // has attached path evidence.  When evidence is present, however, it is
-    // checked against the same HIR-owned edge projection as completed rows.
-    let Some(stored) = prepared.nested_path_evidence() else {
-        return Ok(());
-    };
-    let stored = stored.as_ref().map_err(Clone::clone)?;
-    let Some(expected) = build_line_plan_nested_path_evidence(edges, expressions) else {
-        return Err(CheckedChildEdgeError::StaleNestedPath);
-    };
-    let expected = expected?;
-    if stored == &expected {
-        Ok(())
-    } else if stored.is_empty() && !expected.is_empty() {
-        Err(CheckedChildEdgeError::MissingNestedPath)
-    } else {
+    if prepared.nested_path_evidence().is_some() {
         Err(CheckedChildEdgeError::StaleNestedPath)
+    } else {
+        Ok(())
     }
 }
 
@@ -1164,21 +1138,6 @@ fn checked_role_from_hir(
         }
         HirExpressionChildRole::DialogueTagPayload { ordinal } => {
             CheckedExpressionChildRole::DialogueTagPayload { ordinal: *ordinal }
-        }
-        HirExpressionChildRole::LinePlanOptionValue { path: value } => {
-            CheckedExpressionChildRole::LinePlanOptionValue { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanLetValue { path: value } => {
-            CheckedExpressionChildRole::LinePlanLetValue { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanOut { path: value } => {
-            CheckedExpressionChildRole::LinePlanOut { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanTimelineAssert { path: value } => {
-            CheckedExpressionChildRole::LinePlanTimelineAssert { path: path(value)? }
-        }
-        HirExpressionChildRole::LinePlanExpression { path: value } => {
-            CheckedExpressionChildRole::LinePlanExpression { path: path(value)? }
         }
         HirExpressionChildRole::PostfixIndexCandidate => {
             CheckedExpressionChildRole::PostfixIndexCandidate

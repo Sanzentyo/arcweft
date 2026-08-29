@@ -2,10 +2,9 @@
 
 use arcweft_lang_syntax::attachment::AttachedDialogueLinePlan;
 
-use crate::dialogue_application::{HirLinePlan, HirLinePlanItem};
+use crate::dialogue_application::{HirDialogueContent, HirLinePlan, HirLinePlanItem};
 use crate::identity::{ExprId, LocalId, ScopeId};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
-use crate::stmt::HirStmtKind;
 
 use super::super::super::StagedHirModuleTransaction;
 
@@ -15,6 +14,7 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedDialogueLinePlan,
         owner: ExprId,
         parent_scope: ScopeId,
+        content: &HirDialogueContent,
     ) -> Result<HirLinePlan, HirLowerFailure> {
         let scope = self.allocate_expression_owned_block_scope(
             attached.body().syntax(),
@@ -24,31 +24,13 @@ impl StagedHirModuleTransaction<'_> {
         let mut items = Vec::with_capacity(attached.body().items().len());
         let mut locals = Vec::<LocalId>::new();
         for statement in attached.body().items() {
-            let lowered = self.lower_attached_thread_flow_statement(statement, scope)?;
+            let lowered =
+                self.lower_attached_dialogue_line_plan_statement(statement, scope, content)?;
             locals.extend_from_slice(&lowered.locals);
-            let retained = self
-                .arenas
-                .statements()
-                .resolve_staged(&self.slots, lowered.owner)?;
             let item = if lowered.poisoned {
                 HirLinePlanItem::Error(lowered.owner)
             } else {
-                match retained.kind() {
-                    HirStmtKind::Let {
-                        pattern,
-                        initializer,
-                        ..
-                    } => HirLinePlanItem::Let {
-                        pattern: *pattern,
-                        value: *initializer,
-                        statement: lowered.owner,
-                    },
-                    HirStmtKind::Out { label: None, value } => HirLinePlanItem::Out {
-                        value: *value,
-                        statement: lowered.owner,
-                    },
-                    _ => HirLinePlanItem::Statement(lowered.owner),
-                }
+                HirLinePlanItem::Statement(lowered.owner)
             };
             items.push(item);
         }

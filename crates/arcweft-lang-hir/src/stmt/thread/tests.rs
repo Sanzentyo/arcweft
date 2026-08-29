@@ -226,7 +226,6 @@ fn select_preserves_unary_and_source_ordered_branch_forms() {
         HirSelectBranchHead::Bind {
             binding: HirSelectBindingLocal::Resolved(id(owner, 2)),
             source: id(owner, 3),
-            propagates_error: true,
         },
         thread_body(owner, 10),
     )

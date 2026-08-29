@@ -33,7 +33,9 @@ pub use model::{
     ExternalRegistrationFact, ProjectRegistrationFacts, ProofReturnRegistrationPrelude,
     ProofReturnRegistrationRequest, RegisteredCharacterResolutionError,
     RegisteredEnvironmentDigest, RegisteredEnvironmentExternalOwner, RegisteredExternalOwner,
-    RegisteredExternalOwnerKind, RegisteredSemanticWorld, RegisteredTypeCheckEnv,
+    RegisteredExternalOwnerKind, RegisteredSemanticWorld, RegisteredStatementIngressTypes,
+    RegisteredTypeCheckEnv, StandardStatementIngressTypeId, StatementIngressRegistrationError,
+    StatementIngressTypePublicationInput, StatementIngressTypeRoleId,
 };
 pub use source_index::{
     CharacterDeclarationSet, CharacterDeclarationSource, CharacterDefinitionIndex,

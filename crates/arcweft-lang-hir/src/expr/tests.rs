@@ -8,14 +8,15 @@ use super::{
     HirChoiceMatch, HirChoiceMatchArm, HirChoicePlan, HirChoicePlanError, HirChoicePlanItem,
     HirClosureExpr, HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind,
     HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionChildEdge,
-    HirExpressionChildOwnership, HirExpressionChildRole, HirExpressionRecoveryIssue,
-    HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr, HirLoopExpr, HirMatchArm,
-    HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName, HirNestedExpressionPath,
-    HirNestedExpressionPathSegment, HirPipeExpr, HirPlaceholderKind, HirPoisonState, HirRangeExpr,
-    HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName,
-    HirRecoveryIssue, HirRecoveryOperandSlot, HirSelectExpr, HirSelectedMember, HirThreadBody,
-    HirThreadBodyInvariantError, HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem,
-    HirThreadMode, HirTryExpr, HirTupleExpr, HirUnaryExpr, HirUnaryOp,
+    HirExpressionChildOwnership, HirExpressionChildRole, HirExpressionOwnedChild,
+    HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr,
+    HirLoopExpr, HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
+    HirNestedExpressionPath, HirNestedExpressionPathSegment, HirPipeExpr, HirPlaceholderKind,
+    HirPoisonState, HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordFieldIssue,
+    HirRecordLiteralExpr, HirRecoveredName, HirRecoveryIssue, HirRecoveryOperandSlot,
+    HirSelectExpr, HirSelectedMember, HirThreadBody, HirThreadBodyInvariantError,
+    HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTupleExpr,
+    HirUnaryExpr, HirUnaryOp,
 };
 use crate::dialogue_application::{
     HirBuiltinRichTextTag, HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId,
@@ -992,7 +993,7 @@ fn recovered_expression_leaf_roles_follow_retained_shapes() {
 #[test]
 #[allow(
     clippy::too_many_lines,
-    reason = "the closed 35-family table is clearest as one exhaustive matrix"
+    reason = "the closed expression-family table is clearest as one exhaustive matrix"
 )]
 fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
     let module = module(14);
@@ -1034,9 +1035,13 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
         )
         .expect("test thread body"),
     );
-    let content =
-        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
-            .expect("empty dialogue content");
+    let content = HirDialogueContent::try_new(
+        HirDialogueContentId::new(owner),
+        Box::new([]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .expect("empty dialogue content");
     let dialogue =
         HirDialogueContentApplication::try_new(owner, first, content, None, Box::new([]))
             .expect("test dialogue application");
@@ -1302,9 +1307,13 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
     .into_boxed_slice();
     let coordinates = HirDialogueCoordinate::from_immediate_arguments(&arguments)
         .expect("bounded dialogue coordinates");
-    let content =
-        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
-            .expect("empty dialogue content");
+    let content = HirDialogueContent::try_new(
+        HirDialogueContentId::new(owner),
+        Box::new([]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .expect("empty dialogue content");
     let dialogue = HirExprKind::DialogueContentApplication(
         HirDialogueContentApplication::try_new(owner, first, content, None, coordinates)
             .expect("dialogue coordinates"),
@@ -1473,8 +1482,13 @@ fn dialogue_and_rich_text_source_roles_validate_nested_typed_ordinals() {
         HirDialogueNodeId::try_new(content_id, 1).expect("text node id"),
         HirDialogueNodeKind::Text(HirTextFragment::new("hello".into())),
     );
-    let content = HirDialogueContent::try_new(content_id, Box::new([start, text]), Box::new([tag]))
-        .expect("dialogue content");
+    let content = HirDialogueContent::try_new(
+        content_id,
+        Box::new([start, text]),
+        Box::new([tag]),
+        Box::new([]),
+    )
+    .expect("dialogue content");
     let kind = HirExprKind::DialogueContentApplication(
         HirDialogueContentApplication::try_new(owner, target, content, None, Box::new([]))
             .expect("dialogue application"),
@@ -1560,11 +1574,6 @@ fn edge_role_tag(role: &HirExpressionChildRole) -> u8 {
         HirExpressionChildRole::DialogueCoordinate { .. } => 26,
         HirExpressionChildRole::DialogueInterpolation { .. } => 27,
         HirExpressionChildRole::DialogueTagPayload { .. } => 28,
-        HirExpressionChildRole::LinePlanOptionValue { .. } => 29,
-        HirExpressionChildRole::LinePlanLetValue { .. } => 30,
-        HirExpressionChildRole::LinePlanOut { .. } => 31,
-        HirExpressionChildRole::LinePlanTimelineAssert { .. } => 32,
-        HirExpressionChildRole::LinePlanExpression { .. } => 33,
         HirExpressionChildRole::PostfixIndexCandidate => 34,
         HirExpressionChildRole::PostfixDialogueCandidate => 35,
         HirExpressionChildRole::ForInput => 36,
@@ -1674,6 +1683,7 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
     let content_owner = id::<ExprId>(module, 20);
     let content = HirDialogueContent::try_new(
         HirDialogueContentId::new(content_owner),
+        Box::new([]),
         Box::new([]),
         Box::new([]),
     )
@@ -2121,39 +2131,31 @@ fn choice_child_edges_keep_multi_branch_else_and_match_arm_lifo_paths() {
 }
 
 #[test]
-fn dialogue_line_plan_edges_keep_sibling_group_deep_lifo_order_and_paths() {
+fn dialogue_line_plan_keeps_statement_roots_out_of_direct_expression_edges() {
     let module = module(152);
     let scope = id::<ScopeId>(module, 1);
     let owner = id::<ExprId>(module, 2);
     let target = id::<ExprId>(module, 3);
-    let first = id::<ExprId>(module, 10);
-    let second = id::<ExprId>(module, 11);
-    let third = id::<ExprId>(module, 12);
-    let fourth = id::<ExprId>(module, 13);
-    let fifth = id::<ExprId>(module, 14);
-    let sixth = id::<ExprId>(module, 15);
+    let statements = (10..13)
+        .map(|slot| id::<StmtId>(module, slot))
+        .collect::<Vec<_>>();
     let plan = HirLinePlan::try_new(
         scope,
         None,
         Box::new([
-            HirLinePlanItem::StartGroup(Box::new([
-                HirLinePlanItem::Expression(first),
-                HirLinePlanItem::TogetherGroup(Box::new([
-                    HirLinePlanItem::StartGroup(Box::new([HirLinePlanItem::Expression(second)])),
-                    HirLinePlanItem::Expression(third),
-                ])),
-            ])),
-            HirLinePlanItem::TogetherGroup(Box::new([
-                HirLinePlanItem::Expression(fourth),
-                HirLinePlanItem::StartGroup(Box::new([HirLinePlanItem::Expression(fifth)])),
-            ])),
-            HirLinePlanItem::Expression(sixth),
+            HirLinePlanItem::Statement(statements[0]),
+            HirLinePlanItem::StartGroup(Box::new([HirLinePlanItem::Statement(statements[1])])),
+            HirLinePlanItem::TogetherGroup(Box::new([HirLinePlanItem::Statement(statements[2])])),
         ]),
     )
     .expect("line plan");
-    let content =
-        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
-            .expect("empty dialogue content");
+    let content = HirDialogueContent::try_new(
+        HirDialogueContentId::new(owner),
+        Box::new([]),
+        Box::new([]),
+        Box::new([]),
+    )
+    .expect("empty dialogue content");
     let kind = HirExprKind::DialogueContentApplication(
         HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
             .expect("dialogue line plan application"),
@@ -2165,57 +2167,25 @@ fn dialogue_line_plan_edges_keep_sibling_group_deep_lifo_order_and_paths() {
             .iter()
             .map(HirExpressionChildEdge::child)
             .collect::<Vec<_>>(),
-        [target, sixth, fourth, fifth, first, third, second]
+        [target]
     );
-    let p = |segments| nested_path(segments);
-    let expected_roles = vec![
-        HirExpressionChildRole::DialogueTarget,
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![HirNestedExpressionPathSegment::LinePlanItem {
-                ordinal: 2,
-            }]),
-        },
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![
-                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 1 },
-                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 0 },
-            ]),
-        },
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![
-                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 1 },
-                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 1 },
-                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
-            ]),
-        },
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![
-                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
-                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
-            ]),
-        },
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![
-                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
-                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 1 },
-                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 1 },
-            ]),
-        },
-        HirExpressionChildRole::LinePlanExpression {
-            path: p(vec![
-                HirNestedExpressionPathSegment::LinePlanItem { ordinal: 0 },
-                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 1 },
-                HirNestedExpressionPathSegment::LinePlanTogetherGroupItem { ordinal: 0 },
-                HirNestedExpressionPathSegment::LinePlanStartGroupItem { ordinal: 0 },
-            ]),
-        },
-    ];
+    assert!(edges.iter().all(|edge| !matches!(
+        edge.role(),
+        HirExpressionChildRole::DialogueCoordinate { .. }
+    )));
+
+    let owned = kind
+        .expression_owned_child_edges()
+        .expect("statement-owned dialogue topology");
     assert_eq!(
-        edges
+        owned
             .iter()
-            .map(|edge| edge.role().clone())
+            .filter_map(|edge| match edge.child() {
+                HirExpressionOwnedChild::Statement(statement) => Some(statement),
+                HirExpressionOwnedChild::Pattern(_) | HirExpressionOwnedChild::Body(_) => None,
+            })
             .collect::<Vec<_>>(),
-        expected_roles
+        statements
     );
 }
 

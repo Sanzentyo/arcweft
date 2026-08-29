@@ -23,6 +23,7 @@ use arcweft_lang_syntax::expressions::{
     SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueNodeSourcePart, SyntaxMatchArmPart,
     SyntaxRichTextArgumentSourcePart, SyntaxRichTextTagSourcePart,
 };
+use arcweft_lang_syntax::id_ref::SyntaxIdRefPart;
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::types::TypeRefComponentRole;
 use arcweft_source::SourceDocumentIdentity;
@@ -30,10 +31,10 @@ use arcweft_source::SourceDocumentIdentity;
 use super::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
     HirClosureParameterSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
-    HirMatchArmSourcePart, HirRecordFieldSourcePart, HirRichTextArgumentSourcePart,
-    HirRichTextTagSourcePart, HirSourceCommitInvariantError, HirSourceIndex, HirSourcePresence,
-    HirSourceQuery, HirSourceRequirement, HirSourceSite, StagedHirSourceIndex,
-    validate_component_source,
+    HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart,
+    HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceCommitInvariantError,
+    HirSourceIndex, HirSourcePresence, HirSourceQuery, HirSourceRequirement, HirSourceSite,
+    StagedHirSourceIndex, validate_component_source,
 };
 use crate::arena::ArenaSnapshot;
 use crate::dialogue_application::HirDialogueContentApplication;
@@ -1144,6 +1145,20 @@ pub(crate) fn expression_component_role(
                         HirRichTextTagSourcePart::InferenceInsertion
                     }
                     SyntaxRichTextTagSourcePart::EndTag => HirRichTextTagSourcePart::EndTag,
+                    SyntaxRichTextTagSourcePart::Marker(part) => {
+                        HirRichTextTagSourcePart::Marker(match part {
+                            SyntaxIdRefPart::Whole => HirIdRefSourcePart::Whole,
+                            SyntaxIdRefPart::AbsoluteMarker => HirIdRefSourcePart::AbsoluteMarker,
+                            SyntaxIdRefPart::Family => HirIdRefSourcePart::Family,
+                            SyntaxIdRefPart::FamilySeparator => HirIdRefSourcePart::FamilySeparator,
+                            SyntaxIdRefPart::ParentMarker { ordinal } => {
+                                HirIdRefSourcePart::ParentMarker { ordinal }
+                            }
+                            SyntaxIdRefPart::SuffixSegment { ordinal } => {
+                                HirIdRefSourcePart::SuffixSegment { ordinal }
+                            }
+                        })
+                    }
                 },
             })
         }

@@ -22,7 +22,7 @@ use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_hir::{item::HirItemKind, stmt::HirStmtKind};
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
-    final_analysis::CheckedStatementRole,
+    final_analysis::CheckedStatementPayload,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
     types::TypeKind,
 };
@@ -822,7 +822,7 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         .final_analysis()
         .statement(statement)
         .expect("checked assignment statement");
-    let CheckedStatementRole::Assignment(checked) = checked.role() else {
+    let CheckedStatementPayload::Assignment(checked) = checked.payload() else {
         panic!("assignment owns its checked semantic role")
     };
     let runtime_owners = project_runtime_reachability(
