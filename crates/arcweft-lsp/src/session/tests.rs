@@ -719,15 +719,13 @@ fn assert_code_actions_reuse_analysis(
     uri: &Uri,
     expected: &Arc<DocumentAnalysis>,
 ) {
-    let _ = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(4, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("cached code actions");
+    let _ = session.code_actions(&CodeActionParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        range: Range::new(Position::new(0, 0), Position::new(4, 0)),
+        context: CodeActionContext::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    });
     assert!(Arc::ptr_eq(
         expected,
         &session
@@ -754,15 +752,13 @@ effects { fs.read, debug.record }
 "#,
     );
 
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(20, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
+    let actions = session.code_actions(&CodeActionParams {
+        text_document: TextDocumentIdentifier { uri: uri.clone() },
+        range: Range::new(Position::new(0, 0), Position::new(20, 0)),
+        context: CodeActionContext::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    });
 
     assert!(
         code_action_by_title(&actions, "Remove unused effect declaration").is_none(),

@@ -4,7 +4,6 @@
 //! It does not read files, write files, watch paths, or run an LSP transport.
 
 pub mod agent_repl;
-pub mod code_actions;
 pub mod edit;
 pub mod format;
 pub mod model;

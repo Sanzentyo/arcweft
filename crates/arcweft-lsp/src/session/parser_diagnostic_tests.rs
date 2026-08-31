@@ -29,15 +29,13 @@ fn editless_missing_as_parser_suggestion_does_not_create_a_workspace_edit() {
         .handle_notification(open)
         .expect("open missing-`as` source");
 
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri },
-            range: Range::new(Position::new(1, 21), Position::new(1, 28)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("missing-`as` code actions");
+    let actions = session.code_actions(&CodeActionParams {
+        text_document: TextDocumentIdentifier { uri },
+        range: Range::new(Position::new(1, 21), Position::new(1, 28)),
+        context: CodeActionContext::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    });
 
     assert!(
         actions
@@ -71,15 +69,13 @@ fn project_root_recovery_diagnostic_has_no_executable_code_action() {
         .handle_notification(open)
         .expect("open bare flow item source");
 
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri },
-            range: Range::new(Position::new(0, 0), Position::new(0, 12)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("bare flow item code actions");
+    let actions = session.code_actions(&CodeActionParams {
+        text_document: TextDocumentIdentifier { uri },
+        range: Range::new(Position::new(0, 0), Position::new(0, 12)),
+        context: CodeActionContext::default(),
+        work_done_progress_params: WorkDoneProgressParams::default(),
+        partial_result_params: PartialResultParams::default(),
+    });
 
     assert!(
         actions.is_empty(),

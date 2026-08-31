@@ -18,8 +18,6 @@ use std::sync::Arc;
 pub(in crate::app) struct ToolingCommandOptions {
     path: PathBuf,
     #[arg(long)]
-    canonical_rich_text: bool,
-    #[arg(long)]
     write: bool,
     #[arg(long)]
     json: bool,
@@ -89,12 +87,7 @@ struct ToolingFileReport {
 
 pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
     run_tooling_command(options, |document| {
-        format_document(
-            document,
-            FormatOptions {
-                canonical_rich_text: options.canonical_rich_text,
-            },
-        )
+        format_document(document, FormatOptions::default())
     })
 }
 

@@ -11,7 +11,6 @@ use crate::profiles::{
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
 use crate::uri_key::LspUriKey;
 use arcweft_compiler::project::ProjectCompilationSession;
-use arcweft_tooling::model::ToolingError;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
     DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
@@ -80,9 +79,6 @@ pub enum SessionError {
     /// Document synchronization failed.
     #[error(transparent)]
     Document(#[from] DocumentError),
-    /// Source-edit planning found an invalid tooling range or overlap.
-    #[error(transparent)]
-    Tooling(#[from] ToolingError),
 }
 
 impl ArcweftLspSession {
@@ -180,7 +176,6 @@ impl ArcweftLspSession {
         self.try_handle_request(request, repl, requests)
             .unwrap_or_else(|error| {
                 let code = match &error {
-                    SessionError::Tooling(_) => ErrorCode::InternalError,
                     SessionError::InvalidParams { .. } | SessionError::Document(_) => {
                         ErrorCode::InvalidParams
                     }
@@ -485,7 +480,7 @@ impl ArcweftLspSession {
             }
             CodeActionRequest::METHOD => {
                 let (id, params) = extract::<CodeActionParams>(request, CodeActionRequest::METHOD)?;
-                let result = self.code_actions(&params)?;
+                let result = self.code_actions(&params);
                 Ok(Response::new_ok(id, result))
             }
             InlayHintRequest::METHOD => {
@@ -577,9 +572,9 @@ impl ArcweftLspSession {
         self.documents.get(uri)
     }
 
-    fn code_actions(&self, params: &CodeActionParams) -> Result<CodeActionResponse, SessionError> {
+    fn code_actions(&self, params: &CodeActionParams) -> CodeActionResponse {
         let Some(document) = self.document_for_params(&params.text_document.uri) else {
-            return Ok(Vec::new());
+            return Vec::new();
         };
         let analysis = self.cached_analysis(document).unwrap_or_else(|| {
             Arc::new(DocumentAnalysis::analyze_snapshot(
@@ -587,13 +582,13 @@ impl ArcweftLspSession {
                 self.profile_for_uri(document.uri()),
             ))
         });
-        let actions = features::actions::actions(
+        features::actions::actions(
             self.profile_for_uri(document.uri()),
             &params.text_document.uri,
             document,
             analysis.as_ref(),
             params.range.start,
-        )?
+        )
         .into_iter()
         .map(|mut action| {
             action.edit = action
@@ -601,8 +596,7 @@ impl ArcweftLspSession {
                 .map(|edit| self.workspace_edit_policy.normalize(edit, &self.documents));
             CodeActionOrCommand::CodeAction(action)
         })
-        .collect();
-        Ok(actions)
+        .collect()
     }
 
     fn profile_for_uri(&self, uri: &lsp_types::Uri) -> &LspProfile {

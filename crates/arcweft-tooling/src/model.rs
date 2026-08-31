@@ -3,12 +3,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-/// Syntax-only formatting options. Semantic expansion is intentionally absent.
+/// Syntax-only formatting options.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct FormatOptions {
-    /// Rewrite inferred rich-text tags into explicit canonical spans.
-    pub canonical_rich_text: bool,
-}
+pub struct FormatOptions;
 
 /// A half-open source edit over UTF-8 byte offsets.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -49,15 +46,6 @@ impl ToolingDiagnostic {
             disposition: ToolingDiagnosticDisposition::Partial,
         }
     }
-}
-
-/// Tooling code action data independent from any concrete LSP transport.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ToolingCodeAction {
-    pub id: String,
-    pub label: String,
-    pub edit: Option<TextEdit>,
-    pub diagnostics: Vec<ToolingDiagnostic>,
 }
 
 /// A complete source-edit report.

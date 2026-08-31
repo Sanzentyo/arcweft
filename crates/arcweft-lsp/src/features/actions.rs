@@ -1,8 +1,7 @@
 use crate::diagnostics::DocumentAnalysis;
 use crate::documents::DocumentSnapshot;
 use crate::profiles::LspProfile;
-use arcweft_tooling::model::ToolingError;
-use arcweft_verify_lsp::{code_actions_from_report_with_mapper, source_code_actions_with_mapper};
+use arcweft_verify_lsp::code_actions_from_report_with_mapper;
 use lsp_types::{CodeAction, CodeActionKind, Command, Position, Uri};
 
 /// Computes code actions for one open Arcweft document.
@@ -12,9 +11,8 @@ pub fn actions(
     document: &DocumentSnapshot,
     analysis: &DocumentAnalysis,
     _position: Position,
-) -> Result<Vec<CodeAction>, ToolingError> {
-    let mut actions =
-        source_code_actions_with_mapper(uri, document.source_document(), document.line_index())?;
+) -> Vec<CodeAction> {
+    let mut actions = Vec::new();
     actions.extend(analysis.compiler_commands().iter().map(|command| {
         CodeAction {
             title: command.title().to_owned(),
@@ -48,7 +46,7 @@ pub fn actions(
             document.line_index(),
         ));
     }
-    Ok(actions)
+    actions
 }
 
 #[cfg(test)]
@@ -131,8 +129,7 @@ source = "src/main.arcw"
             .expect("document parse");
         let analysis = DocumentAnalysis::analyze_snapshot(&document, &profile);
 
-        let code_actions = actions(&profile, &uri, &document, &analysis, Position::new(1, 4))
-            .expect("code actions");
+        let code_actions = actions(&profile, &uri, &document, &analysis, Position::new(1, 4));
 
         assert!(code_actions.iter().any(|action| {
             action.command.as_ref().is_some_and(|command| {
