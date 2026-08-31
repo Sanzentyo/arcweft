@@ -192,6 +192,12 @@ pub fn project_runtime_reachability<'project>(
         };
         edges.extend(checked_iteration_edges(statement, iteration));
     }
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::Closure(closure) = checked.resolution() else {
+            continue;
+        };
+        edges.insert(checked_closure_execution_edge(owner, closure.owner()));
+    }
     for entry in &selected_entries {
         append_entry_edges(entry, symbols, &mut edges)?;
     }
@@ -282,6 +288,12 @@ pub(crate) fn project_view_value_program_reachability<'project>(
             continue;
         };
         edges.extend(checked_iteration_edges(statement, iteration));
+    }
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::Closure(closure) = checked.resolution() else {
+            continue;
+        };
+        edges.insert(checked_closure_execution_edge(owner, closure.owner()));
     }
     let evaluated_effect_carriers =
         evaluated_effect_carriers(project, analysis).map_err(|error| {
@@ -426,6 +438,14 @@ fn checked_iteration_edges(
             )
         })
         .collect()
+}
+
+fn checked_closure_execution_edge(source: ExprId, closure: ExprId) -> HirRuntimeReachabilityEdge {
+    HirRuntimeReachabilityEdge::new(
+        HirRuntimeReachabilitySite::Expression(source),
+        HirRuntimeExecutableOwner::Closure(closure),
+        HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
+    )
 }
 
 pub fn validate_reachable_runtime_callables(
@@ -822,13 +842,17 @@ fn validate_checked_executable_edges(
         if !reachability.contains_expression(owner) {
             continue;
         }
-        let CheckedExpressionResolution::Choice(choice) = checked.resolution() else {
-            continue;
+        let expected = match checked.resolution() {
+            CheckedExpressionResolution::Choice(choice) => checked_choice_edges(owner, choice),
+            CheckedExpressionResolution::Closure(closure) => {
+                BTreeSet::from([checked_closure_execution_edge(owner, closure.owner())])
+            }
+            _ => continue,
         };
         validate_exact_edge_set(
             reachability,
             HirRuntimeReachabilitySite::Expression(owner),
-            &checked_choice_edges(owner, choice),
+            &expected,
         )?;
     }
     for (statement, checked) in analysis.statements() {

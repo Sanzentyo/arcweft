@@ -3471,6 +3471,148 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
 }
 
 #[test]
+fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targets() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/runtime-closure-edges",
+        "runtime-closure-edges.arcw",
+        concat!(
+            "flow root() {\n",
+            "    let first = || 1\n",
+            "    let second = || 2\n",
+            "}\n",
+        ),
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    let closures = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            let HirExprKind::Closure(closure) = expression.kind() else {
+                return None;
+            };
+            Some((owner, closure.body()))
+        })
+        .collect::<Vec<_>>();
+    let [(first, first_body), (second, second_body)] = closures.as_slice() else {
+        panic!("fixture must retain exactly two closures: {closures:?}")
+    };
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, Arc::clone(&module))],
+    )
+    .unwrap();
+    let executable = project.executable_view().unwrap();
+    let symbols = symbols_for_project(&project, parsed.document(), "runtime-closure-edges");
+    let topology = executable
+        .accept_symbol_generation(&symbols)
+        .expect("accepted symbol generation")
+        .into_evaluation_topology()
+        .expect("runtime closure-edge topology");
+    let flow = executable
+        .items()
+        .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
+        .map(super::HirProjectItemRef::id)
+        .unwrap();
+    let root = HirRuntimeReachabilityRoot::new(
+        HirRuntimeReachabilityRootKind::CheckedFlow,
+        HirRuntimeExecutableOwner::Item(flow),
+    );
+    let edge = |closure| {
+        HirRuntimeReachabilityEdge::new(
+            super::HirRuntimeReachabilitySite::Expression(closure),
+            HirRuntimeExecutableOwner::Closure(closure),
+            super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
+        )
+    };
+    let input = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        topology.generation().symbol_world().clone(),
+        topology.generation().symbol_revision(),
+        vec![root.clone()],
+        vec![edge(*first), edge(*second)],
+    )
+    .unwrap();
+    let reached = executable
+        .runtime_semantic_reachability(
+            input,
+            &topology,
+            |_| None,
+            |owner| retained_runtime_projection(executable, owner),
+        )
+        .expect("checked closure executions close both bodies");
+    assert!(reached.contains_expression(*first_body));
+    assert!(reached.contains_expression(*second_body));
+    let typed = reached
+        .selected_expression_type_owners()
+        .expect("checked closure body types");
+    assert!(typed.contains(first_body));
+    assert!(typed.contains(second_body));
+
+    let missing = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        topology.generation().symbol_world().clone(),
+        topology.generation().symbol_revision(),
+        vec![root.clone()],
+        vec![edge(*first)],
+    )
+    .unwrap();
+    let missing = executable
+        .runtime_semantic_reachability(
+            missing,
+            &topology,
+            |_| None,
+            |owner| retained_runtime_projection(executable, owner),
+        )
+        .expect("HIR follows only supplied checked closure executions");
+    assert!(missing.contains_expression(*first_body));
+    assert!(!missing.contains_expression(*second_body));
+
+    let foreign = HirRuntimeReachabilityEdge::new(
+        super::HirRuntimeReachabilitySite::Expression(*first),
+        HirRuntimeExecutableOwner::Closure(*second),
+        super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure: *second },
+    );
+    assert!(matches!(
+        HirRuntimeSemanticReachabilityInput::try_new(
+            HirRuntimeEmissionMode::CheckAll,
+            topology.generation().symbol_world().clone(),
+            topology.generation().symbol_revision(),
+            vec![root.clone()],
+            vec![foreign],
+        ),
+        Err(HirRuntimeReachabilityError::InvalidEdgeKind { .. })
+    ));
+
+    let tampered = HirRuntimeReachabilityEdge::new(
+        super::HirRuntimeReachabilitySite::Expression(*first),
+        HirRuntimeExecutableOwner::Closure(*second),
+        super::HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure: *first },
+    );
+    let tampered = HirRuntimeSemanticReachabilityInput::try_new(
+        HirRuntimeEmissionMode::CheckAll,
+        topology.generation().symbol_world().clone(),
+        topology.generation().symbol_revision(),
+        vec![root],
+        vec![tampered],
+    )
+    .unwrap();
+    assert!(matches!(
+        executable.runtime_semantic_reachability(
+            tampered,
+            &topology,
+            |_| None,
+            |owner| retained_runtime_projection(executable, owner),
+        ),
+        Err(HirRuntimeReachabilityError::InvalidEdgeTarget { .. })
+    ));
+}
+
+#[test]
 fn selected_expression_inventory_is_deterministic_across_module_input_order() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();

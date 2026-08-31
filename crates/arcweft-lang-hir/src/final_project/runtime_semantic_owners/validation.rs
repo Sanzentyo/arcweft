@@ -68,6 +68,11 @@ fn edge_source_family_matches(
             .is_some_and(|kind| matches!(kind, HirStmtKind::For(_))),
         (
             HirRuntimeReachabilitySite::Expression(owner),
+            HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. },
+        ) => resolve_expression_kind(project, *owner)
+            .is_some_and(|kind| matches!(kind, HirExprKind::Closure(_))),
+        (
+            HirRuntimeReachabilitySite::Expression(owner),
             HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer { .. },
         ) => resolve_expression_kind(project, *owner)
             .is_some_and(|kind| matches!(kind, HirExprKind::Choice(_))),
@@ -142,6 +147,11 @@ fn edge_kind_matches_target(
             | HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
             _,
         ) => false,
+        (
+            HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
+            HirRuntimeExecutableOwner::Closure(target),
+        ) => closure == target,
+        (HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. }, _) => false,
         _ => true,
     }
 }

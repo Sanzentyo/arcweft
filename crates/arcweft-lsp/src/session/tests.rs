@@ -832,11 +832,23 @@ fn completions_include_standard_enum_variant_shorthands() {
     let completions = completion_labels(&mut session, uri);
     let json = completions
         .iter()
-        .find(|item| item.label == ".Json")
-        .expect(".Json completion");
+        .filter(|item| item.label == ".Json")
+        .collect::<Vec<_>>();
 
-    assert_eq!(json.kind, Some(lsp_types::CompletionItemKind::ENUM_MEMBER));
-    assert_eq!(json.detail.as_deref(), Some("DataFormat.Json"));
+    assert!(
+        json.iter()
+            .all(|item| item.kind == Some(lsp_types::CompletionItemKind::ENUM_MEMBER))
+    );
+    assert!(
+        json.iter()
+            .any(|item| item.detail.as_deref() == Some("DataFormat.Json")),
+        "DataFormat.Json must remain one of the typed .Json owners: {json:?}"
+    );
+    assert!(
+        json.iter()
+            .any(|item| item.detail.as_deref() == Some("AgentResourceBody.Json")),
+        "equal shorthand spellings retain each distinct typed owner: {json:?}"
+    );
     assert!(completions.iter().any(|item| item.label == ".MessagePack"));
 }
 

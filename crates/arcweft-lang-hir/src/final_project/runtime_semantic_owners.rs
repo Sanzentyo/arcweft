@@ -120,6 +120,13 @@ pub enum HirRuntimeReachabilityEdgeKind {
         member: u16,
         method: ImplMethodDeclarationId,
     },
+    /// Executes the body and capture scope owned by one checked closure value.
+    ///
+    /// Closure bodies are executable boundaries: their locals must not enter
+    /// the enclosing frame's structural closure. The owning closure expression
+    /// therefore reaches its body through this exact checked edge instead of
+    /// being reopened by a parent-scope traversal exception.
+    CheckedClosureExecution { closure: ExprId },
     CheckedFlowTransfer {
         source: HirRuntimeReachabilitySite,
         declaration: CallableDeclarationKey,
@@ -135,6 +142,7 @@ enum HirRuntimeReachabilityEdgeAuthority {
     ProjectCall(CallableDeclarationKey),
     TraitMethodCall(ImplMethodDeclarationId),
     IteratorWitnessMethod(HirRuntimeIteratorWitnessMethodRole),
+    ClosureExecution,
     FlowTransfer(CallableDeclarationKey),
     EntryBinding(CallableDeclarationKey),
 }
@@ -1166,6 +1174,10 @@ fn edge_kind_matches_source(edge: &HirRuntimeReachabilityEdge) -> bool {
             HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { .. },
         ) => true,
         (
+            HirRuntimeReachabilitySite::Expression(source),
+            HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure },
+        ) => source == closure,
+        (
             source,
             HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer {
                 source: transfer, ..
@@ -1189,6 +1201,9 @@ fn edge_authority(kind: &HirRuntimeReachabilityEdgeKind) -> HirRuntimeReachabili
         }
         HirRuntimeReachabilityEdgeKind::CheckedIteratorWitnessMethod { role, .. } => {
             HirRuntimeReachabilityEdgeAuthority::IteratorWitnessMethod(*role)
+        }
+        HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { .. } => {
+            HirRuntimeReachabilityEdgeAuthority::ClosureExecution
         }
         HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer { declaration, .. } => {
             HirRuntimeReachabilityEdgeAuthority::FlowTransfer(declaration.clone())

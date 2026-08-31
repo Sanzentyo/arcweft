@@ -271,7 +271,7 @@ fn assert_capacity_native_signature(
         panic!("Capacity must retain one unchecked rest parameter")
     };
     assert_eq!(parameter.coordinate(), active);
-    assert_eq!(parameter.label(), "...args: _?");
+    assert_eq!(parameter.label(), "...args: <unchecked-supply>?");
     assert_eq!(parameter.name().map(CallableName::as_str), Some("args"));
     assert_eq!(
         parameter.admission(),
@@ -297,12 +297,12 @@ fn assert_capacity_lsp_projection(wire: &SignatureHelp, native_projection: &Sign
     };
     assert_eq!(
         wire_signature.label,
-        "String.with_capacity(...args: _?) -> String"
+        "String.with_capacity(...args: <unchecked-supply>?) -> String"
     );
     let Some([wire_parameter]) = wire_signature.parameters.as_deref() else {
         panic!("LSP must expose exactly one Capacity parameter")
     };
-    assert_eq!(wire_parameter.label, ParameterLabel::LabelOffsets([21, 32]));
+    assert_eq!(wire_parameter.label, ParameterLabel::LabelOffsets([21, 49]));
 }
 
 #[expect(

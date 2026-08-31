@@ -132,6 +132,10 @@ fn digest_edge_kind(hasher: &mut Sha256, kind: &HirRuntimeReachabilityEdgeKind) 
             let declaration = CallableDeclarationKey::ImplMethod(method.clone());
             hasher.update(declaration.semantic_digest().as_bytes());
         }
+        HirRuntimeReachabilityEdgeKind::CheckedClosureExecution { closure } => {
+            hasher.update([5]);
+            hasher.update(closure.raw().cache_fingerprint_input());
+        }
         HirRuntimeReachabilityEdgeKind::CheckedFlowTransfer {
             source,
             declaration,
