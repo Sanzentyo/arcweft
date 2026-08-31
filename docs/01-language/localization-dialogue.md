@@ -5,7 +5,7 @@ Arcweft is Japanese-first by default: ordinary `.arcw` source can be written dir
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Control Tags, Ruby, Interpolation, and Inline Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Dialogue Line Manifest](../schemas/dialogue-line-manifest.md)
 - [Localization Catalog](../schemas/localization-catalog.md)
 
@@ -87,10 +87,10 @@ Speaker     @character.alice
 
 `LineId` remains stable through text edits. `source_hash` changes and marks translations as stale.
 
-The canonical dialogue form is `speaker.say(...)[...]`; `speaker(...):` is sugar. Dialogue and narration use the same line options:
+The canonical dialogue form is `speaker(...)[...]`; `speaker(...):` is sugar. Dialogue and narration use the same line options:
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.alice.greeting,
     text_key = @text.opening.alice.greeting,
     voice = auto,
@@ -360,9 +360,9 @@ locale en-US from ja-JP {
 
 ---
 
-## Rich text, control tags, and translations
+## Rich text actions and translations
 
-Japanese source may contain ruby and control tags:
+Japanese source may contain ruby and point actions:
 
 ```arcw
 alice: 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
@@ -381,8 +381,9 @@ Import validation checks:
 - placeholders are preserved.
 - rich text markup is well-formed.
 - ruby syntax is valid if present.
-- untrusted locale files cannot add effectful tags such as [call] or [signal].
-- p/l/r/w tags appear only if locale policy allows translated control marks.
+- untrusted locale files cannot add effectful point actions such as [call] or
+  [signal].
+- p/l/r/w actions appear only if locale policy allows translated control marks.
 ```
 
 ---
@@ -400,7 +401,7 @@ narrator: #[state.player_name]は鍵を手に入れた。[p]
 A localizable placeholder uses `{name}` and must be supplied by line args or context:
 
 ```arcw
-narrator.say(args={ player_name = state.player_name })[
+narrator(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
 ```
@@ -564,7 +565,7 @@ Diagnostics:
 - stale translation
 - missing placeholder
 - invalid rich text markup
-- forbidden translated control tag
+- forbidden translated point action
 - missing voice for locale
 - text too long for its View container
 - choice label exceeds layout constraints

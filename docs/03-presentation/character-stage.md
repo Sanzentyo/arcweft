@@ -5,45 +5,13 @@ Arcweft treats character presentation as a typed stage graph, not as ad-hoc imag
 ## Character definition
 
 ```arcw
-pub character @character.alice Alice as alice {
-    display_name ja-JP = "アリス"
-    display_name en-US = "Alice"
-
-    voice {
-        default_locale = ja-JP
-        speaker = @speaker.alice
-        tts_profile = @tts.alice
-    }
-
-    sprite_sheet @sprite.alice.standing {
-        base = @asset:.char.alice.body
-
-        part body {
-            normal = @asset:.char.alice.body.normal
-        }
-
-        part look {
-            normal = @asset:.char.alice.face.normal
-            smile = @asset:.char.alice.face.smile
-            worried = @asset:.char.alice.face.worried
-            surprised = @asset:.char.alice.face.surprised
-        }
-
-        part mouth {
-            closed = @asset:.char.alice.mouth.closed
-            a = @asset:.char.alice.mouth.a
-            i = @asset:.char.alice.mouth.i
-            u = @asset:.char.alice.mouth.u
-            e = @asset:.char.alice.mouth.e
-            o = @asset:.char.alice.mouth.o
-        }
-    }
-
-    look .normal { part.look = normal; mouth = closed }
-    look .smile { part.look = smile; mouth = closed }
-    look .worried { part.look = worried; mouth = closed }
+pub character alice {
+    display = "Alice"
 }
 ```
+
+Sprite, voice, and look resources are selected by the typed stage and audio
+authorities; they are not nested fields in the character declaration.
 
 ## Stage object
 
@@ -67,7 +35,7 @@ StageObject<CharacterSprite>
 Character aliases are typed objects in Arcweft. They expose presentation, voice, memoized asset, and preload methods.
 
 ```arcw
-alice.say()[おはよう。[p]]
+alice()[おはよう。[p]]
 alice.stage.show(.smile, at=.center, fade=200ms)
 alice.stage.look(.worried, crossfade=120ms)
 alice.stage.move(to=left, time=300ms, ease=quad.out)
@@ -186,7 +154,7 @@ Animations can target transform, opacity, sprite part selection, shader params, 
 Dialogue line timeline:
 
 ```arcw
-alice.say(id=@say.opening.003, look=smile, voice=auto)[
+alice(id=@say.opening.003, look=smile, voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] with {
     at(0.15s) { alice.stage.look(normal, crossfade=80ms) }
@@ -201,7 +169,7 @@ The scheduler drives the timeline from the voice cue if present. If the voice is
 ## Lip sync
 
 ```arcw
-alice.say(id=@say.opening.004, voice=@voice.alice.004, lipsync=auto)[
+alice(id=@say.opening.004, voice=@voice.alice.004, lipsync=auto)[
     夢の中では、君もそこにいた。[p]
 ]
 ```
@@ -218,7 +186,7 @@ Lip-sync modes:
 Manual mouth timeline:
 
 ```arcw
-alice.say(id=@say.opening.005, voice=auto, lipsync=manual)[
+alice(id=@say.opening.005, voice=auto, lipsync=manual)[
     あのね。[p]
 ] with {
     at(phoneme("a")) { alice.stage.mouth(a) }
@@ -283,7 +251,7 @@ verify @proof.dialogue_timeline_bounds {
 Character stage cues can be scheduled from dialogue line plan blocks, or from colon sugar with `with { ... }`.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ] {
     at(0.42s) { alice.stage.look(worried, crossfade=120ms) }
@@ -297,7 +265,7 @@ These cues are compiled to `StageTimelineEvent` records owned by the dialogue li
 Cancellation policy can stop or complete pending stage cues:
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     まだ話している途中……[p]
 ] {
     cancel on input(.SkipLine) {
@@ -365,19 +333,12 @@ alice.look(worried)
 
 ## Character preload policy
 
-Characters can declare how their sprite parts, looks, lip-sync data, and voices should be prepared.
+Preload policy is selected by the stage and profile authorities; character
+identity declarations do not carry policy fields.
 
 ```arcw
 pub character alice {
     display = "Alice"
-
-    preload_policy {
-        sprites = on_flow_anticipate
-        looks = [normal, smile, worried, surprised]
-        mouth_parts = on_voice_line
-        voices = locale_current
-        lipsync = metadata_only
-    }
 }
 ```
 
@@ -407,19 +368,8 @@ anticipate @flow.alice_intro {
 
 ## Character memoization
 
-Expensive character presentation work is memoized by stable keys.
-
-```arcw
-pub character alice {
-    display = "Alice"
-
-    memo_policy {
-        compose_sprite key=(pose, look, mouth, scale_bucket, theme_hash) cache=session
-        lipsync_plan key=(voice_key, locale) cache=session
-        look_patch key=(from_look, to_look) cache=flow
-    }
-}
-```
+Expensive character presentation work is memoized by stable keys owned by the
+stage/runtime authority.
 
 Runtime memo entries are typed:
 
@@ -458,7 +408,7 @@ Agent observation exposes memo status for stage objects:
 Dialogue line plan and `at(...) { ... }` blocks can call character stage methods.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     ほら、ここ。覚えてる？[p]
 ] {
     at(0.15s) { alice.stage.look(normal, crossfade=80ms) }
@@ -503,19 +453,6 @@ preload next @flow.alice_intro {
     alice.sprite(smile).preload()
     alice.voice_for(@say.alice_intro.001).preload()
     asset.image(@asset:.bg.room_evening)
-}
-```
-
-A character may also declare policy-level hints:
-
-```arcw
-pub character alice {
-    preload_policy {
-        next_flow_lookahead = 6.lines
-        looks = [smile, worried, normal]
-        voice = auto_locale
-        memoize_sprites = true
-    }
 }
 ```
 

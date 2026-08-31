@@ -54,8 +54,9 @@ The importer validates:
 - placeholders are preserved.
 - source_hash matches or row is marked stale.
 - voice ID exists or missing voice policy allows it.
-- untrusted locale files do not introduce effectful tags such as [call] or [signal].
-- translated p/l/r/w control tags are allowed only if policy permits them.
+- untrusted locale files do not introduce effectful point actions such as call or signal.
+- translated timeline point actions are allowed only if policy permits their
+  owner-issued identities.
 ```
 
 ## Runtime resolution

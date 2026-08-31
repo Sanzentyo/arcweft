@@ -420,7 +420,7 @@ to replayable state-update events and require explicit capabilities.
 flow opening(state: GameState)
 effects { state.write('flow), state.write('global) }
 {
-    alice[見たことにする。[mark @.seen][p]]
+    alice()[見たことにする。[mark @.seen][p]]
     with {
         on mark(@.seen) {
             'flow.flags.seen_alice_intro <- true

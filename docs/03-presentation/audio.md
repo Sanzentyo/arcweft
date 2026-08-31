@@ -79,7 +79,7 @@ pub enum AudioCommand {
     EnsureBgm(BgmCommand),
     StopBgm { id: StableAudioId, fade: Duration },
     PlayOneShot { event_id: EventId, cue: Ref<Cue>, volume: f32 },
-    PlayVoice { line: Ref<Say>, cue: Ref<Cue>, sync: VoiceSyncPolicy },
+    PlayVoice { line: Ref<DialogueLine>, cue: Ref<Cue>, sync: VoiceSyncPolicy },
     SetMixerSnapshot { snapshot: Ref<MixerSnapshot>, transition: Duration },
     SetListener(ListenerTransform),
     UpdateSpatialSource(SpatialSourceCommand),
@@ -278,7 +278,7 @@ pub struct TtsResult {
 字幕・口パク・表情同期に使う。
 
 ```arcw
-alice.say(voice=@voice.alice.tts)[おはよう。[p]]
+alice(voice=@voice.alice.tts)[おはよう。[p]]
 with {
     fallback = subtitle_only
     cache = true

@@ -1,23 +1,20 @@
-# Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload
+# Dialogue Character Configuration, Views, Interpolation, and Preload
 
-> **Superseded dialogue-call surface:** The canonical final model is
-> [CharacterDialogue authoring](character-dialogue.md). In particular,
-> `.say(...)`, `Speaker`, and `SpeakerPreset` are removed rather than retained
-> as aliases. Examples below that use those spellings are migration inventory,
-> not current authoring syntax; their non-dialogue Character, View,
-> interpolation, and preload material remains applicable unless the new
-> contract says otherwise.
+> **Canonical dialogue-call surface:** The final model is
+> [CharacterDialogue authoring](character-dialogue.md). Direct calls use
+> `character(args)[content]`; the old method-suffix and speaker-wrapper forms
+> are not part of the language.
 >
 > Dialogue content escapes, attached-body roles, Ruby, timeline calls, marks,
 > and reactive View syntax are governed by
 > [Converged Language, Content, and Presentation Surface](converged-language-surface.md).
 
-Arcweft dialogue is written through character objects. The concise `alice:` form remains available, but it is syntax sugar over `alice.say()[ ... ]`. This keeps ordinary conversation compact while giving complex lines a typed, composable form.
+Arcweft dialogue is written through character objects. The concise `alice:` form remains available, but it is syntax sugar over `alice()[ ... ]`. This keeps ordinary conversation compact while giving complex lines a typed, composable form.
 
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Dialogue Views, Character Styles, and Read-State Hooks](dialogue-views-and-hooks.md)
@@ -32,7 +29,7 @@ Related:
 The canonical ordinary dialogue form is:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 ```
@@ -40,7 +37,7 @@ alice.say()[
 With options:
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.greeting,
     voice = auto,
     look = smile,
@@ -50,14 +47,16 @@ alice.say(
 ]
 ```
 
-Fully qualified entity references are allowed. Because `@character.alice.say` would be ambiguous as a single entity path, use `@<...>` or parentheses when calling a method on an entity reference:
+Fully qualified entity references are allowed. Because `@character.alice` is a
+single entity path, use `@<...>` or parentheses when applying options to that
+reference:
 
 ```arcw
-@<character.alice>.say(voice=auto)[
+@<character.alice>(voice=auto)[
     おはよう。[p]
 ]
 
-(@character.alice).say(voice=auto)[
+(@character.alice)(voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -72,10 +71,9 @@ use game.characters.{alice, bob}
 
 ## `:` syntax sugar
 
-For a character alias, the compact speaker-prefix form is sugar for
-`Character.say(...)[...]`. For a `SpeakerPreset`, the same surface syntax calls
-the preset and applies the dialogue content without forcing a character
-`.say(...)` rewrite.
+For a character alias, the compact speaker-prefix form is sugar for a direct
+`character(args)[...]` content call. A configured `CharacterDialogue` value can
+be called with the same content syntax.
 
 ```arcw
 alice: おはよう。[p]
@@ -84,12 +82,12 @@ alice: おはよう。[p]
 is equivalent to:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 ```
 
-Options in parentheses become `say()` options:
+Options in parentheses are character-call options:
 
 ```arcw
 alice(id=@say.opening.greeting, look=smile, voice=auto):
@@ -99,7 +97,7 @@ alice(id=@say.opening.greeting, look=smile, voice=auto):
 is equivalent to:
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.greeting,
     look = smile,
     voice = auto,
@@ -137,7 +135,7 @@ The same rule applies to the built-in narrator aliases:
 is equivalent to:
 
 ```arcw
-@<character.narrator>.say()[
+@<character.narrator>()[
     扉の向こうから、雨の音がした。[p]
 ]
 ```
@@ -147,34 +145,21 @@ is equivalent to:
 
 ---
 
-## Bracket content call
+## Direct content call
 
-A character alias or speaker preset may be called directly with a dialogue
-content block.
+A character alias or configured dialogue value may be called directly with a
+dialogue content block.
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 ```
 
-For a character alias, this is sugar for:
-
-```arcw
-alice.say()[
-    おはよう。[p]
-]
-```
-
-Options still use the parenthesized speaker-preset call or the canonical
-`.say(...)` call.
+Options remain on the same direct call:
 
 ```arcw
 alice(look=smile, voice=auto)[
-    おはよう。[p]
-]
-
-alice.say(look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -194,11 +179,11 @@ This form is especially convenient for tool-generated dialogue because the conte
 
 ---
 
-## Speaker presets and curried line options
+## Configured dialogue values and curried line options
 
 A character alias is callable. Calling a character with line options does not
-display text immediately; it returns a **speaker preset** that carries default
-line options.
+display text immediately; it returns a configured `CharacterDialogue` value
+that carries default line options.
 
 ```arcw
 let alice2 = alice(look=smile, voice=auto, view=@view.SideDialogue)
@@ -221,7 +206,8 @@ alice2(id=@say.opening.side_001)[
 ]
 ```
 
-Presets can be refined by calling them again. Later options override earlier options.
+Configured dialogue values can be refined by calling them again. Later options
+override earlier options.
 
 ```arcw
 let alice_side = alice(view=@view.SideDialogue, voice=auto)
@@ -230,7 +216,8 @@ let alice_worried = alice_side(look=worried)
 alice_worried: ……本当に、大丈夫？[p]
 ```
 
-The colon form on a speaker preset lowers through the preset call surface:
+The colon form on a configured dialogue value lowers through the same direct
+content-call surface:
 
 ```text
 alice2: text
@@ -247,26 +234,23 @@ underlying character.
 The effective option order is:
 
 ```text
-inline rich-text span
+content application
   -> per-line options
-  -> speaker preset options
-  -> character dialogue_style
+  -> configured dialogue options
+   -> selected character presentation defaults
   -> authored dialogue View style
   -> selected profile dialogue Style
   -> engine defaults
 ```
 
-Types:
+The configured value has one typed callable shape:
 
 ```arcw
-pub type Speaker = Ref<Character> | SpeakerPreset
-
-pub fn Character.call(self, options: SayOptions) -> SpeakerPreset
-pub fn SpeakerPreset.call(self, options: SayOptions) -> SpeakerPreset
-pub fn SpeakerPreset.say(self, options: SayOptions = {}) -> DialogueContentCall
+CharacterDialogue(CharacterDialoguePatch) -> CharacterDialogue
+CharacterDialogue[DialogueContent] -> DialogueLine
 ```
 
-The `:` sugar accepts both `Ref<Character>` and `SpeakerPreset`.
+The `:` sugar applies content to a character alias or configured dialogue value.
 
 ```arcw
 let phone_alice = alice(view=@view.PhoneMessage, voice=auto)
@@ -279,7 +263,9 @@ The preset is lexical. It can be local to a block, flow, or helper function. It 
 
 ## Object-like stage handles
 
-Characters expose object-like stage APIs. The speaker alias remains a pure reference, while `stage` methods create handles for currently displayed presentation objects.
+Characters expose object-like stage APIs. The character value remains a pure
+reference, while `stage` methods create handles for currently displayed
+presentation objects.
 
 ```arcw
 let actor = alice.stage.acquire(scope=line)
@@ -315,7 +301,7 @@ by the accepted launch or project profile, then the standard library's minimal
 dialogue View resource.
 
 ```arcw
-alice.say()[おはよう。[p]]
+alice()[おはよう。[p]]
 ```
 
 resolves to the reserved `std.view.dialogue` resource when no accepted profile
@@ -360,13 +346,12 @@ pub view PhoneMessage(dialogue: DialogueView) {
 `DialogueView` is a standard-prelude nominal record and is visible to the type
 checker and LSP. The View body chooses the exact `Text` or `RichText` consumer;
 its style participates in the same effective RichText cascade as the selected
-profile dialogue Style, character `dialogue_style`, speaker presets, line
-options, and inline spans.
+ profile dialogue Style, configured dialogue values, line options, and inline spans.
 
 Use it from dialogue:
 
 ```arcw
-alice.say(view=@view.PhoneMessage, voice=auto)[
+alice(view=@view.PhoneMessage, voice=auto)[
     スマホに通知が届いた。[p]
 ]
 ```
@@ -380,26 +365,18 @@ and actionable wait state.
 
 ## Character text style and color
 
-Characters can define default dialogue style, nameplate style, and voice/text policies.
+Character declarations own identity and display only. Default dialogue style,
+nameplate style, and voice/text policies belong to the selected presentation
+Style/profile authority.
 
 ```arcw
 pub character alice {
     display = "Alice"
-    display_name ja-JP = "アリス"
-    display_name en-US = "Alice"
+}
 
-    dialogue_style {
-        text_color = rgb("#f7d7ff")
-        name_color = rgb("#e070ff")
-        unread_text_color = rgb("#ffffff")
-        read_text_color = rgb("#c8c8d0")
-        view = @view.MainDialogue
-    }
-
-    voice {
-        default_locale = ja-JP
-        speaker = @speaker.alice
-        tts_profile = @tts.alice
+pub style alice_dialogue {
+    .dialogue_content {
+        color = rgba(247, 215, 255, 255)
     }
 }
 ```
@@ -407,10 +384,10 @@ pub character alice {
 When a line is displayed, the effective style is resolved in this order:
 
 ```text
-inline rich-text span
+content application
   -> line options
-  -> speaker preset options
-  -> character dialogue_style
+  -> configured dialogue options
+   -> selected character presentation defaults
   -> authored dialogue View style
   -> selected profile dialogue Style
   -> engine defaults
@@ -419,7 +396,7 @@ inline rich-text span
 Example:
 
 ```arcw
-alice.say(color=rgb("#ff8080"))[
+alice(color=rgb("#ff8080"))[
     この行だけ赤い。[p]
 ]
 ```
@@ -457,10 +434,10 @@ stream-producing callables for a default.
 The selected profile Style is the base of the dialogue cascade:
 
 ```text
-inline rich-text span
+content application
   -> line options
-  -> speaker preset options
-  -> character dialogue_style
+  -> configured dialogue options
+   -> selected character presentation defaults
   -> authored dialogue View style
   -> selected profile dialogue Style
   -> engine defaults
@@ -469,7 +446,7 @@ inline rich-text span
 Scalar fields use nearest-wins semantics. Structured style records deep-merge by
 field, so a character can override only ruby size while inheriting the selected
 profile Style's ruby gap. Per-scene state, temporary line-plan variables, and
-stage handles belong in flows, speaker presets, or line plans.
+stage handles belong in flows, configured dialogue values, or line plans.
 
 ---
 
@@ -496,29 +473,10 @@ pub style dialogue_typography {
 style = "style.dialogue_typography"
 ```
 
-Character defaults use the same structure and override only the fields they
-mention:
+Character declarations do not carry a dialogue-style block. Character-specific
+typography is represented by a named Style selected by the profile or View.
 
-```arcw
-pub character alice {
-    display = "Alice"
-
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#f7d7ff")
-            }
-
-            ruby {
-                size = 13px
-                gap = 1px
-            }
-        }
-    }
-}
-```
-
-Line and speaker preset options may pass the same data as a typed value:
+Line and configured dialogue options may pass the same data as a typed value:
 
 ```arcw
 let phone_alice = alice(
@@ -530,15 +488,14 @@ let phone_alice = alice(
 )
 ```
 
-Inline rich-text selectors remain the most local override:
+Inline typed rich-text calls remain the most local override:
 
 ```arcw
-alice: [.ruby_over ruby_size=11px ruby_gap=1px]|[夢](ゆめ)[/][p]
+alice: #layout(.ruby_over, ruby_size=11px, ruby_gap=1px)[|[夢](ゆめ)][p]
 ```
 
-The inline spelling uses `ruby_size` and `ruby_gap` because tag attributes share
-one flat namespace. Defaults use `rich_text { ruby { size = ... } }` because the
-record path already disambiguates the field.
+The typed call uses named `ruby_size` and `ruby_gap` options. Defaults are
+resolved from the selected Style/profile authority.
 
 ---
 
@@ -548,13 +505,11 @@ Common visual-novel read-state patterns are owned by the selected dialogue View
 and its Style, with local character policy available when a speaker needs a
 different treatment.
 
-Character-level override:
+Style-level override:
 
 ```arcw
-pub character alice {
-    display = "Alice"
-
-    dialogue_style {
+pub style alice_read_state {
+    .dialogue_content {
         read_state_style = builtin.read_state_color(
             unread = rgb("#ffeaff"),
             read = rgb("#d0b8d8"),
@@ -583,7 +538,7 @@ Built-in style policies:
 Dialogue text may insert values. Insertion is only allowed for values that implement `DisplayText`, or values explicitly wrapped by `fmt(...)`.
 
 ```arcw
-narrator.say()[
+narrator()[
     #[player_name]は鍵を手に入れた。[p]
 ]
 ```
@@ -597,7 +552,7 @@ player_name: DisplayText
 Explicit formatting:
 
 ```arcw
-narrator.say()[
+narrator()[
     スコアは#[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点です。[p]
 ]
 ```
@@ -605,7 +560,7 @@ narrator.say()[
 Formatting with locale:
 
 ```arcw
-narrator.say()[
+narrator()[
     所持金: #[fmt(money, currency="JPY", locale=state.locale, on_error=InlineFailure.fallback("--"))][p]
 ]
 ```
@@ -628,23 +583,24 @@ String, LocalizedText, i32, u32, f32, bool, Duration, DateTime, Ref<T>, Option<T
 
 ```arcw
 match state.player_nickname {
-    Some(nick) => alice.say()[#[nick]、おはよう。[p]]
-    None => alice.say()[おはよう。[p]]
+    Some(nick) => alice()[#[nick]、おはよう。[p]]
+    None => alice()[おはよう。[p]]
 }
 ```
 
-`fmt(...)` can also wrap values into `Content` for hooks and custom tags:
+`fmt(...)` can also wrap values into `Content` for hooks and registered
+content callables:
 
 ```arcw
-#[fmt(route_title(state.route, on_error=InlineFailure.fallback("")), color=@color.accent, on_error=InlineFailure.fallback(""))]
+#[fmt(route_title(state.route, on_error=InlineFailure.fallback("")), color=rgb("#a8b5ff"), on_error=InlineFailure.fallback(""))]
 ```
 
 Inline function calls in `#[...]` must declare failure handling for that call, or
- the surrounding line, speaker preset, character state, or selected profile must
+ the surrounding line, configured dialogue value, character state, or selected profile must
 provide an inline failure policy. Canonical values use the `InlineFailure` enum
 namespace; contextual `.fail` and `.discard` shorthands are accepted where
 `InlineFailure` is expected. For ordinary display text, prefer a default
-fallback on the preset or character instead of repeating `on_error` on every
+fallback on the configured dialogue value or character instead of repeating `on_error` on every
 `fmt(...)` call:
 
 ```arcw
@@ -664,7 +620,7 @@ Use `on_error=InlineFailure.discard`, `on_error=.discard`, or
 `#[expr]` is runtime interpolation. `{name}` inside rich text is a localization placeholder.
 
 ```arcw
-narrator.say()[
+narrator()[
     {player_name}は鍵を手に入れた。[p]
 ]
 ```
@@ -672,7 +628,7 @@ narrator.say()[
 The above is extracted as a localizable string with placeholder `player_name`. At runtime the placeholder must be supplied by the line options or surrounding context:
 
 ```arcw
-narrator.say(args={ player_name = state.player_name })[
+narrator(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
 ```
@@ -701,19 +657,19 @@ Inside dialogue-text mode, the following characters can be escaped:
 Raw span:
 
 ```arcw
-alice.say()[
-    [raw]ここでは[p]も#[expr]も解釈されない。[/raw]
+alice()[
+    #raw()[ここでは[p]も#[expr]も解釈されない。]
 ]
 ```
 
 Raw block:
 
 ```arcw
-alice.say()[
-    [raw]
+alice()[
+    #raw()[
     ここでは複数行にわたりタグを解釈しない。
     [p] も文字として表示する。
-    [/raw]
+    ]
 ]
 ```
 
@@ -724,31 +680,24 @@ alice.say()[
 `#[...]` is for safe expression/content insertion. Side-effecting local line behavior uses `[mark @.name]` with `with: on mark(@.name):` or a dialogue-safe `[call ...]`.
 
 ```arcw
-alice.say()[
-    まぶしい……[call flash(color=#ffffff, time=90ms)][p]
+alice()[
+    まぶしい……[call flash(color=rgb("#ffffff"), time=90ms)][p]
 ]
 ```
 
-The mark handler may call an ordinary function:
-
-```arcw
-pub fn mark_keyword(
-    word: String,
-    color: Color = rgb("#ffcc00"),
-) -> Result<DialogueCue, TagError>
-{
-    Ok(DialogueCue.StyleRange { word, color })
-}
-```
+The mark handler may delegate to a registered ordinary typed callable. Such a
+callable is part of the normal content/action registry; it is not a custom
+dialogue-language declaration. Its arguments and result are checked by that
+registry.
 
 Use:
 
 ```arcw
-alice.say()[
+alice()[
     変な夢[mark @.keyword][p]
 with:
     on mark(@.keyword):
-        mark_keyword(word="夢", color=@color.dream)
+        mark_keyword(word="夢", color=rgb("#ffcc00"))
 ]
 ```
 
@@ -760,10 +709,10 @@ event/command boundary.
 
 ## Scoped line blocks
 
-`Character.say(...)[...]`, `with { ... }`, `with:`, and `at(...) { ... }` create lexical scopes. `with:` normalizes to `with { ... }`.
+`character(args)[...]`, `with { ... }`, `with:`, and `at(...) { ... }` create lexical scopes. `with:` normalizes to `with { ... }`.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
 
     今日は少しだけ、変な夢を見たんだ。[p]
 
@@ -841,18 +790,6 @@ Characters own preload and memoization policies for sprites, expressions, mouth 
 ```arcw
 pub character alice {
     display = "Alice"
-
-    preload_policy {
-        sprites = on_flow_anticipate
-        expressions = [normal, smile, worried]
-        voices = locale_current
-        lipsync = metadata_only
-    }
-
-    memo_policy {
-        compose_sprite key=(pose, expression, mouth, scale_bucket, locale) cache=session
-        text_style key=(read_state, locale, theme) cache=flow
-    }
 }
 ```
 
@@ -883,11 +820,11 @@ anticipate @flow.alice_intro {
 ## Design decisions
 
 ```text
-1. `Character.say(...)[...]` is canonical for character-alias dialogue.
-2. `speaker:` is only sugar for applying dialogue content to a speaker value. For `Ref<Character>` this is `speaker.say()[...]`; for `SpeakerPreset` this is `speaker()[...]`.
+1. `character(args)[...]` is canonical for character-alias dialogue.
+2. `speaker:` is only sugar for applying dialogue content to a configured character dialogue value.
 3. There is no `script` item and no script-lowering phase.
 4. A missing dialogue View target resolves to the standard authored View resource through normal linking.
-5. `alice(options)` creates a lexical speaker preset; it does not display text until `:`, `[...]`, or `.say()[...]` is used.
+5. `alice(options)` creates a lexical configured dialogue value; it does not display text until a direct content call or `:` sugar is used.
 6. Text interpolation uses `DisplayText` or explicit `fmt(...)`.
 7. Runtime interpolation `#[expr]` is separate from localization placeholders `{name}`.
 8. Dialogue text uses `[mark @.name]` with line-plan `on mark(@.name):` handlers or `[call ...]`; pure content insertion uses `#[...]`.

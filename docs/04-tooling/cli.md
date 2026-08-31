@@ -614,7 +614,7 @@ available for debugging. Proxy layer metadata is reported as
 `rich_text_ref.object_layer` on the object and `region.proxy_layer` on the hit
 region. The hit's top-level `layer` resolves through `region.proxy_layer`,
 `rich_text_ref.object_layer`, then the render layer, so input debuggers can treat
-text proxies and ordinary rich-text spans as image/model-like semantic layer
+text proxies and ordinary content applications as image/model-like semantic layer
 targets. Semantic object layers do not rewrite the parent framebuffer layer
 capture. Each hit also carries the observed object's `capture_refs`, including
 object-id color and color/object-id/mask resource URIs, so a debugger can crop
@@ -1361,24 +1361,22 @@ Line-plan items that are parsed but not yet represented in the Phase 2.0 runtime
 model fail `arcw check` with a `LinePlanLowerError` until their lowering is
 implemented.
 
-## Formatting and RichText canonicalization
+## Formatting
 
 `arcw fmt` is syntax-only and preserves authoring sugar such as `with:`. Its
-optional rich-text rewrite is likewise syntax-owned:
+rich-text output uses the current typed content-call surface:
 
 ```bash
 arcw fmt game/routes/opening.arcw
-arcw fmt --canonical-rich-text game/routes/opening.arcw
 ```
 
-`fmt --canonical-rich-text` rewrites only recognized dot rich-text selectors such
-as `[.shake]...[/]` to explicit family tags such as
-`[effect .shake]...[/effect]`. Unknown dot selectors are preserved as authored
-or reported as unresolved; they do not become marker, object, or custom-effect
-tags by inference. Markers must use `[mark @.name]`, and typed text objects must
-use the explicit `[object .id type=Type ...]...[/object]` form. It does not
-expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand, `[page]`,
-colon content application, or parenthesized `CharacterDialogue` construction.
+Typed content calls include `#strong()[...]`, `#layout(.vertical_rl)[...]`,
+`#fx(shake(...))[...]`, and
+`#object(id = @.id, type = Type, ...)[...]`. Unknown selectors and malformed
+input use ordinary current grammar and semantic diagnostics; the formatter has
+no removed-spelling reader or rewrite. Markers and host/timeline point actions
+remain bracket actions, while `#[expr]` and the retained natural/ASCII ruby
+forms are preserved.
 The runtime/debug form keeps the originating proxy declaration as typed
 metadata. Agent observe and hit-test report both the resolved proxy `type_name`
 and the declaration provenance (`struct_name` plus `text_proxy` /
@@ -1415,12 +1413,10 @@ accepted as an explicit identity form, while `proof opening(...)` is the
 canonical hand-written spelling. A redundant explicit identity produces the
 same warning; it is not rejected by parsing.
 
-The former sema-backed `arcw canonicalize` command was deleted. It deepened the
-provisional `SpeakerLine` / `SpeakerPreset` / `.say` model that is superseded by
-typed `CharacterDialogue` construction and content application. The CLI does
-not retain an alias, dual reader, or replacement string-based canonicalizer.
-`fmt --canonical-rich-text` changes only the recognized rich-text tag family
-described above.
+The former sema-backed `arcw canonicalize` command was deleted. It deepened a
+provisional speaker-line model that is superseded by typed `CharacterDialogue`
+construction and content application. The CLI does not retain an alias, dual
+reader, or replacement string-based canonicalizer.
 
 The formatting command must preserve IDs, source anchors where possible, comments,
 and stable child entity slots. They must never renumber dialogue or choice IDs

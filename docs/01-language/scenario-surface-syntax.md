@@ -1,25 +1,25 @@
 # Flow-Integrated Scenario Syntax / Dialogue Sugar
 
-> **Surface update:** Dialogue now targets the direct
+> **Canonical surface:** Dialogue uses the direct
 > [CharacterDialogue authoring](character-dialogue.md) model. Canonical output
 > uses `character(options)[content]`, and colon sugar lowers directly to that
-> content application. It never expands to `.say(...)`.
+> content application without a removed method suffix.
 
 Arcweft does not define a separate `script` item. Ordinary visual-novel writing is part of the `flow` grammar itself.
 
 A `flow` body may mix:
 
 - ordinary effectful function calls such as `bg(...)` and `show(...)`;
-- compact dialogue statements such as `alice:`, choices, and dialogue tags;
-- canonical character method calls such as `alice.say()[ ... ]` and `alice.move(...)`;
+  - compact dialogue statements such as `alice:`, choices, and content actions;
+  - canonical character content calls such as `alice()[ ... ]` and stage calls such as `alice.move(...)`;
 - typed Arcweft statements such as `let`, `match`, `await ... with`, `Result`, contracts, and function calls.
 
 The concise dialogue surface is parsed as normal `FlowItem` syntax. There is no `script` language and no script-lowering phase.
 
 Related:
 
-- [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
-- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Character Configuration, Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Localization for Dialogue](localization-dialogue.md)
@@ -41,12 +41,12 @@ There is one `flow` entry-point model.
 
 ---
 
-## Canonical dialogue call form
+## Canonical dialogue content call
 
-The canonical dialogue form is a character method call with a content block:
+The canonical dialogue form is a direct character call with a content block:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 ```
@@ -54,7 +54,7 @@ alice.say()[
 With common options:
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.greeting,
     voice = auto,
     look = .smile,
@@ -64,14 +64,15 @@ alice.say(
 ]
 ```
 
-`alice` is a character alias in scope. If a character is referenced directly by entity ID, use a delimited reference or parentheses before method access:
+`alice` is a character alias in scope. If a character is referenced directly by
+entity ID, use a delimited reference or parentheses before applying options:
 
 ```arcw
-@<character.alice>.say(voice=auto)[
+@<character.alice>(voice=auto)[
     おはよう。[p]
 ]
 
-(@character.alice).say(voice=auto)[
+(@character.alice)(voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -89,12 +90,12 @@ alice: おはよう。[p]
 is sugar for:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 ```
 
-Options are written in parentheses and are the same as `say()` options:
+Options are written in parentheses as ordinary character-call options:
 
 ```arcw
 alice(id=@say.opening.greeting, look=.smile, voice=auto):
@@ -104,7 +105,7 @@ alice(id=@say.opening.greeting, look=.smile, voice=auto):
 is sugar for:
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.greeting,
     look = .smile,
     voice = auto,
@@ -133,7 +134,7 @@ alice(id=@.comment)
   -> @voice.ja-JP.alice.opening.rain.comment
 ```
 
-The long method form is preferred when the line has a custom dialogue View,
+The long direct-call form is preferred when the line has a custom dialogue View,
 timed cues, cancellation, local variables, or custom hooks.
 
 ---
@@ -374,18 +375,19 @@ choice @.first -> @choice.opening.dream.first
 
 ## Dialogue call sugar
 
-The canonical detailed dialogue shape is an explicit character call. Arcweft also accepts bracket shorthand when the callee is a speaker, character reference, or speaker preset:
+The canonical detailed dialogue shape is an explicit character content call:
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 ```
 
-This is sugar for `alice.say()[...]`. A line plan can be attached with canonical `with { ... }` or indentation sugar `with:`.
+The call accepts a content body directly. A line plan can be attached with
+canonical `with { ... }` or indentation sugar `with:`.
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -403,25 +405,25 @@ with:
         alice.stage.look(smile)
 ```
 
-Here `alice:` lowers to the same dialogue call as `alice.say()[...]`, and `with:` lowers to `with { ... }`.
+Here `alice:` lowers to the same dialogue call as `alice()[...]`, and `with:` lowers to `with { ... }`.
 
-Colon lowering keeps speaker presets callable:
+Colon lowering keeps configured dialogue values callable:
 
 ```text
 alice: text
-  -> alice.say()[text]
+  -> alice()[text]
 
 alice(voice=auto): text
-  -> alice.say(voice=auto)[text]
+  -> alice(voice=auto)[text]
 
 alice2(voice=auto): text
   -> alice2(voice=auto)[text]
 ```
 
-Use the canonical method form when the line exports handles or values:
+Use the canonical direct-call form when the line exports handles or values:
 
 ```arcw
-let (actor, voice) = alice.say(voice=auto)[
+let (actor, voice) = alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -461,7 +463,7 @@ ordinary `flow` declarations.
 
 ---
 
-## Speaker line forms
+## Character line forms
 
 ```arcw
 alice: おはよう。
@@ -489,7 +491,7 @@ Meaning:
 The implicit target is the standard authored dialogue View unless the character,
 line, or project defaults override it.
 
-Speaker presets are allowed in the same position:
+Configured dialogue values are allowed in the same position:
 
 ```arcw
 let alice2 = alice(look=.smile, voice=auto, view=@view.SideDialogue)
@@ -500,13 +502,14 @@ alice2(id=@say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
-Here `alice2` is a lexical speaker preset. It is not a new character and it does not mutate `@character.alice`.
+Here `alice2` is a lexical configured dialogue value. It is not a new character
+and it does not mutate `@character.alice`.
 
 ---
 
 ## Dialogue-text mode
 
-Bracket control tags are special only in dialogue text mode.
+Point actions and typed content calls are special only in dialogue text mode.
 
 Dialogue text mode begins only in these places:
 
@@ -521,7 +524,7 @@ alice:
 narrator:
     narration text here
 
-alice.say()[
+alice()[
     dialogue text here
 ]
 ```
@@ -532,14 +535,16 @@ Inside dialogue text mode, Arcweft recognizes:
 [p]      page wait
 [l]      line wait
 [r]      hard line break
-[ruby]   ruby annotation
+#ruby("reading")[base]   typed ruby content call
 #[...]   embedded Arcweft expression/content, requiring DisplayText or fmt(...)
 [call]   dialogue-safe function call
 [mark @.name]
          line-local marker consumed by `with: on mark(@.name):`
 ```
 
-Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It remains normal Arcweft syntax such as indexing, lists, attributes, or parser-specific syntax.
+Outside dialogue text mode, `[...]` is not treated as a dialogue action or
+content call. It remains normal Arcweft syntax such as indexing, lists,
+attributes, or parser-specific syntax.
 
 ---
 
@@ -549,12 +554,7 @@ Arcweft prelude defines a built-in narrator-like character:
 
 ```arcw
 pub character narrator {
-    role = narration
-    nameplate = hidden
-    localizable_name = false
-    dialogue_style {
-        view = @view.NarrationDialogue
-    }
+    display = "Narrator"
 }
 ```
 
@@ -661,10 +661,10 @@ for simultaneous values.
 
 ---
 
-## Complex line with method form
+## Complex direct-call line
 
 ```arcw
-alice.say(id=@say.opening.dream_hint, voice=auto, look=.smile)[
+alice(id=@say.opening.dream_hint, voice=auto, look=.smile)[
     今日は少しだけ、#[fmt("変な夢", color=rgb("#a8b5ff"), on_error=InlineFailure.fallback("変な夢"))]を見たんだ。[p]
 ]
 with {

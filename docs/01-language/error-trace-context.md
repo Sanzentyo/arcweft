@@ -207,7 +207,7 @@ await boundary
 owner-local handler dispatch
 dialogue line start
 activity call
-custom tag call
+registered content/action call
 ```
 
 Authors should not need to add line/file data manually. Context helpers are for human-readable explanation, not source tracking.

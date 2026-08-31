@@ -157,7 +157,8 @@ flow @.opening {
 flow @flow:.next {
 }
 
-character @.alice Alice as alice {
+pub character alice {
+    display = "Alice"
 }
 
 alice(id=@.greeting):
@@ -171,13 +172,13 @@ choice @choice:.first {
 }
 ```
 
-宣言そのものが family を決める場合、`@.suffix` はその宣言 family に
+宣言そのものが family を決める場合、生成・identity 診断用の `@.suffix` はその宣言 family に
 正規化される。`flow @.opening` と `flow @flow:.opening` は
 `flow.opening` を宣言し、`character @.alice` と
 `character @character:.alice` は `character.alice` を宣言する。空の
 `@.` / `@family:.` marker も宣言位置では使える。その場合は後続の宣言名を
 suffix として使い、`flow @. opening { ... }`、`flow @flow:. opening { ... }`、
-`character @. alice Alice { ... }` はそれぞれ `flow.opening` /
+`character @. alice { ... }` はそれぞれ `flow.opening` /
 `flow.opening` / `character.alice` を宣言する。ID を書かずに
 `flow opening { ... }` と書いた場合も同じ暗黙 ID `flow.opening` を持つ。
 

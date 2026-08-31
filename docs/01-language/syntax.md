@@ -217,7 +217,7 @@ own their event ordering, keys, lifetimes, and invalidation. See
 
 ## Flow-integrated scenario syntax
 
-For ordinary visual novel writing, Arcweft provides compact line-oriented syntax directly inside `flow`. It is documented in [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md). Dialogue tags and ruby are documented in [Dialogue Control Tags, Ruby, and Inline Hooks](dialogue-control-tags-and-ruby.md).
+For ordinary visual novel writing, Arcweft provides compact line-oriented syntax directly inside `flow`. It is documented in [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md). Dialogue content actions and ruby are documented in [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md).
 
 ```arcw
 pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {

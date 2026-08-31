@@ -1,18 +1,26 @@
-# Dialogue Control Tags, Ruby, Interpolation, and Line Marks
+# Dialogue Content Actions, Ruby, Interpolation, and Line Marks
 
 > **Converged surface authority:**
 > [Converged Language, Content, and Presentation Surface](converged-language-surface.md)
-> replaces this chapter's legacy paired tags, `$(...)`, `[! ...]`, unknown-dot
-> inference, old Ruby spellings, and blanket-pure interpolation rules. This
-> chapter remains detailed inventory until those examples are migrated; it
-> does not authorize a conflicting parser or runtime success path.
+> defines the canonical typed content calls in this chapter. The success surface
+> uses explicit `#name(args)[content]` calls; bracket syntax is reserved for
+> point controls, marks, and host actions.
 
-Arcweft supports KAG-like bracket tags inside dialogue text, but the feature is deliberately scoped. `[...]` tags are special only in dialogue text mode: speaker lines, narrator lines, indented dialogue bodies, and `Character.say(...)[ ... ]` content blocks.
+Arcweft dialogue content has one typed body-bearing surface. `#name(args)[content]`
+calls own rich-text bodies, while `[...]` is reserved for point controls, marks,
+and host actions. These forms are recognized only in dialogue text mode: speaker
+lines, narrator lines, indented dialogue bodies, and direct character calls.
+
+The former paired or inline bracket bodies, bracket/compact Ruby alternatives,
+bracket raw blocks, and dollar-parenthesis interpolation are not language
+surfaces. There is no spelling-specific tombstone diagnostic, compatibility
+reader, formatter rewrite, or source action for them; ordinary current grammar
+and recovery apply.
 
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
+- [Dialogue Character Configuration, Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Localization for Dialogue](localization-dialogue.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
@@ -34,63 +42,62 @@ alice:
 
 地の文: 扉の向こうから、雨の音がした。[p]
 
-alice.say(voice=auto)[
+alice(voice=auto)[
     今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 ```
 
-Only in those text regions, and in typed `fn(args)[content]` content blocks whose declared content type is dialogue/rich text, are `[...]`, `[/...]`, and `#[...]` interpreted as dialogue markup. In normal typed code, brackets keep their normal meaning.
+Only in those text regions, and in typed `fn(args)[content]` content blocks whose
+declared content type is dialogue/rich text, are point controls, host actions,
+typed `#name(args)[content]` calls, and `#[...]` interpreted as dialogue markup.
+In normal typed code, brackets keep their normal meaning.
 
 Historical flat-fence imports treat a physical text line beginning with `===`
 as a fence. In stable source, use canonical dialogue calls such as
-`alice.say()[...]`; tooling migrations escape literal text that begins with
+`alice()[...]`; tooling migrations escape literal text that begins with
 three equals signs as `\===`.
 
 ---
 
-## Tag families
+## Content calls and point actions
 
-Arcweft has four tag-like forms in dialogue text:
+Arcweft has several authored forms in dialogue text:
 
 | Form | Purpose |
 |---|---|
-| `[p]`, `[l]`, `[r]` | short built-in control tags |
-| `[ruby rt="..."]...[/ruby]`, `[rb rt=...]...[/rb]` | enclosing rich-text/control tags |
-| `#[expr]`, `#[fmt(...)]`, `$(expr)` | pure content interpolation |
-| `[call ...]`, `[! ...]` | dialogue-safe function dispatch |
+| `[p]`, `[l]`, `[r]` | short built-in control actions |
+| `[voice ...]`, `[face ...]`, `[pose ...]`, `[show ...]`, `[hide ...]`, `[move ...]`, `[scale ...]`, `[rotate ...]`, `[anim ...]`, `[shake ...]`, `[signal ...]` | typed host actions |
 | `[mark @.name]` | explicit zero-width line-local marker for `with` handlers and waits |
-| `[fx name(arg=value)]...[/fx]` | a typed reusable presentation-Fx span |
+| `#[expr]`, `#[fmt(...)]` | pure content interpolation |
+| `#strong()[...]`, `#em()[...]`, `#color(rgb("..."))[...]`, `#font("...")[...]`, `#size(36pt)[...]` | direct typed style calls |
+| `#style(.selector, named=...)[...]`, `#layout(.selector, named=...)[...]`, `#transform(.selector, named=...)[...]` | typed selector calls |
+| `#ruby("reading")[base]`, `#raw()[literal]`, `#object(id=@.id, type=Type)[body]`, `#fx(wave(...))[...]` | typed content and presentation calls |
+| `[call ...]`, `[at ...]` | dialogue-safe dispatch and timed cue actions |
 
-Double brackets are not dialogue tags:
+Double brackets are not dialogue content actions:
 
 ```arcw
-/// [[flow.alice_intro]] is a documentation/RAG link, not a dialogue tag.
+/// [[flow.alice_intro]] is a documentation/RAG link, not dialogue markup.
 ```
 
 ---
 
 ## Built-in reserved names
 
-These names are reserved in tag position and scenario-command position. They cannot be used as unqualified custom tag names, unqualified scenario command names, character aliases, or local variables in dialogue tag scope.
-
-A module may still define a qualified function such as `my_tags.p`, but it cannot be imported unqualified as `p`.
+These names are reserved in point-action or content-call position and scenario-command position. They cannot be used as unqualified custom action names, unqualified scenario command names, character aliases, or local variables in dialogue content scope.
 
 | Name | Meaning |
 |---|---|
 | `p` | user wait that closes the current logical page |
 | `l` | user wait that keeps the current logical page open |
 | `r` | hard line break |
-| `br` | hard line break tag |
 | `w` | automatic timed wait reached during reveal |
 | `clear` | immediately reset displayed text when reached |
-| `er` | alias of `clear` |
-| `cm` | alias of `clear` |
-| `ruby` | ruby annotation |
-| `rt` | ruby text shorthand inside ruby-related tags |
-| `em`, `strong` | emphasis spans |
-| `color`, `font`, `size` | rich text styling spans |
+| `#ruby` | typed ruby content call |
+| `#em`, `#strong` | typed emphasis content calls |
+| `#color`, `#font`, `#size` | typed rich-text content calls |
 | `speed` | reveal rate for subsequent text |
-| `object` | typed text presentation object/proxy span |
+| `#object` | typed text presentation object/proxy content call |
 | `reset` | reset text style/reveal modifiers |
 | `voice` | voice cue inside a line |
 | `face`, `pose` | expression/pose change |
@@ -99,96 +106,70 @@ A module may still define a qualified function such as `my_tags.p`, but it canno
 | `anim`, `shake` | animation cue |
 | `mark` | zero-width line-local marker |
 | `at` | timed cue shorthand inside dialogue text |
-| `call` | call an allowed dialogue function/tag |
+| `call` | call an allowed dialogue function |
 | `signal` | emit/set a public signal if capability allows it |
-| `if`, `else`, `endif` | local text conditional |
-| `raw` | literal no-parse span |
+| `#raw` | literal no-parse content call |
 | `fmt` | explicit DisplayText/content formatting function |
-| `fx` | apply a declared reusable presentation Fx function |
-
-Project-specific aliases may map to these names, but canonical names remain reserved:
-
-```toml
-[dialogue.tags.aliases]
-"改ページ" = "p"
-"待機" = "l"
-"改行" = "r"
-```
+| `#fx` | apply a typed Fx value produced by a standard or declared `#[fx]` callable |
 
 ---
 
-## Inferred rich-text selectors
+## Typed rich-text calls
 
-Inline rich-text presentation selectors may be written with dot shorthand when
-the selector is unambiguous:
-
-```arcw
-alice: [.shake amp=2px dir=0,1]揺れる文字[/][p]
-alice: [.vertical_rl jlreq=strict]縦書き[/][p]
-alice: [.offset x=4px y=-2px]少しずらす[/][p]
-```
-
-The canonical forms keep the family explicit:
+Body-bearing presentation is always a typed content call. Selectors and enum
+values are dot-prefixed, vectors use `vec2(...)`, public IDs use `@`-form, and
+every zero-argument call keeps its `()`:
 
 ```arcw
-alice: [effect .shake amp=2px dir=0,1]揺れる文字[/effect][p]
-alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
-alice: [transform .offset x=4px y=-2px]少しずらす[/transform][p]
-alice: [object .hotspot type=KeywordHit hit=true]当たり判定つき文字[/object][p]
+alice: #strong()[強調]、#em()[斜体]、#color(rgb("#a8b5ff"))[夜]。[p]
+alice: #font("Yu Gothic")[游ゴシック]、#size(36pt)[大きな語]。[p]
+alice: #style(.oblique, angle=12deg)[斜体角度][p]
+alice: #layout(.vertical_rl, jlreq=.strict)[縦書き][p]
+alice: #transform(.offset, x=4px, y=-2px)[少しずらす][p]
+alice: #fx(wave(direction=vec2(0.0, 1.0), phase=.glyph_transform))[揺れる文字][p]
+alice: #object(id=@.hotspot, type=KeywordHit, channel="choice")[当たり判定つき文字][p]
 ```
 
-`[/]` closes the most recent inferred rich-text span. Canonical tooling expands
-it to the explicit family end tag, such as `[/effect]`.
+The selector families are closed typed registries. Unknown dot selectors,
+inferred spans, and body-bearing bracket forms are rejected rather than
+reclassified as a different family.
 
-Known selector families are style (`.italic`, `.oblique`), layout
-(`.horizontal_tb`, `.vertical_rl`, `.vertical_lr`, `.dir`, ruby-position
-selectors), transform (`.offset`, `.pos`, `.rotate`, `.scale`, `.skew`), and
-effect (`.wave`, `.shake`, `.arc`, `.spin`, `.pulse`, `.motion`,
-`.typewriter`, `.jitter`, `.sparkle`, `.shader`, `.host`). These ordinary dot
-selectors remain valid only for their declared family. An unknown dot selector
-does not become a marker, object, or custom effect by inference: use the
-explicit `[mark @.name]` form for a marker and the explicit family tag for a
-registered effect.
-
-Text presentation object proxies are explicit object-family spans:
-`[object .name ...]...[/object]`. They preserve custom proxy metadata for
+Text presentation object proxies are explicit generic calls:
+`#object(id = @.name, type = Name, ...)[...]`. Both `id` and `type` are
+required. They preserve custom proxy metadata for
 hit-testing, depth ordering, object-id capture, and renderer/tooling registries
 without reinterpreting the span as a visual effect. The declaration-time proxy
 type may be marked with normal Arcweft attributes such as `#[text_proxy(...)]`;
-inline dialogue text refers to it with `type=Name` inside the explicit object
-family, so it does not conflict with `#[expr]` interpolation. The object family
-is not inferred from a dot selector. Author proxy spans with the explicit
-`[object .id type=Name ...]...[/object]` form. Runtime-plan lowering uses
-declaration attributes as proxy defaults: `kind` becomes the default role,
-`default_hit` becomes the default hit-test policy, `depth` / `z` / `z_index`
-becomes default local depth,
+inline dialogue text refers to it with `type = Name` inside the call, so it does
+not conflict with `#[expr]` interpolation. The object call is not inferred from
+a dot selector. Author proxy spans with the explicit
+`#object(id = @.id, type = Name, ...)[...]` form. Final semantic analysis uses
+declaration attributes as proxy defaults: `role` becomes the default role,
+`hit_test` becomes the default hit-test policy, and `depth` becomes default
+local pixel-milli depth and therefore requires an explicit `px` unit,
 and any remaining attribute arguments become default typed proxy params unless
 the inline object span overrides them.
 
-Effect and shader parameters preserve unknown values as raw authoring tokens.
-The parser does not infer comma-separated values or expression-like strings as
-structured values globally; renderer builtins interpret only the parameter names
-they own, such as `dir=0,1` for a wave direction.
-`.host` is the explicit host-dispatched effect selector. Its `id`, `effect`, or
-`name` parameter selects the renderer registry id, so `[.host id=sparkle]...[/]`
-canonicalizes as an effect span and lowers to the same registry effect id as
-`[effect .sparkle]...[/effect]` while keeping the authoring surface explicit.
+Fx and shader parameters are checked by the owning callable schema. Use
+`direction=vec2(0.0, 1.0)`, dot-prefixed phase/target enums, `@`-form shader resource IDs, and
+numeric `u32` seeds where the selected Fx callable schema accepts them. Host and
+timeline actions remain point actions in brackets; they are never converted to
+visual effect spans.
 
-Layout selectors accept `jlreq=loose|normal|strict` to choose the vertical
+Layout selectors accept `jlreq=.loose`, `jlreq=.normal`, or `jlreq=.strict` to choose the vertical
 Japanese punctuation-pair planning preset for that span. Omitting it keeps the
 host View/default layout preset.
 
-Ruby-position selectors also accept local typography overrides:
+Ruby typography belongs to the selected presentation style/default authority;
+it is not a body-bearing inferred selector. Use the typed ruby call for content:
 
 ```arcw
-alice: [.ruby_over ruby_size=11px ruby_gap=1px ruby_overhang=4px ruby_collision_gap=3px]|[夢](ゆめ)[/][p]
+alice: #layout(.ruby_over, ruby_size=11px, ruby_gap=1px, ruby_overhang=4px, ruby_collision_gap=3px)[|[夢](ゆめ)][p]
 ```
 
-These attributes override the effective `rich_text { ruby { ... } }` defaults
-only for the enclosed span. The inline names are prefixed with `ruby_` because
-dialogue tag attributes are flat. Defaults use the structured form
-`rich_text { ruby { size = ... } }`, normally written as a multiline block when
-more than one field is set.
+These named arguments override the effective style/default values only for the
+enclosed span. Defaults are authored in the selected dialogue View/style or
+profile rather than in a character declaration.
 
 ---
 
@@ -209,14 +190,17 @@ pub fn warning(
     ])
 }
 
-alice: [fx warning()]既定値の警告[/fx][p]
-alice: [fx warning(accent=rgb("#ffd060"), amplitude=4px)]強い警告[/fx][p]
+alice: #fx(warning())[既定値の警告][p]
+alice: #fx(warning(accent=rgb("#ffd060"), amplitude=4px))[強い警告][p]
 ```
 
 The invocation after `fx` is a normal path-resolved call to a `#[fx]`
 function, not a dot selector or a separately registered decoration id. The
 function's original package and qualified name define its `FxId`; ordinary
 `use` and `pub use` provide name resolution without manufacturing another id.
+Builtin producers such as `wave(...)` use that same call path. `#wave(...)`
+and `#effect(...)` are not alternate surfaces; `#fx(...)` is the sole
+body-bearing Content adapter.
 
 Fx parameters are typed and calls are named-only. A parameter without `=` is
 required; a parameter default is const-evaluable and cannot read another
@@ -234,9 +218,8 @@ RichText(message)
     .fx(warning(accent = state.warning_color))
 ```
 
-`[/fx]` closes exactly the corresponding Fx span. Nested Fx calls compose in
-authored order, and the compiler rejects crossing or unmatched closes,
-composition cycles, and expansion-budget overflow. An Fx function is implicitly
+Nested Fx calls compose in authored order, and the compiler rejects malformed
+content-call boundaries, composition cycles, and expansion-budget overflow. An Fx function is implicitly
 pure and deterministic: it cannot hide waits, pages, reveal-speed changes,
 marks, object proxies, host events, state mutation, actions, I/O, tasks, or
 View-child construction.
@@ -246,7 +229,7 @@ reusable presentation-effect grammar.
 
 ---
 
-## Wait and newline tags
+## Wait and newline actions
 
 ```arcw
 alice: おはよう。[l]今日はいい天気だね。[p]
@@ -278,14 +261,6 @@ Timed wait:
 alice: えっと……[w time=500ms]なんでもない。[p]
 ```
 
-Authoring shorthand:
-
-```arcw
-alice: えっと……[w 500ms]なんでもない。[page]
-```
-
-`[page]`, `[wait]`, and `[nl]` normalize to `[p]`, `[l]`, and `[r]`.
-
 `[w]` begins only after reveal reaches its marker. It pauses automatically for
 the authored duration and then resumes without user input. The duration must be
 positive and use `ms` or `s`, for example `250ms`, `1s`, or `0.5s`. Missing,
@@ -294,9 +269,9 @@ are compile-time errors.
 
 `[clear]` resets the currently displayed text immediately when reveal reaches
 the marker. It neither waits for input nor closes the logical page; use an
-adjacent `[l]` or `[p]` when a wait is also required. `[er]` and `[cm]`
-normalize to `[clear]`. When `[l]` follows, the next stage retains the
-post-clear display rather than reconstructing text removed before the marker.
+adjacent `[l]` or `[p]` when a wait is also required. When `[l]` follows, the
+next stage retains the post-clear display rather than reconstructing text
+removed before the marker.
 
 ```arcw
 alice: 前の表示。[clear]ここから表示を作り直す。[p]
@@ -320,9 +295,10 @@ releases the line.
 
 ## Ruby
 
-Arcweft supports these ruby forms. The recommended authoring form is
+Arcweft supports two retained ruby spellings. The recommended authoring form is
 `|[base](ruby)` because it is ASCII-friendly and works when the base contains
-spaces or punctuation.
+spaces or punctuation. The natural Japanese form is retained for Japanese
+source.
 
 ### ASCII explicit ruby
 
@@ -330,49 +306,29 @@ spaces or punctuation.
 alice: 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ```
 
-### ASCII compact ruby
-
-```arcw
-alice: 今日は少しだけ、|変な夢{へんなゆめ}を見たんだ。[p]
-```
-
-Compact ruby is accepted only when the base is non-empty and contains no
-whitespace or reserved markup characters: `[`, `]`, `{`, `}`, `#`, or `|`.
-Use `|[base](ruby)` for longer or ambiguous base text.
-
 ### Natural Japanese ruby
 
 ```arcw
 alice: 今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
 ```
 
-### Bracket tag ruby
-
-```arcw
-alice: 今日は少しだけ、[ruby rt="へんなゆめ"]変な夢[/ruby]を見たんだ。[p]
-```
-
-The shorter `[rb rt=へんなゆめ]変な夢[/rb]` spelling is accepted and normalizes
-to the same ruby fragment.
-
 ### Function/content form
 
 ```arcw
-alice.say()[
-    今日は少しだけ、#[ruby("変な夢", "へんなゆめ")]を見たんだ。[p]
+alice()[
+    今日は少しだけ、#ruby("へんなゆめ")[変な夢]を見たんだ。[p]
 ]
 ```
 
-All forms normalize into the same `Content.Ruby { base, ruby }` fragment.
+Both retained forms and the typed call normalize into the same
+`Content.Ruby { base, ruby }` fragment.
 
 Ruby typography is resolved from the active RichText cascade before layout:
 
 ```text
-inline [.ruby_over ruby_size=... ruby_gap=...]
-  -> line / speaker preset rich_text.ruby
-  -> character dialogue_style.rich_text.ruby
-  -> authored dialogue View style rich_text.ruby
-  -> selected profile dialogue Style rich_text.ruby
+inline typed ruby call
+  -> authored dialogue View style
+  -> selected profile dialogue Style/default
   -> engine defaults
 ```
 
@@ -385,7 +341,7 @@ Localization import validates ruby fragments:
 
 ```text
 - natural ruby delimiters are balanced;
-- bracket ruby has matching end tag;
+- typed ruby content has a non-empty base and reading;
 - base text is not empty;
 - ruby text is not empty;
 - locale-specific ruby may be removed, preserved, or replaced depending on locale policy.
@@ -404,12 +360,11 @@ zh-CN = "preserve_optional"
 
 ## Pure interpolation with `DisplayText`
 
-`#[expr]` inserts the formatted representation of `expr`. `$(expr)` is accepted
-as an authoring shorthand for the same pure interpolation. The expression must
-implement `DisplayText`.
+`#[expr]` inserts the formatted representation of `expr`. The expression must
+implement `DisplayText`; there is no alternate delimiter for this operation.
 
 ```arcw
-narrator.say()[
+narrator()[
     #[player_name]は鍵を手に入れた。[p]
 ]
 ```
@@ -417,7 +372,7 @@ narrator.say()[
 If formatting needs options, use `fmt(...)` explicitly:
 
 ```arcw
-narrator.say()[
+narrator()[
     スコアは#[fmt(score, style="number", on_error=InlineFailure.fallback("?"))]点です。[p]
 ]
 ```
@@ -437,7 +392,7 @@ Built-in implementations include common scalar types, `String`, `LocalizedText`,
 ```
 
 Inline function calls inside `#[...]` must declare how interpolation failures are
- handled, unless the line, speaker preset, character state, or selected profile
+ handled, unless the line, configured dialogue values, character state, or selected profile
 supplies an inline failure policy. Canonical values use the `InlineFailure` enum
 namespace. Contextual shorthand such as `.fail` and `.discard` is valid only
 where an `InlineFailure` value is expected. For ordinary display text, prefer a
@@ -473,7 +428,7 @@ Pure interpolation cannot emit commands, mutate state, play audio, or trigger st
 `#[expr]` is runtime expression interpolation. `{name}` is a localization placeholder.
 
 ```arcw
-narrator.say(args={ player_name = state.player_name })[
+narrator(args={ player_name = state.player_name })[
     {player_name}は鍵を手に入れた。[p]
 ]
 ```
@@ -495,11 +450,8 @@ Translation import checks that required placeholders are present and well-typed.
 Use `[call]` for a dialogue-safe function:
 
 ```arcw
-alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
+alice: まぶしい……[call flash(color=rgb("#ffffff"), time=90ms)][p]
 ```
-
-The short form `[! flash(color=#ffffff, time=90ms)]` is accepted for the same
-dialogue-safe call.
 
 Use `[mark @.name]` to place a zero-width local marker in the line. Handlers live in the line plan; this keeps text markup separate from effectful behavior.
 
@@ -510,37 +462,18 @@ with:
         mark_keyword(word="夢", color=@color.dream)
 ```
 
-Recognized dot-prefixed authoring selectors such as
-`[.vertical_rl]...[/]` and `[.shake amp=1px]...[/]` retain their declared
-`layout` / `effect` families. Unknown or attributed dot selectors do not infer
-markers, objects, or custom effects. Use `[mark @.keyword]` for a marker,
-`[object .id type=Type ...]...[/object]` for a typed object span, and an
-explicit registered `[effect .custom_glow ...]...[/effect]` for a custom effect.
+Body-bearing selectors and Fx do not use bracket actions. Use typed calls such as
+`#layout(.vertical_rl)[縦書き]`, `#fx(shake(amplitude=1px))[揺れる]`, and
+`#object(id=@.id, type=Type)[対象]`; unknown selectors and Fx callables are rejected. Host and
+timeline actions remain point actions in brackets.
 
-A dialogue-safe function must declare its effects:
+Zero-width dialogue operations are ordinary typed callables and are reached
+through `[call ...]` point actions. A registered body-bearing callable is
+reached through the same path-owned surface, `#path(args)[body]`; neither form
+needs a second dialogue-language declaration.
 
-```arcw
-pub fn flash(
-    color: Color = rgb("#ffffff"),
-    time: Duration = 120ms,
-) -> Result<DialogueCue, TagError>
-effects { stage.flash }
-{
-    Ok(DialogueCue.Flash { color, time })
-}
-```
-
-A dialogue-safe function used by the handler:
-
-```arcw
-pub fn mark_keyword(
-    word: String,
-    color: Color,
-) -> Result<DialogueCue, TagError>
-{
-    Ok(DialogueCue.StyleRange { word, color })
-}
-```
+The mark handler above may call a registered ordinary `mark_keyword` callable;
+its effects are checked by the normal callable contract.
 
 Dialogue text declares local synchronization points with `[mark @.name]` and
 handles them with line-plan `on mark(@.name):` clauses. Top-level
@@ -572,61 +505,43 @@ Inside dialogue text mode, special characters can be escaped:
 Raw span:
 
 ```arcw
-alice.say()[
-    [raw]これは[p]をタグとして解釈しない。[/raw]
-]
-```
-
-Short raw span:
-
-```arcw
-alice.say()[
-    [raw: [p]をタグとして扱わない]
+alice()[
+    #raw()[これは[p]をタグとして解釈しない。]
 ]
 ```
 
 Raw block:
 
 ```arcw
-alice.say()[
-    [raw]
+alice()[
+    #raw()[
     ここでは複数行にわたりタグを解釈しない。
     [p] も文字として表示する。
-    [/raw]
+    ]
 ]
 ```
 
 ---
 
-## Short style spans
+## Typed style spans
 
-Single-span style forms are accepted for common emphasis:
+Style spans are typed content calls. Canonical generic font families are
+`serif`, `sans-serif`, `monospace`, `cursive`, and `fantasy`; a quoted value is
+a requested named family that renderers may resolve through their font system.
 
 ```arcw
-alice: [em:夢]を見た。[strong:本当に]変だった。[p]
-alice: [color #a8b5ff:夜]だけが光っていた。[p]
+alice: #font("serif")[Serif text][p]
+alice: #font("Noto Sans JP")[日本語フォント指定][p]
+alice: #color(rgb("#a8b5ff"))[夜]、#strong()[本当に]変だった。[p]
 ```
 
-They normalize to the same rich-text span model as `[em]...[/em]`,
-`[strong]...[/strong]`, and `[color value="..."]...[/color]`.
-
-Font spans are typed rich-text style spans. Canonical generic families are
-`serif`, `sans-serif`, `monospace`, `cursive`, and `fantasy`; any other quoted
-or unquoted value is a requested named family that renderers may resolve through
-their font system.
+Line-level presentation style can set the base font for the whole line. Inline
+`#font(...)` calls override that base font only for their span:
 
 ```arcw
-alice: [font serif]Serif text[/font][p]
-alice: [font "Noto Sans JP"]日本語フォント指定[/font][p]
-```
+alice(style=font(monospace)): 全体は monospace。#font("serif")[ここだけ serif][p]
 
-Line-level dialogue `style` can set the base font for the whole line. Inline
-`[font ...]` spans override that base font only for their span:
-
-```arcw
-alice(style=font(monospace)): 全体は monospace。[font serif]ここだけ serif[/font][p]
-
-let alice_serif = alice(style=text_style(font=serif, color="#f7e8ff"))
+let alice_serif = alice(style=text_style(font=serif, color=rgb("#f7e8ff")))
 alice_serif: この preset の通常表示は serif です。[p]
 ```
 
@@ -634,17 +549,18 @@ alice_serif: この preset の通常表示は serif です。[p]
 
 ## Color and style hooks
 
-Character default colors are defined in the character declaration. Dialogue lines inherit them automatically.
+Character declarations own identity/display only. Default colors are defined in
+the selected dialogue View/style or profile, and dialogue lines inherit them
+through that presentation authority.
 
 ```arcw
 pub character alice {
     display = "Alice"
+}
 
-    dialogue_style {
-        text_color = rgb("#f7d7ff")
-        name_color = rgb("#e070ff")
-        unread_text_color = rgb("#ffffff")
-        read_text_color = rgb("#c8c8d0")
+pub style alice_dialogue {
+    .dialogue_content {
+        color = rgba(247, 215, 255, 255)
     }
 }
 ```
@@ -654,16 +570,16 @@ Style, or in character-local style policy, rather than a global callback.
 
 ---
 
-## Tag parsing and scope
+## Content-action parsing and scope
 
-`[]` tags are parsed only in dialogue text mode. Tag arguments are retained as
-ordered positional or named values with source ranges. Quoted values may
-contain whitespace. Unterminated quotes and duplicate or otherwise invalid
-arguments are reported by the owning tag family instead of being collapsed by
-a whitespace-to-map conversion.
+Point-action arguments and content-call arguments are parsed only in dialogue
+text mode. They are retained as ordered positional or named values with source
+ranges. Quoted values may contain whitespace. Unterminated quotes and duplicate
+or otherwise invalid arguments are reported by the owning typed schema instead
+of being collapsed by a whitespace-to-map conversion.
 
 `DialogueContent` removes authored indentation and normalizes physical line
-endings to `\n`. Token, argument, expression, and end-tag ranges are therefore
+endings to `\n`. Token, argument, expression, and body ranges are therefore
 byte ranges relative to the normalized `DialogueContent::raw()`, not absolute
 document ranges. Compiler and tooling consumers project them to the authored
 document with `DialogueContent.source_range(...)`; the reverse mapping for an
@@ -676,7 +592,7 @@ Values used by dialogue interpolation should be defined in the surrounding flow 
 ```arcw
 let emphasis_color = rgb("#a8b5ff")
 
-alice.say()[
+alice()[
     #[fmt("夢", color=emphasis_color, on_error=InlineFailure.fallback("夢"))]を見た。[p]
 ]
 ```
@@ -684,7 +600,7 @@ alice.say()[
 For cue-local values, use the line plan:
 
 ```arcw
-alice.say()[
+alice()[
     夢を見た。[p]
 ]
 with {

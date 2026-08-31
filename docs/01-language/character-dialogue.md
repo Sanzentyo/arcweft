@@ -9,7 +9,7 @@ intermediate type.
 Applying content directly to a Character uses square brackets:
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 ```
@@ -31,7 +31,7 @@ let worried = phone_alice(
 Square brackets then apply `DialogueContent` and produce a `DialogueLine`:
 
 ```arcw
-worried[
+worried()[
     ……聞こえる？[p]
 ]
 ```
@@ -43,11 +43,11 @@ alice:
     おはよう。[p]
 ```
 
-It lowers through the same path as `alice[...]`; it does not expand to a
+It lowers through the same path as `alice()[...]`; it does not expand to a
 method call. A line plan remains attached to the resulting line:
 
 ```arcw
-worried[
+worried()[
     まだ話している途中……[p]
 ]
 with:
@@ -132,8 +132,8 @@ must not replace `CharacterId`.
 The final language and public API contain none of:
 
 ```text
-Character.say(...)
-SpeakerPreset.say(...)
+Character(...)
+SpeakerPreset(...)
 SpeakerPreset.call(...)
 Speaker
 SpeakerRef
@@ -142,15 +142,16 @@ DialogueSpeakerPreset
 SayOptions
 TypeKind::Speaker
 TypeKind::SpeakerPreset
-.say suffix stripping or reconstruction
+method-suffix stripping or reconstruction
 ```
 
 There is no deprecated alias, dual parser, lowering shim, or dedicated
-removed-spelling diagnostic. A `.say`-shaped expression is rejected by the
-ordinary current grammar and method resolution.
+removed-spelling diagnostic. Unrecognized method-shaped input follows ordinary
+current grammar and method resolution without a tombstone-specific branch.
 
-Tooling canonicalization may expand colon sugar to direct bracket application,
-but it must never emit `.say(...)`.
+Tooling canonicalization may expand colon sugar to a direct character content
+call, but it must never emit a removed method suffix or reconstruct an identity
+from source text.
 
 ## Migration ownership
 

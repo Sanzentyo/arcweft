@@ -3,7 +3,7 @@
 This document defines the presentation-side execution contract for rich-text
 transforms, effects, and shader references. It complements the dialogue
 authoring syntax in
-[Dialogue Control Tags, Ruby, Interpolation, and Line Marks](../01-language/dialogue-control-tags-and-ruby.md)
+[Dialogue Content Actions, Ruby, Interpolation, and Line Marks](../01-language/dialogue-content-actions-ruby-and-interpolation.md)
 and the object/proxy model in
 [Text Presentation Objects](text-presentation-objects.md).
 
@@ -15,28 +15,23 @@ registries.
 
 ## Authoring and canonical form
 
-Dot shorthand may infer a rich-text family when the selector is unambiguous:
+Body-bearing presentation uses typed content calls. Dot selectors are operands,
+not inferred span names; vectors use `vec2(...)`, enums and phases use dot
+prefixes, and public IDs use `@`-form:
 
 ```arcw
-alice: [.shake amp=2px dir=0,1]揺れる文字[/][p]
-alice: [.offset x=4px y=-2px]少しずらす[/][p]
-alice: [.vertical_rl jlreq=strict]縦書き[/][p]
+alice: #fx(shake(amplitude=2px, direction=vec2(0.0, 1.0), phase=.glyph_transform))[揺れる文字][p]
+alice: #transform(.offset, x=4px, y=-2px)[少しずらす][p]
+alice: #layout(.vertical_rl, jlreq=.strict)[縦書き][p]
+alice: #color(rgb("#a8b5ff"))[夜]、#size(36pt)[大きな語][p]
 ```
 
-Canonical tooling expands those spans to explicit families:
-
-```arcw
-alice: [effect .shake amp=2px dir=0,1]揺れる文字[/effect][p]
-alice: [transform .offset x=4px y=-2px]少しずらす[/transform][p]
-alice: [layout .vertical_rl jlreq=strict]縦書き[/layout][p]
-```
-
-`[/]` closes the most recent inferred span. Zero-width markers canonicalize to
-`[mark @.name]` and do not retain a closing tag.
+Zero-width markers use `[mark @.name]`. Host and timeline actions remain point
+actions in brackets and are never represented as visual effect spans.
 
 Reusable presentation is authored as a typed `#[fx] fn ... -> Fx`. The same Fx
-value applies to a View with `.fx(value)` or to a rich-text span with
-`[fx call(...)]...[/fx]`:
+value applies to a View with `.fx(value)` or to rich text with a typed
+`#fx(call)[content]` call:
 
 ```arcw
 #[fx]
@@ -51,8 +46,14 @@ pub fn notice(
 }
 
 Text("WARNING").fx(notice(accent = state.warning_color))
-alice: [fx notice(accent=rgb("#ff6b8a"))]WARNING[/fx][p]
+ alice: #fx(notice(accent=rgb("#ff6b8a")))[WARNING][p]
 ```
+
+The outer `#fx` is the one Content adapter; `wave(...)`, `shader(...)`, and a
+project `#[fx]` function call are ordinary typed Fx producers. There is no
+`#wave(...)` shorthand and no `#effect(...)` alias. Keeping producer selection
+inside the normal call expression gives builtin and project Fx the same
+overload, default, ABI, tooling, and View semantics.
 
 This is the only reusable presentation declaration. There is no separate
 `decoration`, presentation-effect implementation, or View-modifier language.
@@ -77,14 +78,14 @@ Parameters are typed and Fx entry calls are named-only. Defaults live in the
 function signature, are const-evaluable, and cannot refer to other parameters
 or runtime state. Rest parameters are not supported. View applications may
 bind reactive values while preserving a compile-time graph shape; rich-text
-tag applications accept only closed values so localization, replay, and line
+content applications accept only closed values so localization, replay, and line
 caching remain deterministic.
 
 An Fx definition is identified by a typed `FxId` derived from its package and
 original qualified function name. Re-exports are aliases for resolution, not
 new identities. Bundles additionally retain an ABI hash for parameter/default
 and renderer-interface compatibility and a semantic hash for the body and
-resource bindings. Each View application or rich-text span derives a separate
+resource bindings. Each View application or rich-text content application derives a separate
 deterministic `FxInstanceId` from its retained location, authored ordinal, and
 optional local key; state and default seeds therefore do not collide between
 uses of the same definition. For a glyph-targeted application, `ctx.ordinal`
@@ -111,12 +112,11 @@ Scalar fields such as `italic`, `oblique`, `opacity`, `layer`, and `z_index` use
 explicit value wins. Structured layout fields deep-merge by field. Transform is
 one effective transform per run; the nearest transform span replaces earlier
 transform fields for that run. Effects and shader refs append in source order.
-`opacity` / `alpha`, `layer` / `object_layer`, `meta` / `metadata` / `data`, and
-`z_index` / `z` are authored as style-family presentation scalars, for example
-`[style .opacity 0.8]...[/style]`, `[style .layer hud]...[/style]`,
-`[style .meta role=caption hover=true]...[/style]`, `[style .z_index 3]...[/style]`,
-or their inferred forms `[.opacity 0.8]...[/]`, `[.layer hud]...[/]`,
-`[.meta role=caption]...[/]`, and `[.z_index 3]...[/]`. Native/Agent observation
+`opacity` / `alpha`, `layer` / `object_layer`, and `z_index` / `z` are authored
+as typed style calls, for example
+`#style(.opacity, opacity=0.8)[...]`, `#style(.layer, layer=@.hud)[...]`, and
+`#style(.z_index, z_index=3)[...]`. The former metadata selector is not part of
+the canonical body-bearing surface. Native/Agent observation
 exposes presentation `layer` as `rich_text_ref.object_layer`, metadata as
 `rich_text_ref.presentation.params`, and `z_index` as
 `rich_text_ref.object_depth = z_index * 1000` for ordinary run/glyph/line/page
@@ -185,16 +185,15 @@ Phases run in this order:
 4. `glyph_transform`
 5. `glyph_color`
 6. `glyph_mask`
-7. `run_offscreen_pass`
+7. `offscreen_pass`
 8. `post_process`
-9. `host_event`
 
 Default phases are:
 
 | Effect | Default phase |
 |---|---|
-| `.typewriter` | `glyph_mask` |
-| `.shader` | `run_offscreen_pass` |
+| `typewriter(...)` | `glyph_mask` |
+| `shader(...)` | `offscreen_pass` |
 | other effects | `glyph_transform` |
 
 Post-layout effects keep logical hit regions stable. If an effect needs layout
@@ -205,30 +204,29 @@ line breaking, ruby placement, and capture hashes may change.
 
 ## Built-in effects
 
-`.wave` displaces glyphs or runs along a deterministic periodic axis. Common
-parameters are `amp`, `dir`, `period`, `speed`, and `phase`. `dir=0,1` is
-interpreted by the wave builtin as a vector; the parser does not globally
-convert comma-separated values into vectors.
+`wave(...)` displaces glyphs or runs along a deterministic periodic axis. Common
+parameters are `amplitude`, `direction`, `period`, `speed`, and `phase`.
+`direction=vec2(0.0, 1.0)` is the typed vector form.
 
-`.shake` and `.jitter` apply deterministic pseudo-random offsets. Common
-parameters are `amp`, `dir`, `seed`, `speed`, and `bucket`. The same source,
+`shake(...)` and `jitter(...)` apply deterministic pseudo-random offsets. Common
+parameters are `amplitude`, `direction`, `seed`, and `speed`. The same source,
 frame, capture time, and seed must produce the same capture.
 
-`.spin` applies deterministic time-varying rotation. Common parameters are
-`angle`, `speed`, `phase`, `origin`, and `target`.
+`spin(...)` applies deterministic time-varying rotation. Common parameters are
+`rotation_amplitude`, `speed`, `phase`, and `target`.
 
-`.pulse` applies deterministic time-varying scale. Common parameters are
-`amp`, `amount`, `speed`, `phase`, `origin`, and `target`.
+`pulse(...)` applies deterministic time-varying scale. Common parameters are
+`scale_amplitude`, `speed`, `phase`, and `target`.
 
-`.sparkle` applies deterministic shimmer as a glyph transform, glyph color, or
+`sparkle(...)` applies deterministic shimmer as a glyph transform, glyph color, or
 post-process. It is an Arcweft-owned builtin even when authored without
-attributes; `amp`, `amount`, `speed`, `seed`, `phase`, and `target` customize
+attributes; `amplitude`, `amount`, `speed`, `seed`, `phase`, and `target` customize
 its typed program.
 
-`.motion` applies a renderer-resolved deterministic animation function to
-translation, rotation, and scale together. Common parameters are `fn` or
-`curve`, `amp`, `angle`, `scale`, `speed`, `phase`, `seed`, `origin`, and
-`target`. The function name is authored in Arcweft source and preserved in the
+`motion(...)` applies a renderer-resolved deterministic animation function to
+translation, rotation, and scale together. Its closed parameters include
+`motion_function`, `amplitude`, `rotation_amplitude`, `scale_amplitude`, `speed`,
+`phase`, and `seed`. The function identity is authored in Arcweft source and preserved in the
 effect descriptor; renderers may only execute functions they explicitly expose
 through their animation-function registry. Unknown names must remain
 observable through renderer diagnostics and must not be silently reinterpreted
@@ -254,32 +252,26 @@ pub fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {
 Renderer adapters validate the Fx renderer interface and ABI hash instead of
 registering a separate source-language motion-function attribute.
 
-`.typewriter` controls glyph visibility. It changes alpha or mask coverage at
+`typewriter(...)` controls glyph visibility. It changes alpha or mask coverage at
 `glyph_mask` phase and must not change layout geometry. Common parameters are
-`cps`, `delay`, `cursor`, and `capture_time` supplied by the observe/capture
+`characters_per_second`, `delay`, and `cursor`; capture time is supplied by the observe/capture
 request. Time literals such as `0.5s` or `500ms` are converted once during
 typed compilation; renderer adapters do not parse raw duration tokens or keep
 a native-only effect registry. `cursor=true` asks the typed built-in graph to
 expose the next unrevealed glyph as a low-alpha ghost preview without changing
 layout, with `cursor_alpha` / `cursor_opacity` as an optional typed override.
 
-`.shader` references a resource in the bundle's typed renderer-resource table;
-it does not embed shader source in dialogue text. Common parameters are `id`,
-`amount`, `dir`, `phase`, and `color`. Shared evaluation resolves glyph,
+`shader(...)` references a resource in the bundle's typed renderer-resource table;
+it does not embed shader source in dialogue text. Common parameters are
+`resource`, `amount`, `direction`, `color`, `target`, and `phase`. Shared evaluation resolves glyph,
 offscreen, and post-process operations before a backend adapter receives them.
-Unknown resources and invalid uniform schemas are typed diagnostics rather
+Unknown resources and invalid shader arguments are typed diagnostics rather
 than backend-local no-ops.
 
-Unknown custom effect shorthand retains its exact missing definition identity
-and produces a diagnostic; it is not reinterpreted as a built-in basename.
-`.host` is not a visual-registry escape hatch. Host dispatch is represented by
-the explicit typed `phase=host_event` path described below.
-
-If an effect selector uses `phase=host_event`, it is not a visual presentation
-style. Lowering emits a typed `DialogueHostEvent::Effect` marker with the
-resolved effect id and raw attrs, while the span text remains ordinary display
-text. This lets authored rich-text cues address host systems without forcing a
-native renderer to reinterpret `host_event` as a glyph effect.
+Unknown Fx callables are typed diagnostics; they are not inferred from a dot
+selector. Host dispatch uses the bracket host-action family, keeping
+the host event and its point in the line plan instead of constructing a visual
+effect.
 
 ---
 
@@ -290,19 +282,15 @@ only syntax that is unambiguous across all custom effects:
 
 - booleans
 - integers
-- milli numeric values, including unit-like authoring tokens such as `px`,
-  `deg`, and `ch`
-- selectors such as `.shake`
+- milli numeric values with explicit units such as `px`, `pt`, and `deg`
+- closed enum selectors such as `.glyph_transform`
 - quoted strings as `Text`, preserving the distinction between `"2"` /
   `"true"` and their unquoted integer / boolean forms
 - raw tokens for other unquoted values
 
-Legacy low-level rich-text descriptors and renderer builtins own higher-level
-interpretation by parameter name.
-For example, wave may interpret `dir=0,1` as `Vec2`, while another effect may
-preserve the same token as raw text. This avoids hard-coding custom parameter
-grammars into dialogue parsing. Reusable author-facing Fx parameters do not use
-this open raw-token model: they are a closed typed function schema.
+The owning effect schema performs higher-level interpretation by parameter
+name. Reusable author-facing Fx parameters use a closed typed function schema;
+they do not fall back to raw-token reconstruction.
 
 Expression-looking values are not inferred as expressions globally. Explicit
 expression parameters must use the documented expression form when the language
@@ -313,7 +301,7 @@ surface adds one.
 ## Shaders
 
 `RichTextShaderRef` is an effect-like reference with an id, params, and phase.
-The default phase is `run_offscreen_pass`.
+The default phase is `offscreen_pass`.
 
 Shader execution receives the rendered run/layer image as input according to
 the renderer registry. Shader refs should be reported in Agent observation so
@@ -328,7 +316,8 @@ Agent observation must expose the effective presentation needed to debug text:
 - layout mode, direction, vertical latin mode, JLREQ strictness, and ruby
   typography fields
 - full transform descriptor
-- effect descriptors with id, params, target, phase, and state scope
+- effect descriptors with id, typed params, target, and phase; deterministic
+  per-instance state is keyed by the retained `FxInstanceId`
 - shader refs with id, params, and phase
 - text object proxies with id, type, role, layer, depth, hit-test policy, and
   params

@@ -120,17 +120,17 @@ literals until the type checker sees an expected `Color`.
 ## CharacterDialogue surface ownership decision
 
 Dialogue construction and content application are distinct typed operations.
-Parentheses construct or immutably reconfigure a `CharacterDialogue`; brackets
-and colon apply `DialogueContent` and produce a line. Ordinary calls use the
-shared `CallExpr` owner. There is no `.say`, `Speaker`, or `SpeakerPreset`
-canonical surface.
+Parentheses construct or immutably reconfigure a `CharacterDialogue`; direct
+`character(args)[content]` calls and colon sugar apply `DialogueContent` and
+produce a line. Ordinary calls use the shared `CallExpr` owner. There is no
+method-suffix or speaker-wrapper canonical surface.
 
 Final forms:
 
 ```text
 Ref<Character>(CharacterDialoguePatch) -> CharacterDialogue
 CharacterDialogue(CharacterDialoguePatch) -> CharacterDialogue
-CharacterDialogue[DialogueContent] -> DialogueLine
+character(args)[DialogueContent] -> DialogueLine
 CharacterDialogue: DialogueContent -> DialogueLine
 with { line_plan }
 

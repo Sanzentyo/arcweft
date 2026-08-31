@@ -333,7 +333,7 @@ Localized<T>
 LocaleMap<T>
 RichText
 TextRun
-InlineTag
+ContentApplication
 RubyText
 DialogueLine
 LinePlan

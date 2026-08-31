@@ -1,8 +1,9 @@
 # Text Presentation Objects
 
 Arcweft text is a typed presentation object tree, not only a string submitted to
-a renderer. `character.say` and `narrator.say` are high-level facades that create
-the same kind of presentation objects as image, sprite, model, and View layers.
+a renderer. Direct character content calls such as `alice()[...]` and
+`narrator()[...]` create the same kind of presentation objects as image,
+sprite, model, and View layers.
 The default dialogue View chooses sensible content, line, run, glyph-cluster,
 ruby, glyph, object-id, hit-test, depth, and capture behavior, while still
 preserving the authored rich-text surface.
@@ -42,24 +43,24 @@ text objects before loading the full object descriptor.
 
 ## Proxy Spans
 
-Authors can attach typed proxy metadata to a text span with the explicit
-`object` family:
+Authors can attach typed proxy metadata to a text span with the generic
+`#object(...)` call:
 
 ```arcw
-alice.say[
-    [object .hotspot type=KeywordHit role=keyword depth=4 hit=true]夢[/object]を見た。[p]
+alice()[
+    #object(id = @.hotspot, type = KeywordHit, role = keyword, depth = 4px, hit_test = true)[夢]を見た。[p]
 ]
 ```
 
-The selector after `object` is the proxy id. `type` selects the authored proxy
-type. Other attributes are preserved as typed
+The `id` argument names the proxy id. `type` selects the authored proxy type.
+Other named arguments are preserved as typed
 rich-text parameters. The proxy is not a visual effect by itself. It is metadata
 that renderers, hit-test systems, depth sorting, Agent observation, and custom
 effect/shader registries may consume.
 
 Dot selectors do not infer a proxy or custom effect from their attributes.
 Text object proxy spans use the explicit
-`[object .id type=Type ...]...[/object]` form, and custom effects use their
+`#object(id = @.id, type = Type, ...)[...]` form, and custom effects use their
 registered explicit effect family. An unknown or attributed dot selector is
 not a proxy fallback and should be diagnosed rather than reclassified.
 
@@ -69,34 +70,37 @@ Arcweft attributes are the declaration-time way to mark Rust/Arcweft structs as
 text proxy payloads:
 
 ```arcw
-#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+#[text_proxy(role="keyword", hit_test=true, depth=4px, channel="choice")]
 pub struct KeywordHit {
     channel: String
 }
 ```
 
-The declaration metadata is collected into the rich-text proxy registry during
-runtime-plan lowering. Inline text does not overload `#[...]`, because dialogue
+Final semantic analysis collects the declaration metadata into its generation-
+bound typed proxy catalog. Compiler lowering only materializes an accepted
+application into the runtime text DTO; it does not scan declarations or resolve
+names. Inline text does not overload `#[...]`, because dialogue
 text already uses `#[expr]` for interpolation and source items use `#[...]` for
 attributes. Inline spans refer to the proxy type by name through
-`type=KeywordHit`:
+`type = KeywordHit`:
 
 ```arcw
-alice.say[
-    [object .hotspot type=KeywordHit]夢[/object]
+alice()[
+    #object(id = @.hotspot, type = KeywordHit)[夢]
 ]
 ```
 
 Inline attributes override declaration defaults. Unspecified proxy metadata is
-filled from the struct attribute: `kind` supplies the default proxy role,
-`layer` / `object_layer` supplies object-layer metadata, `default_hit` supplies
-hit-test policy, `depth` / `z` / `z_index` supplies local depth, and remaining
+filled from the struct attribute: `role` supplies the default proxy role,
+`layer` supplies object-layer metadata, `hit_test` supplies hit-test policy,
+`depth` supplies local depth as an explicit `px` value sealed to pixel-milli
+precision, and remaining
 attribute arguments become default typed proxy params.
 The resolved proxy also keeps typed declaration provenance: the source struct
 name and the attribute family (`text_proxy` or `rich_text_proxy`) that supplied
-the defaults. This provenance is separate from `type_name`, because an
-attribute may choose a registry-facing proxy type name while the Arcweft struct
-name remains the source declaration used by tooling.
+the defaults. This provenance is separate from `type_name`: `type_name` is the
+qualified semantic declaration name materialized by the compiler, while the
+simple struct name remains diagnostic/tooling display data.
 
 Proxy spans may be nested or otherwise overlap. The effective text run keeps all
 active proxies in source order instead of collapsing them into one object. Agent
@@ -119,13 +123,16 @@ for the ordinary text object itself. It is exposed as
 `rich_text_ref.object_layer` on runs, glyphs, clusters, lines, pages, and ruby
 objects without creating a proxy. `z` / `z_index` works the same way for ordinary
 object depth, exposed as `rich_text_ref.object_depth = z_index * 1000`.
-`meta` / `metadata` / `data` authored in the `style` family attaches typed
-debug/input metadata to the ordinary text object without making it a proxy:
-`[style .meta role=caption hover=true]...[/style]` and
-`[.meta role=caption]...[/]` appear under `rich_text_ref.presentation.params`.
+Typed presentation parameters authored through calls such as
+`#style(.opacity, opacity=0.8)[...]` remain on
+`rich_text_ref.presentation.params` when the owning style schema defines them;
+there is no inferred metadata selector or proxy fallback.
 
-`layer` / `object_layer`, `z`, `z_index`, or `depth` authored on an `object`
-proxy is proxy object metadata. Proxy layer does not replace the parent
+Canonical `layer` and `depth` authored on an `object` proxy are proxy object
+metadata. The style-family aliases `object_layer`, `z`, and `z_index` are not
+object-proxy metadata keys. `depth` requires an explicit `px` unit; other
+length units are valid for typed custom `Length` fields but not for object
+depth. Proxy layer does not replace the parent
 render-layer group, but it is exposed as first-class object metadata so hit
 testing, object-id capture, and headless debuggers can distinguish semantic
 layers such as View, dialogue, hotspot, or depth proxy. When both
@@ -137,8 +144,8 @@ hit-test results as `proxy_params`; ordinary presentation params stay on
 parent presentation layer for Agent hit-test reporting; an explicit proxy layer
 overrides it for that proxy object.
 
-`hit=true` enables hit-test regions for the span. `hit=false` keeps the proxy
-observable but non-interactive. Hit regions are reported in Agent observation and
+`hit_test=true` enables hit-test regions for the span. `hit_test=false` keeps
+the proxy observable but non-interactive. Hit regions are reported in Agent observation and
 must use the same post-transform bounds as object-id and color captures.
 Agent `rich_text_ref.hit_regions` reports these interactive spans with kind
 `text_object_proxy`, the proxy id/type/role/layer, the resolved local depth, and

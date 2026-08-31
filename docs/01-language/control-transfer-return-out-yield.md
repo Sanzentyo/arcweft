@@ -21,7 +21,7 @@ pub flow title(state: GameState) -> Result<FlowExit, FlowError> {
 `out expr` exports a value from a line plan, cue block, or content scope. It does not return from the enclosing flow.
 
 ```arcw
-let (actor, voice) = alice[おはよう。[p]]
+let (actor, voice) = alice()[おはよう。[p]]
 with:
     let actor = alice.stage.acquire(scope=line)
     let voice = line.voice_handle()
@@ -67,7 +67,7 @@ dialogue line plan. An ordinary `fn` becomes a generator only when its own
 scope contains `yield`; use `out` for line-plan results.
 
 ```arcw
-let outcome = alice.say()[長い台詞です。[p]]
+let outcome = alice()[長い台詞です。[p]]
 with 'line {
     cancel on input(.SkipLine) {
         text.flush(mode = .Instant)
@@ -144,7 +144,7 @@ Use `loop` if you need a value.
 Dialogue `cancel on ...` branches may use `return`, `out`, `goto`, or `continue` depending on their target.
 
 ```arcw
-alice[長い台詞です。[p]]
+alice()[長い台詞です。[p]]
 with:
     cancel on input(.SkipLine):
         text.flush(mode = .Instant)
@@ -159,7 +159,7 @@ with:
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
 ```arcw
-alice.say()[長い台詞です。[p]]
+alice()[長い台詞です。[p]]
 with 'line {
     cancel on input(.SkipLine):
         text.flush(mode = .Instant)

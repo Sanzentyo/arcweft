@@ -1,18 +1,16 @@
 # Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks
 
-> **Surface update:** Use the direct `CharacterDialogue` forms specified in
-> [CharacterDialogue authoring](character-dialogue.md). Read every
-> `character.say(options)[content]` example below as
-> `character(options)[content]`. The line-plan, cancellation, and scoped-content
-> rules remain the subject of this chapter; `.say` is not part of the final
-> language.
+> **Canonical surface:** Use the direct `CharacterDialogue` forms specified in
+> [CharacterDialogue authoring](character-dialogue.md):
+> `character(options)[content]`. The line-plan, cancellation, and
+> scoped-content rules remain the subject of this chapter.
 > Content escapes and attached-body admission are governed by
 > [Converged Language, Content, and Presentation Surface](converged-language-surface.md).
 
 Arcweft keeps ordinary dialogue concise, but the canonical form is explicit and composable:
 
 ```arcw
-character.say(args...)[dialogue_content]
+character(args...)[dialogue_content]
 with { line_plan }
 ```
 
@@ -21,9 +19,9 @@ The square bracket block is the player-facing dialogue content. The optional `wi
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Dialogue Views, Character Styles, and Read-State Hooks](dialogue-views-and-hooks.md)
-- [Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-views.md)
+- [Dialogue Character Configuration, Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
 - [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles](dialogue-line-handles-and-returns.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Hooks and Memoization](hooks-and-memoization.md)
@@ -40,15 +38,15 @@ Use these roles consistently:
   Entity reference only.
   Example: @flow.opening, @say.opening.001, @view.MainDialogue.
 
-speaker(args): text
+character(args): text
   Compact dialogue sugar.
-  `args` are the same as `say(args)`.
+  `args` are the same line options used by the direct call.
 
-let speaker2 = speaker(args)
-  Curried speaker preset.
-  `speaker2:` uses the stored options.
+let configured = character(args)
+  Configured dialogue value.
+  `configured:` uses the stored options.
 
-speaker.say(args)[text] with { plan }
+character(args)[text] with { plan }
   Preferred detailed form.
 
 with { plan } / with:
@@ -68,9 +66,11 @@ alice(id=@say.opening.greeting, view=@view.SideDialogue, voice=auto, look=smile)
 
 ---
 
-## Speaker presets
+## Configured dialogue values
 
-A character can be called with line options to produce a reusable speaker preset. This is the preferred way to avoid repeating `voice`, `look`, `window`, and style options.
+A character can be called with line options to produce a reusable configured
+dialogue value. This avoids repeating `voice`, `look`, `window`, and style
+options.
 
 ```arcw
 let alice2 = alice(look=smile, voice=auto, view=@view.SideDialogue)
@@ -81,10 +81,10 @@ alice2(id=@say.opening.side_001):
     こっちのウィンドウで話すね。[p]
 ```
 
-`alice2:` is sugar for calling the speaker preset with an empty option set and
+`alice2:` is sugar for calling the configured dialogue value with an empty option set and
 then applying dialogue content: `alice2()[...]`. Per-line options refine the
 preset first, so `alice2(voice=auto): text` lowers to
-`alice2(voice=auto)[text]`, not to a forced character `.say(...)` call. The
+`alice2(voice=auto)[text]`, not to a forced character `(...)` call. The
 preset is a pure lexical value, so it can be passed to helper functions or kept
 local to a block without mutating `@character.alice`.
 ---
@@ -92,7 +92,7 @@ local to a block without mutating `@character.alice`.
 ## Canonical form
 
 ```arcw
-alice.say(
+alice(
     id = @say.opening.dream_hint,
     view = @view.MainDialogue,
     voice = auto,
@@ -114,7 +114,7 @@ with {
 This creates and executes a `DialogueLine`.
 
 ```arcw
-pub fn Character.say(
+pub fn Character(
     self: Ref<Character>,
     id: Option<Ref<DialogueLine>> = None,
     view: Ref<View> = @view.MainDialogue,
@@ -146,7 +146,7 @@ alice: おはよう。[p]
 is sugar for:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 ```
@@ -161,7 +161,7 @@ alice(id=@say.opening.greeting, look=smile, voice=auto):
 which is sugar for:
 
 ```arcw
-alice.say(id=@say.opening.greeting, look=smile, voice=auto)[
+alice(id=@say.opening.greeting, look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -175,7 +175,7 @@ Narration is the same:
 is sugar for:
 
 ```arcw
-narrator.say()[
+narrator()[
     扉の向こうから、雨の音がした。[p]
 ]
 ```
@@ -205,7 +205,7 @@ with {
 Equivalent canonical form:
 
 ```arcw
-alice.say(voice=auto, look=smile)[
+alice(voice=auto, look=smile)[
     今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with {
@@ -232,7 +232,7 @@ with {
 }
 ```
 
-This is useful when a line is generated or transformed by tools. Normalized output should prefer explicit `alice.say()[...] with { ... }`; `alice:` and `with:` remain source-level sugar for hand-written scripts.
+This is useful when a line is generated or transformed by tools. Normalized output should prefer explicit `alice()[...] with { ... }`; `alice:` and `with:` remain source-level sugar for hand-written scripts.
 
 
 
@@ -243,7 +243,7 @@ This is useful when a line is generated or transformed by tools. Normalized outp
 The following compact form is accepted and formatter-supported:
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -254,7 +254,7 @@ with:
 It is equivalent to:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -272,17 +272,17 @@ with:
         alice.stage.look(smile)
 ```
 
-`with:` starts a line plan only at the same indentation level as the dialogue call. Inside dialogue text it is ordinary text unless introduced by a control tag. Lowering normalizes it to `with { ... }`.
+`with:` starts a line plan only at the same indentation level as the dialogue call. Inside dialogue text it is ordinary text unless introduced by a point action. Lowering normalizes it to `with { ... }`.
 
 The brace and indentation styles are equivalent:
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 with { at(0.42s) { alice.stage.look(smile) } }
 ```
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 with:
     at(0.42s): alice.stage.look(smile)
 ```
@@ -296,7 +296,7 @@ See [Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handl
 A line plan block contains behavior that runs with the line.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     聞いて。[p]
 ]
 with {
@@ -346,7 +346,7 @@ cancellation. A cancelled child task must unwind its defer stack before it is
 considered joined.
 
 ```arcw
-alice.say(look=smile, focus=.soft)[
+alice(look=smile, focus=.soft)[
     今日は少しだけ、変な夢を見たんだ。[mark @.release_focus][p]
 ]
 with {
@@ -399,7 +399,7 @@ plan grammar; use `defer { ... }` in the relevant runtime scope, line-level
 The dialogue content, voice, text reveal, stage cues, and line plan all run under the same line timeline. To start multiple actions at the same time, use `start { ... }`, `together { ... }`, or schedule cues at the same time.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     走って！[p]
 ]
 with {
@@ -451,13 +451,13 @@ The line-plan cue form is `at(...) { ... }` or the indentation sugar
 
 ---
 
-## Inline timed cue tags
+## Inline timed cue actions
 
-For simple one-shot events inside dialogue text, inline tags are allowed:
+For simple one-shot events inside dialogue text, point actions are allowed:
 
 ```arcw
 alice(voice=auto):
-    ねえ。[at 0.42s call=flash(color=#ffffff, time=90ms)]聞いて。[p]
+    ねえ。[at 0.42s call=flash(color=rgb("#ffffff"), time=90ms)]聞いて。[p]
 ```
 
 This is sugar for a timeline event in the surrounding line. Prefer line-plan `at(...) { ... }` blocks when there are multiple cues or when source readability matters.
@@ -470,7 +470,7 @@ Audio can also be the outer call when a voice region controls nested text or cue
 
 ```arcw
 alice.voice(@voice.alice.opening.002).play()[
-    alice.say()[今日は少しだけ、変な夢を見たんだ。[p]]
+    alice()[今日は少しだけ、変な夢を見たんだ。[p]]
 ]
 with {
     cancel on input(.SkipLine) {
@@ -487,7 +487,7 @@ with {
 For ordinary dialogue, prefer:
 
 ```arcw
-alice.say(voice=auto)[今日は少しだけ、変な夢を見たんだ。[p]]
+alice(voice=auto)[今日は少しだけ、変な夢を見たんだ。[p]]
 ```
 
 ---
@@ -497,7 +497,7 @@ alice.say(voice=auto)[今日は少しだけ、変な夢を見たんだ。[p]]
 Dialogue lines, voice playback, animations, and timed hooks may be cancelled by input, branch, timeout, or external signals.
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
@@ -523,7 +523,7 @@ with {
 Cancellation can return an outcome:
 
 ```arcw
-let outcome = alice.say(voice=auto)[
+let outcome = alice(voice=auto)[
     今日は少しだけ、変な夢を見たんだ。[p]
 ]
 with {
@@ -547,7 +547,7 @@ If the result is ignored, the default line policy is used. A `goto` cancellation
 Content calls, line plan blocks, `with` blocks, and `at` blocks create explicit lexical scopes.
 
 ```arcw
-alice.say()[
+alice()[
     #[let local_word = "まぶしい"]
     #[local_word]……[p]
 ]
@@ -584,7 +584,7 @@ Allowed in dialogue content:
 
 ```text
 - text and rich text
-- `[p]`, `[l]`, `[r]`, ruby, style tags
+- `[p]`, `[l]`, `[r]`, typed ruby and style content calls
 - `#[expr]` expressions returning Content/String/Option/Result or Display-compatible values
 - `fmt(expr, ...)`
 - dialogue-safe function calls
@@ -622,25 +622,16 @@ Use normal typed `if`, `match`, `await`, and `return` in the surrounding `flow` 
 
 ---
 
-## Dialogue-safe functions
+## Dialogue-safe callables
 
-A function called from dialogue text or cue mode must be declared dialogue-safe.
-
-```arcw
-pub fn flash(
-    color: Color = rgb("#ffffff"),
-    time: Duration = 120ms,
-) -> Result<DialogueCue, TagError>
-effects { stage.flash }
-{
-    Ok(DialogueCue.Flash { color, time })
-}
-```
+Registered ordinary callables may be used from a line plan or through the
+`[call ...]` point action. A body-bearing presentation callable uses the
+registered `#path(args)[body]` form.
 
 Use from line plan:
 
 ```arcw
-alice.say()[まぶしい……[p]]
+alice()[まぶしい……[p]]
 with {
     at(0.25s) {
         try flash(color=rgb("#ffffff"), time=90ms)
@@ -648,42 +639,26 @@ with {
 }
 ```
 
-Use from inline text with the reserved `[call]` tag:
+Use from inline text with the reserved `[call]` point action:
 
 ```arcw
-alice: まぶしい……[call flash(color=#ffffff, time=90ms)][p]
+alice: まぶしい……[call flash(color=rgb("#ffffff"), time=90ms)][p]
 ```
 
-The function must be in scope through `use dialogue` or `use tag`.
+The callable is resolved through the ordinary typed import/path rules.
 
 ```arcw
 use dialogue game.fx.{flash}
-use tag game.fx.{flash as flash_tag}
 ```
 
 ---
 
-## Custom tags and hooks
+## Marks and hooks
 
-A custom tag maps bracket syntax to a typed function.
-
-```arcw
-pub dialogue tag @tag.shake shake(
-    target: Ref<Character>,
-    strength: f32 = 0.25,
-    time: Duration = 180ms,
-) -> Result<DialogueCue, TagError>
-requires strength >= 0.0 && strength <= 1.0
-effects { stage.animate }
-{
-    Ok(DialogueCue.Shake { target, strength, time })
-}
-```
-
-Usage:
+Use a registered ordinary callable for a zero-width cue:
 
 ```arcw
-alice: きゃっ。[shake target=alice strength=0.4 time=160ms][p]
+    alice: きゃっ。[call shake(target=@.alice, strength=0.4, time=160ms)][p]
 ```
 
 Hook dispatch:
@@ -695,7 +670,8 @@ with:
         mark_important()
 ```
 
-Custom tag names cannot collide with reserved built-ins such as `p`, `l`, `ruby`, `call`, `mark`, `voice`, or `at`.
+Content-call names and point-action names are resolved by their respective
+typed registries; a body-bearing callable never becomes a bracket action.
 
 ---
 
@@ -709,7 +685,7 @@ alice(look=smile, voice=auto):
 becomes conceptually:
 
 ```arcw
-alice.say(look=smile, voice=auto)[
+alice(look=smile, voice=auto)[
     おはよう。[p]
 ]
 ```
@@ -722,7 +698,7 @@ alice(id=@say.opening.003, look=smile, voice=@voice.alice.003):
 becomes conceptually:
 
 ```arcw
-alice.say(id=@say.opening.003, look=smile, voice=@voice.alice.003)[
+alice(id=@say.opening.003, look=smile, voice=@voice.alice.003)[
     ほら、ここ。覚えてる？[p]
 ]
 ```
@@ -748,7 +724,7 @@ with {
 becomes:
 
 ```arcw
-alice.say(voice=auto)[
+alice(voice=auto)[
     聞いて。[p]
 ]
 with {
@@ -766,7 +742,7 @@ values; `return` exits the nearest `fn`, `parser`, or `flow`.
 `out` is how short-lived line-local handles are exported deliberately.
 
 ```arcw
-let (actor, (face0, face1, voice)) = alice.say(
+let (actor, (face0, face1, voice)) = alice(
     id=@say.opening.dream_hint,
     voice=auto,
     look=smile,
@@ -786,7 +762,7 @@ with:
 Returned values are ordinary typed values, but many presentation operations return scoped handles. Handles have drop policies. Binding a returned handle to `_` explicitly discards it; for cancellable handles this cancels or releases the operation immediately after destructuring.
 
 ```arcw
-let (_, (face0, _, voice)) = alice.say(voice=auto)[
+let (_, (face0, _, voice)) = alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -802,7 +778,7 @@ with:
 BGM, subscriptions, hooks, and stage leases follow the same rule. To keep BGM beyond a line, detach or promote the handle explicitly:
 
 ```arcw
-let bgm_handle = alice[始まるよ。[p]]
+let bgm_handle = alice()[始まるよ。[p]]
 with:
     let scoped_bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out scoped_bgm.detach()

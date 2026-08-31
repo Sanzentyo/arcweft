@@ -1,7 +1,7 @@
 # Dialogue Line Manifest Schema
 
 A dialogue line is the compiled unit connecting source text, localization key,
-speaker, authored View target, voice, control tags, dialogue interpolation,
+speaker, authored View target, voice, point actions, dialogue interpolation,
 stage timeline, history, and Agent observation.
 
 ```json
@@ -18,8 +18,6 @@ stage timeline, history, and Agent observation.
   "source_anchor": "game/routes/opening.arcw:9:5-9:48",
   "flow": "flow.opening",
   "scope_path": ["dream"],
-  "canonical_form": "character.say",
-  "sugar_source": "speaker_colon",
   "voice_policy": "auto",
   "voice_by_locale": {
     "ja-JP": "voice.ja-JP.alice.opening.002",
@@ -56,8 +54,8 @@ stage timeline, history, and Agent observation.
     { "kind": "text", "value": "を見たんだ。" },
     { "kind": "page_wait" }
   ],
-  "control_tags": [
-    { "tag": "p", "span": "...", "kind": "page_wait" }
+  "point_actions": [
+    { "action": "page", "span": "..." }
   ],
   "hooks": [
     {
@@ -91,8 +89,8 @@ stage timeline, history, and Agent observation.
 | `speaker` | Character or built-in narrator |
 | `view` | Authored dialogue View target; defaults to the standard library resource |
 | `source_locale` | Locale of inline/source text |
-| `source_text` | Plain source text, without non-text control tags |
-| `source_rich_text` | Source rich text including ruby, dialogue interpolation, and permitted control tags |
+| `source_text` | Plain source text, without non-text point actions |
+| `source_rich_text` | Source rich text including Ruby, dialogue interpolation, typed content calls, and point actions |
 | `source_hash` | Hash used for stale translation detection |
 
 `flow` and `scope_path` are recommended for generated manifests. They preserve
@@ -126,24 +124,11 @@ where a generated ID came from:
 
 Narration uses `speaker = "character.narrator"` by default. Source aliases such as `narrator:`, `地の文:`, and `地:` are resolved to the same entity unless project configuration overrides them.
 
-## Canonical form
+## Source form
 
-Arcweft records whether the source was written as the canonical method form or as sugar.
-
-```json
-{ "canonical_form": "character.say", "sugar_source": "speaker_colon" }
-```
-
-Valid `sugar_source` values:
-
-```text
-none
-speaker_colon
-speaker_colon_indented
-narrator_alias
-```
-
-There is no `script` form in the manifest.
+The manifest records the accepted Character content application and its typed
+source coordinate. It does not serialize a method-shaped canonical form or a
+sugar compatibility discriminator.
 
 Relative source IDs are normalized before entering the manifest:
 
@@ -190,8 +175,7 @@ Project Views are recorded by entity ID:
 { "kind": "page_wait" }
 { "kind": "line_break" }
 { "kind": "ruby", "base": "変な夢", "ruby": "へんなゆめ" }
-{ "kind": "style_start", "style": "em" }
-{ "kind": "style_end", "style": "em" }
+{ "kind": "scope", "presentation": { "kind": "em" }, "children": [ ... ] }
 { "kind": "expr", "expr_id": "expr_...", "display": "DisplayText" }
 { "kind": "expr", "expr_id": "expr_...", "display": "fmt" }
 { "kind": "placeholder", "name": "player_name" }
@@ -230,9 +214,12 @@ Localization placeholders are separate from runtime interpolation:
 }
 ```
 
-## Control tags
+## Point actions and content applications
 
-Control tags are parsed only in dialogue text mode. Reserved built-ins include `p`, `l`, `r`, `br`, `w`, `ruby`, `voice`, `face`, `pose`, `show`, `hide`, `move`, `anim`, `hook`, `call`, `signal`, `if`, `else`, `endif`, `raw`, and `fmt`.
+Zero-width actions are serialized by their closed typed action identity and
+payload. Body-bearing presentation, Ruby, raw literal content, objects, and Fx
+are structural content applications; the manifest never reconstructs them from
+a flat open/close stream or an alias list.
 
 ## Timeline anchors
 
@@ -251,7 +238,7 @@ The manifest compiles into:
 
 ```text
 DialogueLine
-  -> Character.say command
+  -> Character content application
   -> persistent View mount update
   -> AudioCommand / VoiceCue
   -> TextRevealPlan

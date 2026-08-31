@@ -19,7 +19,7 @@ across this document,
 [Agent Observe and Capture Contract](../04-tooling/agent-observe-capture-contract.md).
 
 ```arcw
-alice.say()[
+alice()[
 今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。
 ]
 ```
@@ -73,8 +73,8 @@ rich_text {
 }
 ```
 
-The selected profile dialogue Style, authored View styles, character
-`dialogue_style`, speaker presets, line options, and inline spans all contribute
+The selected profile dialogue Style, authored View styles, selected character
+presentation defaults, configured dialogue values, line options, and inline spans all contribute
 to the same effective RichText style. Records deep-merge by field. The nearest
 explicit field wins, while unspecified sibling fields continue to inherit from
 lower-priority layers.

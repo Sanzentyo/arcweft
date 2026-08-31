@@ -23,7 +23,7 @@ pub flow @flow.error_context_example example(state: GameState) -> Result<FlowExi
         .map_err(.Voice)
         .context("while loading Alice opening voice")
 
-    alice.say(voice=voice)[
+    alice(voice=voice)[
         読み込みが完了しました。[p]
     ]
 

@@ -44,9 +44,10 @@ accept family-relative spelling such as `@say:.greeting` or `@choice:.first`,
 but hand-written code should prefer the shorter `@.greeting` form there. It is
 also accepted in declaration ID positions whose family is known from the
 declaration keyword, such as `flow @.opening`, `flow @flow:.opening`, and
-`character @.alice`. Empty declaration markers `@.` and `@family:.` are also
-accepted when a declaration name follows them, so `flow @. opening` and
-`character @. alice Alice` use that following name as the family-local suffix.
+`character @.alice` in generated or identity-diagnostic source. Empty
+declaration markers `@.` and `@family:.` are likewise an elaborated/diagnostic
+surface when a declaration name follows them; hand-authored characters use
+`pub character alice { display = "Alice" }`.
 These normalize to the declaration family, and named flow declarations without
 an explicit ID use the same implicit ID as `@.name`. It is
 not a general entity reference; write `goto @flow.opening.next` or the
@@ -304,11 +305,12 @@ keyword supplies the default entity family, so authored code should omit that
 family prefix. Prefer
 `pub character alice { display = "Alice" }` or
 `content chapter_two { roots = [@flow.chapter_two] }` for hand-written source.
-Fully qualified forms such as `pub character @character.alice { ... }` and
-`content @content.chapter_two { ... }` are accepted but are generated or fully
-elaborated surfaces rather than the recommended authoring form. Assets are not
-part of this declaration grammar; their identities come from the project asset
-catalog. Avoid putting display names or aliases in declaration headers.
+Generated/diagnostic source may use fully qualified forms such as
+`pub character @character.alice { ... }` and `content @content.chapter_two { ... }`.
+Those forms are accepted for generated or fully elaborated source, not
+recommended hand-authored declarations. Assets are not part of this declaration
+grammar; their identities come from the project asset catalog. Avoid putting
+display names or aliases in declaration headers.
 
 The same rule applies to every declaration family whose keyword supplies a
 default identity family: write the local name in authored source, and retain an
@@ -321,7 +323,7 @@ wrong-family identity is recovered and diagnosed rather than silently changed.
 
 ```text
 DialogueLine :=
-    SpeakerRef CallArgs? ':' DialogueText
+    Callee CallArgs? ':' DialogueText
   | Callee CallArgs? '[' DialogueContent ']'
 
 CallArgs       := '(' (CallArg (',' CallArg)* ','?)? ')'
@@ -337,9 +339,10 @@ LineOption     := 'id' '=' (EntityRef | RelativeId | FamilyRelativeEntityRef)
                 | 'rich_text' '=' Expr
                 | Ident '=' Expr
 DialogueText   := TextUntilLineEnd | Newline IndentedText
-DialogueContent:= (TextAndDialogueTags | FxTextSpan)*
-TagSpace        := UnicodeWhitespace+
-
+DialogueContent:= (Text | PointAction | ContentApplication | Interpolation)*
+PointAction   := '[' PointActionName PointActionArgs? ']'
+ContentApplication := '#' ContentPath CallArgs '[' DialogueContent ']'
+Interpolation := '#[' Expr ']'
 LinePlanAttach := 'with' Block
                 | 'with' ':' Newline IndentedItems
                 | 'with' ':' LinePlanItem
@@ -463,8 +466,8 @@ kind = "fail_line"
 
 The manifest IDs are validated as View and Style identities during project
 admission. The selected View and Style become the base presentation inputs for
-all dialogue in that profile. Character-local `dialogue_style`, speaker preset,
-line, and inline rich-text values remain source-level inputs and override the
+all dialogue in that profile. Configured character dialogue values, line
+options, and inline rich-text values remain source-level inputs and override the
 profile base through the ordinary cascade.
 
 Events are declared through their owning constructs, and input decoding uses
@@ -551,7 +554,7 @@ transitions use one ordinary function surface:
 FxDecl       := '#[fx]' Visibility? 'fn' Ident FxParamGroup '->' 'Fx' Block
 FxParamGroup := '(' (FxParam (',' FxParam)* ','?)? ')'
 FxParam      := Ident ':' Type ('=' ConstExpr)?
-FxTextSpan   := '[fx' FxCall ']' DialogueContent '[/fx]'
+FxContentApplication := '#fx(' FxCall ')' '[' DialogueContent ']'
 FxCall       := Path '(' (NamedArg (',' NamedArg)* ','?)? ')'
 ```
 
@@ -566,13 +569,13 @@ Fx entry calls are named-only. Required parameters have no default, optional
 parameters place their const-evaluable default in the function signature, and
 unknown, duplicate, missing, or positional arguments are diagnostics. The
 function body composes typed constructors such as `Fx.text`, `Fx.style`,
-`Fx.transform`, `Fx.filter`, `Fx.mask`, `Fx.shader`, `Fx.transition`,
+`Fx.transform`, `Fx.filter`, `Fx.mask`, `Fx.transition`,
 `Fx.conditional`, and ordered `Fx.stack`; it is not a second declaration or
 builder grammar.
 
 View expressions apply an Fx value with `.fx(value)` and may pass reactive
 argument expressions. Dialogue rich text applies the same function with
-`[fx path(arg=value)]...[/fx]`, but every inline argument must be a closed,
+`#fx(path(arg=value))[content]`, but every inline argument must be a closed,
 const-evaluable value so localization, replay, and line caching remain stable.
 Dynamic rich-text presentation belongs on a View `RichText(...)` value through
 `.fx(...)`.

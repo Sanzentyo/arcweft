@@ -301,7 +301,7 @@ let owned = {
 Dialogue cue blocks create scopes too.
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 with:
     let voice = line.voice_handle()
     at(0.2s):

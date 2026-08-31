@@ -25,18 +25,9 @@
 ## DSL固有
 
 - Ref resolution
-- Rich-text canonicalization code action:
-  - action id: `arcweft.canonicalRichText`; the action carries a revision-bound
-    `WorkspaceEdit` directly and is not an advertised execute-command alias
-  - rewrites recognized dot selectors such as `[.shake]...[/]` into explicit
-    family tags such as `[effect .shake]...[/effect]`
-  - preserves unknown dot selectors as authored and reports them when the
-    checked rich-text registry cannot resolve them; it does not infer markers,
-    objects, or custom effects
-  - preserves explicit `[mark @.name]` markers and typed object spans rather
-    than inferring either form from a dot selector
-  - does not expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand,
-    `[page]`, colon content application, or parenthesized construction
+- RichText has no migration or canonicalization code action. The server
+  consumes only current typed content applications and point actions; ordinary
+  grammar diagnostics handle invalid input without a removed-spelling route.
 - Typed ID actions are future work and are not part of the current server:
   - hints, materialization, and rename must consume the accepted typed
     project/source-site identity inventory
@@ -59,16 +50,16 @@
 Style/defaults navigation is based on the effective presentation context at the
 cursor position, not only lexical scope. A context may include the selected
 project/build profile, module, flow, named scope path, current dialogue line or
-content call, speaker preset, character, authored dialogue View style, selected
-profile dialogue Style, and inline rich-text span stack.
+content call, configured dialogue options, character, authored dialogue View
+style, selected profile dialogue Style, and content-application stack.
 
 The dialogue RichText cascade is:
 
 ```text
-inline rich-text span
+content application
   -> line options
-  -> speaker preset options
-  -> character dialogue_style
+  -> configured dialogue options
+  -> selected character presentation defaults
   -> authored dialogue View style
   -> selected profile dialogue Style
   -> engine defaults
@@ -177,13 +168,13 @@ client capability negotiation, publish-diagnostics notifications, and request
 dispatch outside the verifier helper. MVP document sync is
 `TextDocumentSyncKind::FULL`; incremental sync and `ropey` remain future work.
 
-It also exposes the RichText-only source action backed by `arcweft-tooling`.
-The helper returns `lsp-types` data
-only; opening documents, applying workspace edits, watching files, and
+The verifier helper returns `lsp-types` data only; opening documents, applying
+workspace edits, watching files, and
 resolving editor capabilities remain transport-adapter responsibilities. The
-old relative-ID materialization action and inferred-ID inlay path are not part
-of the current server: they rebuilt identity from raw source and were deleted
-pending the accepted typed project/source-site inventory.
+old RichText source action, relative-ID materialization action, and inferred-ID
+inlay path are not part of the current server: they rebuilt source or identity
+outside its typed owner and were deleted rather than retained as migration
+paths.
 
 Actual LSP ranges must not treat byte offsets as `Position.character` values.
 `arcweft-verify-lsp` exposes `LspPositionMapper`, while `arcweft-lsp` owns a
@@ -192,9 +183,8 @@ encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
 advertises it through initialize capabilities.
 
 Source-level code actions return `WorkspaceEdit` values when the server can map
-the current document snapshot. Current RichText rewrites are computed by
-`arcweft-tooling`, converted through `LspPositionMapper`, and sent
-as LSP text edits. The deleted semantic sugar command transport has no generic
+the current document snapshot. The server has no RichText source-rewrite
+action; the deleted semantic-sugar command transport has no generic
 `workspace/executeCommand` replacement. Verifier host commands remain typed
 action payloads for an owning client integration; the server does not advertise
 or reinterpret them as arbitrary source-edit injection.

@@ -1,18 +1,17 @@
 # Dialogue Content Calls, `with` Blocks, Line Output Values, and Scoped Handles
 
-> **Surface update:** The final content-application syntax is defined by
-> [CharacterDialogue authoring](character-dialogue.md). Examples below that use
-> `.say(...)` are migration inventory and map directly to configured
-> `CharacterDialogue(...)` followed by `[content]`; the handle, `with`, return,
-> and scope contracts remain applicable.
+> **Canonical surface:** Content application is defined by
+> [CharacterDialogue authoring](character-dialogue.md). Direct calls use
+> `character(args)[content]`; the handle, `with`, return, and scope contracts
+> below apply to that typed call.
 
 Arcweft supports concise dialogue while preserving typed control over voice, BGM, stage objects, hooks, and cancellation.
 
 Related:
 
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
-- [Dialogue Character Methods, Dialogue Views, Speaker Presets, Interpolation, and Preload](dialogue-character-methods-and-views.md)
-- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Character Configuration, Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Audio / Spatial / TTS / BGM](../03-presentation/audio.md)
@@ -24,7 +23,7 @@ Related:
 The preferred detailed shape is:
 
 ```arcw
-speaker.say(args)[dialogue]
+character(args)[dialogue]
 with {
     line plan
 }
@@ -33,7 +32,7 @@ with {
 For script-like sections, `with:` is indentation sugar for the same block:
 
 ```arcw
-speaker.say(args)[dialogue]
+character(args)[dialogue]
 with:
     line plan
 ```
@@ -41,7 +40,7 @@ with:
 For ordinary lines, the speaker itself can receive the content block:
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -52,7 +51,7 @@ with:
 This is equivalent to the canonical detailed form:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -73,7 +72,7 @@ with:
 This is equivalent to the same canonical detailed form:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -82,20 +81,21 @@ with:
 ```
 
 All four source forms produce the same typed `DialogueLine`. The canonical
-semantic shape uses an explicit speaker content call plus a `with { ... }` plan,
-while formatters may preserve `with:` in hand-written scenario files. When the
-callee is a speaker preset, the explicit content call remains the preset call
-surface, for example `alice2(voice=auto)[...]`, instead of being rewritten as a
-character `.say(...)` call.
+semantic shape uses an explicit character content call plus a `with { ... }`
+plan, while formatters may preserve `with:` in hand-written scenario files.
+Configured dialogue values retain their options when called, for example
+`alice2(voice=auto)[...]`.
 
 ---
 
-## Why `alice[...] with {}` is reasonable
+## Why `alice()[...] with {}` is reasonable
 
-It is realistic and useful because `alice[...]` is only interpreted as a dialogue content call when `alice` has type `Speaker`, `Ref<Character>`, or `SpeakerPreset` and appears in flow-item position.
+It is realistic and useful because `alice()[...]` is only interpreted as a
+dialogue content call when `alice` has type `CharacterDialogue` or
+`Ref<Character>` and appears in flow-item position.
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 ```
 
 is a dialogue call.
@@ -109,14 +109,14 @@ is normal indexing, because `items` is not a speaker.
 If a parser cannot decide during lossless parsing, it keeps a generic `PostfixBracket` CST node. HIR lowering resolves it by type.
 
 ```text
-Speaker + [DialogueText] in flow item context
+CharacterDialogue + [DialogueText] in flow item context
   -> DialogueContentCall
 
 Collection + [Expr]
   -> IndexExpr
 ```
 
-The formatter may expand ambiguous cases to `alice.say()[...]`.
+The formatter may expand ambiguous cases to `alice()[...]`.
 
 ---
 
@@ -125,14 +125,14 @@ The formatter may expand ambiguous cases to `alice.say()[...]`.
 Both block forms are supported. `with { ... }` is canonical; `with:` is syntax sugar for an indented source block.
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 with {
     at(0.42s) { alice.stage.look(smile) }
 }
 ```
 
 ```arcw
-alice[おはよう。[p]]
+alice()[おはよう。[p]]
 with:
     at(0.42s):
         alice.stage.look(smile)
@@ -145,12 +145,12 @@ The two forms are equivalent after parsing. Project formatting controls the prin
 line_plan_style = "indent"   # "indent" | "brace" | "preserve"
 ```
 
-`with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a dialogue tag. Lowering should normalize it to the same representation as `with { ... }`.
+`with:` begins a line-plan block only when it is aligned with the speaker line or content call. Inside dialogue text, `with:` is ordinary text unless escaped or parsed as part of a content action. Lowering should normalize it to the same representation as `with { ... }`.
 
 A bare block after dialogue content is not a line plan:
 
 ```arcw
-alice.say()[おはよう。[p]] {
+alice()[おはよう。[p]] {
     debug_log()
 }
 ```
@@ -179,7 +179,7 @@ with:
 It is equivalent to:
 
 ```arcw
-alice.say(voice=auto, look=.smile)[
+alice(voice=auto, look=.smile)[
     今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
 ]
 with:
@@ -199,7 +199,7 @@ with:
 A line plan may export a value with `out`. Without an explicit `out`, the line result is `()`.
 
 ```arcw
-let handles = alice.say(voice=auto)[
+let handles = alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -211,7 +211,7 @@ with:
 The type is inferred from the `out` expression.
 
 ```text
-alice.say(...)[...] with: out (voice, look)
+alice(...)[...] with: out (voice, look)
   -> (VoiceHandle, StageCueHandle)
 ```
 
@@ -226,7 +226,7 @@ If a cancellation branch can complete the line differently, it must either:
 Example with explicit cancel result:
 
 ```arcw
-let result = try alice.say(voice=auto)[
+let result = try alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -245,7 +245,7 @@ For most visual-novel lines, cancel handlers use `continue`, `goto`, or `return 
 Line results can be destructured.
 
 ```arcw
-let (line_alice, (face0, face1, voice)) = alice.say(
+let (line_alice, (face0, face1, voice)) = alice(
     id=@say.opening.dream_hint,
     voice=auto,
     look=.smile,
@@ -265,7 +265,7 @@ with:
 `_` explicitly discards a returned value.
 
 ```arcw
-let (_, (face0, _, voice)) = alice.say(voice=auto)[
+let (_, (face0, _, voice)) = alice(voice=auto)[
     聞いて。[p]
 ]
 with:
@@ -322,7 +322,7 @@ let _ = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
 To persist BGM beyond the line, detach it or use a global scope explicitly.
 
 ```arcw
-let bgm_handle = alice.say()[始まるよ。[p]]
+let bgm_handle = alice()[始まるよ。[p]]
 with:
     let bgm = bgm.play(@bgm.tension, scope=line, drop=fade(300ms))
     out bgm.detach()
@@ -386,7 +386,7 @@ Preload declarations are hints, not hidden blocking operations. If an asset is n
 A line result binding may technically shadow a speaker alias:
 
 ```arcw
-let (alice, _) = alice.say()[おはよう。[p]] with:
+let (alice, _) = alice()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
     out (actor, ())
 ```
@@ -394,7 +394,7 @@ let (alice, _) = alice.say()[おはよう。[p]] with:
 This is allowed but discouraged, because after the binding `alice` refers to the stage handle, not the speaker alias. The LSP warns by default. Prefer a distinct name:
 
 ```arcw
-let (alice_actor, _) = alice.say()[おはよう。[p]] with:
+let (alice_actor, _) = alice()[おはよう。[p]] with:
     let actor = alice.stage.acquire(scope=line)
     out (actor, ())
 ```
@@ -404,7 +404,7 @@ let (alice_actor, _) = alice.say()[おはよう。[p]] with:
 ## Desugaring summary
 
 ```arcw
-alice[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -414,7 +414,7 @@ with:
 becomes conceptually:
 
 ```arcw
-alice.say()[
+alice()[
     おはよう。[p]
 ]
 with:
@@ -431,7 +431,7 @@ with:
 also becomes the same call.
 
 ```arcw
-let (_, cue) = alice.say()[おはよう。[p]] with:
+let (_, cue) = alice()[おはよう。[p]] with:
     let cue = at(0.42s): alice.stage.look(smile)
     out (line.voice_handle(), cue)
 ```

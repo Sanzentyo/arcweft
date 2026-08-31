@@ -144,7 +144,8 @@ static-certification context decides whether its effects are allowed. Its
 result must satisfy the checked content-root contract. `Unit` or an arbitrary
 runtime value is not silently converted into content.
 
-`$(expr)` is removed. It is not retained as an alias or migration reader.
+The former dollar-delimited interpolation spelling is removed. It is not
+retained as an alias or migration reader; use `#[expr]`.
 
 ## Attached content roles
 
@@ -225,13 +226,13 @@ Content construction and reveal-time execution are different operations:
 ```
 
 `[call]` accepts only the existing typed timeline-call result/failure contract;
-it does not discard arbitrary values. `[! ...]` is removed.
+it does not discard arbitrary values. The former bang-prefixed call spelling is
+removed.
 
-An unknown dot form such as `[.hoge]` never falls back to a custom call, mark,
-layout, or effect. A closed zero-argument builtin such as `[.sparkle]` may exist
-only when its owning enum declares that exact shorthand. Custom content,
-timeline work, and marks use `#hoge()`, `[call hoge()]`, and `[mark @.hoge]`
-respectively.
+An unknown dot selector never falls back to a custom call, mark, layout, or
+effect. Custom content, timeline work, and marks use `#hoge()`,
+`[call hoge()]`, and `[mark @.hoge]` respectively. Closed shorthand is reserved
+for point controls whose owning enum explicitly declares it.
 
 ## Ruby
 
@@ -244,7 +245,6 @@ The retained forms are:
 ```arcw
 #ruby("へんなゆめ")[変な夢]
 ｜変な夢《へんなゆめ》
-|変な夢《へんなゆめ》
 |[変な夢](へんなゆめ)
 ```
 
@@ -252,13 +252,12 @@ The reading is the required positional operand of `ruby`; the attached body is
 the required `InlineContent` base. Only typography settings already owned by
 the checked Ruby schema may be named options.
 
-Compact curly Ruby and paired tag Ruby are removed:
+The typed call and the two authoring delimiters above are the complete Ruby
+surface.
 
-```text
-|base{reading}
-[ruby rt=...]...[/ruby]
-[rb rt=...]...[/rb]
-```
+The former compact and bracket Ruby alternatives are absent rather than
+deprecated: no removed-spelling recognizer, migration diagnostic, or formatter
+rewrite is retained for them.
 
 No external text-service codec, interchange profile, or parallel segmented
 Ruby model is added. Per-character Ruby is represented by adjacent Ruby nodes.

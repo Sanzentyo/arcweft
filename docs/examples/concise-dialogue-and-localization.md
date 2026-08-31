@@ -1,6 +1,6 @@
-# Concise Dialogue, Tags, Ruby, Views, and Localization Example
+# Concise Dialogue, Content Actions, Ruby, Views, and Localization Example
 
-This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character.say()[...]` form.
+This example shows Arcweft's flow-integrated dialogue surface. There is no separate `script` item: concise dialogue and typed logic coexist inside `flow`. Ordinary lines use `character:` sugar, while complex lines use the canonical `character()[...]` form.
 
 The paired project manifest owns the dialogue presentation used by this module:
 
@@ -22,7 +22,7 @@ mod game.routes.opening
 
 use game.prelude.*
 use game.characters.{alice}
-use tag game.fx.{flash}
+use dialogue game.fx.{flash}
 
 preload next @flow.alice_intro {
     alice.prefetch(flow=@flow.alice_intro, lines=6)
@@ -40,8 +40,8 @@ pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice(id=@say.opening.greeting, look=.smile, voice=auto):
         おはよう、#[player_name]。[l]
 
-    alice.say(id=@say.opening.dream_hint, voice=auto, look=.normal)[
-        今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]
+    alice(id=@say.opening.dream_hint, voice=auto, look=.normal)[
+        今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[call flash(time=90ms)][p]
     ]
     with {
         at(0.45s) { alice.stage.look(worried, crossfade=120ms) }
@@ -57,31 +57,21 @@ pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
 }
 ```
 
-A dialogue-safe custom content interpolation:
-
-```arcw
-pub dialogue tag @tag.flash flash(
-    color: Color = rgb("#ffffff"),
-    time: Duration = 120ms,
-) -> Result<DialogueCue, TagError>
-effects { stage.flash }
-{
-    Ok(DialogueCue.Flash { color, time })
-}
-```
+The flow imports the ordinary typed dialogue-safe `flash` callable. Because it
+is a zero-width timeline operation, the line invokes it through `[call ...]`;
+body-bearing presentation extensions use registered `#path(args)[body]`
+content calls instead.
 
 Character style excerpt:
 
 ```arcw
 pub character alice {
-    display_name ja-JP = "アリス"
-    display_name en-US = "Alice"
+    display = "Alice"
+}
 
-    text_style {
-        name_color = rgb("#ffb7d5")
-        text_color = rgb("#f7e8ff")
-        unread_color = rgb("#ffffff")
-        read_color = rgb("#b8b8c8")
+pub style alice_dialogue {
+    .dialogue_content {
+        color = rgb("#f7e8ff")
     }
 }
 ```
@@ -96,7 +86,7 @@ text_key = "text.opening.alice.002"
 speaker = "character.alice"
 source_locale = "ja-JP"
 source_text = "今日は少しだけ、変な夢を見たんだ。"
-source_rich_text = "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]"
+source_rich_text = "今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[call flash(time=90ms)][p]"
 source_hash = "b3:f8c0..."
 voice_key = "voice.alice.opening.002"
 flow = "flow.opening"
@@ -149,7 +139,7 @@ locale en-US from ja-JP {
 The same line can be written with bracket speaker-call syntax:
 
 ```arcw
-alice[
+alice()[
     おはよう、#[player_name]。[l]
 ]
 with:
@@ -160,8 +150,8 @@ with:
 A complex line may return scoped handles. `_` explicitly discards and drops a returned handle.
 
 ```arcw
-let (actor, (_, voice)) = alice.say(id=@say.opening.dream_hint, voice=auto)[
-    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[flash time=90ms][p]
+let (actor, (_, voice)) = alice(id=@say.opening.dream_hint, voice=auto)[
+    今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[call flash(time=90ms)][p]
 ]
 with:
     let actor = alice.stage.acquire(scope=line, memo=true)

@@ -259,7 +259,7 @@ reading the full observation payload.
       "object_id": "object.dialogue.0.0.run.2",
       "role": "rich_text_run",
       "rich_text_kind": "text_run",
-      "shaders": [{ "id": "soft_glow", "phase": "run_offscreen_pass" }],
+      "shaders": [{ "id": "soft_glow", "phase": "offscreen_pass" }],
       "effects": [{ "id": "motion", "phase": "glyph_transform" }],
       "motion_function_ids": ["breath_orbit"],
       "children": ["object.dialogue.0.0.proxy.2.0"]
@@ -319,11 +319,11 @@ keys are:
 | `object_layer` | resolved rich-text object layer |
 | `effect` / `effect_id` | presentation effect id |
 | `shader` / `shader_id` | presentation shader id |
-| `motion` / `motion_function_id` | motion function id extracted from `[effect .motion fn=...]` |
+| `motion` / `motion_function_id` | motion function id extracted from `#fx(motion(motion_function=...))[...]` |
 | `proxy` / `object_proxy_id` | custom object proxy id |
 | `proxy_type` / `object_proxy_type` | custom object proxy type name, such as `KeywordHit` |
 | `proxy_role` / `object_proxy_role` | resolved custom object proxy role, such as `keyword` |
-| `proxy_struct` / `object_proxy_struct` | source Arcweft struct that supplied `#[text_proxy]` / `#[rich_text_proxy]` defaults |
+| `proxy_struct` / `object_proxy_struct` | source Arcweft struct that supplied typed `#[text_proxy]` / `#[rich_text_proxy]` defaults |
 | `proxy_param` / `object_proxy_param` | object proxy parameter key; may also be written as `proxy_param=key=value` |
 | `proxy_param.{key}` / `object_proxy_param.{key}` | object proxy parameter key/value match, such as `proxy_param.channel=choice` |
 | `has_transform` | `true` / `false` transform presence |

@@ -7,8 +7,8 @@ presentation entity or renderer element.
 Related:
 
 - [Flow-Integrated Scenario Syntax](scenario-surface-syntax.md)
-- [Dialogue Character Methods, Dialogue Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
-- [Dialogue Control Tags, Ruby, Inline Formatting, and Hooks](dialogue-control-tags-and-ruby.md)
+- [Dialogue Character Configuration, Views, Interpolation, and Preload](dialogue-character-methods-and-views.md)
+- [Dialogue Content Actions, Ruby, Interpolation, and Line Marks](dialogue-content-actions-ruby-and-interpolation.md)
 - [Dialogue Calls, Line Plans, Cancellation, and Scoped Content Blocks](dialogue-calls-scopes-cancellation.md)
 - [Character Stage / Sprite / Voice Timeline](../03-presentation/character-stage.md)
 - [Hooks and Memoization](hooks-and-memoization.md)
@@ -122,12 +122,12 @@ pub view SideNote(dialogue: DialogueView) {
     }
 }
 
-narrator.say(view=@view.SideNote)[
+narrator(view=@view.SideNote)[
     右側の注釈Viewに出る。[p]
 ]
 ```
 
-Speaker presets carry the same typed option:
+Configured dialogue values carry the same typed option:
 
 ```arcw
 let side_alice = alice(view=@view.SideNote, voice=auto)
@@ -172,17 +172,17 @@ uses the custom type normally.
 
 ## Character styles and cascade
 
-Character definitions may contribute dialogue typography and read-state style:
+Character declarations own identity/display. Dialogue typography and read-state
+style are supplied by the selected presentation Style/profile:
 
 ```arcw
 pub character alice {
     display = "Alice"
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#f7e8ff")
-            }
-        }
+}
+
+pub style alice_dialogue {
+    .dialogue_content {
+        color = rgba(247, 232, 255, 255)
     }
 }
 ```
@@ -190,10 +190,10 @@ pub character alice {
 The effective cascade is:
 
 ```text
-inline rich-text span
+content application
   -> line options
-  -> speaker preset options
-  -> character dialogue_style
+  -> configured dialogue options
+   -> selected character presentation defaults
   -> authored View style
   -> selected profile dialogue Style
   -> standard defaults
