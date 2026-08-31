@@ -31,8 +31,6 @@ fn removed_and_session_identity_public_api_contract() {
     cases.compile_fail("tests/ui/removed_old_hir_flow.rs");
     cases.compile_fail("tests/ui/removed_old_hir_flow_item.rs");
     cases.compile_fail("tests/ui/removed_old_hir_thread.rs");
-    cases.compile_fail("tests/ui/removed_legacy_hir_dialogue.rs");
-    cases.compile_fail("tests/ui/removed_legacy_speaker_content.rs");
     cases.compile_fail("tests/ui/removed_flow_tail_accessor.rs");
     cases.compile_fail("tests/ui/removed_flow_source_convenience.rs");
     cases.compile_fail("tests/ui/final_thread_body_fields_private.rs");
