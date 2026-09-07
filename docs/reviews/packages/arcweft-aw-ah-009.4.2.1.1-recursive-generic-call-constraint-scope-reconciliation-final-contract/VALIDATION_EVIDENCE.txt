@@ -1,0 +1,51 @@
+Line endings normalized to LF; diagnostic text retained.
+
+Compiler investigation probe (exit 101)
+   Compiling arcweft-compiler v0.1.0 (D:\git\arcweft\crates\arcweft-compiler)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 30.70s
+     Running tests\project_function_instances.rs (target\debug\deps\project_function_instances-c73663941738ce1b.exe)
+
+running 1 test
+test one_curried_prefix_supports_distinct_later_generic_arguments ... FAILED
+
+failures:
+
+---- one_curried_prefix_supports_distinct_later_generic_arguments stdout ----
+
+thread 'one_curried_prefix_supports_distinct_later_generic_arguments' (29604) panicked at crates\arcweft-compiler\tests\project_function_instances.rs:26:6:
+one prefix retains its later generic binder until each terminal application: Project(ProjectCompileError { stage: "runtime-plan-lower", diagnostics: [ProjectCompileDiagnostic { module: None, stage: RuntimePlanLower, source: None, syntax_diagnostic: None, diagnostic: Diagnostic { severity: Error, code: Some(DiagnosticCode("compiler.runtime_semantic_projection")), message: "semantic type cannot enter runtime lowering: checked type `$generic<local.arcweft.single-source::crate::choose>#1` has no closed runtime representation", span: None, labels: [], notes: [], suggestions: [], commands: [] } }], tooling: Some(ProjectToolingLease { hir_database: HirDatabaseId(1), modules: 1, compile_units: 1, symbol_world: ProjectSymbolWorldId { package: CallablePackageId("local.arcweft.single-source"), root_document: SourceDocumentId("arcweft-source://src/main.arcw"), profile: "single-source" }, symbol_revision: ProjectSymbolRevision(SourceSetRevision([9, 67, 53, 254, 206, 13, 113, 80, 10, 10, 240, 141, 142, 78, 188, 44, 243, 117, 80, 152, 17, 130, 179, 167, 220, 101, 166, 201, 210, 84, 39, 45])), diagnostics: 0 }) })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    one_curried_prefix_supports_distinct_later_generic_arguments
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `-p arcweft-compiler --test project_function_instances`
+
+Sema focused regression (exit 101)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.39s
+     Running unittests src\lib.rs (target\debug\deps\arcweft_lang_sema-411cc836721170f3.exe)
+
+running 4 tests
+test final_analysis::tests::generic_calls::recursive_generic_call_keeps_its_enclosing_type_rigid ... FAILED
+test final_analysis::tests::generic_calls::generic_constructor_cannot_bind_an_enclosing_parameter_to_another_type ... ok
+test final_analysis::tests::generic_calls::generic_result_constructor_retains_enclosing_parameter_identity ... ok
+test final_analysis::tests::generic_calls::generic_closure_call_reuses_its_rigid_parameter ... ok
+
+failures:
+
+---- final_analysis::tests::generic_calls::recursive_generic_call_keeps_its_enclosing_type_rigid stdout ----
+
+thread 'final_analysis::tests::generic_calls::recursive_generic_call_keeps_its_enclosing_type_rigid' (39028) panicked at crates\arcweft-lang-sema\src\final_analysis\tests\generic_calls.rs:56:23:
+recursive generic calls retain the enclosing type identity: CallConstraintFailure(FinalCallConstraintFailure { owner: ExprId(RawHirId { module: HirModuleId { database: HirDatabaseId(2), slot: 1 }, slot: 23, kind: Expr }), failure: Invariant(Constraint(MalformedSchemaInventory)) })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    final_analysis::tests::generic_calls::recursive_generic_call_keeps_its_enclosing_type_rigid
+
+test result: FAILED. 3 passed; 1 failed; 0 ignored; 0 measured; 681 filtered out; finished in 0.04s
+
+error: test failed, to rerun pass `-p arcweft-lang-sema --lib`

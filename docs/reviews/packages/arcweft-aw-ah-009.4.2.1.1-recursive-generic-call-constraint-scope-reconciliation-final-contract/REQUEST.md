@@ -1,9 +1,7 @@
 # Design request: AW-AH-009.4.2.1.1 recursive generic call constraint scope reconciliation
 
 - Date: 2026-09-07
-- Status: `DESIGN_RETURNED`
-- Result: [locally authored scope contract](../packages/arcweft-aw-ah-009.4.2.1.1-recursive-generic-call-constraint-scope-reconciliation-final-contract/README.md)
-- Implementation: pending; see [current evidence](../../implementation/2026-09-07-generic-call-scope-contract.md).
+- Status: `OPEN_DESIGN_REQUEST`
 - Parent: [AW-AH-009.4.2.1](2026-09-01-aw-ah-009.4.2.1-project-callable-attached-content-declaration-and-runtime-abi-correction.md)
 - Assignment: design only; do not edit production code, tests, fixtures, Cargo
   manifests, branches, patches, or implementation overlays.
