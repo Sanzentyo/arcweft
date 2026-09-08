@@ -105,6 +105,10 @@ rust-version = "1.96"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/Sanzentyo/arcweft"
 
+[profile.test]
+# Keep backtrace locations without full type/variable debug data for every test.
+debug = "line-tables-only"
+
 [workspace.dependencies]
 arcweft = { path = "crates/arcweft" }
 arcweft-adapter-context = { path = "crates/arcweft-adapter-context" }

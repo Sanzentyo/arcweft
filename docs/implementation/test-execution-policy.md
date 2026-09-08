@@ -17,6 +17,15 @@ command inventory are retained under `test-profiling/`.
 - Do not preserve obsolete production behavior to satisfy a stale test. Update
   expectations and deterministic fixtures to the selected final contract.
 
+The workspace `test` profile keeps line-table debug information for backtraces.
+This reduces test artifact size and compiler memory pressure without changing
+optimization, debug assertions, overflow checks, or Cargo's normal concurrency.
+The `dev` profile retains full debug information. When debugging test variables,
+temporarily set `CARGO_PROFILE_TEST_DEBUG=2` for that invocation, then restore
+the normal profile for the rest of the validation slice. See the
+[Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html#debug)
+for the debug-information levels.
+
 ## Tight loop
 
 Use the smallest direct evidence for the changed owner:

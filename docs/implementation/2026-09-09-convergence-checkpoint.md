@@ -207,3 +207,8 @@ The Tier 2 recipe stopped before broad Agent observe, native auxiliary capture,
 visual goldens, and the two proof-boundary targets. These are not counted as
 passed. The full convergence goal remains active; this record establishes the
 requested clean and checkpoint validation, not final convergence.
+
+The subsequent [test profile follow-up](2026-09-09-test-profile-memory.md)
+reduces debug-information size and completes workspace test compilation
+without the memory-mapping failure. Its test-assertion failures and validation
+belong to that later record; the results above remain the pre-change evidence.
