@@ -1,5 +1,4 @@
-/target/
-/target/webgpu-parity/
+**/target/
 **/.arcweft/
 /web/node_modules/
 /web/test-results/
