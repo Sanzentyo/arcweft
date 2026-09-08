@@ -218,3 +218,10 @@ variant payload 内の独立したハッシュ計算も含めて型符号化を�
 未コミット差分を蓄積し続けず自律的に commit/push するという追加指示に従い、
 接続した実装・利用側・サンプル・証拠をまとめて記録する。進捗コミットと
 goal 全体の完了は区別し、既知の失敗と検証の実際の状態を引き続き明記する。
+
+[accepted Rust nominal の不足調査](2026-09-09-accepted-rust-nominal-gap-review.md)
+では、受理済み C1-C6 と現行の登録・型・実行・復元・所有権 API を照合した。
+既存の project nominal 対応と再利用できる部分を確認したが、Rust ADT の
+厳密な catalog join と program に結び付いた復元を含む C1-C6 は未完である。
+これは早期の不足調査の結果であり、callable の優先順位と scheduler 前の
+nominal 実装完了条件を変更しない。
