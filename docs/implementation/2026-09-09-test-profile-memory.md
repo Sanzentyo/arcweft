@@ -59,7 +59,7 @@ Logs, the exact manifest patch/hash, source commit, and results are retained at:
   131 passed / 2 failed / 0 ignored. The two failures were
   `image_resource_metadata_preserves_observed_object_ref` and
   `observation_report_serializes_stable_snake_case_enums`; their old Fx JSON
-  fixture lacks the required definition `layout` field. Later test targets
+  fixture lacks the required application `layout` field. Later test targets
   and the recipe's CLI commands were not executed after this failure.
 - `cargo check --workspace --all-targets --all-features`: passed, 17.02 seconds.
 - `cargo clippy --workspace --all-targets --all-features`: passed with warnings,
@@ -76,3 +76,6 @@ on identical Rust source. No dependency/API/ownership structure changed.
 The existing sema/callable/Agent failures remain implementation obligations.
 Changing debug information cannot establish their correction. The active
 convergence goal and its complete execution/restore acceptance are unchanged.
+
+The [Agent fixture migration](2026-09-09-agent-fx-fixture.md) subsequently fixes
+the two protocol failures and records the next workspace stopping point.

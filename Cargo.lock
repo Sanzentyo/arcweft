@@ -374,6 +374,7 @@ dependencies = [
  "arcweft-dialogue",
  "arcweft-id",
  "arcweft-layout",
+ "arcweft-presentation",
  "arcweft-resource-model",
  "arcweft-source",
  "arcweft-text-model",

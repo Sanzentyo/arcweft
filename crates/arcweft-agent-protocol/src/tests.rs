@@ -41,6 +41,7 @@ use arcweft_layout::{
     CaptureRendererKind, CaptureScope, ContentRect, LayoutCoordinateSpace, LayoutPoint, LayoutRect,
     LayoutSize, ScalePolicy,
 };
+use arcweft_presentation::fx::{FxApplication, FxApplicationDraft, FxDefinition, FxGraph, FxId};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
     ResolvedRichTextNode, RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap,
@@ -476,15 +477,18 @@ fn test_serialization_observation_report() -> AgentObservationReport {
 }
 
 fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
-    let presentation = serde_json::from_value::<RichTextPresentation>(serde_json::json!({
-        "fx": [{
-            "definition": { "package": "test", "function": "shake" },
-            "parameters": [],
-            "authored_ordinal": 0,
-            "source_range": null
-        }]
-    }))
-    .expect("typed Fx presentation fixture deserializes");
+    let definition = FxDefinition::new(
+        FxId::try_new("test", "shake").expect("fixture Fx identity"),
+        Vec::new(),
+        FxGraph::default(),
+    )
+    .expect("fixture Fx definition");
+    let draft = FxApplicationDraft::try_new(definition.id().clone(), Vec::new(), 0, None)
+        .expect("fixture Fx application draft");
+    let presentation = RichTextPresentation {
+        fx: vec![FxApplication::bind(&definition, draft).expect("fixture Fx application")],
+        ..RichTextPresentation::default()
+    };
     AgentRichTextElementRef {
         kind: AgentRichTextElementKind::TextRun,
         index: 0,

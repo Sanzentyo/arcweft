@@ -19,6 +19,7 @@ thiserror.workspace = true
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
+arcweft-presentation = { workspace = true }
 arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }
