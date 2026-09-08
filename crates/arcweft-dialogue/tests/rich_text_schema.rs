@@ -4,11 +4,11 @@ use arcweft_dialogue::rich_text::{
     DialogueControlProperty, DialogueHostEventKind, DialogueHostProperty, DialogueRichTextControl,
 };
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, PropertyPresence, RichTextDefaultValue, RichTextSourceForm,
-    RichTextTagSchema, RichTextUnit, RichTextValueKind, SelectorContract, UnknownPropertyPolicy,
+    CheckedOutputKind, PropertyPresence, RichTextDefaultValue, RichTextPointActionSchema,
+    RichTextUnit, RichTextValueKind, SelectorContract, UnknownPropertyPolicy,
 };
 
-fn assert_schema_properties_are_unique<P>(schema: &RichTextTagSchema<P>)
+fn assert_schema_properties_are_unique<P>(schema: &RichTextPointActionSchema<P>)
 where
     P: Copy + Eq + Ord + std::fmt::Debug,
 {
@@ -30,7 +30,7 @@ where
 }
 
 #[test]
-fn dialogue_control_inventory_round_trips_and_rejects_removed_property_names() {
+fn dialogue_control_inventory_round_trips() {
     for owner in DialogueRichTextControl::ALL {
         assert_eq!(
             DialogueRichTextControl::from_source_name(owner.canonical_name()),
@@ -47,24 +47,7 @@ fn dialogue_control_inventory_round_trips_and_rejects_removed_property_names() {
         );
     }
 
-    assert_eq!(
-        DialogueRichTextControl::from_source_name("page"),
-        Some(DialogueRichTextControl::Page)
-    );
-    assert_eq!(
-        DialogueRichTextControl::from_source_name("wait"),
-        Some(DialogueRichTextControl::LineWait)
-    );
-    assert_eq!(
-        DialogueRichTextControl::from_source_name("nl"),
-        Some(DialogueRichTextControl::HardBreak)
-    );
-    assert_eq!(
-        DialogueRichTextControl::from_source_name("cm"),
-        Some(DialogueRichTextControl::Clear)
-    );
     assert_eq!(DialogueControlProperty::from_source_name("speed"), None);
-    assert_eq!(DialogueControlProperty::from_source_name("value"), None);
 }
 
 #[test]
@@ -129,14 +112,8 @@ fn dialogue_host_inventory_owns_only_current_names() {
         }
     }
 
-    assert_eq!(
-        DialogueHostEventKind::from_source_name("!"),
-        Some(DialogueHostEventKind::Call)
-    );
     assert_eq!(DialogueHostProperty::from_source_name("at"), None);
     assert_eq!(DialogueHostProperty::from_source_name("call"), None);
-    assert_eq!(DialogueHostProperty::from_source_name("attrs"), None);
-    assert_eq!(DialogueHostProperty::from_source_name("value"), None);
 }
 
 #[test]
@@ -163,24 +140,9 @@ fn dialogue_host_schemas_retain_cross_field_inputs_without_guessing_them() {
 
     let call = DialogueHostEventKind::Call.schema();
     assert!(call.properties.is_empty());
-    assert!(
-        call.source_forms
-            .contains(&RichTextSourceForm::DedicatedPayload)
-    );
-
-    let conditional = DialogueHostEventKind::ConditionalStart.schema();
-    assert!(
-        conditional
-            .source_forms
-            .contains(&RichTextSourceForm::DedicatedPayload)
-    );
-
     let timed_cue = DialogueHostEventKind::TimedCue.schema();
-    assert!(
-        timed_cue
-            .source_forms
-            .contains(&RichTextSourceForm::DedicatedPayload)
-    );
+    assert_eq!(call.source.spelling(), "call");
+    assert_eq!(timed_cue.source.spelling(), "at");
     assert_eq!(
         timed_cue
             .properties

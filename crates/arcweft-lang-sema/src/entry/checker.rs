@@ -1111,10 +1111,23 @@ impl<'a> EntryCheckContext<'a> {
                 ));
                 return None;
             };
+            let semantic_type = match ty.semantic_identity_digest() {
+                Ok(identity) => identity,
+                Err(error) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_type_scope",
+                        format!(
+                            "Entry target Flow parameter has an invalid generic scope: {error}"
+                        ),
+                        resolved.source.clone(),
+                    ));
+                    return None;
+                }
+            };
             parameters.push(CheckedEntryFlowParameter {
                 coordinate,
                 name: name.clone(),
-                semantic_type: ty.semantic_identity_digest(),
+                semantic_type,
             });
         }
         Some(CheckedEntryFlowTarget {
@@ -1292,10 +1305,22 @@ impl<'a> EntryCheckContext<'a> {
             ));
             return None;
         }
+        let semantic_type =
+            match TypeKind::ProjectNominal(checked.clone()).semantic_identity_digest() {
+                Ok(identity) => identity,
+                Err(error) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_type_scope",
+                        format!("{role} role has an invalid generic scope: {error}"),
+                        source,
+                    ));
+                    return None;
+                }
+            };
         let checked_nominal = CheckedProjectNominal::new(
             checked.declaration().clone(),
             declaration.owner(),
-            TypeKind::ProjectNominal(checked.clone()).semantic_identity_digest(),
+            semantic_type,
             checked.arguments().to_vec(),
         );
         match self.authority.runtime_nominal_projection(&checked_nominal) {

@@ -1,12 +1,14 @@
 mod construction;
 mod dialogue_content;
 pub mod entry_inventory;
+mod flow_ops;
 mod function_sites;
 pub mod generation_contract;
 mod local_declarations;
 #[cfg(test)]
 pub(crate) use local_declarations::RuntimeLocalDeclarationTableBuilder;
 mod nominal_record_domains;
+mod project_call;
 mod type_kind;
 mod type_table;
 mod variant_domains;
@@ -15,12 +17,16 @@ pub use construction::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueEffectSiteSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
+    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeFlowSeed, RuntimeFunctionExecutableBodySeed, RuntimeFunctionInputBindingSeed,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
     RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
@@ -36,11 +42,20 @@ pub use construction::{
     RuntimeTraitMethodDeclarationSeed, RuntimeTraitMethodSeed, RuntimeTraitMethodSeedId,
 };
 pub use dialogue_content::{
-    RuntimeDialogueContentPlan, RuntimeDialogueContentPlanTable,
-    RuntimeDialogueContentPlanTableError, RuntimeDialogueMark, RuntimeDialogueValueRole,
+    RuntimeDialogueContentApplicationKey, RuntimeDialogueContentEffectSlot,
+    RuntimeDialogueContentEffectTrigger, RuntimeDialogueContentPlan,
+    RuntimeDialogueContentPlanTable, RuntimeDialogueContentPlanTableError,
+    RuntimeDialogueContentSlot, RuntimeDialogueContentTemplateManifest,
+    RuntimeDialogueContentTemplateManifestError, RuntimeDialogueContentTemplateManifestTable,
+    RuntimeDialogueEffectSite, RuntimeDialogueMark, RuntimeDialogueValueRole,
     RuntimeDialogueValueSite,
 };
-pub use function_sites::{RuntimeFunctionSite, RuntimeFunctionSiteError, RuntimeFunctionSiteTable};
+pub use function_sites::{
+    RuntimeFunctionEffectSet, RuntimeFunctionEffectSetError, RuntimeFunctionExecutableBody,
+    RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSite,
+    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
+    RuntimeFunctionSiteTable,
+};
 pub use generation_contract::{
     CharacterDialogueRuntimeCustomFieldDigest, RuntimeCharacterCatalogDigest,
     RuntimeGenerationIdentity, RuntimeProducerRootId, RuntimeProjectRootId,
@@ -53,6 +68,20 @@ pub use nominal_record_domains::{
     RuntimeNominalRecordDomain, RuntimeNominalRecordDomainError, RuntimeNominalRecordDomainField,
     RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed,
     RuntimeNominalRecordDomainTable,
+};
+pub use project_call::{
+    RuntimeProjectCallAbiSeed, RuntimeProjectCallAttachedMaterialization,
+    RuntimeProjectCallAttachedMaterializationSeed, RuntimeProjectCallAttachedPresence,
+    RuntimeProjectCallAttachedPresenceSeed, RuntimeProjectCallDefaultCaptureSource,
+    RuntimeProjectCallDefaultFunction, RuntimeProjectCallDefaultFunctionSeed,
+    RuntimeProjectCallFixedMaterialization, RuntimeProjectCallFixedMaterializationSeed,
+    RuntimeProjectCallInput, RuntimeProjectCallInputSeed, RuntimeProjectCallOperand,
+    RuntimeProjectCallOperandSeed, RuntimeProjectCallOrdinaryMaterialization,
+    RuntimeProjectCallOrdinaryMaterializationSeed, RuntimeProjectCallOutcome,
+    RuntimeProjectCallOutcomeSeed, RuntimeProjectCallPlan, RuntimeProjectCallPlanError,
+    RuntimeProjectCallPlanSeed, RuntimeProjectCallRestMaterialization,
+    RuntimeProjectCallRestMaterializationSeed, RuntimeProjectCallSite, RuntimeProjectCallSiteTable,
+    RuntimeProjectCallSiteTableError,
 };
 pub use type_kind::{
     RuntimeAgentOperationalType, RuntimeAgentTypeProjection, RuntimeOperationalType,
@@ -85,6 +114,7 @@ use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
     RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeSemanticTypeId,
 };
+pub use crate::runtime_id::RuntimeProjectCallSiteId;
 use crate::runtime_id::{
     RuntimeDialogueValueSlotId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
     RuntimeLocalDeclarationId, RuntimePlanTypeId, RuntimePublicLabel,
@@ -120,6 +150,7 @@ pub struct RuntimePlan {
     pub(crate) nominal_record_domains: RuntimeNominalRecordDomainTable,
     pub(crate) variant_domains: RuntimeVariantDomainTable,
     pub(crate) function_sites: RuntimeFunctionSiteTable,
+    pub(crate) project_call_sites: RuntimeProjectCallSiteTable,
     pub(crate) dialogue_content: RuntimeDialogueContentPlanTable,
     pub(crate) entries: Vec<RuntimeEntrySpec>,
     pub(crate) callable_executables: Vec<RuntimeCallableExecutable>,
@@ -193,8 +224,18 @@ impl RuntimePlan {
     }
 
     #[must_use]
+    pub const fn project_call_sites(&self) -> &RuntimeProjectCallSiteTable {
+        &self.project_call_sites
+    }
+
+    #[must_use]
     pub const fn dialogue_content(&self) -> &RuntimeDialogueContentPlanTable {
         &self.dialogue_content
+    }
+
+    #[must_use]
+    pub const fn dialogue_content_templates(&self) -> &RuntimeDialogueContentTemplateManifestTable {
+        self.dialogue_content.templates()
     }
 
     #[must_use]
@@ -1056,6 +1097,19 @@ pub enum FlowOp {
         binding: Option<RuntimePattern>,
         target: RuntimeHostCallTarget,
     },
+    /// Typed project-function control transfer. The site catalog row owns the
+    /// result pattern together with the reusable ABI/materialization plan;
+    /// this operation carries only the checked site identity.
+    ProjectCall {
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+    },
+    /// Applies a function value in the current fiber, retaining its return
+    /// binding while an executable body is running or suspended.
+    ApplyFunction {
+        callee: RuntimeExpr,
+        args: Vec<crate::value::RuntimeCallArgument>,
+        result: RuntimePattern,
+    },
     If {
         condition: RuntimeExpr,
         then_ops: Vec<FlowOp>,
@@ -1277,6 +1331,7 @@ pub enum FlowEvent {
     DialogueLine {
         activation: crate::runtime_id::DialogueActivationId,
         line: RuntimeLineId,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
         values: Box<[RuntimeDialogueValueBinding]>,
     },
     LineCancelled {
@@ -1315,6 +1370,7 @@ pub enum FlowEvent {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeDialogueValueBinding {
     pub slot: RuntimeDialogueValueSlotId,
+    pub role: RuntimeDialogueValueRole,
     pub value: crate::value::RuntimeValue,
 }
 

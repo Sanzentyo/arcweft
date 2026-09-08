@@ -37,7 +37,7 @@ use crate::{
         CharacterDeclarationSource, CharacterDefinitionLimitKind, CharacterDefinitionLimits,
         RegisteredSemanticWorld,
     },
-    types::{CharacterNominalType, EntityKind},
+    types::{CharacterNominalType, EntityKind, TypeKind},
 };
 
 /// One request-scoped inventory bound to exact semantic and source identities.
@@ -348,7 +348,9 @@ pub fn collect_character_references(
             .map_err(|_| CharacterReferenceInventoryError::SemanticOwnerMismatch { owner: id })?;
         let fact = match expression.kind() {
             HirExprKind::EntityReference(reference)
-                if checked.ty().is_entity_ref_kind(&EntityKind::Character) =>
+                if checked
+                    .value_type()
+                    .is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character)) =>
             {
                 owner_fact(&input, id, reference, budget)?
             }
@@ -585,7 +587,8 @@ fn expected_nominal(
         .map_err(CharacterReferenceInventoryError::from)?;
     Ok(analysis
         .expression(owner)
-        .and_then(|checked| checked.ty().character_nominal())
+        .and_then(|checked| checked.value_type())
+        .and_then(TypeKind::character_nominal)
         .cloned())
 }
 

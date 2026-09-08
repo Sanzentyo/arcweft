@@ -8,6 +8,8 @@ use serde::{
 };
 use thiserror::Error;
 
+use super::canonical::{CanonicalEncoder, CanonicalReader, CanonicalSink, FxCanonicalDecodeError};
+
 /// Golden angle in radians, fixed by its canonical `f32` bits.
 pub const FX_GOLDEN_ANGLE_RAD: f32 = f32::from_bits(0x4019_98ff);
 
@@ -78,6 +80,7 @@ pub enum FxRuntimeType {
     Color = 6,
     Vec2 = 7,
     Transform2D = 8,
+    U32 = 9,
 }
 
 /// Closed runtime value set. Strings, selectors, and resource IDs are static graph data.
@@ -93,8 +96,29 @@ pub enum FxRuntimeValue {
     Color(FxColor),
     Vec2(FxVec2),
     Transform2D(Transform2D),
+    U32(u32),
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum FxRuntimeValueDecodeError {
+    #[error(transparent)]
+    Canonical(#[from] FxCanonicalDecodeError),
+    #[error("unknown Fx runtime type tag {0}")]
+    UnknownRuntimeType(u8),
+    #[error("Fx runtime {kind} value {value} is out of range")]
+    IntegerOutOfRange { kind: &'static str, value: u64 },
+    #[error("Fx runtime float uses non-canonical bits {bits:#010x}")]
+    NonCanonicalFloat { bits: u32 },
+    #[error(transparent)]
+    Numeric(#[from] FiniteF32Error),
+    #[error(transparent)]
+    Transform(#[from] Transform2DError),
+}
+
+/// Canonical zig-zag projection shared by every Fx value codec.
+///
+/// Using the unsigned magnitude keeps the numeric wire rule explicit and
+/// avoids reinterpreting a signed machine representation as an unsigned one.
 /// Closed authored transform value.
 ///
 /// Deserialization validates opacity. Runtime resolution additionally rejects
@@ -427,7 +451,119 @@ impl FxColor {
     }
 }
 
+impl FxRuntimeType {
+    pub(super) const fn decode_canonical_tag(tag: u8) -> Result<Self, FxRuntimeValueDecodeError> {
+        match tag {
+            0 => Ok(Self::Bool),
+            1 => Ok(Self::I32),
+            2 => Ok(Self::F32),
+            3 => Ok(Self::Length),
+            4 => Ok(Self::Angle),
+            5 => Ok(Self::Seconds),
+            6 => Ok(Self::Color),
+            7 => Ok(Self::Vec2),
+            8 => Ok(Self::Transform2D),
+            9 => Ok(Self::U32),
+            value => Err(FxRuntimeValueDecodeError::UnknownRuntimeType(value)),
+        }
+    }
+}
+
 impl FxRuntimeValue {
+    pub(super) fn encode_canonical_v1<S: CanonicalSink>(
+        &self,
+        encoder: &mut CanonicalEncoder<S>,
+    ) -> Result<(), S::Error> {
+        encoder.tag(self.value_type() as u8)?;
+        match self {
+            Self::Bool(value) => encoder.boolean(*value)?,
+            Self::I32(value) => encoder.signed_i32(*value)?,
+            Self::U32(value) => encoder.unsigned(u64::from(*value))?,
+            Self::F32(value) => encoder.f32_bits(value.to_bits())?,
+            Self::Length(value) => encoder.f32_bits(value.value().to_bits())?,
+            Self::Angle(value) => encoder.f32_bits(value.value().to_bits())?,
+            Self::Seconds(value) => encoder.f32_bits(value.value().to_bits())?,
+            Self::Color(value) => {
+                for channel in [value.red(), value.green(), value.blue(), value.alpha()] {
+                    encoder.f32_bits(channel.value().to_bits())?;
+                }
+            }
+            Self::Vec2(value) => {
+                encoder.f32_bits(value.x.to_bits())?;
+                encoder.f32_bits(value.y.to_bits())?;
+            }
+            Self::Transform2D(value) => {
+                for component in [
+                    value.translate_x.value(),
+                    value.translate_y.value(),
+                    value.scale_x,
+                    value.scale_y,
+                    value.skew_x.value(),
+                    value.skew_y.value(),
+                    value.rotation.value(),
+                    value.origin_x.value(),
+                    value.origin_y.value(),
+                    value.opacity,
+                ] {
+                    encoder.f32_bits(component.to_bits())?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn decode_canonical_v1(
+        reader: &mut CanonicalReader<'_>,
+    ) -> Result<Self, FxRuntimeValueDecodeError> {
+        let runtime_type = FxRuntimeType::decode_canonical_tag(reader.tag()?)?;
+        Ok(match runtime_type {
+            FxRuntimeType::Bool => Self::Bool(reader.boolean()?),
+            FxRuntimeType::I32 => Self::I32(reader.signed_i32()?),
+            FxRuntimeType::U32 => {
+                let value = reader.unsigned()?;
+                Self::U32(u32::try_from(value).map_err(|_| {
+                    FxRuntimeValueDecodeError::IntegerOutOfRange { kind: "U32", value }
+                })?)
+            }
+            FxRuntimeType::F32 => Self::F32(decode_canonical_finite(reader)?),
+            FxRuntimeType::Length => {
+                Self::Length(Length::try_pixels(decode_canonical_finite(reader)?.get())?)
+            }
+            FxRuntimeType::Angle => {
+                Self::Angle(Angle::try_radians(decode_canonical_finite(reader)?.get())?)
+            }
+            FxRuntimeType::Seconds => Self::Seconds(Seconds::try_seconds(
+                decode_canonical_finite(reader)?.get(),
+            )?),
+            FxRuntimeType::Color => Self::Color(FxColor::new(
+                Opacity::try_new(decode_canonical_finite(reader)?)?,
+                Opacity::try_new(decode_canonical_finite(reader)?)?,
+                Opacity::try_new(decode_canonical_finite(reader)?)?,
+                Opacity::try_new(decode_canonical_finite(reader)?)?,
+            )),
+            FxRuntimeType::Vec2 => Self::Vec2(FxVec2 {
+                x: decode_canonical_finite(reader)?,
+                y: decode_canonical_finite(reader)?,
+            }),
+            FxRuntimeType::Transform2D => {
+                let value = Transform2D {
+                    translate_x: Length::try_pixels(decode_canonical_finite(reader)?.get())?,
+                    translate_y: Length::try_pixels(decode_canonical_finite(reader)?.get())?,
+                    scale_x: decode_canonical_finite(reader)?,
+                    scale_y: decode_canonical_finite(reader)?,
+                    skew_x: Angle::try_radians(decode_canonical_finite(reader)?.get())?,
+                    skew_y: Angle::try_radians(decode_canonical_finite(reader)?.get())?,
+                    rotation: Angle::try_radians(decode_canonical_finite(reader)?.get())?,
+                    origin_x: Length::try_pixels(decode_canonical_finite(reader)?.get())?,
+                    origin_y: Length::try_pixels(decode_canonical_finite(reader)?.get())?,
+                    opacity: decode_canonical_finite(reader)?,
+                };
+                value.validate()?;
+                Self::Transform2D(value)
+            }
+        })
+    }
+
     pub const fn value_type(&self) -> FxRuntimeType {
         match self {
             Self::Bool(_) => FxRuntimeType::Bool,
@@ -439,6 +575,7 @@ impl FxRuntimeValue {
             Self::Color(_) => FxRuntimeType::Color,
             Self::Vec2(_) => FxRuntimeType::Vec2,
             Self::Transform2D(_) => FxRuntimeType::Transform2D,
+            Self::U32(_) => FxRuntimeType::U32,
         }
     }
 }
@@ -656,55 +793,17 @@ fn checked_finite(operation: &'static str, value: f32) -> Result<FiniteF32, Tran
     FiniteF32::try_new(value).map_err(|_| Transform2DError::NonFiniteResult { operation })
 }
 
-fn checked_length(operation: &'static str, value: f32) -> Result<Length, Transform2DError> {
-    checked_finite(operation, value).map(Length)
+fn decode_canonical_finite(
+    reader: &mut CanonicalReader<'_>,
+) -> Result<FiniteF32, FxRuntimeValueDecodeError> {
+    let bits = reader.f32_bits()?;
+    let value = FiniteF32::try_from_bits(bits)?;
+    if value.to_bits() != bits {
+        return Err(FxRuntimeValueDecodeError::NonCanonicalFloat { bits });
+    }
+    Ok(value)
 }
 
-pub(crate) fn hash_runtime_value(hasher: &mut blake3::Hasher, value: &FxRuntimeValue) {
-    hasher.update(&[value.value_type() as u8]);
-    match value {
-        FxRuntimeValue::Bool(value) => {
-            hasher.update(&[u8::from(*value)]);
-        }
-        FxRuntimeValue::I32(value) => {
-            hasher.update(&value.to_le_bytes());
-        }
-        FxRuntimeValue::F32(value) => {
-            hasher.update(&value.to_bits().to_le_bytes());
-        }
-        FxRuntimeValue::Length(value) => {
-            hasher.update(&value.value().to_bits().to_le_bytes());
-        }
-        FxRuntimeValue::Angle(value) => {
-            hasher.update(&value.value().to_bits().to_le_bytes());
-        }
-        FxRuntimeValue::Seconds(value) => {
-            hasher.update(&value.value().to_bits().to_le_bytes());
-        }
-        FxRuntimeValue::Color(value) => {
-            for channel in [value.red(), value.green(), value.blue(), value.alpha()] {
-                hasher.update(&channel.value().to_bits().to_le_bytes());
-            }
-        }
-        FxRuntimeValue::Vec2(value) => {
-            hasher.update(&value.x.to_bits().to_le_bytes());
-            hasher.update(&value.y.to_bits().to_le_bytes());
-        }
-        FxRuntimeValue::Transform2D(value) => {
-            for bits in [
-                value.translate_x.value().to_bits(),
-                value.translate_y.value().to_bits(),
-                value.scale_x.to_bits(),
-                value.scale_y.to_bits(),
-                value.skew_x.value().to_bits(),
-                value.skew_y.value().to_bits(),
-                value.rotation.value().to_bits(),
-                value.origin_x.value().to_bits(),
-                value.origin_y.value().to_bits(),
-                value.opacity.to_bits(),
-            ] {
-                hasher.update(&bits.to_le_bytes());
-            }
-        }
-    }
+fn checked_length(operation: &'static str, value: f32) -> Result<Length, Transform2DError> {
+    checked_finite(operation, value).map(Length)
 }

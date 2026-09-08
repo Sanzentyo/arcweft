@@ -202,7 +202,7 @@ impl HirExprKind {
             | Self::If(_)
             | Self::IfLet(_)
             | Self::Match(_)
-            | Self::DialogueContentApplication(_)
+            | Self::AttachedContentApplication(_)
             | Self::PostfixBracket(_)
             | Self::Error(_)
             | Self::ForSynthetic(_) => Ok(None),

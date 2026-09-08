@@ -8,7 +8,7 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
         &json,
         "縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。",
     );
-    assert_eq!(run["entity"], "sen.say");
+    assert_eq!(run["entity"], "character.sen");
     assert_eq!(
         observed_object_rich_text_frame(run)["line"],
         "say.windows_fonts.001"
@@ -23,14 +23,16 @@ fn agent_observe_native_renderer_reports_windows_fonts_sample_vertical_rl_geomet
         run["bbox"]["width"].as_u64().unwrap() <= 400,
         "sample vertical_rl run should be column-shaped rather than one long horizontal line: {run}"
     );
-    assert!(run["capture_refs"]["captures"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|capture| capture["kind"] == "mask"
-            && capture["uri"]
-                .as_str()
-                .is_some_and(|uri| uri.ends_with(".mask.rgba"))));
+    assert!(
+        run["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
+    );
     assert_windows_fonts_sample_vertical_cluster_readback(&source_path, &json);
 }
 
@@ -49,21 +51,22 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
                 && observed_object_rich_text_frame(object)["line"] == "say.full.005"
         })
         .expect("target dialogue_view object is observed");
-    let vertical_rl_display_run = observed_object_rich_text_frame(dialogue_view)["display_map"]
-        ["text_runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|run| {
-            run["range"]["start"].as_u64() == Some(27) && run["range"]["end"].as_u64() == Some(63)
-        })
-        .expect("vertical_rl display-map run is observed");
+    let vertical_rl_display_run =
+        observed_object_rich_text_frame(dialogue_view)["display_map"]["text_runs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|run| {
+                run["range"]["start"].as_u64() == Some(27)
+                    && run["range"]["end"].as_u64() == Some(63)
+            })
+            .expect("vertical_rl display-map run is observed");
     assert_eq!(
         vertical_rl_display_run["presentation"]["layout"]["jlreq_strictness"],
         "strict"
     );
     let vertical_rl = find_rich_text_run_object(&json, "吾輩は猫である。ABC 123 2026");
-    assert_eq!(vertical_rl["entity"], "bob.say");
+    assert_eq!(vertical_rl["entity"], "character.bob");
     assert_eq!(
         observed_object_rich_text_frame(vertical_rl)["line"],
         "say.full.005"
@@ -90,14 +93,16 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_vertical_inference_
     );
     assert_eq!(first_vertical_cluster["bbox"]["width"], 30);
     assert_eq!(first_vertical_cluster["bbox"]["height"], 30);
-    assert!(first_vertical_cluster["capture_refs"]["captures"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .any(|capture| capture["kind"] == "mask"
-            && capture["uri"]
-                .as_str()
-                .is_some_and(|uri| uri.ends_with(".mask.rgba"))));
+    assert!(
+        first_vertical_cluster["capture_refs"]["captures"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|capture| capture["kind"] == "mask"
+                && capture["uri"]
+                    .as_str()
+                    .is_some_and(|uri| uri.ends_with(".mask.rgba")))
+    );
     let first_vertical_cluster_mask_uri =
         rich_text_object_capture_uri(first_vertical_cluster, "mask", "application/octet-stream");
     assert_agent_read_uri_object_image_has_content(
@@ -169,7 +174,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert!(rich_text_text_run_has_effect(inferred, "arc"));
     assert!(
         rich_text_text_run_effect_count(inferred, "sparkle") >= 2,
-        "custom and .host-dispatched sparkle effects should both survive lowering: {inferred}"
+        "custom sparkle effects should both survive lowering: {inferred}"
     );
     assert!(rich_text_text_run_has_transform(
         inferred,
@@ -215,7 +220,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
     assert_full_grammar_text_object_proxy_hit_region(&json);
     assert_full_grammar_text_object_proxy_observed_object(&source_path, &json);
     assert_full_grammar_nested_text_object_proxies(&source_path, &json);
-    assert_full_grammar_inferred_text_object_proxy(&source_path, &json);
+    assert_full_grammar_typed_text_object_proxy(&source_path, &json);
     assert_full_grammar_presentation_scalar_depth(&json);
     assert_full_grammar_text_page_object_readback(&source_path, &json);
     assert_full_grammar_text_line_object_readback(&source_path, &json);
@@ -235,7 +240,7 @@ fn agent_observe_native_renderer_reports_full_grammar_sample_rich_text_construct
         raw_block["text"]
             .as_str()
             .is_some_and(|text| text.contains("[.shake]") && text.contains("#[player_name]")),
-        "raw block text should keep rich-text tags and interpolation literally: {raw_block}"
+        "raw block text should keep point actions and interpolation literally: {raw_block}"
     );
 }
 
@@ -361,21 +366,19 @@ fn assert_effects_animation_combined_typewriter_capture(
 fn agent_observe_native_rich_text_reports_structured_visual_diagnostics() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-structured-diagnostics",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [effect .missing_fx amp=2px]missing effect[/effect] and [effect .shader id=ghost_glow phase=run_offscreen_pass]missing shader[/effect][p]
+    alice: #fx(shader(resource=@.ghost_glow, phase=.offscreen_pass))[missing shader][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
 
     assert_native_rich_text_layer_image_has_content(&json);
-    assert_agent_native_visual_diagnostic(&json, "missing_custom_effect", "missing_fx");
     assert_agent_native_visual_diagnostic(&json, "missing_shader", "ghost_glow");
-    assert_agent_native_visual_image_diagnostic(&json, "missing_custom_effect", "missing_fx");
     assert_agent_native_visual_image_diagnostic(&json, "missing_shader", "ghost_glow");
 
     let read_uri = "arcweft://session/cli/frame/0/layer.dialogue.rich_text.png";
@@ -403,11 +406,6 @@ flow main {
     let resource: serde_json::Value =
         serde_json::from_slice(&read_output.stdout).expect("read-uri resource is JSON");
     assert_eq!(resource["uri"], read_uri);
-    assert_agent_native_visual_resource_diagnostic(
-        &resource,
-        "missing_custom_effect",
-        "missing_fx",
-    );
     assert_agent_native_visual_resource_diagnostic(&resource, "missing_shader", "ghost_glow");
 }
 
@@ -415,13 +413,13 @@ flow main {
 fn agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_resources() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-missing-motion-diagnostics",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.motion fn=ghost_orbit amp=4px target=glyph]missing motion[/][p]
+    alice: #fx(motion(motion_function=@.ghost_orbit, amplitude=4px, target=.glyph))[missing motion][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -466,7 +464,7 @@ fn assert_effects_animation_function_motion_run_changes_over_time(
     let motion_run = find_rich_text_run_object(json, "関数motion");
     let motion_effect = assert_rich_text_run_object_has_effect(motion_run, "motion");
     assert_eq!(
-        motion_effect["params"]["fn"]["value"], "breath_orbit",
+        motion_effect["params"]["motion_function"]["value"], "breath_orbit",
         "motion run should carry the referenced Arcweft animation function id: {motion_run}"
     );
     let object_id = motion_run["id"]
@@ -586,8 +584,8 @@ fn assert_effects_animation_warm_glow_shader_run_is_tinted(
     let shader_run = find_rich_text_run_object(json, "warm glow shader");
     let shader = assert_rich_text_run_object_has_shader(shader_run, "warm_glow");
     assert_eq!(
-        shader["phase"], "run_offscreen_pass",
-        "warm_glow should be a run_offscreen_pass shader: {shader_run}"
+        shader["phase"], "offscreen_pass",
+        "warm_glow should be an offscreen_pass shader: {shader_run}"
     );
     let object_id = shader_run["id"]
         .as_str()
@@ -1167,7 +1165,7 @@ fn assert_full_grammar_soft_glow_shader_readback(source_path: &Path, json: &serd
     assert_eq!(shader_node["role"], "rich_text_run");
     assert_eq!(shader_node["rich_text_kind"], "text_run");
     assert_eq!(shader_node["shaders"][0]["id"], "soft_glow");
-    assert_eq!(shader_node["shaders"][0]["phase"], "run_offscreen_pass");
+    assert_eq!(shader_node["shaders"][0]["phase"], "offscreen_pass");
     let dir = temp_dir("agent-observe-full-grammar-soft-glow-shader");
     let raw_path = dir.join("full-grammar-soft-glow-shader.rgba");
 
@@ -1287,15 +1285,15 @@ fn agent_observe_native_renderer_writes_sample_full_frame_png_vertical_captures(
 fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop() {
     let path = temp_arcw(
         "agent-observe-native-dialogue-layer",
-        r"
+        r#"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Hello native layer[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-dialogue-layer");
     let png_path = dir.join("native-dialogue-layer.png");
@@ -1352,13 +1350,13 @@ flow main {
 fn agent_observe_native_renderer_reports_capture_step_metadata() {
     let path = temp_arcw(
         "agent-observe-native-capture-step",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Step pinned capture[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-capture-step");
     let png_path = dir.join("native-step.png");
@@ -1407,13 +1405,13 @@ flow main {
 fn agent_observe_native_capture_step_defaults_capture_time_for_typewriter() {
     let path = temp_arcw(
         "agent-observe-native-capture-step-typewriter-time",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
+    alice: #layout(.vertical_rl)[#fx(typewriter(characters_per_second=1))[吾輩]][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-capture-step-typewriter-time");
     let step_path = dir.join("native-step-typewriter-mask.rgba");
@@ -1497,76 +1495,16 @@ flow main {
 }
 
 #[test]
-fn agent_observe_native_renderer_reports_custom_effect_diagnostics() {
-    let path = temp_arcw(
-        "agent-observe-native-custom-effect-diagnostic",
-        r"
-character alice {}
-
-flow main {
-    alice: [.unknown_custom_effect amp=2px]custom effect[/][p]
-}
-",
-    );
-    let dir = temp_dir("agent-observe-native-custom-effect-diagnostic");
-    let png_path = dir.join("native-custom-effect.png");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--json")
-        .arg("--image")
-        .arg("png")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
-        .arg("--out")
-        .arg(&png_path)
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("4")
-        .arg("--max-ops")
-        .arg("64")
-        .output()
-        .expect("arcw agent observe reports native custom effect diagnostics");
-
-    assert!(
-        output.status.success(),
-        "native custom effect diagnostic capture should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native custom effect report is JSON");
-    assert!(
-        json["diagnostics"].as_array().is_some_and(|diagnostics| {
-            diagnostics.iter().any(|diagnostic| {
-                diagnostic["severity"] == "warning"
-                    && diagnostic["message"]
-                        .as_str()
-                        .is_some_and(|message| message.contains("missing_custom_effect"))
-            })
-        }),
-        "native custom effect capture should surface renderer diagnostics: {json}"
-    );
-    let bytes = fs::read(&png_path).expect("read native custom effect PNG");
-    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-
-    fs::remove_file(&path).expect("remove temp native custom effect source");
-    fs::remove_dir_all(&dir).expect("remove temp native custom effect dir");
-}
-
-#[test]
 fn agent_observe_native_renderer_applies_shader_glyph_color_phase() {
     let path = temp_arcw(
         "agent-observe-native-shader-glyph-color-phase",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [effect .shader id=soft_glow phase=glyph_color amount=1 dir=1,0]shader phase[/effect][p]
+    alice: #fx(shader(resource=@.soft_glow, phase=.glyph_color, amount=1, direction=vec2(1.0, 0.0)))[shader phase][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-shader-glyph-color-phase");
     let png_path = dir.join("native-shader-glyph-color-phase.png");
@@ -1626,10 +1564,10 @@ fn agent_observe_native_renderer_applies_shader_post_process_phase() {
     let path = temp_arcw(
         "agent-observe-native-shader-post-process-phase",
         r##"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [effect .shader id=screen_tint phase=post_process amount=1 color="#ff2020"]post process shader[/effect][p]
+    alice: #fx(shader(resource=@.screen_tint, phase=.post_process, amount=1, color=rgb("#ff2020")))[post process shader][p]
 }
 "##,
     );
@@ -1696,23 +1634,23 @@ flow main {
 fn agent_observe_native_renderer_applies_builtin_effect_post_process_phase() {
     let path = temp_arcw(
         "agent-observe-native-builtin-effect-post-process-phase",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [effect .wave phase=post_process amp=12px period=48px dir=1,0]wave phase[/effect][p]
+    alice: #fx(wave(phase=.post_process, amplitude=12px, period=48px, direction=vec2(1.0, 0.0)))[wave phase][p]
 }
-",
+"#,
     );
     let baseline = temp_arcw(
         "agent-observe-native-builtin-effect-post-process-baseline",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
     alice: wave phase[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-builtin-effect-post-process-phase");
     let raw_path = dir.join("native-builtin-effect-post-process-phase.rgba");
@@ -1797,16 +1735,16 @@ flow main {
 }
 
 #[test]
-fn agent_observe_reports_host_event_phase_effects() {
+fn agent_observe_reports_signal_and_visual_effects() {
     let path = temp_arcw(
         "agent-observe-host-event-phase-effect",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.host id=sparkle phase=host_event channel=debug]host cue[/][effect .wave phase=host_event amp=4px]wave cue[/effect][p]
+    alice: [signal @.sparkle]host cue#fx(wave(amplitude=4px))[wave cue][p]
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -1821,15 +1759,15 @@ flow main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe reports host_event phase effects");
+        .expect("arcw agent observe reports signal and visual effects");
 
     assert!(
         output.status.success(),
-        "host_event phase effect observe should succeed, stderr: {}",
+        "signal and visual effect observe should succeed, stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
     let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("host_event phase report is JSON");
+        serde_json::from_slice(&output.stdout).expect("signal and visual effect report is JSON");
     let object = json["objects"]
         .as_array()
         .expect("objects array")
@@ -1840,78 +1778,14 @@ flow main {
         .as_array()
         .expect("host events array");
     assert!(
-        host_events.iter().any(|event| {
-            event["kind"] == "effect"
-                && event["id"] == "sparkle"
-                && event["attrs"]
-                    .as_str()
-                    .is_some_and(|attrs| attrs.contains("channel=debug"))
-        }),
-        "host_event .host should be observed as a typed effect event: {json}"
-    );
-    assert!(
         host_events
             .iter()
-            .any(|event| event["kind"] == "effect" && event["id"] == "wave"),
-        "host_event builtin effect should be observed as a typed effect event: {json}"
+            .any(|event| event["kind"] == "signal" && event["signal"] == "sparkle"),
+        "signal point action should be observed as a typed host event: {json}"
     );
     assert_eq!(object["text"], "host cuewave cue");
 
-    fs::remove_file(&path).expect("remove temp host_event phase source");
-}
-
-#[test]
-fn agent_observe_native_renderer_dispatches_host_effect_registry() {
-    let path = temp_arcw(
-        "agent-observe-native-host-effect-registry",
-        r"
-character alice {}
-
-flow main {
-    alice: [.host id=sparkle amp=2px seed=custom]host effect[/][p]
-}
-",
-    );
-    let dir = temp_dir("agent-observe-native-host-effect-registry");
-    let png_path = dir.join("native-host-effect.png");
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--json")
-        .arg("--image")
-        .arg("png")
-        .arg("--object")
-        .arg("object.dialogue.0.0")
-        .arg("--out")
-        .arg(&png_path)
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("4")
-        .arg("--max-ops")
-        .arg("64")
-        .output()
-        .expect("arcw agent observe dispatches host effect registry");
-
-    assert!(
-        output.status.success(),
-        "native host effect capture should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let json: serde_json::Value =
-        serde_json::from_slice(&output.stdout).expect("native host effect report is JSON");
-    assert!(
-        json["diagnostics"].as_array().is_some_and(Vec::is_empty),
-        "registered host effect should not emit diagnostics: {json}"
-    );
-    assert!(json["images"][0]["content_pixels"].as_u64().unwrap() > 0);
-    let bytes = fs::read(&png_path).expect("read native host effect PNG");
-    assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-
-    fs::remove_file(&path).expect("remove temp native host effect source");
-    fs::remove_dir_all(&dir).expect("remove temp native host effect dir");
+    fs::remove_file(&path).expect("remove temp signal and visual effect source");
 }
 
 #[test]
@@ -1919,7 +1793,7 @@ fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -1983,13 +1857,13 @@ flow main {
 fn agent_observe_native_renderer_handles_clear_in_rich_text_layer_capture() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-clear-layer",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Before[clear]After[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-rich-text-clear-layer");
     let png_path = dir.join("native-rich-text-clear-layer.png");
@@ -2059,13 +1933,13 @@ flow main {
 fn agent_observe_native_renderer_captures_clear_after_page_layer() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-layer",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Before[clear]After[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-rich-text-page-layer");
     let png_path = dir.join("native-rich-text-page-layer.png");
@@ -2136,22 +2010,24 @@ fn assert_current_page_native_rich_text_layer_report(json: &serde_json::Value) {
     assert_eq!(page_object["text"], "After");
     assert_eq!(page_object["bbox"], dialogue_view["bbox"]);
     assert_rich_text_hit_region_matches_bbox(page_object, "text_page", 6, 11);
-    assert!(image["selected_capture"]["mask"]["object_ids"]
-        .as_array()
-        .is_some_and(|ids| ids.iter().any(|id| id == "object.dialogue.0.0.page.1")));
+    assert!(
+        image["selected_capture"]["mask"]["object_ids"]
+            .as_array()
+            .is_some_and(|ids| ids.iter().any(|id| id == "object.dialogue.0.0.page.1"))
+    );
 }
 
 #[test]
 fn agent_observe_native_renderer_captures_clear_after_page_object() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-object",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Before[clear]After[p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-rich-text-page-object");
     let png_path = dir.join("native-rich-text-page-object.png");
@@ -2684,9 +2560,11 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "released authored Scroll view observe",
     );
-    assert!(released_view["objects"]
-        .as_array()
-        .is_some_and(Vec::is_empty));
+    assert!(
+        released_view["objects"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
     assert!(released_view["views"].as_array().is_some_and(Vec::is_empty));
     assert_agent_missing_scope_diagnostic(&released_view, "view.ScrollPanel", "view");
 
@@ -2726,12 +2604,16 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "unmounted authored Scroll view observe",
     );
-    assert!(unmounted_view["objects"]
-        .as_array()
-        .is_some_and(Vec::is_empty));
-    assert!(unmounted_view["views"]
-        .as_array()
-        .is_some_and(Vec::is_empty));
+    assert!(
+        unmounted_view["objects"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
+    assert!(
+        unmounted_view["views"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
     assert_agent_missing_scope_diagnostic(&unmounted_view, "view.ScrollPanel", "view");
 
     let destroyed_view = agent_observe_json_for_path(
@@ -2751,12 +2633,16 @@ fn assert_released_authored_scroll_missing_scopes(path: &Path) {
         ],
         "destroyed authored Scroll view observe",
     );
-    assert!(destroyed_view["objects"]
-        .as_array()
-        .is_some_and(Vec::is_empty));
-    assert!(destroyed_view["views"]
-        .as_array()
-        .is_some_and(Vec::is_empty));
+    assert!(
+        destroyed_view["objects"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
+    assert!(
+        destroyed_view["views"]
+            .as_array()
+            .is_some_and(Vec::is_empty)
+    );
     assert_agent_missing_scope_diagnostic(&destroyed_view, "view.ScrollPanel", "view");
 }
 
@@ -3460,7 +3346,7 @@ fn agent_observe_read_uri_returns_latest_native_layer_image() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-layer-read-uri",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -3514,9 +3400,11 @@ flow main {
     assert_eq!(json["image"]["crop_origin"]["y"], 460);
     assert_eq!(json["body"]["body_kind"], "bytes_base64");
     assert_eq!(json["body"]["body"]["encoding"], "base64");
-    assert!(json["body"]["body"]["data"]
-        .as_str()
-        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
+    assert!(
+        json["body"]["body"]["data"]
+            .as_str()
+            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
+    );
 }
 
 #[test]
@@ -3524,7 +3412,7 @@ fn agent_observe_read_uri_uses_native_renderer_without_selected_image() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-read-uri-renderer",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -3567,9 +3455,11 @@ flow main {
     assert_eq!(json["image"]["scope"]["id"], "dialogue.rich_text");
     assert_eq!(json["image"]["composition"], "masked_framebuffer_crop");
     assert!(json["image"]["content_pixels"].as_u64().unwrap() > 0);
-    assert!(json["body"]["body"]["data"]
-        .as_str()
-        .is_some_and(|blob| blob.starts_with("iVBORw0KGgo")));
+    assert!(
+        json["body"]["body"]["data"]
+            .as_str()
+            .is_some_and(|blob| blob.starts_with("iVBORw0KGgo"))
+    );
 }
 
 #[test]
@@ -3577,7 +3467,7 @@ fn agent_observe_native_renderer_writes_ruby_mask_raw_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-ruby-mask",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -3714,13 +3604,13 @@ fn assert_native_vertical_lr_ruby_raw_crop(capture_kind: &str) {
     let fixture_name = format!("agent-observe-native-vertical-lr-ruby-{capture_kind}");
     let path = temp_arcw(
         &fixture_name,
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]天地|[夢](ゆめ)星[/][p]
+    alice: #layout(.vertical_lr)[天地|[夢](ゆめ)星][p]
 }
-",
+"#,
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!("native-vertical-lr-ruby-{capture_kind}.rgba"));
@@ -3840,13 +3730,13 @@ fn assert_native_long_vertical_ruby_mask_raw_crop(writing_mode: &str, ruby_on_ri
     let path = temp_arcw(
         &format!("agent-observe-native-long-{writing_mode}-ruby-mask"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬|[夢](ながいながいよみ)人外][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&format!(
@@ -3943,13 +3833,13 @@ fn assert_native_long_vertical_ruby_object_id_raw_crop(writing_mode: &str, ruby_
     let path = temp_arcw(
         &format!("agent-observe-native-long-{writing_mode}-ruby-object-id"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬|[夢](ながいながいよみ)人外][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&format!(
@@ -4053,13 +3943,13 @@ fn assert_native_overheight_vertical_ruby_raw_crop(
     let path = temp_arcw(
         &format!("agent-observe-native-overheight-{writing_mode}-ruby-{capture_kind}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地|[夢](あいうえおかきくけこさしすせそたちつてと)人外[/][p]
+    alice: #layout(.{writing_mode})[天地|[夢](あいうえおかきくけこさしすせそたちつてと)人外][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&format!(
@@ -4251,13 +4141,13 @@ fn temp_runnable_agent_observe_arcw(name: &str, source: &str) -> PathBuf {
 fn agent_observe_native_renderer_writes_text_combine_mask_raw_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-text-combine-mask",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]A 2026 B[/][p]
+    alice: #layout(.vertical_rl)[A 2026 B][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-text-combine-mask");
     let raw_path = dir.join("native-text-combine-mask.rgba");
@@ -4346,13 +4236,13 @@ flow main {
 fn agent_observe_native_renderer_writes_vertical_lr_text_combine_mask_raw_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-vertical-lr-text-combine-mask",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]A 2026 B[/][p]
+    alice: #layout(.vertical_lr)[A 2026 B][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-vertical-lr-text-combine-mask");
     let raw_path = dir.join("native-vertical-lr-text-combine-mask.rgba");
@@ -4454,13 +4344,13 @@ fn assert_native_text_combine_object_id_raw_crop(writing_mode: &str, label: &str
     let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]A 2026 B[/][p]
+    alice: #layout(.{writing_mode})[A 2026 B][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&format!("agent-observe-native-{label}"));
@@ -4576,13 +4466,13 @@ fn assert_native_jlreq_compressed_punctuation_raw_crop(writing_mode: &str, captu
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天、。・人[/][p]
+    alice: #layout(.{writing_mode})[天、。・人][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4713,13 +4603,13 @@ fn assert_native_jlreq_opening_punctuation_raw_crop(writing_mode: &str, capture_
     let fixture_name =
         format!("agent-observe-native-{writing_mode}-jlreq-opening-punctuation-{capture_kind}");
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春「人外[/][p]
+    alice: #layout(.{writing_mode})[天地春「人外][p]
 }}
-"
+"#
     );
     let path = temp_arcw(&fixture_name, &source);
     let dir = temp_dir(&fixture_name);
@@ -4860,13 +4750,13 @@ fn assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop(capture_kind: &s
     let fixture_name = format!("agent-observe-native-vertical-lr-jlreq-hanging-{capture_kind}");
     let path = temp_arcw(
         &fixture_name,
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]天地、人人[/][p]
+    alice: #layout(.vertical_lr)[天地、人人][p]
 }
-",
+"#,
     );
     let dir = temp_dir(&fixture_name);
     let raw_path = dir.join(format!(
@@ -5278,13 +5168,13 @@ fn observe_native_goal_clear_object_raw_at(
 fn agent_observe_native_typewriter_capture_time_changes_visibility_without_relayout() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-capture-time",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
+    alice: #layout(.vertical_rl)[#fx(typewriter(characters_per_second=1))[吾輩]][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-typewriter-capture-time");
     let hidden_path = dir.join("native-typewriter-hidden-mask.rgba");
@@ -5334,13 +5224,13 @@ flow main {
 fn agent_observe_native_typewriter_capture_time_controls_object_id() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-object-id-capture-time",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
+    alice: #layout(.vertical_rl)[#fx(typewriter(characters_per_second=1))[吾輩]][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-typewriter-object-id-capture-time");
     let hidden_path = dir.join("native-typewriter-hidden-object-id.rgba");
@@ -5411,13 +5301,13 @@ fn assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
     let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+    alice: #layout(.{writing_mode})[#fx(typewriter(characters_per_second=1))[2026]][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!("agent-observe-native-{label}-capture-time"));
@@ -5494,13 +5384,13 @@ fn assert_native_typewriter_text_combine_capture_time_controls_object_id(
     let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
+    alice: #layout(.{writing_mode})[#fx(typewriter(characters_per_second=1))[2026]][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!(
@@ -5585,13 +5475,13 @@ fn assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
     let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬#fx(typewriter(characters_per_second=1))[|[夢](ながいながいよみ)人外]][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!("agent-observe-native-{label}-capture-time"));
@@ -5654,13 +5544,13 @@ fn assert_native_typewriter_ruby_capture_time_controls_object_id(
     let path = temp_runnable_agent_observe_arcw(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬#fx(typewriter(characters_per_second=1))[|[夢](ながいながいよみ)人外]][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!(
@@ -5751,7 +5641,7 @@ fn agent_observe_native_renderer_writes_rich_text_layer_mask_attachment() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-mask",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -5833,7 +5723,7 @@ fn agent_observe_native_renderer_writes_rich_text_layer_object_id_attachment() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-object-id",
         r#"
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"

@@ -2,10 +2,12 @@ use std::sync::Arc;
 
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{
-    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionSiteSeedId,
-    RuntimeLocalDeclarationSeed, RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder,
-    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType, RuntimePureOutputType,
+    RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFunctionInputBindingSeed,
+    RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId, RuntimeLocalDeclarationSeed,
+    RuntimeLocalSeedId, RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan,
+    RuntimePlanBuilder, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureInputType,
+    RuntimePureOutputType,
 };
 use crate::pure::{
     AotPureFunctionBackend, PureFunctionBackend, PureFunctionBackendKind, PureFunctionRequest,
@@ -92,7 +94,10 @@ fn standard_map_seed(
             order,
             mapping: Box::new(RuntimeExprSeed::new(
                 function_ty,
-                RuntimeExprSeedKind::Function(site),
+                RuntimeExprSeedKind::Function {
+                    site,
+                    captures: Box::new([]),
+                },
             )),
             source: Box::new(RuntimeExprSeed::new(
                 source_ty,
@@ -212,7 +217,20 @@ fn standard_map_pure_plan() -> (Arc<RuntimePlan>, Vec<StandardMapPureCase>) {
         .cloned()
         .map(|local| {
             builder
-                .push_function_site_seed([local.clone()], [], callback_body(local))
+                .push_function_site_seed(
+                    [RuntimeFunctionInputBindingSeed {
+                        source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                        input_local: local.clone(),
+                        pattern: RuntimePatternSeed::new(
+                            i64_semantic_type(),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: local.clone(),
+                            },
+                        ),
+                    }],
+                    callback_body(local),
+                )
                 .expect("standard map callback site")
         })
         .collect::<Vec<_>>();
@@ -574,6 +592,8 @@ fn structured_closure_captures_the_exact_owning_plan() {
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
                 RuntimeLocalDeclarationSeed::new(function_semantic_type),
                 RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
             ],
             [],
             [],
@@ -582,10 +602,34 @@ fn structured_closure_captures_the_exact_owning_plan() {
     let captured = admission.local_ids()[0].clone();
     let closure_binding = admission.local_ids()[1].clone();
     let parameter = admission.local_ids()[2].clone();
+    let capture_input = admission.local_ids()[3].clone();
+    let parameter_input = admission.local_ids()[4].clone();
     let site = builder
         .push_function_site_seed(
-            [parameter.clone()],
-            [captured.clone()],
+            [
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Capture { position: 0 },
+                    input_local: capture_input,
+                    pattern: RuntimePatternSeed::new(
+                        i64_semantic_type(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: captured.clone(),
+                        },
+                    ),
+                },
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    input_local: parameter_input,
+                    pattern: RuntimePatternSeed::new(
+                        i64_semantic_type(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: parameter.clone(),
+                        },
+                    ),
+                },
+            ],
             i64_binary(
                 i64_local(parameter),
                 RuntimeBinaryOp::Add,
@@ -593,7 +637,13 @@ fn structured_closure_captures_the_exact_owning_plan() {
             ),
         )
         .expect("typed closure site");
-    let closure = RuntimeExprSeed::new(function_semantic_type, RuntimeExprSeedKind::Function(site));
+    let closure = RuntimeExprSeed::new(
+        function_semantic_type,
+        RuntimeExprSeedKind::Function {
+            site,
+            captures: Box::new([i64_local(captured.clone())]),
+        },
+    );
     let apply = RuntimeExprSeed::new(
         i64_semantic_type(),
         RuntimeExprSeedKind::Apply {
@@ -604,6 +654,7 @@ fn structured_closure_captures_the_exact_owning_plan() {
             args: Box::new([RuntimeCallArgumentSeed::new(
                 i64_value(3),
                 RuntimeCallArgumentMode::Value,
+                0,
             )]),
         },
     );
@@ -637,6 +688,480 @@ fn structured_closure_captures_the_exact_owning_plan() {
         .value;
 
     assert_eq!(value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn structured_function_input_tuple_pattern_binds_body_locals() {
+    let tuple_semantic_type = semantic_type(30);
+    let function_semantic_type = semantic_type(31);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                scalar_type_seeds()[0].clone(),
+                RuntimePlanTypeSeed::new(
+                    tuple_semantic_type,
+                    RuntimePlanTypeProjection::Tuple(Box::new([
+                        i64_semantic_type(),
+                        i64_semantic_type(),
+                    ])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    function_semantic_type,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([tuple_semantic_type]),
+                        result: i64_semantic_type(),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(tuple_semantic_type),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+            ],
+            [],
+            [],
+        )
+        .expect("tuple-pattern type graph");
+    let closure_binding = admission.local_ids()[0].clone();
+    let input_local = admission.local_ids()[1].clone();
+    let first = admission.local_ids()[2].clone();
+    let second = admission.local_ids()[3].clone();
+    let site = builder
+        .push_function_site_seed(
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local,
+                pattern: RuntimePatternSeed::new(
+                    tuple_semantic_type,
+                    RuntimePatternSeedKind::Tuple(Box::new([
+                        RuntimePatternSeed::new(
+                            i64_semantic_type(),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: first.clone(),
+                            },
+                        ),
+                        RuntimePatternSeed::new(
+                            i64_semantic_type(),
+                            RuntimePatternSeedKind::Bind {
+                                mutable: false,
+                                local: second.clone(),
+                            },
+                        ),
+                    ])),
+                ),
+            }],
+            i64_binary(i64_local(first), RuntimeBinaryOp::Add, i64_local(second)),
+        )
+        .expect("tuple-pattern function site");
+    let closure = RuntimeExprSeed::new(
+        function_semantic_type,
+        RuntimeExprSeedKind::Function {
+            site,
+            captures: Box::new([]),
+        },
+    );
+    let apply = RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Apply {
+            callee: Box::new(RuntimeExprSeed::new(
+                function_semantic_type,
+                RuntimeExprSeedKind::Local(closure_binding.clone()),
+            )),
+            args: Box::new([RuntimeCallArgumentSeed::new(
+                RuntimeExprSeed::new(
+                    tuple_semantic_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Tuple(vec![
+                        RuntimeValue::i64(2),
+                        RuntimeValue::i64(5),
+                    ])),
+                ),
+                RuntimeCallArgumentMode::Value,
+                0,
+            )]),
+        },
+    );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "tuple_pattern_add".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Let {
+                    binding: closure_binding,
+                    expr: Box::new(closure),
+                    body: Box::new(apply),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("tuple-pattern helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed tuple-pattern plan"));
+    let result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+                .expect("tuple-pattern request"),
+        )
+        .expect("tuple-pattern evaluation");
+    assert_eq!(result.value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn structured_function_input_sequence_rest_binds_one_logical_tail() {
+    let sequence_semantic_type = semantic_type(32);
+    let function_semantic_type = semantic_type(33);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                scalar_type_seeds()[0].clone(),
+                RuntimePlanTypeSeed::new(
+                    sequence_semantic_type,
+                    RuntimePlanTypeProjection::Sequence {
+                        kind: RuntimePlanSequenceKind::Seq,
+                        item: i64_semantic_type(),
+                    },
+                ),
+                RuntimePlanTypeSeed::new(
+                    function_semantic_type,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([sequence_semantic_type]),
+                        result: i64_semantic_type(),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(sequence_semantic_type),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(sequence_semantic_type),
+            ],
+            [],
+            [],
+        )
+        .expect("sequence-rest type graph");
+    let closure_binding = admission.local_ids()[0].clone();
+    let input_local = admission.local_ids()[1].clone();
+    let selected = admission.local_ids()[2].clone();
+    let tail = admission.local_ids()[3].clone();
+    let site = builder
+        .push_function_site_seed(
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local,
+                pattern: RuntimePatternSeed::new(
+                    sequence_semantic_type,
+                    RuntimePatternSeedKind::Sequence {
+                        items: Box::new([
+                            RuntimePatternSeed::new(
+                                i64_semantic_type(),
+                                RuntimePatternSeedKind::Discard,
+                            ),
+                            RuntimePatternSeed::new(
+                                i64_semantic_type(),
+                                RuntimePatternSeedKind::Bind {
+                                    mutable: false,
+                                    local: selected.clone(),
+                                },
+                            ),
+                        ]),
+                        rest: crate::plan::RuntimePatternRestSeed::Bind(tail),
+                    },
+                ),
+            }],
+            i64_local(selected),
+        )
+        .expect("sequence-rest function site");
+    let closure = RuntimeExprSeed::new(
+        function_semantic_type,
+        RuntimeExprSeedKind::Function {
+            site,
+            captures: Box::new([]),
+        },
+    );
+    let apply = RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Apply {
+            callee: Box::new(RuntimeExprSeed::new(
+                function_semantic_type,
+                RuntimeExprSeedKind::Local(closure_binding.clone()),
+            )),
+            args: Box::new([RuntimeCallArgumentSeed::new(
+                RuntimeExprSeed::new(
+                    sequence_semantic_type,
+                    RuntimeExprSeedKind::Value(RuntimeValue::Seq(RuntimeSeq::values(vec![
+                        RuntimeValue::i64(1),
+                        RuntimeValue::i64(7),
+                        RuntimeValue::i64(9),
+                    ]))),
+                ),
+                RuntimeCallArgumentMode::Value,
+                0,
+            )]),
+        },
+    );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "sequence_rest_select".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Let {
+                    binding: closure_binding,
+                    expr: Box::new(closure),
+                    body: Box::new(apply),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("sequence-rest helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed sequence-rest plan"));
+    let result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+                .expect("sequence-rest request"),
+        )
+        .expect("sequence-rest evaluation");
+    assert_eq!(result.value, RuntimeValue::i64(7));
+}
+
+#[test]
+fn structured_function_input_record_pattern_binds_by_declared_field_coordinate() {
+    let record_semantic_type = semantic_type(34);
+    let function_semantic_type = semantic_type(35);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                scalar_type_seeds()[0].clone(),
+                RuntimePlanTypeSeed::new(
+                    record_semantic_type,
+                    RuntimePlanTypeProjection::Record(Box::new([
+                        crate::plan::RuntimePlanRecordField::new("first", i64_semantic_type()),
+                        crate::plan::RuntimePlanRecordField::new("second", i64_semantic_type()),
+                    ])),
+                ),
+                RuntimePlanTypeSeed::new(
+                    function_semantic_type,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([record_semantic_type]),
+                        result: i64_semantic_type(),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(record_semantic_type),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+            ],
+            [],
+            [],
+        )
+        .expect("record-pattern type graph");
+    let closure_binding = admission.local_ids()[0].clone();
+    let input_local = admission.local_ids()[1].clone();
+    let selected = admission.local_ids()[2].clone();
+    let site = builder
+        .push_function_site_seed(
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local,
+                pattern: RuntimePatternSeed::new(
+                    record_semantic_type,
+                    RuntimePatternSeedKind::Record {
+                        fields: Box::new([crate::plan::RuntimeRecordPatternFieldSeed::new(
+                            crate::plan::RuntimeRecordFieldSeedId::from_zero_based(1),
+                            RuntimePatternSeed::new(
+                                i64_semantic_type(),
+                                RuntimePatternSeedKind::Bind {
+                                    mutable: false,
+                                    local: selected.clone(),
+                                },
+                            ),
+                        )]),
+                        rest: crate::plan::RuntimePatternRestSeed::Ignore,
+                    },
+                ),
+            }],
+            i64_local(selected),
+        )
+        .expect("record-pattern function site");
+    let closure = RuntimeExprSeed::new(
+        function_semantic_type,
+        RuntimeExprSeedKind::Function {
+            site,
+            captures: Box::new([]),
+        },
+    );
+    let record = RuntimeValue::try_record(vec![
+        ("first".to_owned(), RuntimeValue::i64(3)),
+        ("second".to_owned(), RuntimeValue::i64(8)),
+    ])
+    .expect("record value");
+    let apply = RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Apply {
+            callee: Box::new(RuntimeExprSeed::new(
+                function_semantic_type,
+                RuntimeExprSeedKind::Local(closure_binding.clone()),
+            )),
+            args: Box::new([RuntimeCallArgumentSeed::new(
+                RuntimeExprSeed::new(record_semantic_type, RuntimeExprSeedKind::Value(record)),
+                RuntimeCallArgumentMode::Value,
+                0,
+            )]),
+        },
+    );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "record_pattern_select".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Let {
+                    binding: closure_binding,
+                    expr: Box::new(closure),
+                    body: Box::new(apply),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("record-pattern helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed record-pattern plan"));
+    let result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+                .expect("record-pattern request"),
+        )
+        .expect("record-pattern evaluation");
+    assert_eq!(result.value, RuntimeValue::i64(8));
+}
+
+#[test]
+fn structured_apply_reorders_source_arguments_to_the_checked_abi() {
+    let function_semantic_type = semantic_type(36);
+    let mut builder = RuntimePlanBuilder::new();
+    let admission = builder
+        .admit_semantic_batch(
+            [
+                scalar_type_seeds()[0].clone(),
+                RuntimePlanTypeSeed::new(
+                    function_semantic_type,
+                    RuntimePlanTypeProjection::Function {
+                        parameters: Box::new([i64_semantic_type(), i64_semantic_type()]),
+                        result: i64_semantic_type(),
+                    },
+                ),
+            ],
+            [
+                RuntimeLocalDeclarationSeed::new(function_semantic_type),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+                RuntimeLocalDeclarationSeed::new(i64_semantic_type()),
+            ],
+            [],
+            [],
+        )
+        .expect("positioned-call type graph");
+    let closure_binding = admission.local_ids()[0].clone();
+    let input_zero = admission.local_ids()[1].clone();
+    let input_one = admission.local_ids()[2].clone();
+    let parameter_zero = admission.local_ids()[3].clone();
+    let parameter_one = admission.local_ids()[4].clone();
+    let site = builder
+        .push_function_site_seed(
+            [
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    input_local: input_zero,
+                    pattern: RuntimePatternSeed::new(
+                        i64_semantic_type(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: parameter_zero.clone(),
+                        },
+                    ),
+                },
+                RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Parameter { position: 1 },
+                    input_local: input_one,
+                    pattern: RuntimePatternSeed::new(
+                        i64_semantic_type(),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: parameter_one.clone(),
+                        },
+                    ),
+                },
+            ],
+            RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Binary {
+                    lhs: Box::new(i64_local(parameter_zero)),
+                    op: RuntimeBinaryOp::Sub,
+                    rhs: Box::new(i64_local(parameter_one)),
+                },
+            ),
+        )
+        .expect("positioned-call function site");
+    let closure = RuntimeExprSeed::new(
+        function_semantic_type,
+        RuntimeExprSeedKind::Function {
+            site,
+            captures: Box::new([]),
+        },
+    );
+    let apply = RuntimeExprSeed::new(
+        i64_semantic_type(),
+        RuntimeExprSeedKind::Apply {
+            callee: Box::new(RuntimeExprSeed::new(
+                function_semantic_type,
+                RuntimeExprSeedKind::Local(closure_binding.clone()),
+            )),
+            args: Box::new([
+                RuntimeCallArgumentSeed::new(i64_value(10), RuntimeCallArgumentMode::Value, 1),
+                RuntimeCallArgumentSeed::new(i64_value(1), RuntimeCallArgumentMode::Value, 0),
+            ]),
+        },
+    );
+    builder
+        .push_pure_helper_seed(RuntimePureHelperSeed {
+            name: "positioned_apply".to_owned(),
+            inputs: Box::new([]),
+            input_abi: vec![],
+            output_abi: RuntimePureOutputType::I64,
+            body: RuntimeExprSeed::new(
+                i64_semantic_type(),
+                RuntimeExprSeedKind::Let {
+                    binding: closure_binding,
+                    expr: Box::new(closure),
+                    body: Box::new(apply),
+                },
+            ),
+            scalar_eval_supported: false,
+            origin: RuntimePureHelperOrigin::Annotated,
+        })
+        .expect("positioned-call helper admission");
+    let plan = Arc::new(builder.finish().expect("sealed positioned-call plan"));
+    let result = VmPureFunctionBackend
+        .evaluate(
+            &PureFunctionRequest::try_new(Arc::clone(&plan), plan.pure_helpers()[0].id, [])
+                .expect("positioned-call request"),
+        )
+        .expect("positioned-call evaluation");
+    assert_eq!(result.value, RuntimeValue::i64(-9));
 }
 
 #[test]

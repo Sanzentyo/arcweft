@@ -2,10 +2,13 @@
 
 use super::{
     FxApplication, FxApplicationError, FxCapabilitySet, FxDiagnostic, FxDiagnosticCode,
-    FxDiagnosticContext, FxEvaluationBinding, FxEvaluationBudget, FxGraph, FxNamedValue, FxNode,
-    FxNodeKind, FxPhase, FxResolvedValue, FxRuntimeValue, FxSampleContext, FxSampleGeometry,
-    FxStaticValue, FxTarget, ResolvedFxOperation, ResolvedFxPlan, ResolvedTransformOperation,
-    ResolvedValueOperation, Transform2DError, ValueProgramInputs,
+    FxDiagnosticContext, FxEvaluationBinding, FxEvaluationBudget, FxGraph, FxNode, FxNodeKind,
+    FxPhase, FxResolvedValue, FxRuntimeValue, FxSampleContext, FxSampleGeometry, FxSelectorDomain,
+    FxShaderStage, FxShaderUniform, FxStaticValue, FxTarget, ResolvedColorOperation,
+    ResolvedFilterOperation, ResolvedFxOperation, ResolvedFxPlan, ResolvedMaskOperation,
+    ResolvedOffscreenPassOperation, ResolvedPostProcessOperation, ResolvedShaderUniformOperation,
+    ResolvedTextStyleOperation, ResolvedTransformOperation, ResolvedTransitionOperation,
+    Transform2DError, ValueProgramInputs,
 };
 
 /// Single renderer-independent evaluator for View and `RichText` applications.
@@ -91,8 +94,8 @@ impl FxGraphEvaluator {
     ) -> ResolvedFxPlan {
         let context = FxDiagnosticContext {
             definition: Some(application.definition().clone()),
-            instance: Some(binding.instance.instance),
-            child_path: binding.instance.child_path.clone(),
+            instance: Some(binding.instance.instance()),
+            child_path: binding.instance.child_path().clone(),
             source_range: application.source_range(),
             ..FxDiagnosticContext::default()
         };
@@ -114,18 +117,11 @@ impl FxGraphEvaluator {
                 error.to_string(),
             ));
         }
-        if application.parameters() != binding.instance.parameters {
-            return ResolvedFxPlan::from_diagnostic(FxDiagnostic::error(
-                FxDiagnosticCode::ProgramValidation,
-                context,
-                "live Fx parameter snapshot is stale for the authored application",
-            ));
-        }
         let sample_context = match FxSampleContext::from_logical_times(
             binding.runtime_time,
-            binding.instance.activation_logical_time,
+            binding.instance.activation_logical_time(),
             sample.ordinal,
-            binding.instance.deterministic_seed,
+            binding.instance.deterministic_seed(),
             sample.reduce_motion,
         ) {
             Ok(context) => context.with_geometry(sample.geometry),
@@ -141,6 +137,8 @@ impl FxGraphEvaluator {
         let mut visit = 0_usize;
         if let Err(diagnostic) = evaluate_graph(
             binding.definition.graph(),
+            binding.definition,
+            application.template(),
             binding.instance,
             sample_context,
             sample.interactive,
@@ -158,6 +156,8 @@ impl FxGraphEvaluator {
 #[allow(clippy::too_many_arguments)]
 fn evaluate_graph(
     graph: &FxGraph,
+    definition: &super::FxDefinition,
+    template: &super::FxBoundApplicationTemplate,
     instance: &super::FxInstanceSnapshot,
     sample_context: FxSampleContext,
     interactive: bool,
@@ -177,8 +177,15 @@ fn evaluate_graph(
                 then_graph,
                 else_graph,
             } => {
-                let condition =
-                    resolve_value(condition, instance, sample_context, context, budget)?;
+                let condition = resolve_value(
+                    condition,
+                    definition,
+                    template,
+                    instance,
+                    sample_context,
+                    context,
+                    budget,
+                )?;
                 let FxResolvedValue::Runtime(FxRuntimeValue::Bool(condition)) = condition else {
                     return Err(Box::new(FxDiagnostic::error(
                         FxDiagnosticCode::UnitMismatch,
@@ -191,6 +198,8 @@ fn evaluate_graph(
                 let child_context = child_context(context, node_ordinal, branch_ordinal)?;
                 evaluate_graph(
                     branch,
+                    definition,
+                    template,
                     instance,
                     sample_context,
                     interactive,
@@ -205,6 +214,8 @@ fn evaluate_graph(
                     let child_context = child_context(context, node_ordinal, child_ordinal)?;
                     evaluate_graph(
                         child,
+                        definition,
+                        template,
                         instance,
                         sample_context,
                         interactive,
@@ -217,54 +228,153 @@ fn evaluate_graph(
             }
             _ => operations.push(evaluate_leaf(
                 node,
-                instance,
-                sample_context,
                 interactive,
-                context,
-                budget,
+                LeafEvaluationContext {
+                    definition,
+                    template,
+                    instance,
+                    sample_context,
+                    context,
+                    budget,
+                },
             )?),
         }
     }
     Ok(())
 }
 
+struct LeafEvaluationContext<'a> {
+    definition: &'a super::FxDefinition,
+    template: &'a super::FxBoundApplicationTemplate,
+    instance: &'a super::FxInstanceSnapshot,
+    sample_context: FxSampleContext,
+    context: &'a FxDiagnosticContext,
+    budget: &'a mut FxEvaluationBudget,
+}
+
 fn evaluate_leaf(
     node: &FxNode,
-    instance: &super::FxInstanceSnapshot,
-    sample_context: FxSampleContext,
     interactive: bool,
-    context: &FxDiagnosticContext,
-    budget: &mut FxEvaluationBudget,
+    mut input: LeafEvaluationContext<'_>,
 ) -> Result<ResolvedFxOperation, Box<FxDiagnostic>> {
+    let (kind, phase, target, values) = resolve_leaf_properties(node, &mut input)?;
+    match kind {
+        FxNodeKind::Style | FxNodeKind::Text => Ok(ResolvedFxOperation::TextStyle(
+            text_style_operation(phase, target, values, input.context)?,
+        )),
+        FxNodeKind::Color => Ok(ResolvedFxOperation::Color(color_operation(
+            phase,
+            target,
+            values,
+            input.context,
+        )?)),
+        FxNodeKind::Transform => {
+            let mut transform = None;
+            for (name, value) in values {
+                match (name.as_str(), value) {
+                    (
+                        "transform" | "sampler",
+                        FxResolvedValue::Runtime(FxRuntimeValue::Transform2D(value)),
+                    ) => {
+                        if transform.replace(value).is_some() {
+                            return Err(duplicate_property(input.context, name));
+                        }
+                    }
+                    (name, _) => return Err(invalid_property(input.context, name)),
+                }
+            }
+            let transform = transform.ok_or_else(|| {
+                FxDiagnostic::error(
+                    FxDiagnosticCode::ProgramValidation,
+                    input.context.clone(),
+                    "Fx.transform requires one typed transform or sampler result",
+                )
+            })?;
+            let transform = transform.resolve().map_err(|error| {
+                let code = match error {
+                    Transform2DError::InvalidOpacity { .. } => FxDiagnosticCode::InvalidOpacity,
+                    Transform2DError::NonFiniteResult { .. } => FxDiagnosticCode::NumericNonFinite,
+                };
+                FxDiagnostic::error(code, input.context.clone(), error.to_string())
+            })?;
+            Ok(ResolvedFxOperation::Transform(
+                ResolvedTransformOperation::new(phase, target, transform, interactive),
+            ))
+        }
+        FxNodeKind::Mask => Ok(ResolvedFxOperation::Mask(mask_operation(
+            phase,
+            target,
+            values,
+            input.context,
+        )?)),
+        FxNodeKind::Filter => Ok(ResolvedFxOperation::Filter(filter_operation(
+            phase,
+            target,
+            values,
+            input.context,
+        )?)),
+        FxNodeKind::Shader => Ok(ResolvedFxOperation::ShaderUniform(
+            shader_uniform_operation(phase, target, values, input.context)?,
+        )),
+        FxNodeKind::OffscreenPass => Ok(ResolvedFxOperation::OffscreenPass(
+            offscreen_pass_operation(phase, target, values, input.context)?,
+        )),
+        FxNodeKind::PostProcess => Ok(ResolvedFxOperation::PostProcess(post_process_operation(
+            phase,
+            target,
+            values,
+            input.context,
+        )?)),
+        FxNodeKind::Transition => Ok(ResolvedFxOperation::Transition(transition_operation(
+            phase,
+            target,
+            values,
+            input.context,
+        )?)),
+        FxNodeKind::Conditional | FxNodeKind::Stack => Err(Box::new(FxDiagnostic::error(
+            FxDiagnosticCode::ProgramValidation,
+            input.context.clone(),
+            "non-leaf Fx node reached leaf evaluation",
+        ))),
+    }
+}
+
+fn resolve_leaf_properties(
+    node: &FxNode,
+    input: &mut LeafEvaluationContext<'_>,
+) -> Result<(FxNodeKind, FxPhase, FxTarget, Vec<ResolvedProperty>), Box<FxDiagnostic>> {
     let kind = node.node_kind();
     let properties = node.properties().ok_or_else(|| {
         FxDiagnostic::error(
             FxDiagnosticCode::ProgramValidation,
-            context.clone(),
+            input.context.clone(),
             "non-leaf Fx node reached leaf evaluation",
         )
     })?;
-    let phase = properties
+    let phase = match properties
         .iter()
-        .find(|property| property.name() == "phase")
-        .map(|property| match property.value() {
-            FxStaticValue::Phase(phase) => Ok(*phase),
-            _ => Err(Box::new(FxDiagnostic::error(
-                FxDiagnosticCode::ProgramValidation,
-                context.clone(),
-                "Fx phase property is not a closed phase",
-            ))),
-        })
-        .transpose()?
-        .unwrap_or_else(|| default_phase(kind, properties));
+        .find(|property| property.id() == super::FxPropertyId::Phase)
+    {
+        Some(property) => match property.value() {
+            FxStaticValue::Phase(phase) => *phase,
+            _ => {
+                return Err(Box::new(FxDiagnostic::error(
+                    FxDiagnosticCode::ProgramValidation,
+                    input.context.clone(),
+                    "Fx phase property is not a closed phase",
+                )));
+            }
+        },
+        None => default_phase(kind, properties, input.context)?,
+    };
     let target = properties
         .iter()
-        .find(|property| property.name() == "target")
+        .find(|property| property.id() == super::FxPropertyId::Target)
         .map(|property| match property.value() {
             FxStaticValue::Target(target) => Ok(*target),
             _ => Err(Box::new(FxDiagnostic::error(
                 FxDiagnosticCode::ProgramValidation,
-                context.clone(),
+                input.context.clone(),
                 "Fx target property is not a closed target",
             ))),
         })
@@ -272,61 +382,319 @@ fn evaluate_leaf(
         .unwrap_or_else(|| default_target(kind, phase));
     let values = properties
         .iter()
-        .filter(|property| !matches!(property.name(), "target" | "phase"))
+        .filter(|property| {
+            !matches!(
+                property.id(),
+                super::FxPropertyId::Target | super::FxPropertyId::Phase
+            )
+        })
         .map(|property| {
-            resolve_value(property.value(), instance, sample_context, context, budget)
-                .map(|value| FxNamedValue::new(property.name(), value))
+            resolve_value(
+                property.value(),
+                input.definition,
+                input.template,
+                input.instance,
+                input.sample_context,
+                input.context,
+                input.budget,
+            )
+            .map(|value| (property.name().to_owned(), value))
         })
         .collect::<Result<Vec<_>, _>>()?;
+    Ok((kind, phase, target, values))
+}
 
-    if kind == FxNodeKind::Transform {
-        let mut transforms = values.iter().filter_map(|value| match value {
-            FxNamedValue {
-                name,
-                value: FxResolvedValue::Runtime(FxRuntimeValue::Transform2D(transform)),
-            } if matches!(name.as_str(), "transform" | "sampler") => Some(*transform),
-            _ => None,
-        });
-        let transform = transforms.next().ok_or_else(|| {
-            FxDiagnostic::error(
-                FxDiagnosticCode::ProgramValidation,
-                context.clone(),
-                "Fx.transform requires one typed transform or sampler result",
-            )
-        })?;
-        if transforms.next().is_some() {
-            return Err(Box::new(FxDiagnostic::error(
-                FxDiagnosticCode::ProgramValidation,
-                context.clone(),
-                "Fx.transform cannot provide both `transform` and `sampler`",
-            )));
+type ResolvedProperty = (String, FxResolvedValue);
+
+fn text_style_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedTextStyleOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedTextStyleOperation {
+        phase,
+        target,
+        opacity: None,
+        weight: None,
+        slant: None,
+        font_family: None,
+        size: None,
+        spacing: None,
+        color: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("opacity", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.opacity, value, &name, context)?;
+            }
+            ("weight", FxResolvedValue::Runtime(FxRuntimeValue::I32(value))) => {
+                set_property(&mut operation.weight, value, &name, context)?;
+            }
+            ("slant", FxResolvedValue::Runtime(FxRuntimeValue::Angle(value))) => {
+                set_property(&mut operation.slant, value, &name, context)?;
+            }
+            ("font_family", FxResolvedValue::FontFamily(value)) => {
+                set_property(&mut operation.font_family, value, &name, context)?;
+            }
+            ("size", FxResolvedValue::Runtime(FxRuntimeValue::Length(value))) => {
+                set_property(&mut operation.size, value, &name, context)?;
+            }
+            ("spacing", FxResolvedValue::Runtime(FxRuntimeValue::Length(value))) => {
+                set_property(&mut operation.spacing, value, &name, context)?;
+            }
+            ("color", FxResolvedValue::Runtime(FxRuntimeValue::Color(value))) => {
+                set_property(&mut operation.color, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
         }
-        let transform = transform.resolve().map_err(|error| {
-            let code = match error {
-                Transform2DError::InvalidOpacity { .. } => FxDiagnosticCode::InvalidOpacity,
-                Transform2DError::NonFiniteResult { .. } => FxDiagnosticCode::NumericNonFinite,
-            };
-            FxDiagnostic::error(code, context.clone(), error.to_string())
-        })?;
-        return Ok(ResolvedFxOperation::Transform(
-            ResolvedTransformOperation::new(phase, target, transform, interactive),
-        ));
     }
+    Ok(operation)
+}
 
-    let interface = node.renderer_interface().ok_or_else(|| {
-        FxDiagnostic::error(
-            FxDiagnosticCode::ProgramValidation,
-            context.clone(),
-            "Fx graph node has no renderer interface",
-        )
-    })?;
-    Ok(ResolvedFxOperation::Values(ResolvedValueOperation::new(
-        interface, phase, target, values,
-    )))
+fn color_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedColorOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedColorOperation {
+        phase,
+        target,
+        tint: None,
+        multiply: None,
+        opacity: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("tint", FxResolvedValue::Runtime(FxRuntimeValue::Color(value))) => {
+                set_property(&mut operation.tint, value, &name, context)?;
+            }
+            ("multiply", FxResolvedValue::Runtime(FxRuntimeValue::Color(value))) => {
+                set_property(&mut operation.multiply, value, &name, context)?;
+            }
+            ("opacity", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.opacity, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn mask_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedMaskOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedMaskOperation {
+        phase,
+        target,
+        resource: None,
+        coverage: None,
+        invert: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("resource", FxResolvedValue::Resource(value)) => {
+                set_property(&mut operation.resource, value, &name, context)?;
+            }
+            ("coverage", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.coverage, value, &name, context)?;
+            }
+            ("invert", FxResolvedValue::Runtime(FxRuntimeValue::Bool(value))) => {
+                set_property(&mut operation.invert, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn filter_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedFilterOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedFilterOperation {
+        phase,
+        target,
+        blur_radius: None,
+        brightness: None,
+        contrast: None,
+        saturation: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("blur_radius", FxResolvedValue::Runtime(FxRuntimeValue::Length(value))) => {
+                set_property(&mut operation.blur_radius, value, &name, context)?;
+            }
+            ("brightness", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.brightness, value, &name, context)?;
+            }
+            ("contrast", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.contrast, value, &name, context)?;
+            }
+            ("saturation", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.saturation, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn shader_uniform_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedShaderUniformOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedShaderUniformOperation {
+        phase,
+        target,
+        resource: None,
+        stage: None,
+        uniforms: Vec::new(),
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("resource", FxResolvedValue::Resource(value)) => {
+                set_property(&mut operation.resource, value, &name, context)?;
+            }
+            ("stage", FxResolvedValue::ShaderStage(value)) => {
+                let value = shader_stage_phase(value);
+                set_property(&mut operation.stage, value, &name, context)?;
+            }
+            ("uniforms", FxResolvedValue::UniformRecord(value)) => {
+                if !operation.uniforms.is_empty() {
+                    return Err(duplicate_property(context, name));
+                }
+                operation.uniforms = value;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn offscreen_pass_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedOffscreenPassOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedOffscreenPassOperation {
+        phase,
+        target,
+        resource: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("resource", FxResolvedValue::Resource(value)) => {
+                set_property(&mut operation.resource, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn post_process_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedPostProcessOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedPostProcessOperation {
+        phase,
+        target,
+        resource: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("resource", FxResolvedValue::Resource(value)) => {
+                set_property(&mut operation.resource, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn transition_operation(
+    phase: FxPhase,
+    target: FxTarget,
+    values: Vec<ResolvedProperty>,
+    context: &FxDiagnosticContext,
+) -> Result<ResolvedTransitionOperation, Box<FxDiagnostic>> {
+    let mut operation = ResolvedTransitionOperation {
+        phase,
+        target,
+        kind: None,
+        easing: None,
+        duration: None,
+        progress: None,
+    };
+    for (name, value) in values {
+        match (name.as_str(), value) {
+            ("kind", FxResolvedValue::Selector(value))
+                if value.domain() == FxSelectorDomain::TransitionKind =>
+            {
+                set_property(&mut operation.kind, value, &name, context)?;
+            }
+            ("easing", FxResolvedValue::Selector(value))
+                if value.domain() == FxSelectorDomain::TransitionEasing =>
+            {
+                set_property(&mut operation.easing, value, &name, context)?;
+            }
+            ("duration", FxResolvedValue::Runtime(FxRuntimeValue::Seconds(value))) => {
+                set_property(&mut operation.duration, value, &name, context)?;
+            }
+            ("progress", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
+                set_property(&mut operation.progress, value, &name, context)?;
+            }
+            (name, _) => return Err(invalid_property(context, name)),
+        }
+    }
+    Ok(operation)
+}
+
+fn set_property<T>(
+    slot: &mut Option<T>,
+    value: T,
+    name: &str,
+    context: &FxDiagnosticContext,
+) -> Result<(), Box<FxDiagnostic>> {
+    if slot.replace(value).is_some() {
+        Err(duplicate_property(context, name.to_owned()))
+    } else {
+        Ok(())
+    }
+}
+
+fn invalid_property(context: &FxDiagnosticContext, name: &str) -> Box<FxDiagnostic> {
+    Box::new(FxDiagnostic::error(
+        FxDiagnosticCode::UnitMismatch,
+        context.clone(),
+        format!("Fx property `{name}` has an invalid closed value"),
+    ))
+}
+
+fn duplicate_property(context: &FxDiagnosticContext, name: impl Into<String>) -> Box<FxDiagnostic> {
+    Box::new(FxDiagnostic::error(
+        FxDiagnosticCode::ProgramValidation,
+        context.clone(),
+        format!("Fx property `{}` occurs more than once", name.into()),
+    ))
 }
 
 fn resolve_value(
     value: &FxStaticValue,
+    definition: &super::FxDefinition,
+    template: &super::FxBoundApplicationTemplate,
     instance: &super::FxInstanceSnapshot,
     sample_context: FxSampleContext,
     context: &FxDiagnosticContext,
@@ -336,38 +704,41 @@ fn resolve_value(
         FxStaticValue::Runtime(value) => FxResolvedValue::Runtime(*value),
         FxStaticValue::Resource(value) => FxResolvedValue::Resource(value.clone()),
         FxStaticValue::Selector(value) => FxResolvedValue::Selector(value.clone()),
-        FxStaticValue::String(value) => FxResolvedValue::String(value.clone()),
-        FxStaticValue::Parameter(slot) => {
-            let value = instance
-                .parameters
-                .get(usize::from(slot.index))
-                .copied()
-                .ok_or_else(|| {
-                    FxDiagnostic::error(
-                        FxDiagnosticCode::ProgramValidation,
-                        context.clone(),
-                        format!("Fx parameter slot {} is out of bounds", slot.index),
-                    )
-                })?;
-            if value.value_type() != slot.ty {
-                return Err(Box::new(FxDiagnostic::error(
-                    FxDiagnosticCode::UnitMismatch,
-                    context.clone(),
-                    format!(
-                        "Fx parameter slot {} has type {:?}, expected {:?}",
-                        slot.index,
-                        value.value_type(),
-                        slot.ty
-                    ),
-                )));
+        FxStaticValue::ShaderStage(value) => FxResolvedValue::ShaderStage(*value),
+        FxStaticValue::FontFamily(value) => FxResolvedValue::FontFamily(value.clone()),
+        FxStaticValue::Parameter(parameter) => {
+            let row = definition
+                .parameter_layout()
+                .abi_rows()
+                .get(usize::from(parameter.index().get()))
+                .filter(|row| row.parameter() == *parameter)
+                .ok_or_else(|| invalid_property(context, "parameter"))?;
+            match row.storage() {
+                super::FxParameterStorageSlot::Runtime(slot) => FxResolvedValue::Runtime(
+                    *instance
+                        .parameters()
+                        .get(usize::from(slot.get()))
+                        .ok_or_else(|| invalid_property(context, "parameter"))?,
+                ),
+                super::FxParameterStorageSlot::Static(slot) => match template
+                    .static_arguments()
+                    .get(usize::from(slot.get()))
+                    .ok_or_else(|| invalid_property(context, "parameter"))?
+                {
+                    super::FxStaticDefinitionArgumentValue::Resource(value) => {
+                        FxResolvedValue::Resource(value.clone())
+                    }
+                    super::FxStaticDefinitionArgumentValue::UniformRecord(record) => {
+                        resolve_uniform_record(record, instance, sample_context, context, budget)?
+                    }
+                },
             }
-            FxResolvedValue::Runtime(value)
         }
         FxStaticValue::Sampler(program) => FxResolvedValue::Runtime(
             program
                 .evaluate(
                     ValueProgramInputs {
-                        parameters: &instance.parameters,
+                        parameters: instance.parameters(),
                         state: &[],
                     },
                     sample_context,
@@ -375,21 +746,9 @@ fn resolve_value(
                 )
                 .map_err(|error| FxDiagnostic::from_evaluation(context.clone(), &error))?,
         ),
-        FxStaticValue::List(values) => FxResolvedValue::List(
-            values
-                .iter()
-                .map(|value| resolve_value(value, instance, sample_context, context, budget))
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        FxStaticValue::Record(properties) => FxResolvedValue::Record(
-            properties
-                .iter()
-                .map(|property| {
-                    resolve_value(property.value(), instance, sample_context, context, budget)
-                        .map(|value| FxNamedValue::new(property.name(), value))
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
+        FxStaticValue::UniformRecord(record) => {
+            resolve_uniform_record(record, instance, sample_context, context, budget)?
+        }
         FxStaticValue::Target(_) | FxStaticValue::Phase(_) => {
             return Err(Box::new(FxDiagnostic::error(
                 FxDiagnosticCode::ProgramValidation,
@@ -400,8 +759,57 @@ fn resolve_value(
     })
 }
 
-fn default_phase(kind: FxNodeKind, properties: &[super::FxProperty]) -> FxPhase {
-    match kind {
+fn resolve_uniform_record(
+    record: &super::FxUniformRecord,
+    instance: &super::FxInstanceSnapshot,
+    sample_context: FxSampleContext,
+    context: &FxDiagnosticContext,
+    budget: &mut FxEvaluationBudget,
+) -> Result<FxResolvedValue, Box<FxDiagnostic>> {
+    let fields = record
+        .fields()
+        .iter()
+        .map(|field| {
+            let value = match field.value() {
+                super::FxUniformValue::Constant(value) => value.value(),
+                super::FxUniformValue::Parameter(parameter) => {
+                    let reference = parameter.reference();
+                    let value = *instance
+                        .parameters()
+                        .get(usize::from(reference.slot().get()))
+                        .ok_or_else(|| invalid_property(context, field.name().as_str()))?;
+                    if value.value_type() != reference.runtime_type() {
+                        return Err(invalid_property(context, field.name().as_str()));
+                    }
+                    value
+                }
+                super::FxUniformValue::Program(program) => program
+                    .sampler()
+                    .evaluate(
+                        ValueProgramInputs {
+                            parameters: instance.parameters(),
+                            state: &[],
+                        },
+                        sample_context,
+                        budget,
+                    )
+                    .map_err(|error| FxDiagnostic::from_evaluation(context.clone(), &error))?,
+            };
+            Ok(FxShaderUniform::new(
+                field.name().clone(),
+                FxResolvedValue::Runtime(value),
+            ))
+        })
+        .collect::<Result<Vec<_>, Box<FxDiagnostic>>>()?;
+    Ok(FxResolvedValue::UniformRecord(fields))
+}
+
+fn default_phase(
+    kind: FxNodeKind,
+    properties: &[super::FxProperty],
+    context: &FxDiagnosticContext,
+) -> Result<FxPhase, Box<FxDiagnostic>> {
+    Ok(match kind {
         FxNodeKind::Style | FxNodeKind::Text | FxNodeKind::Conditional | FxNodeKind::Stack => {
             FxPhase::BeforeLayout
         }
@@ -409,17 +817,19 @@ fn default_phase(kind: FxNodeKind, properties: &[super::FxProperty]) -> FxPhase 
         FxNodeKind::Transform => FxPhase::GlyphTransform,
         FxNodeKind::Mask => FxPhase::GlyphMask,
         FxNodeKind::Filter | FxNodeKind::OffscreenPass => FxPhase::OffscreenPass,
-        FxNodeKind::Shader => properties
+        FxNodeKind::Shader => match properties
             .iter()
-            .find(|property| property.name() == "stage")
-            .and_then(|property| match property.value() {
-                FxStaticValue::Selector(stage) => phase_from_selector(stage),
-                _ => None,
-            })
-            .unwrap_or(FxPhase::GlyphColor),
+            .find(|property| property.id() == super::FxPropertyId::Stage)
+        {
+            Some(property) => match property.value() {
+                FxStaticValue::ShaderStage(stage) => shader_stage_phase(*stage),
+                _ => return Err(invalid_property(context, "stage")),
+            },
+            None => FxPhase::GlyphColor,
+        },
         FxNodeKind::PostProcess => FxPhase::PostProcess,
         FxNodeKind::Transition => FxPhase::Transition,
-    }
+    })
 }
 
 fn default_target(kind: FxNodeKind, phase: FxPhase) -> FxTarget {
@@ -432,18 +842,12 @@ fn default_target(kind: FxNodeKind, phase: FxPhase) -> FxTarget {
     }
 }
 
-fn phase_from_selector(value: &str) -> Option<FxPhase> {
-    Some(match value {
-        "before_layout" => FxPhase::BeforeLayout,
-        "layout_transform" => FxPhase::LayoutTransform,
-        "glyph_transform" => FxPhase::GlyphTransform,
-        "glyph_color" => FxPhase::GlyphColor,
-        "glyph_mask" => FxPhase::GlyphMask,
-        "offscreen_pass" | "run_offscreen_pass" => FxPhase::OffscreenPass,
-        "post_process" => FxPhase::PostProcess,
-        "transition" => FxPhase::Transition,
-        _ => return None,
-    })
+const fn shader_stage_phase(value: FxShaderStage) -> FxPhase {
+    match value {
+        FxShaderStage::GlyphColor => FxPhase::GlyphColor,
+        FxShaderStage::OffscreenPass => FxPhase::OffscreenPass,
+        FxShaderStage::PostProcess => FxPhase::PostProcess,
+    }
 }
 
 fn child_context(
@@ -487,11 +891,14 @@ fn application_diagnostic(
     error: &FxApplicationError,
 ) -> FxDiagnostic {
     let code = match error {
-        FxApplicationError::ParameterCount { .. } | FxApplicationError::ParameterType { .. } => {
-            FxDiagnosticCode::UnitMismatch
-        }
-        FxApplicationError::TooManyParameters { .. }
-        | FxApplicationError::DefinitionMismatch { .. } => FxDiagnosticCode::ProgramValidation,
+        FxApplicationError::ArgumentCount { .. }
+        | FxApplicationError::MissingArgument { .. }
+        | FxApplicationError::ArgumentType { .. } => FxDiagnosticCode::UnitMismatch,
+        FxApplicationError::TooManyArguments { .. }
+        | FxApplicationError::ArgumentCountOverflow
+        | FxApplicationError::DefinitionMismatch { .. }
+        | FxApplicationError::LayoutMismatch { .. }
+        | FxApplicationError::StorageMismatch => FxDiagnosticCode::ProgramValidation,
     };
     FxDiagnostic::error(code, context.clone(), error.to_string())
 }

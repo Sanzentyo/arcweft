@@ -1,12 +1,13 @@
 //! Resolved dialogue display frame and source map.
 
 use crate::{
-    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextSpanKind, RichTextStyle,
+    DialogueHostEvent, RichTextControl, RichTextPresentation, RichTextStyle,
     RichTextStyleContribution,
 };
 use arcweft_character::id::{CharacterId, CharacterLookId};
 use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_core::value::RuntimeDialogueContentValue;
 use arcweft_dialogue::{
     CharacterDialogueCleanupValue, CharacterDialogueCustomFieldId, CharacterDialogueCustomValue,
     CharacterDialogueFocusValue, CharacterDialogueHookValue, CharacterDialoguePortraitValue,
@@ -18,6 +19,7 @@ use arcweft_presentation::fx::FxApplication;
 use arcweft_view::ViewId;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
+use thiserror::Error;
 
 /// Typed character presentation metadata resolved by the accepted character
 /// catalog. The display name is presentation data, never line identity.
@@ -59,6 +61,10 @@ pub struct LineDisplayFrame {
     pub host_events: Vec<DialogueHostEvent>,
     pub inline_failures: Vec<InlineTextFailure>,
     pub unresolved: Vec<String>,
+    /// Exact Content envelope retained for the authored DialogueView value.
+    /// Every resolved dialogue frame carries the producer-validated envelope;
+    /// callers never need to infer content from the rendered text.
+    pub content: RuntimeDialogueContentValue,
 }
 
 #[derive(Deserialize)]
@@ -76,6 +82,7 @@ struct LineDisplayFrameWire {
     host_events: Vec<DialogueHostEvent>,
     inline_failures: Vec<InlineTextFailure>,
     unresolved: Vec<String>,
+    content: RuntimeDialogueContentValue,
 }
 
 impl<'de> Deserialize<'de> for LineDisplayFrame {
@@ -97,6 +104,7 @@ impl<'de> Deserialize<'de> for LineDisplayFrame {
             host_events: wire.host_events,
             inline_failures: wire.inline_failures,
             unresolved: wire.unresolved,
+            content: wire.content,
         };
         frame.validate().map_err(serde::de::Error::custom)?;
         Ok(frame)
@@ -106,10 +114,196 @@ impl<'de> Deserialize<'de> for LineDisplayFrame {
 /// Mapping from resolved display text back to authored rich-text nodes.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RichTextDisplayMap {
+    /// Number of resolved authored nodes in preorder, including structural
+    /// wrappers and nodes whose interpolation was discarded.
+    pub source_node_count: RichTextNodeCount,
     pub text_runs: Vec<RichTextTextRun>,
     pub ruby_annotations: Vec<RichTextRubyAnnotation>,
     pub controls: Vec<RichTextControlMarker>,
     pub host_events: Vec<RichTextHostEventMarker>,
+}
+
+/// Zero-based preorder index of one resolved authored rich-text node.
+///
+/// Display-map indices are a wire/data boundary, so they deliberately use a
+/// fixed-width integer rather than the host-dependent `usize` type.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct RichTextNodeIndex(u32);
+
+impl RichTextNodeIndex {
+    #[must_use]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        self.as_usize()
+    }
+
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        u32::try_from(index).ok().map(Self)
+    }
+
+    pub fn try_from_index(index: usize) -> Result<Self, RichTextNodeIndexOverflow> {
+        u32::try_from(index)
+            .map(Self)
+            .map_err(|_| RichTextNodeIndexOverflow { index })
+    }
+}
+
+impl From<RichTextNodeIndex> for usize {
+    fn from(value: RichTextNodeIndex) -> Self {
+        value.as_usize()
+    }
+}
+
+impl TryFrom<usize> for RichTextNodeIndex {
+    type Error = RichTextNodeIndexOverflow;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        Self::try_from_index(value)
+    }
+}
+
+/// Failure to represent a host node index in the stable display-map wire.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("rich-text node index {index} exceeds u32::MAX")]
+pub struct RichTextNodeIndexOverflow {
+    pub index: usize,
+}
+
+/// Number of resolved authored rich-text nodes in preorder.
+#[derive(
+    Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
+)]
+#[serde(transparent)]
+pub struct RichTextNodeCount(u32);
+
+impl RichTextNodeCount {
+    #[must_use]
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+
+    #[must_use]
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.0 == 0
+    }
+
+    pub fn try_from_len(length: usize) -> Result<Self, RichTextNodeCountOverflow> {
+        u32::try_from(length)
+            .map(Self)
+            .map_err(|_| RichTextNodeCountOverflow { length })
+    }
+}
+
+impl From<RichTextNodeCount> for usize {
+    fn from(value: RichTextNodeCount) -> Self {
+        value.as_usize()
+    }
+}
+
+impl TryFrom<usize> for RichTextNodeCount {
+    type Error = RichTextNodeCountOverflow;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        Self::try_from_len(value)
+    }
+}
+
+/// Failure to represent a host node count in the stable display-map wire.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("rich-text node count {length} exceeds u32::MAX")]
+pub struct RichTextNodeCountOverflow {
+    pub length: usize,
+}
+
+/// Half-open preorder range containing a Ruby wrapper's descendants.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RichTextNodeRange {
+    pub start: RichTextNodeIndex,
+    pub end: RichTextNodeIndex,
+}
+
+impl RichTextNodeRange {
+    #[must_use]
+    pub const fn new(start: RichTextNodeIndex, end: RichTextNodeIndex) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.start.get() == self.end.get()
+    }
+
+    #[must_use]
+    pub fn contains(self, index: RichTextNodeIndex) -> bool {
+        self.start <= index && index < self.end
+    }
+
+    #[must_use]
+    pub const fn len(self) -> u32 {
+        self.end.get().saturating_sub(self.start.get())
+    }
+}
+
+/// Half-open range of indices into [`RichTextDisplayMap::text_runs`].
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RichTextTextRunRange {
+    pub start: u32,
+    pub end: u32,
+}
+
+impl RichTextTextRunRange {
+    #[must_use]
+    pub const fn new(start: u32, end: u32) -> Self {
+        Self { start, end }
+    }
+
+    #[must_use]
+    pub const fn is_empty(self) -> bool {
+        self.start == self.end
+    }
+
+    #[must_use]
+    pub const fn contains(self, index: u32) -> bool {
+        self.start <= index && index < self.end
+    }
+
+    #[must_use]
+    pub const fn len(self) -> u32 {
+        self.end.saturating_sub(self.start)
+    }
+
+    #[must_use]
+    pub fn as_usize_range(self) -> std::ops::Range<usize> {
+        self.start as usize..self.end as usize
+    }
 }
 
 /// Half-open UTF-8 byte range.
@@ -131,7 +325,7 @@ impl RichTextRange {
 pub struct RichTextTextRun {
     pub range: RichTextRange,
     pub source: RichTextTextSource,
-    pub node_index: usize,
+    pub node_index: RichTextNodeIndex,
     pub styles: Vec<RichTextStyle>,
     #[serde(default)]
     pub presentation: RichTextPresentation,
@@ -144,17 +338,19 @@ pub enum RichTextTextSource {
     Text,
     Interpolation,
     InterpolationFallback,
-    RubyBase,
     ControlHardBreak,
-    ControlRaw,
+    Raw,
 }
 
-/// Ruby annotation attached to a resolved base text range.
+/// Ruby annotation attached to a resolved base text range and its exact
+/// authored/body/run ownership intervals.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextRubyAnnotation {
+    pub owner_node: RichTextNodeIndex,
+    pub body_nodes: RichTextNodeRange,
+    pub base_runs: RichTextTextRunRange,
     pub base_range: RichTextRange,
     pub ruby: String,
-    pub node_index: usize,
     pub styles: Vec<RichTextStyle>,
     #[serde(default)]
     pub presentation: RichTextPresentation,
@@ -163,7 +359,7 @@ pub struct RichTextRubyAnnotation {
 /// Control node marker in the resolved display stream.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextControlMarker {
-    pub node_index: usize,
+    pub node_index: RichTextNodeIndex,
     /// UTF-8 byte offset immediately before this control executes.
     pub text_offset: usize,
     pub control: RichTextControl,
@@ -174,7 +370,7 @@ pub struct RichTextControlMarker {
 /// Host event marker in authored node order.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RichTextHostEventMarker {
-    pub node_index: usize,
+    pub node_index: RichTextNodeIndex,
     /// UTF-8 byte offset at which this event becomes reachable.
     pub text_offset: usize,
     pub event_index: usize,
@@ -188,27 +384,67 @@ pub struct RichTextHostEventMarker {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ResolvedRichTextNode {
-    Text { text: String },
-    Ruby { base: String, ruby: String },
-    StyleStart { style: Box<RichTextStyle> },
-    StyleEnd { span: RichTextSpanKind },
-    Control { control: RichTextControl },
-    HostEvent { event: DialogueHostEvent },
+    Text {
+        text: String,
+    },
+    Scope {
+        style: Box<RichTextStyle>,
+        body: Vec<ResolvedRichTextNode>,
+    },
+    Ruby {
+        body: Vec<ResolvedRichTextNode>,
+        ruby: String,
+    },
+    Raw {
+        text: String,
+    },
+    /// A source interpolation discarded by its resolved failure policy.
+    /// Keeping this node preserves the exact preorder cardinality of the
+    /// resolved source tree without inventing display text.
+    Omitted,
+    Control {
+        control: RichTextControl,
+    },
+    HostEvent {
+        event: DialogueHostEvent,
+    },
 }
 
 impl LineDisplayFrame {
-    /// Returns each active typed Fx application once in authored style-start order.
+    /// Returns each active typed Fx application once in authored scope order.
     pub fn fx_applications(&self) -> impl Iterator<Item = &FxApplication> {
-        self.base_styles
-            .iter()
-            .chain(self.nodes.iter().filter_map(|node| match node {
-                ResolvedRichTextNode::StyleStart { style } => Some(style.as_ref()),
-                _ => None,
-            }))
-            .filter_map(|style| match style {
-                RichTextStyle::Fx { application } => Some(application),
-                _ => None,
-            })
+        fn collect<'a>(
+            styles: impl IntoIterator<Item = &'a RichTextStyle>,
+            out: &mut Vec<&'a FxApplication>,
+        ) {
+            for style in styles {
+                if let RichTextStyle::Fx { application } = style {
+                    out.push(application);
+                }
+            }
+        }
+
+        fn collect_nodes<'a>(nodes: &'a [ResolvedRichTextNode], out: &mut Vec<&'a FxApplication>) {
+            for node in nodes {
+                match node {
+                    ResolvedRichTextNode::Scope { style, body } => {
+                        collect([style.as_ref()], out);
+                        collect_nodes(body, out);
+                    }
+                    ResolvedRichTextNode::Ruby { body, .. } => collect_nodes(body, out),
+                    ResolvedRichTextNode::Text { .. }
+                    | ResolvedRichTextNode::Raw { .. }
+                    | ResolvedRichTextNode::Omitted
+                    | ResolvedRichTextNode::Control { .. }
+                    | ResolvedRichTextNode::HostEvent { .. } => {}
+                }
+            }
+        }
+
+        let mut applications = Vec::new();
+        collect(self.base_styles.iter(), &mut applications);
+        collect_nodes(&self.nodes, &mut applications);
+        applications.into_iter()
     }
 }
 
@@ -248,10 +484,11 @@ mod serde_tests {
                 text: "Hello".to_owned(),
             }],
             display_map: RichTextDisplayMap {
+                source_node_count: RichTextNodeCount::new(1),
                 text_runs: vec![RichTextTextRun {
                     range: RichTextRange::new(0, 5),
                     source: RichTextTextSource::Text,
-                    node_index: 0,
+                    node_index: RichTextNodeIndex::new(0),
                     styles: Vec::new(),
                     presentation: RichTextPresentation::default(),
                 }],
@@ -260,6 +497,15 @@ mod serde_tests {
             host_events: Vec::new(),
             inline_failures: Vec::new(),
             unresolved: Vec::new(),
+            content: RuntimeDialogueContentValue::try_new(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([1; 32])
+                    .expect("fixture artifact"),
+                arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                    .expect("fixture template"),
+                arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([2; 32]),
+                [],
+            )
+            .expect("fixture content"),
         }
     }
 

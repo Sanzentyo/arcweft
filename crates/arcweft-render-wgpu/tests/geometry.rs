@@ -51,11 +51,11 @@ fn scene() -> RenderScene {
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
-                id: "choice.one".to_owned(),
+                id: Some("choice.one".to_owned()),
                 label: "One".to_owned(),
             },
             RenderChoiceItem {
-                id: "choice.two".to_owned(),
+                id: Some("choice.two".to_owned()),
                 label: "Two".to_owned(),
             },
         ],

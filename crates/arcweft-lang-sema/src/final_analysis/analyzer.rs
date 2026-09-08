@@ -14,7 +14,7 @@ use arcweft_lang_hir::{
     dialogue_application::{HirPostfixBracket, HirPostfixBracketCandidates},
     expr::{
         HirAssociatedSeparator, HirAwaitBranchKind, HirBinaryOp, HirBorrowKind, HirCallArgument,
-        HirCallCallee, HirCallExpr, HirCallValue, HirChoiceCompactAction, HirChoiceItem,
+        HirCallCallee, HirCallInvocation, HirCallValue, HirChoiceCompactAction, HirChoiceItem,
         HirComputationBlockKind, HirExpr, HirExprKind, HirRecordField, HirRecoveredName,
         HirSelectedMember, HirUnaryOp,
     },
@@ -71,7 +71,6 @@ use crate::{
     callable::{
         CallableLimits, CallableValidator, PRODUCTION_CALLABLE_LIMITS, SpreadArgumentPolicy,
     },
-    checked_rich_text::RichTextAttributeChecker,
     effect_row::{EffectRow, EffectSubsetError, EffectSubstitution},
     effects::{EffectId, EffectSet},
     env::{EnumVariantPayload, EnvironmentEnumSchema, TypeCheckEnv},
@@ -97,22 +96,23 @@ use super::{
     CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
     CheckedCharacterDialogueTarget, CheckedChoice, CheckedChoiceGoto, CheckedClosure,
     CheckedDialogueEffectSiteOrdinal, CheckedDialogueEffectTrigger, CheckedExpression,
-    CheckedExpressionResolution, CheckedFunctionExecution, CheckedImplicitCallable, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation,
-    CheckedPattern, CheckedPatternResolution, CheckedPipe, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution, CheckedStageLook,
-    CheckedStyleCallee, CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTraitConformance,
-    CheckedTraitIdentity, CheckedTry, CheckedTryBoundary, CheckedTryCarrier, CheckedTypeSelection,
-    CheckedTypedBinding, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-    CheckedViewCall, CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedProjectCallable, CheckedProjectItem, CheckedProjectNominal,
+    CheckedSelectResolution, CheckedStageLook, CheckedSuspensionRole, CheckedSuspensionStatement,
+    CheckedTraitConformance, CheckedTraitIdentity, CheckedTryBoundaryOwner, CheckedTryCarrier,
+    CheckedTryFunctionSite, CheckedTypeSelection, CheckedTypedBinding, CheckedValueResolution,
+    CheckedViewCall, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
     FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
     PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, PreparedAssignmentStatement,
-    PreparedDialogueApplication, PreparedDialogueEffectSite, PreparedDialogueLinePlan,
+    PreparedDialogueApplication, PreparedDialogueEffectPlan, PreparedDialogueEffectSite,
     PreparedEntryExpression, PreparedEntryReference, PreparedExpressionFact,
-    PreparedExpressionShell, PreparedPatternFact, PreparedProjectVariantExpression,
-    PreparedProjectVariantOwnerSeed, PreparedProjectVariantPattern, PreparedStatementPayload,
-    PreparedVariantCaseSeed, ProjectHirSymbolLookupError, ProjectSymbolResolutionError,
-    RecursiveCallableContractEdge, RegisteredSemanticValueId, SemanticFactFamily,
+    PreparedExpressionShell, PreparedImplicitCallableBody, PreparedOwnerBoundExpression,
+    PreparedOwnerBoundResolution, PreparedPatternFact, PreparedStatementPayload,
+    PreparedTryBoundary, PreparedVariantCaseSeed, PreparedVariantExpression,
+    PreparedVariantOwnerSeed, PreparedVariantPattern, ProjectHirSymbolLookupError,
+    ProjectSymbolResolutionError, RecursiveCallableContractEdge, RegisteredSemanticValueId,
+    SemanticFactFamily,
 };
 
 /// Immutable catalogs used by the one accepted semantic pass.
@@ -287,6 +287,9 @@ struct Analyzer<'project, 'catalog, 'control> {
     type_reports: BTreeMap<TypeId, TypeResolutionReport>,
     facts: SemanticFactState,
     staged_callables: Option<StagedCheckedCallables>,
+    text_proxies: Option<crate::checked_text_proxy::PreparedCheckedTextProxyCatalog>,
+    fx_definitions: Option<super::CheckedFxDefinitionCatalog>,
+    fx_definition_body_obligations: Option<PreparedFxDefinitionBodyObligations>,
     call_frames: Rc<expression_error::CallFrameStack>,
     implicit_callable_stack: Vec<ImplicitCallableContext>,
     pipe_stack: Vec<PipeContext>,
@@ -305,7 +308,6 @@ struct PipeContext {
     left: ExprId,
     right: ExprId,
     value: TypeKind,
-    placeholders: BTreeSet<ExprId>,
 }
 
 struct FunctionSiteContext {
@@ -552,6 +554,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             type_reports: BTreeMap::new(),
             facts: SemanticFactState::new(),
             staged_callables: None,
+            text_proxies: None,
+            fx_definitions: None,
+            fx_definition_body_obligations: None,
             call_frames: expression_error::CallFrameStack::new(
                 catalogs.callable_limits.max_nested_calls(),
             )
@@ -584,14 +589,12 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         }
         self.staged_callables = Some(staged_callables);
+        self.prepare_text_proxy_catalog()?;
+        self.analyze_fx_definition_bodies()?;
         let ingress_seal = self.complete_contextual_declarations(entry_roots)?;
         self.infer_residual_statement_bindings()?;
         self.analyze_residual_expressions()?;
         self.finalize_residual_locals()?;
-        if !self.facts.pending_implicit_capture_uses().is_empty() {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
-        }
-
         let mut input = FinalSemanticAnalysisInput::new();
         input.set_ingress_seal(ingress_seal)?;
         for (owner, ty) in &self.types {
@@ -659,13 +662,32 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             self.facts
                 .prepared_calls()
                 .map_err(FinalSemanticAnalysisError::from)?,
+            self.fx_definition_body_obligations
+                .as_ref()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
         )?;
         let staged = self
             .staged_callables
             .take()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let (mut checked_callables, prepared_effects) =
+        let (mut checked_callables, prepared_effects, item_suspensions, executable_suspensions) =
             self.finish_checked_callables(staged, &input, &selected_expressions)?;
+        input.set_executable_suspensions(executable_suspensions)?;
+        for (owner, fact) in &mut input.items {
+            let Some(suspension) = item_suspensions.get(owner).copied() else {
+                continue;
+            };
+            let CheckedItemRole::Function { execution, .. } = fact.role() else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog.into());
+            };
+            *fact = CheckedItem::new(
+                fact.effects().clone(),
+                CheckedItemRole::Function {
+                    execution: execution.clone(),
+                    suspension,
+                },
+            );
+        }
         let mut item_facts = BTreeMap::new();
         for (item, fact) in &input.items {
             if item_facts.insert(*item, fact).is_some() {
@@ -687,8 +709,52 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         );
         let semantic_coordinates =
             SemanticCoordinateIndex::new(accepted_roots.as_ref(), &structural_edges);
+
+        // Owner-bound expression identities are issued only after accepted
+        // roots, structural edges, and their coordinate index are complete.
+        // Drain the temporary capture ledger into one transaction-local
+        // batch, seal every owner, then publish all replacements together so
+        // no partially closed owner-bound row can reach the final report.
+        let owner_bound_callables = self
+            .facts
+            .expressions()
+            .iter()
+            .filter_map(|(owner, fact)| {
+                matches!(
+                    fact,
+                    super::PreparedExpressionFact::OwnerBound(prepared)
+                        if matches!(
+                            prepared.resolution(),
+                            super::PreparedOwnerBoundResolution::ImplicitCallable(_)
+                        )
+                )
+                .then_some(*owner)
+            })
+            .collect::<BTreeSet<_>>();
+        let pending_capture_uses = self
+            .facts
+            .take_implicit_capture_uses_for_owners(&owner_bound_callables)
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let owner_bound_replacements = super::owner_bound_resolution::seal(
+            Arc::clone(&self.topology),
+            self.facts.expressions(),
+            self.facts.locals(),
+            &pending_capture_uses,
+            &semantic_coordinates,
+            &structural_edges,
+            &checked_callables,
+        )?;
+        self.facts
+            .replace_existing_expressions(owner_bound_replacements)
+            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         self.finalize_call_facts(&checked_callables, &semantic_coordinates)?;
-        self.finalize_evaluated_effects(&mut input, &semantic_coordinates)?;
+        self.finalize_view_fx_applications(&semantic_coordinates)?;
+        self.finalize_evaluated_effects(
+            &mut input,
+            &semantic_coordinates,
+            &structural_edges,
+            &checked_callables,
+        )?;
         self.validate_view_modifier_handler_effects(&checked_callables)?;
         let callable_joins = super::match_edges::prepare_checked_callable_joins(
             self.facts.calls(),
@@ -698,8 +764,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             &structural_edges,
             self.facts.expressions(),
             &callable_joins,
-        )
-        .map_err(|error| FinalSemanticAnalysisError::CheckedCallableJoin(Box::new(error)))?;
+        )?;
         for (owner, selection) in method_selections {
             let previous = self
                 .facts
@@ -711,11 +776,13 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily.into());
             };
             let (shell, _diagnostic_name) = previous.into_parts();
-            let (ty, type_selection, effects) = shell.into_parts();
+            let (ty, type_selection, effects) = shell
+                .into_value_parts()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
             self.facts
                 .replace_existing_expression(
                     owner,
-                    CheckedExpression::new(
+                    CheckedExpression::value(
                         ty,
                         type_selection,
                         effects,
@@ -756,6 +823,12 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             std::mem::take(&mut self.type_reports),
             accepted_roots,
             semantic_shapes,
+            self.text_proxies
+                .take()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            self.fx_definitions
+                .take()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
             self.control,
         )
     }
@@ -777,7 +850,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 continue;
             };
             let selected = application.core().candidates().selected();
-            let CallableValidator::ViewModifier(_) = selected.schema().validator() else {
+            let CallableValidator::ViewModifier(crate::callable::ViewModifierId::OnActivate) =
+                selected.schema().validator()
+            else {
                 continue;
             };
             let [argument] = application.core().execution().arguments() else {
@@ -874,6 +949,8 @@ mod call_seal;
 mod callable_effect_graph;
 #[path = "analyzer/calls.rs"]
 mod calls;
+#[path = "analyzer/checked_value_program.rs"]
+mod checked_value_program;
 pub(super) use calls::AnalyzerPreparedCallGraph;
 pub(crate) use calls::CallAnalysisFailure;
 pub(crate) use expression_error::CallFrameInvariant;
@@ -889,6 +966,11 @@ mod expression_error;
 mod expression_types;
 #[path = "analyzer/expressions.rs"]
 mod expressions;
+#[path = "analyzer/fx_definition.rs"]
+mod fx_definition;
+#[path = "analyzer/view_fx.rs"]
+mod view_fx;
+pub(super) use fx_definition::PreparedFxDefinitionBodyObligations;
 #[path = "analyzer/items.rs"]
 mod items;
 #[path = "analyzer/patterns.rs"]
@@ -897,10 +979,14 @@ mod patterns;
 mod preparation;
 #[path = "analyzer/state.rs"]
 mod state;
+#[path = "analyzer/statement_bindings.rs"]
+mod statement_bindings;
 #[path = "analyzer/statement_scrutinee.rs"]
 mod statement_scrutinee;
 #[path = "analyzer/statements.rs"]
 mod statements;
+#[path = "analyzer/text_proxy.rs"]
+mod text_proxy;
 
 pub(crate) use executable_ingress::{
     PreparedEntryIngressSeal, PreparedExecutableIngressFacts, PreparedExecutableIngressSeal,

@@ -1,109 +1,17 @@
 pub character alice {
     display = "Alice"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#d9f2ff")
-                size = 30px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 13px
-                gap = 1px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic UI"
-                color = rgb("#e8e8e8")
-                size = 28px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 13px
-                gap = 1px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub character benio {
     display = "Benio"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Meiryo"
-                color = rgb("#ffd9e8")
-                size = 29px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 13px
-                gap = 1px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub character clerk {
     display = "Clerk"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "MS Gothic"
-                color = rgb("#e8ffd9")
-                size = 27px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 13px
-                gap = 1px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub style rich_text_panel {
@@ -167,30 +75,30 @@ entry game @entry.main {
 }
 
 flow rich_text_showcase(state: GameState) -> String {
-    let alice_panel = alice(text_color="#9fdcff")
+    let alice_panel = alice(style=text_style(color=rgb("#9fdcff")))
 
-    alice_panel(id=@say.rich_text.001, voice=auto, look=.smile, text_color="#8fd7ff", rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
-        [font "Yu Gothic"][color #8fd7ff]光る[/color][.wave amp=3px dir=0,1 period=8 speed=1]波[/]と、[.shake amp=1px seed=demo]震える声[/]。[.offset x=12px y=-4px]|[星屑](ほしくず)[/]が浮いて、[.vertical_rl][font "Yu Mincho"]縦書きも混ざる[/font][/]。[p]
+    alice_panel(id=@say.rich_text.001, voice=auto, look=.smile, style=text_style(color=rgb("#8fd7ff")), rich_text=rich_text_style(ruby=ruby_style(size=11px, gap=1px)))[
+        #font("Yu Gothic")[#color(rgb("#8fd7ff"))[光る]]#fx(wave(amplitude=3px, direction=vec2(0.0, 1.0), period=8, speed=1))[波]と、#fx(shake(amplitude=1px, seed=3u32))[震える声]。#transform(.offset, x=12px, y=-4px)[|[星屑](ほしくず)]が浮いて、#layout(.vertical_rl)[#font("Yu Mincho")[縦書きも混ざる]]。[p]
     ]
 
-    narrator.say(id=@say.rich_text.002, voice=auto)[
-        [font "Segoe UI"]Segoe UI[/font] と [font "Consolas"]Consolas 123[/font]、[font "MS Mincho"]明朝[/font]、[font "Meiryo"]メイリオ[/font] を同じ行で確認する。[p]
+    narrator(id=@say.rich_text.002, voice=auto)[
+        #font("Segoe UI")[Segoe UI] と #font("Consolas")[Consolas 123]、#font("MS Mincho")[明朝]、#font("Meiryo")[メイリオ] を同じ行で確認する。[p]
     ]
 
-    benio.say(id=@say.rich_text.003, voice=auto, look=.confident)[
-        [strong]太字[/strong]、[em]強調[/em]、[italic]italic[/italic]、[oblique 12deg]斜体角度[/oblique]、[size 36]大きな文字[/size]、[color #ff9ac8]色指定[/color]。[p]
+    benio(id=@say.rich_text.003, voice=auto, look=.confident)[
+        #strong()[太字]、#em()[強調]、#style(.italic)[italic]、#style(.oblique, angle=12deg)[斜体角度]、#size(36pt)[大きな文字]、#color(rgb("#ff9ac8"))[色指定]。[p]
     ]
 
-    clerk.say(id=@say.rich_text.004, voice=auto)[
-        [.vertical_rl][font "MS Mincho"]縦書き専用行。春夏秋冬、天地左右、和文の詰まりを見る。[/font][/] [font "MS Gothic"]横組み MS Gothic で比較[/font]。[p]
+    clerk(id=@say.rich_text.004, voice=auto)[
+        #layout(.vertical_rl)[#font("MS Mincho")[縦書き専用行。春夏秋冬、天地左右、和文の詰まりを見る。]] #font("MS Gothic")[横組み MS Gothic で比較]。[p]
     ]
 
-    narrator.say(id=@say.rich_text.005, voice=auto)[
-        [.jitter amp=1px seed=still]静かな揺らぎ[/]、[.arc radius=24px start=-20deg step=10deg]円弧配置[/]、[.shader id=soft_glow amount=0.6 dir=1,0]shader参照[/]、[.typewriter cps=18]typewriter[/] を保持する。[p]
+    narrator(id=@say.rich_text.005, voice=auto)[
+        #fx(jitter(amplitude=1px))[静かな揺らぎ]、#fx(arc(radius=24px, start_angle=-20deg, step_angle=10deg))[円弧配置]、#fx(shader(resource=@.soft_glow, amount=0.6, direction=vec2(1.0, 0.0)))[shader参照]、#fx(typewriter(characters_per_second=18))[typewriter] を保持する。[p]
     ]
 
-    alice.say(id=@say.rich_text.006, voice=auto)[
-        [mark @.keyword]明示的な marker を置き、[reset][font "Yu Gothic"]reset 後の通常文字[/font]へ戻す。[p]
+    alice(id=@say.rich_text.006, voice=auto)[
+        [mark @.keyword]明示的な marker を置き、[reset]#font("Yu Gothic")[reset 後の通常文字]へ戻す。[p]
     ]
 
     return "rich_text_showcase"

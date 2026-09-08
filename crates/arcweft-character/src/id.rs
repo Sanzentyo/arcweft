@@ -79,6 +79,12 @@ impl CharacterId {
         &self.0
     }
 
+    /// Returns the owner-issued bytes of this validated character identity.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
     /// Canonical owner path without the reserved `character.` namespace.
     pub fn compact_str(&self) -> &str {
         self.0.strip_prefix("character.").unwrap_or(&self.0)

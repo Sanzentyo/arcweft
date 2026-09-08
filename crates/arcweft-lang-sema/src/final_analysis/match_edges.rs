@@ -23,12 +23,14 @@ use arcweft_lang_hir::{
         HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
         HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
     },
+    symbol::CallableDeclarationKey,
 };
 
 use super::{
-    CheckedExpressionResolution, CheckedMethodSelection, ExprId as SemaExprId,
-    FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis, FinalSemanticAnalysisError,
-    HirExecutableProjectView, HirModuleId, SemanticFactFamily, TypeKind,
+    CheckedExpressionResolution, CheckedMethodSelection, CheckedTryOperandAuthorityViolation,
+    ExprId as SemaExprId, FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis,
+    FinalSemanticAnalysisError, HirExecutableProjectView, HirModuleId, SemanticFactFamily,
+    TypeKind,
 };
 use crate::callable::{
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
@@ -43,8 +45,8 @@ use crate::semantic_coordinate::{
 mod model;
 
 pub use model::{
-    CheckedChildEdgeError, CheckedExpressionEdgeError, CheckedExpressionEdgeFact,
-    CheckedNestedEvidenceRole, NestedPathEvidence,
+    CheckedChildEdgeError, CheckedExpressionChildEdge, CheckedExpressionEdgeError,
+    CheckedExpressionEdgeFact, CheckedNestedEvidenceRole, NestedPathEvidence,
 };
 
 fn checked_nested_path_from_hir(
@@ -101,12 +103,24 @@ pub(super) type PreparedCallableJoins =
 
 pub(crate) type SelectedHirExpressionEdge = (ExprId, HirExpressionChildRole);
 
+fn checked_call_site_for_expression(
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+    expression: ExprId,
+) -> Option<CheckedCallSite> {
+    expressions
+        .get(&expression)
+        .and_then(|checked| checked.checked_call_site(expression))
+}
+
 /// Resolves the exact expression inventory selected by checked postfix facts.
 /// HIR owns traversal and candidate membership; the checked fact supplies only
 /// the already-accepted candidate identity.
 #[derive(Debug)]
 pub(super) struct CheckedSelectedExpressionGraph {
     graph: HirSelectedExpressionGraph,
+    dialogue_lines: arcweft_lang_hir::project::AcceptedDialogueLineInventory,
+    fx_definition_declarations: BTreeSet<CallableDeclarationKey>,
+    fx_body_expressions: BTreeSet<ExprId>,
 }
 
 impl CheckedSelectedExpressionGraph {
@@ -115,12 +129,25 @@ impl CheckedSelectedExpressionGraph {
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         prepared_calls: &super::analyzer::AnalyzerPreparedCallGraph,
+        fx_body_obligations: &super::analyzer::PreparedFxDefinitionBodyObligations,
     ) -> Result<Self, FinalSemanticAnalysisError> {
+        if fx_body_obligations
+            .owners()
+            .any(|owner| expressions.contains_key(&owner))
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
         let mut call_inventories = BTreeMap::<ExprId, HirSelectedCallExpressionInventory>::new();
         for site in prepared_calls.sites() {
-            let crate::callable::CheckedCallSite::HirCall(owner) = site else {
+            // HIR's selected-expression graph inventories only ordinary
+            // `HirExprKind::Call` children. Attached content applications
+            // still participate in the prepared callable graph, joins, and
+            // transcript, but their body/callee ownership is sealed by the
+            // attached-content authority rather than this HIR-call walker.
+            if !matches!(site, CheckedCallSite::HirCall(_)) {
                 continue;
-            };
+            }
+            let owner = site.expression();
             if expressions
                 .get(&owner)
                 .and_then(|expression| expression.checked_call_site(owner))
@@ -160,18 +187,29 @@ impl CheckedSelectedExpressionGraph {
                 ));
             }
         }
-        Self::seal_with_call_inventory(project, topology, expressions, |owner| {
-            call_inventories
-                .get(&owner)
-                .cloned()
-                .map(HirSelectedCallExpressionDisposition::Callable)
-                .or_else(|| {
-                    expressions
-                        .get(&owner)
-                        .filter(|expression| expression.checked_call_site(owner).is_none())
-                        .map(|_| HirSelectedCallExpressionDisposition::Structural)
-                })
-        })
+        Self::seal_with_call_inventory(
+            project,
+            topology,
+            expressions,
+            fx_body_obligations,
+            |owner| {
+                fx_body_obligations
+                    .contains(owner)
+                    .then_some(HirSelectedCallExpressionDisposition::Structural)
+                    .or_else(|| {
+                        call_inventories
+                            .get(&owner)
+                            .cloned()
+                            .map(HirSelectedCallExpressionDisposition::Callable)
+                    })
+                    .or_else(|| {
+                        expressions
+                            .get(&owner)
+                            .filter(|expression| expression.checked_call_site(owner).is_none())
+                            .map(|_| HirSelectedCallExpressionDisposition::Structural)
+                    })
+            },
+        )
     }
 
     /// Manual fact fixtures may omit prepared-call state only when their HIR
@@ -184,7 +222,8 @@ impl CheckedSelectedExpressionGraph {
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
-        Self::seal_with_call_inventory(project, topology, expressions, |owner| {
+        let obligations = super::analyzer::PreparedFxDefinitionBodyObligations::default();
+        Self::seal_with_call_inventory(project, topology, expressions, &obligations, |owner| {
             expressions
                 .get(&owner)
                 .filter(|expression| expression.checked_call_site(owner).is_none())
@@ -196,6 +235,7 @@ impl CheckedSelectedExpressionGraph {
         project: HirExecutableProjectView<'_>,
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+        fx_body_obligations: &super::analyzer::PreparedFxDefinitionBodyObligations,
         selected_call: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
         let graph = project
@@ -204,7 +244,8 @@ impl CheckedSelectedExpressionGraph {
                 |owner| expressions.get(&owner)?.selected_postfix_candidate(),
                 selected_call,
             )
-            .map_err(|error| match error {
+            .map_err(|error| {
+                match error {
                 HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
                     if !expressions.contains_key(&expression) =>
                 {
@@ -233,30 +274,39 @@ impl CheckedSelectedExpressionGraph {
                     }
                 }
                 HirSelectedExpressionInventoryError::MissingSelectedCallEdges { expression } => {
-                    FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
-                        FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
-                            expression,
-                        )),
-                        crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode,
-                    ))
+                    checked_call_site_for_expression(expressions, expression).map_or(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                        |site| {
+                            FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                                FinalCallSealLocation::Site(site),
+                                crate::callable::CallConstraintInvariant::MissingOrStalePreparedNode,
+                            ))
+                        },
+                    )
                 }
                 HirSelectedExpressionInventoryError::InvalidSelectedCallCallee {
                     expression,
                     ..
-                } => FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
-                    FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
-                        expression,
-                    )),
-                    crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
-                )),
+                } => checked_call_site_for_expression(expressions, expression).map_or(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                    |site| {
+                        FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                            FinalCallSealLocation::Site(site),
+                            crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                        ))
+                    },
+                ),
                 HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
                     expression,
-                } => FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
-                    FinalCallSealLocation::Site(crate::callable::CheckedCallSite::HirCall(
-                        expression,
-                    )),
-                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
-                )),
+                } => checked_call_site_for_expression(expressions, expression).map_or(
+                    FinalSemanticAnalysisError::WrongPayloadFamily,
+                    |site| {
+                        FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
+                            FinalCallSealLocation::Site(site),
+                            crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                        ))
+                    },
+                ),
                 HirSelectedExpressionInventoryError::UnresolvedExpression { expression } => {
                     FinalSemanticAnalysisError::CallSeal(FinalCallSealFailure::new(
                         FinalCallSealLocation::Graph,
@@ -272,20 +322,61 @@ impl CheckedSelectedExpressionGraph {
                 HirSelectedExpressionInventoryError::InvalidSelectedGraph => {
                     FinalSemanticAnalysisError::WrongPayloadFamily
                 }
+            }
             })?;
-        Ok(Self { graph })
+        let fx_body_expressions = fx_body_obligations.owners().collect::<BTreeSet<_>>();
+        let fx_definition_declarations = fx_body_obligations
+            .declarations()
+            .cloned()
+            .collect::<BTreeSet<_>>();
+        let graph_owners = graph.expression_owners().collect::<BTreeSet<_>>();
+        if !fx_body_expressions.is_subset(&graph_owners)
+            || graph_owners.iter().any(|owner| {
+                graph.expression_edges(*owner).iter().any(|edge| {
+                    fx_body_expressions.contains(owner)
+                        != fx_body_expressions.contains(&edge.child())
+                })
+            })
+        {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let dialogue_lines = project
+            .seal_selected_dialogue_lines(&graph)
+            .map_err(FinalSemanticAnalysisError::DialogueLineSeal)?;
+        Ok(Self {
+            graph,
+            dialogue_lines,
+            fx_definition_declarations,
+            fx_body_expressions,
+        })
     }
 
     pub(super) fn topology(&self) -> &Arc<HirProjectEvaluationTopology> {
         self.graph.topology()
     }
 
+    pub(super) const fn dialogue_lines(
+        &self,
+    ) -> &arcweft_lang_hir::project::AcceptedDialogueLineInventory {
+        &self.dialogue_lines
+    }
+
     pub(super) fn owners(&self) -> impl Iterator<Item = ExprId> + '_ {
-        self.graph.expression_owners()
+        self.graph
+            .expression_owners()
+            .filter(|owner| !self.fx_body_expressions.contains(owner))
     }
 
     pub(super) fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
-        self.graph.expression_edges(owner)
+        if self.fx_body_expressions.contains(&owner) {
+            &[]
+        } else {
+            self.graph.expression_edges(owner)
+        }
+    }
+
+    pub(super) fn owns_fx_definition(&self, declaration: &CallableDeclarationKey) -> bool {
+        self.fx_definition_declarations.contains(declaration)
     }
 }
 
@@ -293,11 +384,9 @@ fn selected_expression_edges(
     graph: &CheckedSelectedExpressionGraph,
 ) -> BTreeMap<ExprId, Box<[SelectedHirExpressionEdge]>> {
     graph
-        .graph
-        .expression_owners()
+        .owners()
         .map(|owner| {
             let edges = graph
-                .graph
                 .expression_edges(owner)
                 .iter()
                 .filter_map(|edge| match edge {
@@ -346,6 +435,46 @@ impl CheckedExpressionEdgeAuthority for CheckedStructuralEdgeDraft {
 }
 
 impl CheckedStructuralEdgeDraft {
+    /// Borrows the already-selected owning expression children in exact HIR
+    /// order. Consumers use this draft instead of reopening raw HIR edges.
+    pub(super) fn expression_children(
+        &self,
+        owner: ExprId,
+    ) -> Result<&[(ExprId, CheckedExpressionChildRole)], CheckedChildEdgeError> {
+        self.facts
+            .get(&owner)
+            .ok_or(CheckedChildEdgeError::MissingExpression)?
+            .as_deref()
+            .map_err(Clone::clone)
+    }
+
+    /// Returns the unique checked `Operand` child edge for one Try owner.
+    ///
+    /// This is intentionally issued from the already-enriched structural edge
+    /// draft. A missing or duplicate edge is an authority failure; no raw HIR
+    /// walk may choose a first matching child.
+    pub(super) fn exact_operand_child(
+        &self,
+        owner: ExprId,
+    ) -> Result<ExprId, CheckedTryOperandAuthorityViolation> {
+        let edges = self
+            .facts
+            .get(&owner)
+            .ok_or(CheckedTryOperandAuthorityViolation::MissingOperand { owner })?
+            .as_ref()
+            .map_err(|_| CheckedTryOperandAuthorityViolation::MissingOperand { owner })?;
+        let mut operands = edges
+            .iter()
+            .filter(|(_, role)| matches!(role, CheckedExpressionChildRole::Operand));
+        let Some((child, _)) = operands.next() else {
+            return Err(CheckedTryOperandAuthorityViolation::MissingOperand { owner });
+        };
+        if operands.next().is_some() {
+            return Err(CheckedTryOperandAuthorityViolation::DuplicateOperand { owner });
+        }
+        Ok(*child)
+    }
+
     pub(super) fn attach_record_fields(
         &mut self,
         fields: BTreeMap<ExprId, Box<[super::CheckedExpressionRecordField]>>,
@@ -370,7 +499,11 @@ impl CheckedStructuralEdgeDraft {
             .as_ref()
             .map_err(|_| CheckedCallableJoinError::NotSelected)?;
         let mut callees = edges.iter().filter_map(|(child, role)| {
-            matches!(role, CheckedExpressionChildRole::Callee).then_some(*child)
+            matches!(
+                role,
+                CheckedExpressionChildRole::Callee | CheckedExpressionChildRole::ContentCallee
+            )
+            .then_some(*child)
         });
         let callee = callees.next();
         if callees.next().is_some() {
@@ -400,7 +533,7 @@ impl CheckedStructuralEdgeDraft {
                 facts.insert(owner, Err(CheckedChildEdgeError::MissingExpression));
                 continue;
             };
-            if checked_owner.checked_call_site(owner) == Some(CheckedCallSite::HirCall(owner)) {
+            if checked_owner.checked_call_site(owner).is_some() {
                 call_owners.insert(owner);
             }
             match (
@@ -488,13 +621,13 @@ impl CheckedStructuralEdgeDraft {
                     _ => None,
                 };
                 if matches!(role, HirExpressionChildRole::Guard { .. })
-                    && checked_child.ty() != &TypeKind::Bool
+                    && checked_child.value_type() != Some(&TypeKind::Bool)
                 {
                     first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
                     break;
                 }
                 if matches!(role, HirExpressionChildRole::ChoiceMatchGuard { .. })
-                    && checked_child.ty() != &TypeKind::Bool
+                    && checked_child.value_type() != Some(&TypeKind::Bool)
                 {
                     first_error = Some(CheckedChildEdgeError::MatchGuardTypeMismatch);
                     break;
@@ -546,7 +679,7 @@ impl CheckedStructuralEdgeDraft {
             } else {
                 None
             };
-            let edges = match structural {
+            let mut edges = match structural {
                 Ok(edges) => edges,
                 Err(error) => {
                     final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
@@ -576,6 +709,10 @@ impl CheckedStructuralEdgeDraft {
                     );
                     continue;
                 };
+                if let Err(error) = refine_content_nominal_discriminator_edge(call, &mut edges) {
+                    final_facts.insert(owner, Err(CheckedExpressionEdgeError::Child(error)));
+                    continue;
+                }
                 if let Some(error) = edges
                     .iter()
                     .find_map(|(child, role)| validate_checked_call_edge(call, *child, role).err())
@@ -584,7 +721,7 @@ impl CheckedStructuralEdgeDraft {
                     continue;
                 }
             }
-            match CheckedExpressionEdgeFact::try_new(edges, record_fields, callable) {
+            match CheckedExpressionEdgeFact::seal(edges, record_fields, callable) {
                 Ok(fact) => {
                     final_facts.insert(owner, Ok(fact));
                 }
@@ -617,12 +754,6 @@ pub(super) fn prepare_checked_callable_joins(
     calls
         .iter()
         .filter_map(|(owner, facts)| {
-            if !matches!(
-                facts.outcome().site(),
-                crate::callable::CheckedCallSite::HirCall(_)
-            ) {
-                return None;
-            }
             let joined = facts
                 .selected_application()
                 .ok_or(CheckedCallableJoinError::NotSelected)
@@ -638,15 +769,7 @@ pub(super) fn validate_callable_join_inventory(
     calls: &BTreeMap<ExprId, super::CallTargetFacts>,
     joins: &PreparedCallableJoins,
 ) -> Result<(), CheckedCallableJoinError> {
-    let call_owners = calls
-        .iter()
-        .filter(|(_, facts)| {
-            matches!(
-                facts.outcome().site(),
-                crate::callable::CheckedCallSite::HirCall(_)
-            )
-        })
-        .collect::<Vec<_>>();
+    let call_owners = calls.iter().collect::<Vec<_>>();
     if call_owners.len() != joins.len()
         || !call_owners
             .iter()
@@ -674,25 +797,31 @@ pub(super) fn prepare_checked_method_selections(
     structural_edges: &CheckedStructuralEdgeDraft,
     expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     joins: &PreparedCallableJoins,
-) -> Result<BTreeMap<ExprId, CheckedMethodSelection>, CheckedCallableJoinError> {
+) -> Result<BTreeMap<ExprId, CheckedMethodSelection>, FinalSemanticAnalysisError> {
     let mut methods = BTreeMap::new();
     for (call_owner, joined) in joins {
-        let Ok(join) = joined else {
-            continue;
-        };
         let Some(value) = structural_edges.call_callee(*call_owner)? else {
             continue;
         };
         let Some(checked) = expressions.get(&value) else {
-            return Err(CheckedCallableJoinError::MissingCheckedRecord);
+            return Err(CheckedCallableJoinError::MissingCheckedRecord.into());
         };
         if !matches!(checked, super::PreparedExpressionFact::Method(_)) {
             continue;
         }
+        let join = match joined {
+            Ok(join) => join,
+            Err(CheckedCallableJoinError::NotSelected) => {
+                return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                    owner: *call_owner,
+                });
+            }
+            Err(error) => return Err(error.clone().into()),
+        };
         let selection = CheckedMethodSelection::try_from_join(join)
             .ok_or(CheckedCallableJoinError::ReceiverModeMismatch)?;
         if methods.insert(value, selection).is_some() {
-            return Err(CheckedCallableJoinError::MethodLookupAmbiguous);
+            return Err(CheckedCallableJoinError::MethodLookupAmbiguous.into());
         }
     }
 
@@ -704,7 +833,7 @@ pub(super) fn prepare_checked_method_selections(
         .collect::<Vec<_>>();
     if prepared.len() != methods.len() || prepared.iter().any(|owner| !methods.contains_key(owner))
     {
-        return Err(CheckedCallableJoinError::NotSelected);
+        return Err(CheckedCallableJoinError::NotSelected.into());
     }
     Ok(methods)
 }
@@ -741,7 +870,7 @@ fn validate_match_owner(
                 let Some(checked_guard) = expressions.get(&guard) else {
                     return Err(CheckedChildEdgeError::MatchGuardChildMismatch);
                 };
-                if !matches!(checked_guard.ty(), TypeKind::Bool) {
+                if !matches!(checked_guard.value_type(), Some(TypeKind::Bool)) {
                     return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
                 }
             }
@@ -795,7 +924,7 @@ fn validate_match_edge(
             let Some(checked_guard) = expressions.get(&child) else {
                 return Err(CheckedChildEdgeError::MatchGuardChildMismatch);
             };
-            if !matches!(checked_guard.ty(), TypeKind::Bool) {
+            if !matches!(checked_guard.value_type(), Some(TypeKind::Bool)) {
                 return Err(CheckedChildEdgeError::MatchGuardTypeMismatch);
             }
         }
@@ -882,9 +1011,19 @@ pub(crate) fn build_nested_path_evidence(
             NestedPathFamily::Choice
         }
         (
-            HirExprKind::DialogueContentApplication(_),
+            HirExprKind::AttachedContentApplication(application),
             CheckedExpressionResolution::DialogueApplication { .. },
-        ) => return None,
+        ) => {
+            let arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                target: _,
+                plan: _,
+                coordinates: _,
+            } = application.family()
+            else {
+                return None;
+            };
+            return None;
+        }
         _ => return None,
     };
     build_nested_path_evidence_for_family(owner_family, edges, expressions)
@@ -1001,7 +1140,7 @@ impl FinalSemanticAnalysis {
     pub(crate) fn checked_child_edges(
         &self,
         owner: SemaExprId,
-    ) -> Result<&[(SemaExprId, CheckedExpressionChildRole)], CheckedExpressionEdgeError> {
+    ) -> Result<&[CheckedExpressionChildEdge], CheckedExpressionEdgeError> {
         self.checked_expression_edge_fact(owner)
             .map(CheckedExpressionEdgeFact::edges)
     }
@@ -1026,7 +1165,7 @@ impl CheckedExpressionEdgeAuthority for FinalSemanticAnalysis {
         self.checked_child_edges(parent)
             .ok()?
             .iter()
-            .find_map(|(candidate, role)| (*candidate == child).then(|| role.clone()))
+            .find_map(|edge| (edge.child() == child).then(|| edge.role().clone()))
     }
 }
 
@@ -1040,6 +1179,7 @@ fn validate_checked_call_edge(
         .ok_or(CheckedChildEdgeError::MissingCallFacts)?;
     match role {
         CheckedExpressionChildRole::Callee => Ok(()),
+        CheckedExpressionChildRole::ContentCallee => Ok(()),
         CheckedExpressionChildRole::Argument { ordinal } => application
             .core()
             .execution()
@@ -1055,6 +1195,67 @@ fn validate_checked_call_edge(
             .ok_or(CheckedChildEdgeError::CallSlotMismatch),
         _ => Ok(()),
     }
+}
+
+fn refine_content_nominal_discriminator_edge(
+    call: &super::CallTargetFacts,
+    edges: &mut [(ExprId, CheckedExpressionChildRole)],
+) -> Result<(), CheckedChildEdgeError> {
+    let Some(application) = call.selected_application() else {
+        return Ok(());
+    };
+    if !matches!(
+        application.core().candidates().selected().id(),
+        crate::callable::CallableCandidateId::Content(
+            crate::callable::ContentCallableIdentity::TextProxyObject { .. },
+        )
+    ) {
+        return Ok(());
+    }
+    let mut discriminator = None;
+    for operand in application.core().execution().semantic_operands() {
+        let crate::callable::CheckedCallSemanticOperandSource::TextProxyObject { argument, source } =
+            operand.source()
+        else {
+            continue;
+        };
+        let row = (source.owner(), u32::from(argument.get()));
+        if discriminator.replace(row).is_some() {
+            return Err(CheckedChildEdgeError::CallSlotMismatch);
+        }
+    }
+    let (source, ordinal) = discriminator.ok_or(CheckedChildEdgeError::CallSlotMismatch)?;
+    let mut matching_index = None;
+    let mut matching_count = 0usize;
+    let mut ordinal_count = 0usize;
+    for (index, (child, role)) in edges.iter().enumerate() {
+        if matches!(
+            role,
+            CheckedExpressionChildRole::Argument { ordinal: actual } if *actual == ordinal
+        ) {
+            ordinal_count += 1;
+            if *child == source {
+                matching_count += 1;
+                matching_index = Some(index);
+            }
+        }
+    }
+    if matching_count != 1
+        || ordinal_count != 1
+        || edges.iter().any(|(_, role)| {
+            matches!(
+                role,
+                CheckedExpressionChildRole::ContentNominalDiscriminator { .. }
+            )
+        })
+    {
+        return Err(CheckedChildEdgeError::CallSlotMismatch);
+    }
+    let Some(index) = matching_index else {
+        return Err(CheckedChildEdgeError::CallSlotMismatch);
+    };
+    edges[index].1 = CheckedExpressionChildRole::ContentNominalDiscriminator { ordinal };
+    Ok(())
 }
 
 fn prepared_record_field(
@@ -1077,7 +1278,10 @@ fn prepared_record_field(
         AcceptedRecordFieldSemanticId::issue(
             record.nominal().identity(),
             field.declaration_ordinal(),
-            field.field_type().semantic_identity_digest(),
+            field
+                .field_type()
+                .semantic_identity_digest()
+                .map_err(CheckedChildEdgeError::GenericScope)?,
         ),
     ))
 }
@@ -1098,6 +1302,7 @@ fn checked_role_from_hir(
         HirExpressionChildRole::RepeatedValue => CheckedExpressionChildRole::RepeatedValue,
         HirExpressionChildRole::RepeatLength => CheckedExpressionChildRole::RepeatLength,
         HirExpressionChildRole::Callee => CheckedExpressionChildRole::Callee,
+        HirExpressionChildRole::ContentCallee => CheckedExpressionChildRole::ContentCallee,
         HirExpressionChildRole::Argument { ordinal } => {
             CheckedExpressionChildRole::Argument { ordinal: *ordinal }
         }
@@ -1136,8 +1341,11 @@ fn checked_role_from_hir(
         HirExpressionChildRole::DialogueInterpolation { ordinal } => {
             CheckedExpressionChildRole::DialogueInterpolation { ordinal: *ordinal }
         }
-        HirExpressionChildRole::DialogueTagPayload { ordinal } => {
-            CheckedExpressionChildRole::DialogueTagPayload { ordinal: *ordinal }
+        HirExpressionChildRole::AttachedContentApplication { ordinal } => {
+            CheckedExpressionChildRole::AttachedContentApplication { ordinal: *ordinal }
+        }
+        HirExpressionChildRole::DialoguePointActionPayload { ordinal } => {
+            CheckedExpressionChildRole::DialoguePointActionPayload { ordinal: *ordinal }
         }
         HirExpressionChildRole::PostfixIndexCandidate => {
             CheckedExpressionChildRole::PostfixIndexCandidate

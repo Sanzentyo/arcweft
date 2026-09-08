@@ -6,14 +6,14 @@ use arcweft_core::{
 };
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_runtime_driver::dialogue::{
     DialoguePresentationOperation, DialoguePresentationStore, DialogueViewDefinition,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
-    LineDisplayFrame, RichTextDocument, RichTextNode,
+    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
+    DialoguePresentationCharacter, LineDisplayFrame, RichTextDocument, RichTextNode,
 };
 use std::collections::BTreeMap;
 
@@ -76,13 +76,21 @@ fn runtime_context(view: &str) -> RuntimeLineContext {
     )
 }
 
-fn content_spec(line: &str, text: &str) -> DialogueContentSpec {
-    DialogueContentSpec::new(
-        line_id(line),
-        TextKey::try_new(line.replace("line.", "text.")).expect("text key"),
+fn resolved_frame(line: &str, view: &str, text: &str) -> LineDisplayFrame {
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
         RichTextDocument::new(vec![RichTextNode::Text {
             text: text.to_owned(),
         }]),
+    )
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
+        line_id(line),
+        TextKey::try_new(line.replace("line.", "text.")).expect("text key"),
+        &template,
         support::character_plan("character.narrator"),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             support::dialogue_profile(),
@@ -91,10 +99,16 @@ fn content_spec(line: &str, text: &str) -> DialogueContentSpec {
         Vec::new(),
         source_ref(),
     )
-}
-
-fn resolved_frame(line: &str, view: &str, text: &str) -> LineDisplayFrame {
-    resolve_frame(&content_spec(line, text), &runtime_context(view))
+    .expect("dialogue spec");
+    let content = arcweft_core::value::RuntimeDialogueContentValue::try_new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+            .expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope");
+    resolve_frame_with_template(&spec, &template, &content, &runtime_context(view))
         .expect("final dialogue content resolves with explicit runtime context")
 }
 

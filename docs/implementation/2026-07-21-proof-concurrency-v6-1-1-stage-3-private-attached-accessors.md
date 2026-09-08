@@ -73,7 +73,7 @@ and dedicated expression payloads through the same private lexer/event/
 attachment transaction.
 
 The follow-up preserves the boundary selected here: it does not manufacture
-ordinary `CallArgument` nodes, wrap detached `DialogueTagArg` values, call the
+ordinary `CallArgument` nodes, wrap detached provisional dialogue-argument values, call the
 public dialogue parser from private production code, or publish a dual reader.
 The public dialogue AST remains authoritative until the atomic public switch.
 

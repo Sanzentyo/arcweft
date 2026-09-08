@@ -152,6 +152,30 @@ fn ordinary_function_parameters_retain_typed_fixed_default_and_rest_children() {
 }
 
 #[test]
+fn callable_attached_content_parameter_has_a_closed_typed_shape() {
+    for source in [
+        "fn required(value: String)[body: InlineContent] -> Unit { body }\n",
+        "fn optional(value: String)[body?: RichContent] -> Unit { body }\n",
+        "fn defaulted(value: String)[body: DialogueContent = fallback] -> Unit { body }\n",
+    ] {
+        let built =
+            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+        let entries = built.index().entries();
+        let count = |kind| entries.iter().filter(|entry| entry.kind() == kind).count();
+        assert_eq!(count(SyntaxKind::AttachedContentParameter), 1);
+        assert_eq!(count(SyntaxKind::AttachedContentRole), 1);
+        assert_eq!(count(SyntaxKind::OpenBracketNode), 1);
+        assert_eq!(count(SyntaxKind::CloseBracketNode), 1);
+        assert!(
+            built.diagnostics().is_empty(),
+            "{source:?}: {:?}",
+            built.diagnostics()
+        );
+        assert_eq!(built.green().to_string(), source);
+    }
+}
+
+#[test]
 fn ordinary_functions_retain_typed_extension_receiver_markers_losslessly() {
     let source = concat!(
         "fn normalize(self: String, locale: Locale) -> String { self }\n",

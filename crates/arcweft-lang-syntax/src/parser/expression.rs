@@ -181,6 +181,12 @@ fn parse_binding_power(
     role: SyntaxRole,
 ) -> CompletedNode {
     let mut left = parse_prefix(parser, end, role);
+    if matches!(
+        parser.completed_kind(left.start_event),
+        Some(SyntaxKind::MissingExpression | SyntaxKind::ErrorExpression)
+    ) {
+        return left;
+    }
 
     while let Some((operator_index, _, operator)) = parser.next_significant() {
         if operator_index >= end {

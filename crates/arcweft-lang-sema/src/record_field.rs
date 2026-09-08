@@ -9,7 +9,7 @@ const PROJECT_RECORD_FIELD_DOMAIN: &[u8] = b"arcweft.lang.accepted-record-field.
 
 /// Canonical semantic identity of one field in an accepted project record.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct AcceptedRecordFieldSemanticId([u8; 32]);
+pub struct AcceptedRecordFieldSemanticId([u8; 32]);
 
 impl AcceptedRecordFieldSemanticId {
     pub(crate) fn issue(

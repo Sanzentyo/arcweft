@@ -1,10 +1,14 @@
 //! Deterministic live Fx instances owned by the portable runtime driver.
 
+use std::sync::Arc;
+
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_presentation::fx::{
-    FiniteF32Error, FxAbiHash, FxDefinition, FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext,
-    FxGraphChildPath, FxId, FxInstanceId, FxInstanceSnapshot, FxInstanceSnapshotError,
-    FxLogicalTime, FxRuntimeType, FxRuntimeValue, derive_deterministic_seed,
+    FiniteF32Error, FxAbiHash, FxApplication, FxApplicationDraft, FxAuthoredSeed,
+    FxBoundApplicationTemplate, FxDefinition, FxDefinitionArgumentValue, FxDefinitionParameterType,
+    FxDiagnostic, FxDiagnosticCode, FxDiagnosticContext, FxGraphChildPath, FxId,
+    FxInstanceActivation, FxInstanceId, FxInstanceIdentity, FxInstanceSnapshot,
+    FxInstanceSnapshotError, FxLogicalTime, FxRuntimeType, FxRuntimeValue,
 };
 use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
 use thiserror::Error;
@@ -83,6 +87,11 @@ pub enum BundleFxRuntimeError {
         definition: Box<FxId>,
         instance: FxInstanceId,
     },
+    #[error("retained Fx instance {instance:?} changed its bound application template")]
+    RetainedTemplateChanged {
+        definition: Box<FxId>,
+        instance: FxInstanceId,
+    },
     #[error("invalid state for Fx instance {instance:?} of `{definition}`: {source}")]
     InvalidSnapshot {
         definition: Box<FxId>,
@@ -90,6 +99,53 @@ pub enum BundleFxRuntimeError {
         #[source]
         source: Box<FxInstanceSnapshotError>,
     },
+    #[error("Fx application for `{definition}` failed exact binding: {reason}")]
+    ApplicationBinding {
+        definition: Box<FxId>,
+        reason: String,
+    },
+}
+
+pub(crate) fn bind_runtime_template(
+    definition: &FxDefinition,
+    runtime: &[FxRuntimeValue],
+) -> Result<Arc<FxBoundApplicationTemplate>, BundleFxRuntimeError> {
+    let mut values = runtime.iter().copied();
+    let arguments = definition
+        .parameters()
+        .iter()
+        .map(|parameter| match parameter.parameter_type() {
+            FxDefinitionParameterType::Runtime(_) => values
+                .next()
+                .map(FxDefinitionArgumentValue::Runtime)
+                .map(Some)
+                .ok_or_else(|| BundleFxRuntimeError::ApplicationBinding {
+                    definition: Box::new(definition.id().clone()),
+                    reason: "missing dense runtime argument".to_owned(),
+                }),
+            FxDefinitionParameterType::Resource | FxDefinitionParameterType::UniformRecord => {
+                Ok(None)
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if values.next().is_some() {
+        return Err(BundleFxRuntimeError::ApplicationBinding {
+            definition: Box::new(definition.id().clone()),
+            reason: "extra dense runtime argument".to_owned(),
+        });
+    }
+    let draft = FxApplicationDraft::try_new(definition.id().clone(), arguments, 0, None).map_err(
+        |error| BundleFxRuntimeError::ApplicationBinding {
+            definition: Box::new(definition.id().clone()),
+            reason: error.to_string(),
+        },
+    )?;
+    FxApplication::bind(definition, draft)
+        .map(|application| application.template().clone())
+        .map_err(|error| BundleFxRuntimeError::ApplicationBinding {
+            definition: Box::new(definition.id().clone()),
+            reason: error.to_string(),
+        })
 }
 
 impl Default for BundleFxRuntimeSnapshot {
@@ -116,17 +172,17 @@ impl BundleFxRuntimeSnapshot {
         for instance in &instances {
             instance.clone().validate().map_err(|source| {
                 BundleFxRuntimeError::InvalidSnapshot {
-                    definition: Box::new(instance.definition.clone()),
-                    instance: instance.instance,
+                    definition: Box::new(instance.definition().clone()),
+                    instance: instance.instance(),
                     source: Box::new(source),
                 }
             })?;
         }
-        instances.sort_by_key(|instance| instance.instance);
+        instances.sort_by_key(FxInstanceSnapshot::instance);
         for pair in instances.windows(2) {
-            if pair[0].instance == pair[1].instance {
+            if pair[0].instance() == pair[1].instance() {
                 return Err(BundleFxRuntimeError::DuplicateInstance {
-                    instance: pair[0].instance,
+                    instance: pair[0].instance(),
                 });
             }
         }
@@ -143,7 +199,7 @@ impl BundleFxRuntimeSnapshot {
 
     pub fn instance(&self, instance: FxInstanceId) -> Option<&FxInstanceSnapshot> {
         self.instances
-            .binary_search_by_key(&instance, |snapshot| snapshot.instance)
+            .binary_search_by_key(&instance, FxInstanceSnapshot::instance)
             .ok()
             .map(|index| &self.instances[index])
     }
@@ -154,13 +210,15 @@ impl BundleFxRuntimeSnapshot {
     pub fn retain_instance(
         &mut self,
         definitions: &FxDefinitions,
-        definition_id: &FxId,
-        instance: FxInstanceId,
+        identity: FxInstanceIdentity,
+        template: Arc<FxBoundApplicationTemplate>,
         parameters: Vec<FxRuntimeValue>,
         child_path: FxGraphChildPath,
-        authored_seed: Option<&[u8]>,
+        authored_seed: Option<FxAuthoredSeed>,
     ) -> Result<(), BundleFxRuntimeError> {
-        let definition = definitions.get(definition_id).ok_or_else(|| {
+        let instance = identity.instance();
+        let definition_id = identity.definition().clone();
+        let definition = definitions.get(&definition_id).ok_or_else(|| {
             BundleFxRuntimeError::MissingDefinition {
                 definition: Box::new(definition_id.clone()),
                 instance,
@@ -168,25 +226,46 @@ impl BundleFxRuntimeSnapshot {
         })?;
         match self
             .instances
-            .binary_search_by_key(&instance, |snapshot| snapshot.instance)
+            .binary_search_by_key(&instance, FxInstanceSnapshot::instance)
         {
             Ok(index) => {
                 let retained = &self.instances[index];
-                if &retained.definition != definition_id {
+                if retained.definition() != &definition_id {
                     return Err(BundleFxRuntimeError::RetainedDefinitionChanged {
                         instance,
-                        existing: Box::new(retained.definition.clone()),
+                        existing: Box::new(retained.definition().clone()),
                         requested: Box::new(definition_id.clone()),
                     });
                 }
-                if retained.child_path != child_path {
+                if retained.identity() != &identity {
+                    return Err(BundleFxRuntimeError::InvalidSnapshot {
+                        definition: Box::new(definition_id.clone()),
+                        instance,
+                        source: Box::new(FxInstanceSnapshotError::IdentityMismatch),
+                    });
+                }
+                if retained.child_path() != &child_path {
                     return Err(BundleFxRuntimeError::RetainedChildPathChanged {
                         definition: Box::new(definition_id.clone()),
                         instance,
                     });
                 }
-                let mut refreshed = retained.clone();
-                refreshed.parameters = parameters;
+                if retained.template().layout_digest() != template.layout_digest()
+                    || retained.template().static_arguments() != template.static_arguments()
+                {
+                    return Err(BundleFxRuntimeError::RetainedTemplateChanged {
+                        definition: Box::new(definition_id.clone()),
+                        instance,
+                    });
+                }
+                let refreshed = retained
+                    .clone()
+                    .try_with_parameters(parameters.into_boxed_slice(), definition)
+                    .map_err(|source| BundleFxRuntimeError::InvalidSnapshot {
+                        definition: Box::new(definition_id.clone()),
+                        instance,
+                        source: Box::new(source),
+                    })?;
                 validate_instance(&refreshed, definition, self.logical_time)?;
                 self.instances[index] = refreshed;
             }
@@ -197,21 +276,19 @@ impl BundleFxRuntimeSnapshot {
                         limit: MAX_LIVE_FX_INSTANCES,
                     });
                 }
-                let snapshot = FxInstanceSnapshot {
+                let snapshot = FxInstanceSnapshot::try_new(
+                    identity,
+                    definition,
+                    FxInstanceActivation::new(self.logical_time, authored_seed, child_path),
+                    template,
+                    parameters.into_boxed_slice(),
+                    Vec::new(),
+                )
+                .map_err(|source| BundleFxRuntimeError::InvalidSnapshot {
+                    definition: Box::new(definition_id.clone()),
                     instance,
-                    definition: definition_id.clone(),
-                    abi_hash: definition.abi_hash(),
-                    activation_logical_time: self.logical_time,
-                    deterministic_seed: derive_deterministic_seed(
-                        instance,
-                        definition.semantic_hash(),
-                        authored_seed,
-                        &child_path,
-                    ),
-                    parameters,
-                    child_path,
-                    provider_state: Vec::new(),
-                };
+                    source: Box::new(source),
+                })?;
                 validate_instance(&snapshot, definition, self.logical_time)?;
                 self.instances.insert(index, snapshot);
             }
@@ -221,7 +298,7 @@ impl BundleFxRuntimeSnapshot {
 
     pub fn remove_instance(&mut self, instance: FxInstanceId) -> Option<FxInstanceSnapshot> {
         self.instances
-            .binary_search_by_key(&instance, |snapshot| snapshot.instance)
+            .binary_search_by_key(&instance, FxInstanceSnapshot::instance)
             .ok()
             .map(|index| self.instances.remove(index))
     }
@@ -233,10 +310,10 @@ impl BundleFxRuntimeSnapshot {
     ) -> Result<(), BundleFxRuntimeError> {
         Self::try_new(self.logical_time, self.instances.clone())?;
         for instance in &self.instances {
-            let definition = definitions.get(&instance.definition).ok_or_else(|| {
+            let definition = definitions.get(instance.definition()).ok_or_else(|| {
                 BundleFxRuntimeError::MissingDefinition {
-                    definition: Box::new(instance.definition.clone()),
-                    instance: instance.instance,
+                    definition: Box::new(instance.definition().clone()),
+                    instance: instance.instance(),
                 }
             })?;
             validate_instance(instance, definition, self.logical_time)?;
@@ -287,6 +364,10 @@ impl BundleFxRuntimeError {
                 definition,
                 instance,
             }
+            | Self::RetainedTemplateChanged {
+                definition,
+                instance,
+            }
             | Self::InvalidSnapshot {
                 definition,
                 instance,
@@ -321,6 +402,12 @@ impl BundleFxRuntimeError {
             Self::TooManyInstances { .. } | Self::DuplicateInstance { .. } => (
                 FxDiagnosticCode::ProgramValidation,
                 None,
+                None,
+                FxGraphChildPath::default(),
+            ),
+            Self::ApplicationBinding { definition, .. } => (
+                FxDiagnosticCode::ProgramValidation,
+                Some(definition.as_ref().clone()),
                 None,
                 FxGraphChildPath::default(),
             ),
@@ -363,24 +450,24 @@ fn validate_instance(
         .clone()
         .validate()
         .map_err(|source| BundleFxRuntimeError::InvalidSnapshot {
-            definition: Box::new(instance.definition.clone()),
-            instance: instance.instance,
+            definition: Box::new(instance.definition().clone()),
+            instance: instance.instance(),
             source: Box::new(source),
         })?;
     instance
         .validate_for_definition(definition)
         .map_err(|source| match source {
             FxInstanceSnapshotError::AbiMismatch { .. } => BundleFxRuntimeError::AbiMismatch {
-                definition: Box::new(instance.definition.clone()),
-                instance: instance.instance,
-                saved: instance.abi_hash,
+                definition: Box::new(instance.definition().clone()),
+                instance: instance.instance(),
+                saved: instance.abi_hash(),
                 actual: definition.abi_hash(),
             },
             FxInstanceSnapshotError::ParameterCount {
                 expected, actual, ..
             } => BundleFxRuntimeError::ParameterCount {
-                definition: Box::new(instance.definition.clone()),
-                instance: instance.instance,
+                definition: Box::new(instance.definition().clone()),
+                instance: instance.instance(),
                 expected,
                 actual,
             },
@@ -390,24 +477,24 @@ fn validate_instance(
                 actual,
                 ..
             } => BundleFxRuntimeError::ParameterType {
-                definition: Box::new(instance.definition.clone()),
-                instance: instance.instance,
+                definition: Box::new(instance.definition().clone()),
+                instance: instance.instance(),
                 index,
                 expected,
                 actual,
             },
             other => BundleFxRuntimeError::InvalidSnapshot {
-                definition: Box::new(instance.definition.clone()),
-                instance: instance.instance,
+                definition: Box::new(instance.definition().clone()),
+                instance: instance.instance(),
                 source: Box::new(other),
             },
         })?;
-    if instance.activation_logical_time.seconds().seconds() > runtime_time.seconds().seconds() {
+    if instance.activation_logical_time().seconds().seconds() > runtime_time.seconds().seconds() {
         return Err(BundleFxRuntimeError::ActivationAfterRuntime {
-            definition: Box::new(instance.definition.clone()),
-            instance: instance.instance,
+            definition: Box::new(instance.definition().clone()),
+            instance: instance.instance(),
             activation_seconds: instance
-                .activation_logical_time
+                .activation_logical_time()
                 .seconds()
                 .seconds()
                 .to_string(),
@@ -421,15 +508,45 @@ fn validate_instance(
 mod tests {
     use arcweft_bundle::fx_definitions::FxDefinitions;
     use arcweft_presentation::fx::{
-        FiniteF32, FxDefinition, FxGraph, FxParameter, FxRuntimeType, FxRuntimeValue,
+        FiniteF32, FxDefinition, FxDefinitionParameter, FxDefinitionParameterType, FxGraph,
+        FxInstanceOwnerKey, FxRuntimeType, FxRuntimeValue,
     };
 
     use super::*;
 
+    fn owner(bytes: &[u8]) -> FxInstanceOwnerKey {
+        FxInstanceOwnerKey::from_dialogue_canonical_bytes(bytes)
+    }
+
     fn definition() -> FxDefinition {
         FxDefinition::new(
             FxId::try_new("test", "wave").expect("identity"),
-            vec![FxParameter::try_new("speed", FxRuntimeType::F32, None).expect("parameter")],
+            vec![
+                FxDefinitionParameter::try_new(
+                    0,
+                    "speed",
+                    FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                    None,
+                )
+                .expect("parameter"),
+            ],
+            FxGraph::default(),
+        )
+        .expect("definition")
+    }
+
+    fn u32_definition() -> FxDefinition {
+        FxDefinition::new(
+            FxId::try_new("test", "u32").expect("identity"),
+            vec![
+                FxDefinitionParameter::try_new(
+                    0,
+                    "seed",
+                    FxDefinitionParameterType::Runtime(FxRuntimeType::U32),
+                    None,
+                )
+                .expect("parameter"),
+            ],
             FxGraph::default(),
         )
         .expect("definition")
@@ -440,31 +557,36 @@ mod tests {
         let definition = definition();
         let definitions =
             FxDefinitions::try_new([definition.clone()]).expect("definition inventory");
-        let id = FxInstanceId::derive(definition.id(), ["view.hud", "node.1"]);
+        let identity = FxInstanceIdentity::new(definition.id(), owner(b"view-node"), 0);
+        let id = identity.instance();
         let mut runtime = BundleFxRuntimeSnapshot::default();
         runtime.advance_millis(250).expect("clock");
+        let initial = vec![FxRuntimeValue::F32(
+            FiniteF32::try_new(1.0).expect("finite"),
+        )];
+        let initial_template = bind_runtime_template(&definition, &initial).unwrap();
         runtime
             .retain_instance(
                 &definitions,
-                definition.id(),
-                id,
-                vec![FxRuntimeValue::F32(
-                    FiniteF32::try_new(1.0).expect("finite"),
-                )],
+                identity.clone(),
+                initial_template,
+                initial,
                 FxGraphChildPath::default(),
                 None,
             )
             .expect("activation");
         let activated = runtime.instance(id).expect("instance").clone();
         runtime.advance_millis(750).expect("clock");
+        let refreshed_parameters = vec![FxRuntimeValue::F32(
+            FiniteF32::try_new(2.0).expect("finite"),
+        )];
+        let refreshed_template = bind_runtime_template(&definition, &refreshed_parameters).unwrap();
         runtime
             .retain_instance(
                 &definitions,
-                definition.id(),
-                id,
-                vec![FxRuntimeValue::F32(
-                    FiniteF32::try_new(2.0).expect("finite"),
-                )],
+                identity,
+                refreshed_template,
+                refreshed_parameters,
                 FxGraphChildPath::default(),
                 None,
             )
@@ -472,11 +594,14 @@ mod tests {
         let refreshed = runtime.instance(id).expect("instance");
 
         assert_eq!(
-            refreshed.activation_logical_time,
-            activated.activation_logical_time
+            refreshed.activation_logical_time(),
+            activated.activation_logical_time()
         );
-        assert_eq!(refreshed.deterministic_seed, activated.deterministic_seed);
-        assert_ne!(refreshed.parameters, activated.parameters);
+        assert_eq!(
+            refreshed.deterministic_seed(),
+            activated.deterministic_seed()
+        );
+        assert_ne!(refreshed.parameters(), activated.parameters());
         assert_eq!(runtime.logical_time.seconds().value(), FiniteF32::ONE);
         runtime
             .validate_for_definitions(&definitions)
@@ -495,14 +620,16 @@ mod tests {
         let definition = definition();
         let definitions =
             FxDefinitions::try_new([definition.clone()]).expect("definition inventory");
-        let id = FxInstanceId::derive(definition.id(), ["glyph.0"]);
+        let identity = FxInstanceIdentity::new(definition.id(), owner(b"glyph"), 0);
         let mut runtime = BundleFxRuntimeSnapshot::default();
+        let parameters = vec![FxRuntimeValue::F32(FiniteF32::ONE)];
+        let template = bind_runtime_template(&definition, &parameters).unwrap();
         runtime
             .retain_instance(
                 &definitions,
-                definition.id(),
-                id,
-                vec![FxRuntimeValue::F32(FiniteF32::ONE)],
+                identity,
+                template,
+                parameters,
                 FxGraphChildPath::default(),
                 None,
             )
@@ -516,10 +643,46 @@ mod tests {
             FxDiagnosticCode::MissingDefinition
         );
 
-        runtime.instances[0].abi_hash = FxAbiHash::derive(["wrong"]);
-        let mismatch = runtime
+        let mut tampered = serde_json::to_value(&runtime).expect("snapshot JSON");
+        tampered["instances"][0]["abi_hash"] =
+            serde_json::to_value(FxAbiHash::from_bytes([0xa5; 32])).expect("ABI hash JSON");
+        let tampered = serde_json::from_value::<BundleFxRuntimeSnapshot>(tampered)
+            .expect("intrinsically valid tampered snapshot");
+        let mismatch = tampered
             .validate_for_definitions(&definitions)
             .expect_err("ABI mismatch");
         assert_eq!(mismatch.diagnostic().code, FxDiagnosticCode::AbiMismatch);
+    }
+
+    #[test]
+    fn runtime_snapshot_codec_round_trips_u32_parameter_boundaries() {
+        let definition = u32_definition();
+        let definitions = FxDefinitions::try_new([definition.clone()]).expect("definitions");
+        let mut runtime = BundleFxRuntimeSnapshot::default();
+        for (ordinal, value) in [0_u32, u32::MAX].into_iter().enumerate() {
+            let identity = FxInstanceIdentity::new(
+                definition.id(),
+                owner(&[u8::try_from(ordinal).expect("owner byte")]),
+                u32::try_from(ordinal).expect("ordinal"),
+            );
+            let parameters = vec![FxRuntimeValue::U32(value)];
+            let template = bind_runtime_template(&definition, &parameters).unwrap();
+            runtime
+                .retain_instance(
+                    &definitions,
+                    identity,
+                    template,
+                    parameters,
+                    FxGraphChildPath::default(),
+                    None,
+                )
+                .expect("U32 parameter");
+        }
+        let encoded = serde_json::to_vec(&runtime).expect("runtime snapshot encodes");
+        assert_eq!(
+            serde_json::from_slice::<BundleFxRuntimeSnapshot>(&encoded)
+                .expect("runtime snapshot decodes"),
+            runtime
+        );
     }
 }

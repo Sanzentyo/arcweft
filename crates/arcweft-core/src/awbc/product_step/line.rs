@@ -124,17 +124,16 @@ impl super::AwbcProductStepExecutor {
             }
             for handle in &result_handles {
                 let expected = RuntimeHandleOwnerSlot::DialogueResult(handle.path().clone());
-                match parent_owners.get(handle.token()) {
-                    Some(destination) => ledger.transfer(
+                if let Some(destination) = parent_owners.get(handle.token()) {
+                    ledger.transfer(
                         handle.token(),
                         &expected,
                         RuntimeHandleOwnerSlot::ParentFiber(*destination),
-                    )?,
-                    None => {
-                        let before_sequence = commands.next_sequence();
-                        ledger.drop_owned(handle.token(), &expected, &mut commands)?;
-                        emitted_command |= commands.next_sequence() != before_sequence;
-                    }
+                    )?;
+                } else {
+                    let before_sequence = commands.next_sequence();
+                    ledger.drop_owned(handle.token(), &expected, &mut commands)?;
+                    emitted_command |= commands.next_sequence() != before_sequence;
                 }
             }
             line.commit_ledger(ledger);
@@ -181,6 +180,7 @@ impl super::AwbcProductStepExecutor {
         let mut candidate = transaction.clone();
         let batch = super::ProductLineTaskExecutionBatch {
             child_fibers: self.child_fibers.clone(),
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
             observations: Vec::new(),
@@ -290,6 +290,7 @@ impl super::AwbcProductStepExecutor {
         output: &mut crate::step::RuntimeStepOutput,
     ) {
         self.child_fibers = batch.child_fibers;
+        self.dialogue_effect_callback_activations = batch.dialogue_effect_callback_activations;
         self.next_generation = batch.next_generation;
         self.next_fiber_instance = batch.next_fiber_instance;
         if let Some(stats) = batch.pure_stats {
@@ -334,17 +335,20 @@ impl super::AwbcProductStepExecutor {
             }
         };
         let mut candidate = before.clone();
-        let mut candidate_stats = self.compact_pure_stats.clone();
+        let mut candidate_stats = self.compact_pure_stats;
         let mut host = super::ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
+            context: crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint),
         };
-        let step = crate::awbc::vm::step_with_host(
+        let context = crate::awbc::vm::VmExecutionContext::new(self.artifact_fingerprint);
+        let step = crate::awbc::vm::step_with_host_context(
             &self.program,
             &mut candidate,
             VmStepOptions {
                 max_instructions: 1,
             },
+            &context,
             &mut host,
         )
         .map_err(|error| ProductStepError::Internal(error.to_string()))?;
@@ -440,8 +444,9 @@ impl super::AwbcProductStepExecutor {
                         pure_stats: Some(candidate_stats),
                     })
                 }
-                VmExit::Returned(_) => Err(LineRuntimeError::ResultNotCommitted.into()),
-                VmExit::Cancelled => Err(LineRuntimeError::ResultNotCommitted.into()),
+                VmExit::Returned(_) | VmExit::Cancelled => {
+                    Err(LineRuntimeError::ResultNotCommitted.into())
+                }
                 VmExit::Trapped(trap) => Err(ProductStepError::Internal(format!(
                     "line activation trapped: {trap:?}"
                 ))),
@@ -737,8 +742,8 @@ impl super::AwbcProductStepExecutor {
         let mut candidate = transaction.clone();
         let result = self.resume_pending_line_operation_candidate(&mut candidate, outcomes);
         match &result {
-            Ok(_) => *transaction = candidate,
-            Err(ProductStepError::Line(
+            Ok(_)
+            | Err(ProductStepError::Line(
                 LineRuntimeError::StageCommandRejected { .. }
                 | LineRuntimeError::VoiceStartRejected { .. },
             )) => *transaction = candidate,
@@ -755,8 +760,8 @@ impl super::AwbcProductStepExecutor {
         let activation = transaction.activation().clone();
         let (frame, line) = transaction.parts_mut();
         let (fiber, pending) = match &mut frame.phase {
-            ProductDialoguePhase::Activating { fiber, pending } => (fiber, pending),
-            ProductDialoguePhase::Closing(super::ProductDialogueClosing {
+            ProductDialoguePhase::Activating { fiber, pending }
+            | ProductDialoguePhase::Closing(super::ProductDialogueClosing {
                 state: super::ProductDialogueClosingState::Activation { fiber, pending },
                 ..
             }) => (fiber, pending),
@@ -1030,23 +1035,29 @@ impl super::AwbcProductStepExecutor {
 
         let view = AwbcLineTaskPlanView::new(&self.program, group)
             .ok_or(LineRuntimeError::UnknownTaskGroup)?;
-        let mut live = LineTaskLiveState::new(&view, activation.clone());
+        let mut line_task = LineTaskLiveState::new(&view, activation.clone());
         let elapsed = LogicalDuration::from_nanos(frame.elapsed_nanos);
         for token in line.arm_due_schedules(elapsed)? {
-            live.mark_scheduled_ready(token)?;
+            line_task.mark_scheduled_ready(token)?;
         }
         let reducer = progress_live_line_task_group(
             &view,
             elapsed,
-            LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
-            &mut live,
+            LineTaskReadyEvents::new(&BTreeSet::new()),
+            &mut line_task,
         )?;
-        frame.phase = ProductDialoguePhase::Reducing { line_task: live };
+        frame.phase = ProductDialoguePhase::Reducing { line_task };
         Ok(ProductActivationProgress {
             progressed: true,
             presented: Some(crate::plan::FlowEvent::DialogueLine {
                 activation: activation.clone(),
                 line: frame.line.clone(),
+                template: self
+                    .program
+                    .content_units
+                    .get(frame.content.index())
+                    .ok_or(LineRuntimeError::UnknownContentPlan)?
+                    .template,
                 values: frame.values.clone(),
             }),
             reducer,

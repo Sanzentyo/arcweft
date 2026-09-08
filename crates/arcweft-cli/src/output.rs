@@ -228,7 +228,6 @@ fn trigger_label(trigger: &LineTaskTrigger) -> String {
     match trigger {
         LineTaskTrigger::Immediate => "immediate".to_owned(),
         LineTaskTrigger::Mark(name) => format!("mark {name}"),
-        LineTaskTrigger::ContentEffect(site) => format!("content effect site {}", site.get()),
         LineTaskTrigger::Scheduled(site) => format!("scheduled site {}", site.get()),
     }
 }
@@ -265,8 +264,6 @@ fn wait_target_label(target: &arcweft_core::effect::RuntimeWaitTarget) -> String
         arcweft_core::effect::RuntimeWaitTarget::Duration(duration) => {
             format!("wait({}ns)", duration.as_nanos())
         }
-        arcweft_core::effect::RuntimeWaitTarget::Mark(mark) => format!("wait(mark({mark}))"),
-        arcweft_core::effect::RuntimeWaitTarget::Expr(expr) => format!("wait({expr})"),
     }
 }
 

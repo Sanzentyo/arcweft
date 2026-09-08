@@ -43,8 +43,6 @@ mod call;
 mod choice;
 #[path = "tests/control.rs"]
 mod control;
-#[path = "tests/dialogue.rs"]
-mod dialogue;
 #[path = "tests/dialogue_candidate_block.rs"]
 mod dialogue_candidate_block;
 #[path = "tests/dialogue_candidate_control.rs"]
@@ -302,28 +300,6 @@ fn expression(module: &HirModule, owner: ExprId) -> &HirExpr {
         .expressions()
         .resolve(module.slots(), owner)
         .expect("published expression")
-}
-
-#[test]
-fn fx_constants_are_classified_from_accepted_hir() {
-    let sources = ["500ms", "-2px", "\"seed\"", ".glyph", "[1, 2]", "\"x\"c"].map(str::to_owned);
-    let parsed = parsed_source("fx-constants", &sources);
-    let (module, owners, _) = lower_and_publish(&parsed);
-    let expected = [
-        Some(crate::fx::FxConstKind::Literal),
-        Some(crate::fx::FxConstKind::SignedNumber),
-        Some(crate::fx::FxConstKind::Literal),
-        Some(crate::fx::FxConstKind::Selector),
-        Some(crate::fx::FxConstKind::List),
-        None,
-    ];
-    for ((source, owner), expected) in sources.iter().zip(owners).zip(expected) {
-        let constant = crate::fx::FxConst::from_expr(&module, owner);
-        assert_eq!(constant.map(crate::fx::FxConst::kind), expected, "{source}");
-        if let Some(constant) = constant {
-            assert_eq!(constant.expr(), owner);
-        }
-    }
 }
 
 #[derive(Clone, Copy)]

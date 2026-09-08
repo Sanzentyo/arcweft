@@ -25,7 +25,7 @@ pub struct CharacterDialogueLimits {
     pub max_values_per_sequence: u32,
     pub max_captured_values_per_function: u16,
     pub max_defaults_entries: u32,
-    pub max_line_id_bytes: u16,
+    pub max_public_id_bytes: u16,
 }
 
 /// Production `CharacterDialogue` limits fixed by the language/runtime
@@ -46,11 +46,11 @@ pub const PRODUCTION_CHARACTER_DIALOGUE_LIMITS: CharacterDialogueLimits = Charac
     max_values_per_sequence: 4_096,
     max_captured_values_per_function: 256,
     max_defaults_entries: 4_096,
-    max_line_id_bytes: MAX_DIALOGUE_ID_BYTES,
+    max_public_id_bytes: MAX_DIALOGUE_ID_BYTES,
 };
 
 pub(super) const MAX_PUBLIC_ID_BYTES: usize =
-    PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_line_id_bytes as usize;
+    PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_public_id_bytes as usize;
 pub(super) const MAX_LOCAL_ID_BYTES: usize =
     PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_custom_field_id_bytes as usize;
 pub(super) const MAX_TYPED_AGGREGATE_BYTES: usize =

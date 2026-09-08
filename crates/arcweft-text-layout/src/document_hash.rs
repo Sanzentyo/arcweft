@@ -41,6 +41,11 @@ pub(crate) fn layout_hash(
     }
     for annotation in ruby {
         hasher.update(&annotation.ruby_index.to_le_bytes());
+        hasher.update(&annotation.owner_node.get().to_le_bytes());
+        hasher.update(&annotation.body_nodes.start.get().to_le_bytes());
+        hasher.update(&annotation.body_nodes.end.get().to_le_bytes());
+        hasher.update(&annotation.base_runs.start.to_le_bytes());
+        hasher.update(&annotation.base_runs.end.to_le_bytes());
         hash_range(&mut hasher, annotation.base_range);
         put_bytes(&mut hasher, annotation.text.as_bytes());
         hash_rect(&mut hasher, annotation.base_bounds);

@@ -5,6 +5,7 @@
 //! boundaries.
 
 pub mod catalog;
+pub mod content;
 pub mod frame;
 pub mod playback;
 pub mod reveal;
@@ -14,15 +15,27 @@ pub mod style;
 
 pub use catalog::{
     DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec,
-    DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
-    RichTextSourceRange, RichTextStyleContribution,
+    DialogueContentSpecError, DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer,
+    RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+};
+pub use content::{
+    DialogueContentFragmentCatalog, DialogueContentFragmentCatalogError,
+    DialogueContentFragmentTemplate, DialogueContentFragmentTemplateError,
+    DialogueContentMaterializationError, DialogueContentMaterializer, DialogueContentNodeOrigin,
+    DialogueContentTemplateEffect, DialogueContentTemplateMark, DialogueContentTemplateSlot,
+    MaterializedDialogueContent, MaterializedDialogueEffect, MaterializedDialogueMark,
 };
 pub use frame::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
     ResolvedRichTextNode, RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker,
-    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
+    RichTextNodeCount, RichTextNodeCountOverflow, RichTextNodeIndex, RichTextNodeIndexOverflow,
+    RichTextNodeRange, RichTextRange, RichTextRubyAnnotation, RichTextTextRun,
+    RichTextTextRunRange, RichTextTextSource,
 };
-pub use playback::{LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd};
+pub use playback::{
+    LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd,
+    LineDisplayStageProjection,
+};
 pub use reveal::{
     DialogueRevealElapsed, DialogueRevealEvaluation, DialogueRevealPolicy, evaluate_dialogue_reveal,
 };
@@ -38,6 +51,6 @@ pub use rich_text::{
     DialogueHostEvent, DialogueVoiceSource, RichTextControl, RichTextDocument, RichTextNode,
 };
 pub use style::{
-    RichTextColor, RichTextFontFamily, RichTextPresentationStyle, RichTextSpanKind, RichTextStyle,
+    RichTextColor, RichTextFontFamily, RichTextPresentationStyle, RichTextStyle,
     presentation_from_styles,
 };

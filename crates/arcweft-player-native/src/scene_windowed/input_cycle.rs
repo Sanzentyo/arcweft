@@ -453,7 +453,11 @@ impl NativeSceneState {
     fn apply_dialogue_progress(&mut self, progress: DialogueProgress) {
         match progress {
             DialogueProgress::None => {}
-            DialogueProgress::Reveal => self.dialogue_visual_clock.complete_current_stage(),
+            DialogueProgress::Reveal { target } => {
+                self.runtime
+                    .session_mut()
+                    .queue_dialogue_reveal_completion(target);
+            }
             DialogueProgress::Advance { target } => {
                 self.runtime.session_mut().queue_dialogue_advance(target);
             }

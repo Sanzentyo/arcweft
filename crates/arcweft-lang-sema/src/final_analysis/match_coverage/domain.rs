@@ -16,7 +16,7 @@ use crate::{
     semantic_coordinate::StableSemanticCoordinate,
     types::{
         AcceptedVariantCaseSemanticId, MatchDomainFamily, MatchDomainInvalidity,
-        SemanticTypeDigest, TypeKind, VariantPayloadShape, VariantPayloadType,
+        SemanticTypeDigest, TypeKind, VariantPayloadShape,
     },
 };
 
@@ -189,7 +189,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         coordinate: &StableSemanticCoordinate,
     ) -> Result<CoverageTypeDomain, CheckedMatchBuildError> {
         self.poll()?;
-        let owner = ty.semantic_identity_digest();
+        let owner = ty.semantic_identity_digest()?;
         #[cfg(test)]
         if let Some(domain) = self.domain_overrides.get(&owner) {
             return Ok(domain.clone());
@@ -205,7 +205,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 }
             })?;
         if let Some(variant) = self.analysis.semantic_shapes().closed_variant(owner) {
-            return Self::closed_variant_domain(variant, coordinate);
+            return Ok(Self::closed_variant_domain(variant));
         }
         if let Some(record) = self.analysis.semantic_shapes().environment_record(owner) {
             return Self::environment_record_domain(owner, record, coordinate);
@@ -213,13 +213,8 @@ impl MatchCoverageAnalyzer<'_, '_> {
         self.domain_for_family(ty, owner, family, coordinate)
     }
 
-    fn closed_variant_domain(
-        owner: &CheckedVariantOwner,
-        coordinate: &StableSemanticCoordinate,
-    ) -> Result<CoverageTypeDomain, CheckedMatchBuildError> {
-        Ok(CoverageTypeDomain::Constructors(
-            Self::variant_constructors(owner, coordinate)?.into_boxed_slice(),
-        ))
+    fn closed_variant_domain(owner: &CheckedVariantOwner) -> CoverageTypeDomain {
+        CoverageTypeDomain::Constructors(Self::variant_constructors(owner).into_boxed_slice())
     }
 
     fn environment_record_domain(
@@ -234,7 +229,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     kind: CheckedMatchLimitKind::PatternNodes,
                 })?;
             if field.ordinal() != ordinal
-                || field.type_digest() != field.ty().semantic_identity_digest()
+                || field.type_digest() != field.ty().semantic_identity_digest()?
                 || field.semantic_id()
                     != crate::env::nominal::AcceptedEnvironmentFieldSemanticId::issue(
                         owner,
@@ -275,12 +270,12 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 CoverageConstructor::nullary(CoverageConstructorId::Bool(true)),
             ],
             MatchDomainFamily::Option(item) => {
-                let checked = CheckedVariantOwner::option(item.clone());
-                Self::variant_constructors(&checked, coordinate)?
+                let checked = CheckedVariantOwner::try_option(item.clone())?;
+                Self::variant_constructors(&checked)
             }
             MatchDomainFamily::Result { ok, error } => {
-                let checked = CheckedVariantOwner::result(ok.clone(), error.clone());
-                Self::variant_constructors(&checked, coordinate)?
+                let checked = CheckedVariantOwner::try_result(ok.clone(), error.clone())?;
+                Self::variant_constructors(&checked)
             }
             MatchDomainFamily::ProjectNominal => {
                 self.project_nominal_domain(ty, owner, coordinate)?
@@ -309,7 +304,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     coordinate: coordinate.clone(),
                 });
             }
-            MatchDomainFamily::ClosedOpaqueAtomic => Self::closed_opaque_atomic_constructors(ty),
+            MatchDomainFamily::ClosedOpaqueAtomic => Self::closed_opaque_atomic_constructors(owner),
             MatchDomainFamily::OpenOrOpaque => self.open_constructors(ty)?,
         };
         Ok(CoverageTypeDomain::Constructors(
@@ -368,7 +363,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     != crate::record_field::AcceptedRecordFieldSemanticId::issue(
                         owner,
                         field.declaration_ordinal(),
-                        field.ty().semantic_identity_digest(),
+                        field.ty().semantic_identity_digest()?,
                     )
                 {
                     return Err(CheckedMatchBuildError::InvalidCheckedRow {
@@ -397,20 +392,18 @@ impl MatchCoverageAnalyzer<'_, '_> {
         payload: &crate::types::VariantPayloadType,
         coordinate: &StableSemanticCoordinate,
     ) -> Result<Vec<CoverageConstructor>, CheckedMatchBuildError> {
-        if VariantPayloadType::try_new(
-            payload.owner_family(),
-            payload.owner_type(),
-            payload.case_ordinal(),
-            payload.case(),
-            payload.shape().clone(),
-        )
-        .is_err()
-        {
+        let checked =
+            payload
+                .try_seal()
+                .map_err(|_| CheckedMatchBuildError::InvalidCheckedRow {
+                    coordinate: coordinate.clone(),
+                })?;
+        if checked.semantic_type() != owner {
             return Err(CheckedMatchBuildError::InvalidCheckedRow {
                 coordinate: coordinate.clone(),
             });
         }
-        let identity = match payload.shape() {
+        let identity = match checked.shape() {
             VariantPayloadShape::Tuple(_) => CoverageConstructorId::Tuple { owner },
             VariantPayloadShape::Record(_) => CoverageConstructorId::Record { owner },
             VariantPayloadShape::Unit => {
@@ -421,7 +414,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         };
         Ok(vec![CoverageConstructor {
             identity,
-            field_types: variant_payload_field_types(payload.shape()),
+            field_types: variant_payload_field_types(checked.shape()),
             variant_payload: None,
         }])
     }
@@ -488,7 +481,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 identity: CoverageConstructorId::Choice {
                     owner,
                     ordinal,
-                    alternative: alternative.semantic_identity_digest(),
+                    alternative: alternative.semantic_identity_digest()?,
                 },
                 field_types: vec![alternative.clone()].into_boxed_slice(),
                 variant_payload: None,
@@ -497,22 +490,14 @@ impl MatchCoverageAnalyzer<'_, '_> {
         Ok(constructors)
     }
 
-    fn variant_constructors(
-        owner: &CheckedVariantOwner,
-        coordinate: &StableSemanticCoordinate,
-    ) -> Result<Vec<CoverageConstructor>, CheckedMatchBuildError> {
-        if !owner.has_valid_case_rows() {
-            return Err(CheckedMatchBuildError::InvalidCheckedRow {
-                coordinate: coordinate.clone(),
-            });
-        }
+    fn variant_constructors(owner: &CheckedVariantOwner) -> Vec<CoverageConstructor> {
         let semantic_type = owner.semantic_type();
         owner
             .cases()
             .iter()
             .map(|case| {
                 let payload = case.payload().clone();
-                Ok(CoverageConstructor {
+                CoverageConstructor {
                     identity: CoverageConstructorId::Variant {
                         owner: semantic_type,
                         case: case.semantic_id(),
@@ -520,7 +505,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     },
                     field_types: variant_payload_field_types(&payload),
                     variant_payload: Some(payload),
-                })
+                }
             })
             .collect()
     }
@@ -529,7 +514,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         &mut self,
         ty: &TypeKind,
     ) -> Result<Vec<CoverageConstructor>, CheckedMatchBuildError> {
-        let semantic_type = ty.semantic_identity_digest();
+        let semantic_type = ty.semantic_identity_digest()?;
         let mut literals = BTreeSet::new();
         let mut entities = BTreeSet::new();
         for index in 0..self.observed_patterns.len() {
@@ -539,7 +524,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     coordinate: coordinate.clone(),
                 }
             })?;
-            if checked.ty().semantic_identity_digest() != semantic_type {
+            if checked.ty().semantic_identity_digest()? != semantic_type {
                 continue;
             }
             match checked.resolution() {
@@ -576,9 +561,9 @@ impl MatchCoverageAnalyzer<'_, '_> {
         Ok(constructors)
     }
 
-    fn closed_opaque_atomic_constructors(ty: &TypeKind) -> Vec<CoverageConstructor> {
+    fn closed_opaque_atomic_constructors(owner: SemanticTypeDigest) -> Vec<CoverageConstructor> {
         vec![CoverageConstructor::nullary(CoverageConstructorId::Other(
-            ty.semantic_identity_digest(),
+            owner,
         ))]
     }
 
@@ -597,7 +582,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     coordinate: coordinate.clone(),
                 }
             })?;
-            if checked.ty().semantic_identity_digest() != owner {
+            if checked.ty().semantic_identity_digest()? != owner {
                 continue;
             }
             let hir = self.module.resolve_pattern(pattern_id).map_err(|_| {
@@ -638,7 +623,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
     ) -> Result<CheckedCoverageDomainDigest, CheckedMatchBuildError> {
         let mut hasher = TranscriptHasher::new(self.budget);
         hasher.update(b"arcweft.lang.checked-match-coverage.v1\0")?;
-        hasher.update(ty.semantic_identity_digest().as_bytes())?;
+        hasher.update(ty.semantic_identity_digest()?.as_bytes())?;
         match domain {
             CoverageTypeDomain::Empty => {
                 hasher.update(&[0])?;
@@ -662,7 +647,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                         .to_le_bytes(),
                     )?;
                     for field in &constructor.field_types {
-                        hasher.update(field.semantic_identity_digest().as_bytes())?;
+                        hasher.update(field.semantic_identity_digest()?.as_bytes())?;
                     }
                 }
             }
@@ -701,14 +686,14 @@ fn write_variant_payload_identity(
             for field in fields {
                 hasher.update(&field.ordinal().to_le_bytes())?;
                 hasher.update(field.semantic_id().as_bytes())?;
-                hasher.update(field.ty().semantic_identity_digest().as_bytes())?;
+                hasher.update(field.ty().semantic_identity_digest()?.as_bytes())?;
             }
         }
         VariantPayloadShape::Record(fields) => {
             for field in fields {
                 hasher.update(&field.ordinal().to_le_bytes())?;
                 hasher.update(field.semantic_id().as_bytes())?;
-                hasher.update(field.ty().semantic_identity_digest().as_bytes())?;
+                hasher.update(field.ty().semantic_identity_digest()?.as_bytes())?;
             }
         }
     }

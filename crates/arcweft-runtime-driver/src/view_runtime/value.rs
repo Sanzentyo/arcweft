@@ -1,4 +1,4 @@
-use arcweft_core::value::{RuntimeRecordAdmissionError, RuntimeValue};
+use arcweft_core::value::{RuntimeRecordAdmissionError, RuntimeUInt, RuntimeValue};
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxColor, FxRuntimeType, FxRuntimeValue, FxVec2, Length, Opacity, Seconds,
     Transform2D,
@@ -45,6 +45,7 @@ pub(super) fn fx_placeholder(value_type: FxRuntimeType) -> FxRuntimeValue {
             y: FiniteF32::ZERO,
         }),
         FxRuntimeType::Transform2D => FxRuntimeValue::Transform2D(Transform2D::default()),
+        FxRuntimeType::U32 => FxRuntimeValue::U32(0),
     }
 }
 
@@ -66,6 +67,15 @@ pub(super) fn runtime_to_fx(
                 BundleViewValueConversionError::Type {
                     expected,
                     actual: signed_int_type_name(*value),
+                },
+            ),
+            _ => Err(type_error(expected, value)),
+        },
+        FxRuntimeType::U32 => match value {
+            RuntimeValue::UInt(value) => value.exact_u32().map(FxRuntimeValue::U32).ok_or(
+                BundleViewValueConversionError::Type {
+                    expected,
+                    actual: unsigned_int_type_name(*value),
                 },
             ),
             _ => Err(type_error(expected, value)),
@@ -207,6 +217,7 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         | RuntimeValue::Opaque(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Function(_)
+        | RuntimeValue::ProjectContinuation(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Variant { .. } => None,
     }
@@ -216,6 +227,7 @@ pub(super) fn fx_scalar_text(value: FxRuntimeValue) -> String {
     match value {
         FxRuntimeValue::Bool(value) => value.to_string(),
         FxRuntimeValue::I32(value) => value.to_string(),
+        FxRuntimeValue::U32(value) => value.to_string(),
         FxRuntimeValue::F32(value) => value.to_string(),
         FxRuntimeValue::Length(value) => format!("{}px", value.pixels()),
         FxRuntimeValue::Angle(value) => format!("{}rad", value.radians()),
@@ -252,6 +264,7 @@ pub(super) fn fx_to_runtime(
         FxRuntimeValue::I32(value) => {
             RuntimeValue::Int(arcweft_core::value::RuntimeInt::i32(value))
         }
+        FxRuntimeValue::U32(value) => RuntimeValue::UInt(RuntimeUInt::U32(value)),
         FxRuntimeValue::F32(value) => RuntimeValue::F32(value.get()),
         FxRuntimeValue::Length(value) => {
             RuntimeValue::try_record(vec![("px".to_owned(), RuntimeValue::F32(value.pixels()))])?
@@ -436,6 +449,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Opaque(_) => "opaque",
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Function(_) => "function",
+        RuntimeValue::ProjectContinuation(_) => "project continuation",
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Variant { .. } => "variant",
     }
@@ -449,5 +463,44 @@ fn signed_int_type_name(value: arcweft_core::value::RuntimeInt) -> &'static str 
         arcweft_core::value::RuntimeSignedIntWidth::I64 => "i64",
         arcweft_core::value::RuntimeSignedIntWidth::I128 => "i128",
         arcweft_core::value::RuntimeSignedIntWidth::ISize => "isize",
+    }
+}
+
+fn unsigned_int_type_name(value: RuntimeUInt) -> &'static str {
+    match value.width() {
+        arcweft_core::value::RuntimeUnsignedIntWidth::U8 => "u8",
+        arcweft_core::value::RuntimeUnsignedIntWidth::U16 => "u16",
+        arcweft_core::value::RuntimeUnsignedIntWidth::U32 => "u32",
+        arcweft_core::value::RuntimeUnsignedIntWidth::U64 => "u64",
+        arcweft_core::value::RuntimeUnsignedIntWidth::U128 => "u128",
+        arcweft_core::value::RuntimeUnsignedIntWidth::USize => "usize",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn u32_runtime_arguments_round_trip_at_boundaries() {
+        for value in [0_u32, u32::MAX] {
+            let runtime = RuntimeValue::UInt(RuntimeUInt::U32(value));
+            let fx = runtime_to_fx(&runtime, FxRuntimeType::U32).expect("U32 runtime argument");
+            assert_eq!(fx, FxRuntimeValue::U32(value));
+            assert_eq!(fx_to_runtime(fx).expect("U32 runtime projection"), runtime);
+        }
+    }
+
+    #[test]
+    fn u32_runtime_argument_rejects_non_exact_unsigned_widths() {
+        let value = RuntimeValue::UInt(RuntimeUInt::U64(u64::from(u32::MAX) + 1));
+        let error = runtime_to_fx(&value, FxRuntimeType::U32).expect_err("overflow is rejected");
+        assert_eq!(
+            error,
+            BundleViewValueConversionError::Type {
+                expected: FxRuntimeType::U32,
+                actual: "u64",
+            }
+        );
     }
 }

@@ -11,10 +11,13 @@ use crate::{
     effects::EffectSet,
 };
 
-use super::{GenericConstParameterId, GenericTypeParameterId};
+use super::{
+    GenericConstParameterId, GenericConstReference, GenericTypeParameterId, GenericTypeReference,
+};
 pub(crate) mod context;
 mod hints;
 mod normalization;
+mod references;
 mod shape;
 mod solution;
 #[cfg(test)]
@@ -47,7 +50,9 @@ pub(super) use normalization::{
     bindings_equal, occurs_in_shape, seal_path, seal_type, validate_type,
 };
 pub(crate) use shape::TypeConstraintShape;
+pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;
+pub use solution::TypeInstantiationError;
 pub(crate) use transaction::ClosedConstraintProbe;
 pub(super) use transaction::{ChoiceDerivationStep, ChoiceForkRole, ConstraintPath};
 
@@ -73,23 +78,41 @@ pub(crate) enum TypeConstraintRejection {
     EffectSubset { missing: EffectSet },
 }
 
-/// Kind-separated generic identity shared by the completed type/const
-/// solution authority. Type and constant namespaces never alias even when
-/// they use the same declaration owner and ordinal.
+/// Kind-separated identity retained by constraint projection and source hints.
+/// Each namespace preserves the identity issued by its constraint owner.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum ConstraintGenericParameterId {
-    Type(GenericTypeParameterId),
-    Const(GenericConstParameterId),
+    Type(GenericTypeReference),
+    Const(GenericConstReference),
+    Effect(EffectVar),
+}
+
+impl From<EffectVar> for ConstraintGenericParameterId {
+    fn from(variable: EffectVar) -> Self {
+        Self::Effect(variable)
+    }
 }
 
 impl From<GenericTypeParameterId> for ConstraintGenericParameterId {
     fn from(parameter: GenericTypeParameterId) -> Self {
-        Self::Type(parameter)
+        Self::Type(parameter.into())
     }
 }
 
 impl From<GenericConstParameterId> for ConstraintGenericParameterId {
     fn from(parameter: GenericConstParameterId) -> Self {
+        Self::Const(parameter.into())
+    }
+}
+
+impl From<GenericTypeReference> for ConstraintGenericParameterId {
+    fn from(parameter: GenericTypeReference) -> Self {
+        Self::Type(parameter)
+    }
+}
+
+impl From<GenericConstReference> for ConstraintGenericParameterId {
+    fn from(parameter: GenericConstReference) -> Self {
         Self::Const(parameter)
     }
 }
@@ -143,11 +166,9 @@ pub(crate) enum InheritedSolutionInvariantKind {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintParameterScopeInvariant {
     #[error("type parameter is outside the candidate parameter scope")]
-    TypeParameterOutOfScope { parameter: GenericTypeParameterId },
+    TypeParameterOutOfScope { parameter: GenericTypeReference },
     #[error("constant parameter is outside the candidate parameter scope")]
-    ConstParameterOutOfScope {
-        parameter: super::GenericConstParameterId,
-    },
+    ConstParameterOutOfScope { parameter: GenericConstReference },
     #[error("candidate parameter scope contains a duplicate row")]
     DuplicateParameter,
     #[error("candidate parameter scope rows are not in exact order")]
@@ -155,17 +176,17 @@ pub(crate) enum TypeConstraintParameterScopeInvariant {
     #[error("candidate constant scope rows are not in exact order")]
     ConstParameterUnordered,
     #[error("required inherited binding key is outside the type scope")]
-    RequiredInheritedKeyOutOfScope { parameter: GenericTypeParameterId },
+    RequiredInheritedKeyOutOfScope { parameter: GenericTypeReference },
     #[error("required inherited binding key is not bindable")]
-    RequiredInheritedKeyNotBindable { parameter: GenericTypeParameterId },
+    RequiredInheritedKeyNotBindable { parameter: GenericTypeReference },
     #[error("required inherited constant binding key is outside the constant scope")]
-    RequiredInheritedConstKeyOutOfScope { parameter: GenericConstParameterId },
+    RequiredInheritedConstKeyOutOfScope { parameter: GenericConstReference },
     #[error("required inherited constant binding key is not bindable")]
-    RequiredInheritedConstKeyNotBindable { parameter: GenericConstParameterId },
+    RequiredInheritedConstKeyNotBindable { parameter: GenericConstReference },
     #[error("inherited binding targets a rigid parameter")]
-    RigidBinding { parameter: GenericTypeParameterId },
+    RigidBinding { parameter: GenericTypeReference },
     #[error("inherited binding targets a rigid constant parameter")]
-    RigidConstBinding { parameter: GenericConstParameterId },
+    RigidConstBinding { parameter: GenericConstReference },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -219,18 +240,22 @@ pub(crate) enum TypeConstraintSourceProtocolInvariant {
     Outcome,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintProjectionInvariant {
     #[error("required final keyed projection is missing")]
     MissingKey,
     #[error("final keyed projection key is duplicated")]
     DuplicateKey,
-    #[error("final keyed projection does not satisfy its selected closure")]
-    Mismatch,
+    #[error("final keyed projection does not satisfy its selected closure: {0}")]
+    Mismatch(#[source] TypeConstraintRejection),
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintInvariant {
+    #[error(transparent)]
+    Instantiation(TypeInstantiationError),
+    #[error(transparent)]
+    GenericScope(super::GenericScopeError),
     #[error("inherited solution is invalid: {0:?}")]
     InheritedSolution(InheritedSolutionInvariant),
     #[error("parameter scope is invalid: {0}")]
@@ -243,6 +268,12 @@ pub(crate) enum TypeConstraintInvariant {
     SourceProtocol(TypeConstraintSourceProtocolInvariant),
     #[error("projection is invalid: {0}")]
     Projection(TypeConstraintProjectionInvariant),
+}
+
+impl From<super::GenericScopeError> for TypeConstraintError {
+    fn from(error: super::GenericScopeError) -> Self {
+        Self::Invariant(TypeConstraintInvariant::GenericScope(error))
+    }
 }
 
 pub(super) fn map_effect_environment_error(

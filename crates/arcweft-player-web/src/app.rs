@@ -6,7 +6,6 @@ use crate::report::{WebFrameObservationReport, WebObservationReport};
 use crate::runtime_text_input::{
     WebPlayerTextInputBridgeHandle, WebRuntimeTextInputFocusReason, WebTextInputClientTransform,
 };
-use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
@@ -166,7 +165,6 @@ struct PlayerState {
     clock: LogicalClockQuantizer,
     font_set: Option<PlayerFontSet>,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
-    dialogue_visual_clock: DialogueVisualClock,
     fatal: Option<String>,
 }
 
@@ -715,11 +713,6 @@ fn prepare_web_player_frame(
     let presentation = state.session.presentation();
     let fx_definitions = state.session.fx_definitions();
     let style_environment = state.session.presentation_environment();
-    let dialogue_visual = state.dialogue_visual_clock.progress(
-        presentation.dialogue.latest_active(),
-        host_millis,
-        dialogue_visual_time_override_millis(),
-    );
     let registered_font_bytes = state.frame_planner.stats().registered_font_bytes;
     state
         .frame_planner
@@ -735,8 +728,7 @@ fn prepare_web_player_frame(
                 viewport,
                 fit: state.frame_fit,
                 image_time_millis: host_millis,
-                visual_time_millis: dialogue_visual.elapsed_millis(),
-                dialogue_reveal_complete: dialogue_visual.is_complete(),
+                visual_time_millis: host_millis,
                 preferences: RenderPreferences::default(),
             },
         )
@@ -744,24 +736,6 @@ fn prepare_web_player_frame(
             registered_font_bytes,
             source,
         })
-}
-
-fn dialogue_visual_time_override_millis() -> Option<u64> {
-    let window = web_sys::window()?;
-    let value = js_sys::Reflect::get(
-        &window,
-        &JsValue::from_str("__arcweftDialogueVisualTimeMillis"),
-    )
-    .ok()?;
-    let millis = if value.is_function() {
-        js_sys::Function::from(value)
-            .call0(&JsValue::NULL)
-            .ok()?
-            .as_f64()?
-    } else {
-        value.as_f64()?
-    };
-    millis.is_finite().then(|| millis.max(0.0) as u64)
 }
 
 impl From<BundleImageCatalogError> for WebPlayerError {
@@ -783,7 +757,9 @@ fn apply_outcome(state: &mut PlayerState, outcome: InputOutcome) -> Vec<TextClip
     } = outcome;
     match dialogue_progress {
         DialogueProgress::None => {}
-        DialogueProgress::Reveal => state.dialogue_visual_clock.complete_current_stage(),
+        DialogueProgress::Reveal { target } => {
+            state.session.queue_dialogue_reveal_completion(target);
+        }
         DialogueProgress::Advance { target } => state.session.queue_dialogue_advance(target),
     }
     for action in actions {

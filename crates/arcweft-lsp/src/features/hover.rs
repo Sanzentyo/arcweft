@@ -3,13 +3,15 @@ use crate::features::character_metadata::character_hover_markdown;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::{
+    dialogue_application::HirAttachedContentApplicationFamily,
     expr::HirExprKind,
     identity::ItemId,
-    item::HirItemKind,
+    item::{HirAttachedContentPresence, HirAttachedContentRole, HirItemKind},
     module::HirModule,
     source_index::{
-        HirCallableSourceOwner, HirCallableSourceRole, HirExprSourceRole, HirFlowSourceRole,
-        HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+        HirCallableAttachedContentSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+        HirExprSourceRole, HirFlowSourceRole, HirItemSourceRole, HirSourcePresence, HirSourceQuery,
+        HirSourceSite,
     },
 };
 use arcweft_lang_sema::{
@@ -34,6 +36,9 @@ pub fn hover(
         .line_index()
         .try_byte_offset_from_position(position)
         .ok()?;
+    if let Some(hover) = attached_content_declaration_hover(profile, document, offset) {
+        return Some(hover);
+    }
     let word = word_at_position_range(document, position);
     if let Some((word, word_range)) = word.as_ref()
         && let Some(hover) = callable_effect_row_hover(profile, document, word, *word_range)
@@ -74,6 +79,62 @@ pub fn hover(
     profile_hover(&profile.context(), &word)
 }
 
+fn attached_content_declaration_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<Hover> {
+    let (module, _) = accepted_module_and_analysis(profile, document)?;
+    module.source_ordered_items().iter().find_map(|owner| {
+        let item = module.resolve_item(*owner).ok()?;
+        item.kind()
+            .attached_content_callable_parameters()
+            .find_map(|(callable_owner, attached)| {
+                let source_range = source_range_for_query(
+                    module.as_ref(),
+                    HirSourceQuery::Item {
+                        owner: *owner,
+                        role: HirItemSourceRole::Callable(
+                            HirCallableSourceRole::AttachedContent {
+                                owner: callable_owner,
+                                part: HirCallableAttachedContentSourcePart::Whole,
+                            },
+                        ),
+                    },
+                )?;
+                if offset < source_range.start() || offset >= source_range.end() {
+                    return None;
+                }
+                let binding = module.resolve_local(attached.binding()).ok()?.name().as_str();
+                let role = match attached.role() {
+                    HirAttachedContentRole::Inline => "InlineContent",
+                    HirAttachedContentRole::Rich => "RichContent",
+                    HirAttachedContentRole::Dialogue => "DialogueContent",
+                };
+                let (marker, suffix) = match attached.presence() {
+                    HirAttachedContentPresence::Required => ("", "required"),
+                    HirAttachedContentPresence::Optional => ("?", "optional"),
+                    HirAttachedContentPresence::Defaulted { .. } => ("", "defaulted"),
+                };
+                let default = attached
+                    .presence()
+                    .default_value()
+                    .map_or_else(String::new, |_| " = …".to_owned());
+                let text = format!(
+                    "attached content parameter\n\n`[{binding}{marker}: {role}{default}]` ({suffix})"
+                );
+                Some(Hover {
+                    contents: HoverContents::Scalar(MarkedString::String(text)),
+                    range: Some(
+                        document
+                            .line_index()
+                            .range_from_byte_span(source_range.start(), source_range.end()),
+                    ),
+                })
+            })
+    })
+}
+
 fn dialogue_application_hover(
     profile: &LspProfile,
     document: &DocumentSnapshot,
@@ -86,11 +147,17 @@ fn dialogue_application_hover(
             if owner.module() != module.module_id() {
                 return None;
             }
-            let HirExprKind::DialogueContentApplication(_) =
+            let HirExprKind::AttachedContentApplication(application) =
                 module.resolve_expr(owner).ok()?.kind()
             else {
                 return None;
             };
+            if !matches!(
+                application.family(),
+                HirAttachedContentApplicationFamily::DialogueLine { .. }
+            ) {
+                return None;
+            }
             let CheckedExpressionResolution::DialogueApplication { target, .. } =
                 checked.resolution()
             else {
@@ -153,12 +220,10 @@ fn character_nominal_type_at(
                     role: HirExprSourceRole::Whole,
                 },
             )?;
-            checked
-                .ty()
-                .character_nominal()
+            let ty = checked.value_type()?;
+            ty.character_nominal()
                 .is_some()
-                .then_some(checked.ty())
-                .map(|ty| (range.end() - range.start(), ty.clone()))
+                .then(|| (range.end() - range.start(), ty.clone()))
         })
         .min_by_key(|(span, _)| *span)
         .map(|(_, ty)| ty)
@@ -558,6 +623,40 @@ fn load_story() -> Unit
                 );
             }
             other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hover_describes_typed_attached_content_presence_and_role() {
+        let authored = r#"
+fn required(seed: DialogueContent)[body: InlineContent] -> DialogueContent { body }
+fn optional(seed: DialogueContent)[body?: RichContent] -> DialogueContent { seed }
+fn defaulted()[body: DialogueContent = defaulted()] -> DialogueContent { body }
+"#;
+        let fixture = accepted_effect_hover_fixture("attached-content-hover", authored);
+        let source = fixture.source.as_str();
+        for (spelling, expected) in [
+            ("[body: InlineContent]", "required"),
+            ("[body?: RichContent]", "optional"),
+            ("[body: DialogueContent = …]", "defaulted"),
+        ] {
+            let offset = source.find(spelling).expect("attached declaration span");
+            let position = fixture
+                .document
+                .line_index()
+                .position_from_byte_offset(offset + 1);
+            let attached_hover = hover(&fixture.profile, &fixture.document, position)
+                .expect("attached-content hover");
+            match attached_hover.contents {
+                HoverContents::Scalar(MarkedString::String(text)) => {
+                    assert!(
+                        text.contains(spelling),
+                        "unexpected {expected} hover: {text}"
+                    );
+                    assert!(text.contains(&format!("({expected})")));
+                }
+                other => panic!("unexpected hover contents: {other:?}"),
+            }
         }
     }
 

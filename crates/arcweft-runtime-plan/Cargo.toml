@@ -13,6 +13,7 @@ arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-lang-hir = { workspace = true }
+arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-text-model = { workspace = true }

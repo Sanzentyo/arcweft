@@ -13,21 +13,17 @@ use arcweft_lang_hir::{
         HirRuntimeValueRetention,
     },
     scope::HirScopeOwner,
-    stmt::HirStmtKind,
-    symbol::{CallableDeclarationKey, ProjectSymbolTable},
+    source_index::HirCallableSourceOwner,
+    symbol::{CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable},
 };
 use arcweft_lang_sema::{
-    callable::{
-        CallTargetFacts, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
-        CheckedCallSite, ResolvedCallableOrigin, ResolvedCallableState,
-    },
+    callable::{CheckedCallCalleeExecution, CheckedCallSite, ResolvedCallableOrigin},
     entry::{CheckedEntryBinding, CheckedEntryCatalog},
     final_analysis::{
-        CheckedCallRuntimeCalleeDisposition, CheckedChoice, CheckedDropInvocation,
-        CheckedEvaluatedEffect, CheckedEvaluatedEffectOperation, CheckedExpressionResolution,
-        CheckedExpressionRuntimeDisposition, CheckedItemRole, CheckedOrdinaryFunctionEmission,
-        CheckedStatementPayload, FinalSemanticAnalysis, FinalSemanticAnalysisError,
-        PostfixBracketResolution,
+        CheckedChoice, CheckedExpressionCallCallee, CheckedExpressionExecutionPlan,
+        CheckedExpressionResolution, CheckedItemRole, CheckedOrdinaryFunctionEmission,
+        CheckedRuntimeValueDisposition, CheckedStatementPayload, FinalSemanticAnalysis,
+        FinalSemanticAnalysisError,
     },
 };
 use thiserror::Error;
@@ -45,10 +41,6 @@ pub enum RuntimeReachabilityProjectionError {
     #[error(transparent)]
     Generation(#[from] FinalSemanticAnalysisError),
     #[error(transparent)]
-    ExpressionDisposition(
-        #[from] arcweft_lang_sema::final_analysis::CheckedExpressionRuntimeDispositionError,
-    ),
-    #[error(transparent)]
     Hir(#[from] HirRuntimeReachabilityError),
     #[error("selected Entry has no accepted checked root")]
     MissingSelectedEntry,
@@ -56,14 +48,6 @@ pub enum RuntimeReachabilityProjectionError {
     MissingSelectedCallAuthority { owner: ExprId },
     #[error("checked expression {owner:?} has no matching final-HIR expression")]
     MissingHirExpression { owner: ExprId },
-    #[error(
-        "evaluated-effect carrier {owner:?} is invalid (dialogue application: {dialogue_application:?}): {reason}"
-    )]
-    InvalidEvaluatedEffectCarrier {
-        owner: ExprId,
-        dialogue_application: Option<ExprId>,
-        reason: &'static str,
-    },
     #[error("checked project executable edge is missing")]
     MissingCheckedEdge {
         site: HirRuntimeReachabilitySite,
@@ -82,6 +66,8 @@ pub enum RuntimeReachabilityProjectionError {
     },
     #[error("reachable executable has no checked item")]
     MissingCheckedItem { owner: ItemId },
+    #[error("reachable ordinary function has no exact checked callable")]
+    MissingCheckedCallable { owner: ItemId },
     #[error("reachable executable {owner:?} has no deterministic root path")]
     MissingReachabilityPath { owner: HirRuntimeExecutableOwner },
     #[error(
@@ -100,18 +86,13 @@ impl RuntimeReachabilityProjectionError {
         match self {
             Self::UnsupportedOrdinaryFunction { reason, .. } => reason.diagnostic_code(),
             Self::Generation(_) => "compiler.runtime_reachability.stale_generation",
-            Self::ExpressionDisposition(_) => {
-                "compiler.runtime_reachability.expression_disposition"
-            }
             Self::MissingSelectedEntry
             | Self::MissingCheckedItem { .. }
+            | Self::MissingCheckedCallable { .. }
             | Self::MissingReachabilityPath { .. }
             | Self::MissingHirExpression { .. } => "compiler.runtime_reachability.invalid_root",
             Self::MissingSelectedCallAuthority { .. } => {
                 "compiler.runtime_reachability.missing_selected_call_authority"
-            }
-            Self::InvalidEvaluatedEffectCarrier { .. } => {
-                "compiler.runtime_reachability.invalid_evaluated_effect_carrier"
             }
             Self::MissingCheckedEdge { .. } => "compiler.runtime_reachability.missing_checked_edge",
             Self::MismatchedCheckedEdge { .. } | Self::UnexpectedCheckedEdge { .. } => {
@@ -201,14 +182,6 @@ pub fn project_runtime_reachability<'project>(
     for entry in &selected_entries {
         append_entry_edges(entry, symbols, &mut edges)?;
     }
-    let evaluated_effect_carriers =
-        evaluated_effect_carriers(project, analysis).map_err(|error| {
-            RuntimeReachabilityProjectionError::InvalidEvaluatedEffectCarrier {
-                owner: error.owner(),
-                dialogue_application: error.dialogue_application(),
-                reason: error.reason(),
-            }
-        })?;
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         hir_mode,
         symbols.world().clone(),
@@ -221,7 +194,7 @@ pub fn project_runtime_reachability<'project>(
         if projection_error.is_some() {
             return None;
         }
-        match runtime_expression_projection_for_owner(analysis, owner, &evaluated_effect_carriers) {
+        match runtime_expression_projection_for_owner(analysis, owner) {
             Ok(projection) => Some(projection),
             Err(error) => {
                 projection_error = Some(error);
@@ -295,14 +268,6 @@ pub(crate) fn project_view_value_program_reachability<'project>(
         };
         edges.insert(checked_closure_execution_edge(owner, closure.owner()));
     }
-    let evaluated_effect_carriers =
-        evaluated_effect_carriers(project, analysis).map_err(|error| {
-            RuntimeReachabilityProjectionError::InvalidEvaluatedEffectCarrier {
-                owner: error.owner(),
-                dialogue_application: error.dialogue_application(),
-                reason: error.reason(),
-            }
-        })?;
     let input = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
         symbols.world().clone(),
@@ -315,7 +280,7 @@ pub(crate) fn project_view_value_program_reachability<'project>(
         if projection_error.is_some() {
             return None;
         }
-        match runtime_expression_projection_for_owner(analysis, owner, &evaluated_effect_carriers) {
+        match runtime_expression_projection_for_owner(analysis, owner) {
             Ok(projection) => Some(projection),
             Err(error) => {
                 projection_error = Some(error);
@@ -449,6 +414,7 @@ fn checked_closure_execution_edge(source: ExprId, closure: ExprId) -> HirRuntime
 }
 
 pub fn validate_reachable_runtime_callables(
+    symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     reachability: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<(), RuntimeReachabilityProjectionError> {
@@ -459,10 +425,28 @@ pub fn validate_reachable_runtime_callables(
         let item = analysis
             .item(*owner)
             .ok_or(RuntimeReachabilityProjectionError::MissingCheckedItem { owner: *owner })?;
-        let Some(reason) = item.role().ordinary_function_emission(item.effects()) else {
+        let Some(symbol) = symbols.callable_symbols().find(|symbol| {
+            symbol.source_item() == *owner
+                && symbol.source_owner() == HirCallableSourceOwner::Item
+                && symbol.owner() == CallableDeclarationOwner::Function
+        }) else {
+            if matches!(item.role(), CheckedItemRole::Function { .. }) {
+                return Err(RuntimeReachabilityProjectionError::MissingCheckedCallable {
+                    owner: *owner,
+                });
+            }
             continue;
         };
-        if reason == CheckedOrdinaryFunctionEmission::PureDirectFrame {
+        let checked = analysis
+            .checked_callables()
+            .project_callable(symbol.declaration())
+            .map_err(
+                |_| RuntimeReachabilityProjectionError::MissingCheckedCallable { owner: *owner },
+            )?;
+        let Some(reason) = checked.ordinary_function_emission() else {
+            continue;
+        };
+        if reason.is_supported() {
             continue;
         }
         let path = reachability.first_path(executable).ok_or_else(|| {
@@ -633,190 +617,33 @@ fn runtime_owner_for_declaration(
 fn runtime_expression_projection_for_owner(
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
-    evaluated_effect_carriers: &BTreeSet<ExprId>,
 ) -> Result<HirRuntimeExpressionProjection, RuntimeReachabilityProjectionError> {
-    let checked = analysis
+    let expression = analysis
         .expression(owner)
         .ok_or(RuntimeReachabilityProjectionError::MissingHirExpression { owner })?;
-    let value = if evaluated_effect_carriers.contains(&owner)
-        || matches!(
-            checked.resolution(),
-            CheckedExpressionResolution::DialogueApplication { .. }
-                | CheckedExpressionResolution::PostfixBracket(
-                    PostfixBracketResolution::Dialogue { .. }
-                )
-        ) {
-        HirRuntimeValueRetention::Omit
-    } else {
-        HirRuntimeValueRetention::Retain
+    let value = |value: CheckedRuntimeValueDisposition| match value {
+        CheckedRuntimeValueDisposition::Retain => HirRuntimeValueRetention::Retain,
+        CheckedRuntimeValueDisposition::Omit => HirRuntimeValueRetention::Omit,
     };
-    match analysis.runtime_expression_disposition(owner)? {
-        CheckedExpressionRuntimeDisposition::Structural => {
-            Ok(HirRuntimeExpressionProjection::Structural { value })
+    match expression.execution_plan() {
+        CheckedExpressionExecutionPlan::Structural { value: result, .. } => {
+            Ok(HirRuntimeExpressionProjection::Structural {
+                value: value(*result),
+            })
         }
-        CheckedExpressionRuntimeDisposition::Call(disposition) => {
-            let callee = match disposition {
-                CheckedCallRuntimeCalleeDisposition::Static => {
-                    HirRuntimeCallCalleeDisposition::Static
-                }
-                CheckedCallRuntimeCalleeDisposition::RuntimeReceiver => {
+        CheckedExpressionExecutionPlan::Call { result, callee, .. } => {
+            let callee = match callee {
+                CheckedExpressionCallCallee::Static => HirRuntimeCallCalleeDisposition::Static,
+                CheckedExpressionCallCallee::RuntimeReceiver => {
                     HirRuntimeCallCalleeDisposition::RuntimeReceiver
                 }
             };
             Ok(HirRuntimeExpressionProjection::Call {
-                result: value,
+                result: value(*result),
                 callee,
             })
         }
     }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub(super) enum EvaluatedEffectCarrierError {
-    #[error("evaluated-effect application has no selected call authority")]
-    MissingSelectedCall {
-        owner: ExprId,
-        dialogue_application: Option<ExprId>,
-    },
-    #[error("evaluated-effect metadata has no expression source")]
-    InvalidMetadataSource {
-        owner: ExprId,
-        dialogue_application: Option<ExprId>,
-    },
-}
-
-impl EvaluatedEffectCarrierError {
-    pub(super) const fn owner(self) -> ExprId {
-        match self {
-            Self::MissingSelectedCall { owner, .. } | Self::InvalidMetadataSource { owner, .. } => {
-                owner
-            }
-        }
-    }
-
-    pub(super) const fn dialogue_application(self) -> Option<ExprId> {
-        match self {
-            Self::MissingSelectedCall {
-                dialogue_application,
-                ..
-            }
-            | Self::InvalidMetadataSource {
-                dialogue_application,
-                ..
-            } => dialogue_application,
-        }
-    }
-
-    pub(super) const fn reason(self) -> &'static str {
-        match self {
-            Self::MissingSelectedCall { .. } => {
-                "evaluated-effect application has no selected call authority"
-            }
-            Self::InvalidMetadataSource { .. } => {
-                "evaluated-effect metadata has no expression source"
-            }
-        }
-    }
-}
-
-pub(super) fn evaluated_effect_carriers(
-    project: HirExecutableProjectView<'_>,
-    analysis: &FinalSemanticAnalysis,
-) -> Result<BTreeSet<ExprId>, EvaluatedEffectCarrierError> {
-    let mut carriers = BTreeSet::new();
-    for (statement, checked) in analysis.statements() {
-        let CheckedStatementPayload::EvaluatedEffect(effect) = checked.payload() else {
-            continue;
-        };
-        let statement_expression = resolve_hir_statement_expression(project, statement).ok_or(
-            EvaluatedEffectCarrierError::InvalidMetadataSource {
-                owner: effect.application().raw().expression(),
-                dialogue_application: None,
-            },
-        )?;
-        extend_evaluated_effect_carriers(effect, analysis, None, &mut carriers)?;
-        carriers.insert(statement_expression);
-    }
-    for (owner, expression) in analysis.expressions() {
-        let CheckedExpressionResolution::DialogueApplication { line_plan, .. } =
-            expression.resolution()
-        else {
-            continue;
-        };
-        for site in line_plan.effect_sites() {
-            extend_evaluated_effect_carriers(site.effect(), analysis, Some(owner), &mut carriers)?;
-        }
-    }
-    Ok(carriers)
-}
-
-fn extend_evaluated_effect_carriers(
-    effect: &CheckedEvaluatedEffect,
-    analysis: &FinalSemanticAnalysis,
-    dialogue_application: Option<ExprId>,
-    carriers: &mut BTreeSet<ExprId>,
-) -> Result<(), EvaluatedEffectCarrierError> {
-    let mut current = Some(effect.application().raw().expression());
-    while let Some(owner) = current {
-        if !carriers.insert(owner) {
-            break;
-        }
-        let application = analysis
-            .call(owner)
-            .and_then(CallTargetFacts::selected_application)
-            .ok_or(EvaluatedEffectCarrierError::MissingSelectedCall {
-                owner,
-                dialogue_application,
-            })?;
-        current = match application.core().candidates().selected().state() {
-            ResolvedCallableState::Base => None,
-            ResolvedCallableState::Continuation(continuation) => {
-                Some(continuation.prefix_call_site().expression())
-            }
-        };
-    }
-    let CheckedEvaluatedEffectOperation::Drop {
-        invocation: CheckedDropInvocation::DropWithPolicy { source, .. },
-        ..
-    } = effect.operation()
-    else {
-        return Ok(());
-    };
-    let CheckedCallArgumentSlotSource::Expression(owner) = source.operand().source().raw() else {
-        return Err(EvaluatedEffectCarrierError::InvalidMetadataSource {
-            owner: effect.application().raw().expression(),
-            dialogue_application,
-        });
-    };
-    if analysis.call(owner).is_some()
-        && analysis
-            .call(owner)
-            .and_then(CallTargetFacts::selected_application)
-            .is_none()
-    {
-        return Err(EvaluatedEffectCarrierError::MissingSelectedCall {
-            owner,
-            dialogue_application,
-        });
-    }
-    carriers.insert(owner);
-    Ok(())
-}
-
-fn resolve_hir_statement_expression(
-    project: HirExecutableProjectView<'_>,
-    owner: StmtId,
-) -> Option<ExprId> {
-    let statement = project
-        .modules()
-        .find(|(_, module)| module.module_id() == owner.module())?
-        .1
-        .resolve_stmt(owner)
-        .ok()?;
-    let HirStmtKind::Expression { expression } = statement.kind() else {
-        return None;
-    };
-    Some(*expression)
 }
 
 fn validate_checked_executable_edges(

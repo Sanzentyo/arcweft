@@ -108,7 +108,7 @@ impl PendingExpressionProjection {
                 | SyntaxKind::ArrayRepeatExpression
                 | SyntaxKind::CallExpression
                 | SyntaxKind::PostfixBracketExpression
-                | SyntaxKind::DialogueContentApplicationExpression
+                | SyntaxKind::AttachedContentApplicationExpression
                 | SyntaxKind::PipeExpression
                 | SyntaxKind::TryExpression
                 | SyntaxKind::AwaitExpression
@@ -208,8 +208,8 @@ impl PendingExpressionProjection {
         matches!(
             (projection, kind),
             (
-                ExpressionProjection::DialogueContentApplication(_),
-                SyntaxKind::DialogueContentApplicationExpression
+                ExpressionProjection::AttachedContentApplication(_),
+                SyntaxKind::AttachedContentApplicationExpression
             ) | (
                 ExpressionProjection::PostfixBracket(_) | ExpressionProjection::Index(_),
                 SyntaxKind::PostfixBracketExpression
@@ -316,7 +316,7 @@ fn remaining_components_validate(
                 ExpressionComponentRole::Index,
             ],
         ),
-        ExpressionProjection::DialogueContentApplication(application) => {
+        ExpressionProjection::AttachedContentApplication(application) => {
             dialogue::components_validate(application, roles, components)
         }
         ExpressionProjection::PostfixBracket(_) => exact_component_roles(

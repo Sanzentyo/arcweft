@@ -13,15 +13,14 @@ use arcweft_agent_runner::{
     error::AgentRunError,
     policy::RuntimeAgentPolicy,
     runner::AgentRunner,
-    session::{NoopRagService, ReplayAgentSession},
+    session::{DisabledRagService, ReplayAgentSession},
 };
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
     entry::{EntryBindingIdentity, RootExecutionLimits, RuntimeCommandPolicy, RuntimeEntryRoles},
-    plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget},
-    task::RuntimeHostArgumentTemplate,
+    plan::{FlowOp, FlowRuntimeId, RuntimeCallableExecutableCode, RuntimeEntryTarget},
     value::{
-        RuntimeAgentCompareOp, RuntimeAgentExpr, RuntimeAgentPredicateExpr, RuntimeExprKind,
+        RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentValue, RuntimeExprKind,
         RuntimeUInt, RuntimeValue,
     },
 };
@@ -51,6 +50,91 @@ use super::{
 };
 use crate::{agent::compile_agent_project_bundle, error::CompileAgentError};
 
+fn checked_controller_identity(
+    compiled: &CompiledProject,
+    entry: &PublicId,
+) -> arcweft_core::entry::RuntimeCallableId {
+    let checked = compiled
+        .checked_entries()
+        .get_public(entry)
+        .unwrap()
+        .agent()
+        .unwrap();
+    let declaration = CallableDeclarationKey::Existing(checked.controller().declaration().clone());
+    let callable = compiled
+        .final_analysis()
+        .checked_callables()
+        .project_callable(&declaration)
+        .unwrap();
+    arcweft_core::entry::RuntimeCallableId::from_checked_digest(
+        callable.id().semantic_digest().into_bytes(),
+    )
+}
+
+fn controller_function_body<'a>(
+    plan: &'a arcweft_core::plan::RuntimePlan,
+    ops: &[FlowOp],
+) -> &'a arcweft_core::plan::RuntimeFunctionSiteBody {
+    let [FlowOp::ProjectCall { site }, FlowOp::ReturnExpr(_)] = ops else {
+        panic!("controller adapter must call its sole function site and return its result");
+    };
+    let call = plan.project_call_sites().get(*site).unwrap().plan();
+    let arcweft_core::plan::RuntimeProjectCallOutcome::Invoke { function_site } = call.outcome()
+    else {
+        panic!("controller entry must invoke its terminal function site");
+    };
+    plan.function_sites().get(*function_site).unwrap().body()
+}
+
+fn first_controller_binding<'a>(
+    plan: &'a arcweft_core::plan::RuntimePlan,
+    ops: &[FlowOp],
+) -> &'a arcweft_core::value::RuntimeExpr {
+    match controller_function_body(plan, ops) {
+        arcweft_core::plan::RuntimeFunctionSiteBody::Expression(body) => {
+            let RuntimeExprKind::Let { expr, .. } = body.kind() else {
+                panic!("controller function must bind its authored local");
+            };
+            expr
+        }
+        arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body) => {
+            let Some(FlowOp::Let { expr, .. }) = body.ops().first() else {
+                panic!("controller function must bind its authored local");
+            };
+            expr
+        }
+    }
+}
+
+fn run_controller_to_host_call(
+    plan: &arcweft_core::plan::RuntimePlan,
+    flow: &FlowRuntimeId,
+) -> arcweft_core::step::RuntimeHostCallRequest {
+    use arcweft_core::engine::{Engine, FlowFiberStatus};
+    use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions};
+    let mut engine = Engine::for_flow(plan.clone(), flow).expect("controller flow starts");
+    for _ in 0..128 {
+        let output = engine
+            .step(RuntimeStepInput::default(), RuntimeStepOptions::default())
+            .output;
+        if !output.requests.host_calls.is_empty() {
+            assert_eq!(output.requests.host_calls.len(), 1);
+            return output
+                .requests
+                .host_calls
+                .into_iter()
+                .next()
+                .expect("one host call");
+        }
+        assert!(
+            matches!(engine.fiber().status, FlowFiberStatus::Running),
+            "{:?}: {:?}",
+            engine.fiber().status,
+            output.diagnostics
+        );
+    }
+    panic!("controller did not reach its host call within the deterministic step budget");
+}
 const ENTRY_SOURCE: &str = r"
 struct GameState {
     score: i32
@@ -208,6 +292,15 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     assert_eq!(entry.binding, expected_binding);
     assert_eq!(entry.binding, roles.binding);
     assert_eq!(plan.callable_executables().len(), 2);
+    assert!(
+        plan.callable_executables()
+            .iter()
+            .all(|executable| matches!(
+                &executable.code,
+                RuntimeCallableExecutableCode::FunctionSite(_)
+            ))
+    );
+    assert!(plan.pure_helpers().is_empty());
     assert_eq!(plan.flow_executables().len(), 1);
     assert_eq!(plan.flow_schemas()[0].parameters[0].name, "current");
     assert_eq!(
@@ -484,7 +577,7 @@ entry agent @entry.agent.second {
     assert_eq!(artifact.manifest.entry_id.as_str(), "entry.agent.second");
     assert_eq!(
         artifact.manifest.controller_id.as_str(),
-        "org.arcweft.compiler-entry::second"
+        checked_controller_identity(&compiled, &selected).as_str()
     );
     let product = artifact.bundle.product_awbc().program();
     assert_eq!(product.entries.len(), 1);
@@ -645,9 +738,7 @@ entry agent @entry.agent.controller {
         .find(|flow| &flow.id == controller)
         .expect("controller flow exists");
 
-    let Some(FlowOp::Let { expr, .. }) = flow.ops.first() else {
-        panic!("controller must begin by binding its typed local");
-    };
+    let expr = first_controller_binding(&compiled.runtime_plan().plan, &flow.ops);
     assert!(matches!(
         expr.kind(),
         RuntimeExprKind::Value(RuntimeValue::UInt(RuntimeUInt::U32(1)))
@@ -734,11 +825,9 @@ entry agent @entry.agent.controller {
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
-        panic!("Agent observe call must lower to one typed direct host call");
-    };
-    assert_eq!(target.capability, "agent");
-    assert_eq!(target.operation, "observe");
+    let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
+    assert_eq!(request.operation, "observe");
+    assert!(request.args.is_empty());
 }
 
 #[test]
@@ -776,33 +865,25 @@ entry agent @entry.agent.controller {
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
-        panic!("Agent wait call must lower to one typed direct host call");
+    let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
+    assert_eq!(request.operation, "wait");
+    let [predicate] = request.args.as_slice() else {
+        panic!("wait has one positional predicate");
     };
-    assert_eq!(target.operation, "wait");
-    let Some(RuntimeHostArgumentTemplate::Positional(predicate)) = target.args.first() else {
-        panic!("wait predicate must remain a typed Agent expression");
-    };
-    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::All {
+    let RuntimeValue::Agent(RuntimeAgentValue::Predicate(RuntimeAgentPredicate::All {
         predicates,
-    })) = predicate.kind()
+    })) = predicate.value()
     else {
-        panic!("wait predicate must remain a typed Agent expression");
+        panic!("wait request retains the typed conjunction");
     };
-    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Not {
-        predicate: compare,
-    })) = predicates.as_slice()[1].kind()
-    else {
-        panic!("second predicate must remain the typed Agent not expression");
+    let RuntimeAgentPredicate::Not { predicate } = &predicates.as_slice()[1] else {
+        panic!("second predicate retains negation");
     };
-    let RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(RuntimeAgentPredicateExpr::Compare {
-        op,
-        ..
-    })) = compare.kind()
-    else {
-        panic!("probe comparison must remain a typed Agent expression");
+    let RuntimeAgentPredicate::Compare { op, value, .. } = predicate.as_ref() else {
+        panic!("negation contains the checked probe comparison");
     };
     assert_eq!(*op, RuntimeAgentCompareOp::Eq);
+    assert_eq!(value.as_ref(), &RuntimeValue::Bool(false));
 }
 
 #[test]
@@ -833,22 +914,16 @@ entry agent @entry.agent.controller {
         .iter()
         .find(|flow| flow.id.canonical_label().contains("controller"))
         .expect("selected controller flow");
-    let Some(FlowOp::HostCall { target, .. }) = controller.ops.first() else {
-        panic!("Agent wait call must lower to one typed direct host call");
-    };
-    let Some(RuntimeHostArgumentTemplate::Positional(predicate)) = target.args.first() else {
-        panic!("diagnostics wait must have one predicate argument");
+    let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
+    assert_eq!(request.operation, "wait");
+    let [predicate] = request.args.as_slice() else {
+        panic!("wait has one positional predicate");
     };
     assert!(matches!(
-        predicate.kind(),
-        RuntimeExprKind::Agent(RuntimeAgentExpr::Predicate(
-            RuntimeAgentPredicateExpr::DiagnosticsHasError { diagnostics }
-        )) if matches!(
-            diagnostics.kind(),
-            RuntimeExprKind::Agent(RuntimeAgentExpr::Probe(
-                arcweft_core::value::RuntimeAgentProbeExpr::Diagnostics
-            ))
-        )
+        predicate.value(),
+        RuntimeValue::Agent(RuntimeAgentValue::Predicate(
+            RuntimeAgentPredicate::DiagnosticsHasError
+        ))
     ));
 }
 
@@ -907,9 +982,7 @@ entry agent @entry.agent.second {
             .iter()
             .find(|flow| &flow.id == controller)
             .expect("controller flow exists");
-        let Some(FlowOp::Let { expr, .. }) = flow.ops.first() else {
-            panic!("controller must begin by binding its typed local");
-        };
+        let expr = first_controller_binding(&compiled.runtime_plan().plan, &flow.ops);
         assert!(matches!(
             expr.kind(),
             RuntimeExprKind::Value(RuntimeValue::UInt(actual)) if actual == &expected
@@ -952,7 +1025,11 @@ entry agent @entry.agent.controller {
     assert_eq!(manifest.entry_id.as_str(), "entry.agent.controller");
     assert_eq!(
         manifest.controller_id.as_str(),
-        "org.arcweft.compiler-entry::controller"
+        checked_controller_identity(
+            &compiled,
+            &PublicId::try_new("entry.agent.controller").unwrap()
+        )
+        .as_str()
     );
 
     let session = ReplayAgentSession::new(
@@ -969,7 +1046,7 @@ entry agent @entry.agent.controller {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(
             SessionId::new("session.agent-entry-e2e").expect("valid session ID"),
@@ -1001,7 +1078,7 @@ entry agent @entry.agent.controller {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(
             SessionId::new("session.agent-entry-e2e").expect("valid session ID"),

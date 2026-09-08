@@ -8,32 +8,40 @@
 use std::{collections::BTreeSet, sync::Arc};
 
 use arcweft_id::dialogue::{DialogueLineId, DialogueTextKey};
-use arcweft_lang_hir::{expr::HirCallArgumentOrdinal, identity::ExprId, scope::CaptureAccess};
+use arcweft_lang_hir::{
+    dialogue_application::HirDialogueContentId, expr::HirCallArgumentOrdinal, identity::ExprId,
+    scope::CaptureAccess,
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::{
-    effect_row::{EffectRow, EffectRowTail, EffectVar, EffectVarIssuer},
+    effect_row::{
+        EffectRow, EffectRowError, EffectRowTail, EffectSubstitution, EffectVar, EffectVarIssuer,
+    },
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
         StableCheckedBindingCoordinate, StableCheckedValueCoordinate,
     },
     types::{
         ArrayLength, CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection,
-        GenericConstParameterId, MapKind, SemanticTypeDigest, TypeKind,
+        GenericConstReference, MapKind, SemanticTypeDigest, TypeKind,
         constraints::TypeConstraintSolution,
     },
 };
 
 use super::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallConstraintInvariant,
-    CallableArgumentSemanticAction, CallableArgumentSlotIndex, CallableAuthorityRank,
-    CallableCandidateId, CallableFamily, CallableGroupIndex, CallableLimits,
-    CallableParameterAdmission, CallableParameterCoordinate, CallableParameterIndex,
-    CallableParameterValueAlternative, CallableReceiverMode, CallableSignatureSchema,
-    CallableSignatureSchemaDigest, CapabilityCallableId, CheckedCallArgumentSlotSource,
-    CheckedCallableDigest, CheckedCallableId, CheckedSemanticValueEvidence, CollectionMethodId,
-    DialogueCallableId, DropCallableId, EquivalentCallableSource, FloatWidth, FunctionValueOrdinal,
-    FxCallableSignatureId, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
+    CallableArgumentSemanticAction, CallableArgumentSlotIndex, CallableAttachedContentExecution,
+    CallableAttachedContentParameter, CallableAuthorityRank, CallableCandidateId,
+    CallableContentParameterConsumer, CallableFamily, CallableGroupIndex, CallableLimits,
+    CallableParameterAdmission, CallableParameterConsumer, CallableParameterCoordinate,
+    CallableParameterIndex, CallableParameterPresence, CallableParameterValueAlternative,
+    CallableReceiverMode, CallableResultSchema, CallableSemanticAdmission, CallableSignatureSchema,
+    CallableSignatureSchemaDigest, CallableValidator, CapabilityCallableId,
+    CheckedCallArgumentSlotSource, CheckedCallableDigest, CheckedCallableId,
+    CheckedSemanticValueEvidence, CollectionMethodId, ContentCallableIdentity, DialogueCallableId,
+    DropCallableId, EquivalentCallableSource, FloatWidth, FunctionValueOrdinal,
+    FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
     LineScheduleCallableId, MathCallableId, OpenArgumentId, OptionConstructorKind,
     PreparedCallableEffectInstantiationEvidence, PreparedCaptureIdentityRow,
     PreparedDialogueCalleeIdentity, PreparedFunctionValueOriginIdentity,
@@ -70,6 +78,20 @@ digest_type!(CheckedCallCandidateInventoryDigest);
 digest_type!(CheckedCallApplicationCoreDigest);
 digest_type!(CheckedCallContinuationDigest);
 digest_type!(CheckedCallApplicationDigest);
+
+impl CheckedCallContinuationDigest {
+    /// Projects the checked continuation identity into the opaque runtime
+    /// lineage domain without exposing a source- or declaration-based
+    /// reconstruction path to compiler/runtime consumers.
+    #[must_use]
+    pub const fn runtime_lineage_id(
+        self,
+    ) -> arcweft_id::runtime_program::RuntimeProjectContinuationLineageId {
+        arcweft_id::runtime_program::RuntimeProjectContinuationLineageId::from_checked_digest(
+            self.0,
+        )
+    }
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedDialogueCalleeIdentity {
@@ -340,7 +362,7 @@ impl CheckedCapacityMethodIdentity {
             .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?;
         Ok(Self {
             operation,
-            receiver: id.receiver().semantic_identity_digest(),
+            receiver: id.receiver().semantic_identity_digest()?,
             arity,
         })
     }
@@ -349,7 +371,7 @@ impl CheckedCapacityMethodIdentity {
 /// Exhaustive stable identity for every language-owned callable family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedLanguageCallableIdentity {
-    Fx(FxCallableSignatureId),
+    FxConstructor(FxSourceConstructor),
     EnumConstructor {
         owner: SemanticTypeDigest,
         case: u32,
@@ -360,6 +382,7 @@ pub enum CheckedLanguageCallableIdentity {
     Agent(AgentIntrinsicSignatureId),
     Presentation(PresentationCallableId),
     Dialogue(CheckedDialogueCallableIdentity),
+    Content(ContentCallableIdentity),
     Collection(CollectionMethodId),
     PresentationHandle(PresentationHandleMethodId),
     Integer(IntegerMethodId),
@@ -456,18 +479,17 @@ impl ResolvedCallableAuthority {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
-        self.schema().visit_types(visitor)
+        self.schema()
+            .visit_types(&mut |ty| visitor(crate::types::ScopedTypeView::at_root(ty)))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ResolvedCallableBaseInstantiation {
     None,
-    ExpectedEnum {
-        expected: TypeKind,
-    },
+    EnumConstructor,
     Result {
         kind: ResultConstructorKind,
     },
@@ -491,16 +513,21 @@ pub enum ResolvedCallableBaseInstantiation {
 impl ResolvedCallableBaseInstantiation {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::ExpectedEnum { expected }
-            | Self::Receiver { receiver: expected }
+            Self::Receiver { receiver: expected }
             | Self::Extension {
                 receiver: expected, ..
-            } => visitor(expected),
-            Self::TypeReceiver { receiver } => visitor(receiver.receiver()),
-            Self::None | Self::Result { .. } | Self::Option | Self::Character { .. } => Ok(()),
+            } => visitor(crate::types::ScopedTypeView::at_root(expected)),
+            Self::TypeReceiver { receiver } => {
+                visitor(crate::types::ScopedTypeView::at_root(receiver.receiver()))
+            }
+            Self::None
+            | Self::EnumConstructor
+            | Self::Result { .. }
+            | Self::Option
+            | Self::Character { .. } => Ok(()),
         }
     }
 }
@@ -509,9 +536,7 @@ impl From<super::CallableInstantiation> for ResolvedCallableBaseInstantiation {
     fn from(value: super::CallableInstantiation) -> Self {
         match value {
             super::CallableInstantiation::None => Self::None,
-            super::CallableInstantiation::ExpectedEnum { expected } => {
-                Self::ExpectedEnum { expected }
-            }
+            super::CallableInstantiation::EnumConstructor => Self::EnumConstructor,
             super::CallableInstantiation::Result { kind } => Self::Result { kind },
             super::CallableInstantiation::Option => Self::Option,
             super::CallableInstantiation::Character { owner } => Self::Character { owner },
@@ -648,7 +673,7 @@ impl ResolvedCallableBase {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.authority.visit_types(visitor)?;
         self.instantiation.visit_types(visitor)
@@ -690,14 +715,7 @@ impl ResolvedCallableBase {
         expected: &super::ParameterExpectedTypeProjection,
         source_projection: &CheckedConstraintSourceProjection,
     ) -> Result<CheckedCallableEffectProjectionToken<'_>, CallConstraintInvariant> {
-        self.schema()
-            .group(coordinate.group())
-            .and_then(|group| group.parameter(coordinate.parameter()))
-            .and_then(|parameter| parameter.declared_type())
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
-        self.effect_instantiation
-            .project_parameter(self.schema(), coordinate)?
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        self.project_parameter_type(coordinate)?;
         Ok(CheckedCallableEffectProjectionToken {
             base: self,
             coordinate,
@@ -706,11 +724,23 @@ impl ResolvedCallableBase {
         })
     }
 
-    fn result_type_for_group(
+    /// Formal parameter type projected by this exact checked callable owner.
+    /// Runtime ABI and continuation consumers apply their solution to this
+    /// template instead of reading unresolved rows from the source schema.
+    pub(crate) fn project_parameter_type(
+        &self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Result<TypeKind, CallConstraintInvariant> {
+        self.effect_instantiation
+            .project_parameter(self.schema(), coordinate)?
+            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
+    }
+
+    fn result_schema_for_group(
         &self,
         current: CallableGroupIndex,
         solution: &FrozenCallTypeSolution,
-    ) -> Result<TypeKind, CallConstraintInvariant> {
+    ) -> Result<CallableResultSchema, CallConstraintInvariant> {
         let next = CallableGroupIndex::try_from_usize(
             current
                 .get()
@@ -718,16 +748,26 @@ impl ResolvedCallableBase {
                 .ok_or(CallConstraintInvariant::PreparedGroupMismatch)?,
         )
         .map_err(|_| CallConstraintInvariant::PreparedGroupMismatch)?;
-        let declared = if matches!(
+        if matches!(
             self.instantiation(),
             ResolvedCallableBaseInstantiation::Extension { group, .. } if *group == next
         ) || self.schema().group(next).is_none()
         {
-            self.effect_instantiation.project_result(self.schema())?
+            return match self.schema().result_schema() {
+                CallableResultSchema::Value(_) => self
+                    .effect_instantiation
+                    .project_result(self.schema())
+                    .and_then(|result| solution.instantiate_result(&result))
+                    .map(CallableResultSchema::Value),
+                CallableResultSchema::ContentEmission(operation) => {
+                    Ok(CallableResultSchema::ContentEmission(*operation))
+                }
+            };
         } else {
-            remaining_function_type(self.schema(), next, &self.effect_instantiation)?
-        };
-        Ok(solution.apply(&declared))
+            return remaining_function_type(self.schema(), next, &self.effect_instantiation)
+                .and_then(|result| solution.instantiate_result(&result))
+                .map(CallableResultSchema::Value);
+        }
     }
 }
 
@@ -744,11 +784,7 @@ impl CheckedCallableEffectProjectionToken<'_> {
             .and_then(|group| group.parameter(self.coordinate.parameter()))
             .and_then(|parameter| parameter.declared_type())
             .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
-        let projected = self
-            .base
-            .effect_instantiation
-            .project_parameter(self.base.schema(), self.coordinate)?
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        let projected = self.base.project_parameter_type(self.coordinate)?;
         let source = self
             .source_projection
             .compose_expected(&self.expected.apply_to(source));
@@ -759,7 +795,7 @@ impl CheckedCallableEffectProjectionToken<'_> {
             .base
             .effect_instantiation
             .seal_source_actual(&source, &projected, actual)?;
-        Ok(solution.apply(&projected_actual))
+        solution.complete_value(&projected_actual)
     }
 }
 
@@ -859,7 +895,7 @@ impl ResolvedCallable {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.base.visit_types(visitor)?;
         self.state.visit_types(visitor)
@@ -869,7 +905,7 @@ impl ResolvedCallable {
 impl ResolvedCallableState {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Base => Ok(()),
@@ -903,13 +939,13 @@ impl FrozenCallTypeSolutionSeed {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDeferredContinuationParameter {
-    parameter: crate::types::GenericTypeParameterId,
+    parameter: crate::types::GenericTypeReference,
     first_remaining_group: CallableGroupIndex,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedDeferredContinuationConstParameter {
-    parameter: GenericConstParameterId,
+    parameter: GenericConstReference,
     first_remaining_group: CallableGroupIndex,
 }
 
@@ -929,7 +965,7 @@ impl CheckedCallEffectBinding {
 }
 
 impl CheckedDeferredContinuationParameter {
-    pub const fn parameter(&self) -> &crate::types::GenericTypeParameterId {
+    pub const fn parameter(&self) -> &crate::types::GenericTypeReference {
         &self.parameter
     }
     pub const fn first_remaining_group(&self) -> CallableGroupIndex {
@@ -938,7 +974,7 @@ impl CheckedDeferredContinuationParameter {
 }
 
 impl CheckedDeferredContinuationConstParameter {
-    pub const fn parameter(&self) -> &GenericConstParameterId {
+    pub const fn parameter(&self) -> &GenericConstReference {
         &self.parameter
     }
     pub const fn first_remaining_group(&self) -> CallableGroupIndex {
@@ -973,6 +1009,18 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
 }
 
 impl FrozenCallTypeSolution {
+    pub(crate) fn close_instantiation_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        enclosing: Option<&crate::types::constraints::ClosedTypeInstantiation>,
+        control: &mut C,
+    ) -> Result<
+        crate::types::constraints::ClosedTypeInstantiation,
+        crate::types::TypeProjectionError<C::Error>,
+    > {
+        self.solution
+            .close_instantiation_with_control(enclosing, control)
+    }
+
     pub(crate) fn seal(
         seed: FrozenCallTypeSolutionSeed,
         base: &Arc<ResolvedCallableBase>,
@@ -1015,7 +1063,10 @@ impl FrozenCallTypeSolution {
                 (
                     super::CallableSchemaGenericRole::Candidate,
                     super::CallableGenericFirstUse::Group(group),
-                ) if group > seed.completed_group && Some(group) != implicit_extension_group => {
+                ) if group > seed.completed_group
+                    && Some(group) != implicit_extension_group
+                    && solution.has_residual_type(entry.parameter()) =>
+                {
                     Some(CheckedDeferredContinuationParameter {
                         parameter: entry.parameter().clone(),
                         first_remaining_group: group,
@@ -1024,14 +1075,7 @@ impl FrozenCallTypeSolution {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        deferred.sort_by(|left, right| {
-            generic_parameter_digest(left.parameter())
-                .cmp(&generic_parameter_digest(right.parameter()))
-                .then_with(|| {
-                    left.first_remaining_group()
-                        .cmp(&right.first_remaining_group())
-                })
-        });
+        deferred.sort();
         if deferred.windows(2).any(|rows| rows[0] >= rows[1]) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
@@ -1044,7 +1088,10 @@ impl FrozenCallTypeSolution {
                 (
                     super::CallableSchemaGenericRole::Candidate,
                     super::CallableGenericFirstUse::Group(group),
-                ) if group > seed.completed_group && Some(group) != implicit_extension_group => {
+                ) if group > seed.completed_group
+                    && Some(group) != implicit_extension_group
+                    && solution.has_residual_const(entry.parameter()) =>
+                {
                     Some(CheckedDeferredContinuationConstParameter {
                         parameter: entry.parameter().clone(),
                         first_remaining_group: group,
@@ -1053,24 +1100,19 @@ impl FrozenCallTypeSolution {
                 _ => None,
             })
             .collect::<Vec<_>>();
-        deferred_consts.sort_by(|left, right| {
-            ArrayLength::Generic(left.parameter.clone())
-                .canonical_checked_bytes()
-                .cmp(&ArrayLength::Generic(right.parameter.clone()).canonical_checked_bytes())
-                .then_with(|| left.first_remaining_group.cmp(&right.first_remaining_group))
-        });
+        deferred_consts.sort();
         if deferred_consts.windows(2).any(|rows| rows[0] >= rows[1]) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
         let mut bindings = solution
             .bindings()
             .map(|(parameter, value)| {
-                (
-                    generic_parameter_digest(parameter),
-                    value.semantic_identity_digest(),
-                )
+                Ok::<_, CallConstraintInvariant>((
+                    parameter.semantic_identity_digest()?,
+                    value.semantic_identity_digest()?,
+                ))
             })
-            .collect::<Vec<_>>();
+            .collect::<Result<Vec<_>, _>>()?;
         bindings.sort_by_key(|(parameter, _)| *parameter);
         if bindings.windows(2).any(|rows| rows[0].0 >= rows[1].0) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
@@ -1078,13 +1120,9 @@ impl FrozenCallTypeSolution {
         let mut const_bindings = solution
             .const_bindings()
             .map(|(parameter, value)| {
-                let parameter = ArrayLength::Generic(parameter.clone())
-                    .canonical_checked_bytes()
-                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?;
-                let value = value
-                    .canonical_checked_bytes()
-                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?;
-                Ok((parameter, value))
+                let parameter = parameter.canonical_checked_bytes()?;
+                let value = value.canonical_checked_bytes()?;
+                Ok::<_, CallConstraintInvariant>((parameter, value))
             })
             .collect::<Result<Vec<_>, _>>()?;
         const_bindings.sort_by(|left, right| left.0.cmp(&right.0));
@@ -1136,16 +1174,21 @@ impl FrozenCallTypeSolution {
         encoder.count(deferred.len())?;
         for row in &deferred {
             encoder.tag(2);
-            encoder.digest(generic_parameter_digest(row.parameter()).as_bytes());
+            encoder.digest(
+                solution
+                    .type_parameter_view(row.parameter())
+                    .semantic_identity_digest()?
+                    .as_bytes(),
+            );
             encoder.index(row.first_remaining_group().get())?;
         }
         encoder.count(deferred_consts.len())?;
         for row in &deferred_consts {
             encoder.tag(3);
             encoder.bytes(
-                &ArrayLength::Generic(row.parameter().clone())
-                    .canonical_checked_bytes()
-                    .ok_or(CallConstraintInvariant::PreparedDeferredMismatch)?,
+                &solution
+                    .const_parameter_view(row.parameter())
+                    .canonical_checked_bytes()?,
             )?;
             encoder.index(row.first_remaining_group().get())?;
         }
@@ -1183,13 +1226,93 @@ impl FrozenCallTypeSolution {
     pub const fn digest(&self) -> FrozenCallTypeSolutionDigest {
         self.digest
     }
-    pub(crate) fn apply(&self, ty: &TypeKind) -> TypeKind {
-        self.solution.apply(ty)
+    /// Applies formal declaration slots to a value position, which must not
+    /// capture the application's residual quantifiers.
+    pub(crate) fn instantiate_template(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CallConstraintInvariant> {
+        Ok(self.solution.apply_template(ty)?.view().to_root_type()?)
+    }
+
+    /// The returned continuation owns all quantifiers deferred by this group.
+    pub(crate) fn instantiate_result(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CallConstraintInvariant> {
+        Ok(self
+            .solution
+            .apply_template(ty)?
+            .view()
+            .to_quantified_type()?)
+    }
+
+    /// Source values are already type/const-normalized by source completion.
+    /// Their free declarations belong to the caller and must not be treated
+    /// as this application's formal slots, even in recursive calls.
+    pub(crate) fn complete_value(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, CallConstraintInvariant> {
+        let effects = EffectSubstitution::from_rows(
+            self.effect_bindings
+                .iter()
+                .map(|row| (row.variable(), row.value().clone())),
+        );
+        let value = ty
+            .substitute_effect_rows(&effects)
+            .map_err(crate::types::TypeInstantiationError::from)?;
+        Ok(crate::types::ScopedTypeView::at_root(&value).to_root_type()?)
+    }
+
+    pub(crate) fn type_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedTypeReferenceView<'_>,
+            crate::types::ScopedTypeView<'_>,
+        ),
+    > {
+        self.solution.bindings()
+    }
+
+    pub(crate) fn const_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedConstReferenceView<'_>,
+            crate::types::ScopedArrayLengthView<'_>,
+        ),
+    > {
+        self.solution.const_bindings()
+    }
+
+    /// Closes one checked callable effect row through the same frozen
+    /// application substitution that owns generic type/const instantiation.
+    /// Runtime consumers must use this boundary instead of copying the
+    /// application execution-fold row or inferring effects from an operation
+    /// variant.
+    pub fn instantiate_effect_row(
+        &self,
+        row: &EffectRow,
+    ) -> Result<crate::effects::EffectSet, EffectRowError> {
+        let substitutions = EffectSubstitution::from_rows(
+            self.effect_bindings
+                .iter()
+                .map(|binding| (binding.variable(), binding.value().clone())),
+        );
+        row.resolve(&substitutions)
+    }
+
+    /// Returns whether every type/const parameter required by later callable
+    /// groups is closed at this application boundary.
+    pub fn is_fully_instantiated(&self) -> bool {
+        self.deferred.is_empty() && self.deferred_consts.is_empty()
     }
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         for (_, value) in self.solution.bindings() {
             visitor(value)?;
@@ -1292,7 +1415,7 @@ impl CheckedCandidateInventory {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         for candidate in self.candidates() {
             candidate.visit_types(visitor)?;
@@ -1363,13 +1486,19 @@ pub enum CheckedCallSemanticOperandSource {
     },
     DialogueApplicationId {
         argument: HirCallArgumentOrdinal,
-        source: CheckedCallExecutionSource,
+        source: ExprId,
+        application: StableCheckedValueCoordinate,
         id: DialogueLineId,
     },
     DialogueApplicationTextKey {
         argument: HirCallArgumentOrdinal,
-        source: CheckedCallExecutionSource,
+        source: ExprId,
+        application: StableCheckedValueCoordinate,
         key: DialogueTextKey,
+    },
+    TextProxyObject {
+        argument: HirCallArgumentOrdinal,
+        source: CheckedCallExecutionSource,
     },
 }
 
@@ -1380,8 +1509,9 @@ impl CheckedCallSemanticOperandSource {
             Self::DialogueContent { application } | Self::DialogueLinePlan { application } => {
                 application
             }
-            Self::DialogueApplicationId { source, .. }
-            | Self::DialogueApplicationTextKey { source, .. } => source.coordinate(),
+            Self::DialogueApplicationId { application, .. }
+            | Self::DialogueApplicationTextKey { application, .. } => application,
+            Self::TextProxyObject { source, .. } => source.coordinate(),
         }
     }
 }
@@ -1408,6 +1538,83 @@ impl CheckedCallExecutionSource {
     }
 }
 
+/// C1-stable source of one supplied attached-content body. The raw HIR ID is
+/// retained for typed source consumers, while the enclosing application
+/// coordinate is the accepted identity used by deterministic transcripts.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCallAttachedContentSource {
+    raw: HirDialogueContentId,
+    application: StableCheckedValueCoordinate,
+}
+
+impl CheckedCallAttachedContentSource {
+    pub(crate) fn seal(
+        raw: HirDialogueContentId,
+        site: &CheckedCallApplicationSite,
+    ) -> Result<Self, CallConstraintInvariant> {
+        if raw.owner() != site.raw().expression()
+            || !matches!(
+                site.raw(),
+                super::CheckedCallSite::AttachedContentApplication {
+                    family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+                    ..
+                }
+            )
+        {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
+        Ok(Self {
+            raw,
+            application: site.coordinate().clone(),
+        })
+    }
+
+    pub const fn raw(&self) -> HirDialogueContentId {
+        self.raw
+    }
+
+    pub const fn application(&self) -> &StableCheckedValueCoordinate {
+        &self.application
+    }
+}
+
+/// Final attached-content input for one selected checked call. Presence,
+/// admission role, and execution behavior remain owned by the selected
+/// callable schema; this projection seals the site-specific input only.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedCallAttachedContentOperand {
+    StructuralPresent {
+        source: CheckedCallAttachedContentSource,
+    },
+    RuntimeOmitted {
+        abi_position: u32,
+    },
+    RuntimePresent {
+        source: CheckedCallAttachedContentSource,
+        abi_position: u32,
+    },
+}
+
+impl CheckedCallAttachedContentOperand {
+    pub const fn source(&self) -> Option<&CheckedCallAttachedContentSource> {
+        match self {
+            Self::RuntimeOmitted { .. } => None,
+            Self::StructuralPresent { source } | Self::RuntimePresent { source, .. } => {
+                Some(source)
+            }
+        }
+    }
+
+    pub const fn abi_position(&self) -> Option<u32> {
+        match self {
+            Self::StructuralPresent { .. } => None,
+            Self::RuntimeOmitted { abi_position } | Self::RuntimePresent { abi_position, .. } => {
+                Some(*abi_position)
+            }
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedCallReceiverProjection {
     None,
@@ -1426,7 +1633,7 @@ pub enum CheckedCallReceiverProjection {
 impl CheckedCallReceiverProjection {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         let (mode, ty) = match self {
             Self::None => return Ok(()),
@@ -1436,9 +1643,11 @@ impl CheckedCallReceiverProjection {
             CallableReceiverMode::None => {}
             CallableReceiverMode::Value { receiver }
             | CallableReceiverMode::Type { receiver }
-            | CallableReceiverMode::Extension { receiver, .. } => visitor(receiver)?,
+            | CallableReceiverMode::Extension { receiver, .. } => {
+                visitor(crate::types::ScopedTypeView::at_root(receiver))?
+            }
         }
-        visitor(ty)
+        visitor(crate::types::ScopedTypeView::at_root(ty))
     }
 }
 
@@ -1541,7 +1750,7 @@ impl CheckedCallSemanticOperand {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match &self.source_projection {
             CheckedConstraintSourceProjection::Scalar => {}
@@ -1550,12 +1759,14 @@ impl CheckedCallSemanticOperand {
                 | CheckedConstraintContainerConstructor::Seq
                 | CheckedConstraintContainerConstructor::Slice
                 | CheckedConstraintContainerConstructor::Array { .. } => {}
-                CheckedConstraintContainerConstructor::MapValue { key, .. } => visitor(key)?,
+                CheckedConstraintContainerConstructor::MapValue { key, .. } => {
+                    visitor(crate::types::ScopedTypeView::at_root(key))?
+                }
             },
         }
-        visitor(&self.inferred)?;
+        visitor(crate::types::ScopedTypeView::at_root(&self.inferred))?;
         if let Some(expected) = &self.expected {
-            visitor(expected)?;
+            visitor(crate::types::ScopedTypeView::at_root(expected))?;
         }
         Ok(())
     }
@@ -1589,7 +1800,7 @@ impl CheckedCallExecutionSlot {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match &self.source_projection {
             CheckedConstraintSourceProjection::Scalar => {}
@@ -1598,12 +1809,14 @@ impl CheckedCallExecutionSlot {
                 | CheckedConstraintContainerConstructor::Seq
                 | CheckedConstraintContainerConstructor::Slice
                 | CheckedConstraintContainerConstructor::Array { .. } => {}
-                CheckedConstraintContainerConstructor::MapValue { key, .. } => visitor(key)?,
+                CheckedConstraintContainerConstructor::MapValue { key, .. } => {
+                    visitor(crate::types::ScopedTypeView::at_root(key))?
+                }
             },
         }
-        visitor(&self.inferred)?;
+        visitor(crate::types::ScopedTypeView::at_root(&self.inferred))?;
         if let Some(expected) = &self.expected {
-            visitor(expected)?;
+            visitor(crate::types::ScopedTypeView::at_root(expected))?;
         }
         Ok(())
     }
@@ -1629,6 +1842,9 @@ impl CheckedCallExecutionSlot {
                             .nth(alternative.get() as usize)
                             .map(CallableParameterValueAlternative::action)
                     }
+                    // Semantic-only parameters are carried by a semantic
+                    // operand, never by an executable value slot.
+                    CallableParameterAdmission::Semantic(_) => None,
                 }
             }
         }
@@ -1655,7 +1871,7 @@ impl CheckedCallExecutionArgument {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         for slot in self.slots() {
             slot.visit_types(visitor)?;
@@ -1669,15 +1885,8 @@ pub struct CheckedCallExecutionProjection {
     receiver: CheckedCallReceiverProjection,
     arguments: Box<[CheckedCallExecutionArgument]>,
     semantic_operands: Box<[CheckedCallSemanticOperand]>,
-}
-
-/// Explicit projection order for the one final runtime-operand inventory.
-/// Source order is receiver-first followed by authored argument/slot order;
-/// ABI order is the contiguous position order validated during C sealing.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CheckedCallRuntimeOperandOrder {
-    Source,
-    Abi,
+    attached_content: Option<CheckedCallAttachedContentOperand>,
+    attached_content_abi_type: Option<TypeKind>,
 }
 
 /// Borrowed row from the final checked execution projection. Receiver and
@@ -1695,13 +1904,20 @@ pub enum CheckedCallRuntimeOperand<'a> {
         passing: CheckedCallArgumentPassing,
         slot: &'a CheckedCallExecutionSlot,
     },
+    AttachedContent {
+        source: Option<&'a CheckedCallAttachedContentSource>,
+        presence: CallableParameterPresence,
+        ty: &'a TypeKind,
+        abi_position: u32,
+    },
 }
 
 impl<'a> CheckedCallRuntimeOperand<'a> {
-    pub const fn source(self) -> &'a CheckedCallExecutionSource {
+    pub const fn execution_source(self) -> Option<&'a CheckedCallExecutionSource> {
         match self {
-            Self::Receiver { source, .. } => source,
-            Self::Argument { slot, .. } => slot.source(),
+            Self::Receiver { source, .. } => Some(source),
+            Self::Argument { slot, .. } => Some(slot.source()),
+            Self::AttachedContent { .. } => None,
         }
     }
 
@@ -1709,6 +1925,7 @@ impl<'a> CheckedCallRuntimeOperand<'a> {
         match self {
             Self::Receiver { ty, .. } => ty,
             Self::Argument { slot, .. } => slot.inferred(),
+            Self::AttachedContent { ty, .. } => ty,
         }
     }
 
@@ -1716,6 +1933,7 @@ impl<'a> CheckedCallRuntimeOperand<'a> {
         match self {
             Self::Receiver { abi_position, .. } => abi_position,
             Self::Argument { slot, .. } => slot.abi_position(),
+            Self::AttachedContent { abi_position, .. } => abi_position,
         }
     }
 }
@@ -1723,7 +1941,6 @@ impl<'a> CheckedCallRuntimeOperand<'a> {
 pub(crate) struct CheckedCallExecutionSlotSeal {
     pub(crate) slot: CallableArgumentSlotIndex,
     pub(crate) source: CheckedCallExecutionSource,
-    pub(crate) abi_position: u32,
     pub(crate) destination: CheckedCallOperandDestination,
     pub(crate) source_projection: CheckedConstraintSourceProjection,
     pub(crate) selection: CheckedCallSemanticSelection,
@@ -1750,12 +1967,15 @@ pub(crate) struct CheckedCallExecutionProjectionSeal {
     pub(crate) receiver: CheckedCallReceiverProjection,
     pub(crate) arguments: Box<[CheckedCallExecutionArgumentSeal]>,
     pub(crate) semantic_operands: Box<[CheckedCallSemanticOperandSeal]>,
+    pub(crate) attached_content: Option<CheckedCallAttachedContentOperand>,
+    pub(crate) attached_content_abi_type: Option<TypeKind>,
 }
 
 impl CheckedCallExecutionProjection {
     fn seal(
         input: CheckedCallExecutionProjectionSeal,
         selected: &ResolvedCallable,
+        consumer: &CheckedCallConsumerAdmission,
         solution: &FrozenCallTypeSolution,
         current_group: CallableGroupIndex,
         site: &CheckedCallApplicationSite,
@@ -1763,8 +1983,54 @@ impl CheckedCallExecutionProjection {
         validate_receiver(&input.receiver, selected)?;
         let mut abi_positions = Vec::new();
         if let CheckedCallReceiverProjection::Operand { abi_position, .. } = &input.receiver {
+            if *abi_position != 0 {
+                return Err(CallConstraintInvariant::MalformedMapperSeal);
+            }
             abi_positions.push(*abi_position);
         }
+        // Rank physical operands by their checked parameter destination while
+        // retaining authored evaluation order in the argument/slot inventory.
+        // Repeated rest destinations keep source order; open arguments have
+        // no positional parameter ABI and keep their authored order as well.
+        let mut destinations = input
+            .arguments
+            .iter()
+            .enumerate()
+            .flat_map(|(argument, row)| {
+                row.slots
+                    .iter()
+                    .enumerate()
+                    .map(move |(slot, row)| ((argument, slot), &row.destination))
+            })
+            .collect::<Vec<_>>();
+        destinations.sort_by(|(_, left), (_, right)| match (left, right) {
+            (
+                CheckedCallOperandDestination::Parameter(left),
+                CheckedCallOperandDestination::Parameter(right),
+            ) => left.cmp(right),
+            (
+                CheckedCallOperandDestination::Parameter(_),
+                CheckedCallOperandDestination::Open(_),
+            ) => std::cmp::Ordering::Less,
+            (
+                CheckedCallOperandDestination::Open(_),
+                CheckedCallOperandDestination::Parameter(_),
+            ) => std::cmp::Ordering::Greater,
+            (CheckedCallOperandDestination::Open(_), CheckedCallOperandDestination::Open(_)) => {
+                std::cmp::Ordering::Equal
+            }
+        });
+        let argument_positions = destinations
+            .into_iter()
+            .enumerate()
+            .map(|(position, (source, _))| {
+                position
+                    .checked_add(abi_positions.len())
+                    .and_then(|position| u32::try_from(position).ok())
+                    .map(|position| (source, position))
+                    .ok_or(CallConstraintInvariant::MalformedMapperSeal)
+            })
+            .collect::<Result<std::collections::BTreeMap<_, _>, _>>()?;
         let mut arguments = Vec::with_capacity(input.arguments.len());
         for (argument_index, argument) in input.arguments.into_vec().into_iter().enumerate() {
             if usize::from(argument.argument.get()) != argument_index {
@@ -1775,12 +2041,13 @@ impl CheckedCallExecutionProjection {
                 if slot.slot.get() != slot_index {
                     return Err(CallConstraintInvariant::MalformedMapperSeal);
                 }
-                validate_execution_slot(&slot, selected, solution, current_group)?;
-                abi_positions.push(slot.abi_position);
+                validate_execution_slot(&slot, selected, consumer, solution, current_group)?;
+                let abi_position = argument_positions[&(argument_index, slot_index)];
+                abi_positions.push(abi_position);
                 slots.push(CheckedCallExecutionSlot {
                     slot: slot.slot,
                     source: slot.source,
-                    abi_position: slot.abi_position,
+                    abi_position,
                     destination: slot.destination,
                     source_projection: slot.source_projection,
                     selection: slot.selection,
@@ -1793,6 +2060,20 @@ impl CheckedCallExecutionProjection {
                 passing: argument.passing,
                 slots: slots.into_boxed_slice(),
             });
+        }
+        validate_attached_content_inventory(
+            site,
+            selected,
+            current_group,
+            input.attached_content.as_ref(),
+            input.attached_content_abi_type.as_ref(),
+        )?;
+        if let Some(position) = input
+            .attached_content
+            .as_ref()
+            .and_then(CheckedCallAttachedContentOperand::abi_position)
+        {
+            abi_positions.push(position);
         }
         abi_positions.sort_unstable();
         if abi_positions
@@ -1811,6 +2092,7 @@ impl CheckedCallExecutionProjection {
                 &operand.inferred,
                 operand.expected.as_ref(),
                 selected,
+                consumer,
                 solution,
                 current_group,
             )?;
@@ -1828,6 +2110,8 @@ impl CheckedCallExecutionProjection {
             receiver: input.receiver,
             arguments: arguments.into_boxed_slice(),
             semantic_operands: semantic_operands.into_boxed_slice(),
+            attached_content: input.attached_content,
+            attached_content_abi_type: input.attached_content_abi_type,
         })
     }
 
@@ -1840,10 +2124,13 @@ impl CheckedCallExecutionProjection {
     pub fn semantic_operands(&self) -> &[CheckedCallSemanticOperand] {
         &self.semantic_operands
     }
+    pub const fn attached_content(&self) -> Option<&CheckedCallAttachedContentOperand> {
+        self.attached_content.as_ref()
+    }
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.receiver.visit_types(visitor)?;
         for argument in self.arguments() {
@@ -1852,15 +2139,19 @@ impl CheckedCallExecutionProjection {
         for operand in self.semantic_operands() {
             operand.visit_types(visitor)?;
         }
+        if let Some(ty) = &self.attached_content_abi_type {
+            visitor(crate::types::ScopedTypeView::at_root(ty))?;
+        }
         Ok(())
     }
 
-    /// Project every physical runtime operand through one final authority.
-    /// The returned rows borrow the sealed receiver/argument carriers; no
-    /// caller reconstructs ABI order or silently drops the receiver.
-    pub fn ordered_runtime_operands(
+    /// Project every physical runtime operand through one final authority in
+    /// execution order: receiver first, authored arguments and their slots in
+    /// source order, then the terminal attached-content operand. Each member
+    /// retains its ABI destination; no caller may sort this row to evaluate it.
+    fn runtime_operands(
         &self,
-        order: CheckedCallRuntimeOperandOrder,
+        parameter: Option<CallableAttachedContentParameter>,
     ) -> Box<[CheckedCallRuntimeOperand<'_>]> {
         let receiver = match &self.receiver {
             CheckedCallReceiverProjection::Operand {
@@ -1877,7 +2168,39 @@ impl CheckedCallExecutionProjection {
             CheckedCallReceiverProjection::None
             | CheckedCallReceiverProjection::SemanticOnly { .. } => None,
         };
-        let mut operands = receiver
+        let attached = match (&self.attached_content, parameter) {
+            (
+                Some(CheckedCallAttachedContentOperand::RuntimeOmitted { abi_position }),
+                Some(parameter),
+            ) => Some(CheckedCallRuntimeOperand::AttachedContent {
+                source: None,
+                presence: parameter.presence(),
+                ty: self
+                    .attached_content_abi_type
+                    .as_ref()
+                    .expect("C1 validates every runtime attached-content ABI type"),
+                abi_position: *abi_position,
+            }),
+            (
+                Some(CheckedCallAttachedContentOperand::RuntimePresent {
+                    source,
+                    abi_position,
+                }),
+                Some(parameter),
+            ) => Some(CheckedCallRuntimeOperand::AttachedContent {
+                source: Some(source),
+                presence: parameter.presence(),
+                ty: self
+                    .attached_content_abi_type
+                    .as_ref()
+                    .expect("C1 validates every runtime attached-content ABI type"),
+                abi_position: *abi_position,
+            }),
+            (None, None)
+            | (Some(CheckedCallAttachedContentOperand::StructuralPresent { .. }), Some(_)) => None,
+            _ => unreachable!("C1 validates the selected attached-content execution family"),
+        };
+        receiver
             .into_iter()
             .chain(self.arguments.iter().flat_map(|argument| {
                 argument
@@ -1889,11 +2212,9 @@ impl CheckedCallExecutionProjection {
                         slot,
                     })
             }))
-            .collect::<Vec<_>>();
-        if order == CheckedCallRuntimeOperandOrder::Abi {
-            operands.sort_by_key(|operand| operand.abi_position());
-        }
-        operands.into_boxed_slice()
+            .chain(attached)
+            .collect::<Vec<_>>()
+            .into_boxed_slice()
     }
 }
 
@@ -1902,6 +2223,7 @@ pub struct CheckedCallApplicationCore {
     site: CheckedCallApplicationSite,
     current_group: CallableGroupIndex,
     candidates: CheckedCandidateInventory,
+    consumer: CheckedCallConsumerAdmission,
     solution: Arc<FrozenCallTypeSolution>,
     callee: CheckedCallCalleeExecution,
     execution: CheckedCallExecutionProjection,
@@ -1913,10 +2235,158 @@ pub(crate) struct CheckedCallApplicationCoreSeal {
     pub(crate) site: CheckedCallApplicationSite,
     pub(crate) current_group: CallableGroupIndex,
     pub(crate) candidates: CheckedCandidateInventory,
+    pub(crate) consumer: CheckedCallConsumerAdmissionSeal,
     pub(crate) solution: Arc<FrozenCallTypeSolution>,
     pub(crate) callee: CheckedCallCalleeExecution,
     pub(crate) execution: CheckedCallExecutionProjectionSeal,
     pub(crate) effects: EffectRow,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedCallConsumerAdmission {
+    Ordinary,
+    ViewFxProducer {
+        runtime_parameters: Box<[(CallableParameterCoordinate, TypeKind)]>,
+    },
+}
+
+pub(crate) enum CheckedCallConsumerAdmissionSeal {
+    Ordinary,
+    ViewFxProducer {
+        runtime_parameters: Box<[(CallableParameterCoordinate, TypeKind)]>,
+    },
+}
+
+pub(crate) fn checked_view_fx_runtime_parameter(
+    declared: &TypeKind,
+) -> Option<(arcweft_presentation::fx::FxRuntimeType, TypeKind)> {
+    use arcweft_presentation::fx::FxRuntimeType;
+    let runtime = match declared {
+        TypeKind::Bool => FxRuntimeType::Bool,
+        TypeKind::I32 => FxRuntimeType::I32,
+        TypeKind::U32 => FxRuntimeType::U32,
+        TypeKind::F32 => FxRuntimeType::F32,
+        TypeKind::Duration => FxRuntimeType::Seconds,
+        TypeKind::CompileTimeScalar(value) => match value.kind() {
+            crate::types::CompileTimeScalarKind::Milli
+            | crate::types::CompileTimeScalarKind::Ratio => FxRuntimeType::F32,
+            crate::types::CompileTimeScalarKind::Length => FxRuntimeType::Length,
+            crate::types::CompileTimeScalarKind::Angle => FxRuntimeType::Angle,
+            crate::types::CompileTimeScalarKind::Color => FxRuntimeType::Color,
+            crate::types::CompileTimeScalarKind::PublicId => return None,
+        },
+        TypeKind::FixedVector(vector)
+            if vector.dimensions() == super::VectorDimensions::Two
+                && matches!(vector.component(), TypeKind::F32) =>
+        {
+            FxRuntimeType::Vec2
+        }
+        _ => return None,
+    };
+    let expected = match declared {
+        TypeKind::CompileTimeScalar(value)
+            if matches!(
+                value.kind(),
+                crate::types::CompileTimeScalarKind::Milli
+                    | crate::types::CompileTimeScalarKind::Ratio
+            ) =>
+        {
+            TypeKind::F32
+        }
+        _ => declared.clone(),
+    };
+    Some((runtime, expected))
+}
+
+impl CheckedCallConsumerAdmission {
+    fn seal(
+        input: CheckedCallConsumerAdmissionSeal,
+        selected: &ResolvedCallable,
+        current_group: CallableGroupIndex,
+        solution: &FrozenCallTypeSolution,
+    ) -> Result<Self, CallConstraintInvariant> {
+        match input {
+            CheckedCallConsumerAdmissionSeal::Ordinary => Ok(Self::Ordinary),
+            CheckedCallConsumerAdmissionSeal::ViewFxProducer { runtime_parameters } => {
+                let result_is_fx = matches!(
+                    selected
+                        .base()
+                        .result_schema_for_group(current_group, solution),
+                    Ok(CallableResultSchema::Value(TypeKind::CompileTimeFx(_)))
+                );
+                if !result_is_fx {
+                    return Err(CallConstraintInvariant::MalformedMapperSeal);
+                }
+                let mut previous = None;
+                for (coordinate, expected) in runtime_parameters.iter() {
+                    let parameter = selected
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameter(coordinate.parameter()))
+                        .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+                    let declared = selected.base().project_parameter_type(*coordinate)?;
+                    let (runtime_type, canonical_expected) =
+                        checked_view_fx_runtime_parameter(&declared)
+                            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+                    let valid_producer_parameter = match selected.schema().validator() {
+                        CallableValidator::BuiltinFx(row_id) => {
+                            arcweft_presentation::fx::BUILTIN_FX_CALLABLE_CATALOG
+                                .get(*row_id)
+                                .and_then(|row| {
+                                    row.parameters().get(coordinate.parameter().get()).copied()
+                                })
+                                .is_some_and(|source| {
+                                    source.binding()
+                                        == arcweft_presentation::fx::BuiltinFxParameterBinding::Abi
+                                        && source
+                                            .parameter_type()
+                                            .direct_definition_parameter_type()
+                                            == Some(
+                                                arcweft_presentation::fx::FxDefinitionParameterType::Runtime(
+                                                    runtime_type,
+                                                ),
+                                            )
+                                })
+                        }
+                        _ => matches!(selected.id(), CallableCandidateId::Project(_))
+                            && result_is_fx,
+                    };
+                    if coordinate.group() != current_group
+                        || previous.is_some_and(|previous| previous >= *coordinate)
+                        || parameter.consumer() != &CallableParameterConsumer::Value
+                        || canonical_expected != *expected
+                        || !valid_producer_parameter
+                    {
+                        return Err(CallConstraintInvariant::MalformedMapperSeal);
+                    }
+                    previous = Some(*coordinate);
+                }
+                Ok(Self::ViewFxProducer { runtime_parameters })
+            }
+        }
+    }
+
+    fn runtime_parameter(&self, coordinate: CallableParameterCoordinate) -> Option<&TypeKind> {
+        match self {
+            Self::Ordinary => None,
+            Self::ViewFxProducer { runtime_parameters } => runtime_parameters
+                .binary_search_by_key(&coordinate, |(coordinate, _)| *coordinate)
+                .ok()
+                .map(|index| &runtime_parameters[index].1),
+        }
+    }
+
+    fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Self::ViewFxProducer { runtime_parameters } = self {
+            for (_, ty) in runtime_parameters.iter() {
+                visitor(crate::types::ScopedTypeView::at_root(ty))?;
+            }
+        }
+        Ok(())
+    }
 }
 
 impl CheckedCallApplicationCore {
@@ -1937,9 +2407,16 @@ impl CheckedCallApplicationCore {
         {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
+        let consumer = CheckedCallConsumerAdmission::seal(
+            input.consumer,
+            selected,
+            input.current_group,
+            &input.solution,
+        )?;
         let execution = CheckedCallExecutionProjection::seal(
             input.execution,
             selected,
+            &consumer,
             &input.solution,
             input.current_group,
             &input.site,
@@ -1948,6 +2425,18 @@ impl CheckedCallApplicationCore {
         encoder.digest(input.candidates.digest().as_bytes());
         encoder.index(input.current_group.get())?;
         encoder.digest(input.solution.digest().as_bytes());
+        match &consumer {
+            CheckedCallConsumerAdmission::Ordinary => encoder.tag(0),
+            CheckedCallConsumerAdmission::ViewFxProducer { runtime_parameters } => {
+                encoder.tag(1);
+                encoder.count(runtime_parameters.len())?;
+                for (coordinate, ty) in runtime_parameters.iter() {
+                    encoder.index(coordinate.group().get())?;
+                    encoder.index(coordinate.parameter().get())?;
+                    encoder.type_kind(&ty)?;
+                }
+            }
+        }
         encoder.callee_execution(&input.callee);
         encoder.receiver(execution.receiver())?;
         encoder.count(execution.arguments().len())?;
@@ -1958,12 +2447,17 @@ impl CheckedCallApplicationCore {
         for operand in execution.semantic_operands() {
             encoder.semantic_operand(operand)?;
         }
+        encoder.attached_content_operand(
+            execution.attached_content(),
+            execution.attached_content_abi_type.as_ref(),
+        )?;
         encoder.effect_row(&input.effects)?;
         let digest = CheckedCallApplicationCoreDigest(encoder.finish());
         Ok(Arc::new(Self {
             site: input.site,
             current_group: input.current_group,
             candidates: input.candidates,
+            consumer,
             solution: input.solution,
             callee: input.callee,
             execution,
@@ -1992,6 +2486,9 @@ impl CheckedCallApplicationCore {
     pub const fn candidates(&self) -> &CheckedCandidateInventory {
         &self.candidates
     }
+    pub const fn consumer(&self) -> &CheckedCallConsumerAdmission {
+        &self.consumer
+    }
     pub const fn solution(&self) -> &Arc<FrozenCallTypeSolution> {
         &self.solution
     }
@@ -2000,6 +2497,14 @@ impl CheckedCallApplicationCore {
     }
     pub const fn execution(&self) -> &CheckedCallExecutionProjection {
         &self.execution
+    }
+    /// Projects the complete source-ordered runtime operand inventory through
+    /// the selected call core. The selected schema supplies the attached
+    /// parameter's presence while C1 supplies its instantiated ABI type and
+    /// destination position.
+    pub fn runtime_operands(&self) -> Box<[CheckedCallRuntimeOperand<'_>]> {
+        self.execution
+            .runtime_operands(self.candidates.selected().schema().attached_content())
     }
     /// Returns the exact normalized type receiver only for the sealed direct
     /// type-receiver execution pair.  Consumers cannot infer associated-type
@@ -2031,9 +2536,10 @@ impl CheckedCallApplicationCore {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.candidates.visit_types(visitor)?;
+        self.consumer.visit_types(visitor)?;
         self.solution.visit_types(visitor)?;
         self.execution.visit_types(visitor)
     }
@@ -2074,7 +2580,7 @@ impl CheckedCallContinuation {
                 .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
         )?;
         encoder.digest(core.digest().as_bytes());
-        encoder.digest(function_type.semantic_identity_digest().as_bytes());
+        encoder.type_kind(&function_type)?;
         let digest = CheckedCallContinuationDigest(encoder.finish());
         Ok(Arc::new(Self {
             base,
@@ -2115,34 +2621,44 @@ impl CheckedCallContinuation {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.base.visit_types(visitor)?;
         self.inherited_solution.visit_types(visitor)?;
-        visitor(&self.function_type)
+        visitor(crate::types::ScopedTypeView::at_root(&self.function_type))
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedCallResult {
     Value(TypeKind),
+    ContentEmission(ContentCallableIdentity),
     Continuation(Arc<CheckedCallContinuation>),
 }
 
 impl CheckedCallResult {
-    pub fn ty(&self) -> &TypeKind {
+    pub fn value_type(&self) -> Option<&TypeKind> {
         match self {
-            Self::Value(value) => value,
-            Self::Continuation(continuation) => continuation.function_type(),
+            Self::Value(value) => Some(value),
+            Self::ContentEmission(_) => None,
+            Self::Continuation(continuation) => Some(continuation.function_type()),
+        }
+    }
+
+    pub const fn content_emission(&self) -> Option<ContentCallableIdentity> {
+        match self {
+            Self::ContentEmission(operation) => Some(*operation),
+            Self::Value(_) | Self::Continuation(_) => None,
         }
     }
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Value(value) => visitor(value),
+            Self::Value(value) => visitor(crate::types::ScopedTypeView::at_root(value)),
+            Self::ContentEmission(_) => Ok(()),
             Self::Continuation(continuation) => continuation.visit_types(visitor),
         }
     }
@@ -2150,6 +2666,7 @@ impl CheckedCallResult {
 
 pub(crate) enum CheckedCallResultSeal {
     Value { prepared: TypeKind },
+    ContentEmission { operation: ContentCallableIdentity },
     Continuation { prepared: TypeKind },
 }
 
@@ -2166,19 +2683,35 @@ impl CheckedCallApplication {
         expected: CheckedCallResultSeal,
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
-        let projected = base.result_type_for_group(core.current_group(), core.solution())?;
+        let projected = base.result_schema_for_group(core.current_group(), core.solution())?;
         let result = match (base.next_group_for(core.current_group()), expected) {
-            (None, CheckedCallResultSeal::Value { prepared }) if prepared == projected => {
+            (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
+            {
                 if !core.solution().deferred().is_empty()
                     || !core.solution().deferred_consts().is_empty()
                 {
                     return Err(CallConstraintInvariant::PreparedDeferredMismatch);
                 }
+                let CallableResultSchema::Value(projected) = projected else {
+                    return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+                };
                 CheckedCallResult::Value(projected)
             }
-            (Some(next), CheckedCallResultSeal::Continuation { prepared })
-                if prepared == projected =>
+            (None, CheckedCallResultSeal::ContentEmission { operation })
+                if projected == CallableResultSchema::ContentEmission(operation) =>
             {
+                if !core.solution().deferred().is_empty()
+                    || !core.solution().deferred_consts().is_empty()
+                {
+                    return Err(CallConstraintInvariant::PreparedDeferredMismatch);
+                }
+                CheckedCallResult::ContentEmission(operation)
+            }
+            (Some(next), CheckedCallResultSeal::Continuation { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
+            {
+                let CallableResultSchema::Value(projected) = projected else {
+                    return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
+                };
                 CheckedCallResult::Continuation(CheckedCallContinuation::seal_from_core(
                     &core, next, projected,
                 )?)
@@ -2190,7 +2723,11 @@ impl CheckedCallApplication {
         match &result {
             CheckedCallResult::Value(value) => {
                 encoder.tag(0);
-                encoder.digest(value.semantic_identity_digest().as_bytes());
+                encoder.type_kind(&value)?;
+            }
+            CheckedCallResult::ContentEmission(operation) => {
+                encoder.tag(2);
+                encoder.content_identity(*operation)?;
             }
             CheckedCallResult::Continuation(continuation) => {
                 encoder.tag(1);
@@ -2217,7 +2754,7 @@ impl CheckedCallApplication {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.core.visit_types(visitor)?;
         self.result.visit_types(visitor)
@@ -2311,7 +2848,7 @@ impl ResolvedCallableStableIdentity {
                 Ok(Self::FunctionValue(CheckedFunctionValueIdentity {
                     expression: expression.into_coordinate(),
                     ordinal,
-                    function_type: function_type.semantic_identity_digest(),
+                    function_type: function_type.semantic_identity_digest()?,
                     effects,
                     captures: seal_captures(prepared_captures, captures)?,
                 }))
@@ -2349,12 +2886,14 @@ fn seal_captures(
     }
     Ok(checked
         .into_iter()
-        .map(|row| CheckedCaptureSignatureRow {
-            binding: row.binding.into_coordinate(),
-            mode: row.mode.into(),
-            ty: row.ty.semantic_identity_digest(),
+        .map(|row| {
+            Ok(CheckedCaptureSignatureRow {
+                binding: row.binding.into_coordinate(),
+                mode: row.mode.into(),
+                ty: row.ty.semantic_identity_digest()?,
+            })
         })
-        .collect::<Vec<_>>()
+        .collect::<Result<Vec<_>, CallConstraintInvariant>>()?
         .into_boxed_slice())
 }
 
@@ -2473,7 +3012,7 @@ fn dialogue_origin_matches_checked(
 
 fn language_family(identity: &CheckedLanguageCallableIdentity) -> LanguageCallableFamily {
     match identity {
-        CheckedLanguageCallableIdentity::Fx(_) => LanguageCallableFamily::Fx,
+        CheckedLanguageCallableIdentity::FxConstructor(_) => LanguageCallableFamily::FxConstructor,
         CheckedLanguageCallableIdentity::EnumConstructor { .. } => {
             LanguageCallableFamily::EnumConstructor
         }
@@ -2483,6 +3022,7 @@ fn language_family(identity: &CheckedLanguageCallableIdentity) -> LanguageCallab
         CheckedLanguageCallableIdentity::Agent(_) => LanguageCallableFamily::Agent,
         CheckedLanguageCallableIdentity::Presentation(_) => LanguageCallableFamily::Presentation,
         CheckedLanguageCallableIdentity::Dialogue(_) => LanguageCallableFamily::Dialogue,
+        CheckedLanguageCallableIdentity::Content(_) => LanguageCallableFamily::Content,
         CheckedLanguageCallableIdentity::Collection(_) => LanguageCallableFamily::CollectionMethod,
         CheckedLanguageCallableIdentity::PresentationHandle(_) => {
             LanguageCallableFamily::PresentationHandleMethod
@@ -2536,7 +3076,7 @@ fn validate_receiver(
         (
             CheckedCallReceiverProjection::None,
             ResolvedCallableBaseInstantiation::None
-            | ResolvedCallableBaseInstantiation::ExpectedEnum { .. }
+            | ResolvedCallableBaseInstantiation::EnumConstructor
             | ResolvedCallableBaseInstantiation::Result { .. }
             | ResolvedCallableBaseInstantiation::Option
             | ResolvedCallableBaseInstantiation::Character { .. },
@@ -2583,6 +3123,7 @@ fn validate_receiver(
 fn validate_execution_slot(
     slot: &CheckedCallExecutionSlotSeal,
     selected: &ResolvedCallable,
+    consumer: &CheckedCallConsumerAdmission,
     solution: &FrozenCallTypeSolution,
     current_group: CallableGroupIndex,
 ) -> Result<(), CallConstraintInvariant> {
@@ -2599,16 +3140,20 @@ fn validate_execution_slot(
             }
         }
         CheckedCallOperandDestination::Parameter(coordinate) => {
-            validate_parameter_projection(
+            let result = validate_parameter_projection(
                 *coordinate,
                 &slot.source_projection,
                 &slot.selection,
                 &slot.inferred,
                 slot.expected.as_ref(),
                 selected,
+                consumer,
                 solution,
                 current_group,
-            )?;
+            );
+            if let Err(error) = result {
+                return Err(error);
+            }
         }
     }
     Ok(())
@@ -2625,6 +3170,7 @@ fn validate_parameter_projection(
     inferred: &TypeKind,
     actual_expected: Option<&TypeKind>,
     selected: &ResolvedCallable,
+    consumer: &CheckedCallConsumerAdmission,
     solution: &FrozenCallTypeSolution,
     current_group: CallableGroupIndex,
 ) -> Result<(), CallConstraintInvariant> {
@@ -2636,6 +3182,21 @@ fn validate_parameter_projection(
         .group(coordinate.group())
         .and_then(|group| group.parameter(coordinate.parameter()))
         .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+    if let Some(expected) = consumer.runtime_parameter(coordinate) {
+        if actual_expected != Some(expected)
+            || inferred != expected
+            || !matches!(source_projection, CheckedConstraintSourceProjection::Scalar)
+            || !matches!(
+                selection,
+                CheckedCallSemanticSelection::Checked { alternative, evidence }
+                    if alternative.get() == 0
+                        && evidence == &CheckedSemanticValueEvidence::NoVariantCase
+            )
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        return Ok(());
+    }
     match parameter.admission() {
         CallableParameterAdmission::UncheckedSupply => {
             if actual_expected.is_some()
@@ -2645,11 +3206,7 @@ fn validate_parameter_projection(
             }
         }
         CallableParameterAdmission::Checked { rule, .. } => {
-            let declared = selected
-                .base()
-                .effect_instantiation()
-                .project_parameter(selected.schema(), coordinate)?
-                .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+            let declared = selected.base().project_parameter_type(coordinate)?;
             let CheckedCallSemanticSelection::Checked {
                 alternative,
                 evidence,
@@ -2662,11 +3219,46 @@ fn validate_parameter_projection(
                 .alternative(alternative_index)
                 .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
             let expected =
-                expected_for_alternative(source_projection, &declared, alternative, solution);
-            let checked_declared = solution.apply(&declared);
+                expected_for_alternative(source_projection, &declared, alternative, solution)?;
+            let checked_declared = solution.instantiate_template(&declared)?;
             if actual_expected != Some(&expected)
                 || !rule.selects(alternative_index, &checked_declared, evidence)
                 || !expected.accepts(inferred)
+            {
+                return Err(CallConstraintInvariant::MalformedMapperSeal);
+            }
+        }
+        // The Object nominal discriminator is represented by the owner-side
+        // semantic operand; its closed selection is checked here while the
+        // final owner validates the exact nominal actual.
+        CallableParameterAdmission::Semantic(CallableSemanticAdmission::TextProxyNominal) => {
+            if !matches!(
+                parameter.consumer(),
+                CallableParameterConsumer::Content(CallableContentParameterConsumer::ObjectType,)
+            ) || actual_expected != Some(inferred)
+                || !matches!(source_projection, CheckedConstraintSourceProjection::Scalar)
+                || !matches!(
+                    selection,
+                    CheckedCallSemanticSelection::Checked { alternative, evidence }
+                        if alternative.get() == 0
+                            && evidence == &CheckedSemanticValueEvidence::NoVariantCase
+                )
+            {
+                return Err(CallConstraintInvariant::MalformedMapperSeal);
+            }
+        }
+        CallableParameterAdmission::Semantic(CallableSemanticAdmission::CompileTimeScalar(
+            admission,
+        )) => {
+            if actual_expected != Some(admission.value_type())
+                || inferred != admission.value_type()
+                || !matches!(
+                    selection,
+                    CheckedCallSemanticSelection::Checked { alternative, evidence }
+                        if alternative.get() == 0
+                            && evidence == &CheckedSemanticValueEvidence::NoVariantCase
+                )
+                || !matches!(source_projection, CheckedConstraintSourceProjection::Scalar)
             {
                 return Err(CallConstraintInvariant::MalformedMapperSeal);
             }
@@ -2685,7 +3277,13 @@ fn validate_semantic_operand_inventory(
         selected.id() == &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication);
     if is_dialogue_application {
         if !arguments.is_empty()
-            || !matches!(site.raw(), super::CheckedCallSite::DialogueApplication(_))
+            || !matches!(
+                site.raw(),
+                super::CheckedCallSite::AttachedContentApplication {
+                    family: super::CheckedAttachedContentApplicationFamily::DialogueLine,
+                    ..
+                }
+            )
             || !matches!(operands, [_, _] | [_, _, _])
         {
             return Err(CallConstraintInvariant::MalformedMapperSeal);
@@ -2714,7 +3312,106 @@ fn validate_semantic_operand_inventory(
         return Ok(());
     }
 
-    if !matches!(site.raw(), super::CheckedCallSite::HirCall(_)) {
+    let is_text_proxy_object = matches!(
+        selected.id(),
+        CallableCandidateId::Content(ContentCallableIdentity::TextProxyObject { .. })
+    );
+    if is_text_proxy_object {
+        if !matches!(
+            site.raw(),
+            super::CheckedCallSite::AttachedContentApplication {
+                family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+                ..
+            }
+        ) || operands.len() != 1
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        let [operand] = operands else {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        };
+        let CallableCandidateId::Content(ContentCallableIdentity::TextProxyObject {
+            owner, ..
+        }) = selected.id()
+        else {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        };
+        if operand.inferred().semantic_identity_digest()? != *owner {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        let coordinate = operand.destination();
+        let parameter = selected
+            .schema()
+            .group(coordinate.group())
+            .and_then(|group| group.parameter(coordinate.parameter()))
+            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+        let CheckedCallSemanticOperandSource::TextProxyObject { argument, .. } = operand.source()
+        else {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        };
+        if !matches!(
+            parameter.admission(),
+            CallableParameterAdmission::Semantic(
+                super::CallableSemanticAdmission::TextProxyNominal
+            )
+        ) || !matches!(
+            parameter.consumer(),
+            super::CallableParameterConsumer::Content(
+                super::CallableContentParameterConsumer::ObjectType,
+            )
+        ) || arguments
+            .get(usize::from(argument.get()))
+            .is_none_or(|argument| {
+                argument.slots().iter().any(|slot| {
+                    slot.destination() == &CheckedCallOperandDestination::Parameter(coordinate)
+                })
+            })
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        return Ok(());
+    }
+
+    let is_content_call =
+        selected.id() == &CallableCandidateId::Dialogue(DialogueCallableId::ContentCall);
+    if is_content_call {
+        if !matches!(
+            site.raw(),
+            super::CheckedCallSite::AttachedContentApplication {
+                family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+                ..
+            }
+        ) || !operands.is_empty()
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        return Ok(());
+    }
+    let is_language_content = matches!(
+        selected.id(),
+        CallableCandidateId::Content(ContentCallableIdentity::Language { .. })
+    );
+    if is_language_content {
+        if !matches!(
+            site.raw(),
+            super::CheckedCallSite::AttachedContentApplication {
+                family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+                ..
+            }
+        ) || !operands.is_empty()
+        {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        return Ok(());
+    }
+    let is_content_application = matches!(
+        site.raw(),
+        super::CheckedCallSite::AttachedContentApplication {
+            family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+            ..
+        }
+    );
+    if !matches!(site.raw(), super::CheckedCallSite::HirCall(_)) && !is_content_application {
         return Err(CallConstraintInvariant::MalformedMapperSeal);
     }
     let mut previous_argument = None;
@@ -2755,14 +3452,77 @@ fn validate_semantic_operand_inventory(
     Ok(())
 }
 
+fn validate_attached_content_inventory(
+    site: &CheckedCallApplicationSite,
+    selected: &ResolvedCallable,
+    current_group: CallableGroupIndex,
+    operand: Option<&CheckedCallAttachedContentOperand>,
+    abi_type: Option<&TypeKind>,
+) -> Result<(), CallConstraintInvariant> {
+    let parameter = selected
+        .schema()
+        .attached_content()
+        .filter(|parameter| parameter.group() == current_group);
+    let source_is_valid = |source: &CheckedCallAttachedContentSource| {
+        source.raw().owner() == site.raw().expression()
+            && source.application() == site.coordinate()
+            && matches!(
+                site.raw(),
+                super::CheckedCallSite::AttachedContentApplication {
+                    family: super::CheckedAttachedContentApplicationFamily::ContentCall,
+                    ..
+                }
+            )
+    };
+    match (parameter, operand, abi_type) {
+        (None, None, None) => Ok(()),
+        (
+            Some(parameter),
+            Some(CheckedCallAttachedContentOperand::StructuralPresent { source }),
+            None,
+        ) if parameter.execution() == CallableAttachedContentExecution::Structural
+            && source_is_valid(source) =>
+        {
+            Ok(())
+        }
+        (
+            Some(parameter),
+            Some(CheckedCallAttachedContentOperand::RuntimeOmitted { .. }),
+            Some(_),
+        ) if parameter.execution() == CallableAttachedContentExecution::RuntimeContent
+            && parameter.presence() != CallableParameterPresence::Required
+            && !matches!(
+                site.raw(),
+                super::CheckedCallSite::AttachedContentApplication {
+                    family: super::CheckedAttachedContentApplicationFamily::DialogueLine,
+                    ..
+                }
+            ) =>
+        {
+            Ok(())
+        }
+        (
+            Some(parameter),
+            Some(CheckedCallAttachedContentOperand::RuntimePresent { source, .. }),
+            Some(_),
+        ) if parameter.execution() == CallableAttachedContentExecution::RuntimeContent
+            && source_is_valid(source) =>
+        {
+            Ok(())
+        }
+        _ => Err(CallConstraintInvariant::MalformedMapperSeal),
+    }
+}
+
 fn expected_for_alternative(
     source_projection: &CheckedConstraintSourceProjection,
     declared: &TypeKind,
     alternative: CallableParameterValueAlternative<'_>,
     solution: &FrozenCallTypeSolution,
-) -> TypeKind {
-    let value_expected = solution.apply(&alternative.expected().apply_to(declared));
-    source_projection.compose_expected(&value_expected)
+) -> Result<TypeKind, CallConstraintInvariant> {
+    let value_expected =
+        solution.instantiate_template(&alternative.expected().apply_to(declared))?;
+    Ok(source_projection.compose_expected(&value_expected))
 }
 
 fn remaining_function_type(
@@ -2793,12 +3553,10 @@ fn projected_function_type_with_invocation_effects(
                     .project_parameter(
                         schema,
                         CallableParameterCoordinate::new(group.index(), parameter.index()),
-                    )
-                    .ok()
-                    .flatten()
+                    )?
+                    .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
             })
-            .collect::<Option<Vec<_>>>()
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
+            .collect::<Result<Vec<_>, _>>()?;
         result = TypeKind::function_with_effects(parameters, result, invocation.clone());
     }
     Ok(result)
@@ -2811,7 +3569,10 @@ fn schema_function_type(
         .effects()
         .fixed_row()
         .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)?;
-    let mut result = schema.result().clone();
+    let mut result = schema
+        .value_type()
+        .cloned()
+        .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)?;
     for group in schema.groups().iter().rev() {
         let parameters = group
             .parameters()
@@ -2822,12 +3583,6 @@ fn schema_function_type(
         result = TypeKind::function_with_effects(parameters, result, effects.clone());
     }
     Ok(result)
-}
-
-fn generic_parameter_digest(
-    parameter: &crate::types::GenericTypeParameterId,
-) -> SemanticTypeDigest {
-    TypeKind::GenericParam(parameter.clone()).semantic_identity_digest()
 }
 
 /// The sole version-1 callable encoder. It is private, cannot finish into a
@@ -2858,6 +3613,11 @@ impl CheckedCallCanonicalEncoder {
         self.hasher.update(value);
     }
 
+    fn type_kind(&mut self, ty: &TypeKind) -> Result<(), CallConstraintInvariant> {
+        self.digest(ty.semantic_identity_digest()?.as_bytes());
+        Ok(())
+    }
+
     fn count(&mut self, value: usize) -> Result<(), CallConstraintInvariant> {
         self.u32(
             u32::try_from(value).map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
@@ -2876,6 +3636,53 @@ impl CheckedCallCanonicalEncoder {
                 .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
         );
         self.hasher.update(value);
+        Ok(())
+    }
+
+    fn content_definition(
+        &mut self,
+        definition: arcweft_presentation::rich_text::PresentationContentCallableDefinitionId,
+    ) {
+        use arcweft_presentation::rich_text::PresentationContentCallableDefinitionId as Id;
+        match definition {
+            Id::Strong => self.tag(0),
+            Id::Em => self.tag(1),
+            Id::Color => self.tag(2),
+            Id::Font => self.tag(3),
+            Id::Size => self.tag(4),
+            Id::Style(selector) => {
+                self.tag(5);
+                self.u32(u32::from(selector.ordinal()));
+            }
+            Id::Layout(selector) => {
+                self.tag(6);
+                self.u32(u32::from(selector.ordinal()));
+            }
+            Id::Transform(selector) => {
+                self.tag(7);
+                self.u32(u32::from(selector.ordinal()));
+            }
+            Id::Fx => self.tag(8),
+            Id::Ruby => self.tag(9),
+            Id::Raw => self.tag(10),
+        }
+    }
+
+    fn content_identity(
+        &mut self,
+        identity: ContentCallableIdentity,
+    ) -> Result<(), CallConstraintInvariant> {
+        self.tag(identity.semantic_tag());
+        match identity {
+            ContentCallableIdentity::Language { definition, schema } => {
+                self.content_definition(definition);
+                self.digest(schema.as_bytes());
+            }
+            ContentCallableIdentity::TextProxyObject { owner, definition } => {
+                self.digest(owner.as_bytes());
+                self.bytes(definition.as_bytes())?;
+            }
+        }
         Ok(())
     }
 
@@ -2937,9 +3744,9 @@ impl CheckedCallCanonicalEncoder {
         identity: &CheckedLanguageCallableIdentity,
     ) -> Result<(), CallConstraintInvariant> {
         match identity {
-            CheckedLanguageCallableIdentity::Fx(id) => {
+            CheckedLanguageCallableIdentity::FxConstructor(id) => {
                 self.tag(0);
-                self.tag(fx_tag(*id));
+                self.tag(id.semantic_tag());
             }
             CheckedLanguageCallableIdentity::EnumConstructor { owner, case } => {
                 self.tag(1);
@@ -2975,6 +3782,21 @@ impl CheckedCallCanonicalEncoder {
                         self.tag(1);
                         self.canonical_module_path(content.module())?;
                         self.callable_path(content.path())?;
+                    }
+                }
+            }
+            CheckedLanguageCallableIdentity::Content(identity) => {
+                self.tag(18);
+                match identity {
+                    ContentCallableIdentity::Language { definition, schema } => {
+                        self.tag(0);
+                        self.content_definition(*definition);
+                        self.digest(schema.as_bytes());
+                    }
+                    ContentCallableIdentity::TextProxyObject { owner, definition } => {
+                        self.tag(1);
+                        self.digest(owner.as_bytes());
+                        self.bytes(definition.as_bytes())?;
                     }
                 }
             }
@@ -3132,10 +3954,7 @@ impl CheckedCallCanonicalEncoder {
     ) -> Result<(), CallConstraintInvariant> {
         match instantiation {
             ResolvedCallableBaseInstantiation::None => self.tag(0),
-            ResolvedCallableBaseInstantiation::ExpectedEnum { expected } => {
-                self.tag(1);
-                self.digest(expected.semantic_identity_digest().as_bytes());
-            }
+            ResolvedCallableBaseInstantiation::EnumConstructor => self.tag(1),
             ResolvedCallableBaseInstantiation::Result { kind } => {
                 self.tag(2);
                 self.tag(result_constructor_tag(*kind));
@@ -3143,18 +3962,18 @@ impl CheckedCallCanonicalEncoder {
             ResolvedCallableBaseInstantiation::Option => self.tag(3),
             ResolvedCallableBaseInstantiation::Character { owner } => {
                 self.tag(4);
-                self.bytes(owner.character().as_str().as_bytes())?;
+                self.bytes(owner.character().canonical_identity_bytes())?;
                 match owner.source() {
                     super::CharacterOwnerSource::EntityReference => self.tag(0),
                 }
             }
             ResolvedCallableBaseInstantiation::Receiver { receiver } => {
                 self.tag(5);
-                self.digest(receiver.semantic_identity_digest().as_bytes());
+                self.type_kind(&receiver)?;
             }
             ResolvedCallableBaseInstantiation::TypeReceiver { receiver } => {
                 self.tag(6);
-                self.digest(receiver.receiver().semantic_identity_digest().as_bytes());
+                self.type_kind(&receiver.receiver())?;
             }
             ResolvedCallableBaseInstantiation::Extension {
                 receiver,
@@ -3162,7 +3981,7 @@ impl CheckedCallCanonicalEncoder {
                 parameter,
             } => {
                 self.tag(7);
-                self.digest(receiver.semantic_identity_digest().as_bytes());
+                self.type_kind(&receiver)?;
                 self.index(group.get())?;
                 self.index(parameter.get())?;
             }
@@ -3185,7 +4004,7 @@ impl CheckedCallCanonicalEncoder {
             CheckedCallReceiverProjection::SemanticOnly { mode, ty } => {
                 self.tag(1);
                 self.receiver_mode(mode);
-                self.digest(ty.semantic_identity_digest().as_bytes());
+                self.type_kind(&ty)?;
             }
             CheckedCallReceiverProjection::Operand {
                 mode,
@@ -3195,7 +4014,7 @@ impl CheckedCallCanonicalEncoder {
             } => {
                 self.tag(2);
                 self.receiver_mode(mode);
-                self.digest(ty.semantic_identity_digest().as_bytes());
+                self.type_kind(&ty)?;
                 self.u32(*abi_position);
             }
         }
@@ -3281,25 +4100,36 @@ impl CheckedCallCanonicalEncoder {
             }
             CheckedCallSemanticOperandSource::DialogueApplicationId {
                 argument,
-                source,
+                application,
                 id,
+                ..
             } => {
                 self.tag(3);
                 self.u32(u32::from(argument.get()));
                 self.bytes(
-                    &source
-                        .coordinate()
+                    &application
                         .canonical_bytes()
                         .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
                 )?;
-                self.bytes(id.as_str().as_bytes())?;
+                self.bytes(id.canonical_identity_bytes())?;
             }
             CheckedCallSemanticOperandSource::DialogueApplicationTextKey {
                 argument,
-                source,
+                application,
                 key,
+                ..
             } => {
                 self.tag(4);
+                self.u32(u32::from(argument.get()));
+                self.bytes(
+                    &application
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
+                self.bytes(key.canonical_identity_bytes())?;
+            }
+            CheckedCallSemanticOperandSource::TextProxyObject { argument, source } => {
+                self.tag(5);
                 self.u32(u32::from(argument.get()));
                 self.bytes(
                     &source
@@ -3307,7 +4137,6 @@ impl CheckedCallCanonicalEncoder {
                         .canonical_bytes()
                         .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
                 )?;
-                self.bytes(key.as_str().as_bytes())?;
             }
         }
         self.operand_projection(
@@ -3317,6 +4146,52 @@ impl CheckedCallCanonicalEncoder {
             operand.inferred(),
             operand.expected(),
         )
+    }
+
+    fn attached_content_operand(
+        &mut self,
+        operand: Option<&CheckedCallAttachedContentOperand>,
+        abi_type: Option<&TypeKind>,
+    ) -> Result<(), CallConstraintInvariant> {
+        match (operand, abi_type) {
+            (None, None) => self.tag(0),
+            (Some(CheckedCallAttachedContentOperand::StructuralPresent { source }), None) => {
+                self.tag(1);
+                self.bytes(
+                    &source
+                        .application()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
+            }
+            (
+                Some(CheckedCallAttachedContentOperand::RuntimeOmitted { abi_position }),
+                Some(ty),
+            ) => {
+                self.tag(2);
+                self.u32(*abi_position);
+                self.type_kind(&ty)?;
+            }
+            (
+                Some(CheckedCallAttachedContentOperand::RuntimePresent {
+                    source,
+                    abi_position,
+                }),
+                Some(ty),
+            ) => {
+                self.tag(3);
+                self.bytes(
+                    &source
+                        .application()
+                        .canonical_bytes()
+                        .map_err(|_| CallConstraintInvariant::InvalidPreparedNodeState)?,
+                )?;
+                self.u32(*abi_position);
+                self.type_kind(&ty)?;
+            }
+            _ => return Err(CallConstraintInvariant::MalformedMapperSeal),
+        }
+        Ok(())
     }
 
     fn operand_projection(
@@ -3335,8 +4210,7 @@ impl CheckedCallCanonicalEncoder {
             }
             CheckedCallOperandDestination::Open(open) => {
                 self.tag(1);
-                self.digest(open.schema().as_bytes());
-                self.bytes(open.binding().as_str().as_bytes())?;
+                self.digest(open.semantic_digest().as_bytes());
             }
         }
         match source_projection {
@@ -3372,12 +4246,12 @@ impl CheckedCallCanonicalEncoder {
                 }
             }
         }
-        self.digest(inferred.semantic_identity_digest().as_bytes());
+        self.type_kind(&inferred)?;
         match expected {
             None => self.tag(0),
             Some(expected) => {
                 self.tag(1);
-                self.digest(expected.semantic_identity_digest().as_bytes());
+                self.type_kind(&expected)?;
             }
         }
         Ok(())
@@ -3402,16 +4276,14 @@ impl CheckedCallCanonicalEncoder {
                     MapKind::Sorted => 1,
                     MapKind::BTree => 2,
                 });
-                self.digest(key.semantic_identity_digest().as_bytes());
+                self.type_kind(&key)?;
             }
         }
         Ok(())
     }
 
     fn array_length(&mut self, length: &ArrayLength) -> Result<(), CallConstraintInvariant> {
-        let canonical = length
-            .canonical_checked_bytes()
-            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+        let canonical = length.canonical_checked_bytes()?;
         self.hasher.update(&canonical);
         Ok(())
     }
@@ -3450,21 +4322,6 @@ const fn result_constructor_tag(kind: ResultConstructorKind) -> u8 {
     match kind {
         ResultConstructorKind::Ok => 0,
         ResultConstructorKind::Err => 1,
-    }
-}
-
-const fn fx_tag(id: FxCallableSignatureId) -> u8 {
-    match id {
-        FxCallableSignatureId::Style => 0,
-        FxCallableSignatureId::Text => 1,
-        FxCallableSignatureId::Color => 2,
-        FxCallableSignatureId::Transform => 3,
-        FxCallableSignatureId::Mask => 4,
-        FxCallableSignatureId::Filter => 5,
-        FxCallableSignatureId::Shader => 6,
-        FxCallableSignatureId::Transition => 7,
-        FxCallableSignatureId::Conditional => 8,
-        FxCallableSignatureId::Stack => 9,
     }
 }
 

@@ -49,7 +49,8 @@ impl CheckedStageLook {
             accepted_character_look_semantic_id(character, look.id(), look.selections())?;
         Some(Self {
             character_nominal: TypeKind::CharacterNominal(nominal.clone())
-                .semantic_identity_digest(),
+                .semantic_identity_digest()
+                .ok()?,
             character: character.clone(),
             look_id,
             look: semantic_look,
@@ -88,7 +89,9 @@ impl CheckedStageLook {
             ty,
             TypeKind::CharacterNominal(CharacterNominalType::Look { character })
                 if character == &self.character
-        ) && ty.semantic_identity_digest() == self.character_nominal
+        ) && ty
+            .semantic_identity_digest()
+            .is_ok_and(|digest| digest == self.character_nominal)
     }
 }
 

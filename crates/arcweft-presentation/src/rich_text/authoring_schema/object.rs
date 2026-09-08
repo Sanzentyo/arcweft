@@ -1,21 +1,19 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
-    RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema, RichTextUnit, RichTextValueKind,
-    RichTextValueLimits, SelectorContract, SelectorKind, UnknownPropertyPolicy,
+    Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
+    RichTextPropertySetSchema, RichTextPropertySpec, RichTextUnit, RichTextValueKind,
+    RichTextValueLimits,
 };
 
 /// Closed inline-object selector family.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RichTextObjectSelector {
-    /// Explicit or inferred typed text object.
+    /// Explicit typed text object.
     Object,
 }
 
 /// Canonical metadata properties shared by inline text objects.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RichTextObjectProperty {
-    /// Visible text-proxy schema identity.
-    Type,
     /// Semantic object role.
     Role,
     /// Semantic presentation layer.
@@ -49,28 +47,34 @@ impl RichTextObjectSelector {
 
     /// Immutable owner-typed schema for inline objects.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<RichTextObjectProperty> {
+    pub const fn property_schema(
+        self,
+    ) -> &'static RichTextPropertySetSchema<RichTextObjectProperty> {
         match self {
-            Self::Object => &OBJECT_SCHEMA,
+            Self::Object => &OBJECT_PROPERTY_SET,
         }
     }
 }
 
 impl RichTextObjectProperty {
     /// Deterministic complete object-metadata property inventory.
-    pub const ALL: [Self; 5] = [
-        Self::Type,
-        Self::Role,
-        Self::Layer,
-        Self::Depth,
-        Self::HitTest,
-    ];
+    pub const ALL: [Self; 4] = [Self::Role, Self::Layer, Self::Depth, Self::HitTest];
+
+    /// Canonical schema row used by checked field ordering.
+    #[must_use]
+    pub const fn canonical_ordinal(self) -> u8 {
+        match self {
+            Self::Role => 0,
+            Self::Layer => 1,
+            Self::Depth => 2,
+            Self::HitTest => 3,
+        }
+    }
 
     /// Canonical source key.
     #[must_use]
     pub const fn source_name(self) -> &'static str {
         match self {
-            Self::Type => "type",
             Self::Role => "role",
             Self::Layer => "layer",
             Self::Depth => "depth",
@@ -82,7 +86,6 @@ impl RichTextObjectProperty {
     #[must_use]
     pub const fn from_source_name(source: &str) -> Option<Self> {
         match source.as_bytes() {
-            b"type" => Some(Self::Type),
             b"role" => Some(Self::Role),
             b"layer" => Some(Self::Layer),
             b"depth" => Some(Self::Depth),
@@ -135,8 +138,7 @@ const fn optional_public_id(
     }
 }
 
-const OBJECT_PROPERTIES: [RichTextPropertySpec<RichTextObjectProperty>; 5] = [
-    optional_public_id(RichTextObjectProperty::Type, "type"),
+const OBJECT_PROPERTIES: [RichTextPropertySpec<RichTextObjectProperty>; 4] = [
     optional_public_id(RichTextObjectProperty::Role, "role"),
     optional_public_id(RichTextObjectProperty::Layer, "layer"),
     RichTextPropertySpec {
@@ -159,15 +161,7 @@ const OBJECT_PROPERTIES: [RichTextPropertySpec<RichTextObjectProperty>; 5] = [
     },
 ];
 
-const OBJECT_SCHEMA: RichTextTagSchema<RichTextObjectProperty> = RichTextTagSchema {
-    source_forms: &[
-        RichTextSourceForm::CanonicalTag("object"),
-        RichTextSourceForm::DotSelector,
-    ],
-    selector: SelectorContract::RequiredPositional {
-        kind: SelectorKind::PublicId,
-    },
-    properties: &OBJECT_PROPERTIES,
-    unknown_policy: UnknownPropertyPolicy::Reject,
-    output: CheckedOutputKind::Object,
-};
+const OBJECT_PROPERTY_SET: RichTextPropertySetSchema<RichTextObjectProperty> =
+    RichTextPropertySetSchema {
+        properties: &OBJECT_PROPERTIES,
+    };

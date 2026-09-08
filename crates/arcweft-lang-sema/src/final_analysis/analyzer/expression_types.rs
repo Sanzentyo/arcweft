@@ -66,6 +66,8 @@ pub(super) fn common_type<'a>(
     let mut values = values.into_iter();
     let first = values.next().cloned().or_else(|| expected.cloned())?;
     values.try_fold(first, |joined, value| match (&joined, value) {
+        (TypeKind::Never, _) => Some(value.clone()),
+        (_, TypeKind::Never) => Some(joined),
         (TypeKind::CharacterDialogue(left), TypeKind::CharacterDialogue(right)) => {
             Some(TypeKind::CharacterDialogue(
                 crate::types::CharacterDialogueType::join(left.clone(), right),

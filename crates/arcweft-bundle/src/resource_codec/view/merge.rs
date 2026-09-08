@@ -1,8 +1,8 @@
 //! Atomic composition of executable View programs and their Style catalogs.
 
 use super::model::{
-    ViewProgramInstruction, ViewProgramResource, ViewStyleApplicationTarget, ViewStyleResource,
-    ViewValueInputNamespace,
+    ViewFxArgumentSourceRef, ViewProgramInstruction, ViewProgramResource,
+    ViewStyleApplicationTarget, ViewStyleResource, ViewValueInputNamespace,
 };
 use super::{ViewResourceBudget, ViewStyleContractError};
 use crate::resource_codec::budget::check_budget;
@@ -885,18 +885,26 @@ fn rebuild_program(
     parameter_offset: u16,
     state_offset: u16,
 ) -> Result<ViewValueProgram, ViewResourceMergeError> {
+    let schema =
+        ValueProgramSchema::new(parameters.to_vec(), state.to_vec(), program.return_type());
     let instructions = program
         .program()
         .instructions()
         .iter()
         .cloned()
         .map(|instruction| match instruction {
-            ValueInstruction::LoadParameter { slot, ty } => Ok(ValueInstruction::LoadParameter {
-                slot: slot
+            ValueInstruction::LoadParameter { parameter } => {
+                let slot = parameter
+                    .slot()
+                    .get()
                     .checked_add(parameter_offset)
-                    .ok_or(ViewResourceMergeError::Overflow("View parameter slots"))?,
-                ty,
-            }),
+                    .ok_or(ViewResourceMergeError::Overflow("View parameter slots"))?;
+                Ok(ValueInstruction::LoadParameter {
+                    parameter: schema
+                        .parameter_ref(usize::from(slot))
+                        .ok_or(ViewResourceMergeError::Overflow("View parameter slots"))?,
+                })
+            }
             ValueInstruction::LoadState { slot, ty } => Ok(ValueInstruction::LoadState {
                 slot: slot
                     .checked_add(state_offset)
@@ -906,12 +914,8 @@ fn rebuild_program(
             instruction => Ok(instruction),
         })
         .collect::<Result<Vec<_>, ViewResourceMergeError>>()?;
-    ViewValueProgram::validate(
-        id,
-        ValueProgramSchema::new(parameters.to_vec(), state.to_vec(), program.return_type()),
-        instructions,
-    )
-    .map_err(|error| ViewResourceMergeError::ValueProgram(error.to_string()))
+    ViewValueProgram::validate(id, schema, instructions)
+        .map_err(|error| ViewResourceMergeError::ValueProgram(error.to_string()))
 }
 
 fn remap_program_references(
@@ -947,7 +951,9 @@ fn remap_program_references(
             ..
         } => {
             for argument in arguments {
-                remap_program(&mut argument.value_program, offset)?;
+                if let ViewFxArgumentSourceRef::Reactive(value_program) = &mut argument.source {
+                    remap_program(value_program, offset)?;
+                }
             }
             if let Some(key_program) = key_program {
                 remap_program(key_program, offset)?;

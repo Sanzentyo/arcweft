@@ -31,6 +31,7 @@ use arcweft_lang_sema::{
         CheckedStatefulEntry,
     },
     final_analysis::FinalSemanticAnalysis,
+    registration::RegisteredSemanticWorld,
 };
 use arcweft_runtime_plan::flow::{
     RuntimeCheckedEntryInput, RuntimeEntryCallableBody, RuntimeEntryCallableInput,
@@ -48,16 +49,12 @@ pub(crate) enum EntryRuntimeProjectionError {
     EntryOwnerMismatch {
         owner: arcweft_lang_hir::identity::ItemId,
     },
-    #[error("checked callable `{callable}` is absent from the final checked callable catalog")]
-    MissingCheckedCallable { callable: String },
-    #[error("checked callable `{callable}` is absent from the accepted project symbol table")]
-    MissingCallableSymbol { callable: String },
+    #[error("checked callable `{callable}` has an invalid runtime ABI: {reason}")]
+    InvalidCallableAbi { callable: String, reason: String },
     #[error("checked entry runtime identity is invalid: {0}")]
     InvalidEntryIdentity(String),
     #[error("checked flow runtime identity is invalid: {0}")]
     InvalidFlowIdentity(String),
-    #[error("checked role identity is invalid: {0}")]
-    InvalidRoleIdentity(String),
     #[error("checked nominal role `{nominal}` has an invalid sealed runtime relation: {reason}")]
     InvalidNominalRelation { nominal: String, reason: String },
     #[error(
@@ -90,6 +87,7 @@ impl EntryRuntimeProjection {
 /// semantic bindings and their exact final-HIR owners.
 pub(super) fn runtime_entry_lowering_input(
     project: HirExecutableProjectView<'_>,
+    world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     reachability: &HirRuntimeSemanticReachability<'_>,
@@ -122,6 +120,7 @@ pub(super) fn runtime_entry_lowering_input(
                     checked,
                     binding_identity,
                     command_policy,
+                    world,
                     symbols,
                     analysis,
                 )?;
@@ -131,7 +130,7 @@ pub(super) fn runtime_entry_lowering_input(
             }
             CheckedEntryBinding::Agent(checked) => {
                 let (target, roles, controller) =
-                    project_agent_entry(checked, binding_identity, symbols, analysis)?;
+                    project_agent_entry(checked, binding_identity, world, symbols, analysis)?;
                 callables.push(controller);
                 (target, roles)
             }
@@ -163,6 +162,7 @@ fn project_stateful_entry(
     checked: &CheckedStatefulEntry,
     binding: EntryBindingIdentity,
     command_policy: Option<&RuntimeCommandPolicy>,
+    world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<
@@ -181,21 +181,23 @@ fn project_stateful_entry(
     })?;
     let state = RuntimeSchemaProjection::nominal(analysis, checked.state())?;
     let event = RuntimeSchemaProjection::nominal(analysis, checked.event())?;
-    let initializer = runtime_callable_role(checked.initializer())?;
-    let reducer = runtime_callable_role(checked.reducer())?;
+    let initializer = runtime_callable_role(checked.initializer(), analysis)?;
+    let reducer = runtime_callable_role(checked.reducer(), analysis)?;
     let initial_flow = runtime_flow_role(checked.initial_flow())?;
     let callable_inputs = vec![
         runtime_callable_input(
             checked.initializer(),
             initializer.clone(),
-            RuntimeEntryCallableBody::PureHelper,
+            RuntimeEntryCallableBody::FunctionSite,
+            world,
             symbols,
             analysis,
         )?,
         runtime_callable_input(
             checked.reducer(),
             reducer.clone(),
-            RuntimeEntryCallableBody::PureHelper,
+            RuntimeEntryCallableBody::FunctionSite,
+            world,
             symbols,
             analysis,
         )?,
@@ -233,6 +235,7 @@ fn project_stateful_entry(
 fn project_agent_entry(
     checked: &CheckedAgentEntry,
     binding: EntryBindingIdentity,
+    world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<
@@ -243,12 +246,13 @@ fn project_agent_entry(
     ),
     EntryRuntimeProjectionError,
 > {
-    let controller = runtime_callable_role(checked.controller())?;
-    let controller_flow = agent_controller_flow(checked.controller())?;
+    let controller = runtime_callable_role(checked.controller(), analysis)?;
+    let controller_flow = FlowRuntimeId::for_agent_controller_callable(&controller.callable);
     let callable = runtime_callable_input(
         checked.controller(),
         controller.clone(),
         RuntimeEntryCallableBody::ControllerFlow(controller_flow.clone()),
+        world,
         symbols,
         analysis,
     )?;
@@ -266,27 +270,23 @@ fn runtime_callable_input(
     checked: &CheckedCallableRole,
     role: RuntimeCallableRole,
     body: RuntimeEntryCallableBody,
+    world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeEntryCallableInput, EntryRuntimeProjectionError> {
     let declaration = CallableDeclarationKey::Existing(checked.declaration().clone());
-    analysis
-        .checked_callables()
-        .project_callable(&declaration)
-        .map_err(|_| EntryRuntimeProjectionError::MissingCheckedCallable {
-            callable: checked.declaration().to_string(),
-        })?;
-    let symbol = symbols.callable(&declaration).ok_or_else(|| {
-        EntryRuntimeProjectionError::MissingCallableSymbol {
-            callable: checked.declaration().to_string(),
-        }
+    let callable = crate::lower::runtime_project_callable(&declaration, symbols, world, analysis)
+        .map_err(|reason| EntryRuntimeProjectionError::InvalidCallableAbi {
+        callable: checked.declaration().to_string(),
+        reason,
     })?;
-    Ok(RuntimeEntryCallableInput::new(
-        declaration,
-        symbol.source_item(),
-        role,
-        body,
-    ))
+    if callable.runtime() != &role.callable {
+        return Err(EntryRuntimeProjectionError::InvalidCallableAbi {
+            callable: checked.declaration().to_string(),
+            reason: "checked Entry role and callable descriptor identities disagree".to_owned(),
+        });
+    }
+    Ok(RuntimeEntryCallableInput::new(callable, role, body))
 }
 
 fn project_existing_entry(
@@ -437,14 +437,6 @@ fn runtime_entry_id(id: &CheckedEntryId) -> Result<EntryRuntimeId, EntryRuntimeP
         .map_err(|error| EntryRuntimeProjectionError::InvalidEntryIdentity(error.to_string()))
 }
 
-fn agent_controller_flow(
-    controller: &CheckedCallableRole,
-) -> Result<FlowRuntimeId, EntryRuntimeProjectionError> {
-    let callable = RuntimeCallableId::try_new(controller.declaration().to_string())
-        .map_err(|error| EntryRuntimeProjectionError::InvalidRoleIdentity(error.to_string()))?;
-    Ok(FlowRuntimeId::for_agent_controller_callable(&callable))
-}
-
 fn runtime_entry_kind(kind: &CheckedEntryKind) -> RuntimeEntryKind {
     match kind {
         CheckedEntryKind::Game => RuntimeEntryKind::Game,
@@ -461,10 +453,18 @@ fn runtime_entry_kind(kind: &CheckedEntryKind) -> RuntimeEntryKind {
 
 fn runtime_callable_role(
     checked: &CheckedCallableRole,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeCallableRole, EntryRuntimeProjectionError> {
+    let declaration = CallableDeclarationKey::Existing(checked.declaration().clone());
+    let facts = analysis
+        .checked_callables()
+        .project_callable(&declaration)
+        .map_err(|error| EntryRuntimeProjectionError::InvalidCallableAbi {
+            callable: checked.declaration().to_string(),
+            reason: format!("checked Entry callable identity is absent: {error:?}"),
+        })?;
     Ok(RuntimeCallableRole {
-        callable: RuntimeCallableId::try_new(checked.declaration().to_string())
-            .map_err(|error| EntryRuntimeProjectionError::InvalidRoleIdentity(error.to_string()))?,
+        callable: RuntimeCallableId::from_checked_digest(facts.id().semantic_digest().into_bytes()),
         contract: CallableContractHash::from_bytes(*checked.contract_digest().as_bytes()),
     })
 }

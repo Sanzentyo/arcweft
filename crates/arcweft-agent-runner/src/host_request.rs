@@ -8,6 +8,7 @@ use arcweft_core::{
     task::HostTaskRequest,
 };
 
+use crate::error::AgentHostRequestAdmissionError;
 use crate::label_parse::{
     capture_request, effect_form_attachment_resource, invoke_action, observe_request,
     parse_public_id_arg, parse_string_label, pointer_click_action, rag_request, wait_request,
@@ -17,31 +18,52 @@ use crate::runtime_value::{runtime_public_id, runtime_string, runtime_u32};
 
 pub(crate) fn agent_host_request_from_effect(
     effect: &LineEffectRequest,
-) -> Result<AgentHostRequest, String> {
+) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
     match effect {
         LineEffectRequest::Call(call) => agent_host_request_from_call(call),
-        other => Err(format!("{other:?}")),
+        other => Err(AgentHostRequestAdmissionError::UnsupportedEffect {
+            effect: format!("{other:?}"),
+        }),
     }
 }
 
-pub(crate) fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHostRequest, String> {
+pub(crate) fn agent_host_request_from_call(
+    call: &RuntimeCall,
+) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
     match call.callee.as_str() {
-        "observe" => Ok(AgentHostRequest::Observe(Box::new(observe_request(
-            &call.args,
-        )?))),
+        "observe" => observe_request(&call.args)
+            .map(|request| AgentHostRequest::Observe(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("observe", detail)),
         "checkpoint" => Ok(AgentHostRequest::Checkpoint {
             name: call
                 .args
                 .first()
-                .and_then(|arg| parse_string_label(arg))
-                .unwrap_or_else(|| call.args.first().cloned().unwrap_or_default()),
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "checkpoint",
+                    argument: "name",
+                })
+                .and_then(|arg| {
+                    parse_string_label(arg).ok_or_else(|| {
+                        AgentHostRequestAdmissionError::invalid_arguments(
+                            "checkpoint",
+                            "name must be a string label",
+                        )
+                    })
+                })?,
         }),
-        "attach" => Ok(AgentHostRequest::Attach(Box::new(AgentAttachment {
-            resource: Box::new(effect_form_attachment_resource(&call.args)?),
-        }))),
+        "attach" => effect_form_attachment_resource(&call.args)
+            .map(|resource| {
+                AgentHostRequest::Attach(Box::new(AgentAttachment {
+                    resource: Box::new(resource),
+                }))
+            })
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("attach", detail)),
         "advance_text" => {
             if !call.args.is_empty() {
-                return Err("advance_text does not accept arguments".to_owned());
+                return Err(AgentHostRequestAdmissionError::invalid_arguments(
+                    "advance_text",
+                    "does not accept arguments",
+                ));
             }
             Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
         }
@@ -49,39 +71,69 @@ pub(crate) fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHo
             let choice = call
                 .args
                 .first()
-                .ok_or_else(|| "choose requires a choice argument".to_owned())
-                .and_then(|arg| parse_public_id_arg(arg))?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "choose",
+                    argument: "choice",
+                })
+                .and_then(|arg| {
+                    parse_public_id_arg(arg).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("choose", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::Act(Box::new(AgentAction::SelectChoice {
                 choice,
             })))
         }
-        "pointer.click" => {
-            pointer_click_action(&call.args).map(|action| AgentHostRequest::Act(Box::new(action)))
-        }
-        "invoke" => invoke_action(&call.args).map(|action| AgentHostRequest::Act(Box::new(action))),
-        "capture" => Ok(AgentHostRequest::Capture(Box::new(capture_request(
-            &call.args,
-        )?))),
-        "wait" => Ok(AgentHostRequest::Wait(Box::new(wait_request(&call.args)?))),
-        "rag.query" => Ok(AgentHostRequest::RagQuery(Box::new(rag_request(
-            &call.args,
-        )?))),
+        "pointer.click" => pointer_click_action(&call.args)
+            .map(|action| AgentHostRequest::Act(Box::new(action)))
+            .map_err(|detail| {
+                AgentHostRequestAdmissionError::invalid_arguments("pointer.click", detail)
+            }),
+        "invoke" => invoke_action(&call.args)
+            .map(|action| AgentHostRequest::Act(Box::new(action)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("invoke", detail)),
+        "capture" => capture_request(&call.args)
+            .map(|request| AgentHostRequest::Capture(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("capture", detail)),
+        "wait" => wait_request(&call.args)
+            .map(|request| AgentHostRequest::Wait(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("wait", detail)),
+        "rag.query" => rag_request(&call.args)
+            .map(|request| AgentHostRequest::RagQuery(Box::new(request)))
+            .map_err(|detail| {
+                AgentHostRequestAdmissionError::invalid_arguments("rag.query", detail)
+            }),
         "read_resource" => {
             let uri = call
                 .args
                 .first()
                 .and_then(|arg| parse_string_label(arg).or_else(|| Some(arg.clone())))
-                .ok_or_else(|| "read_resource requires a uri argument".to_owned())?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "read_resource",
+                    argument: "uri",
+                })?;
             Ok(AgentHostRequest::ReadResource {
-                uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
+                uri: AgentResourceUri::new(uri).map_err(|error| {
+                    AgentHostRequestAdmissionError::invalid_arguments(
+                        "read_resource",
+                        error.to_string(),
+                    )
+                })?,
             })
         }
         "entity_meta" => {
             let entity = call
                 .args
                 .first()
-                .ok_or_else(|| "entity_meta requires an entity argument".to_owned())
-                .and_then(|arg| parse_public_id_arg(arg))?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "entity_meta",
+                    argument: "entity",
+                })
+                .and_then(|arg| {
+                    parse_public_id_arg(arg).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("entity_meta", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::EntityMetadata { entity })
         }
         "project_neighbors" => {
@@ -89,17 +141,27 @@ pub(crate) fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHo
                 .args
                 .first()
                 .and_then(|arg| parse_string_label(arg))
-                .ok_or_else(|| "project_neighbors requires a graph symbol ID string".to_owned())?;
-            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| error.to_string())?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "project_neighbors",
+                    argument: "root",
+                })?;
+            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| {
+                AgentHostRequestAdmissionError::invalid_arguments(
+                    "project_neighbors",
+                    error.to_string(),
+                )
+            })?;
             Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth: 1 })
         }
-        other => Err(format!("unsupported Agent call `{other}`")),
+        other => Err(AgentHostRequestAdmissionError::UnsupportedOperation {
+            operation: other.to_owned(),
+        }),
     }
 }
 
 pub(crate) fn agent_host_request_from_task(
     request: &HostTaskRequest,
-) -> Result<AgentHostRequest, String> {
+) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
     let HostTaskRequest::Custom {
         capability,
         operation,
@@ -107,13 +169,14 @@ pub(crate) fn agent_host_request_from_task(
         named_args,
     } = request
     else {
-        return Err(format!("unsupported Agent task request `{request:?}`"));
+        return Err(AgentHostRequestAdmissionError::UnsupportedEffect {
+            effect: format!("{request:?}"),
+        });
     };
     if capability.0 != "agent" {
-        return Err(format!(
-            "unsupported Agent task capability `{}`",
-            capability.0
-        ));
+        return Err(AgentHostRequestAdmissionError::UnsupportedCapability {
+            capability: capability.0.clone(),
+        });
     }
     let args = RuntimeAgentArgs::new(args, named_args);
     agent_host_request_from_runtime_args(operation, &args)
@@ -121,12 +184,11 @@ pub(crate) fn agent_host_request_from_task(
 
 pub(crate) fn agent_host_request_from_host_call(
     request: &RuntimeHostCallRequest,
-) -> Result<AgentHostRequest, String> {
+) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
     if request.capability != "agent" {
-        return Err(format!(
-            "unsupported Agent host-call capability `{}`",
-            request.capability
-        ));
+        return Err(AgentHostRequestAdmissionError::UnsupportedCapability {
+            capability: request.capability.clone(),
+        });
     }
     let args = RuntimeAgentArgs::new(&request.args, &request.named_args);
     agent_host_request_from_runtime_args(&request.operation, &args)
@@ -135,77 +197,145 @@ pub(crate) fn agent_host_request_from_host_call(
 fn agent_host_request_from_runtime_args(
     operation: &str,
     args: &RuntimeAgentArgs<'_>,
-) -> Result<AgentHostRequest, String> {
+) -> Result<AgentHostRequest, AgentHostRequestAdmissionError> {
     match operation {
         "observe" => args
             .observe_request()
-            .map(|request| AgentHostRequest::Observe(Box::new(request))),
+            .map(|request| AgentHostRequest::Observe(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("observe", detail)),
         "capture" => args
             .capture_request()
-            .map(|request| AgentHostRequest::Capture(Box::new(request))),
+            .map(|request| AgentHostRequest::Capture(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("capture", detail)),
         "choose" => {
             let choice = args
                 .positional(0)
-                .ok_or_else(|| "choose requires a choice argument".to_owned())
-                .and_then(runtime_public_id)?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "choose",
+                    argument: "choice",
+                })
+                .and_then(|value| {
+                    runtime_public_id(value).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("choose", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::Act(Box::new(AgentAction::SelectChoice {
                 choice,
             })))
         }
         "advance_text" => {
             if args.positional(0).is_some() || args.has_named() {
-                return Err("advance_text does not accept arguments".to_owned());
+                return Err(AgentHostRequestAdmissionError::invalid_arguments(
+                    "advance_text",
+                    "does not accept arguments",
+                ));
             }
             Ok(AgentHostRequest::Act(Box::new(AgentAction::AdvanceText)))
         }
         "pointer.click" => args
             .pointer_click_action()
-            .map(|action| AgentHostRequest::Act(Box::new(action))),
+            .map(|action| AgentHostRequest::Act(Box::new(action)))
+            .map_err(|detail| {
+                AgentHostRequestAdmissionError::invalid_arguments("pointer.click", detail)
+            }),
         "invoke" => args
             .invoke_action()
-            .map(|action| AgentHostRequest::Act(Box::new(action))),
+            .map(|action| AgentHostRequest::Act(Box::new(action)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("invoke", detail)),
         "read_resource" => {
             let uri = args
                 .positional(0)
                 .or_else(|| args.named("uri"))
-                .ok_or_else(|| "read_resource requires a uri argument".to_owned())
-                .and_then(runtime_string)?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "read_resource",
+                    argument: "uri",
+                })
+                .and_then(|value| {
+                    runtime_string(value).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("read_resource", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::ReadResource {
-                uri: AgentResourceUri::new(uri).map_err(|error| error.to_string())?,
+                uri: AgentResourceUri::new(uri).map_err(|error| {
+                    AgentHostRequestAdmissionError::invalid_arguments(
+                        "read_resource",
+                        error.to_string(),
+                    )
+                })?,
             })
         }
         "entity_meta" => {
             let entity = args
                 .positional(0)
                 .or_else(|| args.named("entity"))
-                .ok_or_else(|| "entity_meta requires an entity argument".to_owned())
-                .and_then(runtime_public_id)?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "entity_meta",
+                    argument: "entity",
+                })
+                .and_then(|value| {
+                    runtime_public_id(value).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("entity_meta", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::EntityMetadata { entity })
         }
         "project_neighbors" => {
             let root = args
                 .positional(0)
                 .or_else(|| args.named("root"))
-                .ok_or_else(|| "project_neighbors requires a graph symbol ID".to_owned())
-                .and_then(runtime_string)?;
-            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| error.to_string())?;
-            let depth = args.named("depth").map_or(Ok(1), runtime_u32)?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "project_neighbors",
+                    argument: "root",
+                })
+                .and_then(|value| {
+                    runtime_string(value).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments(
+                            "project_neighbors",
+                            detail,
+                        )
+                    })
+                })?;
+            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| {
+                AgentHostRequestAdmissionError::invalid_arguments(
+                    "project_neighbors",
+                    error.to_string(),
+                )
+            })?;
+            let depth = args
+                .named("depth")
+                .map_or(Ok(1), runtime_u32)
+                .map_err(|detail| {
+                    AgentHostRequestAdmissionError::invalid_arguments("project_neighbors", detail)
+                })?;
             Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth })
         }
         "rag.query" => args
             .rag_request()
-            .map(|request| AgentHostRequest::RagQuery(Box::new(request))),
+            .map(|request| AgentHostRequest::RagQuery(Box::new(request)))
+            .map_err(|detail| {
+                AgentHostRequestAdmissionError::invalid_arguments("rag.query", detail)
+            }),
         "expect" => args
             .assertion_request(AgentAssertionKind::Expect)
-            .map(|request| AgentHostRequest::Assert(Box::new(request))),
+            .map(|request| AgentHostRequest::Assert(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("expect", detail)),
         "deny" => args
             .assertion_request(AgentAssertionKind::Deny)
-            .map(|request| AgentHostRequest::Assert(Box::new(request))),
+            .map(|request| AgentHostRequest::Assert(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("deny", detail)),
         "checkpoint" => {
             let name = args
                 .positional(0)
                 .or_else(|| args.named("name"))
-                .map_or_else(|| Ok("checkpoint".to_owned()), runtime_string)?;
+                .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                    operation: "checkpoint",
+                    argument: "name",
+                })
+                .and_then(|value| {
+                    runtime_string(value).map_err(|detail| {
+                        AgentHostRequestAdmissionError::invalid_arguments("checkpoint", detail)
+                    })
+                })?;
             Ok(AgentHostRequest::Checkpoint { name })
         }
         "attach" => args
@@ -213,7 +343,10 @@ fn agent_host_request_from_runtime_args(
             .map(|request| AgentHostRequest::Attach(Box::new(request))),
         "wait" => args
             .wait_request()
-            .map(|request| AgentHostRequest::Wait(Box::new(request))),
-        other => Err(format!("unsupported Agent task operation `{other}`")),
+            .map(|request| AgentHostRequest::Wait(Box::new(request)))
+            .map_err(|detail| AgentHostRequestAdmissionError::invalid_arguments("wait", detail)),
+        other => Err(AgentHostRequestAdmissionError::UnsupportedOperation {
+            operation: other.to_owned(),
+        }),
     }
 }

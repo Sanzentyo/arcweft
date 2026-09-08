@@ -2,21 +2,23 @@
 
 use arcweft_lang_syntax::attachment::{AttachedCandidateExpressionChild, AttachedCandidateNode};
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, SyntaxBracketTerminator, SyntaxDialogueApplicationForm,
-    SyntaxDialogueApplicationProjection, SyntaxDialogueContentProjection,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAttachedContentApplicationForm,
+    SyntaxAttachedContentApplicationProjection, SyntaxBracketTerminator,
+    SyntaxDialogueContentProjection,
 };
 
 use crate::dialogue_application::{
-    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirDialogueNode,
-    HirDialogueNodeId, HirRichTextTagId,
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily, HirDialogueContent,
+    HirDialogueContentId, HirDialogueNode, HirDialogueNodeId, HirRawLiteralBody,
 };
-use crate::expr::{HirExpressionRecoveryIssue, HirRecoveryIssue};
+use crate::expr::{HirCallInvocation, HirExpressionRecoveryIssue, HirRecoveryIssue};
 use crate::identity::{ExprId, ScopeId};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{HirExprSourceRole, expression_component_role};
 
-use super::{CandidateCursor, paired_start_tags, project_mark_inputs, project_node, project_tag};
+use super::CandidateCursor;
 use crate::final_lowering::StagedHirModuleTransaction;
+use crate::final_lowering::expression_lowering::HirAttachedContentApplicationFamilyKind;
 
 impl StagedHirModuleTransaction<'_> {
     #[allow(
@@ -29,8 +31,9 @@ impl StagedHirModuleTransaction<'_> {
         node: AttachedCandidateNode<'_>,
         scope: ScopeId,
         cursor: &mut CandidateCursor,
-        projection: &SyntaxDialogueApplicationProjection,
-    ) -> Result<(HirDialogueContentApplication, Option<HirRecoveryIssue>), HirLowerFailure> {
+        projection: &SyntaxAttachedContentApplicationProjection,
+        application_family: HirAttachedContentApplicationFamilyKind,
+    ) -> Result<(HirAttachedContentApplication, Option<HirRecoveryIssue>), HirLowerFailure> {
         if projection.has_plan() {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
@@ -43,23 +46,58 @@ impl StagedHirModuleTransaction<'_> {
             .next()
             .filter(|child| child.component_role() == ExpressionComponentRole::Target)
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-        let target = match target_child {
+        let (target, invocation, target_recovery) = match target_child {
             AttachedCandidateExpressionChild::Authored { node, .. }
             | AttachedCandidateExpressionChild::Recovered { node, .. } => {
-                self.lower_candidate_expression(node, scope, cursor)?
+                if matches!(
+                    application_family,
+                    HirAttachedContentApplicationFamilyKind::ContentCall
+                ) {
+                    if let Some(ExpressionProjection::Call(call)) = node.expression_projection() {
+                        let (invocation, recovery) =
+                            self.lower_candidate_call(node, scope, cursor, call)?;
+                        let target = invocation
+                            .callee()
+                            .value_expression()
+                            .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                        (target, Some(invocation), recovery)
+                    } else {
+                        let target = self.lower_candidate_expression_with_family(
+                            node,
+                            scope,
+                            cursor,
+                            application_family,
+                        )?;
+                        (target, Some(HirCallInvocation::bare_value(target)), None)
+                    }
+                } else {
+                    (
+                        self.lower_candidate_expression_with_family(
+                            node,
+                            scope,
+                            cursor,
+                            application_family,
+                        )?,
+                        None,
+                        None,
+                    )
+                }
             }
             AttachedCandidateExpressionChild::Missing { .. } => {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
         };
-        let mut recovery = self.staged_expression_is_poisoned(target)?.then_some(
-            HirRecoveryIssue::InvalidExpression(HirExpressionRecoveryIssue::RecoveredChild {
-                role: HirExprSourceRole::Target,
-            }),
-        );
+        let target_poisoned = self.staged_expression_is_poisoned(target)?;
+        let mut recovery = target_recovery.or_else(|| {
+            target_poisoned.then_some(HirRecoveryIssue::InvalidExpression(
+                HirExpressionRecoveryIssue::RecoveredChild {
+                    role: HirExprSourceRole::Target,
+                },
+            ))
+        });
         if matches!(
             projection.form(),
-            SyntaxDialogueApplicationForm::Bracket {
+            SyntaxAttachedContentApplicationForm::Bracket {
                 terminator: SyntaxBracketTerminator::RecoveredMissing(_)
             }
         ) {
@@ -68,6 +106,15 @@ impl StagedHirModuleTransaction<'_> {
             });
         }
 
+        let body_presence = match projection.content() {
+            SyntaxDialogueContentProjection::Present(_)
+            | SyntaxDialogueContentProjection::RawLiteral(_) => {
+                crate::dialogue_application::HirAttachedContentBodyPresence::Present
+            }
+            SyntaxDialogueContentProjection::Missing { .. } => {
+                crate::dialogue_application::HirAttachedContentBodyPresence::Absent
+            }
+        };
         let content_id = HirDialogueContentId::new(owner);
         let content = match projection.content() {
             SyntaxDialogueContentProjection::Missing { .. } => {
@@ -77,12 +124,18 @@ impl StagedHirModuleTransaction<'_> {
                 recovery.get_or_insert(HirRecoveryIssue::MissingOperand {
                     role: HirExprSourceRole::Content,
                 });
-                HirDialogueContent::try_new(content_id, Box::new([]), Box::new([]), Box::new([]))
+                HirDialogueContent::try_new(content_id, Box::new([]), Box::new([]))
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+            }
+            SyntaxDialogueContentProjection::RawLiteral(literal) => {
+                HirDialogueContent::try_new_raw_literal(
+                    content_id,
+                    HirRawLiteralBody::new(literal.value().into()),
+                )
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }
             SyntaxDialogueContentProjection::Present(source) => {
                 let mut node_values = vec![None; source.nodes().len()];
-                let mut tag_values = vec![None; source.tags().len()];
                 for child in children {
                     let component = child.component_role();
                     let role = expression_component_role(expression_projection, component)
@@ -114,12 +167,21 @@ impl StagedHirModuleTransaction<'_> {
                                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                             )
                             .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-                        ExpressionComponentRole::RichTextTag {
-                            tag,
-                            part: arcweft_lang_syntax::expressions::SyntaxRichTextTagSourcePart::Payload,
-                        } => tag_values
+                        ExpressionComponentRole::DialogueNode {
+                            ordinal,
+                            part: arcweft_lang_syntax::expressions::SyntaxDialogueNodeSourcePart::Expression,
+                        } => node_values
                             .get_mut(
-                                usize::try_from(tag)
+                                usize::try_from(ordinal)
+                                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                            )
+                            .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
+                        ExpressionComponentRole::DialoguePointAction {
+                            ordinal,
+                            part: arcweft_lang_syntax::expressions::SyntaxDialoguePointActionSourcePart::Payload,
+                        } => node_values
+                            .get_mut(
+                                usize::try_from(ordinal)
                                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                             )
                             .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
@@ -130,50 +192,56 @@ impl StagedHirModuleTransaction<'_> {
                     }
                 }
 
-                let mark_inputs = project_mark_inputs(content_id, source)?;
-                let mut tags = Vec::with_capacity(source.tags().len());
-                for (ordinal, source_tag) in source.tags().iter().enumerate() {
-                    let id = HirRichTextTagId::try_new(content_id, ordinal)
-                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                    tags.push(project_tag(
-                        self,
-                        id,
-                        source_tag,
-                        tag_values[ordinal],
-                        &mut recovery,
-                    )?);
-                }
-                let paired_starts = paired_start_tags(source, &tags)?;
                 let mut nodes = Vec::with_capacity(source.nodes().len());
                 for (ordinal, source_node) in source.nodes().iter().enumerate() {
                     let id = HirDialogueNodeId::try_new(content_id, ordinal)
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                     nodes.push(HirDialogueNode::new(
                         id,
-                        project_node(
-                            content_id,
-                            &tags,
+                        self.project_node(
+                            scope,
+                            owner,
                             source_node,
-                            paired_starts[ordinal],
                             node_values[ordinal],
                             &mut recovery,
+                            id,
                         )?,
                     ));
                 }
-                HirDialogueContent::try_new(
-                    content_id,
-                    nodes.into_boxed_slice(),
-                    tags.into_boxed_slice(),
-                    mark_inputs,
-                )
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+                let mark_inputs = super::super::project_mark_inputs(content_id, &nodes)?;
+                HirDialogueContent::try_new(content_id, nodes.into_boxed_slice(), mark_inputs)
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
             }
         };
 
-        let coordinates = self.dialogue_coordinates(target)?;
-        let application =
-            HirDialogueContentApplication::try_new(owner, target, content, None, coordinates)
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let family = match application_family {
+            HirAttachedContentApplicationFamilyKind::DialogueLine => {
+                HirAttachedContentApplicationFamily::DialogueLine {
+                    target,
+                    plan: None,
+                    coordinates: self.dialogue_coordinates(target)?,
+                }
+            }
+            HirAttachedContentApplicationFamilyKind::ContentCall => {
+                let invocation = invocation.ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                let (evidence, evidence_recovery) =
+                    self.lower_content_call_semantic_evidence(owner, scope, &invocation)?;
+                if recovery.is_none() {
+                    recovery = evidence_recovery;
+                }
+                HirAttachedContentApplicationFamily::ContentCall {
+                    invocation,
+                    evidence,
+                }
+            }
+        };
+        let application = HirAttachedContentApplication::try_new_with_body_presence(
+            owner,
+            content,
+            family,
+            body_presence,
+        )
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         if recovery.is_none() {
             application
                 .validate_transaction(self)

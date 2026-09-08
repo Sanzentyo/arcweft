@@ -9,7 +9,7 @@ use arcweft_agent_repl::{
     ReplSession, ReplSessionOptions,
 };
 use arcweft_agent_runner::config::{AgentControllerRunConfig, AgentRunnerConfig};
-use arcweft_agent_runner::session::{AgentSession, NoopRagService};
+use arcweft_agent_runner::session::{AgentSession, DisabledRagService};
 use arcweft_debug_model::sink::NullDebugEventSink;
 use arcweft_lang_sema::project_index::ProgramHash;
 
@@ -19,7 +19,7 @@ fn repl_cell_command_input_is_not_committed() {
     let before = repl.cells(ReplCellFilter::default()).cells.len();
     let mut host = StaticAgentSession::new("test.program.command");
     let mut debug = NullDebugEventSink;
-    let mut rag = NoopRagService;
+    let mut rag = DisabledRagService;
     let error = repl
         .evaluate_cell(
             &ReplCellInput::source(":history"),
@@ -38,7 +38,7 @@ fn repl_cell_records_literal_binding_evidence() {
     let mut repl = test_repl("test.program.binding");
     let mut host = StaticAgentSession::new("test.program.binding");
     let mut debug = NullDebugEventSink;
-    let mut rag = NoopRagService;
+    let mut rag = DisabledRagService;
     let outcome = repl
         .evaluate_cell(
             &ReplCellInput::statement("let greeting = \"hello\""),
@@ -56,7 +56,7 @@ fn repl_item_cell_compiles_through_a_synthetic_controller_entry() {
     let mut repl = test_repl("test.program.item");
     let mut host = StaticAgentSession::new("test.program.item");
     let mut debug = NullDebugEventSink;
-    let mut rag = NoopRagService;
+    let mut rag = DisabledRagService;
     let outcome = repl
         .evaluate_cell(
             &ReplCellInput::item("fn helper() -> i64 { 1 }"),
@@ -87,12 +87,12 @@ fn test_repl(program_hash: &str) -> ReplSession {
 fn test_runtime<'a>(
     host: &'a mut StaticAgentSession,
     debug: &'a mut NullDebugEventSink,
-    rag: &'a mut NoopRagService,
+    rag: &'a mut DisabledRagService,
 ) -> arcweft_agent_repl::ReplEvaluationRuntime<
     'a,
     StaticAgentSession,
     NullDebugEventSink,
-    NoopRagService,
+    DisabledRagService,
 > {
     arcweft_agent_repl::ReplEvaluationRuntime::new(
         host,

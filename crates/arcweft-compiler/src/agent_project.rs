@@ -452,7 +452,6 @@ fn environment_callable_kind(declaration: &EnvironmentCallableId) -> &'static st
     match declaration.kind() {
         EnvironmentCallableKind::Function => "function",
         EnvironmentCallableKind::Method => "method",
-        EnvironmentCallableKind::UntypedMethodFallback => "untyped_method_fallback",
         EnvironmentCallableKind::RustFunction => "rust_function",
     }
 }

@@ -67,6 +67,11 @@ pub(crate) struct DialogueActivationFrame {
     pub(in crate::engine) result_target: crate::plan::RuntimeDialogueResultTarget,
     pub(in crate::engine) voice: crate::presentation::RuntimeDialogueVoiceState,
     pub(in crate::engine) values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+    /// Exact callback closures captured when this dialogue content was
+    /// activated. Reveal selects these rows by effect site; it never scans
+    /// ordinary value slots for a callback.
+    pub(in crate::engine) effect_callbacks:
+        Box<[crate::value::RuntimeDialogueContentEffectBinding]>,
     pub(in crate::engine) activation_pc: usize,
     pub(in crate::engine) pending_line_operation: Option<PendingLineOperation>,
     pub(in crate::engine) failure: Option<super::DialogueExecutionError>,
@@ -506,6 +511,7 @@ mod tests {
             ),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             values: Box::default(),
+            effect_callbacks: Box::default(),
             activation_pc: 0,
             pending_line_operation: None,
             failure: None,
@@ -655,7 +661,12 @@ mod tests {
             .begin(id.clone(), frame(DialogueRuntimePhase::Ready))
             .expect("activation");
         store
-            .latch_step_input(LogicalDuration::from_nanos(7), &[event.clone()], &[], &[])
+            .latch_step_input(
+                LogicalDuration::from_nanos(7),
+                std::slice::from_ref(&event),
+                &[],
+                &[],
+            )
             .expect("first ingress");
         assert!(matches!(
             store.latch_step_input(LogicalDuration::from_nanos(9), &[event], &[], &[]),

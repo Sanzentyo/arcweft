@@ -11,7 +11,6 @@ use crate::runtime_text_input::register_runtime_bridge;
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_layout::ScalePolicy;
-use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{PlayerFrameFit, PlayerFramePlannerState};
 use arcweft_player_scene::images::BundleImageCatalog;
@@ -153,7 +152,6 @@ fn create(
         clock,
         font_set: Some(font_set),
         prepared: None,
-        dialogue_visual_clock: DialogueVisualClock::default(),
         fatal: None,
     };
     let control = registry::create_control(canvas_id, state)?;

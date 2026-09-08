@@ -47,7 +47,7 @@ impl EnvironmentCallablePublication {
             }
             .into());
         }
-        let digest = publication_digest(&owner, &nominal_world, manifest_digest, &records);
+        let digest = publication_digest(&owner, &nominal_world, manifest_digest, &records)?;
         Ok(Self {
             owner,
             nominal_world,
@@ -135,21 +135,26 @@ fn publication_digest(
     nominal_world: &AcceptedNominalWorldStamp,
     manifest_digest: EnvironmentManifestDigest,
     records: &[EnvironmentCallablePublicationRecord],
-) -> EnvironmentCallablePublicationDigest {
-    let mut records = records.iter().collect::<Vec<_>>();
-    records.sort_by(|left, right| {
-        left.declaration_order()
-            .cmp(&right.declaration_order())
-            .then_with(|| lookup_key_bytes(left.key()).cmp(&lookup_key_bytes(right.key())))
-            .then_with(|| left.overload().cmp(&right.overload()))
-    });
+) -> Result<EnvironmentCallablePublicationDigest, crate::types::GenericScopeError> {
+    let mut records = records
+        .iter()
+        .map(|record| {
+            Ok((
+                record.declaration_order(),
+                lookup_key_bytes(record.key())?,
+                record.overload(),
+                record,
+            ))
+        })
+        .collect::<Result<Vec<_>, crate::types::GenericScopeError>>()?;
+    records.sort_by(|left, right| (left.0, &left.1, left.2).cmp(&(right.0, &right.1, right.2)));
 
     let mut encoder = CanonicalEncoder::default();
     encoder.nominal_world(nominal_world);
     encoder.environment_owner(owner);
     encoder.bytes(manifest_digest.as_bytes());
     encoder.usize(records.len());
-    for record in records {
+    for (_, _, _, record) in records {
         encoder.environment_kind(record.kind());
         encoder.lookup_key(record.key());
         encoder.usize(record.overload().get());
@@ -159,10 +164,12 @@ fn publication_digest(
         encoder.option(record.source(), CanonicalEncoder::source);
         encoder.usize(record.declaration_order().get());
     }
-    EnvironmentCallablePublicationDigest::from_bytes(encoder.finish(PUBLICATION_DOMAIN))
+    Ok(EnvironmentCallablePublicationDigest::from_bytes(
+        encoder.finish(PUBLICATION_DOMAIN)?,
+    ))
 }
 
-fn lookup_key_bytes(key: &CallableLookupKey) -> Vec<u8> {
+fn lookup_key_bytes(key: &CallableLookupKey) -> Result<Vec<u8>, crate::types::GenericScopeError> {
     let mut encoder = CanonicalEncoder::default();
     encoder.lookup_key(key);
     encoder.into_bytes()

@@ -13,11 +13,11 @@ fn frame() -> arcweft_render_wgpu::geometry::PreparedFrame {
         content_avoidance_regions: Vec::new(),
         choices: vec![
             RenderChoiceItem {
-                id: "first".to_owned(),
+                id: Some("first".to_owned()),
                 label: "First".to_owned(),
             },
             RenderChoiceItem {
-                id: "second".to_owned(),
+                id: Some("second".to_owned()),
                 label: "Second".to_owned(),
             },
         ],

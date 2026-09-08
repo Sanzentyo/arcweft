@@ -1,7 +1,7 @@
 use arcweft_rich_text_schema::{
     CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
-    RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema, RichTextUnit, RichTextValueKind,
-    RichTextValueLimits, SelectorContract, UnknownPropertyPolicy,
+    RichTextPointActionSchema, RichTextPointActionSource, RichTextPropertySpec, RichTextUnit,
+    RichTextValueKind, RichTextValueLimits, SelectorContract, UnknownPropertyPolicy,
 };
 
 /// Closed dialogue-owned host-event authoring inventory.
@@ -33,12 +33,6 @@ pub enum DialogueHostEventKind {
     Call,
     /// Emits a typed signal identity.
     Signal,
-    /// Opens a pure Boolean conditional span.
-    ConditionalStart,
-    /// Selects the alternate conditional branch.
-    ConditionalElse,
-    /// Closes a conditional span.
-    ConditionalEnd,
 }
 
 /// Semantic properties used by dialogue host-event schemas.
@@ -72,7 +66,7 @@ pub enum DialogueHostProperty {
 
 impl DialogueHostEventKind {
     /// Deterministic complete host-event inventory.
-    pub const ALL: [Self; 16] = [
+    pub const ALL: [Self; 13] = [
         Self::Voice,
         Self::Face,
         Self::Pose,
@@ -86,9 +80,6 @@ impl DialogueHostEventKind {
         Self::TimedCue,
         Self::Call,
         Self::Signal,
-        Self::ConditionalStart,
-        Self::ConditionalElse,
-        Self::ConditionalEnd,
     ];
 
     /// Resolves a current grammar-owned source spelling.
@@ -106,11 +97,8 @@ impl DialogueHostEventKind {
             b"anim" => Some(Self::Animation),
             b"shake" => Some(Self::Shake),
             b"at" => Some(Self::TimedCue),
-            b"call" | b"!" => Some(Self::Call),
+            b"call" => Some(Self::Call),
             b"signal" => Some(Self::Signal),
-            b"if" => Some(Self::ConditionalStart),
-            b"else" => Some(Self::ConditionalElse),
-            b"endif" => Some(Self::ConditionalEnd),
             _ => None,
         }
     }
@@ -132,15 +120,12 @@ impl DialogueHostEventKind {
             Self::TimedCue => "at",
             Self::Call => "call",
             Self::Signal => "signal",
-            Self::ConditionalStart => "if",
-            Self::ConditionalElse => "else",
-            Self::ConditionalEnd => "endif",
         }
     }
 
     /// Immutable owner-typed schema for this host event.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<DialogueHostProperty> {
+    pub const fn schema(self) -> &'static RichTextPointActionSchema<DialogueHostProperty> {
         match self {
             Self::Voice => &VOICE_SCHEMA,
             Self::Face => &FACE_SCHEMA,
@@ -155,9 +140,6 @@ impl DialogueHostEventKind {
             Self::TimedCue => &TIMED_CUE_SCHEMA,
             Self::Call => &CALL_SCHEMA,
             Self::Signal => &SIGNAL_SCHEMA,
-            Self::ConditionalStart => &CONDITIONAL_START_SCHEMA,
-            Self::ConditionalElse => &CONDITIONAL_ELSE_SCHEMA,
-            Self::ConditionalEnd => &CONDITIONAL_END_SCHEMA,
         }
     }
 }
@@ -419,11 +401,11 @@ const SIGNAL: RichTextPropertySpec<DialogueHostProperty> = required(
 );
 
 const fn host_schema(
-    source_forms: &'static [RichTextSourceForm],
+    source: RichTextPointActionSource,
     properties: &'static [RichTextPropertySpec<DialogueHostProperty>],
-) -> RichTextTagSchema<DialogueHostProperty> {
-    RichTextTagSchema {
-        source_forms,
+) -> RichTextPointActionSchema<DialogueHostProperty> {
+    RichTextPointActionSchema {
+        source,
         selector: SelectorContract::None,
         properties,
         unknown_policy: UnknownPropertyPolicy::Reject,
@@ -431,58 +413,33 @@ const fn host_schema(
     }
 }
 
-const VOICE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("voice")], &[SOURCE]);
-const FACE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("face")], &[EXPRESSION]);
-const POSE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("pose")], &[POSE]);
-const SHOW_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("show")], &[ENTITY]);
-const HIDE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("hide")], &[ENTITY]);
-const MOVE_SCHEMA: RichTextTagSchema<DialogueHostProperty> = host_schema(
-    &[RichTextSourceForm::CanonicalTag("move")],
+const VOICE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("voice"), &[SOURCE]);
+const FACE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("face"), &[EXPRESSION]);
+const POSE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("pose"), &[POSE]);
+const SHOW_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("show"), &[ENTITY]);
+const HIDE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("hide"), &[ENTITY]);
+const MOVE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> = host_schema(
+    RichTextPointActionSource::canonical("move"),
     &[X_DEFAULT_ZERO, Y_DEFAULT_ZERO],
 );
-const SCALE_SCHEMA: RichTextTagSchema<DialogueHostProperty> = host_schema(
-    &[RichTextSourceForm::CanonicalTag("scale")],
+const SCALE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> = host_schema(
+    RichTextPointActionSource::canonical("scale"),
     &[SCALE_X, SCALE_Y],
 );
-const ROTATE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("rotate")], &[ANGLE]);
-const ANIMATION_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("anim")], &[ANIMATION]);
-const SHAKE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("shake")], &[AMP]);
-const TIMED_CUE_SCHEMA: RichTextTagSchema<DialogueHostProperty> = host_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("at"),
-        RichTextSourceForm::DedicatedPayload,
-    ],
-    &[AT],
-);
-const CALL_SCHEMA: RichTextTagSchema<DialogueHostProperty> = host_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("call"),
-        RichTextSourceForm::GrammarSpelling {
-            source: "!",
-            canonical: "call",
-        },
-        RichTextSourceForm::DedicatedPayload,
-    ],
-    NO_PROPERTIES,
-);
-const SIGNAL_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("signal")], &[SIGNAL]);
-const CONDITIONAL_START_SCHEMA: RichTextTagSchema<DialogueHostProperty> = host_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("if"),
-        RichTextSourceForm::DedicatedPayload,
-    ],
-    NO_PROPERTIES,
-);
-const CONDITIONAL_ELSE_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("else")], NO_PROPERTIES);
-const CONDITIONAL_END_SCHEMA: RichTextTagSchema<DialogueHostProperty> =
-    host_schema(&[RichTextSourceForm::CanonicalTag("endif")], NO_PROPERTIES);
+const ROTATE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("rotate"), &[ANGLE]);
+const ANIMATION_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("anim"), &[ANIMATION]);
+const SHAKE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("shake"), &[AMP]);
+const TIMED_CUE_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("at"), &[AT]);
+const CALL_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("call"), NO_PROPERTIES);
+const SIGNAL_SCHEMA: RichTextPointActionSchema<DialogueHostProperty> =
+    host_schema(RichTextPointActionSource::canonical("signal"), &[SIGNAL]);

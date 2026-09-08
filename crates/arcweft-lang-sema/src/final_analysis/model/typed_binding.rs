@@ -15,7 +15,7 @@ impl CheckedTypedBinding {
         annotation: TypeKind,
         scrutinee: &TypeKind,
     ) -> Option<Self> {
-        let annotation_digest = annotation.semantic_identity_digest();
+        let annotation_digest = annotation.semantic_identity_digest().ok()?;
         let choice_alternatives = match scrutinee {
             TypeKind::Choice(alternatives) => alternatives
                 .iter()
@@ -49,7 +49,9 @@ impl CheckedTypedBinding {
     }
 
     pub(crate) fn has_valid_semantic_identity(&self) -> bool {
-        self.annotation.semantic_identity_digest() == self.annotation_digest
+        self.annotation
+            .semantic_identity_digest()
+            .is_ok_and(|digest| digest == self.annotation_digest)
             && self
                 .choice_alternatives
                 .windows(2)

@@ -9,7 +9,11 @@ use arcweft_source::SourceSpan;
 use arcweft_view::ViewId;
 use thiserror::Error;
 
-use crate::{callable::CallableName, registration::AcceptedNominalWorldStamp, types::TypeKind};
+use crate::{
+    callable::CallableName,
+    registration::AcceptedNominalWorldStamp,
+    types::{GenericScopeError, TypeKind},
+};
 
 /// Typed coordinate of a field admitted by the CharacterDialogue schema.
 ///
@@ -34,6 +38,26 @@ pub enum CharacterDialogueFieldCoordinate {
 }
 
 impl CharacterDialogueFieldCoordinate {
+    /// Stable semantic tag for the closed CharacterDialogue field algebra.
+    /// Custom fields retain their owner-issued public identity separately.
+    pub const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::Voice => 0,
+            Self::Look => 1,
+            Self::Stage => 2,
+            Self::Portrait => 3,
+            Self::Focus => 4,
+            Self::Cleanup => 5,
+            Self::View => 6,
+            Self::SourceLocale => 7,
+            Self::Hooks => 8,
+            Self::Style => 9,
+            Self::RichText => 10,
+            Self::InlineFailure => 11,
+            Self::Custom(_) => 12,
+        }
+    }
+
     pub const fn is_custom(&self) -> bool {
         matches!(self, Self::Custom(_))
     }
@@ -70,6 +94,8 @@ pub struct CharacterDialogueCustomFieldRegistry {
 
 #[derive(Clone, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CharacterDialogueCustomFieldRegistryError {
+    #[error(transparent)]
+    GenericScope(#[from] GenericScopeError),
     #[error("CharacterDialogue custom field `{0}` has no source binding")]
     MissingBinding(CharacterDialogueCustomFieldId),
     #[error("duplicate CharacterDialogue custom field `{0}`")]
@@ -215,7 +241,7 @@ impl CharacterDialogueCustomFieldRegistry {
             }
             registry.by_id.insert(id, descriptor);
         }
-        registry.semantic_digest = registry_digest(&registry.by_id, &registry.bindings);
+        registry.semantic_digest = registry_digest(&registry.by_id, &registry.bindings)?;
         Ok(registry)
     }
 
@@ -307,12 +333,13 @@ fn is_reserved(name: &str) -> bool {
 
 fn empty_registry_digest() -> [u8; 32] {
     registry_digest(&BTreeMap::new(), &BTreeMap::new())
+        .expect("empty custom-field registry contains no type references")
 }
 
 fn registry_digest(
     descriptors: &BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomFieldDescriptor>,
     bindings: &BTreeMap<CharacterDialogueCustomFieldBinding, CharacterDialogueCustomFieldId>,
-) -> [u8; 32] {
+) -> Result<[u8; 32], GenericScopeError> {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.character-dialogue-custom-fields.v1\0");
     hasher.update(
@@ -322,7 +349,7 @@ fn registry_digest(
     );
     for (id, descriptor) in descriptors {
         hash_string(&mut hasher, id.as_str());
-        hasher.update(descriptor.value_type.semantic_identity_digest().as_bytes());
+        hasher.update(descriptor.value_type.semantic_identity_digest()?.as_bytes());
         match &descriptor.runtime_nominal_type {
             Some(nominal) => {
                 hasher.update(&[1]);
@@ -368,7 +395,7 @@ fn registry_digest(
         hash_string(&mut hasher, binding.name());
         hash_string(&mut hasher, id.as_str());
     }
-    *hasher.finalize().as_bytes()
+    Ok(*hasher.finalize().as_bytes())
 }
 
 fn hash_string(hasher: &mut blake3::Hasher, value: &str) {

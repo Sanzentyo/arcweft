@@ -5,8 +5,8 @@ use arcweft_source::SourceRange;
 use super::{CompletedNode, emit_expression_node};
 use crate::expressions::{
     ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
-    PendingExpressionProjection, SyntaxDialogueApplicationForm,
-    SyntaxDialogueApplicationProjection, SyntaxDialogueContentRecoveryBoundary,
+    PendingExpressionProjection, SyntaxAttachedContentApplicationForm,
+    SyntaxAttachedContentApplicationProjection, SyntaxDialogueContentRecoveryBoundary,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::parser::cursor::DocumentParser;
@@ -30,7 +30,7 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
         .expect("completed dialogue target retains one source range");
     let owner = parser.insert_projected_start(
         target.start_event,
-        SyntaxKind::DialogueContentApplicationExpression,
+        SyntaxKind::AttachedContentApplicationExpression,
         role,
     );
     parser.set_start_role(target.start_event + 1, SyntaxRole::Target);
@@ -79,9 +79,9 @@ pub(in crate::parser) fn emit_colon_dialogue_application(
     parser.set_expression_projection(
         owner,
         PendingExpressionProjection::new(
-            ExpressionProjection::DialogueContentApplication(
-                SyntaxDialogueApplicationProjection::new(
-                    SyntaxDialogueApplicationForm::Colon,
+            ExpressionProjection::AttachedContentApplication(
+                SyntaxAttachedContentApplicationProjection::new(
+                    SyntaxAttachedContentApplicationForm::Colon,
                     content,
                     false,
                 ),

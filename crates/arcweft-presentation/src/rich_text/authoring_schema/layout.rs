@@ -1,12 +1,11 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextEnumSchemaId,
-    RichTextNumericLimits, RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema,
-    RichTextUnit, RichTextValueKind, RichTextValueLimits, SelectorContract, SelectorKind,
-    UnknownPropertyPolicy,
+    Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextEnumDomain,
+    RichTextNumericLimits, RichTextPropertySetSchema, RichTextPropertySpec, RichTextUnit,
+    RichTextValueKind, RichTextValueLimits,
 };
 
 /// Closed inline-layout selector inventory.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextLayoutSelector {
     /// Horizontal top-to-bottom writing mode.
     HorizontalTb,
@@ -25,7 +24,7 @@ pub enum RichTextLayoutSelector {
 }
 
 /// Semantic properties used by inline-layout schemas.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextLayoutProperty {
     /// Inline direction.
     Direction,
@@ -62,7 +61,7 @@ impl RichTextLayoutSelector {
     pub const fn from_source_name(source: &str) -> Option<Self> {
         match source.as_bytes() {
             b"horizontal_tb" => Some(Self::HorizontalTb),
-            b"vertical_rl" | b"vertical" => Some(Self::VerticalRl),
+            b"vertical_rl" => Some(Self::VerticalRl),
             b"vertical_lr" => Some(Self::VerticalLr),
             b"dir" => Some(Self::Direction),
             b"ruby_over" => Some(Self::RubyOver),
@@ -88,15 +87,37 @@ impl RichTextLayoutSelector {
 
     /// Immutable owner-typed schema for this layout selector.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<RichTextLayoutProperty> {
+    pub const fn property_schema(
+        self,
+    ) -> &'static RichTextPropertySetSchema<RichTextLayoutProperty> {
         match self {
-            Self::HorizontalTb => &HORIZONTAL_TB_SCHEMA,
-            Self::VerticalRl => &VERTICAL_RL_SCHEMA,
-            Self::VerticalLr => &VERTICAL_LR_SCHEMA,
-            Self::Direction => &DIRECTION_SCHEMA,
-            Self::RubyOver => &RUBY_OVER_SCHEMA,
-            Self::RubyUnder => &RUBY_UNDER_SCHEMA,
-            Self::RubyInterCharacter => &RUBY_INTER_CHARACTER_SCHEMA,
+            Self::HorizontalTb => &HORIZONTAL_TB_PROPERTY_SET,
+            Self::VerticalRl => &VERTICAL_RL_PROPERTY_SET,
+            Self::VerticalLr => &VERTICAL_LR_PROPERTY_SET,
+            Self::Direction => &DIRECTION_PROPERTY_SET,
+            Self::RubyOver => &RUBY_OVER_PROPERTY_SET,
+            Self::RubyUnder => &RUBY_UNDER_PROPERTY_SET,
+            Self::RubyInterCharacter => &RUBY_INTER_CHARACTER_PROPERTY_SET,
+        }
+    }
+
+    /// Closed enum domain carried by selector-valued callable parameters.
+    #[must_use]
+    pub const fn schema_id(self) -> arcweft_id::closed_enum::ClosedEnumDomainId {
+        arcweft_rich_text_schema::RichTextEnumDomain::LayoutSelector.domain_id()
+    }
+
+    /// Stable zero-based selector ordinal.
+    #[must_use]
+    pub const fn ordinal(self) -> u16 {
+        match self {
+            Self::HorizontalTb => 0,
+            Self::VerticalRl => 1,
+            Self::VerticalLr => 2,
+            Self::Direction => 3,
+            Self::RubyOver => 4,
+            Self::RubyUnder => 5,
+            Self::RubyInterCharacter => 6,
         }
     }
 }
@@ -146,10 +167,12 @@ impl RichTextLayoutProperty {
     }
 }
 
-const DIRECTION_ENUM: RichTextEnumSchemaId =
-    RichTextEnumSchemaId::new("rich_text.layout.direction");
-const LATIN_ENUM: RichTextEnumSchemaId = RichTextEnumSchemaId::new("rich_text.layout.latin");
-const JLREQ_ENUM: RichTextEnumSchemaId = RichTextEnumSchemaId::new("rich_text.layout.jlreq");
+const DIRECTION_ENUM: arcweft_id::closed_enum::ClosedEnumDomainId =
+    RichTextEnumDomain::LayoutDirection.domain_id();
+const LATIN_ENUM: arcweft_id::closed_enum::ClosedEnumDomainId =
+    RichTextEnumDomain::VerticalLatin.domain_id();
+const JLREQ_ENUM: arcweft_id::closed_enum::ClosedEnumDomainId =
+    RichTextEnumDomain::Jlreq.domain_id();
 const SINGLE: Multiplicity = Multiplicity::Single;
 
 const DIRECTION_LIMITS: RichTextValueLimits = RichTextValueLimits {
@@ -201,7 +224,7 @@ const RUBY_SIZE_LIMITS: RichTextValueLimits = RichTextValueLimits {
 const fn enum_property(
     id: RichTextLayoutProperty,
     source_name: &'static str,
-    enum_id: RichTextEnumSchemaId,
+    enum_id: arcweft_id::closed_enum::ClosedEnumDomainId,
     limits: RichTextValueLimits,
     presence: PropertyPresence<RichTextLayoutProperty>,
 ) -> RichTextPropertySpec<RichTextLayoutProperty> {
@@ -316,71 +339,23 @@ const DIRECTION_PROPERTIES: [RichTextPropertySpec<RichTextLayoutProperty>; 8] = 
     RUBY_COLLISION_GAP,
 ];
 
-const fn selector_schema(
-    source_forms: &'static [RichTextSourceForm],
+const fn property_set(
     properties: &'static [RichTextPropertySpec<RichTextLayoutProperty>],
-) -> RichTextTagSchema<RichTextLayoutProperty> {
-    RichTextTagSchema {
-        source_forms,
-        selector: SelectorContract::RequiredPositional {
-            kind: SelectorKind::Closed,
-        },
-        properties,
-        unknown_policy: UnknownPropertyPolicy::Reject,
-        output: CheckedOutputKind::Span,
-    }
+) -> RichTextPropertySetSchema<RichTextLayoutProperty> {
+    RichTextPropertySetSchema { properties }
 }
 
-const HORIZONTAL_TB_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &COMMON_PROPERTIES,
-);
-const VERTICAL_RL_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".vertical",
-            canonical: ".vertical_rl",
-        },
-    ],
-    &COMMON_PROPERTIES,
-);
-const VERTICAL_LR_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &COMMON_PROPERTIES,
-);
-const DIRECTION_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &DIRECTION_PROPERTIES,
-);
-const RUBY_OVER_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &COMMON_PROPERTIES,
-);
-const RUBY_UNDER_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &COMMON_PROPERTIES,
-);
-const RUBY_INTER_CHARACTER_SCHEMA: RichTextTagSchema<RichTextLayoutProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &COMMON_PROPERTIES,
-);
+const HORIZONTAL_TB_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);
+const VERTICAL_RL_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);
+const VERTICAL_LR_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);
+const DIRECTION_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&DIRECTION_PROPERTIES);
+const RUBY_OVER_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);
+const RUBY_UNDER_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);
+const RUBY_INTER_CHARACTER_PROPERTY_SET: RichTextPropertySetSchema<RichTextLayoutProperty> =
+    property_set(&COMMON_PROPERTIES);

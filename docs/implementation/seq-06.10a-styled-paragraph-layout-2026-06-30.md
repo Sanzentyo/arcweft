@@ -65,7 +65,10 @@ seq06.10b task because the first-cut glyph-area route was not wasm-safe.
 
 ## CSS-style parity fixture
 
-The sample adds a long line containing `[strong]`, `[color]`, and `[size]` spans that must wrap as one paragraph. This is intended to fail under the previous run-per-block model when the wrap boundary crosses a style-run boundary.
+The sample adds a long line containing `#strong()[...]`,
+`#color(...)[...]`, and `#size(...)[...]` content scopes that must wrap as one
+paragraph. This is intended to fail under the previous run-per-block model
+when the wrap boundary crosses a style-run boundary.
 
 ## Coordination with seq06.10
 

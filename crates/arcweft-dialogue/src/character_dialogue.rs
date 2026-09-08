@@ -7,20 +7,17 @@ mod runtime_type;
 mod schema;
 mod typed_value;
 
-use crate::{DialogueContent, InlineFailurePolicy, LinePlan};
+use crate::InlineFailurePolicy;
 use arcweft_character::id::{CharacterId, CharacterLookId};
 use arcweft_core::{
     entry::{RuntimeValueDigest, TypeLayoutHash},
     pattern::{RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
-    plan::RuntimeLineId,
     value::RuntimeOpaqueValueError,
 };
-use arcweft_id::TextKey;
 use arcweft_interaction_model::dialogue::CharacterDialogueCustomFieldIdError;
 pub use arcweft_interaction_model::dialogue::{
     CharacterDialogueCustomFieldId, CharacterDialogueRuntimeRole,
 };
-use arcweft_source::SourceAnchor;
 use arcweft_view::ViewId;
 use core::hash::{Hash, Hasher};
 use std::collections::BTreeMap;
@@ -92,17 +89,6 @@ pub struct CharacterDialogueConfig {
     pub(super) rich_text: CharacterDialogueRichTextValue,
     pub(super) inline_failure: InlineFailurePolicy,
     pub(super) custom: BTreeMap<CharacterDialogueCustomFieldId, CharacterDialogueCustomValue>,
-}
-
-/// One source-owned content application after reusable configuration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CharacterDialogueContentApplication {
-    dialogue: CharacterDialogue,
-    line: RuntimeLineId,
-    text_key: TextKey,
-    content: DialogueContent,
-    plan: LinePlan,
-    source: SourceAnchor,
 }
 
 /// `CharacterDialogue` construction, patch, or runtime-schema failure.
@@ -400,68 +386,5 @@ impl CharacterDialogueConfig {
         }
         typed_value::validate_config_value_limits(self)?;
         Ok(())
-    }
-}
-
-impl CharacterDialogueContentApplication {
-    pub fn try_new(
-        dialogue: CharacterDialogue,
-        line: RuntimeLineId,
-        text_key: TextKey,
-        content: DialogueContent,
-        plan: LinePlan,
-        source: SourceAnchor,
-    ) -> Result<Self, CharacterDialogueValueError> {
-        let maximum = usize::from(PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_line_id_bytes);
-        if line.public_label().as_str().len() > maximum {
-            return Err(CharacterDialogueValueError::Limit {
-                limit: "line_id_bytes",
-                maximum,
-            });
-        }
-        if text_key.as_str().len() > maximum {
-            return Err(CharacterDialogueValueError::Limit {
-                limit: "text_key_bytes",
-                maximum,
-            });
-        }
-        Ok(Self {
-            dialogue,
-            line,
-            text_key,
-            content,
-            plan,
-            source,
-        })
-    }
-
-    #[must_use]
-    pub const fn dialogue(&self) -> &CharacterDialogue {
-        &self.dialogue
-    }
-
-    #[must_use]
-    pub const fn line(&self) -> &RuntimeLineId {
-        &self.line
-    }
-
-    #[must_use]
-    pub const fn text_key(&self) -> &TextKey {
-        &self.text_key
-    }
-
-    #[must_use]
-    pub const fn content(&self) -> &DialogueContent {
-        &self.content
-    }
-
-    #[must_use]
-    pub const fn plan(&self) -> &LinePlan {
-        &self.plan
-    }
-
-    #[must_use]
-    pub const fn source(&self) -> &SourceAnchor {
-        &self.source
     }
 }

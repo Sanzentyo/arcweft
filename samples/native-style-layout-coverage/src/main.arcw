@@ -1,15 +1,5 @@
 pub character layout_agent {
     display = "Layout Coverage"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Arcweft Demo"
-                color = rgb("#f8fbff")
-                size = 28px
-            }
-        }
-    }
 }
 
 pub style coverage_panel {

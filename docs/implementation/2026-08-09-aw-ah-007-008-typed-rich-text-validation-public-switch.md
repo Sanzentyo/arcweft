@@ -1,5 +1,10 @@
 # AW-AH-007/008 typed RichText validation public switch
 
+> Superseded implementation evidence. The paired validation carrier described
+> by this cut was later replaced directly by structural dialogue-content nodes,
+> typed point actions, and the presentation content-call catalog. It is not the
+> current source or semantic authority.
+
 - Date: 2026-08-09
 - Git HEAD inspected: `80331c81e338d20e968a10947d5e848c39610384`
 - Status: `COMPLETE_FOR_TYPED_VALIDATION_SLICE`
@@ -40,10 +45,11 @@ fallback, CSS/Takumi route, or raw executable attribute map. The prior
 permissive semantic success path is not repaired: final analysis admits only
 the checked report attached to the final HIR owner.
 
-The future `#expr`, `#call(...)`, and `#call(...)[content]` authoring surface is
-not inferred by this slice. It remains a later grammar contract and will use
-`#[...]` only for ordinary code attributes; this implementation does not add
-`@static` syntax or revive `$(...)` interpolation.
+The `#expr`, `#call(...)`, and `#call(...)[content]` authoring surface was
+outside this historical slice. It has since landed through the structural
+content-application grammar; `#[...]` is the retained interpolation form, and
+the former dollar-parenthesis interpolation was deleted without a migration
+reader.
 
 ## Validation
 
@@ -57,5 +63,5 @@ On the coherent public-switch copy:
 - `git diff --check` passed; and
 - both structure-audit gates passed with zero blocking violations.
 
-Runtime display codecs and the future Typst-like `#...` content escape are not
-claimed by this typed-validation slice.
+Runtime display codecs and the then-future `#...` content escape were not
+claimed by this historical typed-validation slice.

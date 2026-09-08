@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
-use arcweft_lang_syntax::text::MAX_RICH_TEXT_CONTENT_TAGS;
+use arcweft_lang_syntax::text::MAX_DIALOGUE_POINT_ACTIONS;
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
@@ -22,6 +22,9 @@ use crate::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorld
 use crate::type_ref::HirTypeResolver;
 
 use super::{HirDatabase, StagedHirModuleTransaction};
+
+#[path = "tests/closure_calls.rs"]
+mod closure_calls;
 
 fn parsed_revisions(document_id: &str) -> (ParsedSource, ParsedSource) {
     parsed_revisions_with_source(document_id, "")
@@ -471,8 +474,8 @@ fn transaction_resolvers_read_staged_and_retained_typed_payloads() {
     assert!(
         first
             .require(HirDialogueTransactionRequirement::RichTextCharge(
-                HirRichTextCharge::ContentTags {
-                    observed: MAX_RICH_TEXT_CONTENT_TAGS,
+                HirRichTextCharge::PointActions {
+                    observed: MAX_DIALOGUE_POINT_ACTIONS,
                 },
             ))
             .is_ok()
@@ -480,8 +483,8 @@ fn transaction_resolvers_read_staged_and_retained_typed_payloads() {
     assert!(
         first
             .require(HirDialogueTransactionRequirement::RichTextCharge(
-                HirRichTextCharge::ContentTags {
-                    observed: MAX_RICH_TEXT_CONTENT_TAGS + 1,
+                HirRichTextCharge::PointActions {
+                    observed: MAX_DIALOGUE_POINT_ACTIONS + 1,
                 },
             ))
             .is_err()

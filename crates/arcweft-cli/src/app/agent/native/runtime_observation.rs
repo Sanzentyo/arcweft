@@ -141,15 +141,15 @@ pub(super) fn agent_action_targets_for_runtime_status(
     state
         .options
         .iter()
-        .map(|option| {
-            let target = option.id.as_deref().unwrap_or(option.label.as_str());
-            AgentActionTarget {
+        .filter_map(|option| {
+            let target = option.id.as_deref()?;
+            Some(AgentActionTarget {
                 id: format!("action.select_choice.{target}"),
                 target: target.to_owned(),
                 action: AgentActionKind::SelectChoice,
                 kind: AgentActionDispatch::Semantic,
                 enabled: true,
-            }
+            })
         })
         .collect()
 }

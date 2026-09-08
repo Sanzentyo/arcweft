@@ -253,6 +253,20 @@ where
         (TypeKind::StatementIngress(expected), TypeKind::StatementIngress(actual)) => {
             Ok(expected == actual)
         }
+        (TypeKind::VariantPayload(expected), TypeKind::VariantPayload(actual)) => {
+            if !expected.has_same_header(actual) {
+                return Ok(false);
+            }
+            // A payload is dependent on its exact owner and selected case.
+            // Ordinary widening of the owner's arguments would assign the
+            // same physical fields a different semantic case identity.
+            for (expected, actual) in expected.children().zip(actual.children()) {
+                if !accepts_node(expected, actual, policy, control, meter, true)? {
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        }
         (TypeKind::StageApi(expected), TypeKind::StageApi(actual)) => Ok(expected == actual),
         (
             TypeKind::StageActorHandle(super::StageActorHandleType::Any),
@@ -292,6 +306,33 @@ where
         }
         (TypeKind::AgentBuiltin(expected), TypeKind::AgentBuiltin(actual)) => {
             Ok(expected == actual)
+        }
+        (TypeKind::CompileTimeCallable(expected), TypeKind::CompileTimeCallable(actual)) => {
+            Ok(expected == actual)
+        }
+        (TypeKind::CompileTimeScalar(expected), TypeKind::CompileTimeScalar(actual)) => {
+            Ok(expected == actual)
+        }
+        (TypeKind::CompileTimeEnum(expected), TypeKind::CompileTimeEnum(actual)) => {
+            Ok(expected.accepts(*actual))
+        }
+        (TypeKind::CompileTimeFx(expected), TypeKind::CompileTimeFx(actual)) => {
+            Ok(expected.accepts(actual))
+        }
+        (TypeKind::FixedVector(expected), TypeKind::FixedVector(actual))
+            if expected.dimensions() == actual.dimensions() =>
+        {
+            accepts_node(
+                expected.component(),
+                actual.component(),
+                policy,
+                control,
+                meter,
+                structural,
+            )
+        }
+        (TypeKind::MetaType(expected), TypeKind::MetaType(actual)) => {
+            accepts_node(expected, actual, policy, control, meter, structural)
         }
         (TypeKind::Error(expected), TypeKind::Error(actual)) => Ok(expected == actual),
         (TypeKind::CharacterPatch(expected), TypeKind::CharacterPatch(actual)) => {
@@ -610,17 +651,20 @@ where
         }
         (
             TypeKind::Function {
+                binder: expected_binder,
                 params: expected_params,
                 return_type: expected_return,
                 effects: expected_effects,
             },
             TypeKind::Function {
+                binder: actual_binder,
                 params: actual_params,
                 return_type: actual_return,
                 effects: actual_effects,
             },
         ) => {
-            if expected_params.len() != actual_params.len()
+            if expected_binder != actual_binder
+                || expected_params.len() != actual_params.len()
                 || if structural {
                     expected_effects != actual_effects
                 } else {
@@ -983,6 +1027,9 @@ where
         }
         TypeKind::Projection { subject, .. } => {
             return validate_strict_tree(subject, side, control);
+        }
+        TypeKind::MetaType(inner) => {
+            return validate_strict_tree(inner, side, control);
         }
         _ => {}
     }
@@ -1576,11 +1623,11 @@ mod tests {
         );
         let same = TypeKind::Array {
             item: Box::new(TypeKind::I32),
-            len: ArrayLength::Generic(generic.clone()),
+            len: ArrayLength::generic_parameter(generic.clone()),
         };
         let other = TypeKind::Array {
             item: Box::new(TypeKind::I32),
-            len: ArrayLength::Generic(GenericConstParameterId::new(
+            len: ArrayLength::generic_parameter(GenericConstParameterId::new(
                 GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(41)),
                 1,
             )),
@@ -1612,7 +1659,7 @@ mod tests {
         );
         let expected_generic = TypeKind::Array {
             item: Box::new(TypeKind::I32),
-            len: ArrayLength::Generic(generic),
+            len: ArrayLength::generic_parameter(generic),
         };
         let actual_const = TypeKind::Array {
             item: Box::new(TypeKind::I32),

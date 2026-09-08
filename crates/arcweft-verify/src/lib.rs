@@ -838,7 +838,7 @@ impl ProjectVerifier<'_, '_> {
                     .semantics
                     .expression(expression)
                     .ok_or(VerificationInputError::MissingExpressionFact { owner: expression })?;
-                if checked.ty() != &TypeKind::Bool || !checked.effects().is_empty() {
+                if checked.value_type() != Some(&TypeKind::Bool) || !checked.effects().is_empty() {
                     return Err(VerificationInputError::StatementRoleMismatch { owner });
                 }
                 Ok(expression)
@@ -938,7 +938,9 @@ impl ProjectVerifier<'_, '_> {
                     let checked = self.semantics.expression(expression).ok_or(
                         VerificationInputError::MissingExpressionFact { owner: expression },
                     )?;
-                    if checked.ty() != &TypeKind::String || !checked.effects().is_empty() {
+                    if checked.value_type() != Some(&TypeKind::String)
+                        || !checked.effects().is_empty()
+                    {
                         return Err(VerificationInputError::StatementRoleMismatch { owner });
                     }
                     reason = Some(expression);

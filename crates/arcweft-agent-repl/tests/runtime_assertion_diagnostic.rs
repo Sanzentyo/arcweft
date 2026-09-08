@@ -11,13 +11,14 @@ use arcweft_core::{
 };
 use arcweft_lang_hir::{
     database::HirDatabase,
-    expr::HirThreadFlowItem,
+    expr::{HirExprKind, HirThreadFlowItem},
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
     project::{
-        HirProjectBuilder, HirProjectModule, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
-        HirRuntimeExpressionTypeDisposition, HirRuntimeReachabilityRoot,
-        HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachabilityInput,
+        HirProjectBuilder, HirProjectModule, HirRuntimeCallCalleeDisposition,
+        HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
+        HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
+        HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
     },
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
@@ -209,7 +210,29 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
             reachability_input,
             &topology,
             |_| None,
-            |_| HirRuntimeExpressionTypeDisposition::Retain,
+            |owner| {
+                executable.modules().find_map(|(_, module)| {
+                    let expression = module.resolve_expr(owner).ok()?;
+                    Some(match expression.kind() {
+                        HirExprKind::Call(call) => HirRuntimeExpressionProjection::Call {
+                            result: HirRuntimeValueRetention::Retain,
+                            callee: if call.callee().value_expression().is_some() {
+                                HirRuntimeCallCalleeDisposition::RuntimeReceiver
+                            } else {
+                                HirRuntimeCallCalleeDisposition::Static
+                            },
+                        },
+                        HirExprKind::AttachedContentApplication(_) => {
+                            HirRuntimeExpressionProjection::Structural {
+                                value: HirRuntimeValueRetention::Omit,
+                            }
+                        }
+                        _ => HirRuntimeExpressionProjection::Structural {
+                            value: HirRuntimeValueRetention::Retain,
+                        },
+                    })
+                })
+            },
         )
         .expect("runtime reachability");
     let facts =

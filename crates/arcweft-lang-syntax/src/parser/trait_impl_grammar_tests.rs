@@ -60,6 +60,25 @@ impl Threshold for Score {
 }
 
 #[test]
+fn trait_and_impl_callable_members_admit_the_dedicated_content_parameter() {
+    let source = concat!(
+        "trait Renderable {\n",
+        "    fn render(&self)[body?: RichContent] -> Unit\n",
+        "}\n",
+        "impl Renderable for Widget {\n",
+        "    fn render(&self)[body: RichContent] -> Unit { () }\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+    assert_eq!(kind_count(entries, SyntaxKind::AttachedContentParameter), 2);
+    assert_eq!(kind_count(entries, SyntaxKind::AttachedContentRole), 2);
+    assert_eq!(kind_count(entries, SyntaxKind::QuestionMarkNode), 1);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn trait_receivers_use_binding_patterns_without_inventing_parameter_types() {
     let source = r"trait ReceiverForms {
     fn owned(self) -> Self

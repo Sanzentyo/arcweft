@@ -6,7 +6,7 @@ use arcweft_agent_protocol::ids::{
 };
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
-use arcweft_core::entry::AgentBudget;
+use arcweft_core::entry::RuntimeAgentEntryRoles;
 use arcweft_core::plan::{EntryRuntimeId, RuntimeEntryTarget};
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
@@ -95,7 +95,10 @@ pub fn compile_checked_agent_bundle(
             entry: checked.id().to_string(),
         });
     };
-    if runtime_roles.controller.callable.as_str() != checked.controller().declaration().to_string()
+    if runtime_roles.controller.callable
+        != arcweft_core::entry::RuntimeCallableId::from_checked_digest(
+            controller_facts.id().semantic_digest().into_bytes(),
+        )
         || runtime_roles.binding.as_bytes() != checked.binding_digest().as_bytes()
         || runtime_roles.controller.contract.as_bytes()
             != checked.controller().contract_digest().as_bytes()
@@ -107,10 +110,9 @@ pub fn compile_checked_agent_bundle(
         });
     }
 
-    let runtime_budget = runtime_roles.budget;
     let pure_helpers = compiled.runtime_plan().plan.pure_helpers().len();
     let manifest =
-        agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_budget)?;
+        agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_roles)?;
     let documents = agent_bundle_source_documents(compiled)?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
     let source_label = documents[0].identity().id().as_str();
@@ -299,16 +301,15 @@ fn agent_artifact_manifest(
     checked: &CheckedAgentEntry,
     controller_facts: &CheckedCallableFacts,
     project: &ProjectSemanticIndex,
-    budget: AgentBudget,
+    runtime_roles: &RuntimeAgentEntryRoles,
 ) -> Result<AgentArtifactManifest, CompileAgentError> {
-    let declaration = checked.controller().declaration();
     let verified_effects = effect_manifest::build_verified_effect_summary(controller_facts)?;
     let declared_effects = verified_effects.inferred.clone();
     Ok(AgentArtifactManifest {
         schema_version: 1,
         bundle_kind: AgentBundleKind::AgentController,
         entry_id: ArtifactPublicId::new(checked.id().public_id().as_str())?,
-        controller_id: ArtifactCallableId::new(declaration.to_string())?,
+        controller_id: ArtifactCallableId::new(runtime_roles.controller.callable.as_str())?,
         entry_binding_hash: StableHash::from_blake3_bytes(*checked.binding_digest().as_bytes()),
         controller_contract_hash: StableHash::from_blake3_bytes(
             *checked.controller().contract_digest().as_bytes(),
@@ -323,7 +324,7 @@ fn agent_artifact_manifest(
         },
         declared_effects,
         verified_effects,
-        budget,
+        budget: runtime_roles.budget,
         debug_map_hash: None,
     })
 }

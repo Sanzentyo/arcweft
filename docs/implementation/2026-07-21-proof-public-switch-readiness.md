@@ -68,7 +68,7 @@ The current private predecessor includes:
   families using the shared lexer and grammar transaction;
 - discriminant-complete private typed markers, family nodes, and role-driven
   accessors; and
-- private RichText tag, ordered-argument, recovery, and expression descendants
+- private provisional RichText markup, ordered-argument, recovery, and expression descendants
   emitted by the same lexer/event/attachment transaction.
 
 The direct evidence is recorded in:

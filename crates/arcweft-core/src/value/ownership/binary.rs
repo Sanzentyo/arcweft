@@ -177,7 +177,10 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
         bytes.push(segment.canonical_tag());
         match *segment {
             RuntimeValuePathSegment::TupleElement(index)
-            | RuntimeValuePathSegment::TupleColumn(index) => {
+            | RuntimeValuePathSegment::TupleColumn(index)
+            | RuntimeValuePathSegment::ReductionCommandPayload(index)
+            | RuntimeValuePathSegment::AgentEmbeddedValue(index)
+            | RuntimeValuePathSegment::ProjectContinuationPrefix(index) => {
                 bytes.extend_from_slice(&index.to_le_bytes());
             }
             RuntimeValuePathSegment::SequenceElement(index)
@@ -191,10 +194,6 @@ pub(super) fn encode_value_path(path: &RuntimeValuePath) -> Vec<u8> {
             }
             RuntimeValuePathSegment::FunctionCapture(capture) => {
                 push_u32(&mut bytes, capture.get());
-            }
-            RuntimeValuePathSegment::ReductionCommandPayload(index)
-            | RuntimeValuePathSegment::AgentEmbeddedValue(index) => {
-                bytes.extend_from_slice(&index.to_le_bytes());
             }
             RuntimeValuePathSegment::VariantPayload
             | RuntimeValuePathSegment::IteratorWitnessState
@@ -241,6 +240,7 @@ pub(super) fn decode_value_path(
             11 => RuntimeValuePathSegment::ReductionState,
             12 => RuntimeValuePathSegment::ReductionCommandPayload(reader.u32()?),
             13 => RuntimeValuePathSegment::AgentEmbeddedValue(reader.u32()?),
+            14 => RuntimeValuePathSegment::ProjectContinuationPrefix(reader.u32()?),
             tag => return Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag }),
         };
         segments.push(segment);
@@ -387,6 +387,10 @@ mod tests {
                 r#"[{"kind":"function_capture","capture":3},{"kind":"iterator_remainder","index":"6"}]"#,
                 "020000000603000000080600000000000000",
             ),
+            (
+                r#"[{"kind":"project_continuation_prefix","index":2}]"#,
+                "010000000e02000000",
+            ),
             (r#"[{"kind":"iterator_witness_state"}]"#, "0100000009"),
             (r#"[{"kind":"opaque_payload"}]"#, "010000000a"),
         ];
@@ -406,8 +410,8 @@ mod tests {
         ));
         assert!(decode_owned_slot(&[0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]).is_err());
         assert!(matches!(
-            decode_value_path(&[1, 0, 0, 0, 14]),
-            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 14 })
+            decode_value_path(&[1, 0, 0, 0, 15]),
+            Err(RuntimeOwnershipBinaryError::UnknownPathSegmentTag { tag: 15 })
         ));
         assert!(decode_value_path(&[1, 0, 0, 0, 3, 0, 0, 0, 0]).is_err());
         assert!(decode_value_path(&[2, 0, 0, 0, 7]).is_err());

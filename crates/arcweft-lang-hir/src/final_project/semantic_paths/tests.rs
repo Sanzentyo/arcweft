@@ -4,7 +4,8 @@ use std::sync::Arc;
 use super::*;
 use crate::database::HirDatabase;
 use crate::dialogue_application::{
-    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirLinePlan,
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily,
+    HirAttachedContentBodyPresence, HirDialogueContent, HirDialogueContentId, HirLinePlan,
     HirLinePlanItem,
 };
 use crate::expr::{
@@ -265,13 +266,19 @@ fn statement_loop_control_transfers_resolve_each_statement_loop_family() {
 #[test]
 fn output_control_transfers_require_a_line_plan_and_reject_labels() {
     let module = lower_control_transfer_fixture(
-        "pub character alice { display_name = \"Alice\" }\nflow accepted() -> String {\n    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n    with:\n        out cue\n    return \"done\"\n}\n",
+        "pub character alice { display = \"Alice\" }\nflow accepted() -> String {\n    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n    with:\n        out cue\n    return \"done\"\n}\n",
     );
     let application = module
         .expressions()
         .find_map(|(owner, value)| match value.kind() {
-            HirExprKind::DialogueContentApplication(application)
-                if application.plan().is_some() =>
+            HirExprKind::AttachedContentApplication(application)
+                if matches!(
+                    application.family(),
+                    crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                        plan: Some(_),
+                        ..
+                    }
+                ) =>
             {
                 Some(owner)
             }
@@ -872,16 +879,21 @@ fn path_builder_consumes_nested_start_and_together_owned_edge() {
         ]))]),
     )
     .expect("nested line plan");
-    let content = HirDialogueContent::try_new(
-        HirDialogueContentId::new(owner),
-        Box::new([]),
-        Box::new([]),
-        Box::new([]),
-    )
-    .expect("empty dialogue content");
-    let dialogue = HirExprKind::DialogueContentApplication(
-        HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
-            .expect("dialogue application"),
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let dialogue = HirExprKind::AttachedContentApplication(
+        HirAttachedContentApplication::try_new_with_body_presence(
+            owner,
+            content,
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan: Some(plan),
+                coordinates: Box::new([]),
+            },
+            HirAttachedContentBodyPresence::Present,
+        )
+        .expect("dialogue application"),
     );
     let edge = dialogue
         .expression_owned_child_edges()

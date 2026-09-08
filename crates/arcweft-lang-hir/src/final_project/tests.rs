@@ -10,13 +10,14 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirDeclarationBodyRootRole, HirDeclarationContractRootRole, HirDeclarationParameterRoot,
-    HirDeclarationParameterRootRole, HirExecutableProjectView, HirPackageModuleKey, HirProject,
-    HirProjectBuildError, HirProjectBuilder, HirProjectExecutionError, HirProjectModule,
-    HirProjectModuleError, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeExpressionProjection, HirRuntimeReachabilityEdge,
-    HirRuntimeReachabilityError, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
-    HirRuntimeSemanticReachability, HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
+    HirDeclarationAttachedContentRootRole, HirDeclarationBodyRootRole,
+    HirDeclarationContractRootRole, HirDeclarationParameterRoot, HirDeclarationParameterRootRole,
+    HirExecutableProjectView, HirPackageModuleKey, HirProject, HirProjectBuildError,
+    HirProjectBuilder, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
+    HirRuntimeExpressionProjection, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+    HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
     HirSelectedExpressionInventoryError, HirSemanticOwnerPath, HirSemanticPathStep, exported_parts,
     styles,
 };
@@ -176,7 +177,7 @@ fn retained_runtime_projection(
                     HirRuntimeCallCalleeDisposition::Static
                 },
             },
-            HirExprKind::DialogueContentApplication(_) => {
+            HirExprKind::AttachedContentApplication(_) => {
                 HirRuntimeExpressionProjection::Structural {
                     value: HirRuntimeValueRetention::Omit,
                 }
@@ -269,6 +270,24 @@ fn evaluation_topology(
         .expect("accepted symbol generation")
         .into_evaluation_topology()
         .expect("project evaluation topology")
+}
+
+fn selected_dialogue_lines(
+    project: &HirProject,
+    root_document: &SourceDocument,
+    profile: &str,
+) -> Result<super::AcceptedDialogueLineInventory, super::DialogueLineProjectError> {
+    let symbols = symbols_for_project(project, root_document, profile);
+    let topology = evaluation_topology(project, &symbols);
+    let executable = project.executable_view().expect("executable project");
+    let selected = executable
+        .selected_expression_graph(
+            &topology,
+            |_| None,
+            |_| Some(super::HirSelectedCallExpressionDisposition::Structural),
+        )
+        .expect("selected expression graph");
+    executable.seal_selected_dialogue_lines(&selected)
 }
 
 fn declaration_paths_for_source(
@@ -691,7 +710,7 @@ fn semantic_paths_consume_dialogue_owned_roots() {
     assert_source_expression_owned_paths(
         "dialogue-owned-paths",
         concat!(
-            "pub character alice { display_name = \"Alice\" }\n",
+            "pub character alice { display = \"Alice\" }\n",
             "flow line_handles() -> String {\n",
             "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
             "    with:\n",
@@ -704,7 +723,7 @@ fn semantic_paths_consume_dialogue_owned_roots() {
             "    return \"done\"\n",
             "}\n",
         ),
-        |kind| matches!(kind, HirExprKind::DialogueContentApplication(_)),
+        |kind| matches!(kind, HirExprKind::AttachedContentApplication(_)),
     );
 }
 
@@ -718,7 +737,7 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
         "arcweft-test://proof/final-project/nested-postfix-dialogue-paths",
         "nested-postfix-dialogue-paths.arcw",
         concat!(
-            "pub character alice { display_name = \"Alice\" }\n",
+            "pub character alice { display = \"Alice\" }\n",
             "flow opening {\n",
             "    alice(id = @say.shared)[Hello]\n",
             "}\n",
@@ -759,8 +778,15 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
     );
 
     for (owner, expression) in module.expressions() {
-        if let HirExprKind::DialogueContentApplication(application) = expression.kind() {
-            for coordinate in application.coordinates() {
+        if let HirExprKind::AttachedContentApplication(application) = expression.kind() {
+            let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                coordinates,
+                ..
+            } = application.family()
+            else {
+                continue;
+            };
+            for coordinate in coordinates {
                 let role = HirExpressionChildRole::DialogueCoordinate {
                     ordinal: u32::from(coordinate.argument().get()),
                 };
@@ -783,7 +809,7 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
             HirExprKind::PostfixBracket(_) | HirExprKind::Index(_) => {
                 Some(HirExpressionChildRole::Target)
             }
-            HirExprKind::DialogueContentApplication(_) => {
+            HirExprKind::AttachedContentApplication(_) => {
                 Some(HirExpressionChildRole::DialogueTarget)
             }
             _ => None,
@@ -793,7 +819,7 @@ fn nested_postfix_dialogue_candidates_publish_each_expression_once() {
         };
         let expected_ownership = match expression.kind() {
             HirExprKind::PostfixBracket(_) => HirExpressionChildOwnership::Owning,
-            HirExprKind::Index(_) | HirExprKind::DialogueContentApplication(_) => {
+            HirExprKind::Index(_) | HirExprKind::AttachedContentApplication(_) => {
                 HirExpressionChildOwnership::ReferenceOnly
             }
             _ => unreachable!(),
@@ -913,6 +939,16 @@ fn semantic_owner_hops_survive_closure_block_statement_and_initializer_walkers()
     };
     assert_eq!(hop.parent(), closure);
     assert_eq!(hop.child(), block);
+    assert_eq!(
+        topology
+            .module(retained_module.module_id())
+            .expect("module topology")
+            .expression_uses()
+            .row(initializer)
+            .expect("closure initializer expression use")
+            .parent(),
+        Some(&super::HirExpressionUseParent::EnclosingRegion { parent: block })
+    );
 }
 
 #[test]
@@ -1009,6 +1045,106 @@ fn declaration_body_topology_keeps_root_matrix_and_unified_path_index_parity() {
         project_topology
             .declaration(&declaration)
             .expect("deterministic declaration topology")
+    );
+}
+
+#[test]
+fn attached_content_roots_have_dedicated_paths_and_one_binding_origin() {
+    let (retained_module, topology, declaration) = declaration_paths_for_source(
+        "attached-content-declaration-roots",
+        "fn accepted(value: Unit)[body: InlineContent = fallback] -> Unit { body }\n",
+        "accepted",
+    );
+    let declaration_view = topology
+        .declaration(&declaration)
+        .expect("attached-content declaration topology");
+    let body = declaration_view.body();
+    assert_eq!(
+        body.attached_content_roots()
+            .iter()
+            .map(|root| root.role())
+            .collect::<Vec<_>>(),
+        vec![
+            HirDeclarationAttachedContentRootRole::Binding,
+            HirDeclarationAttachedContentRootRole::Default,
+        ]
+    );
+
+    let (item, function) = retained_module
+        .items()
+        .find_map(|(item, value)| {
+            let HirItemKind::Function(function) = value.kind() else {
+                return None;
+            };
+            (function.name().resolved().map(|name| name.as_str()) == Some("accepted"))
+                .then_some((item, function))
+        })
+        .expect("attached-content function");
+    let attached = function
+        .attached_content()
+        .expect("attached-content HIR declaration");
+    let binding = attached.binding();
+    let default = attached
+        .presence()
+        .default_value()
+        .expect("attached-content default expression");
+
+    assert_eq!(
+        body.paths().local(binding).map(HirSemanticOwnerPath::steps),
+        Some([HirSemanticPathStep::AttachedContentBinding].as_slice())
+    );
+    assert_eq!(
+        body.paths()
+            .expression(default)
+            .map(HirSemanticOwnerPath::steps),
+        Some([HirSemanticPathStep::AttachedContentDefault].as_slice())
+    );
+
+    let module_topology = topology
+        .module(retained_module.module_id())
+        .expect("module evaluation topology");
+    let binding_origin = module_topology
+        .local_origins()
+        .binding(binding)
+        .expect("attached-content local binding origin");
+    assert_eq!(
+        binding_origin.site(),
+        super::HirBindingSite::DeclarationAttachedContent {
+            item,
+            owner: HirCallableSourceOwner::Item,
+        }
+    );
+    assert_eq!(
+        module_topology
+            .selection_roots()
+            .iter()
+            .filter(|root| **root == default)
+            .count(),
+        1
+    );
+    assert_eq!(
+        topology
+            .semantic_path(binding.into())
+            .expect("attached-content binding lookup")
+            .expect("attached-content binding path")
+            .path()
+            .steps(),
+        body.paths()
+            .local(binding)
+            .expect("attached-content local path")
+            .steps()
+    );
+    assert_eq!(
+        topology
+            .semantic_path(default.into())
+            .expect("attached-content default lookup")
+            .expect("attached-content default path")
+            .path()
+            .steps(),
+        body.paths()
+            .expression(default)
+            .expect("attached-content default expression path")
+            .steps()
     );
 }
 
@@ -1260,10 +1396,7 @@ fn assert_capture_and_region_indexes(
         .expect("statement binding retains its expression region");
     let region = module_topology
         .expression_uses()
-        .implicit_callable_region(
-            region_root,
-            crate::expr::HirPlaceholderKind::PartialApplication,
-        )
+        .implicit_callable_region(region_root)
         .expect("implicit callable region");
     assert!(region.contains_binding(internal));
     assert!(
@@ -1288,6 +1421,174 @@ fn assert_capture_and_region_indexes(
     assert!(all_placeholders.len() >= 3);
     assert_eq!(region_placeholders.len(), 1);
     assert!(region_placeholders.is_subset(&all_placeholders));
+}
+
+#[test]
+fn pipe_expression_use_index_seals_nearest_nested_owner_and_closure_cut() {
+    let (module, topology, _) = declaration_paths_for_source(
+        "pipe-expression-use-owners",
+        r#"
+fn add(left: i64, right: i64) -> i64 { left + right }
+
+fn nested(input: i64) -> i64 {
+    input |> (^ |> add(^, 1i64))
+}
+
+fn closure_cut(input: i64) -> i64 {
+    input |> (|value: i64| value + ^)(1i64)
+}
+"#,
+        "nested",
+    );
+    let module_topology = topology
+        .module(module.module_id())
+        .expect("module topology");
+    let pipes = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Pipe(_)).then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(pipes.len(), 3, "nested and closure-cut pipes are retained");
+    let placeholders = module
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(
+                expression.kind(),
+                HirExprKind::Placeholder(crate::expr::HirPlaceholderKind::PipeLeft)
+            )
+            .then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(placeholders.len(), 3);
+
+    let expression_uses = module_topology.expression_uses();
+    let mut owners = placeholders
+        .iter()
+        .map(|placeholder| {
+            (
+                *placeholder,
+                expression_uses
+                    .pipe_left_owner(*placeholder)
+                    .expect("pipe-left owner query"),
+            )
+        })
+        .collect::<Vec<_>>();
+    owners.sort_by_key(|(placeholder, _)| {
+        expression_uses
+            .row(*placeholder)
+            .expect("placeholder row")
+            .source_ordinal()
+    });
+    let pipe_parts = |pipe: ExprId| {
+        let HirExprKind::Pipe(pipe) = module.resolve_expr(pipe).expect("pipe expression").kind()
+        else {
+            panic!("expression {pipe:?} is not a pipe");
+        };
+        (pipe.left(), pipe.right())
+    };
+    let outer_pipe = pipes
+        .iter()
+        .copied()
+        .find(|pipe| pipes.contains(&pipe_parts(*pipe).1))
+        .expect("outer pipe with nested RHS pipe");
+    let nested_pipe = pipe_parts(outer_pipe).1;
+    let nested_left = pipe_parts(nested_pipe).0;
+    let outer_placeholders = expression_uses
+        .pipe_left_region(outer_pipe)
+        .expect("outer pipe region")
+        .placeholders()
+        .map(|placeholder| placeholder.expect("outer pipe-left owner query"))
+        .collect::<Vec<_>>();
+    let nested_placeholders = expression_uses
+        .pipe_left_region(nested_pipe)
+        .expect("nested pipe region")
+        .placeholders()
+        .map(|placeholder| placeholder.expect("nested pipe-left owner query"))
+        .collect::<Vec<_>>();
+    assert_eq!(outer_placeholders, vec![nested_left]);
+    assert_eq!(nested_placeholders.len(), 1, "nested RHS owns its ^");
+    assert_eq!(
+        expression_uses.pipe_left_owner(nested_left),
+        Ok(Some(outer_pipe)),
+        "nested LHS inherits the enclosing pipe owner"
+    );
+    assert_eq!(
+        expression_uses.pipe_left_owner(nested_placeholders[0]),
+        Ok(Some(nested_pipe)),
+        "nested RHS binds to the nested pipe"
+    );
+    assert_eq!(
+        owners.iter().filter(|(_, owner)| owner.is_none()).count(),
+        1,
+        "the explicit closure cuts its pipe-left placeholder"
+    );
+    for pipe in [outer_pipe, nested_pipe] {
+        let region = expression_uses.pipe_left_region(pipe).expect("pipe region");
+        assert_eq!(
+            expression_uses
+                .row(region.left())
+                .expect("pipe-left row")
+                .parent_role(),
+            Some(&HirExpressionChildRole::PipeLeft)
+        );
+        assert_eq!(
+            expression_uses
+                .row(region.right())
+                .expect("pipe-right row")
+                .parent_role(),
+            Some(&HirExpressionChildRole::PipeRight)
+        );
+        assert!(module_topology.expression_edges(pipe).iter().any(|edge| {
+            matches!(
+                edge,
+                super::semantic_paths::HirExpressionEvaluationEdge::Expression {
+                    role: HirExpressionChildRole::PipeLeft,
+                    ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                    child,
+                } if *child == region.left()
+            )
+        }));
+        assert!(module_topology.expression_edges(pipe).iter().any(|edge| {
+            matches!(
+                edge,
+                super::semantic_paths::HirExpressionEvaluationEdge::Expression {
+                    role: HirExpressionChildRole::PipeRight,
+                    ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                    child,
+                } if *child == region.right()
+            )
+        }));
+    }
+    assert!(
+        expression_uses
+            .pipe_left_region(outer_pipe)
+            .expect("outer region")
+            .placeholders()
+            .map(|placeholder| placeholder.expect("pipe-left owner query"))
+            .any(|placeholder| {
+                expression_uses
+                    .pipe_left_owner(placeholder)
+                    .expect("pipe-left owner query")
+                    == Some(outer_pipe)
+            })
+    );
+    assert!(
+        expression_uses
+            .pipe_left_region(nested_pipe)
+            .expect("nested region")
+            .placeholders()
+            .map(|placeholder| placeholder.expect("pipe-left owner query"))
+            .any(|placeholder| {
+                expression_uses
+                    .pipe_left_owner(placeholder)
+                    .expect("pipe-left owner query")
+                    == Some(nested_pipe)
+            })
+    );
+    assert!(owners.iter().any(|(_, owner)| *owner == Some(outer_pipe)));
+    assert!(owners.iter().any(|(_, owner)| *owner == Some(nested_pipe)));
+    assert!(owners.iter().any(|(_, owner)| owner.is_none()));
 }
 
 #[test]
@@ -2954,7 +3255,7 @@ fn runtime_expression_type_inventory_applies_generic_non_value_semantic_carriers
     assert!(leaf_carrier.contains(&callee));
     assert!(!leaf_carrier.contains(&argument));
 
-    let nested_call_carrier = runtime_reachability(
+    let nested_call_reachability = runtime_reachability(
         executable,
         &topology,
         |_| None,
@@ -2969,12 +3270,32 @@ fn runtime_expression_type_inventory_applies_generic_non_value_semantic_carriers
             }
         },
     )
-    .expect("nested-call semantic-carrier reachability")
-    .selected_expression_type_owners()
-    .expect("nested-call semantic-carrier inventory");
+    .expect("nested-call semantic-carrier reachability");
+    let nested_call_children = nested_call_reachability.expression_children(call);
+    assert!(nested_call_children.contains(&callee));
+    assert!(nested_call_children.contains(&argument));
+    let nested_call_carrier = nested_call_reachability
+        .selected_expression_type_owners()
+        .expect("nested-call semantic-carrier inventory");
     assert!(!nested_call_carrier.contains(&call));
     assert!(nested_call_carrier.contains(&callee));
     assert!(nested_call_carrier.contains(&argument));
+
+    let retained_call_reachability = runtime_reachability(
+        executable,
+        &topology,
+        |_| None,
+        |owner| retained_runtime_projection(executable, owner),
+    )
+    .expect("retained-call reachability");
+    assert_eq!(
+        nested_call_reachability.expression_children(call),
+        retained_call_reachability.expression_children(call)
+    );
+    assert_ne!(
+        nested_call_reachability.identity().digest(),
+        retained_call_reachability.identity().digest()
+    );
 }
 
 #[test]
@@ -3481,7 +3802,11 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
         "runtime-closure-edges.arcw",
         concat!(
             "flow root() {\n",
-            "    let first = || 1\n",
+            "    let outside: i64 = 0i64\n",
+            "    let first = || {\n",
+            "        let inside: i64 = 1i64\n",
+            "        outside\n",
+            "    }\n",
             "    let second = || 2\n",
             "}\n",
         ),
@@ -3552,6 +3877,92 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
         .expect("checked closure body types");
     assert!(typed.contains(first_body));
     assert!(typed.contains(second_body));
+    let flow_owners = reached
+        .executable_owners(&HirRuntimeExecutableOwner::Item(flow))
+        .expect("flow executable owner partition");
+    let first_owners = reached
+        .executable_owners(&HirRuntimeExecutableOwner::Closure(*first))
+        .expect("first closure executable owner partition");
+    assert!(flow_owners.expressions().any(|owner| owner == *first));
+    assert!(!flow_owners.expressions().any(|owner| owner == *first_body));
+    assert!(
+        !first_owners.expressions().any(|owner| owner == *first),
+        "the enclosing executable solely owns the closure value expression"
+    );
+    assert!(first_owners.expressions().any(|owner| owner == *first_body));
+    let closure_locals = first_owners.locals().collect::<BTreeSet<_>>();
+    let closure_types = first_owners.types().collect::<BTreeSet<_>>();
+    assert!(!closure_locals.is_empty());
+    assert!(!closure_types.is_empty());
+    assert!(
+        flow_owners
+            .locals()
+            .all(|owner| !closure_locals.contains(&owner))
+    );
+    assert!(
+        flow_owners
+            .types()
+            .all(|owner| !closure_types.contains(&owner))
+    );
+    let closure_captures = first_owners.captures().collect::<BTreeSet<_>>();
+    assert!(!closure_captures.is_empty());
+    assert!(
+        flow_owners
+            .captures()
+            .all(|owner| !closure_captures.contains(&owner)),
+        "the closure executable solely owns its capture rows"
+    );
+
+    let executable_rows = reached
+        .reachable_executables()
+        .map(|owner| {
+            reached
+                .executable_owners(owner)
+                .expect("every reachable executable owns one partition")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.locals())
+            .collect::<BTreeSet<_>>(),
+        reached.locals().collect()
+    );
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.expressions())
+            .collect::<BTreeSet<_>>(),
+        reached.expressions().collect()
+    );
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.statements())
+            .collect::<BTreeSet<_>>(),
+        reached.statements().collect()
+    );
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.types())
+            .collect::<BTreeSet<_>>(),
+        reached.types().collect()
+    );
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.patterns())
+            .collect::<BTreeSet<_>>(),
+        reached.patterns().collect()
+    );
+    assert_eq!(
+        executable_rows
+            .iter()
+            .flat_map(|owners| owners.captures())
+            .collect::<BTreeSet<_>>(),
+        reached.captures().collect()
+    );
 
     let missing = HirRuntimeSemanticReachabilityInput::try_new(
         HirRuntimeEmissionMode::CheckAll,
@@ -3689,13 +4100,13 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
         &mut syntax,
         "arcweft-test://proof/final-project/dialogue-generated",
         "dialogue-generated.arcw",
-        "fn opening() {\n    let line = alice[前[strong]強調[/strong]後]\n}\n",
+        "fn opening() {\n    let line = alice[前#strong()[強調]後]\n}\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
     assert!(module.is_executable(), "{:?}", module.diagnostics());
     assert_eq!(
-        module.dialogue_line_candidates().records().len(),
+        module.dialogue_line_sites().records().len(),
         1,
         "expression inventory: {:#?}",
         module
@@ -3710,7 +4121,9 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
     )
     .unwrap();
 
-    let records = project.dialogue_lines().records();
+    let lines = selected_dialogue_lines(&project, parsed.document(), "dialogue-generated")
+        .expect("selected dialogue lines");
+    let records = lines.records();
     assert_eq!(records.len(), 1);
     let line = &records[0];
     assert_eq!(
@@ -3723,20 +4136,16 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
     );
     assert_eq!(line.id_origin(), DialogueLineIdOrigin::Generated);
     assert_eq!(line.text_key_origin(), DialogueTextKeyOrigin::Derived);
-    assert_eq!(project.dialogue_lines().get(line.id()), Some(line));
+    assert_eq!(lines.get(line.id()), Some(line));
     assert_eq!(
-        project
-            .dialogue_lines()
-            .for_expr(line.source().application()),
+        lines.for_source_expr(line.source().source_application()),
         Some(line)
     );
     assert_eq!(
-        project
-            .dialogue_lines()
-            .source_ordered()
-            .collect::<Vec<_>>(),
-        [line]
+        lines.for_semantic_expr(line.source().semantic_application()),
+        Some(line)
     );
+    assert_eq!(lines.source_ordered().collect::<Vec<_>>(), [line]);
 }
 
 #[test]
@@ -3749,14 +4158,14 @@ fn module_input_permutations_produce_equal_inventory_fingerprint() {
         &mut root_syntax,
         "arcweft-test://proof/final-project/fingerprint-root",
         "fingerprint-root.arcw",
-        "fn root_line() {\n    let line = alice[before[strong]root[/strong]after]\n}\n",
+        "fn root_line() {\n    let line = alice[before#strong()[root]after]\n}\n",
     );
     let mut child_syntax = SyntaxDatabase::try_new().unwrap();
     let child_source = parse_initial(
         &mut child_syntax,
         "arcweft-test://proof/final-project/fingerprint-child",
         "fingerprint-child.arcw",
-        "fn child_line() {\n    let line = bob[before[strong]child[/strong]after]\n}\n",
+        "fn child_line() {\n    let line = bob[before#strong()[child]after]\n}\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let root = lower(&mut database, &root_source, &package, &root_path);
@@ -3767,15 +4176,18 @@ fn module_input_permutations_produce_equal_inventory_fingerprint() {
     let forward = build_project(&database, package.clone(), [root.clone(), child.clone()]).unwrap();
     let reverse = build_project(&database, package, [child, root]).unwrap();
 
-    assert_eq!(forward.dialogue_lines(), reverse.dialogue_lines());
+    let forward_lines =
+        selected_dialogue_lines(&forward, root_source.document(), "fingerprint-forward")
+            .expect("forward selected dialogue lines");
+    let reverse_lines =
+        selected_dialogue_lines(&reverse, root_source.document(), "fingerprint-reverse")
+            .expect("reverse selected dialogue lines");
+    assert_eq!(forward_lines, reverse_lines);
     assert_eq!(
-        forward.dialogue_lines().cache_fingerprint(),
-        reverse.dialogue_lines().cache_fingerprint()
+        forward_lines.cache_fingerprint(),
+        reverse_lines.cache_fingerprint()
     );
-    assert_ne!(
-        forward.dialogue_lines().cache_fingerprint().as_bytes(),
-        &[0; 32]
-    );
+    assert_ne!(forward_lines.cache_fingerprint().as_bytes(), &[0; 32]);
 }
 
 #[test]
@@ -3788,21 +4200,21 @@ fn project_rejects_cross_module_dialogue_id_collision_with_exact_sites() {
         &mut root_syntax,
         "arcweft-test://proof/final-project/dialogue-collision-root",
         "dialogue-collision-root.arcw",
-        "fn root_line() {\n    let line = alice(id = @say.shared)[前[strong]ルート[/strong]後]\n}\n",
+        "fn root_line() {\n    let line = alice(id = @say.shared)[前#strong()[ルート]後]\n}\n",
     );
     let mut child_syntax = SyntaxDatabase::try_new().unwrap();
     let child_source = parse_initial(
         &mut child_syntax,
         "arcweft-test://proof/final-project/dialogue-collision-child",
         "dialogue-collision-child.arcw",
-        "fn child_line() {\n    let line = bob(id = @say.shared)[前[strong]チャイルド[/strong]後]\n}\n",
+        "fn child_line() {\n    let line = bob(id = @say.shared)[前#strong()[チャイルド]後]\n}\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let root = lower(&mut database, &root_source, &package, &root_path);
     let child = lower(&mut database, &child_source, &package, &child_path);
     assert!(root.is_executable(), "{:?}", root.diagnostics());
     assert!(child.is_executable(), "{:?}", child.diagnostics());
-    let result = build_project(
+    let project = build_project(
         &database,
         package.clone(),
         [
@@ -3810,8 +4222,11 @@ fn project_rejects_cross_module_dialogue_id_collision_with_exact_sites() {
             bind(&database, &package, &root_path, root),
         ],
     );
-    let Some(HirProjectBuildError::DialogueLines(rejection)) = result.err() else {
-        panic!("duplicate line ID must atomically reject the project")
+    let project = project.expect("HIR project remains independent of line acceptance");
+    let Err(super::DialogueLineProjectError::Rejected(rejection)) =
+        selected_dialogue_lines(&project, root_source.document(), "collision")
+    else {
+        panic!("duplicate line ID must reject the selected line transaction")
     };
     let [
         DialogueLineDiagnostic::LineIdCollision {
@@ -3870,22 +4285,27 @@ fn module_line_identity_error_publishes_no_candidate_or_project() {
         &mut syntax,
         "arcweft-test://proof/final-project/dialogue-wrong-family",
         "dialogue-wrong-family.arcw",
-        "fn opening() {\n    let line = alice(id = @scene.wrong)[前[strong]本文[/strong]後]\n}\n",
+        "fn opening() {\n    let line = alice(id = @scene.wrong)[前#strong()[本文]後]\n}\n",
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
-    assert!(!module.is_executable());
-    assert!(module.dialogue_line_candidates().records().is_empty());
-    assert!(module.diagnostics().iter().any(|diagnostic| matches!(
-        diagnostic,
-        crate::diagnostic::HirDiagnostic::LineIdentity(
-            DialogueLineDiagnostic::InvalidLineIdFamily { found, span }
-        ) if found == "scene" && span.source() == parsed.document().identity()
-    )));
+    assert!(
+        module.is_executable(),
+        "line identity is selected after HIR publication"
+    );
+    assert_eq!(module.dialogue_line_sites().records().len(), 1);
     let bound = bind(&database, &package, &root_path, module);
     let project = build_project(&database, package, [bound]).unwrap();
-    assert!(project.dialogue_lines().records().is_empty());
-    assert!(project.executable_view().is_err());
+    let Err(super::DialogueLineProjectError::Rejected(rejection)) =
+        selected_dialogue_lines(&project, parsed.document(), "wrong-family")
+    else {
+        panic!("wrong dialogue line family must reject selected line acceptance")
+    };
+    assert!(rejection.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic,
+        DialogueLineDiagnostic::InvalidLineIdFamily { found, span }
+            if found == "scene" && span.source() == parsed.document().identity()
+    )));
 }
 
 #[test]

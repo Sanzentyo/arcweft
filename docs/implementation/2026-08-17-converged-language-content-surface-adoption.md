@@ -1,5 +1,10 @@
 # Converged language/content surface adoption — 2026-08-17
 
+> Superseded status evidence. The scanner inventory and remaining-work list
+> below describe the inspected revision only. The later structural content-call
+> migration deleted the provisional readers; current authority is recorded in
+> the maintained language chapters and production typed APIs.
+
 Inspected revision: `82cfc4c976f030291220654ed2db0eefa42bf8aa`
 
 Working tree at inspection: clean.
@@ -18,11 +23,11 @@ Working tree at inspection: clean.
 - Prefix Try is the selected expression carrier; production search found no
   `PostfixQuestion` or `HirTryForm::PostfixQuestion` symbol in the inspected
   language/runtime-plan crates.
-- The current Dialogue surface scanner still contains `DollarParen` and
-  `AsciiCompact` variants in
+- The inspected Dialogue surface scanner still contained provisional
+  interpolation and compact-Ruby variants in
   `crates/arcweft-lang-syntax/src/text/dialogue_surface.rs`.
 - The final generic `#call(...)[content]` role-preserving vertical slice,
-  removal of legacy Ruby/tag readers, and reactive View `match Need` product
+  removal of provisional Ruby/RichText readers, and reactive View `match Need` product
   projection were not validated as implemented by this documentation cut.
 
 ## Passed
@@ -36,8 +41,9 @@ Working tree at inspection: clean.
 
 ## Remaining implementation work
 
-- Delete `$(expr)`, compact-curly Ruby, paired Ruby tags, `[! ...]`, and unknown
-  dot-selector fallback after their final typed replacements are connected.
+- Delete the former dollar-parenthesis interpolation, compact-curly Ruby,
+  paired Ruby markup, exclamation shorthand, and unknown dot-selector fallback
+  after their final typed replacements are connected.
 - Connect recursive `#call(...)[content]` and callee-owned content roles through
   syntax, HIR, sema, runtime plan, runtime/AWBC, formatter, and LSP.
 - Project View-context ordinary `match Need` into the retained reactive product

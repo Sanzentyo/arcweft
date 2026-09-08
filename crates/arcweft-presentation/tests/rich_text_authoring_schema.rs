@@ -6,11 +6,11 @@ use arcweft_presentation::rich_text::{
     RichTextStyleSelector, RichTextTransformProperty, RichTextTransformSelector,
 };
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, PropertyPresence, RichTextDefaultValue, RichTextSourceForm,
-    RichTextTagSchema, RichTextUnit, RichTextValueKind, SelectorContract, UnknownPropertyPolicy,
+    PropertyPresence, RichTextDefaultValue, RichTextPropertySetSchema, RichTextUnit,
+    RichTextValueKind,
 };
 
-fn assert_schema_properties_are_unique<P>(schema: &RichTextTagSchema<P>)
+fn assert_property_set_is_unique<P>(schema: &RichTextPropertySetSchema<P>)
 where
     P: Copy + Eq + Ord + std::fmt::Debug,
 {
@@ -38,37 +38,35 @@ fn presentation_owner_inventories_round_trip_through_canonical_names() {
             RichTextDirectStyle::from_source_name(owner.canonical_name()),
             Some(owner)
         );
-        assert_eq!(owner.schema().output, CheckedOutputKind::Span);
-        assert_eq!(owner.schema().unknown_policy, UnknownPropertyPolicy::Reject);
-        assert_schema_properties_are_unique(owner.schema());
+        assert_property_set_is_unique(owner.property_schema());
     }
     for owner in RichTextStyleSelector::ALL {
         assert_eq!(
             RichTextStyleSelector::from_source_name(owner.canonical_name()),
             Some(owner)
         );
-        assert_schema_properties_are_unique(owner.schema());
+        assert_property_set_is_unique(owner.property_schema());
     }
     for owner in RichTextLayoutSelector::ALL {
         assert_eq!(
             RichTextLayoutSelector::from_source_name(owner.canonical_name()),
             Some(owner)
         );
-        assert_schema_properties_are_unique(owner.schema());
+        assert_property_set_is_unique(owner.property_schema());
     }
     for owner in RichTextTransformSelector::ALL {
         assert_eq!(
             RichTextTransformSelector::from_source_name(owner.canonical_name()),
             Some(owner)
         );
-        assert_schema_properties_are_unique(owner.schema());
+        assert_property_set_is_unique(owner.property_schema());
     }
     for owner in RichTextObjectSelector::ALL {
         assert_eq!(
             RichTextObjectSelector::from_source_name(owner.canonical_name()),
             Some(owner)
         );
-        assert_schema_properties_are_unique(owner.schema());
+        assert_property_set_is_unique(owner.property_schema());
     }
 
     for property in RichTextDirectStyleProperty::ALL {
@@ -105,26 +103,11 @@ fn presentation_owner_inventories_round_trip_through_canonical_names() {
 
 #[test]
 fn grammar_owned_selector_spellings_resolve_without_property_aliases() {
-    assert_eq!(
-        RichTextDirectStyle::from_source_name("i"),
-        Some(RichTextDirectStyle::Italic)
-    );
-    assert_eq!(
-        RichTextDirectStyle::from_source_name("rb"),
-        Some(RichTextDirectStyle::Ruby)
-    );
-    assert_eq!(
-        RichTextStyleSelector::from_source_name("alpha"),
-        Some(RichTextStyleSelector::Opacity)
-    );
-    assert_eq!(
-        RichTextLayoutSelector::from_source_name("vertical"),
-        Some(RichTextLayoutSelector::VerticalRl)
-    );
-    assert_eq!(
-        RichTextTransformSelector::from_source_name("pos"),
-        Some(RichTextTransformSelector::Offset)
-    );
+    assert_eq!(RichTextDirectStyle::from_source_name("i"), None);
+    assert_eq!(RichTextDirectStyle::from_source_name("rb"), None);
+    assert_eq!(RichTextStyleSelector::from_source_name("alpha"), None);
+    assert_eq!(RichTextLayoutSelector::from_source_name("vertical"), None);
+    assert_eq!(RichTextTransformSelector::from_source_name("pos"), None);
 
     assert_eq!(RichTextStyleSelector::from_source_name("meta"), None);
     assert_eq!(RichTextStyleSelector::from_source_name("metadata"), None);
@@ -144,7 +127,7 @@ fn grammar_owned_selector_spellings_resolve_without_property_aliases() {
 
 #[test]
 fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
-    let oblique = RichTextDirectStyle::Oblique.schema();
+    let oblique = RichTextDirectStyle::Oblique.property_schema();
     assert_eq!(
         oblique.properties[0].presence,
         PropertyPresence::Defaulted(RichTextDefaultValue::AngleMilliDegrees(0))
@@ -156,13 +139,13 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
     assert_eq!(angle_limits.inclusive_min_milli, Some(-89_999));
     assert_eq!(angle_limits.inclusive_max_milli, Some(89_999));
 
-    let size = RichTextDirectStyle::Size.schema();
+    let size = RichTextDirectStyle::Size.property_schema();
     assert_eq!(size.properties[0].id, RichTextDirectStyleProperty::Value);
     assert_eq!(size.properties[0].kind, RichTextValueKind::Length);
     assert_eq!(size.properties[0].presence, PropertyPresence::Required);
     assert_eq!(size.properties[0].limits.units, [RichTextUnit::Pt]);
 
-    let font = RichTextDirectStyle::Font.schema();
+    let font = RichTextDirectStyle::Font.property_schema();
     assert_eq!(font.properties[0].kind, RichTextValueKind::Text);
     assert_eq!(
         font.properties[0].limits.enum_values,
@@ -170,7 +153,7 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
     );
     assert_eq!(font.properties[0].limits.max_decoded_bytes, 256);
 
-    let ruby = RichTextDirectStyle::Ruby.schema();
+    let ruby = RichTextDirectStyle::Ruby.property_schema();
     assert_eq!(ruby.properties[0].id, RichTextDirectStyleProperty::RubyText);
     assert_eq!(ruby.properties[0].source_name, "rt");
     assert_eq!(ruby.properties[0].limits.max_decoded_bytes, 4_096);
@@ -178,7 +161,7 @@ fn direct_style_schemas_preserve_required_values_defaults_and_limits() {
 
 #[test]
 fn layout_and_transform_defaults_are_owner_typed_and_ordered() {
-    let horizontal = RichTextLayoutSelector::HorizontalTb.schema();
+    let horizontal = RichTextLayoutSelector::HorizontalTb.property_schema();
     assert_eq!(
         horizontal.properties.len(),
         RichTextLayoutProperty::ALL.len()
@@ -195,7 +178,10 @@ fn layout_and_transform_defaults_are_owner_typed_and_ordered() {
         })
     );
     assert_eq!(
-        RichTextLayoutSelector::Direction.schema().properties[0].presence,
+        RichTextLayoutSelector::Direction
+            .property_schema()
+            .properties[0]
+            .presence,
         PropertyPresence::Required
     );
     assert_eq!(
@@ -207,43 +193,30 @@ fn layout_and_transform_defaults_are_owner_typed_and_ordered() {
         Some(1)
     );
 
-    let offset = RichTextTransformSelector::Offset.schema();
-    assert!(
-        offset
-            .source_forms
-            .contains(&RichTextSourceForm::ExplicitFamily)
-    );
-    assert!(
-        offset
-            .source_forms
-            .contains(&RichTextSourceForm::DotSelector)
-    );
-    assert!(matches!(
-        offset.selector,
-        SelectorContract::RequiredPositional { .. }
-    ));
+    let offset = RichTextTransformSelector::Offset.property_schema();
     assert_eq!(
         offset.properties[2].presence,
         PropertyPresence::Defaulted(RichTextDefaultValue::EnumVariant(1))
     );
     assert_eq!(
-        RichTextTransformSelector::Rotate.schema().properties[2].presence,
+        RichTextTransformSelector::Rotate
+            .property_schema()
+            .properties[2]
+            .presence,
         PropertyPresence::Defaulted(RichTextDefaultValue::EnumVariant(2))
     );
     assert_eq!(
-        RichTextTransformSelector::Scale.schema().properties[0].presence,
+        RichTextTransformSelector::Scale
+            .property_schema()
+            .properties[0]
+            .presence,
         PropertyPresence::Defaulted(RichTextDefaultValue::Milli(1_000))
     );
 }
 
 #[test]
 fn object_schema_has_only_canonical_metadata_and_no_fallback_identity() {
-    let object = RichTextObjectSelector::Object.schema();
-    assert_eq!(object.output, CheckedOutputKind::Object);
-    assert!(matches!(
-        object.selector,
-        SelectorContract::RequiredPositional { .. }
-    ));
+    let object = RichTextObjectSelector::Object.property_schema();
     assert_eq!(
         object
             .properties
@@ -253,7 +226,7 @@ fn object_schema_has_only_canonical_metadata_and_no_fallback_identity() {
         RichTextObjectProperty::ALL
     );
     assert_eq!(
-        object.properties[4].presence,
+        object.properties[3].presence,
         PropertyPresence::Defaulted(RichTextDefaultValue::Bool(false))
     );
     assert_eq!(RichTextObjectProperty::from_source_name("id"), None);

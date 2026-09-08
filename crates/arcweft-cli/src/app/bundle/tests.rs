@@ -28,7 +28,8 @@ use arcweft_source::{
     identity::SourceSnapshotId,
 };
 use arcweft_text_model::{
-    DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+    DialogueContentCatalog, DialogueContentFragmentTemplate, DialogueContentSpec, RichTextDocument,
+    RichTextNode,
 };
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::{
@@ -37,6 +38,30 @@ use std::{
 };
 
 mod view_part_recovery;
+
+#[test]
+fn bundle_host_inventory_includes_nested_ordinary_function_body() {
+    let compiled = arcweft_compiler::source::compile_source(
+        r"
+fn run() -> Result<Unit, AgentError> effects { agent.observe } {
+    if true { observe(); }
+    return Ok(())
+}
+entry agent @entry.agent.main { controller = run }
+",
+    )
+    .expect("Agent controller compiles through an ordinary function site");
+    assert!(compiled.plan.flows().iter().all(|flow| {
+        !flow
+            .ops
+            .iter()
+            .any(|op| matches!(op, FlowOp::HostCall { .. }))
+    }));
+    assert_eq!(
+        bundle_required_host_calls(&compiled.plan),
+        ["agent.observe"]
+    );
+}
 
 fn test_character_plan() -> CheckedCharacterPresentationPlan {
     CheckedCharacterPresentationPlan::try_new(
@@ -314,23 +339,35 @@ fn bundle_hydrates_default_view_localization_from_matching_content_text_key() {
     )
     .expect("source document");
     let document = RichTextDocument::new(vec![RichTextNode::Ruby {
-        base: "夢".to_owned(),
+        body: vec![RichTextNode::Text {
+            text: "夢".to_owned(),
+        }],
         ruby: "ゆめ".to_owned(),
     }]);
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        document.clone(),
+    )
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
+        RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
+        TextKey::try_new("text.opening.dream").expect("text key"),
+        &template,
+        test_character_plan(),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            DialoguePresentationProfile::engine_default(),
+            test_dialogue_profile_revision(),
+        ),
+        Vec::new(),
+        ProductSourceRef::try_for_identity(source.identity()).expect("product source"),
+    )
+    .expect("dialogue spec");
     let dialogue_content =
-        DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
-            RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
-            TextKey::try_new("text.opening.dream").expect("text key"),
-            document.clone(),
-            test_character_plan(),
-            arcweft_text_model::DialoguePresentationSnapshot::new(
-                DialoguePresentationProfile::engine_default(),
-                test_dialogue_profile_revision(),
-            ),
-            Vec::new(),
-            ProductSourceRef::try_for_identity(source.identity()).expect("product source"),
-        )])
-        .expect("dialogue content catalog is canonical");
+        DialogueContentCatalog::try_from_records_and_templates(vec![spec], vec![template])
+            .expect("dialogue content catalog is canonical");
     let mut text = ViewTextResource {
         sources: vec![arcweft_bundle::resource_codec::view::ViewTextSourceRecord {
             public_id: "text.view.dream".to_owned(),

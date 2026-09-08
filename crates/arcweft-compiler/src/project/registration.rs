@@ -64,6 +64,7 @@ pub struct ProjectCompilationContext {
     accepted_launch_profile: Option<AcceptedLaunchProfileInput>,
     command_policy: Option<RuntimeCommandPolicy>,
     assertion_build_profile: AssertionBuildProfile,
+    instantiation_control: crate::lower::ProjectInstantiationControl,
 }
 
 impl AcceptedLaunchProfileInput {
@@ -150,6 +151,7 @@ impl ProjectCompilationContext {
             accepted_launch_profile: None,
             command_policy: None,
             assertion_build_profile: AssertionBuildProfile::Debug,
+            instantiation_control: crate::lower::ProjectInstantiationControl::default(),
         }
     }
 
@@ -171,6 +173,17 @@ impl ProjectCompilationContext {
     #[must_use]
     pub const fn with_assertion_build_profile(mut self, profile: AssertionBuildProfile) -> Self {
         self.assertion_build_profile = profile;
+        self
+    }
+
+    /// Selects limits and cancellation for this transaction's private
+    /// project-function instance discovery.
+    #[must_use]
+    pub fn with_instantiation_control(
+        mut self,
+        control: crate::lower::ProjectInstantiationControl,
+    ) -> Self {
+        self.instantiation_control = control;
         self
     }
 }
@@ -202,6 +215,10 @@ impl ProjectCompilationContext {
     /// Assertion profile admitted by this exact project compilation transaction.
     pub const fn assertion_build_profile(&self) -> AssertionBuildProfile {
         self.assertion_build_profile
+    }
+
+    pub const fn instantiation_control(&self) -> &crate::lower::ProjectInstantiationControl {
+        &self.instantiation_control
     }
 }
 

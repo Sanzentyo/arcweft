@@ -70,7 +70,7 @@ impl Analyzer<'_, '_, '_> {
             parameter_ids
                 .into_iter()
                 .map(|parameter| {
-                    let generic = TypeKind::GenericParam(parameter);
+                    let generic = TypeKind::generic_parameter(parameter);
                     let resolved = substitutions.apply(&generic);
                     (resolved != generic)
                         .then_some(resolved)
@@ -126,8 +126,13 @@ impl Analyzer<'_, '_, '_> {
             HirRecordField::Explicit { value, .. } => (
                 PreparedRecordValueSource::Expression(*value),
                 self.evaluate_expression(context, *value, field_expected.as_ref())?
-                    .ty()
-                    .clone(),
+                    .value_type()
+                    .cloned()
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *value },
+                        )
+                    })?,
             ),
             HirRecordField::Shorthand { local, .. } => {
                 let actual = self.facts.locals().get(local).cloned().ok_or_else(|| {
@@ -135,8 +140,6 @@ impl Analyzer<'_, '_, '_> {
                         FinalSemanticAnalysisError::LocalTypeUnavailable { owner: *local },
                     )
                 })?;
-                self.record_implicit_capture(owner, *local)
-                    .map_err(AnalyzerExpressionError::fatal)?;
                 (PreparedRecordValueSource::Local(*local), actual)
             }
             HirRecordField::Invalid { .. } => {
@@ -178,6 +181,7 @@ fn expected_project_record_nominal<'a>(
             Ok(ExpectedProjectRecordNominal::Complete(nominal))
         }
         AnalyzerExpressionExpectation::Complete(_)
+        | AnalyzerExpressionExpectation::CompileTimePublicId(_)
         | AnalyzerExpressionExpectation::EnumConstructorHead(_) => {
             Err(AnalyzerExpressionError::fatal(
                 FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
@@ -235,7 +239,7 @@ fn prepare_record_substitutions(
             {
                 continue;
             }
-            if !substitutions.observe(&TypeKind::GenericParam(parameter.clone()), argument) {
+            if !substitutions.observe(&TypeKind::generic_parameter(parameter.clone()), argument) {
                 return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
                 ));

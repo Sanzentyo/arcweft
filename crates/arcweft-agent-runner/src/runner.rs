@@ -35,7 +35,7 @@ use crate::config::{
     AgentRunnerResult,
 };
 use crate::effect_policy::{AgentEffectAuthorization, AgentEffectRegistry};
-use crate::error::{AgentHostResponseKind, AgentRunError};
+use crate::error::{AgentControllerOutcomeAdmissionError, AgentHostResponseKind, AgentRunError};
 use crate::host_request::{
     agent_host_request_from_effect, agent_host_request_from_host_call, agent_host_request_from_task,
 };
@@ -576,7 +576,7 @@ where
                     continue;
                 }
                 let request = agent_host_request_from_effect(effect)
-                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                    .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 report.host_calls += 1;
@@ -585,7 +585,7 @@ where
             }
             for task in &step.output.requests.tasks {
                 let request = agent_host_request_from_task(&task.request)
-                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                    .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 let response = runtime_payload_from_response(&host_report.response)
@@ -593,7 +593,14 @@ where
                 let response = task
                     .outcome
                     .try_result_ok(response.value().clone())
-                    .map_err(AgentRunError::InvalidHostResponse)?;
+                    .map_err(|detail| {
+                        AgentRunError::InvalidControllerOutcome(
+                            AgentControllerOutcomeAdmissionError::result_contract_rejected(
+                                task.id.0.clone(),
+                                detail,
+                            ),
+                        )
+                    })?;
                 task_events.push(TaskEvent {
                     logical_epoch: LogicalEpoch(0),
                     task_id: task.id.clone(),
@@ -606,7 +613,7 @@ where
             }
             for call in &step.output.requests.host_calls {
                 let request = agent_host_request_from_host_call(call)
-                    .map_err(AgentRunError::UnsupportedControllerEffect)?;
+                    .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
                 host_call_results.push(RuntimeHostCallResult {

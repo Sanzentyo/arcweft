@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, sync::Arc};
 
-use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use arcweft_core::entry::{RuntimeCallableId, RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
 };
@@ -40,17 +40,314 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
     RuntimeAgentTypeShape, RuntimeAssignmentFact, RuntimeBuiltinIteratorFact,
-    RuntimeCheckedTypeProjectionError, RuntimeDropFadeFact, RuntimeDropPolicyFact,
-    RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact,
-    RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact, RuntimeIteratorWitnessFact,
-    RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
-    RuntimeRegisteredValueId, RuntimeResolvedCallOperandSource, RuntimeResolvedNominal,
-    RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
-    RuntimeResolvedVariantError, RuntimeSemanticFactFamily, RuntimeSemanticFactsError,
-    RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity,
-    RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind, RuntimeTypeProjectionStep,
-    RuntimeTypeShape, RuntimeUnsupportedTypeShape, validate_iterator_witness_method_edges,
+    RuntimeCallResultShape, RuntimeCallableAttachedContentAbi, RuntimeCheckedTypeProjectionError,
+    RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEvaluatedEffect, RuntimeEvaluatedEffectFact,
+    RuntimeEvaluatedEffectOperandFact, RuntimeIteratorFact, RuntimeIteratorWitnessExecutableFact,
+    RuntimeIteratorWitnessFact, RuntimeNormalizedVariantCase, RuntimePlanSemanticFactInput,
+    RuntimePlanSemanticFacts, RuntimePositionedAttachedContent, RuntimeProjectCallable,
+    RuntimeRegisteredValueId, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
+    RuntimeResolvedCallDispatch, RuntimeResolvedCallError, RuntimeResolvedCallOperand,
+    RuntimeResolvedCallOperandBinding, RuntimeResolvedCallOperandOrigin,
+    RuntimeResolvedCallOperandProjection, RuntimeResolvedCallOperandSource, RuntimeResolvedNominal,
+    RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget, RuntimeResolvedValue,
+    RuntimeResolvedVariant, RuntimeResolvedVariantError, RuntimeSemanticFactFamily,
+    RuntimeSemanticFactsError, RuntimeSemanticOwnerSet, RuntimeSemanticTypeId, RuntimeSequenceKind,
+    RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTriggerAdmissionKind,
+    RuntimeTypeProjectionStep, RuntimeTypeShape, RuntimeUnsupportedTypeShape,
+    validate_iterator_witness_method_edges,
 };
+
+#[test]
+fn attached_content_consumes_only_the_terminal_call_abi_position() {
+    let project = project_fixture("attached-content-terminal-abi", "fn root() { true }\n");
+    let source = boolean_literal(&project);
+    let content = RuntimeResolvedAttachedContent::OptionalPresent {
+        source,
+        ty: option_unit_type(),
+    };
+
+    let accepted = RuntimeResolvedCall::try_new(
+        RuntimeResolvedCallDispatch::Value { callee: source },
+        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0).expect("initial group"),
+        Vec::new(),
+        Some(RuntimePositionedAttachedContent::new(0, content.clone())),
+        None,
+        RuntimeCallResultShape::Value,
+    )
+    .expect("attached content is the terminal ABI member");
+    assert_eq!(accepted.attached_content(), Some(&content));
+    assert_eq!(accepted.completed_group().get(), 0);
+    assert_eq!(
+        accepted
+            .positioned_attached_content()
+            .expect("retained attached-content ABI coordinate")
+            .abi_position(),
+        0
+    );
+    assert!(accepted.operands().is_empty());
+
+    let ordinary = RuntimeResolvedCallOperand::new(
+        0,
+        RuntimeResolvedCallOperandOrigin::Argument {
+            argument: 0,
+            slot: 0,
+        },
+        RuntimeResolvedCallOperandSource::Expression(source),
+        unit_type(),
+        RuntimeResolvedCallOperandBinding::Positional,
+        RuntimeResolvedCallOperandProjection::Scalar,
+        None,
+    );
+    let accepted = RuntimeResolvedCall::try_new(
+        RuntimeResolvedCallDispatch::Value { callee: source },
+        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0).expect("initial group"),
+        vec![ordinary],
+        Some(RuntimePositionedAttachedContent::new(1, content.clone())),
+        None,
+        RuntimeCallResultShape::Value,
+    )
+    .expect("attached content follows all ordinary ABI members");
+    assert_eq!(accepted.operands().len(), 1);
+    assert_eq!(accepted.attached_content(), Some(&content));
+    assert_eq!(
+        accepted
+            .positioned_attached_content()
+            .expect("retained attached-content ABI coordinate")
+            .abi_position(),
+        1
+    );
+
+    assert_eq!(
+        RuntimeResolvedCall::try_new(
+            RuntimeResolvedCallDispatch::Value { callee: source },
+            arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                .expect("initial group"),
+            Vec::new(),
+            Some(RuntimePositionedAttachedContent::new(1, content)),
+            None,
+            RuntimeCallResultShape::Value,
+        )
+        .expect_err("a detached or gapped attached-content slot must be rejected"),
+        RuntimeResolvedCallError::NonTerminalAttachedContentPosition {
+            expected: 0,
+            actual: 1,
+        }
+    );
+}
+
+#[test]
+fn call_operands_retain_source_order_and_derive_abi_order() {
+    let project = project_fixture("call-source-order", "fn root() { true }\n");
+    let source = boolean_literal(&project);
+    let operand = |argument, abi_position, binding, projection| {
+        RuntimeResolvedCallOperand::new(
+            abi_position,
+            RuntimeResolvedCallOperandOrigin::Argument { argument, slot: 0 },
+            RuntimeResolvedCallOperandSource::Expression(source),
+            unit_type(),
+            binding,
+            projection,
+            None,
+        )
+    };
+    let source_row = vec![
+        operand(
+            0,
+            1,
+            RuntimeResolvedCallOperandBinding::Named("second".to_owned()),
+            RuntimeResolvedCallOperandProjection::Scalar,
+        ),
+        operand(
+            1,
+            0,
+            RuntimeResolvedCallOperandBinding::Positional,
+            RuntimeResolvedCallOperandProjection::SpreadContainer(
+                super::RuntimeResolvedSpreadContainer::Vec,
+            ),
+        ),
+    ];
+    let call = RuntimeResolvedCall::try_new(
+        RuntimeResolvedCallDispatch::Value { callee: source },
+        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0).expect("initial group"),
+        source_row.clone(),
+        None,
+        None,
+        RuntimeCallResultShape::Value,
+    )
+    .expect("source order and ABI order are independent checked axes");
+    assert_eq!(call.operands(), source_row);
+    assert_eq!(
+        call.abi_operands()
+            .map(RuntimeResolvedCallOperand::abi_position)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_eq!(
+        call.abi_operands()
+            .map(RuntimeResolvedCallOperand::origin)
+            .cloned()
+            .collect::<Vec<_>>(),
+        vec![
+            RuntimeResolvedCallOperandOrigin::Argument {
+                argument: 1,
+                slot: 0,
+            },
+            RuntimeResolvedCallOperandOrigin::Argument {
+                argument: 0,
+                slot: 0,
+            },
+        ]
+    );
+
+    let mut reversed_source = source_row.clone();
+    reversed_source.reverse();
+    assert_eq!(
+        RuntimeResolvedCall::try_new(
+            RuntimeResolvedCallDispatch::Value { callee: source },
+            arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                .expect("initial group"),
+            reversed_source,
+            None,
+            None,
+            RuntimeCallResultShape::Value,
+        ),
+        Err(RuntimeResolvedCallError::NonCanonicalSourceOrder)
+    );
+    let mut duplicate_abi = source_row;
+    duplicate_abi[1] = operand(
+        1,
+        1,
+        RuntimeResolvedCallOperandBinding::Positional,
+        RuntimeResolvedCallOperandProjection::Scalar,
+    );
+    assert_eq!(
+        RuntimeResolvedCall::try_new(
+            RuntimeResolvedCallDispatch::Value { callee: source },
+            arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0)
+                .expect("initial group"),
+            duplicate_abi,
+            None,
+            None,
+            RuntimeCallResultShape::Value,
+        ),
+        Err(RuntimeResolvedCallError::DuplicateAbiPosition { position: 1 })
+    );
+}
+
+#[test]
+fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() {
+    let project = project_fixture(
+        "project-attached-interface",
+        "fn content(first: String)(second: String)[body: InlineContent] -> Unit { () }\n",
+    );
+    let executable = project.executable_view().expect("clean fixture");
+    let item = executable
+        .items()
+        .find(|item| {
+            matches!(
+                item.item().kind(),
+                HirItemKind::Function(function)
+                    if function.name().resolved().is_some_and(|name| name.as_str() == "content")
+            )
+        })
+        .expect("content function");
+    let HirItemKind::Function(function) = item.item().kind() else {
+        unreachable!("selected content function")
+    };
+    let attached = function
+        .attached_content()
+        .expect("attached-content declaration");
+    let declaration = CallableDeclarationKey::Existing(
+        CallableDeclarationId::try_new(
+            executable.package().clone(),
+            item.module_path().clone(),
+            CallableDeclarationOwner::Function,
+            "content",
+        )
+        .expect("content declaration"),
+    );
+    let terminal =
+        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(1).expect("terminal group");
+    let interface = RuntimeCallableAttachedContentAbi::try_new(
+        terminal,
+        1,
+        arcweft_lang_sema::callable::CallableParameterPresence::Required,
+        attached.binding(),
+        unit_type(),
+        unit_type(),
+        None,
+    )
+    .expect("runtime attached interface");
+    let callable = RuntimeProjectCallable::try_new(
+        declaration,
+        item.id(),
+        arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
+        RuntimeCallableId::try_new("content").expect("runtime callable"),
+        Some(interface),
+    )
+    .expect("runtime project callable");
+    let dispatch = || {
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+            callable.clone(),
+        ))
+    };
+    let initial =
+        arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(0).expect("initial group");
+    RuntimeResolvedCall::try_new(
+        dispatch(),
+        initial,
+        Vec::new(),
+        None,
+        None,
+        RuntimeCallResultShape::PartialFunction,
+    )
+    .expect("nonterminal group does not consume attached content");
+
+    let source = executable
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .map(|(owner, _)| owner)
+        .next()
+        .expect("fixture expression");
+    RuntimeResolvedCall::try_new(
+        dispatch(),
+        terminal,
+        vec![RuntimeResolvedCallOperand::new(
+            0,
+            RuntimeResolvedCallOperandOrigin::Argument {
+                argument: 0,
+                slot: 0,
+            },
+            RuntimeResolvedCallOperandSource::Expression(source),
+            unit_type(),
+            RuntimeResolvedCallOperandBinding::Positional,
+            RuntimeResolvedCallOperandProjection::Scalar,
+            None,
+        )],
+        Some(RuntimePositionedAttachedContent::new(
+            1,
+            RuntimeResolvedAttachedContent::Required {
+                source,
+                ty: unit_type(),
+            },
+        )),
+        None,
+        RuntimeCallResultShape::Value,
+    )
+    .expect("terminal group consumes the exact attached ABI row");
+    assert_eq!(
+        RuntimeResolvedCall::try_new(
+            dispatch(),
+            terminal,
+            Vec::new(),
+            None,
+            None,
+            RuntimeCallResultShape::Value,
+        )
+        .expect_err("terminal group cannot omit its attached ABI row"),
+        RuntimeResolvedCallError::AttachedContentInterfaceMismatch
+    );
+}
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
     let package = CallablePackageId::try_new(format!("runtime-plan-semantic-facts-{label}"))
@@ -247,7 +544,7 @@ fn retained_runtime_projection(
                     HirRuntimeCallCalleeDisposition::Static
                 },
             },
-            HirExprKind::DialogueContentApplication(_) => {
+            HirExprKind::AttachedContentApplication(_) => {
                 HirRuntimeExpressionProjection::Structural {
                     value: HirRuntimeValueRetention::Omit,
                 }
@@ -337,6 +634,17 @@ fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId 
 
 fn unit_type() -> super::RuntimeNormalizedType {
     normalized_type(0x11, RuntimeTypeShape::Unit)
+}
+
+fn option_unit_type() -> super::RuntimeNormalizedType {
+    let item = unit_type();
+    normalized_type(
+        0x12,
+        RuntimeTypeShape::Option {
+            item: Box::new(item.clone()),
+            some_payload: Box::new(tuple_payload(0x13, item)),
+        },
+    )
 }
 
 fn normalized_type(marker: u8, shape: RuntimeTypeShape) -> super::RuntimeNormalizedType {
@@ -636,10 +944,10 @@ fn trigger_admissions_are_complete_unique_generation_bound_and_opaque() {
         .push_expression_trigger(trigger)
         .expect("the sole checked trigger row stages");
     let facts = runtime_facts(&project, input).expect("complete trigger projection");
-    assert!(matches!(
-        facts.trigger(trigger).map(|admission| admission.kind),
-        Some(RuntimeTriggerAdmissionKind::Expression)
-    ));
+    assert!(facts.trigger(trigger).is_some_and(|admission| matches!(
+        &admission.kind,
+        RuntimeTriggerAdmissionKind::Expression
+    )));
 
     let (_project, mut input, trigger, _) = trigger_fact_fixture("trigger-fact-duplicate");
     input
@@ -1051,6 +1359,8 @@ fn evaluated_effect_rejects_an_application_that_is_not_a_call() {
         statement,
         RuntimeEvaluatedEffectFact::new(
             application,
+            application,
+            unit_type(),
             RuntimeEvaluatedEffect::Log {
                 level: super::RuntimeLogLevel::Info,
                 message: operand,
@@ -1085,6 +1395,8 @@ fn evaluated_effect_rejects_an_application_owned_by_another_statement() {
         statement,
         RuntimeEvaluatedEffectFact::new(
             application,
+            application,
+            unit_type(),
             RuntimeEvaluatedEffect::Log {
                 level: super::RuntimeLogLevel::Info,
                 message: operand,
@@ -1121,6 +1433,8 @@ fn evaluated_effect_rejects_an_ensure_condition_without_bool_type() {
         statement,
         RuntimeEvaluatedEffectFact::new(
             application,
+            application,
+            unit_type(),
             RuntimeEvaluatedEffect::Ensure { condition, message },
         ),
     );
@@ -1153,6 +1467,8 @@ fn evaluated_effect_rejects_a_stop_fade_without_duration_type() {
         statement,
         RuntimeEvaluatedEffectFact::new(
             application,
+            application,
+            unit_type(),
             RuntimeEvaluatedEffect::Drop {
                 target,
                 policy: RuntimeDropPolicyFact::Stop {
@@ -1192,6 +1508,8 @@ fn evaluated_effect_rejects_a_stop_fade_with_an_invalid_source() {
         statement,
         RuntimeEvaluatedEffectFact::new(
             application,
+            application,
+            unit_type(),
             RuntimeEvaluatedEffect::Drop {
                 target,
                 policy: RuntimeDropPolicyFact::Stop {

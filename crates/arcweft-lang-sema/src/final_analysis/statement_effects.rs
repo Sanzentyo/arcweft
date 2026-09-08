@@ -37,12 +37,50 @@ use super::{
 struct PreparedExecutionEffectRow {
     effects: EffectSet,
     expressions: BTreeSet<ExprId>,
+    direct_suspension: bool,
+}
+
+/// Transaction-local executable row consumed while attached-default
+/// interfaces are sealed. The expression inventory is the exact eager
+/// selected/body fold; it is not reconstructed from lexical scopes.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PreparedExecutableSuspensionRow {
+    expressions: Box<[ExprId]>,
+    suspension: super::CheckedSuspensionRole,
+    control: super::CheckedExecutableControlRole,
+}
+
+impl PreparedExecutableSuspensionRow {
+    pub(crate) fn new(
+        expressions: Box<[ExprId]>,
+        suspension: super::CheckedSuspensionRole,
+        control: super::CheckedExecutableControlRole,
+    ) -> Self {
+        Self {
+            expressions,
+            suspension,
+            control,
+        }
+    }
+
+    pub(crate) fn expressions(&self) -> &[ExprId] {
+        &self.expressions
+    }
+
+    pub(crate) const fn suspension(&self) -> super::CheckedSuspensionRole {
+        self.suspension
+    }
+
+    pub(crate) const fn control(&self) -> super::CheckedExecutableControlRole {
+        self.control
+    }
 }
 
 impl PreparedExecutionEffectRow {
     fn union_with(&mut self, other: &Self) {
         self.effects.union_with(&other.effects);
         self.expressions.extend(other.expressions.iter().copied());
+        self.direct_suspension |= other.direct_suspension;
     }
 }
 
@@ -62,6 +100,10 @@ impl PreparedClosureExecutionEffectRow {
         &self.row.effects
     }
 
+    pub(crate) const fn direct_suspension(&self) -> bool {
+        self.row.direct_suspension
+    }
+
     pub(crate) fn expressions(&self) -> impl Iterator<Item = ExprId> + '_ {
         self.row.expressions.iter().copied()
     }
@@ -72,12 +114,20 @@ impl PreparedClosureExecutionEffectRow {
 /// the same roots from sealed calls and compares their complete rows.
 #[derive(Debug)]
 pub(crate) struct PreparedExecutionEffectCatalog {
+    expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
     declarations: BTreeMap<CallableDeclarationKey, PreparedExecutionEffectRow>,
     items: BTreeMap<arcweft_lang_hir::identity::ItemId, PreparedExecutionEffectRow>,
     closures: BTreeMap<CallableDeclarationKey, Box<[PreparedClosureExecutionEffectRow]>>,
 }
 
 impl PreparedExecutionEffectCatalog {
+    pub(crate) fn expression_execution_rows(
+        &self,
+    ) -> impl Iterator<Item = (ExprId, bool, &BTreeSet<ExprId>)> + '_ {
+        self.expression_rows
+            .iter()
+            .map(|(owner, row)| (*owner, row.direct_suspension, &row.expressions))
+    }
     pub(crate) fn declaration_effects(
         &self,
         declaration: &CallableDeclarationKey,
@@ -92,6 +142,15 @@ impl PreparedExecutionEffectCatalog {
         self.declarations
             .get(declaration)
             .map(|row| row.expressions.iter().copied())
+    }
+
+    pub(crate) fn declaration_direct_suspension(
+        &self,
+        declaration: &CallableDeclarationKey,
+    ) -> Option<bool> {
+        self.declarations
+            .get(declaration)
+            .map(|row| row.direct_suspension)
     }
 
     pub(crate) fn item_effects(
@@ -235,6 +294,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             for entry in module.entries() {
                 self.control.check()?;
                 if let Some(body) = entry.body() {
+                    if self.selected.owns_fx_definition(body.declaration()) {
+                        continue;
+                    }
                     if self
                         .active_declaration
                         .replace(body.declaration().clone())
@@ -288,6 +350,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             rows.sort_by_key(PreparedClosureExecutionEffectRow::owner);
         }
         Ok(PreparedExecutionEffectCatalog {
+            expression_rows: self.expression_rows,
             declarations: self.declarations,
             items: self.items,
             closures: closures
@@ -341,6 +404,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         let mut row = PreparedExecutionEffectRow {
             effects: fact.effects().clone(),
             expressions: BTreeSet::from([owner]),
+            direct_suspension: matches!(kind, HirExprKind::Await(_)),
         };
         let latent_callable = matches!(
             fact.checked_resolution(),
@@ -482,6 +546,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         )? {
             PreparedStatementPayload::Suspension(_) | PreparedStatementPayload::Yield => {
                 row.effects.insert(EffectId::control_suspend());
+                row.direct_suspension = true;
             }
             PreparedStatementPayload::HirOwned
             | PreparedStatementPayload::Assignment(_)
@@ -692,6 +757,9 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                     self.fold_body(root.projection())?;
                 }
                 if let Some(declaration) = entry.body() {
+                    if self.selected.owns_fx_definition(declaration.declaration()) {
+                        continue;
+                    }
                     let mut effects = EffectSet::new();
                     for root in declaration.roots() {
                         effects.union_with(&self.fold_body(root.projection())?);

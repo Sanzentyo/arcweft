@@ -193,7 +193,10 @@ fn referenced_value_programs(
                 key_program,
                 ..
             } => {
-                programs.extend(arguments.iter().map(|argument| argument.value_program));
+                programs.extend(arguments.iter().filter_map(|argument| match argument.source {
+                    arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Reactive(program) => Some(program),
+                    arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Closed(_) => None,
+                }));
                 programs.extend(key_program);
             }
             ViewProgramInstruction::OpenElement { .. }

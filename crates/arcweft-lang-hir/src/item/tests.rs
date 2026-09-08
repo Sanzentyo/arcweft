@@ -5,11 +5,11 @@ use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
 use super::callable::{HirCallableSignature, HirContractScopes, HirWherePredicate};
 use super::member_index::HirDeclarationMemberIndexResolveError;
 use super::retained::{
-    HirActivityPortMember, HirCharacterAssignmentState, HirCharacterDisplayNameMember,
-    HirCharacterMemberRecovery, HirCharacterSurfaceAlias, HirDeclarationMember,
-    HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState,
-    HirPublicIdOrigin, HirRetainedHeaderError, HirRetainedName, HirRetainedPublicId,
-    HirRetainedPublicIdIssue, HirViewExportMember,
+    HirActivityPortMember, HirCharacterAssignmentState, HirCharacterDisplayMember,
+    HirCharacterMemberRecovery, HirDeclarationMember, HirDeclarationMemberIssue,
+    HirDeclarationMemberKind, HirDeclarationMemberPoisonState, HirPublicIdOrigin,
+    HirRetainedHeaderError, HirRetainedName, HirRetainedPublicId, HirRetainedPublicIdIssue,
+    HirViewExportMember,
 };
 use super::*;
 use crate::expr::{
@@ -189,7 +189,7 @@ fn member_arena_rejects_foreign_children_and_wrong_family() {
 
     let member = HirDeclarationMember::try_new(
         member_id,
-        HirDeclarationMemberKind::CharacterDisplayName(HirCharacterDisplayNameMember::new(
+        HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
             HirCharacterAssignmentState::Present,
             Some(typed_id(local, 2)),
             false,
@@ -525,17 +525,13 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
         owner,
         scope,
         empty_prefix(),
-        HirItemKind::Character(HirCharacterDeclaration::new(
-            header,
-            HirCharacterSurfaceAlias::Absent,
-            Some(member_id),
-        )),
+        HirItemKind::Character(HirCharacterDeclaration::new(header, Some(member_id))),
         Box::new([member_id]),
     )
     .unwrap();
     let member = HirDeclarationMember::try_new(
         member_id,
-        HirDeclarationMemberKind::CharacterDisplayName(HirCharacterDisplayNameMember::new(
+        HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
             HirCharacterAssignmentState::Present,
             Some(typed_id(local, 3)),
             false,
@@ -573,7 +569,6 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
         empty_prefix(),
         HirItemKind::Character(HirCharacterDeclaration::new(
             second_header,
-            HirCharacterSurfaceAlias::Absent,
             Some(second_member_id),
         )),
         Box::new([second_member_id]),
@@ -581,7 +576,7 @@ fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
     .unwrap();
     let second_member = HirDeclarationMember::try_new(
         second_member_id,
-        HirDeclarationMemberKind::CharacterDisplayName(HirCharacterDisplayNameMember::new(
+        HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
             HirCharacterAssignmentState::Present,
             Some(typed_id(local, 5)),
             false,
@@ -675,11 +670,7 @@ fn module_member_index_rejects_foreign_family_and_order_mismatches_before_freeze
         character_owner,
         scope,
         empty_prefix(),
-        HirItemKind::Character(HirCharacterDeclaration::new(
-            header,
-            HirCharacterSurfaceAlias::Absent,
-            Some(character_member),
-        )),
+        HirItemKind::Character(HirCharacterDeclaration::new(header, Some(character_member))),
         Box::new([character_member]),
     )
     .unwrap();
@@ -793,6 +784,7 @@ fn method_block_must_reuse_its_callable_scope() {
             Box::new([]),
             Box::new([parameters]),
             Box::new([]),
+            None,
             None,
             callable_scope,
             Some(HirFunctionBody::Block {
@@ -950,7 +942,7 @@ fn character_member_poison_state_is_derived_from_the_final_payload_shape() {
 
     let clean = HirDeclarationMember::try_new(
         id,
-        HirDeclarationMemberKind::CharacterDisplayName(HirCharacterDisplayNameMember::new(
+        HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
             HirCharacterAssignmentState::Present,
             Some(value),
             false,
@@ -962,25 +954,21 @@ fn character_member_poison_state_is_derived_from_the_final_payload_shape() {
 
     for (payload, issue) in [
         (
-            HirCharacterDisplayNameMember::new(HirCharacterAssignmentState::Missing, None, false),
+            HirCharacterDisplayMember::new(HirCharacterAssignmentState::Missing, None, false),
             HirDeclarationMemberIssue::MissingAssignment,
         ),
         (
-            HirCharacterDisplayNameMember::new(HirCharacterAssignmentState::Present, None, false),
+            HirCharacterDisplayMember::new(HirCharacterAssignmentState::Present, None, false),
             HirDeclarationMemberIssue::MissingInitializer,
         ),
         (
-            HirCharacterDisplayNameMember::new(
-                HirCharacterAssignmentState::Present,
-                Some(value),
-                true,
-            ),
+            HirCharacterDisplayMember::new(HirCharacterAssignmentState::Present, Some(value), true),
             HirDeclarationMemberIssue::Duplicate,
         ),
     ] {
         let member = HirDeclarationMember::try_new(
             id,
-            HirDeclarationMemberKind::CharacterDisplayName(payload),
+            HirDeclarationMemberKind::CharacterDisplay(payload),
             HirDeclarationMemberPoisonState::Poisoned(issue),
         )
         .unwrap();
@@ -993,7 +981,7 @@ fn character_member_poison_state_is_derived_from_the_final_payload_shape() {
     assert_eq!(
         HirDeclarationMember::try_new(
             id,
-            HirDeclarationMemberKind::CharacterDisplayName(HirCharacterDisplayNameMember::new(
+            HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
                 HirCharacterAssignmentState::Missing,
                 None,
                 false,

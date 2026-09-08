@@ -213,6 +213,7 @@ impl CallableRecord {
     pub const fn host_call_contract(&self) -> Option<HostCallContractDigest> {
         self.host_call_contract
     }
+
     pub(crate) fn with_host_call_contract(
         mut self,
         contract: Option<HostCallContractDigest>,
@@ -789,20 +790,20 @@ pub struct RegisteredCallableCatalog {
     digest: super::RegisteredCallableCatalogDigest,
 }
 impl RegisteredCallableCatalog {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         nominal_world: AcceptedNominalWorldStamp,
         project: ProjectCallableCatalog,
         environment: EnvironmentCallableCatalog,
         nominal_resolutions: crate::nominal::NominalResolutionIndex,
-    ) -> Self {
-        let digest = registered_catalog_digest(&nominal_world, &project, &environment);
-        Self {
+    ) -> Result<Self, CallableCatalogError> {
+        let digest = registered_catalog_digest(&nominal_world, &project, &environment)?;
+        Ok(Self {
             nominal_world,
             project,
             environment,
             nominal_resolutions,
             digest,
-        }
+        })
     }
     pub const fn nominal_world(&self) -> &AcceptedNominalWorldStamp {
         &self.nominal_world
@@ -845,15 +846,16 @@ impl RegisteredCallableCatalog {
 
     /// Returns the exact accepted record allocations in canonical identity
     /// order for the private checked-catalog construction transaction.
-    pub(crate) fn records_in_identity_order(&self) -> Vec<&Arc<CallableRecord>> {
-        let mut records = self
+    pub(crate) fn records_in_identity_order(
+        &self,
+    ) -> Result<Vec<&Arc<CallableRecord>>, crate::types::GenericScopeError> {
+        let records = self
             .project
             .by_declaration
             .values()
             .chain(self.environment.by_id.values())
             .collect::<Vec<_>>();
-        records.sort_by_cached_key(|record| record_identity_bytes(record));
-        records
+        canonical_order(records, |record| candidate_bytes(record.id()))
     }
 
     pub(crate) fn validated_free(
@@ -925,26 +927,29 @@ fn registered_catalog_digest(
     nominal_world: &AcceptedNominalWorldStamp,
     project: &ProjectCallableCatalog,
     environment: &EnvironmentCallableCatalog,
-) -> super::RegisteredCallableCatalogDigest {
+) -> Result<super::RegisteredCallableCatalogDigest, crate::types::GenericScopeError> {
     let mut encoder = CanonicalEncoder::default();
     encoder.nominal_world(nominal_world);
 
-    let mut project_records = project.by_declaration.values().collect::<Vec<_>>();
-    project_records.sort_by_key(|record| record_identity_bytes(record));
+    let project_records = canonical_order(project.by_declaration.values(), |record| {
+        candidate_bytes(record.id())
+    })?;
     encoder.usize(project_records.len());
     for record in project_records {
         encode_record(&mut encoder, record);
     }
 
-    let mut environment_records = environment.by_id.values().collect::<Vec<_>>();
-    environment_records.sort_by_key(|record| record_identity_bytes(record));
+    let environment_records = canonical_order(environment.by_id.values(), |record| {
+        candidate_bytes(record.id())
+    })?;
     encoder.usize(environment_records.len());
     for record in environment_records {
         encode_record(&mut encoder, record);
     }
 
-    let mut bindings = project.bindings.iter().collect::<Vec<_>>();
-    bindings.sort_by_key(|(path, _)| project_path_bytes(path));
+    let bindings = canonical_order(project.bindings.iter(), |(path, _)| {
+        project_path_bytes(path)
+    })?;
     encoder.usize(bindings.len());
     for (path, binding) in bindings {
         encode_project_path(&mut encoder, path);
@@ -967,12 +972,12 @@ fn registered_catalog_digest(
             ProjectNameBinding::NonCallable { path, ty } => {
                 encoder.tag(2);
                 encode_project_path(&mut encoder, path);
-                encoder.bytes(ty.semantic_identity_digest().as_bytes());
+                encoder.type_kind(ty);
             }
         }
     }
 
-    let mut indexes = environment
+    let indexes = environment
         .free
         .iter()
         .map(|(path, set)| (CallableLookupKey::Free(path.clone()), set))
@@ -983,15 +988,16 @@ fn registered_catalog_digest(
                 .map(|(method, set)| (CallableLookupKey::Method(method.clone()), set)),
         )
         .collect::<Vec<_>>();
-    indexes.sort_by_key(|(key, _)| lookup_key_bytes(key));
+    let indexes = canonical_order(indexes, |(key, _)| lookup_key_bytes(key))?;
     encoder.usize(indexes.len());
     for (key, set) in indexes {
         encoder.lookup_key(&key);
         encoder.usize(set.as_slice().len());
         for entry in set.as_slice() {
             encode_candidate(&mut encoder, entry.primary().id());
-            let mut equivalents = entry.equivalent_sources().iter().collect::<Vec<_>>();
-            equivalents.sort_by_key(|source| candidate_bytes(source.id()));
+            let equivalents = canonical_order(entry.equivalent_sources().iter(), |source| {
+                candidate_bytes(source.id())
+            })?;
             encoder.usize(equivalents.len());
             for equivalent in equivalents {
                 encode_candidate(&mut encoder, equivalent.id());
@@ -999,7 +1005,9 @@ fn registered_catalog_digest(
         }
     }
 
-    super::RegisteredCallableCatalogDigest::from_bytes(encoder.finish(CATALOG_DOMAIN))
+    Ok(super::RegisteredCallableCatalogDigest::from_bytes(
+        encoder.finish(CATALOG_DOMAIN)?,
+    ))
 }
 
 fn encode_record(encoder: &mut CanonicalEncoder, record: &CallableRecord) {
@@ -1043,24 +1051,36 @@ fn encode_project_path(encoder: &mut CanonicalEncoder, path: &ProjectCallablePat
     encoder.lookup_key(&CallableLookupKey::Free(path.path().clone()));
 }
 
-fn record_identity_bytes(record: &CallableRecord) -> Vec<u8> {
-    candidate_bytes(record.id())
-}
-
-fn candidate_bytes(id: &CallableCandidateId) -> Vec<u8> {
+fn candidate_bytes(id: &CallableCandidateId) -> Result<Vec<u8>, crate::types::GenericScopeError> {
     let mut encoder = CanonicalEncoder::default();
     encode_candidate(&mut encoder, id);
     encoder.into_bytes()
 }
 
-fn lookup_key_bytes(key: &CallableLookupKey) -> Vec<u8> {
+fn lookup_key_bytes(key: &CallableLookupKey) -> Result<Vec<u8>, crate::types::GenericScopeError> {
     let mut encoder = CanonicalEncoder::default();
     encoder.lookup_key(key);
     encoder.into_bytes()
 }
 
-fn project_path_bytes(path: &ProjectCallablePath) -> Vec<u8> {
+fn project_path_bytes(
+    path: &ProjectCallablePath,
+) -> Result<Vec<u8>, crate::types::GenericScopeError> {
     let mut encoder = CanonicalEncoder::default();
     encode_project_path(&mut encoder, path);
     encoder.into_bytes()
+}
+
+/// Establish every key before ordering or publishing any row. A failed type
+/// identity is an encoding failure and never participates in ordering.
+fn canonical_order<T>(
+    rows: impl IntoIterator<Item = T>,
+    mut key: impl FnMut(&T) -> Result<Vec<u8>, crate::types::GenericScopeError>,
+) -> Result<Vec<T>, crate::types::GenericScopeError> {
+    let mut keyed = rows
+        .into_iter()
+        .map(|row| Ok((key(&row)?, row)))
+        .collect::<Result<Vec<_>, crate::types::GenericScopeError>>()?;
+    keyed.sort_by(|left, right| left.0.cmp(&right.0));
+    Ok(keyed.into_iter().map(|(_, row)| row).collect())
 }

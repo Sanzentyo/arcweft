@@ -29,7 +29,7 @@ use crate::identity::{
 #[cfg(test)]
 use crate::item::HirDeclarationMemberIndexBuilder;
 use crate::item::{HirDeclarationMember, HirDeclarationMemberIndex, HirItem, HirItemKind};
-use crate::line_identity::HirDialogueLineCandidates;
+use crate::line_identity::HirDialogueLineSiteInventory;
 use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::pattern::HirPattern;
 use crate::scope::{HirCapture, HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner};
@@ -447,7 +447,7 @@ pub struct HirModule {
     source_ordered_items: Box<[ItemId]>,
     declaration_members: HirDeclarationMemberIndex,
     source_components: HirSourceIndex,
-    dialogue_line_candidates: HirDialogueLineCandidates,
+    dialogue_line_sites: HirDialogueLineSiteInventory,
     invalidation_epoch: NonZeroU64,
 }
 
@@ -516,6 +516,11 @@ impl HirModule {
                 arenas.items(),
                 arenas.types(),
             )
+            || !source_components.validates_content_call_types(
+                &slots,
+                arenas.expressions(),
+                arenas.types(),
+            )
             || !source_components.validates_attached_statements(parsed, &slots, arenas.statements())
             || !source_components.validates_attached_thread_bodies(
                 parsed,
@@ -547,10 +552,9 @@ impl HirModule {
         } else {
             HirModuleStatus::Clean
         };
-        let empty_dialogue_lines = HirDialogueLineCandidates::empty(key.clone());
         let mut module = Self {
             snapshot,
-            key,
+            key: key.clone(),
             provenance,
             status,
             diagnostics,
@@ -559,10 +563,10 @@ impl HirModule {
             source_ordered_items,
             declaration_members,
             source_components,
-            dialogue_line_candidates: empty_dialogue_lines,
+            dialogue_line_sites: HirDialogueLineSiteInventory::empty(key.clone()),
             invalidation_epoch,
         };
-        attach_dialogue_line_candidates(&mut module, parsed.diagnostics().len())?;
+        module.dialogue_line_sites = crate::line_identity::sites::build_site_inventory(&module)?;
         Ok(module)
     }
 
@@ -595,8 +599,10 @@ impl HirModule {
         &self.diagnostics
     }
 
-    pub(crate) const fn dialogue_line_candidates(&self) -> &HirDialogueLineCandidates {
-        &self.dialogue_line_candidates
+    /// Source/topology evidence for dialogue sites in this exact module
+    /// revision. IDs and project acceptance are intentionally absent here.
+    pub const fn dialogue_line_sites(&self) -> &HirDialogueLineSiteInventory {
+        &self.dialogue_line_sites
     }
 
     /// Whether semantic, verifier, compiler, and runtime consumers may execute it.
@@ -650,6 +656,9 @@ impl HirModule {
         expected_source: &SourceDocumentIdentity,
         query: HirSourceQuery,
     ) -> Result<HirSourceLookup<'_>, HirSourceQueryError> {
+        if let Some(delegated_query) = self.content_call_nominal_type_source_query(&query) {
+            return self.source_site(expected_source, delegated_query);
+        }
         match self.source_components.lookup(
             &self.provenance.source_identity,
             expected_source,
@@ -662,6 +671,101 @@ impl HirModule {
                 unreachable!("validated HIR source manifest failed lookup: {error}")
             }
         }
+    }
+
+    /// Relates the source components of a semantic-only Object type root to
+    /// the authored `type` path that supplied it.
+    ///
+    /// The synthetic type root is deliberately absent from the source index.
+    /// Its synthetic key points back to the owning attached content
+    /// application, whose typed HIR evidence points to the ordinary path
+    /// expression.  Only path-root and path-segment roles are projected;
+    /// `Whole` remains the synthetic slot's own metadata source site.
+    fn content_call_nominal_type_source_query(
+        &self,
+        query: &HirSourceQuery,
+    ) -> Option<HirSourceQuery> {
+        let HirSourceQuery::Type { owner, role } = query else {
+            return None;
+        };
+        let role = match role {
+            HirTypeSourceRole::PathRoot => HirExprSourceRole::PathRoot,
+            HirTypeSourceRole::PathSegment { ordinal } => {
+                HirExprSourceRole::PathSegment { ordinal: *ordinal }
+            }
+            HirTypeSourceRole::Whole
+            | HirTypeSourceRole::NeverMarker
+            | HirTypeSourceRole::ConstInteger
+            | HirTypeSourceRole::TupleOpen
+            | HirTypeSourceRole::TupleElement { .. }
+            | HirTypeSourceRole::TupleSeparator { .. }
+            | HirTypeSourceRole::TupleClose
+            | HirTypeSourceRole::FunctionOpen
+            | HirTypeSourceRole::FunctionParameter { .. }
+            | HirTypeSourceRole::FunctionSeparator { .. }
+            | HirTypeSourceRole::FunctionClose
+            | HirTypeSourceRole::FunctionArrow
+            | HirTypeSourceRole::FunctionReturn
+            | HirTypeSourceRole::FunctionEffectOpen
+            | HirTypeSourceRole::FunctionEffect { .. }
+            | HirTypeSourceRole::FunctionEffectClose
+            | HirTypeSourceRole::ChoiceAlternative { .. }
+            | HirTypeSourceRole::ChoiceSeparator { .. }
+            | HirTypeSourceRole::GenericBase
+            | HirTypeSourceRole::GenericOpen
+            | HirTypeSourceRole::GenericArgument { .. }
+            | HirTypeSourceRole::GenericSeparator { .. }
+            | HirTypeSourceRole::GenericClose
+            | HirTypeSourceRole::TraitBase
+            | HirTypeSourceRole::TraitOpen
+            | HirTypeSourceRole::TraitArgument { .. }
+            | HirTypeSourceRole::TraitSeparator { .. }
+            | HirTypeSourceRole::AssociatedBinding { .. }
+            | HirTypeSourceRole::TraitClose
+            | HirTypeSourceRole::ProjectionSubject
+            | HirTypeSourceRole::ProjectionSeparator
+            | HirTypeSourceRole::ProjectionName
+            | HirTypeSourceRole::ReferenceAmpersand
+            | HirTypeSourceRole::Region(_)
+            | HirTypeSourceRole::ReferenceMutKeyword
+            | HirTypeSourceRole::ReferenceReferent
+            | HirTypeSourceRole::SliceOpen
+            | HirTypeSourceRole::SliceElement
+            | HirTypeSourceRole::SliceClose
+            | HirTypeSourceRole::Recovery => return None,
+        };
+
+        let metadata = self.slots.resolve_prepared(*owner).ok()?;
+        let HirOrigin::Synthetic(key) = metadata.origin() else {
+            return None;
+        };
+        if key.role() != SyntheticRole::ContentCallNominalType || key.ordinal() != 0 {
+            return None;
+        }
+        let SyntheticOwner::Expr(application_owner) = key.owner() else {
+            return None;
+        };
+        let application_expression = self
+            .arenas
+            .expressions
+            .resolve_prepared(&self.slots, application_owner)
+            .ok()?;
+        let HirExprKind::AttachedContentApplication(application) = application_expression.kind()
+        else {
+            return None;
+        };
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+            evidence,
+            ..
+        } = application.family()
+        else {
+            return None;
+        };
+        let nominal_discriminator = evidence.nominal_discriminator()?;
+        (nominal_discriminator.semantic_only() == *owner).then_some(HirSourceQuery::Expr {
+            owner: nominal_discriminator.source(),
+            role,
+        })
     }
 
     #[allow(
@@ -718,20 +822,30 @@ impl HirModule {
                     .expressions
                     .resolve(&self.slots, *owner)
                     .expect("published expression slot has its validated payload");
-                let target_call_argument_count =
-                    if let HirExprKind::DialogueContentApplication(application) = payload.kind() {
-                        let target = self
-                            .arenas
-                            .expressions
-                            .resolve(&self.slots, application.target())
-                            .expect("published dialogue target has its validated payload");
-                        Some(match target.kind() {
-                            HirExprKind::Call(call) => call.arguments().len(),
-                            _ => 0,
-                        })
-                    } else {
-                        None
-                    };
+                let target_call_argument_count = if let HirExprKind::AttachedContentApplication(
+                    application,
+                ) = payload.kind()
+                    && application.is_dialogue_line()
+                {
+                    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                            target,
+                            ..
+                        } = application.family()
+                        else {
+                            unreachable!("dialogue-line guard keeps family aligned")
+                        };
+                    let target = self
+                        .arenas
+                        .expressions
+                        .resolve(&self.slots, *target)
+                        .expect("published dialogue target has its validated payload");
+                    Some(match target.kind() {
+                        HirExprKind::Call(call) => call.arguments().len(),
+                        _ => 0,
+                    })
+                } else {
+                    None
+                };
                 payload.kind().validate_source_role_with_context(
                     *owner,
                     *role,
@@ -1119,29 +1233,6 @@ impl HirModule {
         )
         .expect("test module parts are exact")
     }
-}
-
-fn attach_dialogue_line_candidates(
-    module: &mut HirModule,
-    syntax_diagnostic_count: usize,
-) -> Result<(), HirLowerFailure> {
-    let (candidates, line_diagnostics) =
-        crate::line_identity::module_candidates::build_module_candidates(module)?;
-    module.dialogue_line_candidates = candidates;
-    if line_diagnostics.is_empty() {
-        return Ok(());
-    }
-    let mut diagnostics = Vec::from(module.diagnostics.as_ref());
-    diagnostics.extend(
-        line_diagnostics
-            .iter()
-            .cloned()
-            .map(HirDiagnostic::LineIdentity),
-    );
-    diagnostics[syntax_diagnostic_count..].sort_by(HirDiagnostic::compare_for_publication);
-    module.diagnostics = Arc::from(diagnostics);
-    module.status = HirModuleStatus::Recovered;
-    Ok(())
 }
 
 struct ResolvedThreadBody<'a> {
@@ -1580,11 +1671,24 @@ fn recovery_query_applies(
             .resolve_prepared(slots, *owner)
             .is_ok_and(|payload| {
                 let target_call_argument_count =
-                    if let HirExprKind::DialogueContentApplication(application) = payload.kind() {
+                    if let HirExprKind::AttachedContentApplication(application) = payload.kind()
+                        && application.is_dialogue_line()
+                    {
                         Some(
                             arenas
                                 .expressions
-                                .resolve_prepared(slots, application.target())
+                                .resolve_prepared(
+                                    slots,
+                                    match application.family() {
+                                        crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                                            target,
+                                            ..
+                                        } => *target,
+                                        crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                                            ..
+                                        } => unreachable!("dialogue-line guard keeps family aligned"),
+                                    },
+                                )
                                 .ok()
                                 .map_or(0, |target| match target.kind() {
                                     HirExprKind::Call(call) => call.arguments().len(),

@@ -21,8 +21,8 @@ use crate::{
     },
     identity::{CaptureId, ExprId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId},
     item::{
-        HirDeclarationMemberKind, HirImplMember, HirItemKind, HirItemPrefix, HirMethodParameter,
-        HirMethodParameterGroup, HirParameter,
+        HirAttachedContentPresence, HirDeclarationMemberKind, HirImplMember, HirItemKind,
+        HirItemPrefix, HirMethodParameter, HirMethodParameterGroup, HirParameter,
     },
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternChild, HirPatternChildRole, HirPatternKind},
@@ -56,6 +56,17 @@ pub enum HirDeclarationBodyRootRole {
 pub enum HirDeclarationParameterRootRole {
     Pattern { group: u32, parameter: u32 },
     Default { group: u32, parameter: u32 },
+}
+
+/// Closed root-role vocabulary for the dedicated trailing attached-content
+/// declaration slot.  This role family is intentionally separate from
+/// [`HirDeclarationParameterRootRole`]: an attached-content slot is not an
+/// ordinary parameter group and must never acquire a fabricated group or
+/// parameter coordinate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDeclarationAttachedContentRootRole {
+    Binding,
+    Default,
 }
 
 /// Closed contract-root role vocabulary.
@@ -152,7 +163,7 @@ pub enum HirDeclarationItemRootRole {
     ResourceField {
         field: u32,
     },
-    CharacterDisplayName {
+    CharacterDisplay {
         member: u32,
     },
     MetricUnit {
@@ -223,6 +234,8 @@ pub enum HirSemanticPathStep {
     Pattern(HirPatternChildRole),
     ParameterPattern { group: u32, parameter: u32 },
     ParameterDefault { group: u32, parameter: u32 },
+    AttachedContentBinding,
+    AttachedContentDefault,
     DeclarationMember { member: u32 },
     DeclarationResult,
 }
@@ -934,6 +947,8 @@ impl HirSemanticPathIndex {
                                     | HirSemanticPathStep::DeclarationContract(_)
                                     | HirSemanticPathStep::ParameterPattern { .. }
                                     | HirSemanticPathStep::ParameterDefault { .. }
+                                    | HirSemanticPathStep::AttachedContentBinding
+                                    | HirSemanticPathStep::AttachedContentDefault
                                     | HirSemanticPathStep::DeclarationResult
                             ) || (index > 0
                                 && matches!(
@@ -1383,6 +1398,48 @@ impl HirDeclarationParameterRoot {
     }
 }
 
+/// One dedicated attached-content declaration root.
+///
+/// The binding root carries the callable-scope local, while the default root
+/// carries the default expression.  Keeping these children typed prevents a
+/// local from being mistaken for an ordinary parameter pattern or a default
+/// expression from being assigned an invented parameter coordinate.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirDeclarationAttachedContentRoot {
+    role: HirDeclarationAttachedContentRootRole,
+    child: HirDeclarationAttachedContentRootChild,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum HirDeclarationAttachedContentRootChild {
+    Binding(LocalId),
+    Default(ExprId),
+}
+
+impl HirDeclarationAttachedContentRoot {
+    pub const fn role(&self) -> HirDeclarationAttachedContentRootRole {
+        self.role
+    }
+
+    pub const fn child(&self) -> HirDeclarationAttachedContentRootChild {
+        self.child
+    }
+
+    pub const fn binding(&self) -> Option<LocalId> {
+        match self.child {
+            HirDeclarationAttachedContentRootChild::Binding(local) => Some(local),
+            HirDeclarationAttachedContentRootChild::Default(_) => None,
+        }
+    }
+
+    pub const fn default_value(&self) -> Option<ExprId> {
+        match self.child {
+            HirDeclarationAttachedContentRootChild::Binding(_) => None,
+            HirDeclarationAttachedContentRootChild::Default(value) => Some(value),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HirDeclarationParameterRootChild {
     Pattern(PatternId),
@@ -1430,6 +1487,10 @@ pub enum HirBindingSite {
         owner: HirCallableSourceOwner,
         group: u32,
         parameter: u32,
+    },
+    DeclarationAttachedContent {
+        item: ItemId,
+        owner: HirCallableSourceOwner,
     },
     Statement {
         statement: StmtId,
@@ -1504,6 +1565,7 @@ impl HirLocalBindingOrigin {
         match &self.site {
             HirBindingSite::Statement { statement, .. } => Some(*statement),
             HirBindingSite::DeclarationParameter { .. }
+            | HirBindingSite::DeclarationAttachedContent { .. }
             | HirBindingSite::Expression { .. }
             | HirBindingSite::Member { .. }
             | HirBindingSite::FlowResult { .. }
@@ -1532,6 +1594,7 @@ impl HirLocalBindingOrigin {
         match &self.site {
             HirBindingSite::Statement { role, .. } => Some(*role),
             HirBindingSite::DeclarationParameter { .. }
+            | HirBindingSite::DeclarationAttachedContent { .. }
             | HirBindingSite::Expression { .. }
             | HirBindingSite::Member { .. }
             | HirBindingSite::FlowResult { .. }
@@ -1649,19 +1712,50 @@ pub enum HirExpressionCallableBoundary {
 }
 
 impl HirExpressionCallableBoundary {
-    pub const fn cuts(self, kind: HirPlaceholderKind) -> bool {
+    const fn cuts_implicit_callable_region(self) -> bool {
+        matches!(self, Self::Call | Self::ExplicitClosure)
+    }
+
+    const fn cuts_pipe_left_region(self) -> bool {
         matches!(self, Self::ExplicitClosure)
-            || (matches!(self, Self::Call)
-                && matches!(kind, HirPlaceholderKind::PartialApplication))
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Typed incoming expression relation retained by the expression-use
+/// topology. Direct expression edges preserve their child role; a body root
+/// reached through an enclosing region deliberately has no direct role.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirExpressionUseParent {
+    Direct {
+        parent: ExprId,
+        role: HirExpressionChildRole,
+    },
+    EnclosingRegion {
+        parent: ExprId,
+    },
+}
+
+impl HirExpressionUseParent {
+    pub const fn parent(&self) -> ExprId {
+        match self {
+            Self::Direct { parent, .. } | Self::EnclosingRegion { parent } => *parent,
+        }
+    }
+
+    pub fn role(&self) -> Option<&HirExpressionChildRole> {
+        match self {
+            Self::Direct { role, .. } => Some(role),
+            Self::EnclosingRegion { .. } => None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirExpressionUseRow {
     expression: ExprId,
     source_ordinal: u32,
     subtree_end_ordinal: u32,
-    parent_expression: Option<ExprId>,
+    parent: Option<HirExpressionUseParent>,
     capture_access: CaptureAccess,
     callable_boundary: Option<HirExpressionCallableBoundary>,
     placeholder: Option<HirPlaceholderKind>,
@@ -1680,8 +1774,19 @@ impl HirExpressionUseRow {
         self.subtree_end_ordinal
     }
 
+    pub const fn parent(&self) -> Option<&HirExpressionUseParent> {
+        self.parent.as_ref()
+    }
+
     pub const fn parent_expression(&self) -> Option<ExprId> {
-        self.parent_expression
+        match &self.parent {
+            Some(parent) => Some(parent.parent()),
+            None => None,
+        }
+    }
+
+    pub fn parent_role(&self) -> Option<&HirExpressionChildRole> {
+        self.parent.as_ref().and_then(HirExpressionUseParent::role)
     }
 
     pub const fn capture_access(&self) -> CaptureAccess {
@@ -1696,9 +1801,14 @@ impl HirExpressionUseRow {
         self.placeholder
     }
 
-    fn cuts_implicit_callable_region(&self, kind: HirPlaceholderKind) -> bool {
+    fn cuts_implicit_callable_region(&self) -> bool {
         self.callable_boundary
-            .is_some_and(|boundary| boundary.cuts(kind))
+            .is_some_and(HirExpressionCallableBoundary::cuts_implicit_callable_region)
+    }
+
+    fn cuts_pipe_left_region(&self) -> bool {
+        self.callable_boundary
+            .is_some_and(HirExpressionCallableBoundary::cuts_pipe_left_region)
     }
 }
 
@@ -1717,7 +1827,6 @@ pub struct HirExpressionUseIndex {
 pub struct HirImplicitCallableRegion<'index> {
     index: &'index HirExpressionUseIndex,
     root: ExprId,
-    kind: HirPlaceholderKind,
     start_ordinal: u32,
     end_ordinal: u32,
 }
@@ -1727,10 +1836,6 @@ impl HirImplicitCallableRegion<'_> {
         self.root
     }
 
-    pub const fn kind(&self) -> HirPlaceholderKind {
-        self.kind
-    }
-
     pub fn contains_expression(&self, expression: ExprId) -> bool {
         let Some(row) = self.index.row(expression) else {
             return false;
@@ -1738,7 +1843,7 @@ impl HirImplicitCallableRegion<'_> {
         if row.source_ordinal() < self.start_ordinal || row.source_ordinal() >= self.end_ordinal {
             return false;
         }
-        self.index.region_contains(self.root, expression, self.kind)
+        self.index.region_contains(self.root, expression)
     }
 
     pub fn contains_binding(&self, binding: &HirLocalBindingOrigin) -> bool {
@@ -1751,9 +1856,76 @@ impl HirImplicitCallableRegion<'_> {
         self.index.rows[self.start_ordinal as usize..self.end_ordinal as usize]
             .iter()
             .filter_map(|row| {
-                (row.placeholder() == Some(self.kind) && self.contains_expression(row.expression()))
+                (row.placeholder() == Some(HirPlaceholderKind::PartialApplication)
+                    && self.contains_expression(row.expression()))
+                .then_some(row.expression())
+            })
+    }
+}
+
+/// Borrowed, topology-sealed region of pipe-left placeholders owned by one
+/// pipe. The source-order rows remain in [`HirExpressionUseIndex`]; this view
+/// only retains the pipe's typed child coordinates and ordinal bounds.
+pub struct HirPipeLeftRegion<'index> {
+    index: &'index HirExpressionUseIndex,
+    pipe: ExprId,
+    left: ExprId,
+    right: ExprId,
+    start_ordinal: u32,
+    end_ordinal: u32,
+}
+
+impl HirPipeLeftRegion<'_> {
+    pub const fn pipe(&self) -> ExprId {
+        self.pipe
+    }
+
+    pub const fn left(&self) -> ExprId {
+        self.left
+    }
+
+    pub const fn right(&self) -> ExprId {
+        self.right
+    }
+
+    pub fn contains_expression(&self, expression: ExprId) -> bool {
+        let Some(row) = self.index.row(expression) else {
+            return false;
+        };
+        if row.source_ordinal() < self.start_ordinal || row.source_ordinal() >= self.end_ordinal {
+            return false;
+        }
+        self.index.pipe_left_region_contains(self.right, expression)
+    }
+
+    pub fn contains_binding(&self, binding: &HirLocalBindingOrigin) -> bool {
+        binding
+            .binding_expression()
+            .is_some_and(|expression| self.contains_expression(expression))
+    }
+
+    pub fn placeholders(&self) -> impl Iterator<Item = Result<ExprId, HirSemanticPathError>> + '_ {
+        self.index.rows[self.start_ordinal as usize..self.end_ordinal as usize]
+            .iter()
+            .filter_map(|row| {
+                (row.placeholder() == Some(HirPlaceholderKind::PipeLeft))
                     .then_some(row.expression())
             })
+            .map(|placeholder| {
+                self.index.pipe_left_owner(placeholder).map(|owner| {
+                    (owner == Some(self.pipe) && self.contains_expression(placeholder))
+                        .then_some(placeholder)
+                })
+            })
+            .filter_map(Result::transpose)
+    }
+
+    pub fn has_placeholders(&self) -> Result<bool, HirSemanticPathError> {
+        match self.placeholders().next() {
+            None => Ok(false),
+            Some(Ok(_)) => Ok(true),
+            Some(Err(error)) => Err(error),
+        }
     }
 }
 
@@ -1772,7 +1944,7 @@ impl HirExpressionUseIndex {
         &self.rows
     }
 
-    fn region_contains(&self, root: ExprId, candidate: ExprId, kind: HirPlaceholderKind) -> bool {
+    fn region_contains(&self, root: ExprId, candidate: ExprId) -> bool {
         let candidate_root = candidate;
         let mut current = candidate;
         for _ in 0..=self.rows.len() {
@@ -1780,9 +1952,9 @@ impl HirExpressionUseIndex {
                 return false;
             };
             if current == root {
-                return current == candidate_root || !row.cuts_implicit_callable_region(kind);
+                return current == candidate_root || !row.cuts_implicit_callable_region();
             }
-            if current != candidate_root && row.cuts_implicit_callable_region(kind) {
+            if current != candidate_root && row.cuts_implicit_callable_region() {
                 return false;
             }
             let Some(parent) = row.parent_expression() else {
@@ -1793,10 +1965,143 @@ impl HirExpressionUseIndex {
         false
     }
 
+    fn pipe_left_region_contains(&self, root: ExprId, candidate: ExprId) -> bool {
+        let candidate_root = candidate;
+        let mut current = candidate;
+        for _ in 0..=self.rows.len() {
+            let Some(row) = self.row(current) else {
+                return false;
+            };
+            if current == root {
+                return true;
+            }
+            if current != candidate_root && row.cuts_pipe_left_region() {
+                return false;
+            }
+            let Some(parent) = row.parent_expression() else {
+                return false;
+            };
+            current = parent;
+        }
+        false
+    }
+
+    /// Returns the nearest pipe whose right-hand region owns a `^` placeholder.
+    ///
+    /// The typed incoming edge role is authoritative: a `PipeRight` edge binds
+    /// the placeholder to that pipe, while a `PipeLeft` edge is traversed so a
+    /// nested pipe's left side can inherit its enclosing pipe. Explicit closure
+    /// rows cut the search and therefore cannot capture an enclosing pipe-left.
+    pub fn pipe_left_owner(
+        &self,
+        placeholder: ExprId,
+    ) -> Result<Option<ExprId>, HirSemanticPathError> {
+        let row = self
+            .row(placeholder)
+            .ok_or(HirSemanticPathError::UnresolvedOwner)?;
+        if row.placeholder() != Some(HirPlaceholderKind::PipeLeft) {
+            return Ok(None);
+        }
+        let mut current = placeholder;
+        let mut visited = BTreeSet::new();
+        for _ in 0..=self.rows.len() {
+            if !visited.insert(current) {
+                return Err(HirSemanticPathError::CyclicPath {
+                    owner: current.into(),
+                });
+            }
+            let row = self
+                .row(current)
+                .ok_or(HirSemanticPathError::UnresolvedOwner)?;
+            if current != placeholder && row.cuts_pipe_left_region() {
+                return Ok(None);
+            }
+            let Some(parent) = row.parent() else {
+                return Ok(None);
+            };
+            if parent.role() == Some(&HirExpressionChildRole::PipeRight) {
+                self.pipe_children(parent.parent())?;
+                return Ok(Some(parent.parent()));
+            }
+            current = parent.parent();
+        }
+        Err(HirSemanticPathError::CyclicPath {
+            owner: current.into(),
+        })
+    }
+
+    /// Seals the source-ordered `^` occurrences owned by one pipe.
+    pub fn pipe_left_region(
+        &self,
+        pipe: ExprId,
+    ) -> Result<HirPipeLeftRegion<'_>, HirSemanticPathError> {
+        let (left, right) = self.pipe_children(pipe)?;
+        let pipe_row = self
+            .row(pipe)
+            .ok_or(HirSemanticPathError::UnresolvedOwner)?;
+        let left_row = self
+            .row(left)
+            .ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+        let right_row = self
+            .row(right)
+            .ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+        let start_ordinal = right_row.source_ordinal();
+        let end_ordinal = right_row.subtree_end_ordinal();
+        if start_ordinal >= end_ordinal
+            || usize::try_from(end_ordinal).map_or(true, |end| end > self.rows.len())
+            || pipe_row.source_ordinal() >= left_row.source_ordinal()
+            || pipe_row.source_ordinal() >= start_ordinal
+            || left_row.subtree_end_ordinal() > start_ordinal
+            || left_row.source_ordinal() >= end_ordinal
+            || pipe_row.subtree_end_ordinal() < end_ordinal
+        {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        }
+        Ok(HirPipeLeftRegion {
+            index: self,
+            pipe,
+            left,
+            right,
+            start_ordinal,
+            end_ordinal,
+        })
+    }
+
+    fn pipe_children(&self, pipe: ExprId) -> Result<(ExprId, ExprId), HirSemanticPathError> {
+        self.row(pipe)
+            .ok_or(HirSemanticPathError::UnresolvedOwner)?;
+        let mut left = None;
+        let mut right = None;
+        for row in self
+            .rows
+            .iter()
+            .filter(|row| row.parent_expression() == Some(pipe))
+        {
+            match row.parent_role() {
+                Some(HirExpressionChildRole::PipeLeft)
+                    if left.replace(row.expression()).is_some() =>
+                {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                }
+                Some(HirExpressionChildRole::PipeLeft) => {}
+                Some(HirExpressionChildRole::PipeRight)
+                    if right.replace(row.expression()).is_some() =>
+                {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                }
+                Some(HirExpressionChildRole::PipeRight) => {}
+                Some(_) | None => {}
+            }
+        }
+        Ok((
+            left.ok_or(HirSemanticPathError::InvalidOwnedPath)?,
+            right.ok_or(HirSemanticPathError::InvalidOwnedPath)?,
+        ))
+    }
+
     pub fn implicit_callable_region(
         &self,
         root: ExprId,
-        kind: HirPlaceholderKind,
     ) -> Result<HirImplicitCallableRegion<'_>, HirSemanticPathError> {
         let row = self
             .row(root)
@@ -1811,7 +2116,6 @@ impl HirExpressionUseIndex {
         Ok(HirImplicitCallableRegion {
             index: self,
             root,
-            kind,
             start_ordinal,
             end_ordinal,
         })
@@ -1845,6 +2149,7 @@ pub struct HirDeclarationBodyTopology {
     source_item: ItemId,
     source_owner: HirCallableSourceOwner,
     parameter_roots: Box<[HirDeclarationParameterRoot]>,
+    attached_content_roots: Box<[HirDeclarationAttachedContentRoot]>,
     contract_roots: Box<[HirDeclarationContractRoot]>,
     roots: Box<[HirDeclarationBodyRoot]>,
     paths: HirSemanticPathIndex,
@@ -1865,6 +2170,7 @@ pub struct HirDeclarationEvaluationView<'topology> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HirDeclarationEvaluationPhase<'a> {
     Parameter(&'a HirDeclarationParameterRoot),
+    AttachedContent(&'a HirDeclarationAttachedContentRoot),
     Contract(&'a HirDeclarationContractRoot),
     Body(&'a HirDeclarationBodyRoot),
 }
@@ -2371,6 +2677,10 @@ impl HirDeclarationBodyTopology {
         &self.parameter_roots
     }
 
+    pub const fn attached_content_roots(&self) -> &[HirDeclarationAttachedContentRoot] {
+        &self.attached_content_roots
+    }
+
     pub const fn roots(&self) -> &[HirDeclarationBodyRoot] {
         &self.roots
     }
@@ -2387,6 +2697,11 @@ impl HirDeclarationBodyTopology {
         self.parameter_roots
             .iter()
             .map(HirDeclarationEvaluationPhase::Parameter)
+            .chain(
+                self.attached_content_roots
+                    .iter()
+                    .map(HirDeclarationEvaluationPhase::AttachedContent),
+            )
             .chain(
                 self.contract_roots
                     .iter()
@@ -2637,6 +2952,8 @@ impl HirExecutableProjectView<'_> {
                     };
                     let declaration = symbol.declaration().clone();
                     let parameter_roots = declaration_parameter_roots(module, item, owner)?;
+                    let attached_content_roots =
+                        declaration_attached_content_roots(module, item, owner)?;
                     let contract_roots = declaration_contract_roots(module, item, owner)?;
                     let body_roots = declaration_body_roots(module, item, owner)?;
                     Some(builder.walk_declaration_topology(
@@ -2644,6 +2961,7 @@ impl HirExecutableProjectView<'_> {
                         item,
                         owner,
                         &parameter_roots,
+                        &attached_content_roots,
                         &contract_roots,
                         &body_roots,
                     )?)
@@ -2689,6 +3007,8 @@ impl HirExecutableProjectView<'_> {
                         };
                         let declaration = symbol.declaration().clone();
                         let parameter_roots = declaration_parameter_roots(module, item, owner)?;
+                        let attached_content_roots =
+                            declaration_attached_content_roots(module, item, owner)?;
                         let contract_roots = declaration_contract_roots(module, item, owner)?;
                         let body_roots = declaration_body_roots(module, item, owner)?;
                         Some(builder.walk_declaration_topology(
@@ -2696,6 +3016,7 @@ impl HirExecutableProjectView<'_> {
                             item,
                             owner,
                             &parameter_roots,
+                            &attached_content_roots,
                             &contract_roots,
                             &body_roots,
                         )?)
@@ -2922,6 +3243,112 @@ fn declaration_parameter_roots(
                 push_parameters(&mut roots, checked_ordinal(group)?, parameters.parameters())?;
             }
         }
+    }
+    Ok(roots)
+}
+
+fn declaration_attached_content_roots(
+    module: &HirModule,
+    item: ItemId,
+    owner: HirCallableSourceOwner,
+) -> Result<Vec<HirDeclarationAttachedContentRoot>, HirSemanticPathError> {
+    let item = module
+        .resolve_item(item)
+        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+    let (attached, callable_scope) = match owner {
+        HirCallableSourceOwner::Item => match item.kind() {
+            HirItemKind::Function(function) => {
+                (function.attached_content(), Some(function.callable_scope()))
+            }
+            HirItemKind::Predicate(_)
+            | HirItemKind::Proof(_)
+            | HirItemKind::Flow(_)
+            | HirItemKind::Module(_)
+            | HirItemKind::Use(_)
+            | HirItemKind::Enum(_)
+            | HirItemKind::Struct(_)
+            | HirItemKind::TypeAlias(_)
+            | HirItemKind::Resource(_)
+            | HirItemKind::Character(_)
+            | HirItemKind::Action(_)
+            | HirItemKind::Activity(_)
+            | HirItemKind::Signal(_)
+            | HirItemKind::Metric(_)
+            | HirItemKind::Layer(_)
+            | HirItemKind::Entry(_)
+            | HirItemKind::Trait(_)
+            | HirItemKind::Impl(_)
+            | HirItemKind::ExternCapability(_)
+            | HirItemKind::View(_)
+            | HirItemKind::Test(_)
+            | HirItemKind::Bench(_)
+            | HirItemKind::Style(_)
+            | HirItemKind::Error(_) => (None, None),
+        },
+        HirCallableSourceOwner::ViewItem => (None, None),
+        HirCallableSourceOwner::TraitFunction { member } => {
+            let HirItemKind::Trait(value) = item.kind() else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            let Some(crate::item::HirTraitMember::Function(function)) =
+                value.members().get(usize::from(member))
+            else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            (function.attached_content(), Some(function.callable_scope()))
+        }
+        HirCallableSourceOwner::ImplFunction { member } => {
+            let HirItemKind::Impl(value) = item.kind() else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            let Some(HirImplMember::Function(function)) = value.members().get(usize::from(member))
+            else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            (function.attached_content(), Some(function.callable_scope()))
+        }
+        HirCallableSourceOwner::ExternCapabilityFunction { member } => {
+            let HirItemKind::ExternCapability(value) = item.kind() else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            let Some(crate::item::HirCapabilityMember::Function(function)) =
+                value.members().get(usize::from(member))
+            else {
+                return Err(HirSemanticPathError::MissingBody);
+            };
+            (function.attached_content(), Some(function.callable_scope()))
+        }
+    };
+    let Some(attached) = attached else {
+        return Ok(Vec::new());
+    };
+    let callable_scope = callable_scope.ok_or(HirSemanticPathError::InvalidOwnedPath)?;
+    let binding = module
+        .resolve_local(attached.binding())
+        .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+    if binding.scope() != callable_scope
+        || binding.kind() != HirLocalKind::Parameter
+        || binding.pattern().is_some()
+        || binding.annotation().is_some()
+        || binding.is_mutable_binding()
+    {
+        return Err(HirSemanticPathError::InvalidOwnedPath);
+    }
+    let mut roots = vec![HirDeclarationAttachedContentRoot {
+        role: HirDeclarationAttachedContentRootRole::Binding,
+        child: HirDeclarationAttachedContentRootChild::Binding(attached.binding()),
+    }];
+    if let HirAttachedContentPresence::Defaulted { value } = attached.presence() {
+        let default = module
+            .resolve_expr(value)
+            .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+        if default.scope() != callable_scope {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        }
+        roots.push(HirDeclarationAttachedContentRoot {
+            role: HirDeclarationAttachedContentRootRole::Default,
+            child: HirDeclarationAttachedContentRootChild::Default(value),
+        });
     }
     Ok(roots)
 }
@@ -3579,7 +4006,7 @@ fn append_member_roots(
     kind: &HirDeclarationMemberKind,
 ) -> Result<(), HirSemanticPathError> {
     match kind {
-        HirDeclarationMemberKind::CharacterDisplayName(value) => {
+        HirDeclarationMemberKind::CharacterDisplay(value) => {
             if let Some(expression) = value.initializer() {
                 let role =
                     if value.assignment() == crate::item::HirCharacterAssignmentState::Missing {
@@ -3587,7 +4014,7 @@ fn append_member_roots(
                             owner: HirItemRecoveryRootOwner::DeclarationMember { member },
                         }
                     } else {
-                        HirDeclarationItemRootRole::CharacterDisplayName { member }
+                        HirDeclarationItemRootRole::CharacterDisplay { member }
                     };
                 roots.push(item_expression_root(role, expression));
             }
@@ -4092,6 +4519,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         item: ItemId,
         owner: HirCallableSourceOwner,
         parameter_roots: &[HirDeclarationParameterRoot],
+        attached_content_roots: &[HirDeclarationAttachedContentRoot],
         contract_roots: &[HirDeclarationContractRoot],
         roots: &[HirDeclarationBodyRoot],
     ) -> Result<HirDeclarationBodyTopology, HirSemanticPathError> {
@@ -4110,6 +4538,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         self.record_declaration_result_local()?;
         for root in parameter_roots {
             self.walk_parameter(root)?;
+        }
+        for root in attached_content_roots {
+            self.walk_attached_content(root)?;
         }
         for root in contract_roots {
             self.walk_contract(root)?;
@@ -4163,6 +4594,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             source_item: item,
             source_owner: owner,
             parameter_roots: parameter_roots.to_vec().into_boxed_slice(),
+            attached_content_roots: attached_content_roots.to_vec().into_boxed_slice(),
             contract_roots: contract_roots.to_vec().into_boxed_slice(),
             roots: roots.to_vec().into_boxed_slice(),
             paths,
@@ -4214,13 +4646,33 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         self.validate_module_owner_sets(&owner_sets)?;
         self.validate_capture_inventory()?;
         for row in self.expression_uses.values() {
-            if let Some(parent) = row.parent_expression() {
-                let Some(parent_row) = self.expression_uses.get(&parent) else {
+            let Some(parent_relation) = row.parent() else {
+                continue;
+            };
+            let parent = parent_relation.parent();
+            let Some(parent_row) = self.expression_uses.get(&parent) else {
+                return Err(HirSemanticPathError::InvalidOwnedPath);
+            };
+            if parent_row.source_ordinal() >= row.source_ordinal()
+                || row.subtree_end_ordinal() > parent_row.subtree_end_ordinal()
+                || row.source_ordinal() >= parent_row.subtree_end_ordinal()
+            {
+                return Err(HirSemanticPathError::InvalidOwnedPath);
+            }
+            if let HirExpressionUseParent::Direct { role, .. } = parent_relation {
+                let Some(edges) = self.selection_edges.get(&parent) else {
                     return Err(HirSemanticPathError::InvalidOwnedPath);
                 };
-                if parent_row.source_ordinal() >= row.source_ordinal()
-                    || row.source_ordinal() >= parent_row.subtree_end_ordinal()
-                {
+                if !edges.iter().any(|edge| {
+                    matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression {
+                            role: edge_role,
+                            ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                            child,
+                        } if edge_role == role && *child == row.expression()
+                    )
+                }) {
                     return Err(HirSemanticPathError::InvalidOwnedPath);
                 }
             }
@@ -4541,6 +4993,56 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         Ok(())
     }
 
+    fn walk_attached_content(
+        &mut self,
+        root: &HirDeclarationAttachedContentRoot,
+    ) -> Result<(), HirSemanticPathError> {
+        match (root.role(), root.child()) {
+            (
+                HirDeclarationAttachedContentRootRole::Binding,
+                HirDeclarationAttachedContentRootChild::Binding(local),
+            ) => {
+                let value = self
+                    .module
+                    .resolve_local(local)
+                    .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
+                if value.scope().module() != self.module.module_id()
+                    || value.kind() != HirLocalKind::Parameter
+                    || value.pattern().is_some()
+                    || value.annotation().is_some()
+                    || value.is_mutable_binding()
+                {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                }
+                let (Some(item), Some(owner)) = (self.binding_item, self.binding_owner) else {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                };
+                let path = [HirSemanticPathStep::AttachedContentBinding];
+                insert_unique(&mut self.locals, local, &path, &[])?;
+                self.insert_local_origin(
+                    local,
+                    HirBindingSite::DeclarationAttachedContent { item, owner },
+                    None,
+                    None,
+                    HirLocalValueOrigin::Independent,
+                )?;
+                Ok(())
+            }
+            (
+                HirDeclarationAttachedContentRootRole::Default,
+                HirDeclarationAttachedContentRootChild::Default(expression),
+            ) => {
+                if expression.module() != self.module.module_id() {
+                    return Err(HirSemanticPathError::InvalidOwnedPath);
+                }
+                self.record_selection_root(expression);
+                let path = [HirSemanticPathStep::AttachedContentDefault];
+                self.walk_expression(expression, &path, &[], None, CaptureAccess::Read)
+            }
+            _ => Err(HirSemanticPathError::InvalidOwnedPath),
+        }
+    }
+
     fn walk_parameter(
         &mut self,
         root: &HirDeclarationParameterRoot,
@@ -4586,7 +5088,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
     fn record_expression_start(
         &mut self,
         owner: ExprId,
-        owning_parent: Option<ExprId>,
+        parent: Option<HirExpressionUseParent>,
         access: CaptureAccess,
         kind: &HirExprKind,
     ) -> Result<(), HirSemanticPathError> {
@@ -4612,7 +5114,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     expression: owner,
                     source_ordinal,
                     subtree_end_ordinal: self.next_source_ordinal,
-                    parent_expression: owning_parent,
+                    parent,
                     capture_access: access,
                     callable_boundary,
                     placeholder,
@@ -4862,7 +5364,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             projection.kind,
             HirExprKind::Await(_)
                 | HirExprKind::Choice(_)
-                | HirExprKind::DialogueContentApplication(_)
+                | HirExprKind::AttachedContentApplication(_)
         ) {
             selection_edges.sort_by_key(expression_selection_edge_order);
         }
@@ -4889,7 +5391,17 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
             .resolve_expr(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
         let kind = expression.kind();
-        self.record_expression_start(owner, owning_parent, access, kind)?;
+        let parent = owning_parent.map(|parent| {
+            hops.last()
+                .filter(|hop| hop.parent() == parent && hop.child() == owner)
+                .map_or(HirExpressionUseParent::EnclosingRegion { parent }, |hop| {
+                    HirExpressionUseParent::Direct {
+                        parent,
+                        role: hop.role().clone(),
+                    }
+                })
+        });
+        self.record_expression_start(owner, parent, access, kind)?;
         let direct_body = self.record_expression_body_rows(owner, path, hops, kind)?;
         let projection = HirExpressionTraversalProjection {
             kind,
@@ -4988,13 +5500,19 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     .module
                     .resolve_expr(application)
                     .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-                let HirExprKind::DialogueContentApplication(value) = expression.kind() else {
+                let HirExprKind::AttachedContentApplication(value) = expression.kind() else {
                     return Err(
                         HirControlTransferResolutionError::InvalidOutputApplication { statement }
                             .into(),
                     );
                 };
-                if value.plan().is_none() {
+                if !matches!(
+                    value.family(),
+                    crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                        plan: Some(_),
+                        ..
+                    }
+                ) {
                     return Err(
                         HirControlTransferResolutionError::InvalidOutputApplication { statement }
                             .into(),
@@ -5689,18 +6207,22 @@ fn expression_edge_ownership(
         let expression = module
             .resolve_expr(owner)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
             return Err(HirSemanticPathError::InvalidOwnedPath);
         };
-        let coordinate = application
-            .coordinates()
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            target,
+            coordinates,
+            ..
+        } = application.family()
+        else {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        };
+        let coordinate = coordinates
             .iter()
             .find(|coordinate| u32::from(coordinate.argument().get()) == *ordinal)
             .ok_or(HirSemanticPathError::InvalidOwnedPath)?;
-        if *dialogue != owner
-            || postfix.target() != application.target()
-            || coordinate.value() != child
-        {
+        if *dialogue != owner || postfix.target() != *target || coordinate.value() != child {
             return Err(HirSemanticPathError::InvalidOwnedPath);
         }
         return Ok(crate::expr::HirExpressionChildOwnership::ReferenceOnly);
@@ -5728,14 +6250,21 @@ fn expression_edge_ownership(
         let parent = module
             .resolve_expr(parent)
             .map_err(|_| HirSemanticPathError::UnresolvedOwner)?;
-        let HirExprKind::DialogueContentApplication(application) = parent.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = parent.kind() else {
             return Err(HirSemanticPathError::InvalidOwnedPath);
         };
-        if application.target() != owner {
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            target,
+            coordinates,
+            ..
+        } = application.family()
+        else {
+            return Err(HirSemanticPathError::InvalidOwnedPath);
+        };
+        if *target != owner {
             return Err(HirSemanticPathError::InvalidOwnedPath);
         }
-        let coordinate = application
-            .coordinates()
+        let coordinate = coordinates
             .iter()
             .find(|coordinate| u32::from(coordinate.argument().get()) == *ordinal);
         if let Some(coordinate) = coordinate {

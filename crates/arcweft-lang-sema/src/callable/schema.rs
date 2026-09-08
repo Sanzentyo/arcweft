@@ -6,16 +6,22 @@ use std::{
 };
 
 use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
+use arcweft_presentation::rich_text::{
+    PresentationContentAttachedBodyPolicy, PresentationContentCallableDefinition,
+    PresentationContentCallableDefinitionId,
+};
+use arcweft_rich_text_schema::RichTextCallableSchemaDigest;
 use arcweft_source::SourceSpan;
 
 use crate::{
     character_dialogue::CharacterDialogueFieldCoordinate,
     effect_row::EffectRow,
     env::{FunctionParam, FunctionSignature, nominal::AcceptedNominalId},
+    record_field::AcceptedRecordFieldSemanticId,
     types::{
         AcceptedVariantPayloadFieldSemanticId, GenericConstParameterId, GenericParameterOwnerId,
-        GenericTypeParameterId, LanguageIntrinsicGenericOwner, SemanticTypeDigest,
-        TypeGenericUseCollector, TypeKind, VariantPayloadShape,
+        GenericTypeParameterId, LanguageIntrinsicGenericOwner, SemanticTypeDigest, TypeKind,
+        VariantPayloadShape,
     },
 };
 
@@ -23,8 +29,8 @@ use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterCoordinate,
     CallableParameterIndex, CallableSchemaError, CallableSourceError, CapacityMethodId,
-    CollectionMethodId, DetachedCallableDeclarationId, DialogueCallableId, DomainMethodId,
-    DropCallableId, EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId,
+    CollectionMethodId, ContentCallableIdentity, DetachedCallableDeclarationId, DialogueCallableId,
+    DomainMethodId, DropCallableId, EnumVariantSignatureId, FxSourceConstructor, IntegerMethodId,
     LanguageDocumentationFamily, LineContextMethodId, OptionConstructorKind,
     PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
     ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
@@ -392,46 +398,163 @@ impl RustCallableProvenance {
     }
 }
 
+/// Result contract owned by a callable signature.
+///
+/// Ordinary callables produce a typed runtime value. Content-emission
+/// callables produce a typed content operation instead; they do not smuggle a
+/// placeholder runtime `TypeKind` through the result contract.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallableResultSchema {
+    Value(TypeKind),
+    ContentEmission(ContentCallableIdentity),
+}
+
+impl From<TypeKind> for CallableResultSchema {
+    fn from(value: TypeKind) -> Self {
+        Self::Value(value)
+    }
+}
+
+impl CallableResultSchema {
+    pub const fn value_type(&self) -> Option<&TypeKind> {
+        match self {
+            Self::Value(value) => Some(value),
+            Self::ContentEmission(_) => None,
+        }
+    }
+
+    pub const fn content_emission(&self) -> Option<ContentCallableIdentity> {
+        match self {
+            Self::Value(_) => None,
+            Self::ContentEmission(identity) => Some(*identity),
+        }
+    }
+
+    pub(crate) fn visit_types<E>(
+        &self,
+        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+    ) -> Result<(), E> {
+        if let Self::Value(value) = self {
+            visitor(value)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableSignatureSchema {
-    groups: Arc<[CallableParameterGroup]>,
-    result: TypeKind,
-    generic_inventory: CallableGenericParameterInventory,
-    effects: CallableEffectSchema,
-    argument_policy: CallableArgumentPolicy,
-    reserved_open_names: Arc<[CallableName]>,
-    validator: CallableValidator,
-    evaluated_effect: Option<CallableEvaluatedEffect>,
-    extension_receiver: Option<CallableExtensionReceiver>,
+    core: CallableSignatureContents,
+    digest: super::CallableSignatureSchemaDigest,
+}
+
+/// Construction data owned by the signature seal. Only a sealed schema can be
+/// published; canonical encoding finishes before that outer carrier is made.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct CallableSignatureContents {
+    pub(super) groups: Arc<[CallableParameterGroup]>,
+    pub(super) result: CallableResultSchema,
+    pub(super) generic_inventory: CallableGenericParameterInventory,
+    pub(super) effects: CallableEffectSchema,
+    pub(super) argument_policy: CallableArgumentPolicy,
+    pub(super) reserved_open_names: Arc<[CallableName]>,
+    pub(super) validator: CallableValidator,
+    pub(super) attached_content: Option<CallableAttachedContentParameter>,
+    pub(super) dependency: Option<CallableSchemaDependency>,
+    pub(super) evaluated_effect: Option<CallableEvaluatedEffect>,
+    pub(super) extension_receiver: Option<CallableExtensionReceiver>,
 }
 
 /// Typed owner selected by the declaration or intrinsic schema issuer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CallableGenericIssuerOwner {
     Callable(CallableDeclarationKey),
+    ProjectNominal(arcweft_lang_hir::symbol::nominal::ProjectNominalDeclarationId),
     AcceptedNominal(AcceptedNominalId),
     LanguageIntrinsic(LanguageIntrinsicGenericOwner),
 }
 
-/// Authenticated declaration-owned generic inventory issuer.
-///
-/// The issuer creates the complete contiguous type/const identities for one
-/// exact owner. No arbitrary ID list can be supplied by a schema caller. The
-/// schema constructor consumes this token only as input evidence and derives
-/// all role and first-use rows from the checked type graph.
+/// Authenticated formal-parameter inventory for a declaration or a function
+/// scheme. Anonymous slots retain lexical references, never fabricated
+/// declaration identities. The schema seal derives uses from its type graph.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableGenericParameterIssuer {
-    owner: Option<CallableGenericIssuerOwner>,
-    type_count: u16,
-    const_count: u16,
+    authority: CallableGenericParameterAuthority,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CallableGenericParameterAuthority {
+    Empty,
+    Declaration {
+        owner: CallableGenericIssuerOwner,
+        type_count: u16,
+        const_count: u16,
+    },
+    FunctionScheme(crate::types::GenericBinder),
 }
 
 impl CallableGenericParameterIssuer {
+    /// Selects one declaration-owned constructor template from a contextual
+    /// owner type. Contextual arguments are not copied into the child solver.
+    pub(crate) fn for_enum_constructor_type(
+        ty: &TypeKind,
+        symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
+    ) -> Result<(Self, TypeKind), CallableSchemaError> {
+        let (owner, type_count) = match ty {
+            TypeKind::ProjectNominal(nominal) => {
+                let declaration = symbols
+                    .nominal(nominal.declaration())
+                    .ok_or(CallableSchemaError::InvalidCandidateIssuer)?;
+                if !matches!(
+                    declaration.body(),
+                    arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Enum { .. }
+                ) || declaration.type_parameters().len() != nominal.arguments().len()
+                {
+                    return Err(CallableSchemaError::InvalidCandidateIssuer);
+                }
+                let count = u16::try_from(declaration.type_parameters().len())
+                    .map_err(|_| CallableSchemaError::InvalidCandidateIssuer)?;
+                (
+                    CallableGenericIssuerOwner::ProjectNominal(declaration.id().clone()),
+                    count,
+                )
+            }
+            TypeKind::Option(_) => (
+                CallableGenericIssuerOwner::LanguageIntrinsic(
+                    LanguageIntrinsicGenericOwner::OptionConstructor,
+                ),
+                1,
+            ),
+            TypeKind::Result { .. } => (
+                CallableGenericIssuerOwner::LanguageIntrinsic(
+                    LanguageIntrinsicGenericOwner::ResultConstructor,
+                ),
+                2,
+            ),
+            _ => return Ok((Self::empty(), ty.clone())),
+        };
+        let issuer = Self::new(owner, type_count, 0)?;
+        let parameters = issuer
+            .type_parameters()?
+            .into_iter()
+            .map(TypeKind::GenericParam)
+            .collect::<Vec<_>>();
+        let template = match ty {
+            TypeKind::ProjectNominal(nominal) => TypeKind::ProjectNominal(
+                crate::types::ProjectNominalType::new(nominal.declaration().clone(), parameters),
+            ),
+            TypeKind::Option(_) => TypeKind::Option(Box::new(parameters[0].clone())),
+            TypeKind::Result { .. } => TypeKind::Result {
+                ok: Box::new(parameters[0].clone()),
+                error: Box::new(parameters[1].clone()),
+            },
+            _ => unreachable!("only parameterized constructor owners reach template construction"),
+        };
+        Ok((issuer, template))
+    }
+
     pub fn empty() -> Self {
         Self {
-            owner: None,
-            type_count: 0,
-            const_count: 0,
+            authority: CallableGenericParameterAuthority::Empty,
         }
     }
 
@@ -471,61 +594,126 @@ impl CallableGenericParameterIssuer {
         )
     }
 
+    fn function_scheme(binder: crate::types::GenericBinder) -> Self {
+        Self {
+            authority: CallableGenericParameterAuthority::FunctionScheme(binder),
+        }
+    }
+
     fn new(
         owner: CallableGenericIssuerOwner,
         type_count: u16,
         const_count: u16,
     ) -> Result<Self, CallableSchemaError> {
         if let CallableGenericIssuerOwner::LanguageIntrinsic(owner) = &owner {
-            let (expected_type_count, expected_const_count) = owner.generic_arity();
-            if const_count != expected_const_count || type_count != expected_type_count {
+            if (type_count, const_count) != owner.generic_arity() {
                 return Err(CallableSchemaError::InvalidCandidateIssuer);
             }
-            return Ok(Self {
-                owner: Some(CallableGenericIssuerOwner::LanguageIntrinsic(*owner)),
-                type_count,
-                const_count,
-            });
         }
         Ok(Self {
-            owner: Some(owner),
-            type_count,
-            const_count,
+            authority: CallableGenericParameterAuthority::Declaration {
+                owner,
+                type_count,
+                const_count,
+            },
         })
     }
 
-    pub(crate) fn type_parameters(&self) -> Vec<GenericTypeParameterId> {
-        let Some(owner) = self.generic_owner() else {
-            return Vec::new();
-        };
-        (0..self.type_count)
-            .map(|ordinal| GenericTypeParameterId::new(owner.clone(), ordinal))
-            .collect()
+    fn template_scope(&self) -> crate::types::GenericScope {
+        match self.authority {
+            CallableGenericParameterAuthority::FunctionScheme(binder) => {
+                crate::types::GenericScope::default().with_binder(binder)
+            }
+            _ => crate::types::GenericScope::default(),
+        }
     }
 
-    pub(crate) fn const_parameters(&self) -> Vec<GenericConstParameterId> {
-        let Some(owner) = self.generic_owner() else {
-            return Vec::new();
-        };
-        (0..self.const_count)
-            .map(|ordinal| GenericConstParameterId::new(owner.clone(), ordinal))
-            .collect()
+    fn type_parameters(
+        &self,
+    ) -> Result<Vec<crate::types::GenericTypeReference>, CallableSchemaError> {
+        match &self.authority {
+            CallableGenericParameterAuthority::Empty => Ok(Vec::new()),
+            CallableGenericParameterAuthority::Declaration { type_count, .. } => {
+                let owner = self
+                    .generic_owner()
+                    .expect("declaration issuer owns declaration parameters");
+                Ok((0..*type_count)
+                    .map(|slot| GenericTypeParameterId::new(owner.clone(), slot).into())
+                    .collect())
+            }
+            CallableGenericParameterAuthority::FunctionScheme(binder) => {
+                let scope = self.template_scope();
+                (0..binder.types())
+                    .map(|slot| scope.bound_type(0, slot).map_err(Into::into))
+                    .collect()
+            }
+        }
     }
 
-    pub(crate) fn owns_type(&self, parameter: &GenericTypeParameterId) -> bool {
-        self.generic_owner()
-            .is_some_and(|owner| parameter.owner() == &owner)
+    fn const_parameters(
+        &self,
+    ) -> Result<Vec<crate::types::GenericConstReference>, CallableSchemaError> {
+        match &self.authority {
+            CallableGenericParameterAuthority::Empty => Ok(Vec::new()),
+            CallableGenericParameterAuthority::Declaration { const_count, .. } => {
+                let owner = self
+                    .generic_owner()
+                    .expect("declaration issuer owns declaration parameters");
+                Ok((0..*const_count)
+                    .map(|slot| GenericConstParameterId::new(owner.clone(), slot).into())
+                    .collect())
+            }
+            CallableGenericParameterAuthority::FunctionScheme(binder) => {
+                let scope = self.template_scope();
+                (0..binder.const_lengths())
+                    .map(|slot| scope.bound_const(0, slot).map_err(Into::into))
+                    .collect()
+            }
+        }
     }
 
-    pub(crate) fn owns_const(&self, parameter: &GenericConstParameterId) -> bool {
-        self.generic_owner()
-            .is_some_and(|owner| parameter.owner() == &owner)
+    fn owns_type(&self, parameter: &crate::types::GenericTypeReference) -> bool {
+        match parameter {
+            crate::types::GenericTypeReference::Free(parameter) => self
+                .generic_owner()
+                .is_some_and(|owner| parameter.owner() == &owner),
+            crate::types::GenericTypeReference::Bound(parameter) => {
+                parameter.depth() == 0
+                    && matches!(
+                        self.authority,
+                        CallableGenericParameterAuthority::FunctionScheme(_)
+                    )
+            }
+            crate::types::GenericTypeReference::Inference(_) => false,
+        }
+    }
+
+    fn owns_const(&self, parameter: &crate::types::GenericConstReference) -> bool {
+        match parameter {
+            crate::types::GenericConstReference::Free(parameter) => self
+                .generic_owner()
+                .is_some_and(|owner| parameter.owner() == &owner),
+            crate::types::GenericConstReference::Bound(parameter) => {
+                parameter.depth() == 0
+                    && matches!(
+                        self.authority,
+                        CallableGenericParameterAuthority::FunctionScheme(_)
+                    )
+            }
+            crate::types::GenericConstReference::Inference(_) => false,
+        }
     }
 
     fn generic_owner(&self) -> Option<GenericParameterOwnerId> {
-        self.owner.as_ref().map(|owner| match owner {
+        let CallableGenericParameterAuthority::Declaration { owner, .. } = &self.authority else {
+            return None;
+        };
+        Some(match owner {
             CallableGenericIssuerOwner::Callable(declaration) => {
                 GenericParameterOwnerId::Callable(declaration.clone())
+            }
+            CallableGenericIssuerOwner::ProjectNominal(declaration) => {
+                GenericParameterOwnerId::Nominal(declaration.clone())
             }
             CallableGenericIssuerOwner::AcceptedNominal(declaration) => {
                 GenericParameterOwnerId::AcceptedNominal(declaration.clone())
@@ -536,24 +724,24 @@ impl CallableGenericParameterIssuer {
         })
     }
 }
-
 /// The one schema-sealed inventory used by callable constraint preparation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGenericParameterInventory {
+    template_scope: crate::types::GenericScope,
     types: Arc<[CallableGenericTypeUse]>,
     consts: Arc<[CallableGenericConstUse]>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGenericTypeUse {
-    parameter: GenericTypeParameterId,
+    parameter: crate::types::GenericTypeReference,
     role: CallableSchemaGenericRole,
     first_use: CallableGenericFirstUse,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct CallableGenericConstUse {
-    parameter: GenericConstParameterId,
+    parameter: crate::types::GenericConstReference,
     role: CallableSchemaGenericRole,
     first_use: CallableGenericFirstUse,
 }
@@ -571,6 +759,17 @@ pub(crate) enum CallableGenericFirstUse {
 }
 
 impl CallableGenericParameterInventory {
+    pub(crate) const fn template_scope(&self) -> &crate::types::GenericScope {
+        &self.template_scope
+    }
+
+    pub(crate) fn template_binder(&self) -> crate::types::GenericBinder {
+        self.template_scope
+            .binders()
+            .first()
+            .copied()
+            .unwrap_or(crate::types::GenericBinder::EMPTY)
+    }
     pub(crate) fn types(&self) -> &[CallableGenericTypeUse] {
         &self.types
     }
@@ -581,7 +780,7 @@ impl CallableGenericParameterInventory {
 }
 
 impl CallableGenericTypeUse {
-    pub(crate) const fn parameter(&self) -> &GenericTypeParameterId {
+    pub(crate) const fn parameter(&self) -> &crate::types::GenericTypeReference {
         &self.parameter
     }
 
@@ -595,7 +794,7 @@ impl CallableGenericTypeUse {
 }
 
 impl CallableGenericConstUse {
-    pub(crate) const fn parameter(&self) -> &GenericConstParameterId {
+    pub(crate) const fn parameter(&self) -> &crate::types::GenericConstReference {
         &self.parameter
     }
 
@@ -611,6 +810,15 @@ impl CallableGenericConstUse {
 /// Call-site identity for one deliberately open named argument. The schema
 /// digest prevents two open slots from different signatures from colliding;
 /// the authored name is canonicalized through `CallableName` before issuance.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct OpenArgumentSemanticDigest([u8; 32]);
+
+impl OpenArgumentSemanticDigest {
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct OpenArgumentId {
     schema: super::CallableSignatureSchemaDigest,
@@ -628,6 +836,18 @@ impl OpenArgumentId {
 
     pub const fn binding(&self) -> &CallableName {
         &self.binding
+    }
+
+    /// Issues the one opaque semantic identity for this open argument.  The
+    /// schema digest and owner-issued callable binding bytes are hashed
+    /// directly; no string representation or duplicate wire grammar is
+    /// introduced at this boundary.
+    pub(crate) fn semantic_digest(&self) -> OpenArgumentSemanticDigest {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.lang.open-argument-semantic.v1\0");
+        hasher.update(self.schema.as_bytes());
+        hasher.update(self.binding.canonical_identity_bytes());
+        OpenArgumentSemanticDigest(*hasher.finalize().as_bytes())
     }
 }
 
@@ -686,6 +906,29 @@ pub(crate) enum CallableEvaluatedEffectOperandRole {
 }
 
 impl CallableEvaluatedEffect {
+    /// Declaration-owned closed effect row required to execute this evaluated
+    /// operation. The mapping lives on the semantic operation identity so
+    /// schema producers, dialogue callbacks, and ordinary effect accounting
+    /// cannot diverge or infer capabilities from runtime variants.
+    pub(crate) fn declared_effect_row(self) -> EffectRow {
+        let label = match self {
+            Self::Log(_) => Some("log.write"),
+            Self::SignalWrite => Some("signal.write"),
+            Self::MetricWrite => Some("metric.write"),
+            Self::EmitEvent => Some("event.emit"),
+            Self::Panic | Self::Fail | Self::Bail | Self::Ensure | Self::Drop(_) => None,
+        };
+        EffectRow::closed(
+            label
+                .into_iter()
+                .map(|label| {
+                    crate::effects::EffectId::parse(label)
+                        .expect("evaluated-effect identities are canonical static semantics")
+                })
+                .collect(),
+        )
+    }
+
     /// Resolves an exact schema coordinate to its closed effect operand role.
     pub(crate) const fn operand_role(
         self,
@@ -784,11 +1027,262 @@ pub struct CallableParameter {
     source: Option<CallableParameterSource>,
 }
 
+/// Stable digest payload for one schema-owned dependency definition.
+///
+/// The callable layer cannot depend on the text-proxy owner module, so this
+/// opaque digest is deliberately issued by that owner and carried here as a
+/// typed value. It is never reconstructed from a source/display name.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CallableSchemaDependencyDigest([u8; 32]);
+
+impl CallableSchemaDependencyDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Closed owner identity carried by a context-dependent callable schema.
+///
+/// The text-proxy row contains both the nominal owner identity and the exact
+/// owner-issued definition digest. Consequently two declarations with equal
+/// callable parameter shapes remain distinct schema dependencies.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableSchemaDependency {
+    TextProxy {
+        owner: SemanticTypeDigest,
+        definition: CallableSchemaDependencyDigest,
+    },
+    PresentationContent {
+        definition: PresentationContentCallableDefinitionId,
+        schema: RichTextCallableSchemaDigest,
+    },
+}
+
+impl CallableSchemaDependency {
+    /// Constructs the callable-layer projection of an owner-issued text-proxy
+    /// definition identity.
+    pub(crate) const fn text_proxy(
+        owner: SemanticTypeDigest,
+        definition: CallableSchemaDependencyDigest,
+    ) -> Self {
+        Self::TextProxy { owner, definition }
+    }
+
+    pub(crate) const fn presentation_content(
+        definition: PresentationContentCallableDefinitionId,
+        schema: RichTextCallableSchemaDigest,
+    ) -> Self {
+        Self::PresentationContent { definition, schema }
+    }
+
+    pub const fn owner(self) -> Option<SemanticTypeDigest> {
+        match self {
+            Self::TextProxy { owner, .. } => Some(owner),
+            Self::PresentationContent { .. } => None,
+        }
+    }
+
+    pub const fn definition_digest(self) -> Option<CallableSchemaDependencyDigest> {
+        match self {
+            Self::TextProxy { definition, .. } => Some(definition),
+            Self::PresentationContent { .. } => None,
+        }
+    }
+
+    pub const fn presentation_content_definition(
+        self,
+    ) -> Option<PresentationContentCallableDefinitionId> {
+        match self {
+            Self::TextProxy { .. } => None,
+            Self::PresentationContent { definition, .. } => Some(definition),
+        }
+    }
+
+    pub const fn presentation_content_schema(self) -> Option<RichTextCallableSchemaDigest> {
+        match self {
+            Self::TextProxy { .. } => None,
+            Self::PresentationContent { schema, .. } => Some(schema),
+        }
+    }
+
+    /// Stable zero-based tag for the dependency family.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::TextProxy { .. } => 0,
+            Self::PresentationContent { .. } => 1,
+        }
+    }
+
+    fn valid_for(
+        self,
+        validator: &CallableValidator,
+        attached_content: Option<CallableAttachedContentParameter>,
+    ) -> bool {
+        match (self, validator, attached_content) {
+            (
+                Self::TextProxy { .. },
+                &CallableValidator::Content(ContentCallableIdentity::TextProxyObject {
+                    owner,
+                    definition,
+                }),
+                Some(parameter),
+            ) => {
+                parameter == CallableAttachedContentParameter::text_proxy_object()
+                    && owner == self.owner().expect("text proxy dependency owner")
+                    && definition
+                        == self
+                            .definition_digest()
+                            .expect("text proxy dependency digest")
+            }
+            (
+                Self::PresentationContent { definition, schema },
+                &CallableValidator::Content(identity),
+                Some(parameter),
+            ) => {
+                identity == ContentCallableIdentity::language(definition, schema)
+                    && arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+                        .get(definition)
+                        .is_some_and(|row| {
+                            identity.schema() == Some(row.schema_digest())
+                                && parameter
+                                    == CallableAttachedContentParameter::from_presentation_row(row)
+                        })
+            }
+            _ => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum CallableParameterSemanticBinding {
     Coordinate,
     Named(CallableName),
     AcceptedVariantPayloadField(AcceptedVariantPayloadFieldSemanticId),
+    AcceptedProjectRecordField(AcceptedRecordFieldSemanticId),
+}
+
+/// Callable-owned identity projection of the shared compile-time scalar kinds.
+/// This is an admission identity only; checked scalar values and their decoding
+/// remain owned by the compile-time scalar authority.
+///
+/// This deliberately lives with callable schema ownership instead of
+/// importing the analyzer's checked-value implementation. Keeping this small
+/// identity algebra here
+/// avoids a reverse module dependency while retaining the exact checked scalar
+/// distinction needed by the Object schema.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableCompileTimeScalarKind {
+    Bool,
+    Int,
+    Milli,
+    Ratio,
+    Length,
+    Angle,
+    Duration,
+    /// The digest of the accepted payload-free project-enum type schema.
+    ClosedEnum(SemanticTypeDigest),
+    PublicId,
+    Text,
+    Color,
+}
+
+impl CallableCompileTimeScalarKind {
+    /// Stable zero-based tag for the closed scalar admission identity.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Bool => 0,
+            Self::Int => 1,
+            Self::Milli => 2,
+            Self::Ratio => 3,
+            Self::Length => 4,
+            Self::Angle => 5,
+            Self::Duration => 6,
+            Self::ClosedEnum(_) => 7,
+            Self::PublicId => 8,
+            Self::Text => 9,
+            Self::Color => 10,
+        }
+    }
+}
+
+/// Semantic-only admission used by callable families whose values are not
+/// represented by an ordinary `TypeKind` in the call schema.
+///
+/// `TextProxyNominal` is a closed family marker for the exact text-proxy
+/// nominal admission. Scalar fields carry their checked scalar kind; they do
+/// not degrade to `Any`, `Named`, or a source spelling.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct CallableCompileTimeScalarAdmission {
+    kind: CallableCompileTimeScalarKind,
+    value_type: TypeKind,
+}
+
+impl CallableCompileTimeScalarAdmission {
+    pub fn try_new(kind: CallableCompileTimeScalarKind, value_type: TypeKind) -> Option<Self> {
+        let valid = match (kind, &value_type) {
+            (CallableCompileTimeScalarKind::Bool, TypeKind::Bool)
+            | (CallableCompileTimeScalarKind::Int, TypeKind::I64)
+            | (CallableCompileTimeScalarKind::Duration, TypeKind::Duration)
+            | (CallableCompileTimeScalarKind::Text, TypeKind::String) => true,
+            (CallableCompileTimeScalarKind::Milli, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::Milli
+            }
+            (CallableCompileTimeScalarKind::Ratio, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::Ratio
+            }
+            (CallableCompileTimeScalarKind::Length, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::Length
+            }
+            (CallableCompileTimeScalarKind::Angle, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::Angle
+            }
+            (CallableCompileTimeScalarKind::PublicId, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::PublicId
+            }
+            (CallableCompileTimeScalarKind::Color, TypeKind::CompileTimeScalar(value)) => {
+                value.kind() == crate::types::CompileTimeScalarKind::Color
+            }
+            (CallableCompileTimeScalarKind::ClosedEnum(owner), value) => {
+                value
+                    .semantic_identity_digest()
+                    .is_ok_and(|digest| digest == owner)
+                    && matches!(value, TypeKind::ProjectNominal(nominal) if nominal.arguments().is_empty())
+            }
+            _ => false,
+        };
+        if !valid {
+            return None;
+        }
+        Some(Self { kind, value_type })
+    }
+
+    pub const fn kind(&self) -> CallableCompileTimeScalarKind {
+        self.kind
+    }
+
+    pub const fn value_type(&self) -> &TypeKind {
+        &self.value_type
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CallableSemanticAdmission {
+    TextProxyNominal,
+    CompileTimeScalar(CallableCompileTimeScalarAdmission),
+}
+
+impl CallableSemanticAdmission {
+    /// Stable zero-based tag for the closed semantic admission family.
+    pub const fn semantic_tag(&self) -> u8 {
+        match self {
+            Self::TextProxyNominal => 0,
+            Self::CompileTimeScalar(_) => 1,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -797,6 +1291,7 @@ pub enum CallableParameterAdmission {
         declared: TypeKind,
         rule: CallableParameterValueRule,
     },
+    Semantic(CallableSemanticAdmission),
     UncheckedSupply,
 }
 
@@ -834,19 +1329,45 @@ pub enum CallableSemanticValueGuard {
     },
 }
 
-/// Exact semantic discriminator observed on one checked source value.
+/// Variant discriminator with the owner representation supplied by its phase.
 ///
 /// This is independent of the selected schema alternative: an `otherwise`
 /// row still retains a variant case when the checked value is a variant that
 /// did not match any guarded row.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CheckedSemanticValueEvidence {
+pub enum SemanticValueEvidence<Owner> {
     VariantCase {
-        owner: SemanticTypeDigest,
+        owner: Owner,
         ordinal: u32,
         payload: VariantPayloadRequirement,
     },
     NoVariantCase,
+}
+
+/// Stable source discriminator after type projection and evidence completion.
+pub type CheckedSemanticValueEvidence = SemanticValueEvidence<SemanticTypeDigest>;
+
+/// Source observation before candidate-owned variables have been resolved.
+pub(crate) type ObservedSemanticValueEvidence = SemanticValueEvidence<TypeKind>;
+
+impl<Owner> SemanticValueEvidence<Owner> {
+    pub(crate) fn try_project_owner<T, E>(
+        &self,
+        project: impl FnOnce(&Owner) -> Result<T, E>,
+    ) -> Result<SemanticValueEvidence<T>, E> {
+        Ok(match self {
+            Self::VariantCase {
+                owner,
+                ordinal,
+                payload,
+            } => SemanticValueEvidence::VariantCase {
+                owner: project(owner)?,
+                ordinal: *ordinal,
+                payload: *payload,
+            },
+            Self::NoVariantCase => SemanticValueEvidence::NoVariantCase,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -883,11 +1404,58 @@ pub enum CallableArgumentSemanticAction {
     Clear,
 }
 
+/// Semantic destination of a content callable parameter.
+///
+/// Object parameters are kept as typed coordinates rather than being
+/// recovered from authored names. A custom field retains the accepted field
+/// identity issued by the project-record owner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableContentParameterConsumer {
+    ObjectId,
+    ObjectType,
+    ObjectRole,
+    ObjectLayer,
+    ObjectDepth,
+    ObjectHitTest,
+    ObjectCustomField(AcceptedRecordFieldSemanticId),
+}
+
+impl CallableContentParameterConsumer {
+    /// Stable zero-based tag for the Object content-parameter coordinate.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::ObjectId => 0,
+            Self::ObjectType => 1,
+            Self::ObjectRole => 2,
+            Self::ObjectLayer => 3,
+            Self::ObjectDepth => 4,
+            Self::ObjectHitTest => 5,
+            Self::ObjectCustomField(_) => 6,
+        }
+    }
+
+    /// Returns whether a scalar admission is the exact built-in Object kind
+    /// for this coordinate. Custom fields retain their own checked scalar
+    /// kind and therefore accept every member of the closed scalar algebra.
+    pub const fn accepts_scalar_kind(self, kind: CallableCompileTimeScalarKind) -> bool {
+        match self {
+            Self::ObjectId | Self::ObjectRole | Self::ObjectLayer => {
+                matches!(kind, CallableCompileTimeScalarKind::PublicId)
+            }
+            Self::ObjectDepth => matches!(kind, CallableCompileTimeScalarKind::Length),
+            Self::ObjectHitTest => matches!(kind, CallableCompileTimeScalarKind::Bool),
+            Self::ObjectCustomField(_) => true,
+            Self::ObjectType => false,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableParameterConsumer {
     Value,
     DialoguePatch(CharacterDialogueFieldCoordinate),
     DialogueApplicationMetadata(DialogueApplicationMetadataCoordinate),
+    Content(CallableContentParameterConsumer),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1042,6 +1610,29 @@ impl CallableSemanticValueGuard {
         declared: &TypeKind,
         checked: &CheckedSemanticValueEvidence,
     ) -> bool {
+        self.accepts_owner(checked, |owner, checked_owner| {
+            owner
+                .apply_to(declared)
+                .semantic_identity_digest()
+                .is_ok_and(|digest| digest == *checked_owner)
+        })
+    }
+
+    pub(crate) fn accepts_observation(
+        &self,
+        declared: &TypeKind,
+        observed: &ObservedSemanticValueEvidence,
+    ) -> bool {
+        self.accepts_owner(observed, |owner, observed_owner| {
+            owner.apply_to(declared) == *observed_owner
+        })
+    }
+
+    fn accepts_owner<Owner>(
+        &self,
+        checked: &SemanticValueEvidence<Owner>,
+        owner_accepts: impl FnOnce(&ParameterExpectedTypeProjection, &Owner) -> bool,
+    ) -> bool {
         match (self, checked) {
             (
                 Self::VariantCase {
@@ -1049,17 +1640,17 @@ impl CallableSemanticValueGuard {
                     ordinal,
                     payload,
                 },
-                CheckedSemanticValueEvidence::VariantCase {
+                SemanticValueEvidence::VariantCase {
                     owner: checked_owner,
                     ordinal: checked_ordinal,
                     payload: checked_payload,
                 },
             ) => {
-                owner.apply_to(declared).semantic_identity_digest() == *checked_owner
+                owner_accepts(owner, checked_owner)
                     && ordinal == checked_ordinal
                     && payload == checked_payload
             }
-            (Self::VariantCase { .. }, CheckedSemanticValueEvidence::NoVariantCase) => false,
+            (Self::VariantCase { .. }, SemanticValueEvidence::NoVariantCase) => false,
         }
     }
 }
@@ -1080,22 +1671,50 @@ impl CallableParameterAdmission {
         Self::UncheckedSupply
     }
 
+    pub const fn semantic(admission: CallableSemanticAdmission) -> Self {
+        Self::Semantic(admission)
+    }
+
+    pub const fn text_proxy_nominal() -> Self {
+        Self::Semantic(CallableSemanticAdmission::TextProxyNominal)
+    }
+
+    pub fn compile_time_scalar(
+        kind: CallableCompileTimeScalarKind,
+        value_type: TypeKind,
+    ) -> Option<Self> {
+        CallableCompileTimeScalarAdmission::try_new(kind, value_type)
+            .map(CallableSemanticAdmission::CompileTimeScalar)
+            .map(Self::Semantic)
+    }
+
     pub const fn declared(&self) -> Option<&TypeKind> {
         match self {
             Self::Checked { declared, .. } => Some(declared),
-            Self::UncheckedSupply => None,
+            Self::Semantic(_) | Self::UncheckedSupply => None,
         }
     }
 
     pub const fn rule(&self) -> Option<&CallableParameterValueRule> {
         match self {
             Self::Checked { rule, .. } => Some(rule),
-            Self::UncheckedSupply => None,
+            Self::Semantic(_) | Self::UncheckedSupply => None,
+        }
+    }
+
+    pub const fn semantic_admission(&self) -> Option<&CallableSemanticAdmission> {
+        match self {
+            Self::Semantic(admission) => Some(admission),
+            Self::Checked { .. } | Self::UncheckedSupply => None,
         }
     }
 
     pub const fn is_unchecked(&self) -> bool {
         matches!(self, Self::UncheckedSupply)
+    }
+
+    pub const fn is_semantic(&self) -> bool {
+        matches!(self, Self::Semantic(_))
     }
 }
 
@@ -1115,6 +1734,12 @@ impl From<TypeKind> for CallableParameterAdmission {
         Self::checked(value)
     }
 }
+
+impl From<CallableSemanticAdmission> for CallableParameterAdmission {
+    fn from(value: CallableSemanticAdmission) -> Self {
+        Self::Semantic(value)
+    }
+}
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallableParameterPassing {
     PositionalOnly,
@@ -1123,7 +1748,7 @@ pub enum CallableParameterPassing {
     RestPositional,
     RestNamed,
 }
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CallableParameterPresence {
     Required,
     Optional,
@@ -1148,10 +1773,223 @@ pub enum SpreadArgumentPolicy {
     Unchecked,
 }
 
+/// Checked role admitted by an attached content body.
+///
+/// The role is semantic admission evidence, not a runtime `TypeKind`. In
+/// particular, an attached body is never represented as a nominal
+/// `DialogueContent` type in the callable schema.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedContentRole {
+    Inline,
+    Rich,
+    Dialogue,
+}
+
+/// Final admission selected for one checked attached body. Literal content is
+/// intentionally not assigned a fabricated Inline/Rich/Dialogue role.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedAttachedContentAdmission {
+    Role(CheckedContentRole),
+    Literal,
+}
+
+impl CheckedAttachedContentAdmission {
+    pub const fn role(self) -> Option<CheckedContentRole> {
+        match self {
+            Self::Role(role) => Some(role),
+            Self::Literal => None,
+        }
+    }
+
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Role(CheckedContentRole::Inline) => 0,
+            Self::Role(CheckedContentRole::Rich) => 1,
+            Self::Role(CheckedContentRole::Dialogue) => 2,
+            Self::Literal => 3,
+        }
+    }
+}
+
+impl CheckedContentRole {
+    /// Stable zero-based tag for the closed checked body-role identity.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Inline => 0,
+            Self::Rich => 1,
+            Self::Dialogue => 2,
+        }
+    }
+}
+
+/// Admission policy for a callable's attached content body.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableAttachedContentPolicy {
+    PreserveBodyRole,
+    InlineOnly,
+    RichOnly,
+    LiteralOnly,
+    Declared(CheckedContentRole),
+}
+
+/// Execution ownership of a callable's attached content body.
+///
+/// Presentation and text-proxy content callables consume their body while
+/// sealing the checked content tree. Project/user callables instead receive a
+/// runtime `DialogueContent` value through the dedicated attached-content
+/// call channel. This distinction is schema authority; consumers must not
+/// infer it from the selected callable family or result type.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableAttachedContentExecution {
+    Structural,
+    RuntimeContent,
+}
+
+impl CallableAttachedContentExecution {
+    /// Stable zero-based tag for the closed execution-owner identity.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Structural => 0,
+            Self::RuntimeContent => 1,
+        }
+    }
+}
+
+/// Schema-owned description of an attached content parameter.
+///
+/// Presence and role are orthogonal: `Optional` means the body may be omitted;
+/// it does not wrap the body role in an `Option` type. Keeping both facts in
+/// one value prevents a bare policy from silently losing requiredness.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CallableAttachedContentParameter {
+    group: CallableGroupIndex,
+    presence: CallableParameterPresence,
+    policy: CallableAttachedContentPolicy,
+    execution: CallableAttachedContentExecution,
+}
+
+impl CallableAttachedContentParameter {
+    /// Returns the complete attached-content parameter owned by a text-proxy
+    /// Object schema.
+    pub const fn text_proxy_object() -> Self {
+        Self::new(
+            CallableGroupIndex::ZERO,
+            CallableParameterPresence::Required,
+            CallableAttachedContentPolicy::RichOnly,
+            CallableAttachedContentExecution::Structural,
+        )
+    }
+
+    /// Returns the attached-content parameter for an exact Content identity.
+    /// Presentation rows remain the source of language body policy; the
+    /// dynamic Object identity has its closed Rich-only policy here.
+    pub(crate) fn for_content_identity(identity: ContentCallableIdentity) -> Option<Self> {
+        match identity {
+            ContentCallableIdentity::TextProxyObject { .. } => Some(Self::text_proxy_object()),
+            ContentCallableIdentity::Language { definition, .. } => {
+                arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+                    .get(definition)
+                    .map(Self::from_presentation_row)
+            }
+        }
+    }
+
+    /// Projects the attached-body contract from one already-resolved catalog
+    /// row. Callers that also validate the row digest use this entry point so
+    /// one catalog lookup remains the sole source of the presentation policy.
+    pub(crate) const fn from_presentation_row(row: &PresentationContentCallableDefinition) -> Self {
+        Self::new(
+            CallableGroupIndex::ZERO,
+            CallableParameterPresence::Required,
+            CallableAttachedContentPolicy::from_presentation_policy(row.attached_body_policy()),
+            CallableAttachedContentExecution::Structural,
+        )
+    }
+
+    pub const fn new(
+        group: CallableGroupIndex,
+        presence: CallableParameterPresence,
+        policy: CallableAttachedContentPolicy,
+        execution: CallableAttachedContentExecution,
+    ) -> Self {
+        Self {
+            group,
+            presence,
+            policy,
+            execution,
+        }
+    }
+
+    pub const fn group(self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn presence(self) -> CallableParameterPresence {
+        self.presence
+    }
+
+    pub const fn policy(self) -> CallableAttachedContentPolicy {
+        self.policy
+    }
+
+    pub const fn execution(self) -> CallableAttachedContentExecution {
+        self.execution
+    }
+
+    /// Resolves the final body admission from this callee-owned policy and
+    /// the already checked surrounding role.
+    pub const fn admission(
+        self,
+        surrounding: CheckedContentRole,
+    ) -> CheckedAttachedContentAdmission {
+        match self.policy {
+            CallableAttachedContentPolicy::PreserveBodyRole => {
+                CheckedAttachedContentAdmission::Role(surrounding)
+            }
+            CallableAttachedContentPolicy::InlineOnly => {
+                CheckedAttachedContentAdmission::Role(CheckedContentRole::Inline)
+            }
+            CallableAttachedContentPolicy::RichOnly => {
+                CheckedAttachedContentAdmission::Role(CheckedContentRole::Rich)
+            }
+            CallableAttachedContentPolicy::LiteralOnly => CheckedAttachedContentAdmission::Literal,
+            CallableAttachedContentPolicy::Declared(role) => {
+                CheckedAttachedContentAdmission::Role(role)
+            }
+        }
+    }
+}
+
+impl CallableAttachedContentPolicy {
+    /// Returns the body contract for one exact presentation content row.
+    pub(crate) const fn from_presentation_policy(
+        policy: PresentationContentAttachedBodyPolicy,
+    ) -> Self {
+        match policy {
+            PresentationContentAttachedBodyPolicy::PreserveBodyRole => Self::PreserveBodyRole,
+            PresentationContentAttachedBodyPolicy::InlineOnly => Self::InlineOnly,
+            PresentationContentAttachedBodyPolicy::LiteralOnly => Self::LiteralOnly,
+        }
+    }
+
+    /// Stable zero-based tag for the policy constructor. Declared roles carry
+    /// their own checked role tag after this constructor tag.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::PreserveBodyRole => 0,
+            Self::InlineOnly => 1,
+            Self::RichOnly => 2,
+            Self::LiteralOnly => 3,
+            Self::Declared(_) => 4,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableValidator {
     Ordinary,
-    Fx(FxCallableSignatureId),
+    FxConstructor(FxSourceConstructor),
+    BuiltinFx(arcweft_presentation::fx::BuiltinFxCallableRowId),
     UnknownFxMember { member: CallableName },
     EnumConstructor(EnumVariantSignatureId),
     ResultConstructor(ResultConstructorKind),
@@ -1161,6 +1999,7 @@ pub enum CallableValidator {
     Agent(AgentIntrinsicSignatureId),
     Presentation(PresentationCallableId),
     Dialogue(DialogueCallableId),
+    Content(ContentCallableIdentity),
     Collection(CollectionMethodId),
     StandardMap(super::StandardMapFamily),
     PresentationHandle(PresentationHandleMethodId),
@@ -1205,15 +2044,169 @@ impl CallableMethodRole {
 }
 
 impl CallableSignatureSchema {
+    fn seal(core: CallableSignatureContents) -> Result<Self, CallableSchemaError> {
+        let digest = super::digest::schema_digest(&core)?;
+        Ok(Self { core, digest })
+    }
+
+    pub const fn semantic_digest(&self) -> super::CallableSignatureSchemaDigest {
+        self.digest
+    }
+
     pub(crate) fn try_new(
         groups: Vec<CallableParameterGroup>,
-        result: TypeKind,
+        result: impl Into<CallableResultSchema>,
         effects: CallableEffectSchema,
         argument_policy: CallableArgumentPolicy,
         validator: CallableValidator,
         generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
+        Self::try_new_with_attached_content(
+            groups,
+            result,
+            effects,
+            argument_policy,
+            validator,
+            None,
+            generic_issuer,
+            limits,
+        )
+    }
+
+    pub(crate) fn try_new_with_attached_content(
+        groups: Vec<CallableParameterGroup>,
+        result: impl Into<CallableResultSchema>,
+        effects: CallableEffectSchema,
+        argument_policy: CallableArgumentPolicy,
+        validator: CallableValidator,
+        attached_content: Option<CallableAttachedContentParameter>,
+        generic_issuer: CallableGenericParameterIssuer,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        if matches!(validator, CallableValidator::Content(_)) {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
+        Self::try_new_with_attached_content_inner(
+            groups,
+            result,
+            effects,
+            argument_policy,
+            validator,
+            attached_content,
+            None,
+            generic_issuer,
+            limits,
+        )
+    }
+
+    /// Constructs a context-dependent schema only when its closed dependency
+    /// has been supplied and agrees with the content validator/body contract.
+    pub(crate) fn try_new_with_dependency(
+        groups: Vec<CallableParameterGroup>,
+        result: impl Into<CallableResultSchema>,
+        effects: CallableEffectSchema,
+        argument_policy: CallableArgumentPolicy,
+        validator: CallableValidator,
+        attached_content: Option<CallableAttachedContentParameter>,
+        dependency: CallableSchemaDependency,
+        generic_issuer: CallableGenericParameterIssuer,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        Self::try_new_with_attached_content_inner(
+            groups,
+            result,
+            effects,
+            argument_policy,
+            validator,
+            attached_content,
+            Some(dependency),
+            generic_issuer,
+            limits,
+        )
+    }
+
+    fn try_new_with_attached_content_inner(
+        groups: Vec<CallableParameterGroup>,
+        result: impl Into<CallableResultSchema>,
+        effects: CallableEffectSchema,
+        argument_policy: CallableArgumentPolicy,
+        validator: CallableValidator,
+        attached_content: Option<CallableAttachedContentParameter>,
+        dependency: Option<CallableSchemaDependency>,
+        generic_issuer: CallableGenericParameterIssuer,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableSchemaError> {
+        let result = result.into();
+        if let CallableValidator::Content(identity) = &validator
+            && attached_content != CallableAttachedContentParameter::for_content_identity(*identity)
+        {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidValidator,
+            });
+        }
+        if let CallableValidator::Content(identity) = &validator
+            && !matches!(
+                &result,
+                CallableResultSchema::ContentEmission(result_identity) if result_identity == identity
+            )
+        {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidValidator,
+            });
+        }
+        if matches!(&result, CallableResultSchema::ContentEmission(_))
+            && !matches!(&validator, CallableValidator::Content(_))
+        {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidValidator,
+            });
+        }
+        if attached_content.is_some_and(|parameter| {
+            matches!(&validator, CallableValidator::Content(_))
+                != matches!(
+                    parameter.execution(),
+                    CallableAttachedContentExecution::Structural
+                )
+        }) {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidValidator,
+            });
+        }
+        if attached_content.is_some_and(|parameter| {
+            parameter.execution() == CallableAttachedContentExecution::RuntimeContent
+                && !matches!(
+                    parameter.policy(),
+                    CallableAttachedContentPolicy::Declared(_)
+                )
+        }) {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidValidator,
+            });
+        }
+        if let CallableValidator::Content(_) = &validator
+            && dependency.is_none()
+        {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
+        if dependency.is_some_and(|dependency| !dependency.valid_for(&validator, attached_content))
+        {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::Content,
+                code: super::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
         if groups.is_empty() {
             return Err(CallableSchemaError::EmptyGroups);
         }
@@ -1221,6 +2214,21 @@ impl CallableSignatureSchema {
             return Err(CallableSchemaError::GroupLimit {
                 actual: groups.len(),
                 limit: limits.max_groups_per_callable(),
+            });
+        }
+        let terminal_group =
+            CallableGroupIndex::try_from_usize(groups.len() - 1).map_err(|_| {
+                CallableSchemaError::GroupLimit {
+                    actual: groups.len(),
+                    limit: limits.max_groups_per_callable(),
+                }
+            })?;
+        if let Some(parameter) = attached_content
+            && parameter.group() != terminal_group
+        {
+            return Err(CallableSchemaError::InvalidAttachedContentGroup {
+                expected: terminal_group,
+                actual: parameter.group(),
             });
         }
         let mut total_parameters = 0usize;
@@ -1252,6 +2260,41 @@ impl CallableSignatureSchema {
                 },
             )?;
             for parameter in group.parameters() {
+                match (parameter.semantic_binding(), parameter.consumer()) {
+                    (
+                        CallableParameterSemanticBinding::AcceptedProjectRecordField(binding),
+                        CallableParameterConsumer::Content(
+                            CallableContentParameterConsumer::ObjectCustomField(field),
+                        ),
+                    ) if binding == field => {}
+                    (CallableParameterSemanticBinding::AcceptedProjectRecordField(_), _)
+                    | (
+                        _,
+                        CallableParameterConsumer::Content(
+                            CallableContentParameterConsumer::ObjectCustomField(_),
+                        ),
+                    ) => {
+                        return Err(CallableSchemaError::InvalidParameterConsumer {
+                            group: group.index,
+                            parameter: parameter.index,
+                        });
+                    }
+                    (
+                        CallableParameterSemanticBinding::Coordinate
+                        | CallableParameterSemanticBinding::Named(_),
+                        CallableParameterConsumer::Content(_),
+                    ) => {}
+                    (
+                        CallableParameterSemanticBinding::AcceptedVariantPayloadField(_),
+                        CallableParameterConsumer::Content(_),
+                    ) => {
+                        return Err(CallableSchemaError::InvalidParameterConsumer {
+                            group: group.index,
+                            parameter: parameter.index,
+                        });
+                    }
+                    _ => {}
+                }
                 match parameter.admission() {
                     CallableParameterAdmission::UncheckedSupply => {
                         if !matches!(parameter.consumer(), CallableParameterConsumer::Value) {
@@ -1262,6 +2305,12 @@ impl CallableSignatureSchema {
                         }
                     }
                     CallableParameterAdmission::Checked { rule, .. } => {
+                        if matches!(parameter.consumer(), CallableParameterConsumer::Content(_)) {
+                            return Err(CallableSchemaError::InvalidParameterAdmission {
+                                group: group.index,
+                                parameter: parameter.index,
+                            });
+                        }
                         if rule.guarded().iter().enumerate().any(|(index, row)| {
                             rule.guarded()[..index]
                                 .iter()
@@ -1283,6 +2332,38 @@ impl CallableSignatureSchema {
                                 group: group.index,
                                 parameter: parameter.index,
                             });
+                        }
+                    }
+                    CallableParameterAdmission::Semantic(admission) => {
+                        let valid_consumer = match (admission, parameter.consumer()) {
+                            (
+                                CallableSemanticAdmission::TextProxyNominal,
+                                CallableParameterConsumer::Content(
+                                    CallableContentParameterConsumer::ObjectType,
+                                ),
+                            ) => true,
+                            (
+                                CallableSemanticAdmission::CompileTimeScalar(admission),
+                                CallableParameterConsumer::Content(consumer),
+                            ) => consumer.accepts_scalar_kind(admission.kind()),
+                            _ => false,
+                        };
+                        if !valid_consumer {
+                            let error = if matches!(
+                                parameter.consumer(),
+                                CallableParameterConsumer::Content(_)
+                            ) {
+                                CallableSchemaError::InvalidParameterAdmission {
+                                    group: group.index,
+                                    parameter: parameter.index,
+                                }
+                            } else {
+                                CallableSchemaError::InvalidParameterConsumer {
+                                    group: group.index,
+                                    parameter: parameter.index,
+                                }
+                            };
+                            return Err(error);
                         }
                     }
                 }
@@ -1317,7 +2398,7 @@ impl CallableSignatureSchema {
             });
         }
         let generic_inventory = seal_generic_inventory(&groups, &result, &generic_issuer)?;
-        Ok(Self {
+        Self::seal(CallableSignatureContents {
             groups: groups.into(),
             result,
             generic_inventory,
@@ -1325,6 +2406,8 @@ impl CallableSignatureSchema {
             argument_policy,
             reserved_open_names: Arc::new([]),
             validator,
+            attached_content,
+            dependency,
             evaluated_effect: None,
             extension_receiver: None,
         })
@@ -1336,7 +2419,7 @@ impl CallableSignatureSchema {
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
         if !names.is_empty()
-            && self.argument_policy.unknown_named() != UnknownNamedArgumentPolicy::OpenSupply
+            && self.core.argument_policy.unknown_named() != UnknownNamedArgumentPolicy::OpenSupply
         {
             return Err(CallableSchemaError::ReservedOpenNamesRequireOpenPolicy);
         }
@@ -1355,7 +2438,8 @@ impl CallableSignatureSchema {
             }
         }
         if names.iter().any(|reserved| {
-            self.groups
+            self.core
+                .groups
                 .iter()
                 .flat_map(|group| group.parameters())
                 .any(|parameter| parameter.name() == Some(reserved))
@@ -1363,7 +2447,8 @@ impl CallableSignatureSchema {
             let name = names
                 .iter()
                 .find(|reserved| {
-                    self.groups
+                    self.core
+                        .groups
                         .iter()
                         .flat_map(|group| group.parameters())
                         .any(|parameter| parameter.name() == Some(reserved))
@@ -1372,15 +2457,15 @@ impl CallableSignatureSchema {
                 .clone();
             return Err(CallableSchemaError::ReservedOpenNameParameterCollision { name });
         }
-        self.reserved_open_names = names.into();
-        Ok(self)
+        self.core.reserved_open_names = names.into();
+        Self::seal(self.core)
     }
 
     pub fn with_extension_receiver(
         mut self,
         receiver: CallableExtensionReceiver,
     ) -> Result<Self, CallableSchemaError> {
-        if self.extension_receiver.is_some() {
+        if self.core.extension_receiver.is_some() {
             return Err(CallableSchemaError::DuplicateExtensionReceiver);
         }
         let group =
@@ -1397,62 +2482,84 @@ impl CallableSignatureSchema {
         )?;
         let receiver_first =
             receiver.group() == CallableGroupIndex::ZERO && receiver.parameter().get() == 0;
-        let receiver_data_last = receiver.group().get() + 1 == self.groups.len()
+        let receiver_data_last = receiver.group().get() + 1 == self.core.groups.len()
             && receiver.group().get() == 1
-            && self.groups.len() == 2
+            && self.core.groups.len() == 2
             && group.parameters().len() == 1
             && receiver.parameter().get() == 0;
         if (!receiver_first && !receiver_data_last)
             || parameter.passing() != CallableParameterPassing::PositionalOnly
             || parameter.presence() != CallableParameterPresence::Required
             || parameter.admission().is_unchecked()
+            || parameter.admission().is_semantic()
         {
             return Err(CallableSchemaError::InvalidExtensionReceiver {
                 group: receiver.group(),
                 parameter: receiver.parameter(),
             });
         }
-        self.extension_receiver = Some(receiver);
-        Ok(self)
+        self.core.extension_receiver = Some(receiver);
+        Self::seal(self.core)
     }
 
-    pub(crate) fn with_evaluated_effect(mut self, effect: CallableEvaluatedEffect) -> Self {
-        self.evaluated_effect = Some(effect);
-        self
+    pub(crate) fn with_evaluated_effect(
+        mut self,
+        effect: CallableEvaluatedEffect,
+    ) -> Result<Self, CallableSchemaError> {
+        if !matches!(self.core.effects, CallableEffectSchema::Fixed(_)) {
+            return Err(CallableSchemaError::EvaluatedEffectRequiresFixedRow);
+        }
+        self.core.effects = CallableEffectSchema::fixed(effect.declared_effect_row());
+        self.core.evaluated_effect = Some(effect);
+        Self::seal(self.core)
     }
     pub fn groups(&self) -> &[CallableParameterGroup] {
-        &self.groups
+        &self.core.groups
     }
-    pub const fn result(&self) -> &TypeKind {
-        &self.result
+    pub const fn result_schema(&self) -> &CallableResultSchema {
+        &self.core.result
+    }
+    pub const fn value_type(&self) -> Option<&TypeKind> {
+        self.core.result.value_type()
     }
     pub(crate) const fn generic_inventory(&self) -> &CallableGenericParameterInventory {
-        &self.generic_inventory
+        &self.core.generic_inventory
     }
     pub const fn effects(&self) -> &CallableEffectSchema {
-        &self.effects
+        &self.core.effects
     }
     pub const fn argument_policy(&self) -> CallableArgumentPolicy {
-        self.argument_policy
+        self.core.argument_policy
     }
     pub fn reserved_open_names(&self) -> &[CallableName] {
-        &self.reserved_open_names
+        &self.core.reserved_open_names
     }
     pub(crate) fn allows_open_name(&self, name: &CallableName) -> bool {
-        self.argument_policy.unknown_named() == UnknownNamedArgumentPolicy::OpenSupply
-            && self.reserved_open_names.binary_search(name).is_err()
+        self.core.argument_policy.unknown_named() == UnknownNamedArgumentPolicy::OpenSupply
+            && self.core.reserved_open_names.binary_search(name).is_err()
     }
     pub const fn validator(&self) -> &CallableValidator {
-        &self.validator
+        &self.core.validator
     }
+    pub const fn attached_content(&self) -> Option<CallableAttachedContentParameter> {
+        self.core.attached_content
+    }
+
+    /// Returns the exact owner dependency of a context-dependent schema, when
+    /// one exists. The dependency is an identity carrier rather than a
+    /// source/display name and is included in the schema semantic digest.
+    pub const fn dependency(&self) -> Option<CallableSchemaDependency> {
+        self.core.dependency
+    }
+
     pub const fn evaluated_effect(&self) -> Option<CallableEvaluatedEffect> {
-        self.evaluated_effect
+        self.core.evaluated_effect
     }
     pub const fn extension_receiver(&self) -> Option<CallableExtensionReceiver> {
-        self.extension_receiver
+        self.core.extension_receiver
     }
     pub fn extension_receiver_type(&self) -> Option<&TypeKind> {
-        let receiver = self.extension_receiver?;
+        let receiver = self.core.extension_receiver?;
         self.group(receiver.group())
             .and_then(|group| group.parameter(receiver.parameter()))
             .and_then(|parameter| parameter.declared_type())
@@ -1462,7 +2569,7 @@ impl CallableSignatureSchema {
         &self,
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
-        visitor(self.result())?;
+        self.result_schema().visit_types(visitor)?;
         for group in self.groups() {
             for parameter in group.parameters() {
                 if let Some(ty) = parameter.declared_type() {
@@ -1477,28 +2584,36 @@ impl CallableSignatureSchema {
     }
 
     pub fn group(&self, index: CallableGroupIndex) -> Option<&CallableParameterGroup> {
-        self.groups
+        self.core
+            .groups
             .get(index.get())
             .filter(|group| group.index == index)
     }
     pub fn total_parameters(&self) -> usize {
-        self.groups.iter().map(|group| group.parameters.len()).sum()
+        self.core
+            .groups
+            .iter()
+            .map(|group| group.parameters.len())
+            .sum()
     }
 
     pub fn semantic_eq(&self, other: &Self) -> bool {
-        self.generic_inventory == other.generic_inventory
-            && self.result == other.result
-            && self.effects == other.effects
-            && self.argument_policy == other.argument_policy
-            && self.reserved_open_names == other.reserved_open_names
-            && self.validator == other.validator
-            && self.evaluated_effect == other.evaluated_effect
-            && self.extension_receiver == other.extension_receiver
-            && self.groups.len() == other.groups.len()
+        self.core.generic_inventory == other.core.generic_inventory
+            && self.result_schema() == other.result_schema()
+            && self.core.effects == other.core.effects
+            && self.core.argument_policy == other.core.argument_policy
+            && self.core.reserved_open_names == other.core.reserved_open_names
+            && self.core.validator == other.core.validator
+            && self.core.attached_content == other.core.attached_content
+            && self.core.dependency == other.core.dependency
+            && self.core.evaluated_effect == other.core.evaluated_effect
+            && self.core.extension_receiver == other.core.extension_receiver
+            && self.core.groups.len() == other.core.groups.len()
             && self
+                .core
                 .groups
                 .iter()
-                .zip(other.groups.iter())
+                .zip(other.core.groups.iter())
                 .all(|(left, right)| left.semantic_eq(right))
     }
 
@@ -1508,6 +2623,7 @@ impl CallableSignatureSchema {
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
         let TypeKind::Function {
+            binder,
             params,
             return_type,
             effects,
@@ -1560,21 +2676,28 @@ impl CallableSignatureSchema {
                 SpreadArgumentPolicy::FixedLiteralOnly,
             ),
             CallableValidator::Ordinary,
-            CallableGenericParameterIssuer::empty(),
+            CallableGenericParameterIssuer::function_scheme(*binder),
             limits,
         )
     }
 
-    /// Builds the exact constructor schema retained by one accepted enum case.
-    /// The checked case row has already instantiated its owner, so no generic
-    /// issuer or path lookup is admitted here. Tuple and record payloads keep
-    /// their distinct positional and named argument contracts.
+    /// Builds a constructor from one accepted declaration-template case and
+    /// its authenticated formal parameters. Tuple and record payloads keep
+    /// their distinct positional and named argument contracts; the application
+    /// solution instantiates the result owner separately.
     pub(crate) fn for_accepted_enum_case(
         id: EnumVariantSignatureId,
         payload: &VariantPayloadShape,
         result: TypeKind,
+        issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
+        if id.owner() != result.semantic_identity_digest()? {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: super::CallableFamily::EnumConstructor,
+                code: super::CallableFamilyInvariantCode::InvalidOwner,
+            });
+        }
         let mut parameters = Vec::with_capacity(payload.field_count());
         let mut push_parameter = |index: usize,
                                   name: Option<CallableName>,
@@ -1647,7 +2770,7 @@ impl CallableSignatureSchema {
                 SpreadArgumentPolicy::FixedLiteralOnly,
             ),
             CallableValidator::EnumConstructor(id),
-            CallableGenericParameterIssuer::empty(),
+            issuer,
             limits,
         )
     }
@@ -1655,7 +2778,7 @@ impl CallableSignatureSchema {
 
 fn seal_generic_inventory(
     groups: &[CallableParameterGroup],
-    result: &TypeKind,
+    result: &CallableResultSchema,
     issuer: &CallableGenericParameterIssuer,
 ) -> Result<CallableGenericParameterInventory, CallableSchemaError> {
     let mut occurrences = Vec::new();
@@ -1673,9 +2796,15 @@ fn seal_generic_inventory(
             actual: groups.len(),
             limit: groups.len(),
         })?;
-    occurrences.push((result, result_position));
-    let collected = TypeGenericUseCollector::collect_many(occurrences)?;
-    let candidate_types = issuer.type_parameters();
+    if let CallableResultSchema::Value(result) = result {
+        occurrences.push((result, result_position));
+    }
+    let template_scope = issuer.template_scope();
+    let collected = crate::types::StableGenericReferenceUseCollector::collect_many_in_scope(
+        occurrences,
+        &template_scope,
+    )?;
+    let candidate_types = issuer.type_parameters()?;
     for parameter in &candidate_types {
         if !collected.types().contains(parameter) {
             return Err(CallableSchemaError::MissingCandidateType {
@@ -1683,7 +2812,7 @@ fn seal_generic_inventory(
             });
         }
     }
-    let candidate_consts = issuer.const_parameters();
+    let candidate_consts = issuer.const_parameters()?;
     for parameter in &candidate_consts {
         if !collected.consts().contains(parameter) {
             return Err(CallableSchemaError::MissingCandidateConst {
@@ -1749,7 +2878,11 @@ fn seal_generic_inventory(
         })
         .collect::<Vec<_>>()
         .into();
-    Ok(CallableGenericParameterInventory { types, consts })
+    Ok(CallableGenericParameterInventory {
+        types,
+        consts,
+        template_scope,
+    })
 }
 
 fn first_use_for(position: u32, group_count: usize) -> CallableGenericFirstUse {
@@ -1773,7 +2906,14 @@ impl FunctionSignature {
         generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-        let mut groups = Vec::with_capacity(self.remaining_call_groups().saturating_add(1));
+        let group_capacity =
+            self.remaining_call_groups()
+                .checked_add(1)
+                .ok_or(CallableSchemaError::GroupLimit {
+                    actual: usize::MAX,
+                    limit: limits.max_groups_per_callable(),
+                })?;
+        let mut groups = Vec::with_capacity(group_capacity);
         groups.push(function_parameter_group(0, self.params(), limits)?);
         for index in 0..self.remaining_call_groups() {
             groups.push(function_parameter_group(
@@ -1812,9 +2952,15 @@ fn function_parameter_group(
     params: &[FunctionParam],
     limits: &CallableLimits,
 ) -> Result<CallableParameterGroup, CallableSchemaError> {
+    let actual = index
+        .checked_add(1)
+        .ok_or(CallableSchemaError::GroupLimit {
+            actual: usize::MAX,
+            limit: limits.max_groups_per_callable(),
+        })?;
     let group =
         CallableGroupIndex::try_from_usize(index).map_err(|_| CallableSchemaError::GroupLimit {
-            actual: index.saturating_add(1),
+            actual,
             limit: limits.max_groups_per_callable(),
         })?;
     let parameters = params
@@ -2119,6 +3265,29 @@ impl CallableParameter {
             CallableParameterSemanticBinding::AcceptedVariantPayloadField(semantic_id);
         Ok(parameter)
     }
+    pub(crate) fn for_accepted_project_record_field(
+        index: CallableParameterIndex,
+        name: Option<CallableName>,
+        semantic_id: AcceptedRecordFieldSemanticId,
+        admission: CallableParameterAdmission,
+        passing: CallableParameterPassing,
+        presence: CallableParameterPresence,
+        documentation: Option<Arc<str>>,
+        source: Option<CallableParameterSource>,
+    ) -> Result<Self, CallableSchemaError> {
+        let mut parameter = Self::try_new(
+            index,
+            name,
+            admission,
+            passing,
+            presence,
+            documentation,
+            source,
+        )?;
+        parameter.semantic_binding =
+            CallableParameterSemanticBinding::AcceptedProjectRecordField(semantic_id);
+        Ok(parameter)
+    }
     pub const fn index(&self) -> CallableParameterIndex {
         self.index
     }
@@ -2187,12 +3356,112 @@ impl CallableArgumentPolicy {
 mod families;
 
 pub(super) use families::{dialogue_schema, presentation_schema};
+pub(crate) use families::{fx_callable_schema, presentation_content_schema};
+
+#[cfg(test)]
+mod evaluated_effect_schema_tests {
+    use super::*;
+
+    #[test]
+    fn evaluated_effect_owner_seals_the_exact_declared_runtime_row() {
+        let cases = [
+            (
+                CallableEvaluatedEffect::Log(CallableLogLevel::Info),
+                vec!["log.write"],
+            ),
+            (CallableEvaluatedEffect::SignalWrite, vec!["signal.write"]),
+            (CallableEvaluatedEffect::MetricWrite, vec!["metric.write"]),
+            (CallableEvaluatedEffect::EmitEvent, vec!["event.emit"]),
+            (CallableEvaluatedEffect::Panic, Vec::new()),
+            (CallableEvaluatedEffect::Fail, Vec::new()),
+            (CallableEvaluatedEffect::Bail, Vec::new()),
+            (CallableEvaluatedEffect::Ensure, Vec::new()),
+            (
+                CallableEvaluatedEffect::Drop(DropCallableId::Drop),
+                Vec::new(),
+            ),
+        ];
+        for (operation, expected) in cases {
+            let row = operation.declared_effect_row();
+            assert_eq!(row.tail(), crate::effect_row::EffectRowTail::Closed);
+            assert_eq!(row.concrete().to_labels(), expected);
+        }
+    }
+
+    #[test]
+    fn evaluated_effect_annotation_replaces_the_generic_empty_schema_row() {
+        let schema = BuiltinCallableId::Capability(super::super::CapabilityCallableId::EventEmit)
+            .closed_signature_schema()
+            .expect("event.emit closed schema");
+        assert_eq!(
+            schema
+                .effects()
+                .fixed_row()
+                .expect("evaluated effect has one fixed row")
+                .concrete()
+                .to_labels(),
+            ["event.emit"]
+        );
+    }
+}
 
 #[cfg(test)]
 mod generic_inventory_tests {
     use super::*;
+
+    #[test]
+    fn function_value_schema_owns_anonymous_type_and_const_slots() {
+        use crate::types::{ArrayLength, GenericBinder, GenericScope};
+        let binder = GenericBinder::new(1, 1, 0);
+        let scope = GenericScope::default().with_binder(binder);
+        let type_key = scope.bound_type(0, 0).expect("scheme type");
+        let const_key = scope.bound_const(0, 0).expect("scheme length");
+        let function = TypeKind::function_with_binder(
+            binder,
+            [TypeKind::Array {
+                item: Box::new(TypeKind::GenericParam(type_key.clone())),
+                len: ArrayLength::Generic(const_key.clone()),
+            }],
+            TypeKind::GenericParam(type_key.clone()),
+            EffectRow::closed(crate::effects::EffectSet::new()),
+        );
+        let schema = CallableSignatureSchema::for_function_value(
+            &function,
+            &super::super::PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("function scheme has a real slot inventory");
+        let inventory = schema.generic_inventory();
+        assert_eq!(inventory.template_scope(), &scope);
+        let [ty] = inventory.types() else {
+            panic!("one type slot");
+        };
+        let [constant] = inventory.consts() else {
+            panic!("one const slot");
+        };
+        assert_eq!(ty.parameter(), &type_key);
+        assert_eq!(constant.parameter(), &const_key);
+        assert_eq!(ty.role(), CallableSchemaGenericRole::Candidate);
+        assert_eq!(constant.role(), CallableSchemaGenericRole::Candidate);
+        assert_eq!(
+            ty.first_use(),
+            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
+        );
+        assert_eq!(
+            constant.first_use(),
+            CallableGenericFirstUse::Group(CallableGroupIndex::ZERO)
+        );
+        let again = CallableSignatureSchema::for_function_value(
+            &function,
+            &super::super::PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("same scheme");
+        assert_eq!(schema.semantic_digest(), again.semantic_digest());
+    }
     use crate::{
-        callable::PRODUCTION_CALLABLE_LIMITS,
+        callable::{
+            CallableCandidateId, CallableFamily, CallableFamilyInvariantCode,
+            PRODUCTION_CALLABLE_LIMITS,
+        },
         effect_row::EffectRow,
         effects::EffectSet,
         env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
@@ -2258,11 +3527,82 @@ mod generic_inventory_tests {
     }
 
     #[test]
+    fn schema_updates_publish_a_new_identity_with_canonical_reserved_names() {
+        let schema = CallableSignatureSchema::try_new(
+            vec![group(0, vec![])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::OpenSupply,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("initial schema");
+        let names = |values: [&str; 2]| {
+            values
+                .into_iter()
+                .map(|value| CallableName::try_new(value).expect("reserved name"))
+                .collect()
+        };
+        let first = schema
+            .clone()
+            .try_with_reserved_open_names(names(["level", "category"]), &PRODUCTION_CALLABLE_LIMITS)
+            .expect("updated schema");
+        let second = schema
+            .clone()
+            .try_with_reserved_open_names(names(["category", "level"]), &PRODUCTION_CALLABLE_LIMITS)
+            .expect("equivalent update");
+        assert_ne!(schema.semantic_digest(), first.semantic_digest());
+        assert_eq!(first.semantic_digest(), second.semantic_digest());
+        assert_eq!(first, second);
+        assert!(schema.reserved_open_names().is_empty());
+    }
+
+    #[test]
+    fn environment_identity_rejects_an_active_receiver_before_ordering_or_hashing() {
+        use crate::types::constraints::{
+            TypeConstraintParameterEligibility, TypeConstraintParameterScope,
+        };
+        let parameter = accepted_type(92, 0);
+        let scope = TypeConstraintParameterScope::new([(
+            parameter.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )])
+        .expect("application scope");
+        let reference = scope
+            .type_reference(&(parameter).clone().into())
+            .expect("opened variable");
+        let receiver = TypeKind::Vec(Box::new(TypeKind::GenericParam(reference)));
+        let identity = super::super::EnvironmentCallableId::try_new(
+            super::super::EnvironmentCallableOwner::Standard(
+                super::super::StandardEnvironmentId::Core,
+            ),
+            super::super::EnvironmentCallableKind::Method,
+            super::super::CallableLookupKey::Method(super::super::ReceiverMethodKey::new(
+                receiver,
+                CallableName::try_new("len").expect("method"),
+            )),
+            super::super::CallableOverloadIndex::try_from_usize(0).expect("overload"),
+        );
+        assert!(matches!(
+            identity,
+            Err(crate::types::GenericScopeError::EscapedInference {
+                kind: crate::types::GenericParameterKind::Type
+            })
+        ));
+    }
+
+    #[test]
     fn semantic_value_rule_selects_clear_guard_before_mandatory_otherwise() {
         let declared = TypeKind::I32;
         let rule = CallableParameterValueRule::clearable_option();
         let clear = CheckedSemanticValueEvidence::VariantCase {
-            owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+            owner: TypeKind::Option(Box::new(declared.clone()))
+                .semantic_identity_digest()
+                .expect("stable fixture type"),
             ordinal: 1,
             payload: VariantPayloadRequirement::Unit,
         };
@@ -2275,7 +3615,9 @@ mod generic_inventory_tests {
         let declared = TypeKind::I32;
         let rule = CallableParameterValueRule::clearable_option();
         let other_variant = CheckedSemanticValueEvidence::VariantCase {
-            owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+            owner: TypeKind::Option(Box::new(declared.clone()))
+                .semantic_identity_digest()
+                .expect("stable fixture type"),
             ordinal: 0,
             payload: VariantPayloadRequirement::Present,
         };
@@ -2288,22 +3630,70 @@ mod generic_inventory_tests {
     }
 
     #[test]
+    fn source_observation_keeps_an_inference_owner_until_projection() {
+        use crate::types::{
+            DetachedGenericOwnerId, GenericParameterOwnerId, GenericScopeError,
+            GenericTypeParameterId,
+            constraints::{TypeConstraintParameterEligibility, TypeConstraintParameterScope},
+        };
+        let parameter = GenericTypeParameterId::new(
+            GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(720)),
+            0,
+        );
+        let scope = TypeConstraintParameterScope::new([(
+            parameter.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        )])
+        .expect("application parameter");
+        let item = TypeKind::GenericParam(
+            scope
+                .type_reference(&(parameter).clone().into())
+                .expect("active parameter"),
+        );
+        let observed = ObservedSemanticValueEvidence::VariantCase {
+            owner: TypeKind::Option(Box::new(item.clone())),
+            ordinal: 1,
+            payload: VariantPayloadRequirement::Unit,
+        };
+        let rule = CallableParameterValueRule::clearable_option();
+        let guard = rule.guarded()[0].guard();
+        assert!(guard.accepts_observation(&item, &observed));
+        assert!(matches!(
+            observed.try_project_owner(TypeKind::semantic_identity_digest),
+            Err(GenericScopeError::EscapedInference { .. }),
+        ));
+
+        let actual = TypeKind::Option(Box::new(TypeKind::I64));
+        let checked = observed
+            .try_project_owner(|_| actual.semantic_identity_digest())
+            .expect("projected owner is stable");
+        assert!(guard.accepts(&TypeKind::I64, &checked));
+        assert!(!guard.accepts(&TypeKind::U64, &checked));
+    }
+
+    #[test]
     fn semantic_value_rule_rejects_tampered_clear_evidence_at_the_guarded_coordinate() {
         let declared = TypeKind::I32;
         let rule = CallableParameterValueRule::clearable_option();
         for tampered in [
             CheckedSemanticValueEvidence::VariantCase {
-                owner: TypeKind::Option(Box::new(TypeKind::U32)).semantic_identity_digest(),
+                owner: TypeKind::Option(Box::new(TypeKind::U32))
+                    .semantic_identity_digest()
+                    .expect("stable fixture type"),
                 ordinal: 1,
                 payload: VariantPayloadRequirement::Unit,
             },
             CheckedSemanticValueEvidence::VariantCase {
-                owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+                owner: TypeKind::Option(Box::new(declared.clone()))
+                    .semantic_identity_digest()
+                    .expect("stable fixture type"),
                 ordinal: 0,
                 payload: VariantPayloadRequirement::Unit,
             },
             CheckedSemanticValueEvidence::VariantCase {
-                owner: TypeKind::Option(Box::new(declared.clone())).semantic_identity_digest(),
+                owner: TypeKind::Option(Box::new(declared.clone()))
+                    .semantic_identity_digest()
+                    .expect("stable fixture type"),
                 ordinal: 1,
                 payload: VariantPayloadRequirement::Present,
             },
@@ -2373,17 +3763,17 @@ mod generic_inventory_tests {
             4,
         );
         let declared = TypeKind::Tuple(vec![
-            TypeKind::GenericParam(candidate.clone()),
-            TypeKind::GenericParam(foreign.clone()),
-            TypeKind::GenericParam(enclosing.clone()),
+            TypeKind::generic_parameter(candidate.clone()),
+            TypeKind::generic_parameter(foreign.clone()),
+            TypeKind::generic_parameter(enclosing.clone()),
             TypeKind::Array {
                 item: Box::new(TypeKind::I32),
-                len: ArrayLength::Generic(constant.clone()),
+                len: ArrayLength::generic_parameter(constant.clone()),
             },
         ]);
         let schema = CallableSignatureSchema::try_new(
             vec![group(0, vec![parameter(0, declared)])],
-            TypeKind::GenericParam(candidate.clone()),
+            TypeKind::generic_parameter(candidate.clone()),
             effects(),
             CallableArgumentPolicy::new(
                 UnknownNamedArgumentPolicy::Reject,
@@ -2400,7 +3790,7 @@ mod generic_inventory_tests {
         assert_eq!(
             types
                 .iter()
-                .find(|entry| entry.parameter() == &candidate)
+                .find(|entry| entry.parameter() == &candidate.clone().into())
                 .expect("candidate row")
                 .role(),
             CallableSchemaGenericRole::Candidate
@@ -2408,7 +3798,7 @@ mod generic_inventory_tests {
         assert_eq!(
             types
                 .iter()
-                .find(|entry| entry.parameter() == &foreign)
+                .find(|entry| entry.parameter() == &foreign.clone().into())
                 .expect("foreign row")
                 .role(),
             CallableSchemaGenericRole::RigidReference
@@ -2416,7 +3806,7 @@ mod generic_inventory_tests {
         assert_eq!(
             types
                 .iter()
-                .find(|entry| entry.parameter() == &enclosing)
+                .find(|entry| entry.parameter() == &enclosing.clone().into())
                 .expect("enclosing row")
                 .role(),
             CallableSchemaGenericRole::RigidReference
@@ -2428,16 +3818,19 @@ mod generic_inventory_tests {
                 .first()
                 .expect("rigid const row")
                 .parameter(),
-            &constant
+            &constant.clone().into()
         );
 
         let later = accepted_type(13, 0);
         let later_schema = CallableSignatureSchema::try_new(
             vec![
                 group(0, vec![parameter(0, TypeKind::I32)]),
-                group(1, vec![parameter(0, TypeKind::GenericParam(later.clone()))]),
+                group(
+                    1,
+                    vec![parameter(0, TypeKind::generic_parameter(later.clone()))],
+                ),
             ],
-            TypeKind::GenericParam(later.clone()),
+            TypeKind::generic_parameter(later.clone()),
             effects(),
             CallableArgumentPolicy::new(
                 UnknownNamedArgumentPolicy::Reject,
@@ -2535,7 +3928,7 @@ mod generic_inventory_tests {
                     0,
                     TypeKind::Array {
                         item: Box::new(TypeKind::I32),
-                        len: ArrayLength::Generic(constant.clone()),
+                        len: ArrayLength::generic_parameter(constant.clone()),
                     },
                 )],
             )],
@@ -2553,7 +3946,7 @@ mod generic_inventory_tests {
         let [entry] = schema.generic_inventory().consts() else {
             panic!("one const candidate row")
         };
-        assert_eq!(entry.parameter(), &constant);
+        assert_eq!(entry.parameter(), &constant.clone().into());
         assert_eq!(entry.role(), CallableSchemaGenericRole::Candidate);
     }
 
@@ -2562,7 +3955,7 @@ mod generic_inventory_tests {
         let candidate = accepted_type(30, 0);
         let ty = TypeKind::Map {
             kind: MapKind::Sorted,
-            key: Box::new(TypeKind::GenericParam(candidate.clone())),
+            key: Box::new(TypeKind::generic_parameter(candidate.clone())),
             value: Box::new(TypeKind::I32),
         };
         let policy = CallableArgumentPolicy::new(
@@ -2599,6 +3992,450 @@ mod generic_inventory_tests {
         .expect("rigid schema");
         assert_ne!(first.semantic_digest(), rigid.semantic_digest());
     }
+
+    #[test]
+    fn object_content_callable_owns_rich_attached_body_policy() {
+        assert_eq!(
+            CallableAttachedContentPolicy::RichOnly,
+            CallableAttachedContentPolicy::RichOnly,
+        );
+        assert_eq!(
+            CallableAttachedContentParameter::text_proxy_object(),
+            CallableAttachedContentParameter::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterPresence::Required,
+                CallableAttachedContentPolicy::RichOnly,
+                CallableAttachedContentExecution::Structural,
+            ),
+        );
+        let object = CallableSignatureSchema::try_new_with_dependency(
+            vec![group(0, vec![parameter(0, TypeKind::Unit)])],
+            CallableResultSchema::ContentEmission(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            }),
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Content(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            }),
+            Some(CallableAttachedContentParameter::text_proxy_object()),
+            CallableSchemaDependency::text_proxy(
+                SemanticTypeDigest::from_bytes([0; 32]),
+                CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            ),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("Object schema body parameter metadata");
+        assert_eq!(
+            object.result_schema(),
+            &CallableResultSchema::ContentEmission(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            })
+        );
+        let ordinary_emission = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter(0, TypeKind::Unit)])],
+            CallableResultSchema::ContentEmission(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            }),
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("content emission requires the matching content validator");
+        assert!(matches!(
+            ordinary_emission,
+            CallableSchemaError::FamilyInvariant {
+                family: CallableFamily::Content,
+                code: CallableFamilyInvariantCode::InvalidValidator,
+            }
+        ));
+        assert_eq!(
+            object.attached_content(),
+            Some(CallableAttachedContentParameter::text_proxy_object())
+        );
+        assert_eq!(CheckedContentRole::Inline.semantic_tag(), 0);
+        assert_eq!(CheckedContentRole::Rich.semantic_tag(), 1);
+        assert_eq!(CheckedContentRole::Dialogue.semantic_tag(), 2);
+        assert_ne!(
+            CallableCandidateId::Content(crate::callable::ContentCallableIdentity::language(
+                PresentationContentCallableDefinitionId::Strong,
+                arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+                    .get(PresentationContentCallableDefinitionId::Strong)
+                    .expect("Strong content row")
+                    .schema_digest(),
+            )),
+            CallableCandidateId::Dialogue(DialogueCallableId::ContentCall),
+        );
+    }
+
+    #[test]
+    fn object_content_parameters_retain_semantic_field_identity() {
+        assert!(
+            CallableParameterAdmission::compile_time_scalar(
+                CallableCompileTimeScalarKind::Text,
+                TypeKind::I64,
+            )
+            .is_none(),
+            "a scalar kind cannot be paired with a different exact value type"
+        );
+        let owner = SemanticTypeDigest::from_bytes([31; 32]);
+        let field = AcceptedRecordFieldSemanticId::issue(
+            owner,
+            2,
+            TypeKind::String
+                .semantic_identity_digest()
+                .expect("stable fixture type"),
+        );
+        let parameter = CallableParameter::for_accepted_project_record_field(
+            CallableParameterIndex::try_from_usize(0).expect("parameter index"),
+            Some(CallableName::try_new("label").expect("field name")),
+            field,
+            CallableParameterAdmission::compile_time_scalar(
+                CallableCompileTimeScalarKind::Text,
+                TypeKind::String,
+            )
+            .expect("text scalar admission"),
+            CallableParameterPassing::NamedOnly,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("semantic custom field parameter")
+        .with_consumer(CallableParameterConsumer::Content(
+            CallableContentParameterConsumer::ObjectCustomField(field),
+        ));
+        let schema = CallableSignatureSchema::try_new(
+            vec![group(0, vec![parameter])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("semantic custom field schema");
+        let parameter = &schema.groups()[0].parameters()[0];
+        assert!(matches!(
+            parameter.semantic_binding(),
+            CallableParameterSemanticBinding::AcceptedProjectRecordField(id) if id == &field
+        ));
+        assert!(matches!(
+            parameter.admission(),
+            CallableParameterAdmission::Semantic(CallableSemanticAdmission::CompileTimeScalar(
+                admission
+            )) if admission.kind() == CallableCompileTimeScalarKind::Text
+                && admission.value_type() == &TypeKind::String
+        ));
+        assert_eq!(
+            parameter.consumer(),
+            &CallableParameterConsumer::Content(
+                CallableContentParameterConsumer::ObjectCustomField(field)
+            )
+        );
+    }
+
+    #[test]
+    fn semantic_admission_is_closed_to_its_content_consumer() {
+        let ordinary = parameter(0, TypeKind::String);
+        let semantic = CallableParameter::try_new(
+            CallableParameterIndex::try_from_usize(1).expect("parameter index"),
+            Some(CallableName::try_new("type").expect("type name")),
+            CallableParameterAdmission::text_proxy_nominal(),
+            CallableParameterPassing::NamedOnly,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("semantic parameter")
+        .with_consumer(CallableParameterConsumer::Value);
+        let error = CallableSignatureSchema::try_new(
+            vec![group(0, vec![ordinary, semantic])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("semantic admissions require typed content consumers");
+        assert!(matches!(
+            error,
+            CallableSchemaError::InvalidParameterConsumer { parameter, .. }
+                if parameter == CallableParameterIndex::try_from_usize(1).expect("index")
+        ));
+
+        let named_fallback = parameter(0, TypeKind::Named("TextProxy".to_owned())).with_consumer(
+            CallableParameterConsumer::Content(CallableContentParameterConsumer::ObjectId),
+        );
+        let error = CallableSignatureSchema::try_new(
+            vec![group(0, vec![named_fallback])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("named spellings must not stand in for semantic Object admission");
+        assert!(matches!(
+            error,
+            CallableSchemaError::InvalidParameterAdmission { parameter, .. }
+                if parameter == CallableParameterIndex::try_from_usize(0).expect("parameter index")
+        ));
+
+        let wrong_kind = CallableParameter::try_new(
+            CallableParameterIndex::try_from_usize(0).expect("parameter index"),
+            Some(CallableName::try_new("id").expect("id name")),
+            CallableParameterAdmission::compile_time_scalar(
+                CallableCompileTimeScalarKind::Text,
+                TypeKind::String,
+            )
+            .expect("text scalar admission"),
+            CallableParameterPassing::NamedOnly,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("semantic id parameter")
+        .with_consumer(CallableParameterConsumer::Content(
+            CallableContentParameterConsumer::ObjectId,
+        ));
+        let error = CallableSignatureSchema::try_new(
+            vec![group(0, vec![wrong_kind])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("Object id only admits the exact public-id scalar kind");
+        assert!(matches!(
+            error,
+            CallableSchemaError::InvalidParameterAdmission { parameter, .. }
+                if parameter == CallableParameterIndex::try_from_usize(0).expect("parameter index")
+        ));
+    }
+
+    #[test]
+    fn attached_content_policy_is_part_of_schema_identity() {
+        let base_group = group(0, vec![parameter(0, TypeKind::String)]);
+        let argument_policy = CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        );
+        let plain = CallableSignatureSchema::try_new(
+            vec![base_group.clone()],
+            TypeKind::String,
+            effects(),
+            argument_policy,
+            CallableValidator::Ordinary,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("plain callable schema");
+        let rich = CallableSignatureSchema::try_new_with_attached_content(
+            vec![base_group.clone()],
+            TypeKind::String,
+            effects(),
+            argument_policy,
+            CallableValidator::Ordinary,
+            Some(CallableAttachedContentParameter::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterPresence::Optional,
+                CallableAttachedContentPolicy::Declared(CheckedContentRole::Rich),
+                CallableAttachedContentExecution::RuntimeContent,
+            )),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("rich content schema");
+        let object_without_policy = CallableSignatureSchema::try_new(
+            vec![base_group],
+            TypeKind::String,
+            effects(),
+            argument_policy,
+            CallableValidator::Content(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            }),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("content validators must carry their fixed body policy");
+        let object_optional = CallableSignatureSchema::try_new_with_attached_content(
+            vec![group(0, vec![parameter(0, TypeKind::String)])],
+            TypeKind::String,
+            effects(),
+            argument_policy,
+            CallableValidator::Content(ContentCallableIdentity::TextProxyObject {
+                owner: SemanticTypeDigest::from_bytes([0; 32]),
+                definition: CallableSchemaDependencyDigest::from_bytes([1; 32]),
+            }),
+            Some(CallableAttachedContentParameter::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterPresence::Optional,
+                CallableAttachedContentPolicy::RichOnly,
+                CallableAttachedContentExecution::Structural,
+            )),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("Object content is required");
+        let non_terminal = CallableSignatureSchema::try_new_with_attached_content(
+            vec![
+                group(0, vec![parameter(0, TypeKind::String)]),
+                group(1, vec![parameter(0, TypeKind::String)]),
+            ],
+            TypeKind::String,
+            effects(),
+            argument_policy,
+            CallableValidator::Ordinary,
+            Some(CallableAttachedContentParameter::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterPresence::Required,
+                CallableAttachedContentPolicy::Declared(CheckedContentRole::Dialogue),
+                CallableAttachedContentExecution::RuntimeContent,
+            )),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect_err("attached content belongs to the terminal group");
+
+        assert_eq!(plain.attached_content(), None);
+        assert_eq!(
+            rich.attached_content(),
+            Some(CallableAttachedContentParameter::new(
+                CallableGroupIndex::ZERO,
+                CallableParameterPresence::Optional,
+                CallableAttachedContentPolicy::Declared(CheckedContentRole::Rich),
+                CallableAttachedContentExecution::RuntimeContent,
+            ))
+        );
+        assert_ne!(plain.semantic_digest(), rich.semantic_digest());
+        assert!(!plain.semantic_eq(&rich));
+        assert!(matches!(
+            object_without_policy,
+            CallableSchemaError::FamilyInvariant {
+                family: CallableFamily::Content,
+                code: CallableFamilyInvariantCode::InvalidOwner,
+            }
+        ));
+        assert!(matches!(
+            object_optional,
+            CallableSchemaError::FamilyInvariant {
+                family: CallableFamily::Content,
+                code: CallableFamilyInvariantCode::InvalidOwner,
+            }
+        ));
+        assert!(matches!(
+            non_terminal,
+            CallableSchemaError::InvalidAttachedContentGroup { expected, actual }
+                if expected == CallableGroupIndex::try_from_usize(1).expect("terminal group")
+                    && actual == CallableGroupIndex::ZERO
+        ));
+    }
+
+    #[test]
+    fn text_proxy_schema_dependency_commits_owner_and_definition_digest() {
+        let dependency = |owner_byte, definition_byte| {
+            CallableSchemaDependency::text_proxy(
+                SemanticTypeDigest::from_bytes([owner_byte; 32]),
+                CallableSchemaDependencyDigest::from_bytes([definition_byte; 32]),
+            )
+        };
+        let base = |dependency| {
+            CallableSignatureSchema::try_new_with_dependency(
+                vec![group(0, vec![parameter(0, TypeKind::Unit)])],
+                CallableResultSchema::ContentEmission({
+                    let CallableSchemaDependency::TextProxy { owner, definition } = dependency
+                    else {
+                        panic!("test dependency is text proxy");
+                    };
+                    ContentCallableIdentity::TextProxyObject { owner, definition }
+                }),
+                effects(),
+                CallableArgumentPolicy::new(
+                    UnknownNamedArgumentPolicy::Reject,
+                    SpreadArgumentPolicy::FixedLiteralOnly,
+                ),
+                CallableValidator::Content({
+                    let CallableSchemaDependency::TextProxy { owner, definition } = dependency
+                    else {
+                        panic!("test dependency is text proxy");
+                    };
+                    ContentCallableIdentity::TextProxyObject { owner, definition }
+                }),
+                Some(CallableAttachedContentParameter::text_proxy_object()),
+                dependency,
+                CallableGenericParameterIssuer::empty(),
+                &PRODUCTION_CALLABLE_LIMITS,
+            )
+            .expect("Object base schema")
+        };
+        let first = base(dependency(1, 2));
+        let changed_owner = base(dependency(3, 2));
+        let changed_definition = base(dependency(1, 4));
+        assert_ne!(first.semantic_digest(), changed_owner.semantic_digest());
+        assert_ne!(
+            first.semantic_digest(),
+            changed_definition.semantic_digest()
+        );
+        assert!(!first.semantic_eq(&changed_owner));
+        assert!(!first.semantic_eq(&changed_definition));
+        assert_eq!(
+            first.dependency(),
+            Some(dependency(1, 2)),
+            "the complete closed dependency remains queryable"
+        );
+
+        let ordinary = CallableSignatureSchema::try_new_with_dependency(
+            vec![group(0, vec![parameter(0, TypeKind::Unit)])],
+            TypeKind::Unit,
+            effects(),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::FixedLiteralOnly,
+            ),
+            CallableValidator::Ordinary,
+            None,
+            dependency(1, 2),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(matches!(
+            ordinary,
+            Err(CallableSchemaError::FamilyInvariant {
+                family: CallableFamily::Content,
+                code: CallableFamilyInvariantCode::InvalidOwner,
+            })
+        ));
+    }
 }
 
 #[cfg(test)]
@@ -2606,16 +4443,17 @@ mod accepted_variant_schema_tests {
     use super::*;
     use crate::{callable::PRODUCTION_CALLABLE_LIMITS, types::VariantPayloadOwnerFamily};
 
-    fn owner(ty: TypeKind) -> SemanticTypeDigest {
-        ty.semantic_identity_digest()
+    fn owner(ty: &TypeKind) -> SemanticTypeDigest {
+        ty.semantic_identity_digest().expect("stable fixture type")
     }
 
     fn record_schema(
-        owner: SemanticTypeDigest,
+        result: &TypeKind,
         case: u32,
         label: &str,
         field_type: TypeKind,
     ) -> CallableSignatureSchema {
+        let owner = owner(result);
         let payload = VariantPayloadShape::try_record(
             VariantPayloadOwnerFamily::BuiltinClosed,
             owner,
@@ -2626,7 +4464,8 @@ mod accepted_variant_schema_tests {
         CallableSignatureSchema::for_accepted_enum_case(
             EnumVariantSignatureId::new(owner, case),
             &payload,
-            TypeKind::Unit,
+            result.clone(),
+            CallableGenericParameterIssuer::empty(),
             &PRODUCTION_CALLABLE_LIMITS,
         )
         .expect("accepted record constructor schema")
@@ -2634,9 +4473,8 @@ mod accepted_variant_schema_tests {
 
     #[test]
     fn accepted_record_labels_are_lookup_only_not_schema_identity() {
-        let owner = owner(TypeKind::I32);
-        let left = record_schema(owner, 3, "fade", TypeKind::Duration);
-        let right = record_schema(owner, 3, "duration", TypeKind::Duration);
+        let left = record_schema(&TypeKind::I32, 3, "fade", TypeKind::Duration);
+        let right = record_schema(&TypeKind::I32, 3, "duration", TypeKind::Duration);
         let left_parameter = &left.groups()[0].parameters()[0];
         let right_parameter = &right.groups()[0].parameters()[0];
 
@@ -2651,12 +4489,10 @@ mod accepted_variant_schema_tests {
 
     #[test]
     fn accepted_record_field_owner_case_and_type_are_schema_identity() {
-        let first_owner = owner(TypeKind::I32);
-        let second_owner = owner(TypeKind::I64);
-        let base = record_schema(first_owner, 3, "fade", TypeKind::Duration);
-        let changed_owner = record_schema(second_owner, 3, "fade", TypeKind::Duration);
-        let changed_case = record_schema(first_owner, 4, "fade", TypeKind::Duration);
-        let changed_type = record_schema(first_owner, 3, "fade", TypeKind::I64);
+        let base = record_schema(&TypeKind::I32, 3, "fade", TypeKind::Duration);
+        let changed_owner = record_schema(&TypeKind::I64, 3, "fade", TypeKind::Duration);
+        let changed_case = record_schema(&TypeKind::I32, 4, "fade", TypeKind::Duration);
+        let changed_type = record_schema(&TypeKind::I32, 3, "fade", TypeKind::I64);
 
         assert_ne!(base.semantic_digest(), changed_owner.semantic_digest());
         assert_ne!(base.semantic_digest(), changed_case.semantic_digest());
@@ -2665,7 +4501,7 @@ mod accepted_variant_schema_tests {
 
     #[test]
     fn accepted_tuple_constructor_has_no_fabricated_parameter_names() {
-        let owner = owner(TypeKind::I32);
+        let owner = owner(&TypeKind::I32);
         let payload = VariantPayloadShape::try_tuple(
             VariantPayloadOwnerFamily::BuiltinClosed,
             owner,
@@ -2676,7 +4512,8 @@ mod accepted_variant_schema_tests {
         let schema = CallableSignatureSchema::for_accepted_enum_case(
             EnumVariantSignatureId::new(owner, 2),
             &payload,
-            TypeKind::Unit,
+            TypeKind::I32,
+            CallableGenericParameterIssuer::empty(),
             &PRODUCTION_CALLABLE_LIMITS,
         )
         .expect("accepted tuple constructor schema");
@@ -2689,5 +4526,23 @@ mod accepted_variant_schema_tests {
                     CallableParameterSemanticBinding::AcceptedVariantPayloadField(_)
                 )
         }));
+    }
+
+    #[test]
+    fn constructor_signature_owner_must_match_the_result_template() {
+        let result = CallableSignatureSchema::for_accepted_enum_case(
+            EnumVariantSignatureId::new(owner(&TypeKind::I32), 0),
+            &VariantPayloadShape::Unit,
+            TypeKind::I64,
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(matches!(
+            result,
+            Err(CallableSchemaError::FamilyInvariant {
+                family: super::super::CallableFamily::EnumConstructor,
+                code: super::super::CallableFamilyInvariantCode::InvalidOwner,
+            })
+        ));
     }
 }

@@ -10,7 +10,7 @@ use super::{
     HirRecordField,
 };
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueNodeKind, HirPostfixBracketCandidates,
+    HirAttachedContentApplication, HirDialogueNodeKind, HirPostfixBracketCandidates,
 };
 use crate::identity::ExprId;
 use crate::stmt::HirTrigger;
@@ -115,6 +115,7 @@ pub enum HirExpressionChildRole {
     RepeatedValue,
     RepeatLength,
     Callee,
+    ContentCallee,
     Argument {
         ordinal: u32,
     },
@@ -151,7 +152,10 @@ pub enum HirExpressionChildRole {
     DialogueInterpolation {
         ordinal: u32,
     },
-    DialogueTagPayload {
+    AttachedContentApplication {
+        ordinal: u32,
+    },
+    DialoguePointActionPayload {
         ordinal: u32,
     },
     PostfixIndexCandidate,
@@ -533,7 +537,7 @@ impl HirExprKind {
                     );
                 }
             }
-            Self::DialogueContentApplication(expression) => {
+            Self::AttachedContentApplication(expression) => {
                 append_dialogue_application_edges(expression, &mut edges)?;
             }
             Self::PostfixBracket(expression) => {
@@ -631,41 +635,72 @@ fn append_record_edges(
 }
 
 fn append_dialogue_application_edges(
-    application: &HirDialogueContentApplication,
+    application: &HirAttachedContentApplication,
     edges: &mut Vec<HirExpressionChildEdge>,
 ) -> Result<(), HirExpressionChildEdgeError> {
-    push_edge(
-        edges,
-        application.target(),
-        HirExpressionChildRole::DialogueTarget,
-    );
-    for coordinate in application.coordinates() {
-        push_edge(
-            edges,
-            coordinate.value(),
-            HirExpressionChildRole::DialogueCoordinate {
-                ordinal: u32::from(coordinate.argument().get()),
-            },
-        );
+    match application.family() {
+        crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            target,
+            coordinates,
+            ..
+        } => {
+            push_edge(edges, *target, HirExpressionChildRole::DialogueTarget);
+            for coordinate in coordinates {
+                push_edge(
+                    edges,
+                    coordinate.value(),
+                    HirExpressionChildRole::DialogueCoordinate {
+                        ordinal: u32::from(coordinate.argument().get()),
+                    },
+                );
+            }
+        }
+        crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+            invocation,
+            ..
+        } => {
+            if let Some(target) = invocation.callee().value_expression() {
+                push_edge(edges, target, HirExpressionChildRole::ContentCallee);
+            }
+            for (ordinal, argument) in invocation.arguments().iter().enumerate() {
+                push_edge(
+                    edges,
+                    argument.value(),
+                    HirExpressionChildRole::Argument {
+                        ordinal: ordinal_u32(ordinal)?,
+                    },
+                );
+            }
+        }
     }
     for node in application.content().nodes() {
-        if let HirDialogueNodeKind::Interpolation(expression) = node.kind() {
-            push_edge(
+        match node.kind() {
+            HirDialogueNodeKind::Interpolation(expression) => push_edge(
                 edges,
                 *expression,
                 HirExpressionChildRole::DialogueInterpolation {
                     ordinal: node.id().ordinal(),
                 },
-            );
+            ),
+            HirDialogueNodeKind::ContentApplication(expression) => push_edge(
+                edges,
+                *expression,
+                HirExpressionChildRole::AttachedContentApplication {
+                    ordinal: node.id().ordinal(),
+                },
+            ),
+            _ => {}
         }
     }
-    for tag in application.content().tags() {
-        if let Some(expression) = tag.payload().expression() {
+    for node in application.content().nodes() {
+        if let HirDialogueNodeKind::PointAction(action) = node.kind()
+            && let Some(expression) = action.payload().expression()
+        {
             push_edge(
                 edges,
                 expression,
-                HirExpressionChildRole::DialogueTagPayload {
-                    ordinal: tag.id().ordinal(),
+                HirExpressionChildRole::DialoguePointActionPayload {
+                    ordinal: node.id().ordinal(),
                 },
             );
         }
@@ -1012,6 +1047,25 @@ fn recovery_edge_child(
                     .checked_add(1)
                     .is_some_and(|candidate| candidate == ordinal)
             }
+            (
+                HirExprKind::AttachedContentApplication(application),
+                HirExpressionChildRole::ContentCallee,
+            ) => matches!(
+                application.family(),
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    invocation,
+                    ..
+                } if ordinal == 0 && invocation.callee().value_expression().is_some()
+            ),
+            (
+                HirExprKind::AttachedContentApplication(application),
+                HirExpressionChildRole::Argument { ordinal: argument },
+            ) => matches!(
+                application.family(),
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    ..
+                } if argument.checked_add(1).is_some_and(|candidate| candidate == ordinal)
+            ),
             (HirExprKind::Select(_), HirExpressionChildRole::Target)
             | (HirExprKind::Index(_), HirExpressionChildRole::Target)
             | (HirExprKind::Pipe(_), HirExpressionChildRole::PipeLeft)

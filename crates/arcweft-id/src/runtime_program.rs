@@ -12,6 +12,15 @@ use serde::{Deserialize, Serialize};
 #[serde(transparent)]
 pub struct RuntimePureProgramId([u8; 32]);
 
+/// Stable runtime identity of one checked curried project-call lineage.
+///
+/// The semantic callable owner issues these bytes from its checked
+/// continuation digest. Runtime values compare this opaque identity and never
+/// reconstruct a declaration, group, or substitution from source spelling.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct RuntimeProjectContinuationLineageId([u8; 32]);
+
 impl RuntimePureProgramId {
     #[must_use]
     pub const fn from_checked_digest(bytes: [u8; 32]) -> Self {
@@ -24,7 +33,28 @@ impl RuntimePureProgramId {
     }
 }
 
+impl RuntimeProjectContinuationLineageId {
+    #[must_use]
+    pub const fn from_checked_digest(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    #[must_use]
+    pub const fn as_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
 impl fmt::Display for RuntimePureProgramId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(formatter, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+impl fmt::Display for RuntimeProjectContinuationLineageId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for byte in self.0 {
             write!(formatter, "{byte:02x}")?;

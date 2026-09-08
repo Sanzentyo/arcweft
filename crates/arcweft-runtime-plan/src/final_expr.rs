@@ -2,18 +2,18 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::plan::{
-    RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId,
-    RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeLocalSeedId,
-    RuntimeNominalRecordFieldSeed, RuntimePureHelperSeedId, RuntimeRecordFieldSeedId,
-    RuntimeTraitMethodSeedId,
+    RuntimeAgentExprSeed, RuntimeCallArgumentSeed, RuntimeDialogueContentEffectBindingSeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowOpSeed, RuntimeFunctionSiteSeedId, RuntimeHostArgumentSeed,
+    RuntimeHostCallTargetSeed, RuntimeLocalSeedId, RuntimeNominalRecordFieldSeed,
+    RuntimeRecordFieldSeedId, RuntimeTraitMethodSeedId,
 };
 use arcweft_core::task::NamedHostArg;
 use arcweft_core::value::{
     RuntimeAgentCompareOp, RuntimeBinaryOp, RuntimeCallArgumentMode, RuntimeCallTarget,
-    RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder, RuntimeUnaryOp, RuntimeValue,
+    RuntimeDialogueOpaqueRole, RuntimeStandardMapFamily, RuntimeStandardMapOperandOrder,
+    RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{HirBinaryOp, HirExprKind, HirUnaryOp};
 use arcweft_lang_hir::identity::{ExprId, LocalId, StmtId};
@@ -29,25 +29,35 @@ use crate::final_variant::{
 };
 use crate::flow::TryLocalSeeds;
 use crate::semantic_facts::{
-    RuntimeNormalizedType, RuntimePlanSemanticFacts, RuntimeRecordExpressionSource,
-    RuntimeReductionConstructor, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
-    RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
+    RuntimeAssignmentFact, RuntimeCallParameterCoordinate, RuntimeClosureInstanceKey,
+    RuntimeDialogueEffectProgramKey, RuntimeNormalizedType, RuntimePlanSemanticFacts,
+    RuntimePositionedAttachedContent, RuntimeRecordExpressionFact, RuntimeRecordExpressionSource,
+    RuntimeReductionConstructor, RuntimeResolvedAttachedContent, RuntimeResolvedCall,
+    RuntimeResolvedCallDispatch, RuntimeResolvedCallOperand, RuntimeResolvedCallOperandBinding,
     RuntimeResolvedCallOperandOrigin, RuntimeResolvedCallOperandProjection,
     RuntimeResolvedCallOperandSource, RuntimeResolvedSelect, RuntimeResolvedStaticCallTarget,
-    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeStandardMapCall,
-    RuntimeStandardMapFamily as SemanticStandardMapFamily, RuntimeTryBoundaryOwner,
-    RuntimeTryCarrierFact, RuntimeTypeShape,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeScopedExecutableSemanticFactView,
+    RuntimeStandardMapCall, RuntimeStandardMapFamily as SemanticStandardMapFamily,
+    RuntimeTryBoundaryOwner, RuntimeTryCarrierFact, RuntimeTryFact, RuntimeTypeShape,
 };
 
 pub(crate) struct FinalExprLowerer<'hir> {
     module: &'hir HirModule,
     facts: &'hir RuntimePlanSemanticFacts,
+    semantic_facts: RuntimeScopedExecutableSemanticFactView<'hir>,
     locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
-    pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
     trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
     function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+    dialogue_effect_sites:
+        &'hir BTreeMap<RuntimeDialogueEffectProgramKey, RuntimeFunctionSiteSeedId>,
     pipe_locals: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
     try_locals: &'hir BTreeMap<ExprId, TryLocalSeeds>,
+    /// Synthetic destinations for specialized call operands.  Structural
+    /// payloads are allowed to consume these locals in ABI/role order only
+    /// after the source row has been evaluated once, in source order, by the
+    /// enclosing Let chain.
+    specialized_operand_locals: Option<&'hir BTreeMap<(ExprId, u32), RuntimeLocalSeedId>>,
+    closure_sites: Option<&'hir BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>>,
     overrides: BTreeMap<ExprId, RuntimeExprSeed>,
 }
 
@@ -131,9 +141,12 @@ impl<'hir> FinalExprLowerer<'hir> {
         module: &'hir HirModule,
         facts: &'hir RuntimePlanSemanticFacts,
         locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
-        pure_helpers: &'hir BTreeMap<RuntimeCallableId, RuntimePureHelperSeedId>,
         trait_methods: &'hir BTreeMap<ImplMethodDeclarationId, RuntimeTraitMethodSeedId>,
         function_sites: &'hir BTreeMap<ExprId, RuntimeFunctionSiteSeedId>,
+        dialogue_effect_sites: &'hir BTreeMap<
+            RuntimeDialogueEffectProgramKey,
+            RuntimeFunctionSiteSeedId,
+        >,
         control_locals: (
             &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
             &'hir BTreeMap<ExprId, TryLocalSeeds>,
@@ -143,14 +156,59 @@ impl<'hir> FinalExprLowerer<'hir> {
         Self {
             module,
             facts,
+            semantic_facts: RuntimeScopedExecutableSemanticFactView::global(facts),
             locals,
-            pure_helpers,
             trait_methods,
             function_sites,
+            dialogue_effect_sites,
             pipe_locals,
             try_locals,
+            specialized_operand_locals: None,
+            closure_sites: None,
             overrides: BTreeMap::new(),
         }
+    }
+
+    pub(crate) fn with_scoped_semantics(
+        mut self,
+        semantic_facts: RuntimeScopedExecutableSemanticFactView<'hir>,
+    ) -> Self {
+        self.semantic_facts = semantic_facts;
+        self
+    }
+
+    pub(crate) fn with_locals(
+        mut self,
+        locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
+    ) -> Self {
+        self.locals = locals;
+        self
+    }
+
+    pub(crate) fn with_control_locals(
+        mut self,
+        pipes: &'hir BTreeMap<ExprId, RuntimeLocalSeedId>,
+        tries: &'hir BTreeMap<ExprId, TryLocalSeeds>,
+    ) -> Self {
+        self.pipe_locals = pipes;
+        self.try_locals = tries;
+        self
+    }
+
+    pub(crate) fn with_specialized_operand_locals(
+        mut self,
+        locals: &'hir BTreeMap<(ExprId, u32), RuntimeLocalSeedId>,
+    ) -> Self {
+        self.specialized_operand_locals = Some(locals);
+        self
+    }
+
+    pub(crate) fn with_closure_sites(
+        mut self,
+        sites: &'hir BTreeMap<RuntimeClosureInstanceKey, RuntimeFunctionSiteSeedId>,
+    ) -> Self {
+        self.closure_sites = Some(sites);
+        self
     }
 
     pub(crate) fn with_overrides(mut self, overrides: BTreeMap<ExprId, RuntimeExprSeed>) -> Self {
@@ -158,15 +216,75 @@ impl<'hir> FinalExprLowerer<'hir> {
         self
     }
 
+    fn call(&self, id: ExprId) -> Result<&RuntimeResolvedCall, String> {
+        self.semantic_facts
+            .call(id)
+            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))
+    }
+
+    fn value(&self, id: ExprId) -> Option<&RuntimeResolvedValue> {
+        self.semantic_facts.value(id)
+    }
+
+    fn literal(&self, id: ExprId) -> Option<&RuntimeValue> {
+        self.semantic_facts.expression_literal(id)
+    }
+
+    fn expression_children(&self, id: ExprId) -> Result<&[ExprId], String> {
+        self.semantic_facts
+            .expression_children(id)
+            .ok_or_else(|| format!("checked expression row is missing for {id:?}"))
+    }
+
+    fn expression_variant(&self, id: ExprId) -> Option<&RuntimeResolvedVariant> {
+        self.semantic_facts.expression_variant(id)
+    }
+
+    fn implicit_callable(
+        &self,
+        id: ExprId,
+    ) -> Option<&crate::semantic_facts::RuntimeImplicitCallableFact> {
+        self.semantic_facts.implicit_callable(id)
+    }
+
+    fn pipe(&self, id: ExprId) -> Option<&crate::semantic_facts::RuntimePipeFact> {
+        self.semantic_facts.pipe(id)
+    }
+
+    fn select(&self, id: ExprId) -> Option<&RuntimeResolvedSelect> {
+        self.semantic_facts.select(id)
+    }
+
+    fn nominal_record(&self, id: ExprId) -> Option<&RuntimeRecordExpressionFact> {
+        self.semantic_facts.nominal_record(id)
+    }
+
+    fn postfix_candidate(&self, id: ExprId) -> Option<ExprId> {
+        self.semantic_facts.postfix_candidate(id)
+    }
+
+    fn tried(&self, id: ExprId) -> Option<&RuntimeTryFact> {
+        self.semantic_facts.tried(id)
+    }
+
+    fn assignment(&self, id: StmtId) -> Option<&RuntimeAssignmentFact> {
+        self.semantic_facts.assignment(id)
+    }
+
+    fn dialogue_content_fragment_for_source(
+        &self,
+        source: ExprId,
+    ) -> Option<&crate::semantic_facts::RuntimeContentFragmentFact> {
+        self.semantic_facts
+            .dialogue_content_fragment_for_source(source)
+    }
+
     pub(crate) fn lower_host_call_target(
         &self,
         id: ExprId,
-        _call: &arcweft_lang_hir::expr::HirCallExpr,
+        _call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<Option<RuntimeHostCallTargetSeed>, String> {
-        let call = self
-            .facts
-            .call(id)
-            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
+        let call = self.call(id)?;
         let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(host)) =
             call.dispatch()
         else {
@@ -220,12 +338,23 @@ impl<'hir> FinalExprLowerer<'hir> {
         if let Some(value) = self.overrides.get(&id) {
             return Ok(value.clone());
         }
-        if self.facts.implicit_callable(id).is_some() {
+        if self.implicit_callable(id).is_some() {
+            let callable = self
+                .implicit_callable(id)
+                .ok_or_else(|| format!("implicit callable fact is missing for {id:?}"))?;
             return Ok(RuntimeExprSeed::new(
                 self.expression_type(id)?,
-                RuntimeExprSeedKind::Function(self.function_sites.get(&id).cloned().ok_or_else(
-                    || format!("builder-issued function site seed is missing for {id:?}"),
-                )?),
+                RuntimeExprSeedKind::Function {
+                    site: self.function_sites.get(&id).cloned().ok_or_else(|| {
+                        format!("builder-issued function site seed is missing for {id:?}")
+                    })?,
+                    captures: callable
+                        .captures()
+                        .iter()
+                        .map(|local| self.lower_local_capture(*local))
+                        .collect::<Result<Vec<_>, _>>()?
+                        .into_boxed_slice(),
+                },
             ));
         }
         self.lower_body(id)
@@ -238,11 +367,9 @@ impl<'hir> FinalExprLowerer<'hir> {
         overrides: BTreeMap<ExprId, RuntimeExprSeed>,
     ) -> Result<RuntimeExprSeed, String> {
         let lowerer = self.clone_with_overrides(overrides);
-        if let Some(tried) = lowerer
-            .facts
-            .tried(body)
-            .filter(|tried| tried.boundary() == RuntimeTryBoundaryOwner::FunctionSite(site_owner))
-        {
+        if let Some(tried) = lowerer.facts.tried(body).filter(|tried| {
+            tried.boundary() == RuntimeTryBoundaryOwner::ExplicitFunctionSite(site_owner)
+        }) {
             lowerer.lower_with_try_continuation(
                 body,
                 PureTryContinuation::WrapSuccess {
@@ -276,20 +403,20 @@ impl<'hir> FinalExprLowerer<'hir> {
         let kind = match expression.kind() {
             HirExprKind::Unit => RuntimeExprSeedKind::Value(RuntimeValue::Unit),
             HirExprKind::Literal(_) | HirExprKind::NumericBracketSequence(_) => {
-                RuntimeExprSeedKind::Value(self.facts.expression_literal(id).cloned().ok_or_else(
-                    || format!("checked literal fact is missing for expression {id:?}"),
-                )?)
+                RuntimeExprSeedKind::Value(self.literal(id).cloned().ok_or_else(|| {
+                    format!("checked literal fact is missing for expression {id:?}")
+                })?)
             }
             HirExprKind::EntityReference(_) => {
                 RuntimeExprSeedKind::EntityRef(self.entity_reference(id)?)
             }
-            HirExprKind::Path(_) if self.facts.expression_variant(id).is_some() => {
+            HirExprKind::Path(_) if self.expression_variant(id).is_some() => {
                 self.lower_unit_variant(id)?
             }
             HirExprKind::Path(_) => self.lower_path(id)?,
             HirExprKind::ShortVariant(_)
                 if matches!(
-                    self.facts.value(id),
+                    self.value(id),
                     Some(RuntimeResolvedValue::CharacterLook { .. })
                 ) =>
             {
@@ -353,11 +480,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 },
                 expr: Box::new(self.lower(unary.operand())?),
             },
-            HirExprKind::Closure(_) => {
-                RuntimeExprSeedKind::Function(self.function_sites.get(&id).cloned().ok_or_else(
-                    || format!("builder-issued function site seed is missing for closure {id:?}"),
-                )?)
-            }
+            HirExprKind::Closure(_) => self.lower_closure(id)?,
             HirExprKind::Block(block) => {
                 return self.lower_block(id, block.statements(), block.tail());
             }
@@ -399,7 +522,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .into_boxed_slice(),
             },
             HirExprKind::PostfixBracket(_) => {
-                return self.lower(self.facts.postfix_candidate(id).ok_or_else(|| {
+                return self.lower(self.postfix_candidate(id).ok_or_else(|| {
                     format!("checked postfix candidate is missing for expression {id:?}")
                 })?);
             }
@@ -411,10 +534,12 @@ impl<'hir> FinalExprLowerer<'hir> {
                     RuntimeCallArgumentSeed::new(
                         self.lower(index.target())?,
                         RuntimeCallArgumentMode::Value,
+                        0,
                     ),
                     RuntimeCallArgumentSeed::new(
                         self.lower(index.index())?,
                         RuntimeCallArgumentMode::Value,
+                        1,
                     ),
                 ]
                 .into_boxed_slice(),
@@ -428,7 +553,6 @@ impl<'hir> FinalExprLowerer<'hir> {
                     RuntimeExprSeedKind::Local(binding.clone()),
                 );
                 let overrides = self
-                    .facts
                     .pipe(id)
                     .ok_or_else(|| format!("checked pipe fact is missing for {id:?}"))?
                     .placeholders()
@@ -452,11 +576,31 @@ impl<'hir> FinalExprLowerer<'hir> {
             | HirExprKind::Thread(_)
             | HirExprKind::Choice(_)
             | HirExprKind::Borrow(_)
-            | HirExprKind::Dereference(_)
-            | HirExprKind::DialogueContentApplication(_)
-            | HirExprKind::Error(_)
-            | HirExprKind::ForSynthetic(_)
-            | HirExprKind::LifetimePath(_) => {
+            | HirExprKind::Dereference(_) => {
+                return Err(format!(
+                    "final-HIR expression family {:?} at {id:?} is not a pure runtime expression",
+                    expression.kind()
+                ));
+            }
+            HirExprKind::AttachedContentApplication(application) => {
+                let invocation = application.family().invocation().ok_or_else(|| {
+                    format!(
+                        "dialogue-line application {id:?} cannot be embedded in a pure expression"
+                    )
+                })?;
+                match invocation.form() {
+                    arcweft_lang_hir::expr::HirCallInvocationForm::Value => {
+                        let target = invocation.callee().value_expression().ok_or_else(|| {
+                            format!("content value application {id:?} has no checked value source")
+                        })?;
+                        return self.lower(target);
+                    }
+                    arcweft_lang_hir::expr::HirCallInvocationForm::Parenthesized => {
+                        self.lower_call(id, invocation)?
+                    }
+                }
+            }
+            HirExprKind::Error(_) | HirExprKind::ForSynthetic(_) | HirExprKind::LifetimePath(_) => {
                 return Err(format!(
                     "final-HIR expression family {:?} at {id:?} is not a pure runtime expression",
                     expression.kind()
@@ -473,11 +617,14 @@ impl<'hir> FinalExprLowerer<'hir> {
             module: self.module,
             facts: self.facts,
             locals: self.locals,
-            pure_helpers: self.pure_helpers,
             trait_methods: self.trait_methods,
             function_sites: self.function_sites,
+            dialogue_effect_sites: self.dialogue_effect_sites,
             pipe_locals: self.pipe_locals,
             try_locals: self.try_locals,
+            specialized_operand_locals: self.specialized_operand_locals,
+            closure_sites: self.closure_sites,
+            semantic_facts: self.semantic_facts,
             overrides: merged,
         }
     }
@@ -489,7 +636,6 @@ impl<'hir> FinalExprLowerer<'hir> {
         outer: PureTryContinuation,
     ) -> Result<RuntimeExprSeed, String> {
         let tried = self
-            .facts
             .tried(owner)
             .ok_or_else(|| format!("checked Try fact is missing for {owner:?}"))?;
         let locals = self
@@ -508,7 +654,8 @@ impl<'hir> FinalExprLowerer<'hir> {
                     .ok_or_else(|| format!("Try {owner:?} has no active carrier continuation"))?,
             ),
             RuntimeTryBoundaryOwner::Infallible
-            | RuntimeTryBoundaryOwner::FunctionSite(_)
+            | RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
+            | RuntimeTryBoundaryOwner::ImplicitFunctionSite(_)
             | RuntimeTryBoundaryOwner::Callable(_) => None,
         };
         let success = self.apply_try_continuation(success_value, outer)?;
@@ -628,10 +775,10 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
 
     fn contains_executable_try(&self, owner: ExprId) -> Result<bool, String> {
-        if self.facts.implicit_callable(owner).is_some() {
+        if self.implicit_callable(owner).is_some() {
             return Ok(false);
         }
-        if self.facts.tried(owner).is_some() {
+        if self.tried(owner).is_some() {
             return Ok(true);
         }
         let expression = self.resolve_expression(owner)?;
@@ -650,8 +797,8 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             _ => {}
         }
-        for child in expression.kind().direct_expression_children() {
-            if self.contains_executable_try(child)? {
+        for child in self.expression_children(owner)? {
+            if self.contains_executable_try(*child)? {
                 return Ok(true);
             }
         }
@@ -762,13 +909,13 @@ impl<'hir> FinalExprLowerer<'hir> {
                 continuation,
             );
         }
-        for child in expression.kind().direct_expression_children() {
-            if !self.overrides.contains_key(&child) && self.contains_executable_try(child)? {
+        for child in self.expression_children(owner)? {
+            if !self.overrides.contains_key(child) && self.contains_executable_try(*child)? {
                 return self.lower_with_try_continuation(
-                    child,
+                    *child,
                     PureTryContinuation::Compose {
                         owner,
-                        child,
+                        child: *child,
                         overrides: self.overrides.clone(),
                         outer: Box::new(continuation),
                     },
@@ -882,7 +1029,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             }
             PureTryContinuation::WrapCarrier { owner, outer } => {
                 let boundary = self
-                    .facts
+                    .semantic_facts
                     .expression_type(owner)
                     .ok_or_else(|| format!("carrier block {owner:?} has no checked result type"))?;
                 let wrapped = normalized_variant_expression_seed(boundary, 0, Some(value))
@@ -960,7 +1107,6 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeExprSeedKind::Local(binding.clone()),
         );
         let overrides = self
-            .facts
             .pipe(owner)
             .ok_or_else(|| format!("checked pipe fact is missing for {owner:?}"))?
             .placeholders()
@@ -1034,7 +1180,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         continuation: PureTryContinuation,
     ) -> Result<RuntimeExprSeed, String> {
         let bool_type = self
-            .facts
+            .semantic_facts
             .expression_type(right)
             .ok_or_else(|| format!("short-circuit right operand {right:?} has no type"))?;
         let literal = |value| {
@@ -1187,7 +1333,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         ),
         String,
     > {
-        let assignment = self.facts.assignment(statement).ok_or_else(|| {
+        let assignment = self.assignment(statement).ok_or_else(|| {
             format!("checked assignment fact is missing for statement {statement:?}")
         })?;
         Ok((
@@ -1199,7 +1345,6 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     fn lower_path(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         match self
-            .facts
             .value(id)
             .ok_or_else(|| format!("checked value fact is missing for expression {id:?}"))?
         {
@@ -1218,9 +1363,51 @@ impl<'hir> FinalExprLowerer<'hir> {
         }
     }
 
+    fn lower_local_capture(&self, local: LocalId) -> Result<RuntimeExprSeed, String> {
+        Ok(RuntimeExprSeed::new(
+            self.local_type(local)?,
+            RuntimeExprSeedKind::Local(self.local(local)?),
+        ))
+    }
+
+    fn lower_closure(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
+        let fact = self
+            .semantic_facts
+            .closure_instance(id)
+            .ok_or_else(|| format!("closed project closure fact is missing for {id:?}"))?;
+        let site = self
+            .closure_sites
+            .and_then(|sites| sites.get(fact.key()))
+            .cloned()
+            .ok_or_else(|| {
+                format!(
+                    "builder-issued project closure function site is missing for {:?}",
+                    fact.key()
+                )
+            })?;
+        let captures = fact
+            .captures()
+            .iter()
+            .map(|capture| {
+                let value = self.lower_local_capture(capture.source())?;
+                if value.ty() != capture.ty().identity() {
+                    return Err(format!(
+                        "project closure {:?} capture {} type disagrees with its closed ABI",
+                        fact.key(),
+                        capture.position()
+                    ));
+                }
+                Ok(value)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(RuntimeExprSeedKind::Function {
+            site,
+            captures: captures.into_boxed_slice(),
+        })
+    }
+
     fn lower_unit_variant(&self, id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         let selected = self
-            .facts
             .expression_variant(id)
             .ok_or_else(|| format!("checked variant fact is missing for expression {id:?}"))?;
         if selected
@@ -1248,12 +1435,9 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn lower_call(
         &self,
         id: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
+        call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<RuntimeExprSeedKind, String> {
-        let selected = self
-            .facts
-            .call(id)
-            .ok_or_else(|| format!("checked call fact is missing for expression {id:?}"))?;
+        let selected = self.call(id)?;
         if let RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
             map,
         )) = selected.dispatch()
@@ -1261,15 +1445,21 @@ impl<'hir> FinalExprLowerer<'hir> {
             return self.lower_standard_map(id, map);
         }
         let operands = selected.operands();
+        if selected.requires_specialized_operand_anf() {
+            if selected.attached_content().is_some() {
+                return Err(format!(
+                    "specialized call {id:?} cannot carry attached content outside its admitted source-row ABI"
+                ));
+            }
+            let lowered = self.lower_call_operands(id, selected)?;
+            return self.lower_specialized_call(id, selected, lowered, operands);
+        }
         let lowered = self.lower_call_operands(id, selected)?;
         let values = lowered
             .iter()
             .map(|(value, mode)| (value.clone(), *mode))
             .collect::<Vec<_>>();
-        let arguments = values
-            .iter()
-            .map(|(value, mode)| RuntimeCallArgumentSeed::new(value.clone(), *mode))
-            .collect::<Vec<_>>();
+        let arguments = self.lower_function_arguments(id, selected, &values)?;
         match selected.dispatch() {
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Intrinsic(
                 intrinsic,
@@ -1277,74 +1467,22 @@ impl<'hir> FinalExprLowerer<'hir> {
                 callee: RuntimeCallTarget::intrinsic(*intrinsic),
                 args: arguments.into_boxed_slice(),
             }),
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(
-                intrinsic,
-            )) => self.lower_agent_intrinsic(id, *intrinsic, &values, operands),
-            RuntimeResolvedCallDispatch::Static(
-                RuntimeResolvedStaticCallTarget::AgentProbeComparison(operation),
-            ) => self.lower_agent_compare(id, *operation, &values),
-            RuntimeResolvedCallDispatch::Static(
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(_))
+            | RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::AgentProbeComparison(_),
+            )
+            | RuntimeResolvedCallDispatch::Static(
                 RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError,
-            ) => Ok(RuntimeExprSeedKind::Agent(
-                RuntimeAgentExprSeed::PredicateDiagnosticsHasError {
-                    diagnostics: Box::new(exact_one(id, &self.scalar_values(id, &values)?)?),
-                },
-            )),
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
-                callable,
-            )) => Ok(RuntimeExprSeedKind::PureCall {
-                helper: self
-                    .pure_helpers
-                    .get(callable.runtime())
-                    .cloned()
-                    .ok_or_else(|| {
-                        format!(
-                            "builder-issued pure-helper seed is missing for callable {:?}",
-                            callable.runtime()
-                        )
-                    })?,
-                args: arguments.into_boxed_slice(),
-            }),
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(
-                variant,
-            )) => {
-                self.validate_variant_call_payload(id, operands, variant)?;
-                let scalar_values = self.scalar_values(id, &values)?;
-                let payload_ty = variant
-                    .selected_payload_type()
-                    .map_err(|error| error.to_string())?;
-                let payload = match payload_ty {
-                    None if scalar_values.is_empty() => None,
-                    Some(payload) if matches!(payload.shape(), RuntimeTypeShape::Tuple(_)) => {
-                        Some(Box::new(RuntimeExprSeed::new(
-                            payload.identity(),
-                            RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
-                        )))
-                    }
-                    Some(_) => {
-                        return Err(format!(
-                            "variant constructor at {id:?} requires a non-positional payload"
-                        ));
-                    }
-                    None => {
-                        return Err(format!(
-                            "unit variant constructor at {id:?} received payload operands"
-                        ));
-                    }
-                };
-                Ok(RuntimeExprSeedKind::Variant {
-                    ordinal: variant
-                        .checked_selection()
-                        .map_err(|error| error.to_string())?
-                        .ordinal(),
-                    payload,
-                })
+            )
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(_))
+            | RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(_)) => {
+                unreachable!("specialized dispatch was handled by source-row ANF")
             }
-            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(
-                RuntimeReductionConstructor::Unchanged,
-            )) => Ok(RuntimeExprSeedKind::ReductionUnchanged {
-                state: Box::new(exact_one(id, &self.scalar_values(id, &values)?)?),
-            }),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                _,
+            )) => Err(format!(
+                "declaration call {id:?} has no flow-owned project-call projection"
+            )),
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::StandardMap(
                 _,
             )) => unreachable!("standard map is lowered before generic call operands"),
@@ -1369,32 +1507,48 @@ impl<'hir> FinalExprLowerer<'hir> {
                 method,
                 ..
             }) => {
-                let receiver_index = operands
-                    .iter()
-                    .position(|operand| {
-                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
-                    })
-                    .ok_or_else(|| format!("trait call {id:?} has no receiver projection"))?;
                 let scalar_values = self.scalar_values(id, &values)?;
-                let receiver = scalar_values
-                    .get(receiver_index)
-                    .cloned()
-                    .ok_or_else(|| format!("trait call {id:?} receiver is not a scalar operand"))?;
-                let args = scalar_values
-                    .into_iter()
-                    .enumerate()
-                    .filter_map(|(index, value)| (index != receiver_index).then_some(value))
-                    .map(|value| {
-                        RuntimeCallArgumentSeed::new(value, RuntimeCallArgumentMode::Value)
+                let receiver = self.exact_scalar_operand_value(
+                    id,
+                    &values,
+                    operands,
+                    "trait receiver",
+                    |operand| {
+                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                    },
+                )?;
+                let mut args = Vec::new();
+                for (abi_position, source) in selected
+                    .abi_operands()
+                    .filter(|operand| {
+                        !matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
                     })
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice();
+                    .enumerate()
+                {
+                    let source_index = operands
+                        .iter()
+                        .position(|candidate| candidate == source)
+                        .ok_or_else(|| {
+                            format!("trait call {id:?} lost a checked source operand")
+                        })?;
+                    let value = scalar_values
+                        .get(source_index)
+                        .cloned()
+                        .ok_or_else(|| format!("trait call {id:?} lost a scalar source operand"))?;
+                    let abi_position = u32::try_from(abi_position)
+                        .map_err(|_| format!("trait call {id:?} has too many runtime arguments"))?;
+                    args.push(RuntimeCallArgumentSeed::new(
+                        value,
+                        RuntimeCallArgumentMode::Value,
+                        abi_position,
+                    ));
+                }
                 Ok(RuntimeExprSeedKind::TraitCall {
                     callable: self.trait_methods.get(method).cloned().ok_or_else(|| {
                         format!("builder-issued trait-method seed is missing for {method:?}")
                     })?,
                     receiver: Box::new(receiver),
-                    args,
+                    args: args.into_boxed_slice(),
                 })
             }
             RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Host(_)) => Err(
@@ -1404,6 +1558,162 @@ impl<'hir> FinalExprLowerer<'hir> {
                 format!("line capability call {id:?} must be consumed by typed line-plan lowering"),
             ),
         }
+    }
+
+    /// Lower structural call payloads only after their complete source row has
+    /// been materialized into synthetic locals.  The payload may then inspect
+    /// those locals in ABI/semantic-role order without changing evaluation
+    /// order of the original source expressions.
+    fn lower_specialized_call(
+        &self,
+        id: ExprId,
+        selected: &RuntimeResolvedCall,
+        lowered: Vec<(RuntimeExprSeed, RuntimeCallArgumentMode)>,
+        operands: &[RuntimeResolvedCallOperand],
+    ) -> Result<RuntimeExprSeedKind, String> {
+        if lowered.len() != operands.len() {
+            return Err(format!(
+                "specialized call {id:?} lost a source operand during source-row lowering"
+            ));
+        }
+        let local_map = self.specialized_operand_locals.ok_or_else(|| {
+            format!("specialized call {id:?} has no admitted source-row ANF local map")
+        })?;
+        let local_values = lowered
+            .iter()
+            .enumerate()
+            .map(|(source_index, (value, mode))| {
+                if *mode != RuntimeCallArgumentMode::Value {
+                    return Err(format!(
+                        "specialized call {id:?} cannot consume a spread source operand at index {source_index}"
+                    ));
+                }
+                let source_index = u32::try_from(source_index).map_err(|_| {
+                    format!(
+                        "specialized call {id:?} source operand index exceeds checked limits"
+                    )
+                })?;
+                let local = local_map
+                    .get(&(id, source_index))
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!(
+                            "specialized call {id:?} source operand {source_index} has no admitted ANF local"
+                        )
+                    })?;
+                Ok((
+                    RuntimeExprSeed::new(value.ty(), RuntimeExprSeedKind::Local(local)),
+                    RuntimeCallArgumentMode::Value,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let body = match selected.dispatch() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Agent(
+                intrinsic,
+            )) => self.lower_agent_intrinsic(id, *intrinsic, &local_values, selected)?,
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::AgentProbeComparison(operation),
+            ) => self.lower_agent_compare(id, *operation, &local_values, operands)?,
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError,
+            ) => RuntimeExprSeedKind::Agent(RuntimeAgentExprSeed::PredicateDiagnosticsHasError {
+                diagnostics: Box::new(self.exact_scalar_operand_value(
+                    id,
+                    &local_values,
+                    operands,
+                    "diagnostics receiver",
+                    |operand| {
+                        matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                    },
+                )?),
+            }),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Variant(
+                variant,
+            )) => {
+                self.validate_variant_call_payload(id, selected, variant)?;
+                let scalar_values = self.abi_scalar_values(id, &local_values, selected)?;
+                let payload_ty = variant
+                    .selected_payload_type()
+                    .map_err(|error| error.to_string())?;
+                let payload = match payload_ty {
+                    None if scalar_values.is_empty() => None,
+                    Some(payload) if matches!(payload.shape(), RuntimeTypeShape::Tuple(_)) => {
+                        Some(Box::new(RuntimeExprSeed::new(
+                            payload.identity(),
+                            RuntimeExprSeedKind::Tuple(scalar_values.into_boxed_slice()),
+                        )))
+                    }
+                    Some(_) => {
+                        return Err(format!(
+                            "variant constructor at {id:?} requires a non-positional payload"
+                        ));
+                    }
+                    None => {
+                        return Err(format!(
+                            "unit variant constructor at {id:?} received payload operands"
+                        ));
+                    }
+                };
+                RuntimeExprSeedKind::Variant {
+                    ordinal: variant
+                        .checked_selection()
+                        .map_err(|error| error.to_string())?
+                        .ordinal(),
+                    payload,
+                }
+            }
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Reduction(
+                RuntimeReductionConstructor::Unchanged,
+            )) => RuntimeExprSeedKind::ReductionUnchanged {
+                state: Box::new(self.exact_scalar_operand_value(
+                    id,
+                    &local_values,
+                    operands,
+                    "reduction state",
+                    |operand| {
+                        matches!(
+                            operand.origin(),
+                            RuntimeResolvedCallOperandOrigin::Argument { .. }
+                        ) && operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0))
+                    },
+                )?),
+            },
+            _ => {
+                return Err(format!(
+                    "call {id:?} changed dispatch while lowering its specialized source row"
+                ));
+            }
+        };
+        let result_ty = self.expression_type(id)?;
+        let body = RuntimeExprSeed::new(result_ty, body);
+        let body = lowered
+            .into_iter()
+            .enumerate()
+            .rev()
+            .try_fold(body, |body, (source_index, (source, _))| {
+                let source_index = u32::try_from(source_index).map_err(|_| {
+                    format!(
+                        "specialized call {id:?} source operand index exceeds checked limits"
+                    )
+                })?;
+                let binding = local_map
+                    .get(&(id, source_index))
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!(
+                            "specialized call {id:?} source operand {source_index} has no admitted ANF local"
+                        )
+                    })?;
+                Ok::<_, String>(RuntimeExprSeed::new(
+                    result_ty,
+                    RuntimeExprSeedKind::Let {
+                        binding,
+                        expr: Box::new(source),
+                        body: Box::new(body),
+                    },
+                ))
+            })?;
+        Ok(body.kind().clone())
     }
 
     fn lower_standard_map(
@@ -1444,12 +1754,62 @@ impl<'hir> FinalExprLowerer<'hir> {
         })
     }
 
+    fn lower_function_arguments(
+        &self,
+        id: ExprId,
+        selected: &RuntimeResolvedCall,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+    ) -> Result<Vec<RuntimeCallArgumentSeed>, String> {
+        let operands = selected.operands();
+        values
+            .iter()
+            .enumerate()
+            .map(|(source_position, (value, mode))| {
+                let abi_position = if let Some(operand) = operands.get(source_position) {
+                    operand.abi_position()
+                } else if source_position == operands.len() {
+                    selected
+                        .positioned_attached_content()
+                        .map(RuntimePositionedAttachedContent::abi_position)
+                        .ok_or_else(|| {
+                            format!(
+                                "call {id:?} has a runtime value outside its checked source row"
+                            )
+                        })?
+                } else {
+                    return Err(format!(
+                        "call {id:?} has a non-canonical checked source operand row"
+                    ));
+                };
+                Ok(RuntimeCallArgumentSeed::new(
+                    value.clone(),
+                    *mode,
+                    abi_position,
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    }
+
+    pub(crate) fn lower_function_application(
+        &self,
+        id: ExprId,
+        selected: &RuntimeResolvedCall,
+    ) -> Result<(RuntimeExprSeed, Box<[RuntimeCallArgumentSeed]>), String> {
+        let RuntimeResolvedCallDispatch::Value { callee } = selected.dispatch() else {
+            return Err(format!("call {id:?} has no checked value callee"));
+        };
+        let callee = self.lower(*callee)?;
+        let values = self.lower_call_operands(id, selected)?;
+        let arguments = self.lower_function_arguments(id, selected, &values)?;
+        Ok((callee, arguments.into_boxed_slice()))
+    }
     fn lower_call_operands(
         &self,
-        _id: ExprId,
+        id: ExprId,
         call: &RuntimeResolvedCall,
     ) -> Result<Vec<(RuntimeExprSeed, RuntimeCallArgumentMode)>, String> {
-        call.operands()
+        let mut operands = call
+            .operands()
             .iter()
             .map(|operand| {
                 let value = self.lower_scalar_operand_source(operand.source(), operand.ty())?;
@@ -1459,9 +1819,141 @@ impl<'hir> FinalExprLowerer<'hir> {
                         RuntimeCallArgumentMode::Spread
                     }
                 };
-                Ok((value, mode))
+                Ok::<_, String>((value, mode))
             })
-            .collect()
+            .collect::<Result<Vec<_>, _>>()?;
+        if let Some(attached) = call.attached_content() {
+            let value = self.lower_attached_content_operand(id, attached)?;
+            operands.push((value, RuntimeCallArgumentMode::Value));
+        }
+        Ok(operands)
+    }
+
+    pub(crate) fn lower_attached_content_operand(
+        &self,
+        owner: ExprId,
+        attached: &RuntimeResolvedAttachedContent,
+    ) -> Result<RuntimeExprSeed, String> {
+        let content = match attached.source() {
+            Some(source) => self.lower_dialogue_content(source)?,
+            None => return self.lower_omitted_attached_content(owner, attached.ty()),
+        };
+        match attached {
+            RuntimeResolvedAttachedContent::Required { .. } => {
+                if attached.ty().identity()
+                    != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                {
+                    return Err(format!(
+                        "required attached content at {owner:?} has a non-Content runtime type"
+                    ));
+                }
+                Ok(content)
+            }
+            RuntimeResolvedAttachedContent::OptionalPresent { .. }
+            | RuntimeResolvedAttachedContent::DefaultedPresent { .. } => {
+                normalized_variant_expression_seed(attached.ty(), 0, Some(content)).map_err(
+                    |error| {
+                        format!(
+                            "present attached content at {owner:?} cannot construct Some: {error}"
+                        )
+                    },
+                )
+            }
+            RuntimeResolvedAttachedContent::OptionalOmitted { .. }
+            | RuntimeResolvedAttachedContent::DefaultedOmitted { .. } => unreachable!(
+                "omitted attached content has no source and returns before present wrapping"
+            ),
+        }
+    }
+
+    pub(crate) fn lower_attached_content_source(
+        &self,
+        source: ExprId,
+    ) -> Result<RuntimeExprSeed, String> {
+        self.lower_dialogue_content(source)
+    }
+
+    fn lower_omitted_attached_content(
+        &self,
+        owner: ExprId,
+        ty: &RuntimeNormalizedType,
+    ) -> Result<RuntimeExprSeed, String> {
+        normalized_variant_expression_seed(ty, 1, None).map_err(|error| {
+            format!("omitted attached content at {owner:?} cannot construct None: {error}")
+        })
+    }
+
+    fn lower_dialogue_content(&self, source: ExprId) -> Result<RuntimeExprSeed, String> {
+        let fragment = self
+            .dialogue_content_fragment_for_source(source)
+            .ok_or_else(|| {
+                format!("attached content source {source:?} has no checked content fragment fact")
+            })?;
+        let content_ty = RuntimeDialogueOpaqueRole::Content.semantic_identity();
+        let values = fragment
+            .values()
+            .iter()
+            .map(|value| {
+                let lowered = self.lower(value.expression())?;
+                if lowered.ty() != value.ty().identity() {
+                    return Err(format!(
+                        "attached content value {:?} has type {:?}, expected {:?}",
+                        value.expression(),
+                        lowered.ty(),
+                        value.ty().identity()
+                    ));
+                }
+                Ok(lowered)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let effects = fragment
+            .effects()
+            .iter()
+            .map(|effect| {
+                let program = RuntimeDialogueEffectProgramKey::new(
+                    fragment.template().id(),
+                    effect.site(),
+                );
+                let function = self
+                    .dialogue_effect_sites
+                    .get(&program)
+                    .cloned()
+                    .ok_or_else(|| {
+                        format!(
+                            "attached content effect site {:?} has no reserved callback site",
+                            effect.site()
+                        )
+                    })?;
+                let captures = effect
+                    .captures()
+                    .iter()
+                    .map(|capture| {
+                        let local = self.locals.get(&capture.local()).cloned().ok_or_else(|| {
+                            format!(
+                                "attached content effect site {:?} capture {:?} has no runtime local",
+                                effect.site(),
+                                capture.local()
+                            )
+                        })?;
+                        Ok(RuntimeExprSeed::new(
+                            capture.ty().identity(),
+                            RuntimeExprSeedKind::Local(local),
+                        ))
+                    })
+                    .collect::<Result<Vec<_>, String>>()?;
+                Ok(RuntimeDialogueContentEffectBindingSeed {
+                    site: effect.site(),
+                    function,
+                    captures: captures.into_boxed_slice(),
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        Ok(RuntimeExprSeed::dialogue_content_with_effects(
+            content_ty,
+            fragment.template().id(),
+            values,
+            effects,
+        ))
     }
 
     pub(crate) fn lower_scalar_operand_source(
@@ -1482,7 +1974,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Ok(value)
             }
             RuntimeResolvedCallOperandSource::CompactNumericElement { sequence, ordinal } => {
-                let literal = self.facts.expression_literal(sequence).ok_or_else(|| {
+                let literal = self.literal(sequence).ok_or_else(|| {
                     format!("compact call operand sequence {sequence:?} has no checked literal")
                 })?;
                 let RuntimeValue::Seq(values) = literal else {
@@ -1522,6 +2014,60 @@ impl<'hir> FinalExprLowerer<'hir> {
         Ok(values.iter().map(|(value, _)| value.clone()).collect())
     }
 
+    fn abi_scalar_values(
+        &self,
+        id: ExprId,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+        call: &RuntimeResolvedCall,
+    ) -> Result<Vec<RuntimeExprSeed>, String> {
+        let operands = call.operands();
+        if values.len() != operands.len() {
+            return Err(format!(
+                "typed call {id:?} lost a source operand during ABI projection"
+            ));
+        }
+        let values = self.scalar_values(id, values)?;
+        call.abi_operands()
+            .map(|operand| {
+                let source_index = operands
+                    .iter()
+                    .position(|candidate| candidate == operand)
+                    .ok_or_else(|| format!("typed call {id:?} lost an ABI operand source row"))?;
+                values
+                    .get(source_index)
+                    .cloned()
+                    .ok_or_else(|| format!("typed call {id:?} lost an ABI operand value"))
+            })
+            .collect()
+    }
+
+    fn exact_scalar_operand_value(
+        &self,
+        id: ExprId,
+        values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+        operands: &[RuntimeResolvedCallOperand],
+        role: &str,
+        matches_role: impl Fn(&RuntimeResolvedCallOperand) -> bool,
+    ) -> Result<RuntimeExprSeed, String> {
+        let mut matches = operands
+            .iter()
+            .enumerate()
+            .filter(|(_, operand)| matches_role(operand));
+        let Some((source_index, _)) = matches.next() else {
+            return Err(format!("typed call {id:?} has no accepted {role} operand"));
+        };
+        if matches.next().is_some() {
+            return Err(format!("typed call {id:?} has duplicate {role} operands"));
+        }
+        let Some((value, mode)) = values.get(source_index) else {
+            return Err(format!("typed call {id:?} lost its {role} value"));
+        };
+        if *mode != RuntimeCallArgumentMode::Value {
+            return Err(format!("typed call {id:?} has a spread {role} operand"));
+        }
+        Ok(value.clone())
+    }
+
     /*
      * Call operand lowering is intentionally driven only by the sealed
      * runtime carrier above.  The old authored-ordinal recovery helpers were
@@ -1531,7 +2077,6 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn lower_select(&self, id: ExprId, target_id: ExprId) -> Result<RuntimeExprSeedKind, String> {
         let target = Box::new(self.lower(target_id)?);
         match self
-            .facts
             .select(id)
             .ok_or_else(|| format!("checked member fact is missing for expression {id:?}"))?
         {
@@ -1574,7 +2119,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: ExprId,
     ) -> Result<Vec<RuntimeNominalRecordFieldSeed>, String> {
-        let record = self.facts.nominal_record(id).ok_or_else(|| {
+        let record = self.nominal_record(id).ok_or_else(|| {
             format!(
                 "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
             )
@@ -1647,14 +2192,15 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         intrinsic: RuntimeAgentIntrinsic,
         values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
-        operands: &[RuntimeResolvedCallOperand],
+        call: &RuntimeResolvedCall,
     ) -> Result<RuntimeExprSeedKind, String> {
         if let Some(operation) = intrinsic.host_operation() {
             return Err(format!(
                 "Agent host call {operation} at {id:?} cannot enter pure expression lowering"
             ));
         }
-        let values = self.scalar_values(id, values)?;
+        let values = self.abi_scalar_values(id, values, call)?;
+        let operands = call.operands();
         let one = |values: &Vec<RuntimeExprSeed>| exact_one(id, values);
         Ok(RuntimeExprSeedKind::Agent(match intrinsic {
             RuntimeAgentIntrinsic::StatePath => RuntimeAgentExprSeed::StatePath {
@@ -1745,13 +2291,32 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
         op: RuntimeAgentCompareOp,
         values: &[(RuntimeExprSeed, RuntimeCallArgumentMode)],
+        operands: &[RuntimeResolvedCallOperand],
     ) -> Result<RuntimeExprSeedKind, String> {
-        let mut values = self.scalar_values(id, values)?;
+        let probe = self.exact_scalar_operand_value(
+            id,
+            values,
+            operands,
+            "comparison receiver",
+            |operand| matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver),
+        )?;
+        let value = self.exact_scalar_operand_value(
+            id,
+            values,
+            operands,
+            "comparison argument",
+            |operand| {
+                matches!(
+                    operand.origin(),
+                    RuntimeResolvedCallOperandOrigin::Argument { .. }
+                ) && operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0))
+            },
+        )?;
         Ok(RuntimeExprSeedKind::Agent(
             RuntimeAgentExprSeed::PredicateCompare {
-                probe: Box::new(values.remove(0)),
+                probe: Box::new(probe),
                 op,
-                value: Box::new(values.remove(0)),
+                value: Box::new(value),
             },
         ))
     }
@@ -1762,8 +2327,14 @@ impl<'hir> FinalExprLowerer<'hir> {
         id: ExprId,
     ) -> Result<arcweft_core::entry::RuntimeCommandTargetId, String> {
         let operand = operands
-            .first()
-            .ok_or_else(|| format!("choice_action at {id:?} has no accepted operand"))?;
+            .iter()
+            .find(|operand| {
+                matches!(
+                    operand.origin(),
+                    RuntimeResolvedCallOperandOrigin::Argument { .. }
+                ) && operand.parameter() == Some(RuntimeCallParameterCoordinate::new(0, 0))
+            })
+            .ok_or_else(|| format!("choice_action at {id:?} has no accepted choice operand"))?;
         let RuntimeResolvedCallOperandSource::Expression(expression) = operand.source() else {
             return Err(format!(
                 "choice_action at {id:?} requires an expression operand"
@@ -1779,7 +2350,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: ExprId,
     ) -> Result<arcweft_core::value::RuntimeEntityReference, String> {
-        match self.facts.value(id) {
+        match self.value(id) {
             Some(RuntimeResolvedValue::ProjectItem(item)) => Ok(project_entity_reference(item)),
             Some(RuntimeResolvedValue::DialogueLine(line)) => Ok(
                 arcweft_core::value::RuntimeEntityReference::DialogueLine(line.clone()),
@@ -1799,11 +2370,12 @@ impl<'hir> FinalExprLowerer<'hir> {
     fn validate_variant_call_payload(
         &self,
         id: ExprId,
-        operands: &[RuntimeResolvedCallOperand],
+        call: &RuntimeResolvedCall,
         variant: &RuntimeResolvedVariant,
     ) -> Result<(), String> {
-        let types = operands
-            .iter()
+        let operands = call.operands();
+        let types = call
+            .abi_operands()
             .map(|operand| {
                 if matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver) {
                     return Err(format!(
@@ -1836,8 +2408,7 @@ impl<'hir> FinalExprLowerer<'hir> {
 
     fn lower_constant_length(&self, id: ExprId) -> Result<usize, String> {
         match self
-            .facts
-            .expression_literal(id)
+            .literal(id)
             .ok_or_else(|| format!("checked array length fact is missing for {id:?}"))?
         {
             RuntimeValue::UInt(value) => usize::try_from(value.as_u128())
@@ -1878,7 +2449,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: ExprId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
-        self.facts
+        self.semantic_facts
             .expression_type(id)
             .map(RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for expression {id:?}"))
@@ -1896,7 +2467,7 @@ impl<'hir> FinalExprLowerer<'hir> {
         &self,
         id: LocalId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
-        self.facts
+        self.semantic_facts
             .local_type(id)
             .map(RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for local {id:?}"))
@@ -1908,6 +2479,7 @@ impl<'hir> FinalExprLowerer<'hir> {
     }
     fn pattern(&self) -> FinalPatternLowerer<'hir> {
         FinalPatternLowerer::new(self.module, self.facts, self.locals)
+            .with_semantic_facts(self.semantic_facts.facts())
     }
 }
 

@@ -4,18 +4,21 @@ use super::{
     AgentIntrinsicSignatureId, Arc, BuiltinCallableId, CallResolverRequest, CallableCandidateId,
     CallableDeclarationKey, CallableInstantiation, CallableLookupKey, CallableName, CallablePath,
     CallableRecord, CallableSignatureSchema, CapacityMethodId, CollectionMethodId, DomainMethodId,
-    EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver, FxCallableSignatureId,
-    FxResolution, HirCallArgument, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
-    LineScheduleCallableId, NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind,
-    Ordering, PreparedCallCallee, PreparedFreeCallScope, PreparedFunctionValueCallee,
-    PreparedFunctionValueOriginProducer, PreparedResolvedCallable, PresentationCallableId,
-    PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
-    ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedAssociatedTypeReceiver,
-    ResolvedCallTarget, ResolvedFunctionValueSeed, ResolvedNonCallableTarget,
-    ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
-    TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
+    EnvironmentCallableOwner, EquivalentCallableSource, EvaluatedReceiver, HirCallArgument,
+    IntegerMethodId, LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId,
+    NonCallableSource, NonEmptyResolvedCandidates, OptionConstructorKind, Ordering,
+    PreparedCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
+    PreparedFunctionValueCallee, PreparedFunctionValueOriginProducer, PreparedResolvedCallable,
+    PresentationCallableId, PresentationHandleMethodId, ProjectCallablePath, ProjectNameBinding,
+    PromotionCallableId, ReceiverMethodKey, ResolveCallError, ResolveCallOutcome,
+    ResolvedAssociatedTypeReceiver, ResolvedCallTarget, ResolvedFunctionValueSeed,
+    ResolvedNonCallableTarget, ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind,
+    TypeReceiverInstantiation, TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget,
 };
-use crate::callable::CallConstraintInvariant;
+use crate::callable::{
+    CallConstraintInvariant, ContentCallableIdentity, presentation_content_schema,
+    resolve_fx_source_constructor,
+};
 use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
 
 pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> ResolveCallOutcome {
@@ -41,10 +44,10 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             path,
             project,
             scope,
-            ..
+            context,
         } => {
             let path = path.clone();
-            match resolve_free_call(&mut request, &path, project, scope) {
+            match resolve_free_call(&mut request, &path, project, scope, context) {
                 Ok(Some(target)) => ResolveCallOutcome::Resolved(target),
                 Ok(None) => ResolveCallOutcome::Missing(UnknownCallTarget::new(
                     UnknownCallKind::Free,
@@ -562,26 +565,86 @@ fn resolve_free_call(
     path: &CallablePath,
     project: Option<&CallableDeclarationKey>,
     scope: PreparedFreeCallScope,
+    context: PreparedFreeCallContext,
 ) -> Result<Option<ResolvedCallTarget>, ResolveCallError> {
+    // The final project value lookup has already selected an exact callable
+    // declaration. That typed result outranks every language-owned implicit
+    // head, including attached-content spellings with the same leaf name.
+    // Falling through to the ordered language chain would discard HIR name
+    // resolution and could silently call a different semantic producer.
+    if let Some(declaration) = project {
+        return resolve_exact_project_callable(declaration, path, request).map(Some);
+    }
     if scope == PreparedFreeCallScope::ExplicitProject {
-        return project
-            .map(|declaration| resolve_exact_project_callable(declaration, path, request))
-            .transpose();
+        return Ok(None);
     }
     check_query_step(request)?;
-    if let FxResolution::Known(id) = FxCallableSignatureId::resolve(path) {
+    if let Some(id) = resolve_fx_source_constructor(path) {
         check_query_step(request)?;
         let callable = PreparedResolvedCallable::try_from_intrinsic(
-            CallableCandidateId::Fx(id),
+            CallableCandidateId::FxConstructor(id),
             SignatureOrigin::Language {
-                family: LanguageCallableFamily::Fx,
+                family: LanguageCallableFamily::FxConstructor,
             },
-            Arc::new(id.signature_schema()),
+            Arc::new(
+                crate::callable::schema::fx_callable_schema(
+                    id,
+                    request
+                        .authority
+                        .world()
+                        .environment()
+                        .compile_time_scalars(),
+                    request.authority.world().environment().nominal_catalog(),
+                )
+                .map_err(|_| ResolveCallError::InvalidResolvedCallable)?,
+            ),
             CallableInstantiation::None,
             Vec::new(),
             request.limits,
         )?;
         return NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+            .map(ResolvedCallTarget::Candidates)
+            .map(Some);
+    }
+
+    // Attached Content is resolved by its exact implicit head. Selector rows
+    // remain distinct candidates and ordinary argument mapping selects the
+    // exact enum-constrained branch below; no emission-family operation is
+    // inferred or carried through the resolver.
+    if context == PreparedFreeCallContext::AttachedContent
+        && scope == PreparedFreeCallScope::Implicit
+        && path.len() == 1
+        && let Some(head) = arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+            .resolve_implicit_head(path.leaf().as_str())
+    {
+        let scalars = request
+            .authority
+            .world()
+            .environment()
+            .compile_time_scalars();
+        let mut resolved = Vec::new();
+        for row in arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+            .rows_for_head(head)
+        {
+            check_query_step(request)?;
+            let definition = row.id();
+            let schema = Arc::new(
+                presentation_content_schema(definition, scalars)
+                    .map_err(|_| ResolveCallError::InvalidResolvedCallable)?,
+            );
+            let identity = ContentCallableIdentity::language(definition, row.schema_digest());
+            resolved.push(PreparedResolvedCallable::try_from_intrinsic(
+                CallableCandidateId::Content(identity),
+                SignatureOrigin::Language {
+                    family: LanguageCallableFamily::Content,
+                },
+                schema,
+                CallableInstantiation::None,
+                Vec::new(),
+                request.limits,
+            )?);
+        }
+        return NonEmptyResolvedCandidates::try_new(resolved, request.limits)
             .map(ResolvedCallTarget::Candidates)
             .map(Some);
     }
@@ -631,7 +694,13 @@ fn resolve_free_call(
                 )
                 .ok_or(ResolveCallError::InvalidResolvedCallable)?,
             _ => id
-                .closed_signature_schema()
+                .world_signature_schema(
+                    request
+                        .authority
+                        .world()
+                        .environment()
+                        .compile_time_scalars(),
+                )
                 .ok_or(ResolveCallError::InvalidResolvedCallable)?,
         });
         check_query_step(request)?;
@@ -724,9 +793,6 @@ fn resolve_free_call(
         current_module.clone(),
         path.clone(),
     );
-    if let Some(declaration) = project {
-        return resolve_exact_project_callable(declaration, path, request).map(Some);
-    }
     if let Some(binding) = world
         .environment()
         .callable_catalog()
@@ -823,9 +889,7 @@ fn resolve_enum_constructor(
         },
         seed,
         Arc::new(seed.schema.clone()),
-        CallableInstantiation::ExpectedEnum {
-            expected: seed.expected.clone(),
-        },
+        CallableInstantiation::EnumConstructor,
         Vec::new(),
         request.limits,
     )?;

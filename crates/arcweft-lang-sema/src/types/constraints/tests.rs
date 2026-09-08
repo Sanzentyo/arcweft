@@ -40,7 +40,9 @@ fn try_type_only_solution(
     fn collect(ty: &TypeKind, parameters: &mut BTreeSet<GenericTypeParameterId>) {
         match ty.constraint_shape() {
             super::TypeConstraintShape::Generic(parameter) => {
-                parameters.insert(parameter.clone());
+                if let Some(parameter) = parameter.free_parameter() {
+                    parameters.insert(parameter.clone());
+                }
             }
             super::TypeConstraintShape::Unresolved | super::TypeConstraintShape::Never => {}
             shape => {
@@ -62,6 +64,7 @@ fn try_type_only_solution(
         collect(value, &mut parameters);
     }
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         parameters.into_iter().map(|parameter| {
             let eligibility = if binding_keys.contains(&parameter) {
                 TypeConstraintParameterEligibility::Bindable
@@ -98,7 +101,9 @@ fn bindable_scope(types: &[&TypeKind]) -> TypeConstraintParameterScope {
     fn collect(ty: &TypeKind, parameters: &mut BTreeSet<GenericTypeParameterId>) {
         match ty.constraint_shape() {
             super::TypeConstraintShape::Generic(parameter) => {
-                parameters.insert(parameter.clone());
+                if let Some(parameter) = parameter.free_parameter() {
+                    parameters.insert(parameter.clone());
+                }
             }
             super::TypeConstraintShape::Unresolved | super::TypeConstraintShape::Never => {}
             shape => {
@@ -137,9 +142,17 @@ fn parameter_scope_is_sorted_and_classified_without_callable_metadata() {
     let rows = scope
         .iter()
         .map(|(parameter, eligibility)| (parameter, eligibility));
-    assert_eq!(rows.count(), 2);
     assert_eq!(
-        scope.eligibility(&second),
+        rows.count(),
+        1,
+        "the bindable inventory excludes caller-rigid declarations"
+    );
+    assert_eq!(
+        scope.eligibility(&scope.type_reference(&first.into()).expect("future slot")),
+        Some(TypeConstraintParameterEligibility::FutureEligible)
+    );
+    assert_eq!(
+        scope.eligibility(&second.clone().into()),
         Some(TypeConstraintParameterEligibility::Rigid)
     );
 }
@@ -156,12 +169,12 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
     )
     .expect("rigid const scope");
     assert_eq!(
-        scope.const_eligibility(&constant),
+        scope.const_eligibility(&constant.clone().into()),
         Some(TypeConstraintConstEligibility::Rigid)
     );
     let array = TypeKind::Array {
         item: Box::new(TypeKind::I32),
-        len: super::super::ArrayLength::Generic(constant.clone()),
+        len: super::super::ArrayLength::generic_parameter(constant.clone()),
     };
     let cancellation = AtomicBool::new(false);
     let mut context =
@@ -182,6 +195,7 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
     );
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
+            crate::types::GenericBinder::EMPTY,
             std::iter::empty(),
             [super::context::TypeConstraintConstParameterScopeRow::new(
                 constant,
@@ -222,8 +236,25 @@ fn active_const_alias_chain_closes_before_solution_publication() {
     let solution = TypeConstraintSolution::complete_path(
         BTreeMap::new(),
         BTreeMap::from([
-            (first.clone(), ArrayLength::Generic(second.clone())),
-            (second.clone(), ArrayLength::Const(7)),
+            (
+                context
+                    .parameter_scope
+                    .const_reference(&(first).clone().into())
+                    .expect("first inference slot"),
+                ArrayLength::Generic(
+                    context
+                        .parameter_scope
+                        .const_reference(&(second).clone().into())
+                        .expect("second inference slot"),
+                ),
+            ),
+            (
+                context
+                    .parameter_scope
+                    .const_reference(&(second).clone().into())
+                    .expect("second inference slot"),
+                ArrayLength::Const(7),
+            ),
         ]),
         BTreeMap::new(),
         &mut context,
@@ -232,7 +263,14 @@ fn active_const_alias_chain_closes_before_solution_publication() {
     assert_eq!(
         solution
             .const_bindings()
-            .map(|(parameter, value)| (parameter.clone(), value.clone()))
+            .map(|(parameter, value)| (
+                parameter
+                    .value()
+                    .free_parameter()
+                    .expect("declaration fixture")
+                    .clone(),
+                value.value().clone()
+            ))
             .collect::<Vec<_>>(),
         vec![
             (first, ArrayLength::Const(7)),
@@ -269,7 +307,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
     let error = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
-            (first.clone(), ArrayLength::Generic(second)),
+            (first.clone(), ArrayLength::generic_parameter(second)),
             (
                 GenericConstParameterId::new(
                     GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(212)),
@@ -288,7 +326,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
                 kind: InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             })
-        )) if found == first.into()
+        )) if found == context.parameter_scope.const_reference(&first.into()).expect("claimed first slot").into()
     ));
 }
 
@@ -318,7 +356,7 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [(
                 self_parameter.clone(),
-                ArrayLength::Generic(self_parameter.clone()),
+                ArrayLength::generic_parameter(self_parameter.clone()),
             )],
             std::iter::empty(),
             &mut self_context,
@@ -357,8 +395,11 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
         TypeConstraintSolution::test_seal_completed_with_consts(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
             [
-                (first.clone(), ArrayLength::Generic(second.clone())),
-                (second.clone(), ArrayLength::Generic(first)),
+                (
+                    first.clone(),
+                    ArrayLength::generic_parameter(second.clone())
+                ),
+                (second.clone(), ArrayLength::generic_parameter(first)),
             ],
             std::iter::empty(),
             &mut cycle_context,
@@ -402,13 +443,14 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
     .expect("completed future const binding");
 
     let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
         [super::context::TypeConstraintConstParameterScopeRow::new(
             parameter.clone(),
             TypeConstraintConstEligibility::Bindable,
         )],
-        std::iter::empty::<GenericTypeParameterId>(),
-        [parameter.clone()],
+        std::iter::empty::<crate::types::GenericTypeReference>(),
+        ([parameter.clone()]).into_iter().map(Into::into),
     )
     .expect("inherited const key scope");
     let mut next_context =
@@ -422,7 +464,13 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
         .expect("FutureEligible const becomes Bindable");
     assert_eq!(
         path.const_bindings,
-        BTreeMap::from([(parameter, ArrayLength::Const(9))])
+        BTreeMap::from([(
+            next_context
+                .parameter_scope
+                .const_reference(&(parameter).clone().into())
+                .expect("reopened const slot"),
+            ArrayLength::Const(9)
+        )])
     );
 }
 
@@ -462,6 +510,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
     )
     .expect("complete const rows");
     let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
         [
             super::context::TypeConstraintConstParameterScopeRow::new(
@@ -473,8 +522,8 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
                 TypeConstraintConstEligibility::Bindable,
             ),
         ],
-        std::iter::empty::<GenericTypeParameterId>(),
-        [first.clone()],
+        std::iter::empty::<crate::types::GenericTypeReference>(),
+        ([first.clone()]).into_iter().map(Into::into),
     )
     .expect("unexpected-key continuation scope");
     let mut next_context =
@@ -518,6 +567,7 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
     )
     .expect("complete partial future const rows");
     let next_scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         std::iter::empty::<super::context::TypeConstraintTypeParameterScopeRow>(),
         [
             super::context::TypeConstraintConstParameterScopeRow::new(
@@ -529,8 +579,8 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
                 TypeConstraintConstEligibility::Bindable,
             ),
         ],
-        std::iter::empty::<GenericTypeParameterId>(),
-        [first, second.clone()],
+        std::iter::empty::<crate::types::GenericTypeReference>(),
+        ([first, second.clone()]).into_iter().map(Into::into),
     )
     .expect("missing-key continuation scope");
     let mut next_context =
@@ -576,10 +626,15 @@ fn completed_const_solution_applies_array_length_parameter() {
     )
     .expect("canonical array-length binding");
     assert_eq!(
-        solution.apply(&TypeKind::Array {
-            item: Box::new(TypeKind::I32),
-            len: ArrayLength::Generic(parameter),
-        }),
+        solution
+            .apply_template(&TypeKind::Array {
+                item: Box::new(TypeKind::I32),
+                len: ArrayLength::generic_parameter(parameter),
+            })
+            .expect("completed template")
+            .view()
+            .to_root_type()
+            .expect("closed array"),
         TypeKind::Array {
             item: Box::new(TypeKind::I32),
             len: ArrayLength::Const(5),
@@ -629,7 +684,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         None,
     );
     rigid_transaction.constrain(
-        &TypeKind::GenericParam(rigid),
+        &TypeKind::generic_parameter(rigid),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -655,7 +710,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         None,
     );
     foreign_transaction.constrain(
-        &TypeKind::GenericParam(foreign),
+        &TypeKind::generic_parameter(foreign),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -753,7 +808,8 @@ where
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
-        self.lower.request_projection(key, value, closure);
+        self.lower
+            .request_projection(&mut self.context, key, value, closure);
     }
 
     fn finish(self) -> TypeConstraintRun<'c, A, D> {
@@ -871,10 +927,13 @@ fn transitive_bindings_are_sealed_and_move_only() {
     let outcome = {
         let cancellation = AtomicBool::new(false);
         let pattern = TypeKind::Tuple(vec![
-            TypeKind::GenericParam(first.clone()),
-            TypeKind::GenericParam(second.clone()),
+            TypeKind::generic_parameter(first.clone()),
+            TypeKind::generic_parameter(second.clone()),
         ]);
-        let actual = TypeKind::Tuple(vec![TypeKind::GenericParam(second.clone()), TypeKind::I32]);
+        let actual = TypeKind::Tuple(vec![
+            TypeKind::generic_parameter(second.clone()),
+            TypeKind::I32,
+        ]);
         let mut transaction = TestConstraintTransaction::begin(
             TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
                 TypeConstraintLimits::new(1_024, 512, 128, 64),
@@ -883,6 +942,10 @@ fn transitive_bindings_are_sealed_and_move_only() {
             ),
             None,
         );
+        let actual = transaction
+            .context
+            .open_template_type(&actual)
+            .expect("equation RHS uses the same active parameter namespace");
         transaction.constrain(
             &pattern,
             &actual,
@@ -894,7 +957,16 @@ fn transitive_bindings_are_sealed_and_move_only() {
     let bindings = outcome
         .solution
         .bindings()
-        .map(|(parameter, value)| (parameter.clone(), value.clone()))
+        .map(|(parameter, value)| {
+            (
+                parameter
+                    .value()
+                    .free_parameter()
+                    .expect("declaration fixture")
+                    .clone(),
+                value.value().clone(),
+            )
+        })
         .collect::<Vec<_>>();
     assert_eq!(
         bindings,
@@ -908,8 +980,8 @@ fn choice_acceptance_is_branch_local_and_ambiguous_bindings_remain() {
     let second = owned_parameter(2, 1);
     let outcome = solve(
         TypeKind::Choice(vec![
-            TypeKind::GenericParam(first),
-            TypeKind::GenericParam(second),
+            TypeKind::generic_parameter(first),
+            TypeKind::generic_parameter(second),
         ]),
         TypeKind::I32,
     );
@@ -964,8 +1036,8 @@ fn actual_choice_keeps_generic_bindings_consistent_across_all_rows() {
     let parameter = owned_parameter(6, 0);
     let repeated = solve(
         TypeKind::Tuple(vec![
-            TypeKind::GenericParam(parameter.clone()),
-            TypeKind::GenericParam(parameter.clone()),
+            TypeKind::generic_parameter(parameter.clone()),
+            TypeKind::generic_parameter(parameter.clone()),
         ]),
         TypeKind::Choice(vec![
             TypeKind::Tuple(vec![TypeKind::I32, TypeKind::I32]),
@@ -976,8 +1048,8 @@ fn actual_choice_keeps_generic_bindings_consistent_across_all_rows() {
 
     let divergent = solve(
         TypeKind::Tuple(vec![
-            TypeKind::GenericParam(parameter.clone()),
-            TypeKind::GenericParam(parameter),
+            TypeKind::generic_parameter(parameter.clone()),
+            TypeKind::generic_parameter(parameter),
         ]),
         TypeKind::Choice(vec![
             TypeKind::Tuple(vec![TypeKind::I32, TypeKind::I32]),
@@ -1016,7 +1088,7 @@ fn choice_to_choice_covers_each_supplied_alternative() {
 fn rejected_choice_branch_does_not_leak_its_speculative_binding() {
     let parameter = owned_parameter(7, 0);
     let pattern = TypeKind::Choice(vec![
-        TypeKind::Tuple(vec![TypeKind::GenericParam(parameter), TypeKind::I32]),
+        TypeKind::Tuple(vec![TypeKind::generic_parameter(parameter), TypeKind::I32]),
         TypeKind::Tuple(vec![TypeKind::String, TypeKind::String]),
     ]);
     let actual = TypeKind::Tuple(vec![TypeKind::String, TypeKind::String]);
@@ -1064,7 +1136,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
         None,
     );
     transaction.constrain(
-        &TypeKind::GenericParam(rigid.clone()),
+        &TypeKind::generic_parameter(rigid.clone()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -1089,7 +1161,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
         None,
     );
     choice_transaction.constrain(
-        &TypeKind::Choice(vec![TypeKind::GenericParam(rigid), TypeKind::I32]),
+        &TypeKind::Choice(vec![TypeKind::generic_parameter(rigid), TypeKind::I32]),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -1104,10 +1176,10 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
 fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     let parameter = owned_parameter(13, 0);
     let pattern = TypeKind::Choice(vec![
-        TypeKind::GenericParam(parameter.clone()),
-        TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.clone()))),
+        TypeKind::generic_parameter(parameter.clone()),
+        TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone()))),
     ]);
-    let actual = TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.clone())));
+    let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -1121,6 +1193,10 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
         ),
         None,
     );
+    let actual = transaction
+        .context
+        .open_template_type(&actual)
+        .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
         &pattern,
         &actual,
@@ -1157,6 +1233,7 @@ fn inherited_failure_for(value: TypeKind) -> InheritedFailureClass {
 #[test]
 fn forbidden_completed_rows_are_solution_owner_invariants() {
     let unknown_effect_function = TypeKind::Function {
+        binder: crate::types::GenericBinder::EMPTY,
         params: Vec::new(),
         return_type: Box::new(TypeKind::I32),
         effects: EffectRow::unknown(),
@@ -1184,11 +1261,26 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
     let t = owned_parameter(15, 0);
     let u = owned_parameter(15, 1);
     let expected_rows = vec![
-        (t.clone(), TypeKind::GenericParam(u.clone())),
+        (t.clone(), TypeKind::generic_parameter(u.clone())),
         (u.clone(), TypeKind::I32),
     ];
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(4096, 2048, 256, 128),
+            &cancellation,
+            TypeConstraintParameterScope::new([
+                (t.clone(), TypeConstraintParameterEligibility::Bindable),
+                (u, TypeConstraintParameterEligibility::Bindable),
+            ])
+            .expect("claimed completed scope"),
+        );
+    let expected_key = context
+        .parameter_scope
+        .type_reference(&t.into())
+        .expect("claimed type slot");
     let failure: TypeConstraintFailure<NoConstraintClient> =
-        try_type_only_solution(expected_rows, &[])
+        TypeConstraintSolution::test_seal_completed(expected_rows, [], &mut context)
             .expect_err("a non-canonical completed carrier cannot be issued")
             .into();
     assert!(matches!(
@@ -1198,7 +1290,7 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
                 kind: super::InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             }),
-        )) if found == t.into()
+        )) if found == expected_key.into()
     ));
 }
 
@@ -1235,7 +1327,10 @@ fn completed_solution_self_binding_and_occurs_cycle_are_distinct_invariants() {
     let parameter = owned_parameter(151, 0);
     assert!(matches!(
         try_type_only_solution(
-            [(parameter.clone(), TypeKind::GenericParam(parameter.clone()),)],
+            [(
+                parameter.clone(),
+                TypeKind::generic_parameter(parameter.clone()),
+            )],
             &[],
         ),
         Err(TypeConstraintError::Invariant(
@@ -1250,7 +1345,7 @@ fn completed_solution_self_binding_and_occurs_cycle_are_distinct_invariants() {
         try_type_only_solution(
             [(
                 parameter.clone(),
-                TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter))),
+                TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter))),
             )],
             &[],
         ),
@@ -1279,6 +1374,7 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
     let second = owned_parameter(160, 1);
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
+            crate::types::GenericBinder::EMPTY,
             [
                 super::context::TypeConstraintTypeParameterScopeRow::new(
                     second.clone(),
@@ -1299,12 +1395,13 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
     ));
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
+            crate::types::GenericBinder::EMPTY,
             [super::context::TypeConstraintTypeParameterScopeRow::new(
                 first.clone(),
                 TypeConstraintParameterEligibility::FutureEligible,
             )],
             std::iter::empty(),
-            [first],
+            ([first]).into_iter().map(Into::into),
             std::iter::empty(),
         ),
         Err(TypeConstraintInvariant::ParameterScope(
@@ -1325,6 +1422,7 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
     };
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
+            crate::types::GenericBinder::EMPTY,
             [row(first.clone()), row(first)],
             std::iter::empty(),
             std::iter::empty(),
@@ -1336,6 +1434,7 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
     ));
     assert!(matches!(
         TypeConstraintParameterScope::seal_call_scope(
+            crate::types::GenericBinder::EMPTY,
             [row(second), row(owned_parameter(1600, 0))],
             std::iter::empty(),
             std::iter::empty(),
@@ -1351,12 +1450,13 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
 fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
     let parameter = owned_parameter(161, 0);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [super::context::TypeConstraintTypeParameterScopeRow::new(
             parameter.clone(),
             TypeConstraintParameterEligibility::Bindable,
         )],
         std::iter::empty(),
-        [parameter.clone()],
+        ([parameter.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("required inherited key scope");
@@ -1384,6 +1484,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
     let required = owned_parameter(162, 0);
     let extra = owned_parameter(162, 1);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 required.clone(),
@@ -1395,7 +1496,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
             ),
         ],
         std::iter::empty(),
-        [required.clone()],
+        ([required.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("required scope");
@@ -1426,6 +1527,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
 
     let rigid = owned_parameter(162, 2);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 required.clone(),
@@ -1437,7 +1539,7 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
             ),
         ],
         std::iter::empty(),
-        [required.clone()],
+        ([required.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("required and rigid scope");
@@ -1468,6 +1570,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     let bindable = owned_parameter(16, 0);
     let rigid = owned_parameter(16, 1);
     let inherited_scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 bindable.clone(),
@@ -1479,12 +1582,12 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
             ),
         ],
         std::iter::empty(),
-        [bindable.clone()],
+        ([bindable.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("rigid self scope");
     let mut bindings = BTreeMap::new();
-    bindings.insert(bindable.clone(), TypeKind::GenericParam(rigid.clone()));
+    bindings.insert(bindable.clone(), TypeKind::generic_parameter(rigid.clone()));
     let inherited = type_only_solution(bindings, &[]);
     let cancellation = AtomicBool::new(false);
     let transaction = TestConstraintTransaction::begin(
@@ -1503,8 +1606,10 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
         inherited
             .solution
             .bindings()
-            .any(|(parameter, value)| parameter == &bindable
-                && value == &TypeKind::GenericParam(rigid.clone()))
+            .any(
+                |(parameter, value)| parameter.value() == &bindable.clone().into()
+                    && value.value() == &TypeKind::generic_parameter(rigid.clone())
+            )
     );
 
     let rigid_scope = TypeConstraintParameterScope::new([(
@@ -1522,7 +1627,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     );
     transaction.request_projection(
         (),
-        &TypeKind::GenericParam(rigid.clone()),
+        &TypeKind::generic_parameter(rigid.clone()),
         TypeConstraintProjectionClosure::Closed,
     );
     let projection = transaction
@@ -1533,7 +1638,13 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
         .into_iter()
         .next()
         .expect("one rigid projection");
-    assert_eq!(projection.value(), &TypeKind::GenericParam(rigid));
+    assert_eq!(
+        projection
+            .value()
+            .to_root_type()
+            .expect("closed rigid projection"),
+        TypeKind::generic_parameter(rigid)
+    );
 }
 
 #[test]
@@ -1541,6 +1652,7 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
     let forbidden = [
         (
             TypeKind::Function {
+                binder: crate::types::GenericBinder::EMPTY,
                 params: Vec::new(),
                 return_type: Box::new(TypeKind::I32),
                 effects: EffectRow::unknown(),
@@ -1587,7 +1699,9 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
                 Err(TypeConstraintFailure::Invariant(
                     TypeConstraintFailureInvariant::Constraint(
                         TypeConstraintInvariant::Projection(
-                            TypeConstraintProjectionInvariant::Mismatch
+                            TypeConstraintProjectionInvariant::Mismatch(
+                                TypeConstraintRejection::UnresolvedType
+                            )
                         )
                     )
                 ))
@@ -1606,7 +1720,7 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
     )])
     .expect("local scope");
     let inherited = type_only_solution(
-        BTreeMap::from([(local, TypeKind::GenericParam(foreign))]),
+        BTreeMap::from([(local, TypeKind::generic_parameter(foreign))]),
         &[],
     );
     let cancellation = AtomicBool::new(false);
@@ -1631,7 +1745,7 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
 #[test]
 fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
     let foreign = owned_parameter(202, 0);
-    let expected = TypeKind::Vec(Box::new(TypeKind::GenericParam(foreign)));
+    let expected = TypeKind::Vec(Box::new(TypeKind::generic_parameter(foreign)));
     let cancellation = AtomicBool::new(false);
     let mut context =
         TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_scope(
@@ -1679,8 +1793,8 @@ fn foreign_equal_generic_self_relation_is_fail_closed() {
         None,
     );
     transaction.constrain(
-        &TypeKind::GenericParam(foreign.clone()),
-        &TypeKind::GenericParam(foreign),
+        &TypeKind::generic_parameter(foreign.clone()),
+        &TypeKind::generic_parameter(foreign),
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
@@ -1701,7 +1815,7 @@ fn foreign_array_length_generic_is_fail_closed() {
     );
     let array = TypeKind::Array {
         item: Box::new(TypeKind::I32),
-        len: super::super::ArrayLength::Generic(foreign),
+        len: super::super::ArrayLength::generic_parameter(foreign),
     };
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
@@ -1728,6 +1842,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
     let first = owned_parameter(205, 0);
     let second = owned_parameter(205, 1);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 first.clone(),
@@ -1739,12 +1854,12 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
             ),
         ],
         std::iter::empty(),
-        [first.clone()],
+        ([first.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("extension scope");
     let inherited = type_only_solution(
-        BTreeMap::from([(first.clone(), TypeKind::GenericParam(second.clone()))]),
+        BTreeMap::from([(first.clone(), TypeKind::generic_parameter(second.clone()))]),
         std::slice::from_ref(&second),
     );
     let cancellation = AtomicBool::new(false);
@@ -1757,7 +1872,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         Some(Arc::new(inherited)),
     );
     transaction.constrain(
-        &TypeKind::GenericParam(second.clone()),
+        &TypeKind::generic_parameter(second.clone()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -1766,15 +1881,26 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         .complete()
         .expect("extended inherited solution");
     assert_eq!(
-        outcome.solution.bindings().collect::<Vec<_>>(),
+        outcome
+            .solution
+            .bindings()
+            .map(|(parameter, value)| (
+                parameter
+                    .value()
+                    .free_parameter()
+                    .expect("declaration fixture"),
+                value.value()
+            ))
+            .collect::<Vec<_>>(),
         vec![(&first, &TypeKind::I32), (&second, &TypeKind::I32)]
     );
 
     let unresolved = type_only_solution(
-        BTreeMap::from([(first, TypeKind::GenericParam(second.clone()))]),
+        BTreeMap::from([(first, TypeKind::generic_parameter(second.clone()))]),
         std::slice::from_ref(&second),
     );
     let unresolved_scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 owned_parameter(205, 0),
@@ -1786,7 +1912,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
             ),
         ],
         std::iter::empty(),
-        [owned_parameter(205, 0)],
+        ([owned_parameter(205, 0)]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("unresolved extension scope");
@@ -1817,6 +1943,7 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
     let t = owned_parameter(208, 0);
     let u = owned_parameter(208, 1);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 t.clone(),
@@ -1828,18 +1955,28 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
             ),
         ],
         std::iter::empty(),
-        [t.clone()],
+        ([t.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("canonical inherited scope");
     let inherited = type_only_solution(
-        BTreeMap::from([(t.clone(), TypeKind::GenericParam(u.clone()))]),
+        BTreeMap::from([(t.clone(), TypeKind::generic_parameter(u.clone()))]),
         std::slice::from_ref(&u),
     );
+    let (bound, value) = inherited.bindings().next().expect("one inherited binding");
+    assert_eq!(bound.value(), &t.clone().into());
     assert_eq!(
-        inherited.bindings().collect::<Vec<_>>(),
-        vec![(&t, &TypeKind::GenericParam(u.clone()))],
-        "the previous group seals a canonical edge to its future frontier"
+        value.scope().binders(),
+        &[crate::types::GenericBinder::new(1, 0, 0)]
+    );
+    assert_eq!(
+        value.value(),
+        &TypeKind::GenericParam(
+            value
+                .scope()
+                .bound_type(0, 0)
+                .expect("residual future slot")
+        )
     );
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
@@ -1851,7 +1988,7 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
         Some(Arc::new(inherited)),
     );
     transaction.constrain(
-        &TypeKind::GenericParam(u.clone()),
+        &TypeKind::generic_parameter(u.clone()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -1861,7 +1998,17 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
         .complete()
         .expect("current group closes the inherited chain");
     assert_eq!(
-        outcome.solution.bindings().collect::<Vec<_>>(),
+        outcome
+            .solution
+            .bindings()
+            .map(|(parameter, value)| (
+                parameter
+                    .value()
+                    .free_parameter()
+                    .expect("declaration fixture"),
+                value.value()
+            ))
+            .collect::<Vec<_>>(),
         vec![(&t, &TypeKind::I32), (&u, &TypeKind::I32)]
     );
 }
@@ -1870,12 +2017,13 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
 fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
     let parameter = owned_parameter(207, 0);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [super::context::TypeConstraintTypeParameterScopeRow::new(
             parameter.clone(),
             TypeConstraintParameterEligibility::Bindable,
         )],
         std::iter::empty(),
-        [parameter.clone()],
+        ([parameter.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("replacement scope");
@@ -1890,7 +2038,7 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
         Some(Arc::new(inherited)),
     );
     transaction.constrain(
-        &TypeKind::GenericParam(parameter),
+        &TypeKind::generic_parameter(parameter),
         &TypeKind::String,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -1907,6 +2055,7 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
     let bound = owned_parameter(206, 0);
     let future = owned_parameter(206, 1);
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
         [
             super::context::TypeConstraintTypeParameterScopeRow::new(
                 bound.clone(),
@@ -1918,12 +2067,12 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
             ),
         ],
         std::iter::empty(),
-        [bound.clone()],
+        ([bound.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("continuation scope");
     let inherited = type_only_solution(
-        BTreeMap::from([(bound.clone(), TypeKind::GenericParam(future.clone()))]),
+        BTreeMap::from([(bound.clone(), TypeKind::generic_parameter(future.clone()))]),
         std::slice::from_ref(&future),
     );
     let cancellation = AtomicBool::new(false);
@@ -1939,9 +2088,19 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
         .finish()
         .complete()
         .expect("future symbol remains owned by the exact continuation scope");
+    let (parameter, value) = outcome
+        .solution
+        .bindings()
+        .next()
+        .expect("one deferred binding");
+    assert_eq!(parameter.value(), &bound.clone().into());
     assert_eq!(
-        outcome.solution.bindings().collect::<Vec<_>>(),
-        vec![(&bound, &TypeKind::GenericParam(future))]
+        value.scope().binders(),
+        &[crate::types::GenericBinder::new(1, 0, 0)]
+    );
+    assert_eq!(
+        value.value(),
+        &TypeKind::GenericParam(value.scope().bound_type(0, 0).expect("deferred slot"))
     );
 }
 
@@ -2051,7 +2210,7 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
         (
             TypeKind::Array {
                 item: Box::new(TypeKind::I32),
-                len: super::super::ArrayLength::Generic(constant),
+                len: super::super::ArrayLength::generic_parameter(constant),
             },
             generic_scope,
         ),
@@ -2245,6 +2404,7 @@ impl ConstraintDomain for SyntheticClient {
     type Source = u8;
     type AlternativeIndex = u8;
     type EvidenceRule = u8;
+    type ObservedEvidence = u8;
     type CheckedEvidence = u8;
     type ProbeSemanticBranch = u8;
     type SealedBranchValue = u8;
@@ -2252,12 +2412,12 @@ impl ConstraintDomain for SyntheticClient {
     type SourceErrorCause = &'static str;
     type ClientInvariant = ();
 
-    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::CheckedEvidence) -> bool {
+    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::ObservedEvidence) -> bool {
         rule == checked
     }
 
     fn project_checked_evidence(
-        checked: &Self::CheckedEvidence,
+        checked: &Self::ObservedEvidence,
         _: &TypeKind,
     ) -> Option<Self::CheckedEvidence> {
         Some(*checked)
@@ -2335,8 +2495,8 @@ fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![
-            TypeKind::GenericParam(first),
-            TypeKind::GenericParam(second),
+            TypeKind::generic_parameter(first),
+            TypeKind::generic_parameter(second),
         ]),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -2366,7 +2526,12 @@ fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
             .submit_probe(&mut context, ticket, submission)
             .expect("submit probe");
     }
-    transaction.request_projection(5, &TypeKind::I32, TypeConstraintProjectionClosure::Closed);
+    transaction.request_projection(
+        &mut context,
+        5,
+        &TypeKind::I32,
+        TypeConstraintProjectionClosure::Closed,
+    );
     while let Some(mut ticket) = transaction
         .next_materialization_ticket(&mut context)
         .expect("materialization ticket")
@@ -2470,8 +2635,8 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![
-            TypeKind::GenericParam(first),
-            TypeKind::GenericParam(second),
+            TypeKind::generic_parameter(first),
+            TypeKind::generic_parameter(second),
         ]),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
@@ -2570,7 +2735,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             parameters
                 .iter()
                 .cloned()
-                .map(TypeKind::GenericParam)
+                .map(TypeKind::generic_parameter)
                 .collect(),
         ),
         &TypeKind::I32,
@@ -2706,7 +2871,13 @@ fn keyed_projection_is_sorted_and_closed_after_unique_pair() {
     let outcome = transaction.finish().complete().expect("closed projection");
     assert_eq!(outcome.projections.len(), 1);
     assert_eq!(outcome.projections[0].key(), &());
-    assert_eq!(outcome.projections[0].value(), &TypeKind::I32);
+    assert_eq!(
+        outcome.projections[0]
+            .value()
+            .to_root_type()
+            .expect("closed value"),
+        TypeKind::I32
+    );
 }
 
 #[test]
@@ -2729,6 +2900,60 @@ fn keyed_projection_duplicate_is_a_typed_invariant() {
 }
 
 #[test]
+fn required_candidate_keys_are_rejected_before_closed_projection() {
+    let ty = owned_parameter(505, 0);
+    let constant = GenericConstParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(505)),
+        0,
+    );
+    let cancellation = AtomicBool::new(false);
+    for (scope, projection, parameter) in [
+        (
+            TypeConstraintParameterScope::new([(
+                ty.clone(),
+                TypeConstraintParameterEligibility::Bindable,
+            )])
+            .expect("type scope"),
+            TypeKind::generic_parameter(ty.clone()),
+            super::ConstraintGenericParameterId::from(ty),
+        ),
+        (
+            TypeConstraintParameterScope::new_with_constants(
+                [],
+                [(constant.clone(), TypeConstraintConstEligibility::Bindable)],
+            )
+            .expect("constant scope"),
+            TypeKind::Array {
+                item: Box::new(TypeKind::I32),
+                len: ArrayLength::Generic(constant.clone().into()),
+            },
+            super::ConstraintGenericParameterId::from(constant),
+        ),
+    ] {
+        let mut transaction = TestConstraintTransaction::begin(
+            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+                TypeConstraintLimits::new(256, 128, 16, 8),
+                &cancellation,
+                scope,
+            ),
+            None,
+        );
+        transaction.request_projection((), &projection, TypeConstraintProjectionClosure::Closed);
+        let outcome = transaction.finish().complete();
+        let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Constraint(
+            rejection,
+        ))) = outcome
+        else {
+            panic!("missing candidate key must be an ordinary rejection: {outcome:?}");
+        };
+        assert_eq!(
+            rejection,
+            TypeConstraintRejection::IncompleteInstantiation { parameter }
+        );
+    }
+}
+
+#[test]
 fn closed_projection_rejects_future_eligible_row_with_typed_mismatch() {
     let future = owned_parameter(50, 0);
     let cancellation = AtomicBool::new(false);
@@ -2747,14 +2972,16 @@ fn closed_projection_rejects_future_eligible_row_with_typed_mismatch() {
     );
     transaction.request_projection(
         (),
-        &TypeKind::GenericParam(future),
+        &TypeKind::generic_parameter(future),
         TypeConstraintProjectionClosure::Closed,
     );
     assert!(matches!(
         transaction.finish().complete(),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
-                TypeConstraintProjectionInvariant::Mismatch,
+                TypeConstraintProjectionInvariant::Mismatch(
+                    TypeConstraintRejection::IncompleteInstantiation { .. }
+                ),
             ))
         ))
     ));
@@ -2779,13 +3006,27 @@ fn future_projection_allows_only_future_eligible_rows() {
     );
     transaction.request_projection(
         (),
-        &TypeKind::GenericParam(future.clone()),
+        &TypeKind::generic_parameter(future.clone()),
         TypeConstraintProjectionClosure::AllowFutureEligible,
     );
     let outcome = transaction.finish().complete().expect("future projection");
+    let value = outcome.projections[0].value();
     assert_eq!(
-        outcome.projections[0].value(),
-        &TypeKind::GenericParam(future)
+        value.scope().binders(),
+        &[crate::types::GenericBinder::new(1, 0, 0)]
+    );
+    assert_eq!(
+        value.value(),
+        &TypeKind::GenericParam(
+            value
+                .scope()
+                .bound_type(0, 0)
+                .expect("future projection slot")
+        )
+    );
+    assert!(
+        value.to_root_type().is_err(),
+        "future projections retain their lexical authority"
     );
 }
 
@@ -2807,7 +3048,7 @@ fn final_selected_call_rejects_non_unique_choice_injection() {
 fn final_equation_replays_choice_after_later_binding() {
     let parameter = owned_parameter(10, 0);
     let pattern = TypeKind::Choice(vec![
-        TypeKind::GenericParam(parameter.clone()),
+        TypeKind::generic_parameter(parameter.clone()),
         TypeKind::I32,
     ]);
     let actual = TypeKind::I32;
@@ -2826,7 +3067,7 @@ fn final_equation_replays_choice_after_later_binding() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     transaction.constrain(
-        &TypeKind::GenericParam(parameter),
+        &TypeKind::generic_parameter(parameter),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -2841,8 +3082,8 @@ fn final_equation_replays_choice_after_later_binding() {
 #[test]
 fn deferred_cycle_is_reported_only_after_close() {
     let parameter = owned_parameter(11, 0);
-    let pattern = TypeKind::GenericParam(parameter.clone());
-    let actual = TypeKind::Vec(Box::new(TypeKind::GenericParam(parameter.clone())));
+    let pattern = TypeKind::generic_parameter(parameter.clone());
+    let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
         TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
@@ -2852,6 +3093,10 @@ fn deferred_cycle_is_reported_only_after_close() {
         ),
         None,
     );
+    let actual = transaction
+        .context
+        .open_template_type(&actual)
+        .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
         &pattern,
         &actual,
@@ -2886,6 +3131,7 @@ impl ConstraintDomain for PreparedDomain {
     type Source = u8;
     type AlternativeIndex = u8;
     type EvidenceRule = PreparedRule;
+    type ObservedEvidence = PreparedRule;
     type CheckedEvidence = PreparedRule;
     type ProbeSemanticBranch = PreparedBranch;
     type SealedBranchValue = PreparedSealed;
@@ -2893,7 +3139,7 @@ impl ConstraintDomain for PreparedDomain {
     type SourceErrorCause = &'static str;
     type ClientInvariant = ();
 
-    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::CheckedEvidence) -> bool {
+    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::ObservedEvidence) -> bool {
         match (rule, checked) {
             (PreparedRule::Otherwise, _) => true,
             (PreparedRule::Tag(expected), PreparedRule::Tag(actual)) => expected == actual,
@@ -2902,7 +3148,7 @@ impl ConstraintDomain for PreparedDomain {
     }
 
     fn project_checked_evidence(
-        checked: &Self::CheckedEvidence,
+        checked: &Self::ObservedEvidence,
         _: &TypeKind,
     ) -> Option<Self::CheckedEvidence> {
         Some(checked.clone())
@@ -3418,7 +3664,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     .expect("typed rest has one explicit fallback");
     transaction.constrain(
         &mut context,
-        &TypeKind::GenericParam(parameter.clone()),
+        &TypeKind::generic_parameter(parameter.clone()),
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -3433,15 +3679,18 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .next_probe(&mut context)
         .expect("generic rest hint")
         .expect("one generic rest row");
+    let actual = context
+        .open_template_type(&TypeKind::Array {
+            item: Box::new(TypeKind::generic_parameter(parameter.clone())),
+            len: super::super::ArrayLength::Const(5),
+        })
+        .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
             ticket,
             ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::Array {
-                    item: Box::new(TypeKind::GenericParam(parameter.clone())),
-                    len: super::super::ArrayLength::Const(5),
-                },
+                actual,
                 PreparedBranch("generic-rest"),
                 0,
                 PreparedRule::Otherwise,
@@ -3536,7 +3785,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .expect("valid test initialization");
     transaction.constrain(
         &mut context,
-        &TypeKind::GenericParam(parameter.clone()),
+        &TypeKind::generic_parameter(parameter.clone()),
         &TypeKind::String,
         ConstraintAcceptance::PatternAcceptsActual,
     );
@@ -3560,16 +3809,19 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .next_probe(&mut context)
         .expect("generic map rest hint")
         .expect("one generic map rest row");
+    let actual = context
+        .open_template_type(&TypeKind::Map {
+            kind: super::super::MapKind::BTree,
+            key: Box::new(TypeKind::generic_parameter(parameter.clone())),
+            value: Box::new(TypeKind::I32),
+        })
+        .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
             ticket,
             ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::Map {
-                    kind: super::super::MapKind::BTree,
-                    key: Box::new(TypeKind::GenericParam(parameter.clone())),
-                    value: Box::new(TypeKind::I32),
-                },
+                actual,
                 PreparedBranch("generic-map-rest"),
                 0,
                 PreparedRule::Otherwise,

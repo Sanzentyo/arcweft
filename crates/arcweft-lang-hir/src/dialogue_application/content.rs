@@ -1,10 +1,13 @@
 //! Complete dialogue-content records owned by one expression.
+//!
+//! Dialogue content is a source-ordered node stream. Zero-width bracket
+//! actions are carried by their node; body-bearing operations are represented
+//! by the attached content-call expression that owns their body.
 
 use std::collections::BTreeSet;
 
 use super::rich_text::{
-    HirRichTextEndTag, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
-    HirRichTextTagPayload, validate_argument_ids,
+    HirDialogueControl, HirRichTextArgumentIssue, HirRichTextHostEvent, HirRichTextValue,
 };
 use super::{
     HirDialogueExpressionExpectation, HirDialogueInvariantError, HirDialogueOrdinalError,
@@ -13,7 +16,9 @@ use super::{
 };
 use crate::identity::{ExprId, HirLimit, HirModuleId};
 use crate::leaf::HirIdSuffix;
-use arcweft_lang_syntax::expressions::{SyntaxDialogueContentIssue, SyntaxLineBreakKind};
+use arcweft_lang_syntax::expressions::{
+    SyntaxDialogueContentIssue, SyntaxDialogueControl, SyntaxLineBreakKind,
+};
 
 /// Source-ordered ordinal of one marker in dialogue content.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -81,12 +86,16 @@ impl HirDialogueMarkName {
 pub struct HirDialogueMark {
     id: HirDialogueMarkId,
     name: HirDialogueMarkName,
-    tag: HirRichTextTagId,
+    action: HirDialogueNodeId,
 }
 
 impl HirDialogueMark {
-    const fn new(id: HirDialogueMarkId, name: HirDialogueMarkName, tag: HirRichTextTagId) -> Self {
-        Self { id, name, tag }
+    const fn new(
+        id: HirDialogueMarkId,
+        name: HirDialogueMarkName,
+        action: HirDialogueNodeId,
+    ) -> Self {
+        Self { id, name, action }
     }
 
     /// Returns the content-qualified marker identity.
@@ -99,9 +108,257 @@ impl HirDialogueMark {
         &self.name
     }
 
-    /// Returns the marker tag row that introduced this marker.
-    pub const fn tag(&self) -> HirRichTextTagId {
-        self.tag
+    /// Returns the point-action node that introduced this marker.
+    pub const fn action(&self) -> HirDialogueNodeId {
+        self.action
+    }
+}
+
+/// Opaque decoded body retained by the canonical `#raw()[...]` content call.
+///
+/// This carrier is intentionally not a dialogue node stream.  Brackets and
+/// control-looking bytes therefore remain literal and cannot be reparsed.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirRawLiteralBody(Box<str>);
+
+impl HirRawLiteralBody {
+    pub(crate) const fn new(value: Box<str>) -> Self {
+        Self(value)
+    }
+
+    /// Returns the decoded literal body.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Complete typed zero-width bracket action.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirDialoguePointAction {
+    id: HirDialogueNodeId,
+    identity: HirDialoguePointActionIdentity,
+    arguments: Box<[HirDialoguePointActionArgument]>,
+    payload: HirDialoguePointActionPayload,
+}
+
+impl HirDialoguePointAction {
+    pub(crate) fn try_new(
+        id: HirDialogueNodeId,
+        identity: HirDialoguePointActionIdentity,
+        arguments: Box<[HirDialoguePointActionArgument]>,
+        payload: HirDialoguePointActionPayload,
+    ) -> Result<Self, HirDialogueInvariantError> {
+        for (ordinal, argument) in arguments.iter().enumerate() {
+            let expected = u16::try_from(ordinal)
+                .map_err(|_| HirDialogueInvariantError::ArithmeticOverflow)?;
+            if argument.id().action() != id || argument.id().ordinal() != expected {
+                return Err(HirDialogueInvariantError::InvalidArgumentReference);
+            }
+        }
+        let action = Self {
+            id,
+            identity,
+            arguments,
+            payload,
+        };
+        action
+            .validate_module(id.content().owner().module())
+            .map_err(|actual| HirDialogueInvariantError::ForeignChild {
+                expected: id.content().owner().module(),
+                actual,
+            })?;
+        Ok(action)
+    }
+
+    /// Returns the point-action node identity.
+    pub const fn id(&self) -> HirDialogueNodeId {
+        self.id
+    }
+
+    /// Returns the typed action identity.
+    pub const fn identity(&self) -> &HirDialoguePointActionIdentity {
+        &self.identity
+    }
+
+    /// Returns source-ordered value arguments.
+    pub const fn arguments(&self) -> &[HirDialoguePointActionArgument] {
+        &self.arguments
+    }
+
+    /// Returns the optional expression payload.
+    pub const fn payload(&self) -> HirDialoguePointActionPayload {
+        self.payload
+    }
+
+    fn validate_module(&self, expected: HirModuleId) -> Result<(), HirModuleId> {
+        if let Some(expression) = self.payload.expression() {
+            validate_module(expected, expression.module())?;
+        }
+        Ok(())
+    }
+
+    fn validate_transaction<C: HirDialogueTransactionContext>(
+        &self,
+        context: &mut C,
+    ) -> Result<(), HirDialogueTransactionError<C::Error>> {
+        for argument in &self.arguments {
+            if let Some(name) = argument.name() {
+                context
+                    .require(HirDialogueTransactionRequirement::RichTextCharge(
+                        HirRichTextCharge::ArgumentKeyBytes {
+                            observed: name.len(),
+                        },
+                    ))
+                    .map_err(HirDialogueTransactionError::Context)?;
+            }
+            if let Some(value) = argument.value() {
+                context
+                    .require(HirDialogueTransactionRequirement::RichTextCharge(
+                        HirRichTextCharge::ArgumentValueDecodedBytes {
+                            observed: value.as_str().len(),
+                        },
+                    ))
+                    .map_err(HirDialogueTransactionError::Context)?;
+            }
+        }
+        if let Some(expression) = self.payload.expression() {
+            context
+                .require(HirDialogueTransactionRequirement::Expression {
+                    id: expression,
+                    expected: HirDialogueExpressionExpectation::Call,
+                })
+                .map_err(HirDialogueTransactionError::Context)?;
+        }
+        Ok(())
+    }
+
+    fn has_recovery(&self) -> bool {
+        self.arguments
+            .iter()
+            .any(|argument| argument.issue().is_some())
+    }
+}
+
+/// Typed point-action identity admitted by bracket dialogue syntax.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDialoguePointActionIdentity {
+    Control(HirDialogueControl),
+    Mark(HirDialogueMarkName),
+    Host(HirRichTextHostEvent),
+}
+
+/// Optional call payload owned by a point action.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDialoguePointActionPayload {
+    None,
+    Call(ExprId),
+    TimedCue(ExprId),
+}
+
+impl HirDialoguePointActionPayload {
+    pub const fn expression(self) -> Option<ExprId> {
+        match self {
+            Self::Call(expression) | Self::TimedCue(expression) => Some(expression),
+            Self::None => None,
+        }
+    }
+}
+
+/// Content-local point-action argument identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirDialoguePointActionArgumentId {
+    action: HirDialogueNodeId,
+    ordinal: u16,
+}
+
+impl HirDialoguePointActionArgumentId {
+    pub(crate) fn try_new(
+        action: HirDialogueNodeId,
+        ordinal: usize,
+    ) -> Result<Self, HirDialogueOrdinalError> {
+        if ordinal >= 32 {
+            return Err(HirDialogueOrdinalError::Argument { ordinal });
+        }
+        u16::try_from(ordinal)
+            .map(|ordinal| Self { action, ordinal })
+            .map_err(|_| HirDialogueOrdinalError::Argument { ordinal })
+    }
+
+    pub const fn action(self) -> HirDialogueNodeId {
+        self.action
+    }
+
+    pub const fn ordinal(self) -> u16 {
+        self.ordinal
+    }
+}
+
+/// One point-action argument, retained as typed decoded data.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDialoguePointActionArgument {
+    Positional {
+        id: HirDialoguePointActionArgumentId,
+        value: HirRichTextValue,
+    },
+    Named {
+        id: HirDialoguePointActionArgumentId,
+        name: Box<str>,
+        value: HirRichTextValue,
+    },
+    Invalid {
+        id: HirDialoguePointActionArgumentId,
+        issue: HirRichTextArgumentIssue,
+    },
+}
+
+impl HirDialoguePointActionArgument {
+    pub(crate) const fn positional(
+        id: HirDialoguePointActionArgumentId,
+        value: HirRichTextValue,
+    ) -> Self {
+        Self::Positional { id, value }
+    }
+
+    pub(crate) const fn named(
+        id: HirDialoguePointActionArgumentId,
+        name: Box<str>,
+        value: HirRichTextValue,
+    ) -> Self {
+        Self::Named { id, name, value }
+    }
+
+    pub(crate) const fn invalid(
+        id: HirDialoguePointActionArgumentId,
+        issue: HirRichTextArgumentIssue,
+    ) -> Self {
+        Self::Invalid { id, issue }
+    }
+
+    pub const fn id(&self) -> HirDialoguePointActionArgumentId {
+        match self {
+            Self::Positional { id, .. } | Self::Named { id, .. } | Self::Invalid { id, .. } => *id,
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Named { name, .. } => Some(name),
+            Self::Positional { .. } | Self::Invalid { .. } => None,
+        }
+    }
+
+    pub const fn value(&self) -> Option<&HirRichTextValue> {
+        match self {
+            Self::Positional { value, .. } | Self::Named { value, .. } => Some(value),
+            Self::Invalid { .. } => None,
+        }
+    }
+
+    pub const fn issue(&self) -> Option<HirRichTextArgumentIssue> {
+        match self {
+            Self::Invalid { issue, .. } => Some(*issue),
+            Self::Positional { .. } | Self::Named { .. } => None,
+        }
     }
 }
 
@@ -110,7 +367,7 @@ impl HirDialogueMark {
 pub struct HirDialogueContent {
     id: HirDialogueContentId,
     nodes: Box<[HirDialogueNode]>,
-    tags: Box<[HirRichTextTag]>,
+    raw_literal: Option<HirRawLiteralBody>,
     marks: Box<[HirDialogueMark]>,
 }
 
@@ -118,14 +375,26 @@ impl HirDialogueContent {
     pub(crate) fn try_new(
         id: HirDialogueContentId,
         nodes: Box<[HirDialogueNode]>,
-        tags: Box<[HirRichTextTag]>,
-        mark_inputs: Box<[(HirRichTextTagId, HirDialogueMarkName)]>,
+        mark_inputs: Box<[(HirDialogueNodeId, HirDialogueMarkName)]>,
     ) -> Result<Self, HirDialogueInvariantError> {
         Self::try_new_with_mark_maximum(
             id,
             nodes,
-            tags,
+            None,
             mark_inputs,
+            HirLimit::DialogueMarksPerContent.maximum(),
+        )
+    }
+
+    pub(crate) fn try_new_raw_literal(
+        id: HirDialogueContentId,
+        literal: HirRawLiteralBody,
+    ) -> Result<Self, HirDialogueInvariantError> {
+        Self::try_new_with_mark_maximum(
+            id,
+            Box::new([]),
+            Some(literal),
+            Box::new([]),
             HirLimit::DialogueMarksPerContent.maximum(),
         )
     }
@@ -133,29 +402,21 @@ impl HirDialogueContent {
     fn try_new_with_mark_maximum(
         id: HirDialogueContentId,
         nodes: Box<[HirDialogueNode]>,
-        mut tags: Box<[HirRichTextTag]>,
-        mark_inputs: Box<[(HirRichTextTagId, HirDialogueMarkName)]>,
+        raw_literal: Option<HirRawLiteralBody>,
+        mark_inputs: Box<[(HirDialogueNodeId, HirDialogueMarkName)]>,
         maximum_marks: usize,
     ) -> Result<Self, HirDialogueInvariantError> {
-        let marks = mint_mark_catalog(id, &mut tags, &mark_inputs, maximum_marks)?;
-        validate_content_ids(id, &nodes, &tags, &marks)?;
+        if raw_literal.is_some() && !nodes.is_empty() {
+            return Err(HirDialogueInvariantError::InvalidContentOwner);
+        }
+        let marks = mint_mark_catalog(id, &nodes, &mark_inputs, maximum_marks)?;
+        validate_content_ids(id, &nodes, raw_literal.as_ref(), &marks)?;
         Ok(Self {
             id,
             nodes,
-            tags,
+            raw_literal,
             marks,
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn try_new_with_mark_limit_for_test(
-        id: HirDialogueContentId,
-        nodes: Box<[HirDialogueNode]>,
-        tags: Box<[HirRichTextTag]>,
-        mark_inputs: Box<[(HirRichTextTagId, HirDialogueMarkName)]>,
-        maximum_marks: usize,
-    ) -> Result<Self, HirDialogueInvariantError> {
-        Self::try_new_with_mark_maximum(id, nodes, tags, mark_inputs, maximum_marks)
     }
 
     /// Returns the application-owned content identity.
@@ -163,14 +424,14 @@ impl HirDialogueContent {
         self.id
     }
 
-    /// Returns source-ordered dialogue nodes.
+    /// Returns source-ordered dialogue nodes. Raw literal bodies have no nodes.
     pub const fn nodes(&self) -> &[HirDialogueNode] {
         &self.nodes
     }
 
-    /// Returns source-ordered `RichText` tags.
-    pub const fn tags(&self) -> &[HirRichTextTag] {
-        &self.tags
+    /// Returns the dedicated opaque raw-literal body, when this is `#raw()`.
+    pub const fn raw_literal(&self) -> Option<&HirRawLiteralBody> {
+        self.raw_literal.as_ref()
     }
 
     /// Returns the source-ordered marker catalog owned by this content.
@@ -187,12 +448,8 @@ impl HirDialogueContent {
     }
 
     pub(super) fn validate_module(&self, expected: HirModuleId) -> Result<(), HirModuleId> {
-        validate_module(expected, self.id.owner.module())?;
         for node in &self.nodes {
             node.validate_module(expected)?;
-        }
-        for tag in &self.tags {
-            tag.validate_module(expected)?;
         }
         Ok(())
     }
@@ -201,21 +458,29 @@ impl HirDialogueContent {
         &self,
         context: &mut C,
     ) -> Result<(), HirDialogueTransactionError<C::Error>> {
+        let action_count = self
+            .nodes
+            .iter()
+            .filter(|node| matches!(node.kind(), HirDialogueNodeKind::PointAction(_)))
+            .count();
         context
             .require(HirDialogueTransactionRequirement::RichTextCharge(
-                HirRichTextCharge::ContentTags {
-                    observed: self.tags.len(),
+                HirRichTextCharge::PointActions {
+                    observed: action_count,
                 },
             ))
             .map_err(HirDialogueTransactionError::Context)?;
-        let mut argument_count = 0usize;
-        for tag in &self.tags {
-            argument_count = argument_count.checked_add(tag.arguments().len()).ok_or(
-                HirDialogueTransactionError::Invariant(
-                    HirDialogueInvariantError::ArithmeticOverflow,
-                ),
-            )?;
-        }
+        let argument_count = self
+            .nodes
+            .iter()
+            .filter_map(|node| match node.kind() {
+                HirDialogueNodeKind::PointAction(action) => Some(action.arguments().len()),
+                _ => None,
+            })
+            .try_fold(0usize, usize::checked_add)
+            .ok_or(HirDialogueTransactionError::Invariant(
+                HirDialogueInvariantError::ArithmeticOverflow,
+            ))?;
         context
             .require(HirDialogueTransactionRequirement::RichTextCharge(
                 HirRichTextCharge::ContentArguments {
@@ -226,15 +491,11 @@ impl HirDialogueContent {
         for node in &self.nodes {
             node.validate_transaction(context)?;
         }
-        for tag in &self.tags {
-            tag.validate_transaction(context)?;
-        }
         Ok(())
     }
 
     pub(super) fn has_recovery(&self) -> bool {
         self.nodes.iter().any(HirDialogueNode::has_recovery)
-            || self.tags.iter().any(HirRichTextTag::has_recovery)
     }
 }
 
@@ -307,12 +568,11 @@ impl HirDialogueNode {
 
     pub(super) fn validate_module(&self, expected: HirModuleId) -> Result<(), HirModuleId> {
         match &self.kind {
-            HirDialogueNodeKind::Interpolation(expression) => {
+            HirDialogueNodeKind::Interpolation(expression)
+            | HirDialogueNodeKind::ContentApplication(expression) => {
                 validate_module(expected, expression.module())
             }
-            HirDialogueNodeKind::AuthoredEndTag(tag) | HirDialogueNodeKind::InferredEndTag(tag) => {
-                tag.validate_module(expected)
-            }
+            HirDialogueNodeKind::PointAction(action) => action.validate_module(expected),
             _ => Ok(()),
         }
     }
@@ -321,22 +581,27 @@ impl HirDialogueNode {
         &self,
         context: &mut C,
     ) -> Result<(), HirDialogueTransactionError<C::Error>> {
-        if let HirDialogueNodeKind::Interpolation(expression) = self.kind {
-            context
+        match self.kind {
+            HirDialogueNodeKind::Interpolation(expression) => context
                 .require(HirDialogueTransactionRequirement::Expression {
                     id: expression,
                     expected: HirDialogueExpressionExpectation::Unrestricted,
                 })
-                .map_err(HirDialogueTransactionError::Context)?;
+                .map_err(HirDialogueTransactionError::Context),
+            HirDialogueNodeKind::ContentApplication(expression) => context
+                .require(HirDialogueTransactionRequirement::Expression {
+                    id: expression,
+                    expected: HirDialogueExpressionExpectation::ContentApplication,
+                })
+                .map_err(HirDialogueTransactionError::Context),
+            HirDialogueNodeKind::PointAction(ref action) => action.validate_transaction(context),
+            _ => Ok(()),
         }
-        Ok(())
     }
 
     pub(super) fn has_recovery(&self) -> bool {
         match &self.kind {
-            HirDialogueNodeKind::AuthoredEndTag(tag) | HirDialogueNodeKind::InferredEndTag(tag) => {
-                tag.issue().is_some()
-            }
+            HirDialogueNodeKind::PointAction(action) => action.has_recovery(),
             HirDialogueNodeKind::Error(_) => true,
             _ => false,
         }
@@ -347,14 +612,10 @@ impl HirDialogueNode {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirDialogueNodeKind {
     Text(HirTextFragment),
-    Raw(HirTextFragment),
     Escape(char),
-    Ruby(HirRuby),
-    AuthoredStartTag(HirRichTextTagId),
-    InferredStartTag(HirRichTextTagId),
-    AuthoredEndTag(HirRichTextEndTag),
-    InferredEndTag(HirRichTextEndTag),
     Interpolation(ExprId),
+    ContentApplication(ExprId),
+    PointAction(HirDialoguePointAction),
     LineBreak(HirLineBreakKind),
     Error(HirDialogueContentError),
 }
@@ -371,29 +632,6 @@ impl HirTextFragment {
     /// Returns decoded semantic text.
     pub fn as_str(&self) -> &str {
         &self.0
-    }
-}
-
-/// Decoded ruby base and annotation.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirRuby {
-    base: Box<str>,
-    ruby: Box<str>,
-}
-
-impl HirRuby {
-    pub(crate) const fn new(base: Box<str>, ruby: Box<str>) -> Self {
-        Self { base, ruby }
-    }
-
-    /// Returns the decoded base text.
-    pub fn base(&self) -> &str {
-        &self.base
-    }
-
-    /// Returns the decoded ruby annotation.
-    pub fn ruby(&self) -> &str {
-        &self.ruby
     }
 }
 
@@ -419,20 +657,14 @@ impl From<SyntaxLineBreakKind> for HirLineBreakKind {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirDialogueContentError {
     UnclassifiedToken,
-    InvalidEscape,
-    InvalidRuby,
-    UnmatchedEndTag,
-    UnclosedTag,
+    InvalidPointAction,
 }
 
 impl From<SyntaxDialogueContentIssue> for HirDialogueContentError {
     fn from(value: SyntaxDialogueContentIssue) -> Self {
         match value {
             SyntaxDialogueContentIssue::UnclassifiedToken => Self::UnclassifiedToken,
-            SyntaxDialogueContentIssue::InvalidEscape => Self::InvalidEscape,
-            SyntaxDialogueContentIssue::InvalidRuby => Self::InvalidRuby,
-            SyntaxDialogueContentIssue::UnmatchedEndTag => Self::UnmatchedEndTag,
-            SyntaxDialogueContentIssue::UnclosedTag => Self::UnclosedTag,
+            SyntaxDialogueContentIssue::InvalidPointAction => Self::InvalidPointAction,
         }
     }
 }
@@ -443,72 +675,30 @@ pub enum HirDialogueIssue {
     ForeignChild,
     DuplicateNodeId,
     NonContiguousNodeOrdinal,
-    InvalidTagReference,
     InvalidArgumentReference,
+    InvalidMarkReference,
     InvalidPlan,
 }
 
 fn validate_content_ids(
     content: HirDialogueContentId,
     nodes: &[HirDialogueNode],
-    tags: &[HirRichTextTag],
+    raw_literal: Option<&HirRawLiteralBody>,
     marks: &[HirDialogueMark],
 ) -> Result<(), HirDialogueInvariantError> {
+    if raw_literal.is_some() && !nodes.is_empty() {
+        return Err(HirDialogueInvariantError::InvalidContentOwner);
+    }
     for (ordinal, node) in nodes.iter().enumerate() {
         let expected =
             u32::try_from(ordinal).map_err(|_| HirDialogueInvariantError::ArithmeticOverflow)?;
         if node.id.content != content || node.id.ordinal != expected {
             return Err(HirDialogueInvariantError::NonContiguousNodeOrdinal);
         }
-        match &node.kind {
-            HirDialogueNodeKind::AuthoredStartTag(tag)
-            | HirDialogueNodeKind::InferredStartTag(tag) => {
-                if tag.content() != content
-                    || tags.get(tag.ordinal() as usize).map(HirRichTextTag::id) != Some(*tag)
-                {
-                    return Err(HirDialogueInvariantError::InvalidTagReference);
-                }
+        if let HirDialogueNodeKind::PointAction(action) = node.kind() {
+            if action.id() != node.id {
+                return Err(HirDialogueInvariantError::InvalidArgumentReference);
             }
-            HirDialogueNodeKind::AuthoredEndTag(tag) if tag.is_inferred() => {
-                return Err(HirDialogueInvariantError::InvalidEndTagInference);
-            }
-            HirDialogueNodeKind::InferredEndTag(tag) if !tag.is_inferred() => {
-                return Err(HirDialogueInvariantError::InvalidEndTagInference);
-            }
-            HirDialogueNodeKind::AuthoredEndTag(end) | HirDialogueNodeKind::InferredEndTag(end) => {
-                if let Some(tag) = end.paired_start()
-                    && (tag.content() != content
-                        || tags.get(tag.ordinal() as usize).map(HirRichTextTag::id) != Some(tag))
-                {
-                    return Err(HirDialogueInvariantError::InvalidTagReference);
-                }
-            }
-            _ => {}
-        }
-    }
-    for (ordinal, tag) in tags.iter().enumerate() {
-        let expected =
-            u32::try_from(ordinal).map_err(|_| HirDialogueInvariantError::ArithmeticOverflow)?;
-        if tag.id().content() != content || tag.id().ordinal() != expected {
-            return Err(HirDialogueInvariantError::NonContiguousTagOrdinal);
-        }
-        validate_argument_ids(tag.id(), tag.arguments())?;
-
-        match tag.payload() {
-            HirRichTextTagPayload::Marker(mark) => {
-                if !matches!(tag.identity(), HirRichTextTagIdentity::Marker)
-                    || mark.content() != content
-                    || !marks
-                        .iter()
-                        .any(|row| row.id() == *mark && row.tag() == tag.id())
-                {
-                    return Err(HirDialogueInvariantError::InvalidMarkReference);
-                }
-            }
-            _ if matches!(tag.identity(), HirRichTextTagIdentity::Marker) => {
-                return Err(HirDialogueInvariantError::InvalidMarkReference);
-            }
-            _ => {}
         }
     }
 
@@ -519,13 +709,18 @@ fn validate_content_ids(
         if mark.id().content() != content || mark.id().ordinal() != expected {
             return Err(HirDialogueInvariantError::NonContiguousMarkOrdinal);
         }
-        let Some(tag) = tags.get(mark.tag().ordinal() as usize) else {
+        let Some(node) = nodes.get(mark.action().ordinal() as usize) else {
             return Err(HirDialogueInvariantError::InvalidMarkReference);
         };
-        if mark.tag().content() != content
-            || tag.id() != mark.tag()
-            || !matches!(tag.identity(), HirRichTextTagIdentity::Marker)
-            || !matches!(tag.payload(), HirRichTextTagPayload::Marker(id) if *id == mark.id())
+        if mark.action().content() != content
+            || node.id() != mark.action()
+            || !matches!(
+                node.kind(),
+                HirDialogueNodeKind::PointAction(HirDialoguePointAction {
+                    identity: HirDialoguePointActionIdentity::Mark(_),
+                    ..
+                })
+            )
         {
             return Err(HirDialogueInvariantError::InvalidMarkReference);
         }
@@ -534,13 +729,16 @@ fn validate_content_ids(
         }
     }
     let mut marker_ordinal = 0usize;
-    for tag in tags {
-        if !matches!(tag.identity(), HirRichTextTagIdentity::Marker) {
+    for node in nodes {
+        let HirDialogueNodeKind::PointAction(action) = node.kind() else {
+            continue;
+        };
+        if !matches!(action.identity(), HirDialoguePointActionIdentity::Mark(_)) {
             continue;
         }
         let expected = HirDialogueMarkOrdinal::try_new(marker_ordinal)
             .map_err(|_| HirDialogueInvariantError::ArithmeticOverflow)?;
-        let Some(mark) = marks.iter().find(|mark| mark.tag() == tag.id()) else {
+        let Some(mark) = marks.iter().find(|mark| mark.action() == node.id()) else {
             return Err(HirDialogueInvariantError::InvalidMarkReference);
         };
         if mark.id().ordinal() != expected {
@@ -558,45 +756,45 @@ fn validate_content_ids(
 
 fn mint_mark_catalog(
     content: HirDialogueContentId,
-    tags: &mut [HirRichTextTag],
-    inputs: &[(HirRichTextTagId, HirDialogueMarkName)],
+    nodes: &[HirDialogueNode],
+    inputs: &[(HirDialogueNodeId, HirDialogueMarkName)],
     maximum_marks: usize,
 ) -> Result<Box<[HirDialogueMark]>, HirDialogueInvariantError> {
     let mut charge = HirDialogueMarkCatalogCharge::new(maximum_marks);
     let mut names = BTreeSet::<&HirDialogueMarkName>::new();
-    let mut tag_ids = BTreeSet::new();
+    let mut action_ids = BTreeSet::new();
     let mut marks = Vec::new();
-    for (ordinal, (tag_id, name)) in inputs.iter().enumerate() {
+    for (ordinal, (action_id, name)) in inputs.iter().enumerate() {
         let mark_ordinal = HirDialogueMarkOrdinal::try_new(ordinal)
             .map_err(|_| HirDialogueInvariantError::ArithmeticOverflow)?;
         let id = HirDialogueMarkId::new(content, mark_ordinal);
-        let tag = tags
-            .get(tag_id.ordinal() as usize)
-            .filter(|tag| tag.id() == *tag_id)
+        let action = nodes
+            .get(action_id.ordinal() as usize)
+            .filter(|node| node.id() == *action_id)
             .ok_or(HirDialogueInvariantError::InvalidMarkReference)?;
-        if tag_id.content() != content
-            || !matches!(tag.identity(), HirRichTextTagIdentity::Marker)
-            || !matches!(tag.payload(), HirRichTextTagPayload::None)
-            || !tag.arguments().is_empty()
-            || tag_ids.contains(tag_id)
+        if action_id.content() != content
+            || !matches!(
+                action.kind(),
+                HirDialogueNodeKind::PointAction(HirDialoguePointAction {
+                    identity: HirDialoguePointActionIdentity::Mark(_),
+                    ..
+                })
+            )
+            || action_ids.contains(action_id)
         {
             return Err(HirDialogueInvariantError::InvalidMarkReference);
         }
-        if tag_id.ordinal() as usize != ordinal {
-            return Err(HirDialogueInvariantError::NonContiguousMarkOrdinal);
-        }
-        if names.contains(name) {
-            return Err(HirDialogueInvariantError::DuplicateMarkName);
+        if action_id.ordinal() as usize >= nodes.len() || names.contains(name) {
+            return Err(if names.contains(name) {
+                HirDialogueInvariantError::DuplicateMarkName
+            } else {
+                HirDialogueInvariantError::InvalidMarkReference
+            });
         }
         charge.charge()?;
-        let inserted = names.insert(name);
-        debug_assert!(inserted);
-        let inserted = tag_ids.insert(*tag_id);
-        debug_assert!(inserted);
-        marks.push(HirDialogueMark::new(id, name.clone(), *tag_id));
-    }
-    for mark in &marks {
-        tags[mark.tag().ordinal() as usize].set_marker_id(mark.id())?;
+        names.insert(name);
+        action_ids.insert(*action_id);
+        marks.push(HirDialogueMark::new(id, name.clone(), *action_id));
     }
     Ok(marks.into_boxed_slice())
 }
@@ -627,6 +825,20 @@ impl HirDialogueMarkCatalogCharge {
         }
         self.charged = observed;
         Ok(())
+    }
+}
+
+impl From<SyntaxDialogueControl> for HirDialogueControl {
+    fn from(value: SyntaxDialogueControl) -> Self {
+        match value {
+            SyntaxDialogueControl::Page => Self::Page,
+            SyntaxDialogueControl::LineWait => Self::LineWait,
+            SyntaxDialogueControl::HardBreak => Self::HardBreak,
+            SyntaxDialogueControl::TimedWait => Self::TimedWait,
+            SyntaxDialogueControl::Clear => Self::Clear,
+            SyntaxDialogueControl::Reset => Self::Reset,
+            SyntaxDialogueControl::Speed => Self::Speed,
+        }
     }
 }
 

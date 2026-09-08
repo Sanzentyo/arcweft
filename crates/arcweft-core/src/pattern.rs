@@ -1243,6 +1243,7 @@ fn runtime_value_is_agent_value(value: &RuntimeValue, depth: usize) -> bool {
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Agent(_)
         | RuntimeValue::Function(_)
+        | RuntimeValue::ProjectContinuation(_)
         | RuntimeValue::Variant { .. } => false,
     }
 }
@@ -1945,6 +1946,11 @@ fn runtime_value_matches_type_inner(
         | (RuntimePlanTypeProjection::Range(_), RuntimeValue::Range(_))
         | (RuntimePlanTypeProjection::Iterator(_), RuntimeValue::Iterator(_))
         | (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::Function(_)) => true,
+        (RuntimePlanTypeProjection::Function { .. }, RuntimeValue::ProjectContinuation(value)) => {
+            plan.type_table()
+                .get(ty)
+                .is_some_and(|declaration| value.function_type() == declaration.semantic_identity())
+        }
         (RuntimePlanTypeProjection::Signed(expected), RuntimeValue::Int(actual)) => {
             *expected == actual.width()
         }

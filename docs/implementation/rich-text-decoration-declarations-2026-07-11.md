@@ -8,34 +8,12 @@
 
 ## Result
 
-Arcweft now has module-level, reusable visual-decoration declarations for
-dialogue text. A declaration can combine existing span builders, declare
-required and defaulted named parameters, accept an explicit custom-argument
-bag, and compose another declaration:
-
-```arcw
-decoration emphasis(accent = "#ffd060") {
-    strong()
-    color(value=accent)
-}
-
-decoration notice(
-    accent,
-    amplitude = 2px,
-    seed = "notice",
-    ...effect_args,
-) {
-    decorate(.emphasis, accent=accent)
-    effect(.wave, amp=amplitude, seed=seed, effect_args...)
-}
-
-alice: [decorate .notice accent="#ff6b8a" speed=2]warning[/decorate][p]
-```
-
-The explicit `[decorate .name ...]` spelling is intentional. Bare `[name]`
-tags remain unknown controls. A dot tag without attributes remains a marker,
-while a dot tag with attributes remains an inferred custom effect. Adding a
-declaration therefore cannot silently reinterpret existing dialogue content.
+This historical cut introduced a module-local reusable visual-decoration
+declaration and an inline invocation surface backed by a non-structural node
+sequence. Both were later deleted in favor of typed `#[fx] fn ... -> Fx`
+definitions invoked as
+`#fx(expression)[content]`. The historical source spelling is intentionally not
+reproduced here because it is not an accepted input or compatibility surface.
 
 ## Implemented contract
 
@@ -68,19 +46,19 @@ declaration therefore cannot silently reinterpret existing dialogue content.
 - Declarations cannot hide dialogue controls, reveal speed, object identity,
   calls, signals, conditionals, or `phase=host_event` effects. The abstraction
   is visual and deterministic rather than a second control-flow surface.
-- Runtime-plan lowering expands each invocation to the existing ordered
-  `StyleStart`/`StyleEnd` nodes and closes layers in reverse order as one
-  authored span. Nested inferred style closes remain valid, while crossing,
-  reset, missing, or unmatched decoration closes are rejected.
+- Runtime-plan lowering in this historical cut expanded each invocation to the
+  then-current non-structural style-node sequence. That representation was
+  later deleted with the declaration surface; it is not an accepted source or
+  runtime compatibility model.
 - Expanded layers also produce `InlineSpan` cascade contributions from the
-  same typed expansion result. Direct and decoration tags retain authored
+  same typed expansion result. Direct and decoration layers retain authored
   order, declaration defaults point back to the invocation selector, explicit
   overrides point to their value ranges, and LSP hover reports the style that
   is actually rendered.
 - The renderer, bundle codec, and session-save schemas are unchanged because
   no decoration declaration survives as retained runtime state.
-- Dialogue-tag tokenization is quote-aware and exposes typed argument/end-tag
-  ranges. Dialogue content owns a provenance map from its indentation-stripped,
+- The then-current inline tokenization was quote-aware and exposed typed
+  argument ranges. Dialogue content owned a provenance map from its indentation-stripped,
   LF-normalized bytes back to the original document, and runtime-plan, tooling,
   and LSP consumers project through that map instead of treating token ranges
   as document-absolute. This permits values containing whitespace or `]`
@@ -89,12 +67,8 @@ declaration therefore cannot silently reinterpret existing dialogue content.
   `DialogueContent`, including text diagnostics and LF/CRLF provenance. Sema
   checks their decorations, spans, marks, and interpolations before lowering;
   runtime-plan consumes the typed content without lossy reparsing.
-- Direct `color`, `font`, and `size` tags now resolve short, quoted, and
-  canonical `value=...` spellings through one scalar boundary. Canonicalizing
-  `[color #a8b5ff:text]` therefore preserves the same typed RGB value.
-- Rich-text end-tag aliases are owned once by `arcweft-dialogue`; syntax and
-  retained-text rendering no longer maintain drifting copies of the family
-  inventory.
+- Direct color, font, and size operands resolved through one scalar boundary
+  in that historical model.
 - Expansion budgets have success-at-the-limit and overflow coverage for depth,
   declaration visits, and concrete layers.
 - `just test-rich-text` now covers syntax, HIR, sema, runtime-plan, both rich

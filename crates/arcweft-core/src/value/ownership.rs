@@ -133,6 +133,12 @@ impl RuntimeValue {
                 }),
             Self::Agent(value) => value.ownership(),
             Self::Function(function) => function.ownership(),
+            Self::ProjectContinuation(continuation) => continuation
+                .prefix_values()
+                .iter()
+                .fold(RuntimeValueOwnership::Unrestricted, |ownership, value| {
+                    ownership.join(value.ownership())
+                }),
             Self::Variant { payload, .. } => payload
                 .as_deref()
                 .map_or(RuntimeValueOwnership::Unrestricted, RuntimeValue::ownership),
@@ -168,7 +174,9 @@ impl RuntimeValue {
             | Self::Duration(_)
             | Self::Progress(_)
             | Self::Range(_)
-            | Self::EntityRef(_) => Ok(()),
+            | Self::EntityRef(_)
+            | Self::Seq(RuntimeSeq::Dense(_))
+            | Self::Iterator(RuntimeIterator::Range(_)) => Ok(()),
             Self::Tuple(values) => collect_indexed_line_handles(
                 values,
                 path,
@@ -181,7 +189,6 @@ impl RuntimeValue {
                 RuntimeValuePathSegment::SequenceElement,
                 handles,
             ),
-            Self::Seq(RuntimeSeq::Dense(_)) => Ok(()),
             Self::Seq(RuntimeSeq::TupleColumns(columns)) => {
                 for (index, column) in columns.columns().iter().enumerate() {
                     let index = u32::try_from(index)
@@ -248,7 +255,6 @@ impl RuntimeValue {
                 }
                 Ok(())
             }
-            Self::Iterator(RuntimeIterator::Range(_)) => Ok(()),
             Self::Iterator(RuntimeIterator::Witness { state, .. }) => state
                 .collect_affine_line_handles(
                     &path.child(RuntimeValuePathSegment::IteratorWitnessState)?,
@@ -292,6 +298,12 @@ impl RuntimeValue {
                 Ok(())
             }
             Self::Function(function) => function.collect_affine_line_handles(path, handles),
+            Self::ProjectContinuation(continuation) => collect_indexed_line_handles(
+                continuation.prefix_values(),
+                path,
+                RuntimeValuePathSegment::ProjectContinuationPrefix,
+                handles,
+            ),
         }
     }
 }

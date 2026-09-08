@@ -4,7 +4,10 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary,
     resource_codec::{
         SourceMapSection, ValidatedViewProduct, ViewProductValidationLimits,
-        view::{EventKind, ViewProgramInstruction, ViewProgramResource},
+        view::{
+            EventKind, ViewFxArgumentSourceRef, ViewProgramInstruction, ViewProgramResource,
+            ViewValueInputNamespace, ViewValueInputSource,
+        },
     },
 };
 use arcweft_character::id::CharacterId;
@@ -25,7 +28,10 @@ use arcweft_lang_syntax::{
     parser::ParseOptions,
 };
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
-use arcweft_presentation::input::{InputEpoch, InputEvent};
+use arcweft_presentation::{
+    fx::{FxRuntimeType, ValueInstruction},
+    input::{InputEpoch, InputEvent},
+};
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -322,6 +328,248 @@ fn compiler_lowers_checked_on_click_to_typed_bundle_handler_without_fx_conflatio
             ),
         )
     );
+}
+
+#[test]
+fn compiler_lowers_view_fx_closed_and_reactive_bindings_from_checked_authority() {
+    let fixture = project_view_fixture(
+        r#"
+view Main(speed: f32) {
+  Text("closed").fx(wave(speed = 1.25))
+  Text("direct").fx(wave(speed = speed))
+  Text("sum").fx(wave(speed = speed + speed))
+}
+"#,
+        "arcweft-test://compiler-view-fx",
+    );
+    let compiled = fixture.compile().expect("typed View Fx product");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .expect("View program")
+        .resource();
+    let definition = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .expect("authored View definition");
+    assert_eq!(definition.parameters.len(), 1);
+    assert_eq!(
+        definition.parameters[0].value_type,
+        Some(FxRuntimeType::F32)
+    );
+    assert_eq!(definition.parameters[0].value_slot, Some(0));
+    assert!(matches!(
+        program.value_inputs.as_slice(),
+        [input]
+            if input.namespace == ViewValueInputNamespace::Parameter
+                && input.slot == 0
+                && input.value_type == FxRuntimeType::F32
+                && matches!(&input.source,
+                    ViewValueInputSource::DefinitionParameter { view, parameter }
+                        if view.as_str() == "view.Main" && parameter.value() == 0)
+    ));
+
+    let body = &program.instructions
+        [definition.body.start_instruction as usize..definition.body.end_instruction as usize];
+    let applications = body
+        .iter()
+        .filter_map(|instruction| match instruction {
+            ViewProgramInstruction::ApplyFx {
+                arguments,
+                application_ordinal,
+                ..
+            } => Some((arguments, *application_ordinal)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(applications.len(), 3);
+    assert_eq!(
+        applications
+            .iter()
+            .map(|(_, ordinal)| *ordinal)
+            .collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert!(
+        applications[0]
+            .0
+            .iter()
+            .any(|argument| matches!(argument.source, ViewFxArgumentSourceRef::Closed(_)))
+    );
+    let reactive = applications
+        .iter()
+        .flat_map(|(arguments, _)| arguments.iter())
+        .filter_map(|argument| match &argument.source {
+            ViewFxArgumentSourceRef::Reactive(program) => Some(*program),
+            ViewFxArgumentSourceRef::Closed(_) => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(reactive.len(), 2);
+    let direct = program
+        .value_programs
+        .iter()
+        .find(|program| program.id() == reactive[0])
+        .expect("direct reactive program");
+    let repeated = program
+        .value_programs
+        .iter()
+        .find(|program| program.id() == reactive[1])
+        .expect("repeated reactive program");
+    assert!(matches!(
+        direct.program().instructions(),
+        [
+            ValueInstruction::LoadParameter { parameter },
+            ValueInstruction::Return,
+        ] if parameter.slot().get() == 0 && parameter.runtime_type() == FxRuntimeType::F32
+    ));
+    assert!(matches!(
+        repeated.program().instructions(),
+        [
+            ValueInstruction::LoadParameter { parameter: left },
+            ValueInstruction::LoadParameter { parameter: right },
+            ValueInstruction::Add,
+            ValueInstruction::Return,
+        ] if left.slot().get() == 0 && right.slot().get() == 0
+    ));
+
+    let encoded = program
+        .encode_canonical_section()
+        .expect("typed View Fx codec");
+    let decoded = ViewProgramResource::decode_canonical_section(&encoded)
+        .expect("typed View Fx codec round trip");
+    assert_eq!(decoded.value_inputs, program.value_inputs);
+    assert_eq!(decoded.value_programs, program.value_programs);
+}
+
+#[test]
+fn compiler_lowers_project_fx_view_binding_through_the_shared_catalog() {
+    let fixture = project_view_fixture(
+        r#"
+#[fx]
+fn tint(accent: Color) -> Fx {
+  Fx.text(color = accent)
+}
+
+view Main(accent: Color) {
+  Text("project").fx(tint(accent = accent))
+}
+"#,
+        "arcweft-test://compiler-view-project-fx",
+    );
+    let compiled = fixture.compile().expect("typed project View Fx product");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .expect("View program")
+        .resource();
+    let definition = program
+        .definitions
+        .iter()
+        .find(|definition| definition.public_id.as_str() == "view.Main")
+        .expect("authored View definition");
+    assert_eq!(
+        definition.parameters[0].value_type,
+        Some(FxRuntimeType::Color)
+    );
+    assert_eq!(definition.parameters[0].value_slot, Some(0));
+    let body = &program.instructions
+        [definition.body.start_instruction as usize..definition.body.end_instruction as usize];
+    let application = body
+        .iter()
+        .find_map(|instruction| match instruction {
+            ViewProgramInstruction::ApplyFx {
+                fx,
+                arguments,
+                application_ordinal,
+                ..
+            } => Some((fx, arguments, application_ordinal)),
+            _ => None,
+        })
+        .expect("project Fx application");
+    assert_eq!(*application.2, 0);
+    assert_eq!(application.1.len(), 1);
+    assert_eq!(application.1[0].parameter.get(), 0);
+    assert!(matches!(
+        application.1[0].source,
+        ViewFxArgumentSourceRef::Reactive(_)
+    ));
+    assert!(
+        compiled
+            .fx_definitions()
+            .iter()
+            .any(|definition| definition.id() == application.0)
+    );
+}
+
+#[test]
+fn compiler_qualifies_view_fx_parameter_slots_by_definition() {
+    let fixture = project_view_fixture(
+        r#"
+view Alpha(speed: f32) {
+  Text("alpha").fx(wave(speed = speed))
+}
+
+view Zeta(speed: f32) {
+  Text("zeta").fx(wave(speed = speed))
+}
+"#,
+        "arcweft-test://compiler-view-fx-qualified-inputs",
+    );
+    let compiled = fixture.compile().expect("definition-qualified View inputs");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .expect("View program")
+        .resource();
+    assert!(matches!(
+        program.value_inputs.as_slice(),
+        [alpha, zeta]
+            if alpha.slot == 0
+                && zeta.slot == 1
+                && matches!(&alpha.source,
+                    ViewValueInputSource::DefinitionParameter { view, parameter }
+                        if view.as_str() == "view.Alpha" && parameter.value() == 0)
+                && matches!(&zeta.source,
+                    ViewValueInputSource::DefinitionParameter { view, parameter }
+                        if view.as_str() == "view.Zeta" && parameter.value() == 0)
+    ));
+    for (view, expected_slot) in [("view.Alpha", 0), ("view.Zeta", 1)] {
+        let definition = program
+            .definitions
+            .iter()
+            .find(|definition| definition.public_id.as_str() == view)
+            .expect("authored View definition");
+        assert_eq!(definition.parameters[0].value_slot, Some(expected_slot));
+        let reactive = program.instructions
+            [definition.body.start_instruction as usize..definition.body.end_instruction as usize]
+            .iter()
+            .find_map(|instruction| match instruction {
+                ViewProgramInstruction::ApplyFx { arguments, .. } => {
+                    arguments.iter().find_map(|argument| match argument.source {
+                        ViewFxArgumentSourceRef::Reactive(program) => Some(program),
+                        ViewFxArgumentSourceRef::Closed(_) => None,
+                    })
+                }
+                _ => None,
+            })
+            .expect("reactive View Fx program");
+        let value_program = program
+            .value_programs
+            .iter()
+            .find(|program| program.id() == reactive)
+            .expect("definition-qualified value program");
+        assert!(matches!(
+            value_program.program().instructions(),
+            [
+                ValueInstruction::LoadParameter { parameter },
+                ValueInstruction::Return,
+            ] if parameter.slot().get() == expected_slot
+        ));
+    }
 }
 
 #[test]
@@ -734,6 +982,15 @@ fn minimal_dialogue_frame(view: ViewId) -> LineDisplayFrame {
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
+        content: arcweft_core::value::RuntimeDialogueContentValue::try_new(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+                .expect("fixture artifact"),
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("fixture template"),
+            arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x72; 32]),
+            [],
+        )
+        .expect("fixture Content envelope"),
     }
 }
 

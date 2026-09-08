@@ -105,7 +105,7 @@ impl<'a> StatementScrutineeTypeAuthority<'a> {
             .types
             .get(&owner)
             .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner })?;
-        if ty.semantic_identity_digest()
+        if ty.semantic_identity_digest()?
             != self
                 .ingress
                 .event_digest(declaration)
@@ -467,7 +467,10 @@ pub(super) fn seed_dynamic_scrutinee(
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: *target,
                     })?
-                    .ty();
+                    .value_type()
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: *target,
+                    })?;
                 let TypeKind::Ref(signal) = target_type else {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 };
@@ -505,7 +508,10 @@ pub(super) fn seed_dynamic_scrutinee(
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: *source,
                     })?
-                    .ty()
+                    .value_type()
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: *source,
+                    })?
                     .clone();
                 set_local(facts, local, ty)?;
             }
@@ -543,7 +549,10 @@ pub(super) fn validate_declaration_scrutinees(
         match statement.kind() {
             HirStmtKind::On { trigger, .. } => match trigger {
                 HirTrigger::Timeout(expression)
-                    if facts.expressions().get(expression).map(|fact| fact.ty())
+                    if facts
+                        .expressions()
+                        .get(expression)
+                        .and_then(|fact| fact.value_type())
                         != Some(&TypeKind::Duration) =>
                 {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
@@ -551,7 +560,10 @@ pub(super) fn validate_declaration_scrutinees(
                     });
                 }
                 HirTrigger::Expression(expression)
-                    if facts.expressions().get(expression).map(|fact| fact.ty())
+                    if facts
+                        .expressions()
+                        .get(expression)
+                        .and_then(|fact| fact.value_type())
                         != Some(&TypeKind::Bool) =>
                 {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
@@ -570,7 +582,10 @@ pub(super) fn validate_declaration_scrutinees(
                         .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                             owner: *target,
                         })?
-                        .ty();
+                        .value_type()
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                            owner: *target,
+                        })?;
                     let payload = authority
                         .signal_payload(StatementScrutineeRole::TriggerSignal, target_type)?;
                     if let Some(value) = value {
@@ -619,7 +634,10 @@ pub(super) fn validate_declaration_scrutinees(
                                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                                     owner: *source,
                                 })?
-                                .ty();
+                                .value_type()
+                                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                                    owner: *source,
+                                })?;
                             if facts.locals().get(&local) != Some(source_type) {
                                 return Err(FinalSemanticAnalysisError::LocalTypeUnavailable {
                                     owner: local,

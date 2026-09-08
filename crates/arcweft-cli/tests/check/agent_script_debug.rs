@@ -227,7 +227,6 @@ fn assert_agent_script_project_metadata(metadata: &BTreeMap<String, serde_json::
     assert_eq!(entities["kind_counts"].as_object().unwrap().len(), 0);
 
     let graph = &metadata["project_graph"];
-    assert_eq!(graph["has_project_summary"], true);
     assert_eq!(graph["summary_symbol_id"], "project:summary");
     assert_eq!(graph["symbol_count"], 1);
     assert_eq!(graph["edge_count"], 0);
@@ -300,10 +299,6 @@ fn assert_debug_db_runs_report(debug_db_path: &Path, second_run_id: &str) {
     assert_eq!(runs[0]["run_id"], second_run_id);
     assert_eq!(runs[0]["outcome"], "done");
     assert_eq!(runs[0]["session_id"], "session.cli");
-    assert_eq!(
-        runs[0]["metadata"]["project_graph"]["has_project_summary"],
-        true
-    );
     assert_eq!(
         runs[0]["metadata"]["project_graph"]["summary_symbol_id"],
         "project:summary"
@@ -3092,7 +3087,6 @@ fn project_shape_metadata(
                 "symbol_count": graph_symbol_count,
                 "edge_count": graph_edge_count,
                 "summary_symbol_id": "project:summary",
-                "has_project_summary": true,
                 "symbol_kind_counts": {
                     "project_summary": 1,
                     "flow": graph_symbol_count.saturating_sub(1)

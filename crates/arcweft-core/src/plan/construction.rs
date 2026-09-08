@@ -1,5 +1,6 @@
 //! Sole mutable construction authority for a runtime plan.
 
+use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::num::NonZeroU32;
 use std::sync::Arc;
@@ -9,17 +10,22 @@ use thiserror::Error;
 mod lower;
 mod seed;
 
+use lower::{function_input_scope, require_same};
 use seed::RuntimePlanConstructionIssuer;
 pub use seed::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeAwaitManyTargetSeed,
     RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeCallArgumentSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
-    RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeed, RuntimeDialogueContentPlanSeedId,
-    RuntimeDialogueEffectSiteSeedId, RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
+    RuntimeChoiceOptionSeed, RuntimeDialogueContentEffectBindingSeed,
+    RuntimeDialogueContentEffectSlotSeed, RuntimeDialogueContentPlanSeed,
+    RuntimeDialogueContentPlanSeedId, RuntimeDialogueContentSlotSeed,
+    RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
+    RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
     RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
     RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
+    RuntimeFlowSeed, RuntimeFunctionExecutableBodySeed, RuntimeFunctionInputBindingSeed,
+    RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
     RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
     RuntimeIteratorWitnessExecutableSeed, RuntimeLineEffectSeed, RuntimeLineHandleSiteSeed,
@@ -44,14 +50,18 @@ use crate::line_task::{
 };
 use crate::pattern::{RuntimePatternBindingPathError, RuntimeSemanticTypeId};
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueMarkId, RuntimeLineTaskGroupId,
-    RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount, RuntimeDialogueMarkId,
+    RuntimeLineTaskGroupId, RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::stream::StreamPlan;
-use crate::value::{RuntimeAgentConstructor, RuntimeRecordFieldIdError};
+use crate::value::{RuntimeAgentConstructor, RuntimeDialogueOpaqueRole, RuntimeRecordFieldIdError};
 
 use super::dialogue_content::RuntimeDialogueContentPlanTableBuilder;
-use super::function_sites::{RuntimeFunctionSiteError, RuntimeFunctionSiteTableBuilder};
+use super::function_sites::{
+    RuntimeFunctionEffectSet, RuntimeFunctionInputBinding, RuntimeFunctionInputSource,
+    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
+    RuntimeFunctionSiteTableBuilder,
+};
 use super::local_declarations::{
     RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError,
 };
@@ -68,8 +78,9 @@ use super::variant_domains::{
     RuntimeVariantDomainTableBuilder,
 };
 use super::{
-    RuntimeDialogueContentPlan, RuntimeDialogueMark, RuntimeDialogueValueRole,
-    RuntimeDialogueValueSite, RuntimeEntrySpec, RuntimeFlow, RuntimePlan,
+    RuntimeDialogueContentEffectSlot, RuntimeDialogueContentPlan, RuntimeDialogueContentSlot,
+    RuntimeDialogueContentTemplateManifest, RuntimeDialogueEffectSite, RuntimeDialogueMark,
+    RuntimeDialogueValueRole, RuntimeDialogueValueSite, RuntimeEntrySpec, RuntimeFlow, RuntimePlan,
     RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureProgramBinding, RuntimeTraitMethod,
 };
 
@@ -94,6 +105,7 @@ pub enum RuntimePlanTable {
     FlowSchemas,
     FlowExecutables,
     Flows,
+    ProjectCallSites,
     PureHelpers,
     PurePrograms,
     TraitMethods,
@@ -119,6 +131,12 @@ pub enum RuntimePlanBuildError {
     DialogueContent(#[from] super::RuntimeDialogueContentPlanTableError),
     #[error(transparent)]
     Plan(#[from] super::RuntimePlanError),
+    #[error(transparent)]
+    ProjectCall(#[from] super::RuntimeProjectCallPlanError),
+    #[error(transparent)]
+    ProjectCallSites(#[from] super::RuntimeProjectCallSiteTableError),
+    #[error("project-call {context} has an invalid typed ABI")]
+    InvalidProjectCallAbi { context: &'static str },
     #[error("semantic type {semantic_identity:?} is absent from the transaction type graph")]
     UnknownSemanticType {
         semantic_identity: RuntimeSemanticTypeId,
@@ -149,6 +167,18 @@ pub enum RuntimePlanBuildError {
     ForeignLocalSeed,
     #[error("a construction-only function-site handle belongs to another runtime-plan builder")]
     ForeignFunctionSiteSeed,
+    #[error(
+        "runtime function site {site} body family is {actual:?}, expected reserved family {expected:?}"
+    )]
+    FunctionSiteBodyKindMismatch {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        expected: RuntimeFunctionSiteBodyKind,
+        actual: RuntimeFunctionSiteBodyKind,
+    },
+    #[error("runtime function site {site} effect set does not match its reservation")]
+    FunctionSiteEffectSetMismatch {
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+    },
     #[error("a construction-only dialogue content handle belongs to another runtime-plan builder")]
     ForeignDialogueContentSeed,
     #[error("a construction-only dialogue mark handle belongs to another runtime-plan builder")]
@@ -200,11 +230,61 @@ pub enum RuntimePlanBuildError {
         expected: crate::runtime_id::RuntimeDialogueValueSlotId,
         actual: crate::runtime_id::RuntimeDialogueValueSlotId,
     },
-    #[error("dialogue condition slot {slot} has non-Bool plan type {ty}")]
-    InvalidDialogueConditionType {
+    #[error(
+        "dialogue content slot {slot} does not have the exact DialogueContent opaque type {ty}"
+    )]
+    InvalidDialogueContentType {
         slot: crate::runtime_id::RuntimeDialogueValueSlotId,
         ty: RuntimePlanTypeId,
     },
+    #[error(
+        "dialogue content template slot {actual} is not the expected canonical slot {expected}"
+    )]
+    NonCanonicalDialogueTemplateSlot {
+        expected: crate::runtime_id::RuntimeDialogueValueSlotId,
+        actual: crate::runtime_id::RuntimeDialogueValueSlotId,
+    },
+    #[error("dialogue content template slot {slot} does not match its evaluated value site")]
+    DialogueTemplateSlotMismatch {
+        slot: crate::runtime_id::RuntimeDialogueValueSlotId,
+    },
+    #[error(
+        "dialogue content has {actual} evaluated value sites but its template declares {expected} slots"
+    )]
+    DialogueValueCountMismatch { expected: usize, actual: usize },
+    #[error(
+        "dialogue content has {actual} effect bindings but its template declares {expected} sites"
+    )]
+    DialogueEffectCountMismatch { expected: usize, actual: usize },
+    #[error("dialogue content effect site {actual} is not the expected canonical site {expected}")]
+    NonCanonicalDialogueEffectSite {
+        expected: crate::runtime_id::RuntimeDialogueEffectSiteId,
+        actual: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    },
+    #[error("dialogue content effect site {site} has a mismatched callback capture ABI")]
+    DialogueEffectCaptureTypeMismatch {
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    },
+    #[error(
+        "dialogue content effect site {site} callback has {actual} captures, expected {expected}"
+    )]
+    DialogueEffectCaptureCountMismatch {
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("dialogue content effect site {site} callback does not return Unit")]
+    DialogueEffectResultMismatch {
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    },
+    #[error("dialogue content expression references missing template manifest {template}")]
+    MissingDialogueTemplateManifest {
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+    },
+    #[error(transparent)]
+    DialogueTemplateManifest(
+        #[from] super::dialogue_content::RuntimeDialogueContentTemplateManifestError,
+    ),
     #[error("a construction-only pure-helper handle belongs to another runtime-plan builder")]
     ForeignPureHelperSeed,
     #[error("runtime pure program {program} is bound more than once")]
@@ -237,6 +317,13 @@ pub enum RuntimePlanBuildError {
     DuplicateFunctionLocal { local: RuntimeLocalDeclarationId },
     #[error("function site uses local declaration {local} as both a parameter and capture")]
     FunctionParameterCaptureOverlap { local: RuntimeLocalDeclarationId },
+    #[error("function site input row {index} has a non-canonical source order")]
+    InvalidFunctionInputSource { index: usize },
+    #[error("function site input row {index} repeats a synthetic input local {local}")]
+    DuplicateFunctionInputLocal {
+        index: usize,
+        local: RuntimeLocalDeclarationId,
+    },
     #[error("{context} has {actual} ABI rows for {expected} input locals")]
     CallableAbiArity {
         context: &'static str,
@@ -339,6 +426,10 @@ pub enum RuntimePlanBuildError {
     },
     #[error("spread argument has non-expandable plan type {ty}")]
     IndeterminateSpreadArgument { ty: RuntimePlanTypeId },
+    #[error("call argument {index} has a duplicate or overlapping ABI position {position}")]
+    InvalidCallArgumentPosition { index: usize, position: u32 },
+    #[error("call argument ABI positions are not contiguous at position {position}")]
+    NonContiguousCallArgumentPosition { position: u32 },
     #[error("runtime range expression must retain at least one typed bound")]
     EmptyRangeExpression,
     #[error("runtime sequence expected {expected} item(s), found {actual}")]
@@ -401,9 +492,11 @@ pub enum RuntimePlanBuildError {
 
 #[derive(Debug)]
 struct ReservedFunctionSite {
-    params: Box<[RuntimeLocalDeclarationId]>,
-    captures: Box<[RuntimeLocalDeclarationId]>,
-    body: Option<crate::value::RuntimeExpr>,
+    inputs: Box<[RuntimeFunctionInputBinding]>,
+    result: RuntimePlanTypeId,
+    body_kind: RuntimeFunctionSiteBodyKind,
+    effects: RuntimeFunctionEffectSet,
+    body: Option<RuntimeFunctionSiteBody>,
 }
 
 #[derive(Debug)]
@@ -427,6 +520,45 @@ struct ReservedTraitMethod {
     body: Option<crate::value::RuntimeExpr>,
 }
 
+/// Private atomic owner used while recursively lowering Flow operations. A
+/// fully validated site row is appended once, and the resulting ID cannot be
+/// injected by a caller or by another builder.
+#[derive(Debug, Default)]
+struct RuntimeProjectCallSiteTableBuilder {
+    rows: Vec<super::RuntimeProjectCallSite>,
+}
+
+impl RuntimeProjectCallSiteTableBuilder {
+    fn push(
+        &mut self,
+        row: super::RuntimeProjectCallSite,
+    ) -> Result<crate::runtime_id::RuntimeProjectCallSiteId, super::RuntimeProjectCallSiteTableError>
+    {
+        let ordinal = self
+            .rows
+            .len()
+            .try_into()
+            .ok()
+            .and_then(|length: u32| length.checked_add(1))
+            .and_then(NonZeroU32::new)
+            .ok_or(super::RuntimeProjectCallSiteTableError::IdentityExhausted)?;
+        let site = crate::runtime_id::RuntimeProjectCallSiteId::from_accepted_ordinal(ordinal);
+        self.rows.push(row);
+        Ok(site)
+    }
+
+    fn get(
+        &self,
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+    ) -> Option<&super::RuntimeProjectCallSite> {
+        self.rows.get(site.index())
+    }
+
+    fn finish(self) -> super::RuntimeProjectCallSiteTable {
+        super::RuntimeProjectCallSiteTable::from_admitted_rows(self.rows.into_boxed_slice())
+    }
+}
+
 /// Sole mutable aggregate owner. Its internal issuers are never published or
 /// cloned; successful `finish` consumes them into one immutable plan.
 #[derive(Debug)]
@@ -438,6 +570,7 @@ pub struct RuntimePlanBuilder {
     nominal_record_domains: RuntimeNominalRecordDomainTableBuilder,
     variant_domains: RuntimeVariantDomainTableBuilder,
     function_sites: Vec<ReservedFunctionSite>,
+    project_call_sites: RefCell<RuntimeProjectCallSiteTableBuilder>,
     dialogue_content: RuntimeDialogueContentPlanTableBuilder,
     entries: Vec<RuntimeEntrySpec>,
     callable_executables: Vec<RuntimeCallableExecutable>,
@@ -464,6 +597,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: RuntimeNominalRecordDomainTableBuilder::new(),
             variant_domains: RuntimeVariantDomainTableBuilder::new(),
             function_sites: Vec::new(),
+            project_call_sites: RefCell::new(RuntimeProjectCallSiteTableBuilder::default()),
             dialogue_content: RuntimeDialogueContentPlanTableBuilder::new(),
             entries: Vec::new(),
             callable_executables: Vec::new(),
@@ -531,15 +665,15 @@ impl RuntimePlanBuilder {
 
     pub fn push_function_site_seed(
         &mut self,
-        params: impl IntoIterator<Item = RuntimeLocalSeedId>,
-        captures: impl IntoIterator<Item = RuntimeLocalSeedId>,
+        inputs: impl IntoIterator<Item = RuntimeFunctionInputBindingSeed>,
         body: RuntimeExprSeed,
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
         let result = body.ty();
         let site = self.reserve_function_site_seed(RuntimeFunctionSiteDeclarationSeed {
-            params: params.into_iter().collect(),
-            captures: captures.into_iter().collect(),
+            inputs: inputs.into_iter().collect(),
             result,
+            body_kind: RuntimeFunctionSiteBodyKind::Expression,
+            effects: RuntimeFunctionEffectSet::empty(),
         })?;
         self.define_function_site_seed(&site, body)?;
         Ok(site)
@@ -561,35 +695,29 @@ impl RuntimePlanBuilder {
         &mut self,
         seed: RuntimeFunctionSiteDeclarationSeed,
     ) -> Result<RuntimeFunctionSiteSeedId, RuntimePlanBuildError> {
-        let params = self.resolve_function_locals(seed.params)?;
-        let captures = self.resolve_function_locals(seed.captures)?;
-        let parameter_set = params
-            .iter()
-            .map(|(local, _)| *local)
-            .collect::<BTreeSet<_>>();
-        for (local, _) in &captures {
-            if parameter_set.contains(local) {
-                return Err(RuntimePlanBuildError::FunctionParameterCaptureOverlap {
-                    local: *local,
-                });
-            }
+        let mut inputs = Vec::with_capacity(seed.inputs.len());
+        let mut input_sources = Vec::with_capacity(seed.inputs.len());
+        let mut input_types = Vec::with_capacity(seed.inputs.len());
+        for input in seed.inputs {
+            let (input_local, input_type) = input
+                .input_local
+                .resolve(&self.issuer)
+                .ok_or(RuntimePlanBuildError::ForeignLocalSeed)?;
+            let pattern = self.lower_pattern_seed(input.pattern)?;
+            require_same("function input pattern", input_type, pattern.ty())?;
+            input_types.push(input_type);
+            input_sources.push(input.source);
+            inputs.push(RuntimeFunctionInputBinding::new(
+                input.source,
+                input_local,
+                pattern,
+            ));
         }
-        let parameter_types = params
-            .iter()
-            .map(|(_, ty)| *ty)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let params = params
-            .into_iter()
-            .map(|(local, _)| local)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        let captures = captures
-            .into_iter()
-            .map(|(local, _)| local)
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        validate_function_input_bindings(&inputs)?;
+        let input_types = input_types.into_boxed_slice();
         let result = self.resolve_seed_type("function result", seed.result)?;
+        let body_kind = seed.body_kind;
+        let effects = seed.effects;
         let ordinal = self
             .function_sites
             .len()
@@ -599,25 +727,30 @@ impl RuntimePlanBuilder {
             .ok_or(RuntimeFunctionSiteError::IdentityExhausted)?;
         let site = crate::runtime_id::RuntimeFunctionSiteId::from_accepted_ordinal(ordinal);
         self.function_sites.push(ReservedFunctionSite {
-            params,
-            captures,
+            inputs: inputs.into_boxed_slice(),
+            result,
+            body_kind,
+            effects: effects.clone(),
             body: None,
         });
         Ok(RuntimeFunctionSiteSeedId::issued(
             &self.issuer,
             site,
-            parameter_types,
+            input_sources.into_boxed_slice(),
+            input_types,
             result,
+            body_kind,
+            effects,
         ))
     }
 
     pub fn define_function_site_seed(
         &mut self,
         site: &RuntimeFunctionSiteSeedId,
-        body: RuntimeExprSeed,
+        body: impl Into<RuntimeFunctionSiteBodySeed>,
     ) -> Result<(), RuntimePlanBuildError> {
         self.ensure_usable()?;
-        let result = self.try_define_function_site_seed(site, body);
+        let result = self.try_define_function_site_seed(site, body.into());
         if result.is_err() {
             self.poisoned = true;
         }
@@ -627,9 +760,9 @@ impl RuntimePlanBuilder {
     fn try_define_function_site_seed(
         &mut self,
         site: &RuntimeFunctionSiteSeedId,
-        body: RuntimeExprSeed,
+        body: RuntimeFunctionSiteBodySeed,
     ) -> Result<(), RuntimePlanBuildError> {
-        let (site_id, _, result) = site
+        let (site_id, _, _, result, body_kind, effects) = site
             .resolve(&self.issuer)
             .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
         let index = usize::try_from(site_id.get().get() - 1)
@@ -641,12 +774,43 @@ impl RuntimePlanBuilder {
         if reserved.body.is_some() {
             return Err(RuntimePlanBuildError::DuplicateFunctionSiteDefinition { site: site_id });
         }
-        let params = reserved.params.clone();
-        let captures = reserved.captures.clone();
-        let body = self.lower_expression(body)?;
-        require_reserved_result("function result", result, body.ty())?;
-        self.validate_function_body_locals(&body, &params, &captures)?;
-        self.function_sites[index].body = Some(body);
+        if reserved.body_kind != body_kind {
+            return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
+                site: site_id,
+                expected: reserved.body_kind,
+                actual: body_kind,
+            });
+        }
+        if reserved.effects != *effects {
+            return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch { site: site_id });
+        }
+        let inputs = reserved.inputs.clone();
+        let lowered = match body {
+            RuntimeFunctionSiteBodySeed::Expression(body) => {
+                let body = self.lower_expression(body)?;
+                require_reserved_result("function result", result, body.ty())?;
+                self.validate_function_body_locals(&body, &inputs)?;
+                RuntimeFunctionSiteBody::Expression(body)
+            }
+            RuntimeFunctionSiteBodySeed::Executable(body) => {
+                let body_effects = body.effects;
+                if body_effects != *effects {
+                    return Err(RuntimePlanBuildError::FunctionSiteEffectSetMismatch {
+                        site: site_id,
+                    });
+                }
+                let ops = self.lower_flow_ops(body.ops.into_vec())?;
+                let mut scope = function_input_scope(&inputs);
+                self.validate_flow_operation_locals_with_usage(&ops, &mut scope)?;
+                RuntimeFunctionSiteBody::Executable(
+                    super::function_sites::RuntimeFunctionExecutableBody::new(
+                        body_effects,
+                        ops.into_boxed_slice(),
+                    ),
+                )
+            }
+        };
+        self.function_sites[index].body = Some(lowered);
         Ok(())
     }
 
@@ -662,12 +826,158 @@ impl RuntimePlanBuilder {
         result
     }
 
+    /// Interns one text-model-owned immutable template manifest before any
+    /// expression site that constructs a `DialogueContent` value is lowered.
+    pub fn register_dialogue_content_template_seed(
+        &mut self,
+        seed: RuntimeDialogueContentTemplateManifestSeed,
+    ) -> Result<crate::runtime_id::RuntimeDialogueContentTemplateId, RuntimePlanBuildError> {
+        self.ensure_usable()?;
+        let result = self.try_register_dialogue_content_template_seed(seed);
+        if result.is_err() {
+            self.poisoned = true;
+        }
+        result
+    }
+
+    fn try_register_dialogue_content_template_seed(
+        &mut self,
+        seed: RuntimeDialogueContentTemplateManifestSeed,
+    ) -> Result<crate::runtime_id::RuntimeDialogueContentTemplateId, RuntimePlanBuildError> {
+        let manifest = self.lower_dialogue_content_template_manifest_seed(seed)?;
+        self.dialogue_content
+            .intern_template(manifest)
+            .map_err(RuntimePlanBuildError::from)
+    }
+
+    fn lower_dialogue_content_template_manifest_seed(
+        &self,
+        seed: RuntimeDialogueContentTemplateManifestSeed,
+    ) -> Result<RuntimeDialogueContentTemplateManifest, RuntimePlanBuildError> {
+        let RuntimeDialogueContentTemplateManifestSeed {
+            id,
+            digest,
+            slots: slot_seeds,
+            effects: effect_seeds,
+        } = seed;
+        let slots = slot_seeds
+            .into_vec()
+            .into_iter()
+            .enumerate()
+            .map(|(index, slot)| {
+                let expected = crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(
+                    index,
+                )
+                .ok_or(RuntimePlanBuildError::TooManyRows {
+                    table: RuntimePlanTable::DialogueContent,
+                })?;
+                if slot.slot != expected {
+                    return Err(RuntimePlanBuildError::NonCanonicalDialogueTemplateSlot {
+                        expected,
+                        actual: slot.slot,
+                    });
+                }
+                if slot.role == RuntimeDialogueValueRole::Content
+                    && slot.semantic_type != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                {
+                    return Err(RuntimePlanBuildError::DialogueTemplateSlotMismatch {
+                        slot: slot.slot,
+                    });
+                }
+                Ok(RuntimeDialogueContentSlot::new(
+                    slot.slot,
+                    slot.role,
+                    slot.semantic_type,
+                ))
+            })
+            .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+        let effects = effect_seeds
+            .into_vec()
+            .into_iter()
+            .enumerate()
+            .map(|(index, effect)| {
+                let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(
+                    index,
+                )
+                .ok_or(RuntimePlanBuildError::TooManyRows {
+                    table: RuntimePlanTable::DialogueContent,
+                })?;
+                if effect.site != expected {
+                    return Err(RuntimePlanBuildError::NonCanonicalDialogueEffectSite {
+                        expected,
+                        actual: effect.site,
+                    });
+                }
+                let capture_types = effect
+                    .capture_types
+                    .into_vec()
+                    .into_iter()
+                    .map(|semantic_identity| {
+                        self.types.id_for_semantic(semantic_identity).ok_or(
+                            RuntimePlanBuildError::UnknownSeedType {
+                                context: "dialogue content effect capture",
+                                semantic_identity,
+                            },
+                        )
+                    })
+                    .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?
+                    .into_boxed_slice();
+                Ok(RuntimeDialogueContentEffectSlot::new(
+                    effect.site,
+                    effect.trigger,
+                    capture_types,
+                ))
+            })
+            .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+        Ok(RuntimeDialogueContentTemplateManifest::new_with_effects(
+            id,
+            digest,
+            slots.into_boxed_slice(),
+            effects.into_boxed_slice(),
+        ))
+    }
+
     fn try_push_dialogue_content_seed(
         &mut self,
         seed: RuntimeDialogueContentPlanSeed,
     ) -> Result<RuntimeDialogueContentPlanSeedId, RuntimePlanBuildError> {
-        let mut values = Vec::with_capacity(seed.values.len());
-        for (index, value) in seed.values.into_vec().into_iter().enumerate() {
+        let RuntimeDialogueContentPlanSeed {
+            line,
+            template,
+            values: value_seeds,
+            effect_sites: effect_site_seeds,
+            marks: mark_seeds,
+            effect_site_count,
+        } = seed;
+        let template_id = template.id;
+        let manifest = self.lower_dialogue_content_template_manifest_seed(template)?;
+        let slots = manifest.slots().to_vec();
+        let effects = manifest.effects().to_vec();
+        let effect_count = RuntimeDialogueEffectSiteCount::try_from_len(effects.len()).ok_or(
+            RuntimePlanBuildError::TooManyRows {
+                table: RuntimePlanTable::DialogueContent,
+            },
+        )?;
+        if effect_site_count != effect_count {
+            return Err(RuntimePlanBuildError::DialogueEffectCountMismatch {
+                expected: effects.len(),
+                actual: usize::try_from(effect_site_count.get()).unwrap_or(usize::MAX),
+            });
+        }
+        if effect_site_seeds.len() != effects.len() {
+            return Err(RuntimePlanBuildError::DialogueEffectCountMismatch {
+                expected: effects.len(),
+                actual: effect_site_seeds.len(),
+            });
+        }
+        if value_seeds.len() != slots.len() {
+            return Err(RuntimePlanBuildError::DialogueValueCountMismatch {
+                expected: slots.len(),
+                actual: value_seeds.len(),
+            });
+        }
+        let mut values = Vec::with_capacity(value_seeds.len());
+        for (index, value) in value_seeds.into_vec().into_iter().enumerate() {
             let expected = crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(index)
                 .ok_or(RuntimePlanBuildError::TooManyRows {
                     table: RuntimePlanTable::DialogueContent,
@@ -678,31 +988,85 @@ impl RuntimePlanBuilder {
                     actual: value.slot,
                 });
             }
-            let (function, parameters, result) = value
+            let (function, input_sources, input_types, result, body_kind, _) = value
                 .function
                 .resolve(&self.issuer)
                 .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
-            if !parameters.is_empty() {
+            if body_kind != RuntimeFunctionSiteBodyKind::Expression {
+                return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
+                    site: function,
+                    expected: RuntimeFunctionSiteBodyKind::Expression,
+                    actual: body_kind,
+                });
+            }
+            let parameter_count = input_sources
+                .iter()
+                .filter(|source| matches!(source, RuntimeFunctionInputSource::Parameter { .. }))
+                .count();
+            if parameter_count != 0 {
                 return Err(RuntimePlanBuildError::CallableAbiArity {
                     context: "dialogue value site",
                     expected: 0,
-                    actual: parameters.len(),
+                    actual: parameter_count,
                 });
             }
-            if value.role == RuntimeDialogueValueRole::Condition
-                && self.require_bool("dialogue condition", result).is_err()
+            let capture_types = input_sources
+                .iter()
+                .zip(input_types)
+                .filter_map(|(source, ty)| {
+                    matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                })
+                .collect::<Vec<_>>();
+            if value.captures.len() != capture_types.len() {
+                return Err(RuntimePlanBuildError::CallableAbiArity {
+                    context: "dialogue value capture expressions",
+                    expected: capture_types.len(),
+                    actual: value.captures.len(),
+                });
+            }
+            let captures = value
+                .captures
+                .into_vec()
+                .into_iter()
+                .zip(capture_types)
+                .map(|(capture, expected)| {
+                    let capture = self.lower_expression(capture)?;
+                    require_same("dialogue value capture expression", expected, capture.ty())?;
+                    Ok(capture)
+                })
+                .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+            if value.role == RuntimeDialogueValueRole::Content
+                && !self.is_exact_dialogue_content_type(result)
             {
-                return Err(RuntimePlanBuildError::InvalidDialogueConditionType {
+                return Err(RuntimePlanBuildError::InvalidDialogueContentType {
                     slot: value.slot,
                     ty: result,
                 });
             }
+            let Some(slot) = slots.get(index) else {
+                return Err(RuntimePlanBuildError::DialogueTemplateSlotMismatch {
+                    slot: value.slot,
+                });
+            };
+            if slot.slot() != value.slot
+                || slot.role() != value.role
+                || self
+                    .types
+                    .get(result)
+                    .is_none_or(|ty| slot.semantic_type() != ty.semantic_identity())
+            {
+                return Err(RuntimePlanBuildError::DialogueTemplateSlotMismatch {
+                    slot: value.slot,
+                });
+            }
             values.push(RuntimeDialogueValueSite::new(
-                value.slot, value.role, function,
+                value.slot,
+                value.role,
+                function,
+                captures.into_boxed_slice(),
             ));
         }
-        let marks = seed
-            .marks
+        let marks = mark_seeds
             .into_vec()
             .into_iter()
             .enumerate()
@@ -715,18 +1079,127 @@ impl RuntimePlanBuilder {
                 Ok(RuntimeDialogueMark::new(id, label))
             })
             .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
-        let effect_site_count = seed.effect_site_count;
+        let mut effect_sites = Vec::with_capacity(effect_site_seeds.len());
+        for (index, effect) in effect_site_seeds.into_vec().into_iter().enumerate() {
+            let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                .ok_or(RuntimePlanBuildError::TooManyRows {
+                table: RuntimePlanTable::DialogueContent,
+            })?;
+            if effect.site != expected {
+                return Err(RuntimePlanBuildError::NonCanonicalDialogueEffectSite {
+                    expected,
+                    actual: effect.site,
+                });
+            }
+            let (function, input_sources, input_types, result, body_kind, _) = effect
+                .function
+                .resolve(&self.issuer)
+                .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+            if body_kind != RuntimeFunctionSiteBodyKind::Executable {
+                return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
+                    site: function,
+                    expected: RuntimeFunctionSiteBodyKind::Executable,
+                    actual: body_kind,
+                });
+            }
+            let parameter_count = input_sources
+                .iter()
+                .filter(|source| matches!(source, RuntimeFunctionInputSource::Parameter { .. }))
+                .count();
+            if parameter_count != 0 {
+                return Err(RuntimePlanBuildError::CallableAbiArity {
+                    context: "dialogue effect site",
+                    expected: 0,
+                    actual: parameter_count,
+                });
+            }
+            if !matches!(
+                self.types
+                    .get(result)
+                    .map(|declaration| declaration.projection()),
+                Some(super::RuntimePlanTypeProjection::Unit)
+            ) {
+                return Err(RuntimePlanBuildError::DialogueEffectResultMismatch {
+                    site: effect.site,
+                });
+            }
+            let Some(slot) = effects.get(index) else {
+                return Err(RuntimePlanBuildError::DialogueEffectCountMismatch {
+                    expected: effects.len(),
+                    actual: index,
+                });
+            };
+            let capture_types = input_sources
+                .iter()
+                .zip(input_types)
+                .filter_map(|(source, ty)| {
+                    matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                })
+                .collect::<Vec<_>>();
+            if capture_types != slot.capture_types() {
+                return Err(RuntimePlanBuildError::DialogueEffectCaptureTypeMismatch {
+                    site: effect.site,
+                });
+            }
+            if effect.captures.len() != capture_types.len() {
+                return Err(RuntimePlanBuildError::DialogueEffectCaptureCountMismatch {
+                    site: effect.site,
+                    expected: capture_types.len(),
+                    actual: effect.captures.len(),
+                });
+            }
+            let captures = effect
+                .captures
+                .into_vec()
+                .into_iter()
+                .zip(capture_types)
+                .map(|(capture, expected)| {
+                    let capture = self.lower_expression(capture)?;
+                    require_same("dialogue effect capture expression", expected, capture.ty())?;
+                    Ok(capture)
+                })
+                .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+            effect_sites.push(RuntimeDialogueEffectSite::new(
+                effect.site,
+                function,
+                captures.into_boxed_slice(),
+            ));
+        }
+        let key = super::RuntimeDialogueContentApplicationKey::new(line.clone(), template_id);
+        self.dialogue_content.ensure_pushable(&key)?;
+        self.dialogue_content.intern_template(manifest)?;
         let content = self.dialogue_content.push(RuntimeDialogueContentPlan::new(
-            seed.line,
+            line,
+            template_id,
             values.into_boxed_slice(),
+            effect_sites.into_boxed_slice(),
             marks.into_boxed_slice(),
             effect_site_count,
         ))?;
         Ok(RuntimeDialogueContentPlanSeedId::issued(
             &self.issuer,
             content,
-            effect_site_count,
         ))
+    }
+
+    fn is_exact_dialogue_content_type(&self, ty: RuntimePlanTypeId) -> bool {
+        let Some(declaration) = self.types.get(ty) else {
+            return false;
+        };
+        let super::RuntimePlanTypeProjection::Opaque {
+            producer,
+            admission: crate::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+            value_class: crate::value::RuntimeOpaqueValueClass::Plain,
+            persistence: crate::value::RuntimeOpaquePersistence::SnapshotOnly,
+            arguments,
+        } = declaration.projection()
+        else {
+            return false;
+        };
+        let owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
+        arguments.is_empty()
+            && producer == owner.producer()
+            && declaration.semantic_identity() == owner.semantic_identity()
     }
 
     /// Lowers a recursive, construction-only line-task seed into the one
@@ -902,19 +1375,6 @@ impl RuntimePlanBuilder {
         match seed {
             RuntimeLineTaskTriggerSeed::Immediate => Ok(LineTaskTrigger::Immediate),
             RuntimeLineTaskTriggerSeed::Scheduled(site) => Ok(LineTaskTrigger::Scheduled(site)),
-            RuntimeLineTaskTriggerSeed::ContentEffect(effect) => {
-                let (content, site) = effect
-                    .resolve(&self.issuer)
-                    .ok_or(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed)?;
-                if self
-                    .dialogue_content
-                    .get(content)
-                    .is_none_or(|content| !content.effect_site_count().contains(site))
-                {
-                    return Err(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed);
-                }
-                Ok(LineTaskTrigger::ContentEffect(site))
-            }
             RuntimeLineTaskTriggerSeed::Mark(mark) => {
                 let (content, mark) = mark
                     .resolve(&self.issuer)
@@ -1167,12 +1627,6 @@ impl RuntimePlanBuilder {
                             .ok_or(RuntimePlanBuildError::ForeignDialogueMarkSeed)?;
                         owners.insert(content);
                     }
-                    RuntimeLineTaskTriggerSeed::ContentEffect(effect) => {
-                        let (content, _) = effect
-                            .resolve(&self.issuer)
-                            .ok_or(RuntimePlanBuildError::ForeignDialogueEffectSiteSeed)?;
-                        owners.insert(content);
-                    }
                     RuntimeLineTaskTriggerSeed::Immediate
                     | RuntimeLineTaskTriggerSeed::Scheduled(_) => {}
                 }
@@ -1334,7 +1788,7 @@ impl RuntimePlanBuilder {
         let inputs = reserved.input_locals.clone();
         let body = self.lower_expression(body)?;
         require_reserved_result("pure helper result", result, body.ty())?;
-        self.validate_function_body_locals(&body, &inputs, &[])?;
+        self.validate_callable_body_locals(&body, &inputs, &[])?;
         self.pure_helpers[helper_id.0].body = Some(body);
         Ok(())
     }
@@ -1446,7 +1900,7 @@ impl RuntimePlanBuilder {
         let inputs = reserved.input_locals.clone();
         let body = self.lower_expression(body)?;
         require_reserved_result("trait method result", result, body.ty())?;
-        self.validate_function_body_locals(&body, &inputs, &[])?;
+        self.validate_callable_body_locals(&body, &inputs, &[])?;
         self.trait_methods[method_id.0].body = Some(body);
         Ok(())
     }
@@ -1480,6 +1934,17 @@ impl RuntimePlanBuilder {
                     return Err(RuntimePlanBuildError::ForeignPureHelperSeed);
                 }
                 RuntimeCallableExecutableCode::PureHelper(helper)
+            }
+            RuntimeCallableExecutableSeedCode::FunctionSite(site) => {
+                let (site, _, _, _, _, _) = site
+                    .resolve(&self.issuer)
+                    .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                let index = usize::try_from(site.get().get() - 1)
+                    .map_err(|_| RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                if self.function_sites.get(index).is_none() {
+                    return Err(RuntimePlanBuildError::ForeignFunctionSiteSeed);
+                }
+                RuntimeCallableExecutableCode::FunctionSite(site)
             }
             RuntimeCallableExecutableSeedCode::ControllerFlow(flow) => {
                 RuntimeCallableExecutableCode::ControllerFlow(flow)
@@ -1556,7 +2021,7 @@ impl RuntimePlanBuilder {
             let Some(body) = site.body else {
                 unreachable!("incomplete function sites returned before materialization")
             };
-            function_site_builder.push(site.params, site.captures, body)?;
+            function_site_builder.push(site.inputs, site.result, body)?;
         }
         let pure_helpers = self
             .pure_helpers
@@ -1598,6 +2063,7 @@ impl RuntimePlanBuilder {
             })
             .collect();
         let type_table = self.types.finish()?;
+        let project_call_sites = self.project_call_sites.into_inner().finish();
         let local_declarations = self.locals.finish();
         validate_flow_parameters(
             &self.flows,
@@ -1612,6 +2078,7 @@ impl RuntimePlanBuilder {
             nominal_record_domains: self.nominal_record_domains.finish(),
             variant_domains: self.variant_domains.finish(),
             function_sites: function_site_builder.finish(),
+            project_call_sites,
             dialogue_content: self.dialogue_content.finish(),
             entries: self.entries,
             callable_executables: self.callable_executables,
@@ -1891,6 +2358,43 @@ fn resolve_semantic_type(
     types
         .id_for_semantic(semantic_identity)
         .ok_or(RuntimePlanBuildError::UnknownSemanticType { semantic_identity })
+}
+
+fn validate_function_input_bindings(
+    inputs: &[RuntimeFunctionInputBinding],
+) -> Result<(), RuntimePlanBuildError> {
+    let mut captures = 0_u32;
+    let mut parameters = 0_u32;
+    let mut parameter_phase = false;
+    let mut locals = BTreeSet::new();
+    for (index, input) in inputs.iter().enumerate() {
+        if !locals.insert(input.input_local()) {
+            return Err(RuntimePlanBuildError::DuplicateFunctionInputLocal {
+                index,
+                local: input.input_local(),
+            });
+        }
+        match input.source() {
+            RuntimeFunctionInputSource::Capture { position }
+                if !parameter_phase && position == captures =>
+            {
+                captures = captures
+                    .checked_add(1)
+                    .ok_or(RuntimePlanBuildError::InvalidFunctionInputSource { index })?;
+            }
+            RuntimeFunctionInputSource::Parameter { position } if position == parameters => {
+                parameter_phase = true;
+                parameters = parameters
+                    .checked_add(1)
+                    .ok_or(RuntimePlanBuildError::InvalidFunctionInputSource { index })?;
+            }
+            RuntimeFunctionInputSource::Capture { .. }
+            | RuntimeFunctionInputSource::Parameter { .. } => {
+                return Err(RuntimePlanBuildError::InvalidFunctionInputSource { index });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn rewrite_record_domain(
@@ -2231,8 +2735,17 @@ mod tests {
 
         assert_eq!(
             second.push_function_site_seed(
-                [foreign],
-                [],
+                [RuntimeFunctionInputBindingSeed {
+                    source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                    input_local: foreign.clone(),
+                    pattern: RuntimePatternSeed::new(
+                        identity(1),
+                        RuntimePatternSeedKind::Bind {
+                            mutable: false,
+                            local: foreign.clone(),
+                        },
+                    ),
+                }],
                 RuntimeExprSeed::new(
                     identity(1),
                     RuntimeExprSeedKind::Value(RuntimeValue::Bool(true)),

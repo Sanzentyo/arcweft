@@ -1,7 +1,7 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextNumericLimits, RichTextPropertySpec,
-    RichTextSourceForm, RichTextTagSchema, RichTextUnit, RichTextValueKind, RichTextValueLimits,
-    SelectorContract, SelectorKind, UnknownPropertyPolicy,
+    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextNumericLimits,
+    RichTextPointActionSchema, RichTextPointActionSource, RichTextPropertySpec, RichTextUnit,
+    RichTextValueKind, RichTextValueLimits, SelectorContract, SelectorKind, UnknownPropertyPolicy,
 };
 
 /// Closed dialogue-owned point and reveal-control inventory.
@@ -51,11 +51,11 @@ impl DialogueRichTextControl {
     #[must_use]
     pub const fn from_source_name(source: &str) -> Option<Self> {
         match source.as_bytes() {
-            b"p" | b"page" => Some(Self::Page),
-            b"l" | b"wait" => Some(Self::LineWait),
-            b"r" | b"nl" | b"br" => Some(Self::HardBreak),
+            b"p" => Some(Self::Page),
+            b"l" => Some(Self::LineWait),
+            b"r" => Some(Self::HardBreak),
             b"w" => Some(Self::TimedWait),
-            b"clear" | b"er" | b"cm" => Some(Self::Clear),
+            b"clear" => Some(Self::Clear),
             b"reset" => Some(Self::Reset),
             b"speed" => Some(Self::RevealRate),
             b"mark" => Some(Self::Marker),
@@ -80,7 +80,7 @@ impl DialogueRichTextControl {
 
     /// Immutable owner-typed schema for this control.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<DialogueControlProperty> {
+    pub const fn schema(self) -> &'static RichTextPointActionSchema<DialogueControlProperty> {
         match self {
             Self::Page => &PAGE_SCHEMA,
             Self::LineWait => &LINE_WAIT_SCHEMA,
@@ -164,48 +164,16 @@ const CPS_PROPERTY: RichTextPropertySpec<DialogueControlProperty> = RichTextProp
     allow_empty: false,
 };
 
-const PAGE_FORMS: &[RichTextSourceForm] = &[
-    RichTextSourceForm::CanonicalTag("p"),
-    RichTextSourceForm::GrammarSpelling {
-        source: "page",
-        canonical: "p",
-    },
-];
-const LINE_WAIT_FORMS: &[RichTextSourceForm] = &[
-    RichTextSourceForm::CanonicalTag("l"),
-    RichTextSourceForm::GrammarSpelling {
-        source: "wait",
-        canonical: "l",
-    },
-];
-const HARD_BREAK_FORMS: &[RichTextSourceForm] = &[
-    RichTextSourceForm::CanonicalTag("r"),
-    RichTextSourceForm::GrammarSpelling {
-        source: "nl",
-        canonical: "r",
-    },
-    RichTextSourceForm::GrammarSpelling {
-        source: "br",
-        canonical: "r",
-    },
-];
-const CLEAR_FORMS: &[RichTextSourceForm] = &[
-    RichTextSourceForm::CanonicalTag("clear"),
-    RichTextSourceForm::GrammarSpelling {
-        source: "er",
-        canonical: "clear",
-    },
-    RichTextSourceForm::GrammarSpelling {
-        source: "cm",
-        canonical: "clear",
-    },
-];
+const PAGE_SOURCE: RichTextPointActionSource = RichTextPointActionSource::canonical("p");
+const LINE_WAIT_SOURCE: RichTextPointActionSource = RichTextPointActionSource::canonical("l");
+const HARD_BREAK_SOURCE: RichTextPointActionSource = RichTextPointActionSource::canonical("r");
+const CLEAR_SOURCE: RichTextPointActionSource = RichTextPointActionSource::canonical("clear");
 
 const fn point_schema(
-    source_forms: &'static [RichTextSourceForm],
-) -> RichTextTagSchema<DialogueControlProperty> {
-    RichTextTagSchema {
-        source_forms,
+    source: RichTextPointActionSource,
+) -> RichTextPointActionSchema<DialogueControlProperty> {
+    RichTextPointActionSchema {
+        source,
         selector: SelectorContract::None,
         properties: NO_PROPERTIES,
         unknown_policy: UnknownPropertyPolicy::Reject,
@@ -213,34 +181,38 @@ const fn point_schema(
     }
 }
 
-const PAGE_SCHEMA: RichTextTagSchema<DialogueControlProperty> = point_schema(PAGE_FORMS);
-const LINE_WAIT_SCHEMA: RichTextTagSchema<DialogueControlProperty> = point_schema(LINE_WAIT_FORMS);
-const HARD_BREAK_SCHEMA: RichTextTagSchema<DialogueControlProperty> =
-    point_schema(HARD_BREAK_FORMS);
-const CLEAR_SCHEMA: RichTextTagSchema<DialogueControlProperty> = point_schema(CLEAR_FORMS);
-const RESET_SCHEMA: RichTextTagSchema<DialogueControlProperty> =
-    point_schema(&[RichTextSourceForm::CanonicalTag("reset")]);
+const PAGE_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> = point_schema(PAGE_SOURCE);
+const LINE_WAIT_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    point_schema(LINE_WAIT_SOURCE);
+const HARD_BREAK_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    point_schema(HARD_BREAK_SOURCE);
+const CLEAR_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> = point_schema(CLEAR_SOURCE);
+const RESET_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    point_schema(RichTextPointActionSource::canonical("reset"));
 
-const TIMED_WAIT_SCHEMA: RichTextTagSchema<DialogueControlProperty> = RichTextTagSchema {
-    source_forms: &[RichTextSourceForm::CanonicalTag("w")],
-    selector: SelectorContract::None,
-    properties: &[TIME_PROPERTY],
-    unknown_policy: UnknownPropertyPolicy::Reject,
-    output: CheckedOutputKind::PointControl,
-};
-const REVEAL_RATE_SCHEMA: RichTextTagSchema<DialogueControlProperty> = RichTextTagSchema {
-    source_forms: &[RichTextSourceForm::CanonicalTag("speed")],
-    selector: SelectorContract::None,
-    properties: &[CPS_PROPERTY],
-    unknown_policy: UnknownPropertyPolicy::Reject,
-    output: CheckedOutputKind::PointControl,
-};
-const MARKER_SCHEMA: RichTextTagSchema<DialogueControlProperty> = RichTextTagSchema {
-    source_forms: &[RichTextSourceForm::CanonicalTag("mark")],
-    selector: SelectorContract::RequiredPositional {
-        kind: SelectorKind::PublicId,
-    },
-    properties: NO_PROPERTIES,
-    unknown_policy: UnknownPropertyPolicy::Reject,
-    output: CheckedOutputKind::Marker,
-};
+const TIMED_WAIT_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    RichTextPointActionSchema {
+        source: RichTextPointActionSource::canonical("w"),
+        selector: SelectorContract::None,
+        properties: &[TIME_PROPERTY],
+        unknown_policy: UnknownPropertyPolicy::Reject,
+        output: CheckedOutputKind::PointControl,
+    };
+const REVEAL_RATE_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    RichTextPointActionSchema {
+        source: RichTextPointActionSource::canonical("speed"),
+        selector: SelectorContract::None,
+        properties: &[CPS_PROPERTY],
+        unknown_policy: UnknownPropertyPolicy::Reject,
+        output: CheckedOutputKind::PointControl,
+    };
+const MARKER_SCHEMA: RichTextPointActionSchema<DialogueControlProperty> =
+    RichTextPointActionSchema {
+        source: RichTextPointActionSource::canonical("mark"),
+        selector: SelectorContract::RequiredPositional {
+            kind: SelectorKind::PublicId,
+        },
+        properties: NO_PROPERTIES,
+        unknown_policy: UnknownPropertyPolicy::Reject,
+        output: CheckedOutputKind::Marker,
+    };

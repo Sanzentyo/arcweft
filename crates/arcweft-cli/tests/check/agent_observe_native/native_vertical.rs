@@ -7,7 +7,7 @@ fn agent_observe_writes_layer_png_and_object_raw_images() {
         r##"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
     alice: Hello |[夢](ゆめ)[r][voice auto][p]
@@ -869,15 +869,15 @@ flow main {
 fn agent_observe_native_dialogue_view_capture_bounds_include_ruby_extents() {
     let path = temp_arcw(
         "agent-observe-native-dialogue_view-ruby-crop-bounds",
-        r"
+        r#"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.ruby_over ruby_size=14px ruby_gap=12px]|[夢](ゆめ)[/][p]
+    alice: #layout(.ruby_over, ruby_size=14px, ruby_gap=12px)[|[夢](ゆめ)][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-dialogue_view-ruby-crop-bounds");
     let raw_path = dir.join("dialogue_view-ruby-mask.rgba");
@@ -925,15 +925,15 @@ flow main {
 fn agent_observe_native_dialogue_view_capture_bounds_include_vertical_columns() {
     let path = temp_arcw(
         "agent-observe-native-dialogue_view-vertical-crop-bounds",
-        r"
+        r#"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]吾輩は猫である。ABC 123 2026。[/][p]
+    alice: #layout(.vertical_rl)[吾輩は猫である。ABC 123 2026。][p]
 }
-",
+"#,
     );
     let dir = temp_dir("agent-observe-native-dialogue_view-vertical-crop-bounds");
     let raw_path = dir.join("dialogue_view-vertical-mask.rgba");
@@ -987,27 +987,27 @@ fn agent_observe_native_vertical_capture_matches_imq_reference() {
 
     assert_repeated_native_capture_matches_imq_reference(
         "vertical-rl-mixed",
-        r"
+        r#"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]吾輩は猫である。ABC 123 2026。[/][p]
+    alice: #layout(.vertical_rl)[吾輩は猫である。ABC 123 2026。][p]
 }
-",
+"#,
     );
     assert_repeated_native_capture_matches_imq_reference(
         "vertical-lr-ruby-text-combine",
-        r"
+        r#"
 entry cli @entry.main { goto @flow.main }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]縦 |[夢](ゆめ)[r] 2026 ABC。[/][p]
+    alice: #layout(.vertical_lr)[縦 |[夢](ゆめ)[r] 2026 ABC。][p]
 }
-",
+"#,
     );
 }
 
@@ -1702,13 +1702,13 @@ fn native_exact_golden_command_stdout(command: &mut Command) -> Option<String> {
 fn agent_observe_native_renderer_reports_vertical_lr_ruby_text_combine_geometry() {
     let path = temp_arcw(
         "agent-observe-native-vertical-lr-ruby-combine",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]縦 |[夢](ゆめ)[r] 2026 ABC。[/][p]
+    alice: #layout(.vertical_lr)[縦 |[夢](ゆめ)[r] 2026 ABC。][p]
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -1968,13 +1968,13 @@ fn assert_native_vertical_column_progression_direction(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-column-progression"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬月火水木金土[/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬月火水木金土][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -2031,13 +2031,13 @@ flow main {{
 fn agent_observe_native_renderer_reports_vertical_cluster_orientation_metadata() {
     let path = temp_arcw(
         "agent-observe-native-vertical-cluster-metadata",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]A。ー12[/][p]
+    alice: #layout(.vertical_rl)[A。ー12][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -2109,13 +2109,13 @@ fn observe_native_vertical_grapheme_cluster(writing_mode: &str) -> serde_json::V
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-grapheme-cluster"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]{text}[/][p]
+    alice: #layout(.{writing_mode})[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -2130,13 +2130,13 @@ fn assert_native_vertical_grapheme_cluster_raw_crop(writing_mode: &str, capture_
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]{text}[/][p]
+    alice: #layout(.{writing_mode})[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2233,13 +2233,13 @@ fn assert_native_vertical_text_glyph_raw_crop(writing_mode: &str, capture_kind: 
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]{text}[/][p]
+    alice: #layout(.{writing_mode})[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2351,13 +2351,13 @@ fn observe_native_vertical_zwj_cluster(writing_mode: &str) -> serde_json::Value 
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-zwj-cluster"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]{text}[/][p]
+    alice: #layout(.{writing_mode})[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -2371,13 +2371,13 @@ fn assert_native_vertical_zwj_cluster_raw_crop(writing_mode: &str, capture_kind:
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]{text}[/][p]
+    alice: #layout(.{writing_mode})[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2516,13 +2516,13 @@ fn observe_native_vertical_ruby_under_fixture(writing_mode: &str) -> serde_json:
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-ruby-under"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.ruby_under]|[夢](ゆめ)[/][p]
+    alice: #layout(.{writing_mode})[#layout(.ruby_under)[|[夢](ゆめ)]][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -2539,13 +2539,13 @@ fn assert_native_vertical_ruby_under_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.ruby_under]|[夢](ゆめ)[/][p]
+    alice: #layout(.{writing_mode})[#layout(.ruby_under)[|[夢](ゆめ)]][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2668,13 +2668,13 @@ fn observe_native_vertical_inter_character_ruby_fixture(writing_mode: &str) -> s
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-ruby-inter-character"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.ruby_inter_character]|[夢星](ゆめ)[/]人[p]
+    alice: #layout(.{writing_mode})[#layout(.ruby_inter_character)[|[夢星](ゆめ)]]人[p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -2688,13 +2688,13 @@ fn assert_native_vertical_inter_character_ruby_raw_crop(writing_mode: &str, capt
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}][.ruby_inter_character]|[夢星](ゆめ)[/]人[p]
+    alice: #layout(.{writing_mode})[#layout(.ruby_inter_character)[|[夢星](ゆめ)]]人[p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2829,13 +2829,13 @@ fn assert_native_long_vertical_ruby_expansion_geometry(writing_mode: &str, ruby_
     let path = temp_arcw(
         &format!("agent-observe-native-long-{writing_mode}-ruby-expansion"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬|[夢](ながいながいよみ)人外][p]
 }}
-"
+"#
         ),
     );
 
@@ -2886,13 +2886,13 @@ flow main {{
 fn agent_observe_native_renderer_reports_short_vertical_rl_ruby_at_edge() {
     let path = temp_arcw(
         "agent-observe-native-short-vertical-rl-ruby-edge",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]天地春夏秋冬|[夢](ゆめ)[/][p]
+    alice: #layout(.vertical_rl)[天地春夏秋冬|[夢](ゆめ)][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -2920,13 +2920,13 @@ fn assert_native_vertical_ruby_collision_geometry(writing_mode: &str, ruby_on_ri
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-ruby-collision"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいよみ)|[星](ながいよみ)[/][p]
+    alice: #layout(.{writing_mode})[天地春夏秋冬|[夢](ながいよみ)|[星](ながいよみ)][p]
 }}
-"
+"#
         ),
     );
 
@@ -2964,13 +2964,13 @@ flow main {{
 fn agent_observe_native_renderer_reports_expanded_jlreq_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-expanded-jlreq-pairs",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火…人[/][p]
+    alice: #layout(.vertical_rl, jlreq=.normal)[天地春夏秋冬月火…人][p]
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -3190,13 +3190,13 @@ fn assert_native_jlreq_leader_mark_raw_crop(writing_mode: &str, capture_kind: &s
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-leader-mark-{capture_kind}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬月火…人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬月火…人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!(
@@ -3309,13 +3309,13 @@ fn assert_native_vertical_presentation_leader_chain_geometry(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-{label}-chain"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{leader}{leader}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{leader}{leader}人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -3342,13 +3342,13 @@ fn assert_native_vertical_presentation_leader_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{leader}{leader}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{leader}{leader}人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -3469,13 +3469,13 @@ fn assert_native_jlreq_dash_mark_raw_crop(writing_mode: &str, capture_kind: &str
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-dash-mark-{capture_kind}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬月火――人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬月火――人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&format!(
@@ -3595,13 +3595,13 @@ fn assert_native_jlreq_dash_mark_geometry(json: &serde_json::Value) -> &serde_js
 fn agent_observe_native_renderer_reports_expanded_jlreq_normal_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-expanded-jlreq-normal-pairs",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+    alice: #layout(.vertical_rl, jlreq=.normal)[天地春夏秋冬山々人「」川あっいおーえ][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -4154,13 +4154,13 @@ fn agent_observe_native_renderer_writes_small_curly_and_tortoise_bracket_raw_cro
 
 fn assert_native_jlreq_prolonged_sound_raw_crop(writing_mode: &str, capture_kind: &str) {
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬山々人「」川あっいおーえ][p]
 }}
-"
+"#
     );
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-prolonged-sound-{capture_kind}"),
@@ -4254,13 +4254,13 @@ flow main {{
 
 fn assert_native_jlreq_small_kana_raw_crop(writing_mode: &str, capture_kind: &str) {
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬山々人「」川あっいおーえ][p]
 }}
-"
+"#
     );
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-small-kana-{capture_kind}"),
@@ -4351,13 +4351,13 @@ flow main {{
 
 fn assert_native_jlreq_iteration_mark_raw_crop(writing_mode: &str, capture_kind: &str) {
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬山々人「」川あっいおーえ][p]
 }}
-"
+"#
     );
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-iteration-mark-{capture_kind}"),
@@ -4448,13 +4448,13 @@ flow main {{
 
 fn assert_native_jlreq_compact_bracket_raw_crop(writing_mode: &str, capture_kind: &str) {
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地春夏秋冬山々人「」川あっいおーえ[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地春夏秋冬山々人「」川あっいおーえ][p]
 }}
-"
+"#
     );
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-compact-bracket-{capture_kind}"),
@@ -4668,13 +4668,13 @@ fn assert_native_vertical_presentation_bracket_geometry(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-{label}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{open}{close}人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -4701,13 +4701,13 @@ fn assert_native_vertical_presentation_bracket_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{open}{close}人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4840,13 +4840,13 @@ fn assert_native_halfwidth_corner_bracket_geometry(writing_mode: &str) {
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-halfwidth-corner-bracket"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天｢｣人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天｢｣人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -4861,13 +4861,13 @@ fn assert_native_halfwidth_corner_bracket_raw_crop(writing_mode: &str, capture_k
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天｢｣人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天｢｣人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4991,13 +4991,13 @@ fn assert_native_rotated_bracket_geometry(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-{label}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{open}{close}人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -5018,13 +5018,13 @@ fn assert_native_rotated_bracket_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天{open}{close}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天{open}{close}人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5158,13 +5158,13 @@ fn assert_native_halfwidth_suffix_mark_geometry(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-{label}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地{mark}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地{mark}人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -5184,13 +5184,13 @@ fn assert_native_halfwidth_suffix_mark_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地{mark}人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地{mark}人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5315,13 +5315,13 @@ fn assert_native_katakana_phonetic_extension_small_kana_geometry(writing_mode: &
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-katakana-phonetic-extension-small-kana"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地ㇰ人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地ㇰ人][p]
 }}
-",
+"#,
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -5340,13 +5340,13 @@ fn assert_native_katakana_phonetic_extension_small_kana_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=normal]天地ㇰ人[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.normal)[天地ㇰ人][p]
 }}
-",
+"#,
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5467,13 +5467,13 @@ fn assert_native_katakana_phonetic_extension_small_kana_object<'report>(
 fn agent_observe_native_renderer_reports_strict_jlreq_middle_dot_pair_geometry() {
     let path = temp_arcw(
         "agent-observe-native-strict-jlreq-middle-dot-pair",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl jlreq=strict]天地春夏秋冬月火中・外[/][p]
+    alice: #layout(.vertical_rl, jlreq=.strict)[天地春夏秋冬月火中・外][p]
 }
-",
+"#,
     );
 
     let json = observe_native_rich_text_layer_report(&path);
@@ -5579,13 +5579,13 @@ fn observe_native_jlreq_middle_dot_opening_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-middle-dot-opening-{strictness}"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq={strictness}]天地・「人山川海[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[天地・「人山川海][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -5604,13 +5604,13 @@ fn assert_native_strict_jlreq_middle_dot_opening_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=strict]天地・「人山川海[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地・「人山川海][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5695,13 +5695,13 @@ flow main {{
 
 fn assert_native_strict_jlreq_middle_dot_raw_crop(writing_mode: &str, capture_kind: &str) {
     let source = format!(
-        r"
-character alice {{}}
+        r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬月火中・外[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬月火中・外][p]
 }}
-"
+"#
     );
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-middle-dot-{capture_kind}"),
@@ -5863,13 +5863,13 @@ fn assert_native_strict_jlreq_middle_dot_opening_geometry<'report>(
 fn agent_observe_native_renderer_reports_jlreq_punctuation_compression_and_hanging() {
     let hanging_path = temp_arcw(
         "agent-observe-native-jlreq-hanging-punctuation",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]天地、人人[/][p]
+    alice: #layout(.vertical_rl)[天地、人人][p]
 }
-",
+"#,
     );
     let hanging = observe_native_rich_text_layer_report(&hanging_path);
     fs::remove_file(&hanging_path).expect("remove temp hanging punctuation source");
@@ -5894,13 +5894,13 @@ flow main {
 
     let compression_path = temp_arcw(
         "agent-observe-native-jlreq-punctuation-compression",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]天、。・人[/][p]
+    alice: #layout(.vertical_rl)[天、。・人][p]
 }
-",
+"#,
     );
     let compression = observe_native_rich_text_layer_report(&compression_path);
     fs::remove_file(&compression_path).expect("remove temp punctuation compression source");
@@ -6152,13 +6152,13 @@ fn assert_native_closing_punctuation_hanging_geometry(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-{label}-hanging"),
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地{mark}人人[/][p]
+    alice: #layout(.{writing_mode})[天地{mark}人人][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -6185,13 +6185,13 @@ fn assert_native_closing_punctuation_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow main {{
-    alice: [.{writing_mode}]天地{mark}人人[/][p]
+    alice: #layout(.{writing_mode})[天地{mark}人人][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -6314,13 +6314,13 @@ fn assert_native_closing_punctuation_geometry<'report>(
 fn agent_observe_native_renderer_reports_jlreq_line_end_prohibited_opening_punctuation() {
     let path = temp_arcw(
         "agent-observe-native-jlreq-line-end-opening-punctuation",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl]天地春「人外[/][p]
+    alice: #layout(.vertical_rl)[天地春「人外][p]
 }
-",
+"#,
     );
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp JLREQ opening punctuation source");
@@ -6353,13 +6353,13 @@ flow main {
 fn agent_observe_native_renderer_reports_vertical_lr_jlreq_edge_geometry() {
     let opening_path = temp_arcw(
         "agent-observe-native-vertical-lr-jlreq-opening-punctuation",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]天地春「人外[/][p]
+    alice: #layout(.vertical_lr)[天地春「人外][p]
 }
-",
+"#,
     );
     let opening = observe_native_rich_text_layer_report(&opening_path);
     fs::remove_file(&opening_path).expect("remove temp vertical_lr JLREQ opening source");
@@ -6385,13 +6385,13 @@ flow main {
 
     let hanging_path = temp_arcw(
         "agent-observe-native-vertical-lr-jlreq-hanging-punctuation",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr]天地、人人[/][p]
+    alice: #layout(.vertical_lr)[天地、人人][p]
 }
-",
+"#,
     );
     let hanging = observe_native_rich_text_layer_report(&hanging_path);
     fs::remove_file(&hanging_path).expect("remove temp vertical_lr JLREQ hanging source");
@@ -6416,13 +6416,13 @@ flow main {
 
     let leader_path = temp_arcw(
         "agent-observe-native-vertical-lr-jlreq-leader-chain",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr jlreq=normal]天地………終[/][p]
+    alice: #layout(.vertical_lr, jlreq=.normal)[天地………終][p]
 }
-",
+"#,
     );
     let leader = observe_native_rich_text_layer_report(&leader_path);
     fs::remove_file(&leader_path).expect("remove temp vertical_lr JLREQ leader source");
@@ -6500,13 +6500,13 @@ fn agent_observe_native_renderer_writes_vertical_lr_strict_jlreq_closing_opening
 fn agent_observe_native_renderer_reports_jlreq_paragraph_column_geometry() {
     let path = temp_arcw(
         "agent-observe-native-jlreq-paragraph-column-geometry",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_rl jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.vertical_rl, jlreq=.normal)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終][p]
 }
-",
+"#,
     );
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp JLREQ paragraph source");
@@ -6519,13 +6519,13 @@ flow main {
 fn agent_observe_native_renderer_reports_vertical_lr_jlreq_paragraph_column_geometry() {
     let path = temp_arcw(
         "agent-observe-native-vertical-lr-jlreq-paragraph-column-geometry",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.vertical_lr jlreq=normal]天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.vertical_lr, jlreq=.normal)[天地春夏秋冬月火、山々人「川」あっいおーえ―中・外………終][p]
 }
-",
+"#,
     );
     let json = observe_native_rich_text_layer_report(&path);
     fs::remove_file(&path).expect("remove temp vertical_lr JLREQ paragraph source");

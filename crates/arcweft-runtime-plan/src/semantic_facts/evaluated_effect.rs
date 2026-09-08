@@ -132,20 +132,40 @@ pub enum RuntimeEvaluatedEffect {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeEvaluatedEffectFact {
-    application: ExprId,
+    site_root: ExprId,
+    application_site: ExprId,
+    result: RuntimeNormalizedType,
     effect: RuntimeEvaluatedEffect,
 }
 
 impl RuntimeEvaluatedEffectFact {
-    pub const fn new(application: ExprId, effect: RuntimeEvaluatedEffect) -> Self {
+    pub const fn new(
+        site_root: ExprId,
+        application_site: ExprId,
+        result: RuntimeNormalizedType,
+        effect: RuntimeEvaluatedEffect,
+    ) -> Self {
         Self {
-            application,
+            site_root,
+            application_site,
+            result,
             effect,
         }
     }
 
-    pub const fn application(&self) -> ExprId {
-        self.application
+    pub const fn site_root(&self) -> ExprId {
+        self.site_root
+    }
+
+    pub const fn application_site(&self) -> ExprId {
+        self.application_site
+    }
+
+    /// Exact normalized result type copied from the checked terminal
+    /// operation application. This remains available even when the call is a
+    /// non-value evaluated-effect carrier.
+    pub const fn result(&self) -> &RuntimeNormalizedType {
+        &self.result
     }
 
     pub const fn effect(&self) -> &RuntimeEvaluatedEffect {
@@ -203,23 +223,37 @@ pub(super) fn validate_evaluated_effect(
     let HirStmtKind::Expression { expression } = resolve_stmt(modules, statement)? else {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
     };
-    if fact.application() != *expression
-        && !matches!(
-            resolve_expr(modules, *expression),
-            Ok(HirExprKind::Pipe(pipe)) if pipe.right() == fact.application()
-        )
-    {
+    if fact.site_root() != *expression || !validate_evaluated_effect_site(modules, fact) {
         return Err(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement });
     }
     validate_evaluated_effect_operation(
         modules,
         expression_types,
         calls,
-        fact.application(),
+        fact.application_site(),
         fact.effect(),
     )
     .then_some(())
     .ok_or(RuntimeSemanticFactsError::InvalidEvaluatedEffectFact { statement })
+}
+
+pub(super) fn validate_evaluated_effect_site(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    fact: &RuntimeEvaluatedEffectFact,
+) -> bool {
+    validate_evaluated_effect_result(modules, fact.result())
+        && (fact.application_site() == fact.site_root()
+            || matches!(
+                resolve_expr(modules, fact.site_root()),
+                Ok(HirExprKind::Pipe(pipe)) if pipe.right() == fact.application_site()
+            ))
+}
+
+pub(super) fn validate_evaluated_effect_result(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    result: &RuntimeNormalizedType,
+) -> bool {
+    validate_normalized_type(modules, result).is_ok()
 }
 
 pub(super) fn validate_evaluated_effect_operation(

@@ -10,8 +10,8 @@ use thiserror::Error;
 use super::analyzer::{CallAnalysisFailure, CallFrameInvariant};
 use super::{
     AssertionContext, AssertionMode, CharacterDialogueFieldCoordinate,
-    CheckedCaptureAuthorityViolation, EffectSet, ExprId, ItemId, LocalId, PatternId, StmtId,
-    TypeId, TypeKind,
+    CheckedCaptureAuthorityViolation, CheckedTryOperandAuthorityViolation, EffectSet, ExprId,
+    ItemId, LocalId, PatternId, SealedFxEdgePlanError, StmtId, TypeId, TypeKind,
 };
 use crate::callable::{
     CallConstraintInvariant, CheckedCallSite, CheckedCallableId, CheckedCallableJoinError,
@@ -253,6 +253,10 @@ pub enum CandidateFactTransactionViolation {
 /// Failure to publish final semantic facts.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum FinalSemanticAnalysisError {
+    #[error(transparent)]
+    VariantOwner(#[from] super::CheckedVariantOwnerError),
+    #[error(transparent)]
+    TypeReferenceScope(#[from] crate::types::GenericScopeError),
     #[error("semantic analysis publication was cancelled")]
     Cancelled,
     #[error("semantic analysis work accounting overflowed")]
@@ -261,6 +265,8 @@ pub enum FinalSemanticAnalysisError {
     SymbolGenerationMismatch,
     #[error("semantic analysis contains duplicate {family:?} fact")]
     DuplicateFact { family: SemanticFactFamily },
+    #[error("selected dialogue-line identity seal failed: {0}")]
+    DialogueLineSeal(#[from] arcweft_lang_hir::project::DialogueLineProjectError),
     #[error("semantic analysis is missing a {family:?} fact")]
     MissingFact { family: SemanticFactFamily },
     #[error("semantic expression fact {owner:?} is outside the selected expression graph")]
@@ -269,9 +275,18 @@ pub enum FinalSemanticAnalysisError {
     InvalidOwner,
     #[error("semantic fact does not match its final-HIR payload family")]
     WrongPayloadFamily,
+    #[error("sealed Fx edge plan for expression {owner:?} is invalid: {source}")]
+    FxEdgePlan {
+        owner: ExprId,
+        source: SealedFxEdgePlanError,
+    },
     #[error("checked terminal capture authority violation: {violation}")]
     CaptureAuthority {
         violation: CheckedCaptureAuthorityViolation,
+    },
+    #[error("checked Try operand authority violation: {violation}")]
+    TryOperandAuthority {
+        violation: CheckedTryOperandAuthorityViolation,
     },
     #[error("semantic fact references a recovered HIR payload")]
     RecoveredOwner,
@@ -329,6 +344,11 @@ pub enum FinalSemanticAnalysisError {
     CatalogGenerationMismatch,
     #[error("checked callable catalog construction or validation failed")]
     CheckedCallableCatalog,
+    #[error("project Fx declaration {declaration:?} cannot be sealed: {cause}")]
+    FxDefinition {
+        declaration: arcweft_lang_hir::symbol::CallableDeclarationKey,
+        cause: super::CheckedFxDefinitionSealError,
+    },
     #[error("accepted semantic root catalog construction or validation failed: {0}")]
     AcceptedSemanticRootCatalog(#[from] AcceptedSemanticRootCatalogError),
     #[error("checked callable join enrichment failed: {0}")]
@@ -361,9 +381,14 @@ pub enum FinalSemanticAnalysisError {
     #[error("postfix-bracket expression {owner:?} has no admissible interpretation")]
     UnresolvedPostfixBracket { owner: ExprId },
     #[error("dialogue content {owner:?} has invalid typed RichText attributes")]
-    InvalidRichTextAttributes {
+    InvalidRichTextContent {
         owner: ExprId,
-        diagnostics: Box<[crate::checked_rich_text::RichTextAttributeDiagnostic]>,
+        diagnostics: Box<[crate::checked_rich_text::RichTextDiagnostic]>,
+        declaration_diagnostics: Box<[arcweft_source::Diagnostic]>,
+    },
+    #[error("text-proxy declarations contain invalid authored defaults")]
+    InvalidTextProxyDeclarations {
+        diagnostics: Box<[crate::checked_text_proxy::TextProxyDeclarationDiagnostic]>,
     },
     #[error("dialogue content {owner:?} has inconsistent final-HIR source-role evidence")]
     RichTextSourceQuery { owner: ExprId },
@@ -532,9 +557,21 @@ impl From<CandidateFactTransactionViolation> for FinalSemanticAnalysisError {
     }
 }
 
+impl From<CheckedCallableJoinError> for FinalSemanticAnalysisError {
+    fn from(error: CheckedCallableJoinError) -> Self {
+        Self::CheckedCallableJoin(Box::new(error))
+    }
+}
+
 impl From<CheckedCaptureAuthorityViolation> for FinalSemanticAnalysisError {
     fn from(violation: CheckedCaptureAuthorityViolation) -> Self {
         Self::CaptureAuthority { violation }
+    }
+}
+
+impl From<CheckedTryOperandAuthorityViolation> for FinalSemanticAnalysisError {
+    fn from(violation: CheckedTryOperandAuthorityViolation) -> Self {
+        Self::TryOperandAuthority { violation }
     }
 }
 
@@ -557,6 +594,13 @@ impl FinalSemanticAnalysisError {
             Self::CharacterDialogueCustomFieldTypeMismatch { .. } => "AW-CD-015",
             Self::CharacterDialogueFieldNotClearable { .. } => "AW-CD-016",
             Self::DialogueLineEscape { .. } => "AW-CD-017",
+            Self::InvalidTextProxyDeclarations { diagnostics } => match diagnostics.first() {
+                Some(diagnostic) => diagnostic.diagnostic_code(),
+                None => "sema.rich_text.proxy.invalid_default",
+            },
+            Self::FxEdgePlan { .. } => "sema.fx.edge_plan",
+            Self::FxDefinition { .. } => "sema.fx.invalid_definition",
+            Self::DialogueLineSeal(_) => "AW-CD-020",
             _ => "sema.final_analysis",
         }
     }
@@ -605,6 +649,18 @@ impl FinalSemanticAnalysisError {
                 escape_span,
                 self.diagnostic_code(),
             )),
+            Self::DialogueLineSeal(error) => match error {
+                arcweft_lang_hir::project::DialogueLineProjectError::Rejected(rejection) => {
+                    rejection
+                        .diagnostics()
+                        .first()
+                        .map(|diagnostic| diagnostic.to_source_diagnostic())
+                }
+                arcweft_lang_hir::project::DialogueLineProjectError::Fatal(_) => None,
+            },
+            Self::InvalidTextProxyDeclarations { diagnostics } => diagnostics
+                .first()
+                .map(crate::checked_text_proxy::TextProxyDeclarationDiagnostic::source_diagnostic),
             Self::BreakValueRequiresLoop {
                 value_source,
                 target_source,

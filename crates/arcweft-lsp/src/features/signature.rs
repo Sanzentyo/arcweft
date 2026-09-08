@@ -2,8 +2,8 @@
 
 use arcweft_lang_sema::{
     callable::{
-        CallableDocumentation, CallableParameterCoordinate, SemanticSignature,
-        SemanticSignatureHelp, SemanticSignatureSurface,
+        CallableDocumentation, CallableParameterCoordinate, CallableResultSchema,
+        SemanticSignature, SemanticSignatureHelp, SemanticSignatureSurface,
     },
     signature::SignatureQueryOutcome,
 };
@@ -96,6 +96,11 @@ fn project_signature(
                 }
                 label.push(")")?;
             }
+            if let Some(attached) = signature.attached_content() {
+                label.push("[")?;
+                push_attached_parameter(&mut label, &mut parameters, attached)?;
+                label.push("]")?;
+            }
         }
         SemanticSignatureSurface::DialogueContent => {
             let group = signature
@@ -128,8 +133,10 @@ fn project_signature(
             )?;
         }
     }
-    label.push(" -> ")?;
-    label.push(signature.result().source_label().as_str())?;
+    if let CallableResultSchema::Value(result) = signature.result() {
+        label.push(" -> ")?;
+        label.push(result.source_label().as_str())?;
+    }
 
     if active.is_some() && active_parameter.is_none() {
         return Err(SignatureProjectionError::ActiveParameterMissing);
@@ -144,6 +151,36 @@ fn project_signature(
         },
         active_parameter,
     })
+}
+
+fn push_attached_parameter(
+    label: &mut SignatureLabelBuilder,
+    parameters: &mut Vec<ParameterInformation>,
+    attached: &arcweft_lang_sema::callable::SemanticAttachedContentParameter,
+) -> Result<(), SignatureProjectionError> {
+    let (presence, default) = match attached.presence() {
+        arcweft_lang_sema::callable::CallableParameterPresence::Required => ("", ""),
+        arcweft_lang_sema::callable::CallableParameterPresence::Optional => ("?", ""),
+        arcweft_lang_sema::callable::CallableParameterPresence::Defaulted => ("", " = …"),
+    };
+    let role = match attached.role() {
+        arcweft_lang_sema::callable::CheckedContentRole::Inline => "InlineContent",
+        arcweft_lang_sema::callable::CheckedContentRole::Rich => "RichContent",
+        arcweft_lang_sema::callable::CheckedContentRole::Dialogue => "DialogueContent",
+    };
+    let parameter = format!(
+        "{}{}: {}{}",
+        attached.binding().as_str(),
+        presence,
+        role,
+        default
+    );
+    let range = label.push_parameter(&parameter)?;
+    parameters.push(ParameterInformation {
+        label: ParameterLabel::LabelOffsets(range),
+        documentation: None,
+    });
+    Ok(())
 }
 
 fn push_parameter(
@@ -252,11 +289,16 @@ mod tests {
             BuiltinCallableId, CallPoison, CallableCandidateId, CallableDocumentation,
             CallableGroupIndex, CallableGroupKind, CallableName, CallableParameterAdmission,
             CallableParameterCoordinate, CallableParameterIndex, CallableParameterPassing,
-            CallableParameterPresence, LanguageCallableFamily, PRODUCTION_CALLABLE_LIMITS,
-            SemanticParameter, SemanticParameterGroup, SemanticSignature, SignatureOrigin,
+            CallableParameterPresence, CallableResultSchema, CheckedContentRole,
+            ContentCallableIdentity, LanguageCallableFamily, PRODUCTION_CALLABLE_LIMITS,
+            SemanticAttachedContentParameter, SemanticParameter, SemanticParameterGroup,
+            SemanticSignature, SignatureOrigin,
         },
         effect_row::EffectRow,
         types::{EntityKind, TypeKind},
+    };
+    use arcweft_presentation::rich_text::{
+        PRESENTATION_CONTENT_CALLABLE_CATALOG, PresentationContentCallableDefinitionId,
     };
 
     use super::*;
@@ -293,9 +335,10 @@ mod tests {
             Arc::from("計算"),
             Arc::from("canonical.calculate"),
             vec![group],
-            TypeKind::String,
+            CallableResultSchema::Value(TypeKind::String),
             EffectRow::default(),
             CallableDocumentation::missing(),
+            None,
             None,
             CallableGroupIndex::try_from_usize(0).expect("group"),
             CallPoison::Clean,
@@ -383,9 +426,10 @@ mod tests {
             Arc::from("alice"),
             Arc::from("dialogue.content_application"),
             vec![group],
-            TypeKind::DialogueLine(Box::new(TypeKind::Unit)),
+            CallableResultSchema::Value(TypeKind::DialogueLine(Box::new(TypeKind::Unit))),
             EffectRow::default(),
             CallableDocumentation::missing(),
+            None,
             None,
             group_index,
             CallPoison::Clean,
@@ -415,6 +459,139 @@ mod tests {
             2
         );
         assert!(!projected.information.label.contains("target"));
+    }
+
+    #[test]
+    fn project_signature_appends_one_typed_attached_content_group() {
+        let group_index = CallableGroupIndex::try_from_usize(0).expect("group");
+        let coordinate = CallableParameterCoordinate::new(
+            group_index,
+            CallableParameterIndex::try_from_usize(0).expect("parameter"),
+        );
+        let parameter = SemanticParameter::try_new(
+            coordinate,
+            "value: String",
+            Some(CallableName::try_new("value").expect("name")),
+            CallableParameterAdmission::checked(TypeKind::String),
+            CallableParameterPassing::PositionalOnly,
+            CallableParameterPresence::Required,
+            None,
+            None,
+        )
+        .expect("semantic parameter");
+        let group = SemanticParameterGroup::try_new(
+            group_index,
+            CallableGroupKind::Initial,
+            vec![parameter],
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("semantic group");
+        let attached = SemanticAttachedContentParameter::new(
+            CallableName::try_new("body").expect("attached binding"),
+            CheckedContentRole::Rich,
+            CallableParameterPresence::Optional,
+        );
+        let signature = SemanticSignature::try_new(
+            CallableCandidateId::Builtin(BuiltinCallableId::Panic),
+            Vec::new(),
+            SignatureOrigin::Language {
+                family: LanguageCallableFamily::Builtin,
+            },
+            Arc::from("render"),
+            Arc::from("render"),
+            vec![group],
+            CallableResultSchema::Value(TypeKind::String),
+            EffectRow::default(),
+            CallableDocumentation::missing(),
+            None,
+            Some(attached),
+            group_index,
+            CallPoison::Clean,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("semantic signature");
+
+        let projected = project_signature(
+            &signature,
+            Some(coordinate),
+            SemanticSignatureSurface::Parenthesized,
+        )
+        .expect("LSP projection");
+        assert_eq!(
+            projected.information.label,
+            "render(value: String)[body?: RichContent] -> String"
+        );
+        assert_eq!(projected.active_parameter, Some(0));
+        assert_eq!(
+            projected.information.parameters.as_ref().map(Vec::len),
+            Some(2)
+        );
+        assert!(projected.information.label.contains("[body?: RichContent]"));
+
+        let defaulted = SemanticAttachedContentParameter::new(
+            CallableName::try_new("body").expect("attached binding"),
+            CheckedContentRole::Dialogue,
+            CallableParameterPresence::Defaulted,
+        );
+        let mut defaulted_label = SignatureLabelBuilder::new("render").expect("label");
+        let mut defaulted_parameters = Vec::new();
+        defaulted_label.push("[").expect("open attached group");
+        push_attached_parameter(&mut defaulted_label, &mut defaulted_parameters, &defaulted)
+            .expect("defaulted attached parameter");
+        defaulted_label.push("]").expect("close attached group");
+        assert_eq!(
+            defaulted_label.finish(),
+            "render[body: DialogueContent = …]"
+        );
+    }
+
+    #[test]
+    fn content_emission_signature_does_not_fabricate_a_value_result() {
+        let group = CallableGroupIndex::try_from_usize(0).expect("group");
+        let group = SemanticParameterGroup::try_new(
+            group,
+            CallableGroupKind::Initial,
+            Vec::new(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("empty strong parameter group");
+        let definition = PresentationContentCallableDefinitionId::Strong;
+        let operation = ContentCallableIdentity::language(
+            definition,
+            PRESENTATION_CONTENT_CALLABLE_CATALOG
+                .definition(definition)
+                .expect("strong definition")
+                .schema_digest(),
+        );
+        let signature = SemanticSignature::try_new(
+            CallableCandidateId::Content(operation),
+            Vec::new(),
+            SignatureOrigin::Language {
+                family: LanguageCallableFamily::Content,
+            },
+            Arc::from("strong"),
+            Arc::from("strong"),
+            vec![group],
+            CallableResultSchema::ContentEmission(operation),
+            EffectRow::default(),
+            CallableDocumentation::missing(),
+            None,
+            None,
+            CallableGroupIndex::try_from_usize(0).expect("group"),
+            CallPoison::Clean,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("content semantic signature");
+
+        let projected =
+            project_signature(&signature, None, SemanticSignatureSurface::Parenthesized)
+                .expect("content LSP projection");
+
+        assert_eq!(projected.information.label, "strong()");
+        assert!(matches!(
+            signature.result(),
+            CallableResultSchema::ContentEmission(selected) if *selected == operation
+        ));
     }
 
     #[test]

@@ -64,15 +64,17 @@ clamp(0, <pipe-left>, 100)
 ```
 
 `<pipe-left>` はソースから記述できない内部 binding である。RHS 内に `^` が
-複数あっても、closure や `if` / `match` の内側にあっても、すべて同じ値を
-読む。左辺式を `^` の個数だけ複製してはならない。入れ子のパイプでは、内側
-パイプの RHS にある `^` は内側の値を参照し、内側パイプの LHS にある `^` は
-外側の RHS scope を参照する。
+複数あればすべて同じ値を読む。左辺式を `^` の個数だけ複製してはならない。
+明示的な closure は callable boundary なので、closure の内側の `^` は外側の
+pipe-left binding を参照しない。必要な値は先に明示的な binding として保存して
+closure から参照する。入れ子のパイプでは、内側パイプの RHS にある `^` は
+内側の値を参照し、内側パイプの LHS にある `^` は外側の RHS scope を参照する。
 
 `_` と `^` は役割が違う。
 
 ```arcw
-threshold |> choices.filter(_.score >= ^)
+choices.filter(_.score >= 0)
+threshold |> clamp(0, ^, 100)
 ```
 
 - `_`: `choices` の各要素。
@@ -82,7 +84,14 @@ threshold |> choices.filter(_.score >= ^)
 
 ```arcw
 let <pipe-left> = threshold
-choices.filter(|choice| choice.score >= <pipe-left>)
+clamp(0, <pipe-left>, 100)
+```
+
+closure 内で pipe-left の値を使う場合は、明示的に保存した binding を参照する。
+
+```arcw
+let saved_threshold = threshold
+threshold |> choices.filter(|choice| choice.score >= saved_threshold)
 ```
 
 ## Explicit extension receiver

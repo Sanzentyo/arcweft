@@ -35,8 +35,7 @@ use arcweft_core::{
 };
 use arcweft_id::PublicId;
 use arcweft_presentation::fx::{
-    FiniteF32Error, FxGraphChildPath, FxId, FxInstanceId, FxLogicalTime, FxRuntimeType,
-    FxRuntimeValue,
+    FiniteF32Error, FxGraphChildPath, FxInstanceIdentity, FxLogicalTime, FxRuntimeType,
 };
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
@@ -238,17 +237,16 @@ pub struct BundleViewTextOutput {
 /// One evaluated named Fx argument.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleViewFxArgument {
-    pub parameter: String,
-    pub value: FxRuntimeValue,
+    pub parameter: arcweft_presentation::fx::FxDefinitionParameterIndex,
+    pub value: arcweft_presentation::fx::FxDefinitionArgumentValue,
 }
 
 /// One active View-side Fx application ready for shared Fx reconciliation.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct BundleViewFxApplication {
-    pub instance: FxInstanceId,
-    pub definition: FxId,
+    pub identity: FxInstanceIdentity,
+    pub parameter_layout: arcweft_presentation::fx::FxDefinitionParameterLayoutDigest,
     pub target: String,
-    pub application_ordinal: u32,
     pub arguments: Vec<BundleViewFxArgument>,
     pub child_path: FxGraphChildPath,
 }

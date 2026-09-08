@@ -746,6 +746,7 @@ dependencies = [
  "arcweft-project",
  "arcweft-render-text",
  "arcweft-resource-model",
+ "arcweft-rich-text-schema",
  "arcweft-runtime-driver",
  "arcweft-runtime-plan",
  "arcweft-source",
@@ -1391,6 +1392,10 @@ dependencies = [
 [[package]]
 name = "arcweft-rich-text-schema"
 version = "0.1.0"
+dependencies = [
+ "arcweft-id",
+ "blake3",
+]
 
 [[package]]
 name = "arcweft-runtime-accelerator"
@@ -1498,6 +1503,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-lang-hir",
+ "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-source",
  "arcweft-text-model",
@@ -1619,6 +1625,7 @@ dependencies = [
  "arcweft-resource-model",
  "arcweft-source",
  "arcweft-view",
+ "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -1660,7 +1667,6 @@ dependencies = [
  "arcweft-runtime-host",
  "arcweft-rust-abi",
  "arcweft-source",
- "arcweft-tooling",
  "arcweft-verify",
  "lsp-types",
  "serde_json",

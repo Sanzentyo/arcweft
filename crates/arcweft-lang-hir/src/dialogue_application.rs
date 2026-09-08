@@ -7,9 +7,10 @@
 use std::collections::BTreeSet;
 
 use crate::expr::{
-    HirCallArgument, HirCallArgumentOrdinal, HirCallArgumentOrdinalError, HirExprKind,
+    HirCallArgument, HirCallArgumentOrdinal, HirCallArgumentOrdinalError, HirCallInvocation,
+    HirCallTypeArgument, HirExprKind, HirExpressionTypeRoot,
 };
-use crate::identity::{ExprId, HirModuleId, ItemId, ScopeId, StmtId, SyntheticRole};
+use crate::identity::{ExprId, HirModuleId, ScopeId, StmtId, SyntheticRole, TypeId};
 use crate::leaf::HirName;
 use crate::module::HirModule;
 
@@ -19,44 +20,221 @@ mod rich_text;
 pub use self::content::{
     HirDialogueContent, HirDialogueContentError, HirDialogueContentId, HirDialogueIssue,
     HirDialogueMark, HirDialogueMarkId, HirDialogueMarkName, HirDialogueMarkOrdinal,
-    HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLineBreakKind, HirRuby,
-    HirTextFragment,
+    HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirDialoguePointAction,
+    HirDialoguePointActionArgument, HirDialoguePointActionArgumentId,
+    HirDialoguePointActionIdentity, HirDialoguePointActionPayload, HirLineBreakKind,
+    HirRawLiteralBody, HirTextFragment,
 };
 pub use self::rich_text::{
-    HirBuiltinRichTextFx, HirBuiltinRichTextTag, HirRichTextArgument, HirRichTextArgumentId,
-    HirRichTextArgumentIssue, HirRichTextConditionalTag, HirRichTextDirectStyle, HirRichTextEndTag,
-    HirRichTextHostEvent, HirRichTextIssue, HirRichTextLayoutSelector, HirRichTextObjectSelector,
-    HirRichTextStyleSelector, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
-    HirRichTextTagPayload, HirRichTextTransformSelector, HirRichTextValue,
-    HirUnresolvedRichTextTag,
+    HirDialogueControl, HirRichTextArgumentIssue, HirRichTextHostEvent, HirRichTextIssue,
+    HirRichTextValue,
 };
 
-/// A dialogue-content application in the shared expression arena.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirDialogueContentApplication {
-    target: ExprId,
-    content: HirDialogueContent,
-    plan: Option<HirLinePlan>,
-    coordinates: Box<[HirDialogueCoordinate]>,
+/// Exact semantic operand that identifies an Object call's nominal type.
+///
+/// The source expression remains an HIR child for evaluation and diagnostics;
+/// the separate type root is semantic-only and must never enter runtime
+/// ownership. Keeping both IDs here prevents consumers from rediscovering the
+/// discriminator by argument name or source spelling.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirContentCallNominalDiscriminator {
+    argument: HirCallArgumentOrdinal,
+    source: ExprId,
+    semantic_only: TypeId,
 }
 
-impl HirDialogueContentApplication {
-    pub(crate) fn try_new(
-        owner: ExprId,
+/// Recovery-aware required Object discriminator. Recognized Object calls
+/// never fall back to a generic callable merely because their `type` operand
+/// is malformed.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirRequiredContentCallNominalDiscriminator {
+    Present(HirContentCallNominalDiscriminator),
+    Invalid,
+}
+
+impl HirRequiredContentCallNominalDiscriminator {
+    pub const fn present(self) -> Option<HirContentCallNominalDiscriminator> {
+        match self {
+            Self::Present(value) => Some(value),
+            Self::Invalid => None,
+        }
+    }
+}
+
+/// Semantic evidence retained by HIR for an attached content call.
+///
+/// Content callable identity belongs to the presentation catalog and the
+/// semantic resolver. HIR retains only the one source-shape fact that cannot
+/// be recovered from a generic call without reinterpreting its arguments:
+/// the exact nominal discriminator of the canonical `object` root.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirContentCallSemanticEvidence {
+    None,
+    TextProxyObject {
+        nominal_discriminator: HirRequiredContentCallNominalDiscriminator,
+    },
+}
+
+impl HirContentCallSemanticEvidence {
+    pub const fn nominal_discriminator(self) -> Option<HirContentCallNominalDiscriminator> {
+        match self {
+            Self::None => None,
+            Self::TextProxyObject {
+                nominal_discriminator,
+            } => nominal_discriminator.present(),
+        }
+    }
+
+    pub const fn has_invalid_required_payload(self) -> bool {
+        matches!(
+            self,
+            Self::TextProxyObject {
+                nominal_discriminator: HirRequiredContentCallNominalDiscriminator::Invalid
+            }
+        )
+    }
+}
+
+impl HirContentCallNominalDiscriminator {
+    pub(crate) const fn new(
+        argument: HirCallArgumentOrdinal,
+        source: ExprId,
+        semantic_only: TypeId,
+    ) -> Self {
+        Self {
+            argument,
+            source,
+            semantic_only,
+        }
+    }
+
+    /// Authored argument ordinal carrying the nominal discriminator.
+    pub const fn argument(self) -> HirCallArgumentOrdinal {
+        self.argument
+    }
+
+    /// Expression ID of the authored nominal type operand.
+    pub const fn source(self) -> ExprId {
+        self.source
+    }
+
+    /// Semantic-only HIR type root for the nominal discriminator.
+    pub const fn semantic_only(self) -> TypeId {
+        self.semantic_only
+    }
+
+    /// Alias emphasizing that the field is a type-arena root.
+    pub const fn type_root(self) -> TypeId {
+        self.semantic_only
+    }
+}
+
+/// The semantic family of one attached content application.
+///
+/// Dialogue-line metadata is deliberately nested in its family variant. A
+/// content call therefore has no representational slot for a line plan or
+/// dialogue coordinates, rather than carrying an invalid empty/optional
+/// projection of either one.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirAttachedContentApplicationFamily {
+    DialogueLine {
         target: ExprId,
-        content: HirDialogueContent,
         plan: Option<HirLinePlan>,
         coordinates: Box<[HirDialogueCoordinate]>,
+    },
+    ContentCall {
+        invocation: HirCallInvocation,
+        evidence: HirContentCallSemanticEvidence,
+    },
+}
+
+/// Whether the attached body delimiter was present in source. Empty present
+/// content and an omitted body both own an empty HIR content value, so this
+/// typed bit is retained alongside the application instead of being inferred
+/// from that value later.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirAttachedContentBodyPresence {
+    Absent,
+    Present,
+}
+
+impl HirAttachedContentApplicationFamily {
+    pub const fn is_dialogue_line(&self) -> bool {
+        matches!(self, Self::DialogueLine { .. })
+    }
+
+    pub const fn is_content_call(&self) -> bool {
+        matches!(self, Self::ContentCall { .. })
+    }
+
+    pub const fn invocation(&self) -> Option<&HirCallInvocation> {
+        match self {
+            Self::DialogueLine { .. } => None,
+            Self::ContentCall { invocation, .. } => Some(invocation),
+        }
+    }
+
+    pub const fn content_call_evidence(&self) -> Option<HirContentCallSemanticEvidence> {
+        match self {
+            Self::DialogueLine { .. } => None,
+            Self::ContentCall { evidence, .. } => Some(*evidence),
+        }
+    }
+}
+
+/// One attached content application in the shared expression arena.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirAttachedContentApplication {
+    content: HirDialogueContent,
+    family: HirAttachedContentApplicationFamily,
+    body_presence: HirAttachedContentBodyPresence,
+}
+
+impl HirAttachedContentApplication {
+    pub(crate) fn try_new_with_body_presence(
+        owner: ExprId,
+        content: HirDialogueContent,
+        family: HirAttachedContentApplicationFamily,
+        body_presence: HirAttachedContentBodyPresence,
     ) -> Result<Self, HirDialogueInvariantError> {
         if content.id().owner() != owner {
             return Err(HirDialogueInvariantError::InvalidContentOwner);
         }
-        validate_coordinate_order(&coordinates)?;
+        match &family {
+            HirAttachedContentApplicationFamily::DialogueLine { coordinates, .. } => {
+                validate_coordinate_order(coordinates)?;
+            }
+            HirAttachedContentApplicationFamily::ContentCall {
+                invocation,
+                evidence,
+            } if invocation.callee().value_expression().is_none() => {
+                return Err(HirDialogueInvariantError::InvalidContentCallInvocation);
+            }
+            HirAttachedContentApplicationFamily::ContentCall { .. } => {}
+        }
+        if let HirAttachedContentApplicationFamily::ContentCall {
+            invocation,
+            evidence,
+        } = &family
+            && let Some(nominal_discriminator) = evidence.nominal_discriminator()
+        {
+            let argument = invocation
+                .arguments()
+                .get(usize::from(nominal_discriminator.argument().get()))
+                .ok_or(HirDialogueInvariantError::InvalidContentCallSemanticEvidence)?;
+            if argument.value() != nominal_discriminator.source() {
+                return Err(HirDialogueInvariantError::InvalidContentCallSemanticEvidence);
+            }
+            if nominal_discriminator.source().module() != owner.module()
+                || nominal_discriminator.semantic_only().module() != owner.module()
+            {
+                return Err(HirDialogueInvariantError::InvalidContentCallSemanticEvidence);
+            }
+        }
         let application = Self {
-            target,
             content,
-            plan,
-            coordinates,
+            family,
+            body_presence,
         };
         application
             .validate_module(owner.module())
@@ -67,63 +245,170 @@ impl HirDialogueContentApplication {
         Ok(application)
     }
 
-    /// Returns the expression being configured or applied.
-    pub const fn target(&self) -> ExprId {
-        self.target
-    }
-
     /// Returns the complete ordered dialogue content.
     pub const fn content(&self) -> &HirDialogueContent {
         &self.content
     }
 
-    /// Returns the optional line plan.
-    pub const fn plan(&self) -> Option<&HirLinePlan> {
-        self.plan.as_ref()
+    /// Returns the explicit attached-content semantic family.
+    pub const fn family(&self) -> &HirAttachedContentApplicationFamily {
+        &self.family
     }
 
-    /// Returns immediate outer-call coordinates in authored argument order.
-    pub const fn coordinates(&self) -> &[HirDialogueCoordinate] {
-        &self.coordinates
+    pub const fn body_presence(&self) -> HirAttachedContentBodyPresence {
+        self.body_presence
+    }
+
+    /// Returns whether this application produces a dialogue line.
+    pub const fn is_dialogue_line(&self) -> bool {
+        self.family.is_dialogue_line()
+    }
+
+    /// Returns whether this application is an attached content call.
+    pub const fn is_content_call(&self) -> bool {
+        self.family.is_content_call()
+    }
+
+    /// Returns all runtime-bearing typed roots authored by this application.
+    /// Point-action arguments are value-only; content-call type arguments
+    /// remain owned by the invocation itself.
+    pub(crate) fn direct_type_roots(&self) -> Vec<HirExpressionTypeRoot> {
+        let mut roots = Vec::new();
+        if let HirAttachedContentApplicationFamily::ContentCall {
+            invocation,
+            evidence,
+        } = &self.family
+        {
+            roots.extend(
+                invocation
+                    .callee()
+                    .associated_parts()
+                    .and_then(|(receiver, _, _)| receiver.type_id())
+                    .into_iter()
+                    .chain(
+                        invocation
+                            .explicit_type_application()
+                            .arguments()
+                            .iter()
+                            .filter_map(HirCallTypeArgument::type_id),
+                    )
+                    .map(HirExpressionTypeRoot::runtime),
+            );
+            if let Some(discriminator) = evidence.nominal_discriminator() {
+                roots.push(HirExpressionTypeRoot::semantic_only(
+                    discriminator.semantic_only(),
+                ));
+            }
+        }
+        roots
     }
 
     pub(crate) fn validate_module(&self, expected: HirModuleId) -> Result<(), HirModuleId> {
-        validate_module(expected, self.target.module())?;
+        match &self.family {
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan,
+                coordinates,
+            } => {
+                validate_module(expected, target.module())?;
+                if let Some(plan) = plan {
+                    plan.validate_module(expected)?;
+                }
+                for coordinate in coordinates {
+                    validate_module(expected, coordinate.value.module())?;
+                }
+            }
+            HirAttachedContentApplicationFamily::ContentCall {
+                invocation,
+                evidence,
+            } => {
+                invocation.validate_module(expected).map_err(|_| expected)?;
+                if let Some(nominal_discriminator) = evidence.nominal_discriminator() {
+                    validate_module(expected, nominal_discriminator.source().module())?;
+                    validate_module(expected, nominal_discriminator.semantic_only().module())?;
+                }
+            }
+        }
         self.content.validate_module(expected)?;
-        if let Some(plan) = &self.plan {
-            plan.validate_module(expected)?;
-        }
-        for coordinate in &self.coordinates {
-            validate_module(expected, coordinate.value.module())?;
-        }
         Ok(())
     }
 
     pub(crate) fn has_recovery(&self) -> bool {
-        self.content.has_recovery() || self.plan.as_ref().is_some_and(HirLinePlan::has_recovery)
+        (matches!(
+            self.family,
+            HirAttachedContentApplicationFamily::DialogueLine { .. }
+        ) && matches!(self.body_presence, HirAttachedContentBodyPresence::Absent))
+            || self.content.has_recovery()
+            || match &self.family {
+                HirAttachedContentApplicationFamily::DialogueLine { plan, .. } => {
+                    plan.as_ref().is_some_and(HirLinePlan::has_recovery)
+                }
+                HirAttachedContentApplicationFamily::ContentCall { invocation, .. } => {
+                    invocation.contains_recovery_payload()
+                        || self.family.content_call_evidence().is_some_and(
+                            HirContentCallSemanticEvidence::has_invalid_required_payload,
+                        )
+                }
+            }
     }
 
     pub(crate) fn validate_transaction<C: HirDialogueTransactionContext>(
         &self,
         context: &mut C,
     ) -> Result<(), HirDialogueTransactionError<C::Error>> {
-        context
-            .require(HirDialogueTransactionRequirement::Expression {
-                id: self.target,
-                expected: HirDialogueExpressionExpectation::Unrestricted,
-            })
-            .map_err(HirDialogueTransactionError::Context)?;
-        for coordinate in &self.coordinates {
-            context
-                .require(HirDialogueTransactionRequirement::Expression {
-                    id: coordinate.value,
-                    expected: HirDialogueExpressionExpectation::Unrestricted,
-                })
-                .map_err(HirDialogueTransactionError::Context)?;
-        }
         self.content.validate_transaction(context)?;
-        if let Some(plan) = &self.plan {
-            plan.validate_transaction(context)?;
+        match &self.family {
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan,
+                coordinates,
+            } => {
+                context
+                    .require(HirDialogueTransactionRequirement::Expression {
+                        id: *target,
+                        expected: HirDialogueExpressionExpectation::Unrestricted,
+                    })
+                    .map_err(HirDialogueTransactionError::Context)?;
+                for coordinate in coordinates {
+                    context
+                        .require(HirDialogueTransactionRequirement::Expression {
+                            id: coordinate.value,
+                            expected: HirDialogueExpressionExpectation::Unrestricted,
+                        })
+                        .map_err(HirDialogueTransactionError::Context)?;
+                }
+                if let Some(plan) = plan {
+                    plan.validate_transaction(context)?;
+                }
+            }
+            HirAttachedContentApplicationFamily::ContentCall {
+                invocation,
+                evidence,
+            } => {
+                if let Some(target) = invocation.callee().value_expression() {
+                    context
+                        .require(HirDialogueTransactionRequirement::Expression {
+                            id: target,
+                            expected: HirDialogueExpressionExpectation::Unrestricted,
+                        })
+                        .map_err(HirDialogueTransactionError::Context)?;
+                }
+                if let Some(nominal_discriminator) = evidence.nominal_discriminator() {
+                    context
+                        .require(HirDialogueTransactionRequirement::Type(
+                            nominal_discriminator.semantic_only(),
+                        ))
+                        .map_err(HirDialogueTransactionError::Context)?;
+                }
+                for argument in invocation.arguments() {
+                    context
+                        .require(HirDialogueTransactionRequirement::Expression {
+                            id: argument.value(),
+                            expected: HirDialogueExpressionExpectation::Unrestricted,
+                        })
+                        .map_err(HirDialogueTransactionError::Context)?;
+                }
+            }
         }
         Ok(())
     }
@@ -138,19 +423,6 @@ pub struct HirDialogueCoordinate {
 }
 
 impl HirDialogueCoordinate {
-    #[cfg(test)]
-    pub(crate) const fn new(
-        kind: HirDialogueCoordinateKind,
-        argument: HirCallArgumentOrdinal,
-        value: ExprId,
-    ) -> Self {
-        Self {
-            kind,
-            argument,
-            value,
-        }
-    }
-
     pub(crate) fn from_immediate_arguments(
         arguments: &[HirCallArgument],
     ) -> Result<Box<[Self]>, HirCallArgumentOrdinalError> {
@@ -196,6 +468,40 @@ impl HirDialogueCoordinate {
 pub enum HirDialogueCoordinateKind {
     Id,
     TextKey,
+}
+
+/// Typed pre-sema evidence for one immediate dialogue coordinate. The HIR
+/// query reports the existing value shape only; semantic identity and project
+/// acceptance remain owned by later seals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum HirDialogueCoordinateValueRef {
+    IdRef(crate::leaf::HirIdRef),
+    Runtime(ExprId),
+    Error(ExprId),
+}
+
+impl HirModule {
+    /// Classifies one immediate coordinate without reparsing source text or
+    /// fabricating a line identity from a runtime expression.
+    pub fn dialogue_coordinate_value(
+        &self,
+        coordinate: &HirDialogueCoordinate,
+    ) -> Result<HirDialogueCoordinateValueRef, crate::identity::IdResolveError> {
+        let expression = self.resolve_expr(coordinate.value())?;
+        match expression.kind() {
+            HirExprKind::EntityReference(crate::leaf::HirIdRefValue::Resolved(reference))
+                if !expression.is_poisoned() =>
+            {
+                Ok(HirDialogueCoordinateValueRef::IdRef(reference.clone()))
+            }
+            HirExprKind::EntityReference(crate::leaf::HirIdRefValue::Recovered(_))
+            | HirExprKind::Error(_) => Ok(HirDialogueCoordinateValueRef::Error(coordinate.value())),
+            _ if expression.is_poisoned() => {
+                Ok(HirDialogueCoordinateValueRef::Error(coordinate.value()))
+            }
+            _ => Ok(HirDialogueCoordinateValueRef::Runtime(coordinate.value())),
+        }
+    }
 }
 
 /// HIR-owner-issued projection of the immediate Dialogue metadata arguments
@@ -251,11 +557,19 @@ impl HirModule {
         let expression = self
             .resolve_expr(owner)
             .map_err(|_| HirDialogueApplicationMetadataProjectionError::UnknownApplication)?;
-        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
             return Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication);
         };
+        if !application.is_dialogue_line() {
+            return Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication);
+        }
+        let HirAttachedContentApplicationFamily::DialogueLine { target, .. } = application.family()
+        else {
+            return Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication);
+        };
+        let target_id = *target;
         let target = self
-            .resolve_expr(application.target())
+            .resolve_expr(target_id)
             .map_err(|_| HirDialogueApplicationMetadataProjectionError::UnknownTarget)?;
         let HirExprKind::Call(call) = target.kind() else {
             return Err(HirDialogueApplicationMetadataProjectionError::TargetNotCall);
@@ -263,22 +577,27 @@ impl HirModule {
         let coordinates = validate_application_metadata_projection(application, call)?;
         Ok(HirDialogueApplicationMetadataProjection {
             application: owner,
-            target_call: application.target(),
+            target_call: target_id,
             coordinates,
         })
     }
 }
 
 fn validate_application_metadata_projection(
-    application: &HirDialogueContentApplication,
-    call: &crate::expr::HirCallExpr,
+    application: &HirAttachedContentApplication,
+    call: &crate::expr::HirCallInvocation,
 ) -> Result<Box<[HirDialogueCoordinate]>, HirDialogueApplicationMetadataProjectionError> {
+    let HirAttachedContentApplicationFamily::DialogueLine { coordinates, .. } =
+        application.family()
+    else {
+        return Err(HirDialogueApplicationMetadataProjectionError::NotDialogueApplication);
+    };
     let canonical = HirDialogueCoordinate::from_immediate_arguments(call.arguments())
         .map_err(|_| HirDialogueApplicationMetadataProjectionError::ArgumentOrdinalOverflow)?;
     let mut arguments = BTreeSet::new();
     let mut sources = BTreeSet::new();
     let mut kinds = BTreeSet::new();
-    for coordinate in application.coordinates() {
+    for coordinate in coordinates {
         if !arguments.insert(coordinate.argument())
             || !sources.insert(coordinate.value())
             || !kinds.insert(coordinate.kind())
@@ -300,7 +619,7 @@ fn validate_application_metadata_projection(
             return Err(HirDialogueApplicationMetadataProjectionError::CoordinateKindMismatch);
         }
     }
-    if canonical.as_ref() != application.coordinates() {
+    if canonical.as_ref() != coordinates.as_ref() {
         return Err(HirDialogueApplicationMetadataProjectionError::CoordinateInventoryMismatch);
     }
     Ok(canonical)
@@ -540,7 +859,6 @@ pub enum HirPostfixCandidateFailureKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirDialogueOrdinalError {
     Node { ordinal: usize },
-    Tag { ordinal: usize },
     Argument { ordinal: usize },
     Mark { ordinal: usize },
 }
@@ -548,6 +866,10 @@ pub(crate) enum HirDialogueOrdinalError {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirDialogueExpressionExpectation {
     Unrestricted,
+    /// An expression produced by a `#` content application. This remains a
+    /// dedicated transaction role even though content-root admission belongs
+    /// to the later semantic layer.
+    ContentApplication,
     Call,
     PostfixIndexCandidate {
         owner: ExprId,
@@ -563,9 +885,8 @@ pub(crate) enum HirDialogueExpressionExpectation {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirRichTextCharge {
-    ContentTags { observed: usize },
+    PointActions { observed: usize },
     ContentArguments { observed: usize },
-    TagArguments { observed: usize },
     ArgumentKeyBytes { observed: usize },
     ArgumentValueDecodedBytes { observed: usize },
 }
@@ -578,7 +899,7 @@ pub(crate) enum HirDialogueTransactionRequirement {
     },
     Statement(StmtId),
     Scope(ScopeId),
-    Item(ItemId),
+    Type(TypeId),
     RichTextCharge(HirRichTextCharge),
 }
 
@@ -605,15 +926,13 @@ pub(crate) enum HirDialogueInvariantError {
         actual: HirModuleId,
     },
     InvalidArgumentReference,
+    InvalidContentCallInvocation,
+    InvalidContentCallSemanticEvidence,
     InvalidContentOwner,
-    InvalidEndTagInference,
     InvalidPostfixCandidate,
     InvalidMarkReference,
-    InvalidTagReference,
-    NonContiguousArgumentOrdinal,
     NonContiguousMarkOrdinal,
     NonContiguousNodeOrdinal,
-    NonContiguousTagOrdinal,
     DuplicateMarkName,
     MarkCatalogLimitExceeded {
         observed: usize,

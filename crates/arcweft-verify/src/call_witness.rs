@@ -38,7 +38,9 @@ impl ProofCallWitnessProjection {
         let (candidate_witnesses, omitted_count) =
             retain_candidate_witnesses(primary, &conflicts, &considered);
         let result = match outcome {
-            CallAnalysisOutcome::Selected(application) => Some(application.result().ty().clone()),
+            CallAnalysisOutcome::Selected(application) => {
+                application.result().value_type().cloned()
+            }
             CallAnalysisOutcome::Ambiguous(_)
             | CallAnalysisOutcome::Rejected(_)
             | CallAnalysisOutcome::NonCallable(_)

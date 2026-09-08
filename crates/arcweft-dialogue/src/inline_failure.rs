@@ -15,6 +15,21 @@ pub enum InlineFailurePolicy {
     },
 }
 
+/// Selects the failure policy for one inline or Content insertion.
+///
+/// `InheritCharacterDialogue` defers policy selection until the effective
+/// `CharacterDialogue` value is known. `Explicit` retains an authored policy
+/// without allowing a renderer or materializer to infer one from a raw value.
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InlineFailureSelection {
+    #[default]
+    InheritCharacterDialogue,
+    Explicit {
+        policy: InlineFailurePolicy,
+    },
+}
+
 /// Fallback rendering strategy for a failed runtime interpolation expression.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -53,6 +68,13 @@ enum StrictInlineFailurePolicy {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
+enum StrictInlineFailureSelection {
+    InheritCharacterDialogue {},
+    Explicit { policy: InlineFailurePolicy },
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, tag = "kind", rename_all = "snake_case")]
 enum StrictInlineFallback {
     Text {
         text: String,
@@ -87,6 +109,22 @@ impl<'de> Deserialize<'de> for InlineFailurePolicy {
                 StrictInlineFailurePolicy::FailLine {} => Self::FailLine,
                 StrictInlineFailurePolicy::Discard {} => Self::Discard,
                 StrictInlineFailurePolicy::Fallback { fallback } => Self::Fallback { fallback },
+            },
+        )
+    }
+}
+
+impl<'de> Deserialize<'de> for InlineFailureSelection {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(
+            match StrictInlineFailureSelection::deserialize(deserializer)? {
+                StrictInlineFailureSelection::InheritCharacterDialogue {} => {
+                    Self::InheritCharacterDialogue
+                }
+                StrictInlineFailureSelection::Explicit { policy } => Self::Explicit { policy },
             },
         )
     }
@@ -162,9 +200,29 @@ impl InlineFailurePolicy {
     }
 }
 
+impl InlineFailureSelection {
+    #[must_use]
+    pub const fn inherit_character_dialogue() -> Self {
+        Self::InheritCharacterDialogue
+    }
+
+    #[must_use]
+    pub const fn explicit(policy: InlineFailurePolicy) -> Self {
+        Self::Explicit { policy }
+    }
+
+    #[must_use]
+    pub fn resolve(&self, inherited: &InlineFailurePolicy) -> InlineFailurePolicy {
+        match self {
+            Self::InheritCharacterDialogue => inherited.clone(),
+            Self::Explicit { policy } => policy.clone(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::InlineFailurePolicy;
+    use super::{InlineFailurePolicy, InlineFailureSelection};
 
     #[test]
     fn tagged_unit_variants_reject_unknown_fields_at_every_level() {
@@ -179,5 +237,25 @@ mod tests {
                 "policy must reject {malformed}"
             );
         }
+    }
+
+    #[test]
+    fn failure_selection_is_closed_and_resolves_at_display_time() {
+        let inherited = InlineFailurePolicy::Discard;
+        let selection = InlineFailureSelection::InheritCharacterDialogue;
+        assert_eq!(selection.resolve(&inherited), inherited);
+        let explicit = InlineFailureSelection::Explicit {
+            policy: InlineFailurePolicy::FailLine,
+        };
+        assert_eq!(
+            explicit.resolve(&InlineFailurePolicy::Discard),
+            InlineFailurePolicy::FailLine
+        );
+        assert!(
+            serde_json::from_str::<InlineFailureSelection>(
+                r#"{"kind":"inherit_character_dialogue","extra":true}"#
+            )
+            .is_err()
+        );
     }
 }

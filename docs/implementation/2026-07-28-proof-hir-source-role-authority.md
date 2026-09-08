@@ -50,17 +50,18 @@ their payloads are re-derived from attached items at freeze.
 - A Dialogue configuration argument keeps its authored sparse call-argument
   ordinal. Applicability is checked against the target call's argument slice,
   never `coordinates.len()`.
-- Every RichText end tag owns its Dialogue-node whole component. An end-tag
-  tag component exists only for an exact paired start-tag ordinal; names and
-  source strings are not used to manufacture pairing.
+- Every structural dialogue-content node owns its whole component. Typed
+  content applications retain their call/body child roles, while zero-width
+  point actions own one node and require no paired-source coordinate.
 - `PostfixBracket` is bracket-only. Colon syntax lowers directly to
   `DialogueContentApplication` and cannot pass through an intermediate postfix
   carrier.
 
 The manifest is required because semantic payloads intentionally discard some
 authored spelling, including literal components, ID suffix ordinals, invalid
-field shorthand/rest spelling, Dialogue bracket-versus-colon form, RichText
-argument/end-tag coordinates, type delimiters, and trailing separators. Those
+field shorthand/rest spelling, Dialogue bracket-versus-colon form, typed
+content-call argument/body coordinates, point-action arguments, type
+delimiters, and trailing separators. Those
 coordinates stay in the typed attached-source projection rather than being
 copied into semantic payloads or reconstructed later.
 

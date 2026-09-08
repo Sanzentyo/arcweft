@@ -19,11 +19,11 @@ use arcweft_core::plan::{
     EntryRuntimeId, FlowEvent, FlowRuntimeId, RuntimeAwaitPendingObserverSeed,
     RuntimeAwaitTargetSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFunctionSiteSeedId, RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed,
-    RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
-    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId,
-    RuntimePureHelperOrigin, RuntimePureHelperSeed, RuntimePureOutputType,
-    RuntimePureProgramBindingSeed,
+    RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteSeedId,
+    RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed, RuntimePatternSeed,
+    RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperId, RuntimePureHelperOrigin,
+    RuntimePureHelperSeed, RuntimePureOutputType, RuntimePureProgramBindingSeed,
 };
 use arcweft_core::pure::{
     PureFunctionBackend, PureFunctionRequest, RuntimePureCallBackend, VmPureFunctionBackend,
@@ -96,7 +96,10 @@ fn standard_map_seed(
             order,
             mapping: Box::new(RuntimeExprSeed::new(
                 function_ty,
-                RuntimeExprSeedKind::Function(site),
+                RuntimeExprSeedKind::Function {
+                    site,
+                    captures: Box::new([]),
+                },
             )),
             source: Box::new(RuntimeExprSeed::new(
                 source_ty,
@@ -196,16 +199,29 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
                 ),
                 RuntimePlanTypeSeed::new(unit_ty, RuntimePlanTypeProjection::Unit),
             ],
-            [RuntimeLocalDeclarationSeed::new(item_ty)],
+            [
+                RuntimeLocalDeclarationSeed::new(item_ty),
+                RuntimeLocalDeclarationSeed::new(item_ty),
+            ],
             [],
             [],
         )
         .expect("standard map AWBC type graph");
-    let callback_local = admission.local_ids()[0].clone();
+    let callback_input_local = admission.local_ids()[0].clone();
+    let callback_local = admission.local_ids()[1].clone();
     let callback_site = builder
         .push_function_site_seed(
-            [callback_local.clone()],
-            [],
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local: callback_input_local,
+                pattern: RuntimePatternSeed::new(
+                    item_ty,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: callback_local.clone(),
+                    },
+                ),
+            }],
             RuntimeExprSeed::new(
                 item_ty,
                 RuntimeExprSeedKind::Binary {

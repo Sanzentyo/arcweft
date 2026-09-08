@@ -26,46 +26,52 @@ mod runtime_semantic_owners;
 mod selected_expressions;
 #[path = "final_project/semantic_paths.rs"]
 mod semantic_paths;
+#[path = "final_project/type_roots.rs"]
+mod type_roots;
 
 pub use self::dialogue_lines::{
     AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
-    DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
+    DialogueLineIndex, DialogueLineProjectError, DialogueLineProjectFatal,
+    DialogueLineProjectRejection,
 };
 pub use self::runtime_semantic_owners::{
-    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
-    HirRuntimeReachabilityDigest, HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind,
-    HirRuntimeReachabilityError, HirRuntimeReachabilityIdentity, HirRuntimeReachabilityLimitFamily,
-    HirRuntimeReachabilityPath, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
-    HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
+    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExecutableSemanticOwners,
+    HirRuntimeIteratorWitnessMethodRole, HirRuntimeReachabilityDigest, HirRuntimeReachabilityEdge,
+    HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError, HirRuntimeReachabilityIdentity,
+    HirRuntimeReachabilityLimitFamily, HirRuntimeReachabilityPath, HirRuntimeReachabilityRoot,
+    HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite, HirRuntimeSemanticReachability,
     HirRuntimeSemanticReachabilityInput,
 };
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionProjection, HirRuntimeValueRetention,
-    HirSelectedCallExpressionDisposition, HirSelectedCallExpressionInventory,
-    HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
+    HirSelectedCallArgument, HirSelectedCallExpressionDisposition,
+    HirSelectedCallExpressionInventory, HirSelectedExpressionGraph,
+    HirSelectedExpressionInventoryError,
 };
 pub use self::semantic_paths::{
     HirAcceptedItemFamily, HirBindingSite, HirCaptureEvaluationIndex, HirCaptureEvaluationRow,
     HirChoiceLifecycleContext, HirChoiceLifecycleContextError, HirControlTransferKind,
     HirControlTransferLocation, HirControlTransferLookupError, HirControlTransferResolutionError,
-    HirControlTransferRow, HirControlTransferTarget, HirDeclarationBodyRoot,
-    HirDeclarationBodyRootRole, HirDeclarationBodyTopology, HirDeclarationContractRoot,
-    HirDeclarationContractRootRole, HirDeclarationEvaluationPhase, HirDeclarationEvaluationView,
-    HirDeclarationItemRootRole, HirDeclarationParameterRoot, HirDeclarationParameterRootChild,
-    HirDeclarationParameterRootRole, HirExpressionBindingRole, HirExpressionCallableBoundary,
-    HirExpressionEvaluationEdge, HirExpressionSemanticHop, HirExpressionUseIndex,
-    HirExpressionUseRow, HirFlowContractRootFamily, HirImplicitCallableRegion,
-    HirItemAttributeOwner, HirItemEvaluationEntry, HirItemEvaluationEntryRole,
-    HirItemEvaluationRoot, HirItemRecoveryRootOwner, HirLayerExpressionRootField,
-    HirLocalBindingOrigin, HirLocalBindingOriginIndex, HirLocalBindingStatementRole,
-    HirLocalValueOrigin, HirLoopTargetFamily, HirMemberBindingRole, HirModuleEvaluationTopology,
-    HirProjectEvaluationTopology, HirSemanticBodyLocation, HirSemanticBodyLocator,
-    HirSemanticBodyLookupError, HirSemanticBodyOwner, HirSemanticBodyOwnerError,
-    HirSemanticBodyOwnerRole, HirSemanticBodyRow, HirSemanticOwnerPath, HirSemanticPathError,
-    HirSemanticPathIndex, HirSemanticPathLocation, HirSemanticPathLookupError,
-    HirSemanticPathOwnerId, HirSemanticPathRoot, HirSemanticPathStep, HirStyleRootPath,
-    HirStyleRootPathSegment,
+    HirControlTransferRow, HirControlTransferTarget, HirDeclarationAttachedContentRoot,
+    HirDeclarationAttachedContentRootChild, HirDeclarationAttachedContentRootRole,
+    HirDeclarationBodyRoot, HirDeclarationBodyRootRole, HirDeclarationBodyTopology,
+    HirDeclarationContractRoot, HirDeclarationContractRootRole, HirDeclarationEvaluationPhase,
+    HirDeclarationEvaluationView, HirDeclarationItemRootRole, HirDeclarationParameterRoot,
+    HirDeclarationParameterRootChild, HirDeclarationParameterRootRole, HirExpressionBindingRole,
+    HirExpressionCallableBoundary, HirExpressionEvaluationEdge, HirExpressionSemanticHop,
+    HirExpressionUseIndex, HirExpressionUseParent, HirExpressionUseRow, HirFlowContractRootFamily,
+    HirImplicitCallableRegion, HirItemAttributeOwner, HirItemEvaluationEntry,
+    HirItemEvaluationEntryRole, HirItemEvaluationRoot, HirItemRecoveryRootOwner,
+    HirLayerExpressionRootField, HirLocalBindingOrigin, HirLocalBindingOriginIndex,
+    HirLocalBindingStatementRole, HirLocalValueOrigin, HirLoopTargetFamily, HirMemberBindingRole,
+    HirModuleEvaluationTopology, HirPipeLeftRegion, HirProjectEvaluationTopology,
+    HirSemanticBodyLocation, HirSemanticBodyLocator, HirSemanticBodyLookupError,
+    HirSemanticBodyOwner, HirSemanticBodyOwnerError, HirSemanticBodyOwnerRole, HirSemanticBodyRow,
+    HirSemanticOwnerPath, HirSemanticPathError, HirSemanticPathIndex, HirSemanticPathLocation,
+    HirSemanticPathLookupError, HirSemanticPathOwnerId, HirSemanticPathRoot, HirSemanticPathStep,
+    HirStyleRootPath, HirStyleRootPathSegment,
 };
+pub use self::type_roots::{HirExpressionTypeRootProjection, HirExpressionTypeRootProjectionError};
 
 /// Package-qualified canonical key for one project module.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -218,7 +224,6 @@ pub struct HirProject {
     root_package: CallablePackageId,
     database: HirDatabaseId,
     modules: BTreeMap<HirPackageModuleKey, HirProjectModule>,
-    dialogue_lines: AcceptedDialogueLineInventory,
 }
 
 /// Invalid final-HIR project generation.
@@ -258,10 +263,6 @@ pub enum HirProjectBuildError {
         current: HirSnapshotId,
         supplied: HirSnapshotId,
     },
-    #[error(transparent)]
-    DialogueLines(#[from] DialogueLineProjectRejection),
-    #[error(transparent)]
-    DialogueLineFatal(#[from] DialogueLineProjectFatal),
 }
 
 /// Sole transactional builder for one package-qualified final-HIR project.
@@ -358,12 +359,10 @@ impl<'database> HirProjectBuilder<'database> {
             }
         }
 
-        let dialogue_lines = dialogue_lines::accept_dialogue_lines(self.modules.values())?;
         Ok(HirProject {
             root_package: self.root_package,
             database: database_id,
             modules: self.modules,
-            dialogue_lines,
         })
     }
 
@@ -396,10 +395,6 @@ impl HirProject {
 
     pub fn module_by_key(&self, key: &HirPackageModuleKey) -> Option<&HirProjectModule> {
         self.modules.get(key)
-    }
-
-    pub const fn dialogue_lines(&self) -> &AcceptedDialogueLineInventory {
-        &self.dialogue_lines
     }
 
     pub fn view(&self) -> HirProjectView<'_> {
@@ -448,11 +443,15 @@ impl<'project> HirProjectView<'project> {
         self.project.module(path).map(HirProjectModule::module)
     }
 
-    /// Returns the dialogue-line inventory accepted by this exact project
-    /// generation. Consumers borrow this authority instead of reconstructing
-    /// line identities from module source.
-    pub const fn dialogue_lines(self) -> &'project AcceptedDialogueLineInventory {
-        self.project.dialogue_lines()
+    /// Returns source/topology dialogue sites in deterministic module order.
+    /// No line identity has been accepted at this tooling boundary.
+    pub fn dialogue_line_sites(
+        self,
+    ) -> impl Iterator<Item = &'project crate::line_identity::HirDialogueLineSite> + 'project {
+        self.project
+            .modules
+            .values()
+            .flat_map(|module| module.module().dialogue_line_sites().source_ordered())
     }
 
     pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
@@ -983,9 +982,16 @@ impl<'project> HirExecutableProjectView<'project> {
         self.view.module(path)
     }
 
-    /// Returns the line inventory owned by the admitted project generation.
-    pub const fn dialogue_lines(self) -> &'project AcceptedDialogueLineInventory {
-        self.view.dialogue_lines()
+    /// Seals dialogue identities from the exact checked expression graph.
+    ///
+    /// This is the only HIR entry point that materializes generated IDs,
+    /// resolves explicit coordinates, derives text keys, and performs the
+    /// project-wide collision transaction.
+    pub fn seal_selected_dialogue_lines(
+        self,
+        selected: &HirSelectedExpressionGraph,
+    ) -> Result<AcceptedDialogueLineInventory, DialogueLineProjectError> {
+        dialogue_lines::accept_selected_dialogue_lines(self.view.project.modules.values(), selected)
     }
 
     pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {

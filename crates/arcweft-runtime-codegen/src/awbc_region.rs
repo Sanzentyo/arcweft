@@ -15,7 +15,9 @@ use crate::region::{
 use arcweft_core::awbc::schema::{
     AwbcBlockId, AwbcDigest, AwbcFunctionId, AwbcOpcode, AwbcProgram, AwbcTerminator, AwbcTrapCode,
 };
-use arcweft_core::awbc::vm::{RejectingVmHost, VmExit, VmStepOptions, step_with_host};
+use arcweft_core::awbc::vm::{
+    RejectingVmHost, VmExecutionContext, VmExit, VmStepOptions, step_with_host_context,
+};
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -172,6 +174,7 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::MakeRecord
         | AwbcOpcode::MakeVariant
         | AwbcOpcode::MakeAgent
+        | AwbcOpcode::MakeDialogueContent
         | AwbcOpcode::ProjectTuple
         | AwbcOpcode::ProjectRecord
         | AwbcOpcode::ProjectField
@@ -186,7 +189,32 @@ fn opcode_eligible(opcode: AwbcOpcode, options: &AwbcRegionLowerOptions) -> bool
         | AwbcOpcode::SpawnFiber
         | AwbcOpcode::StreamYield
         | AwbcOpcode::StreamClose => options.allow_host_boundaries,
-        _ => false,
+        AwbcOpcode::MakeFunction
+        | AwbcOpcode::MakeReductionUnchanged
+        | AwbcOpcode::AssignRecordField
+        | AwbcOpcode::CallTraitMethod
+        | AwbcOpcode::ApplyFunction
+        | AwbcOpcode::ExecuteLineOperation
+        | AwbcOpcode::CommitDialogueResult
+        | AwbcOpcode::CopyValue
+        | AwbcOpcode::RegisterCleanup
+        | AwbcOpcode::CancelCleanup
+        | AwbcOpcode::Jump
+        | AwbcOpcode::Branch
+        | AwbcOpcode::Match
+        | AwbcOpcode::CallFunction
+        | AwbcOpcode::GotoStatic
+        | AwbcOpcode::GotoDynamic
+        | AwbcOpcode::Return
+        | AwbcOpcode::ProjectCall
+        | AwbcOpcode::HostCall
+        | AwbcOpcode::Await
+        | AwbcOpcode::AwaitMany
+        | AwbcOpcode::BudgetYield
+        | AwbcOpcode::Dialogue
+        | AwbcOpcode::Choice
+        | AwbcOpcode::Trap
+        | AwbcOpcode::Unreachable => false,
     }
 }
 
@@ -200,6 +228,7 @@ fn terminator_eligible(terminator: &AwbcTerminator, options: &AwbcRegionLowerOpt
         | AwbcTerminator::BudgetYield { .. }
         | AwbcTerminator::Unreachable
         | AwbcTerminator::CallFunction { .. }
+        | AwbcTerminator::ProjectCall { .. }
         | AwbcTerminator::GotoStatic { .. } => true,
         AwbcTerminator::GotoDynamic { .. }
         | AwbcTerminator::Dialogue { .. }
@@ -232,12 +261,46 @@ impl CompiledRegion for BaselineAwbcRegion {
             };
         }
         let mut host = RejectingVmHost;
-        match step_with_host(
+        let context = match input.program.encode_canonical() {
+            Ok(bytes) => match arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+                *blake3::hash(&bytes).as_bytes(),
+            ) {
+                Ok(artifact) => VmExecutionContext::new(artifact),
+                Err(_) => {
+                    let at = input
+                        .fiber
+                        .safe_point(None)
+                        .expect("fiber at entry has a safe point");
+                    return CompiledRegionResult {
+                        consumed: 0,
+                        exit: CompiledStepExit::FallbackToVm(CompiledFallback {
+                            reason: CompiledFallbackReason::ArtifactRejected,
+                            at,
+                        }),
+                    };
+                }
+            },
+            Err(_) => {
+                let at = input
+                    .fiber
+                    .safe_point(None)
+                    .expect("fiber at entry has a safe point");
+                return CompiledRegionResult {
+                    consumed: 0,
+                    exit: CompiledStepExit::FallbackToVm(CompiledFallback {
+                        reason: CompiledFallbackReason::ArtifactRejected,
+                        at,
+                    }),
+                };
+            }
+        };
+        match step_with_host_context(
             input.program,
             input.fiber,
             VmStepOptions {
                 max_instructions: input.instruction_budget,
             },
+            &context,
             &mut host,
         ) {
             Ok(result) => CompiledRegionResult {

@@ -18,6 +18,10 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_presentation::{
+    fx::FxSourceConstructor, rich_text::PresentationContentCallableDefinitionId,
+};
+use arcweft_rich_text_schema::RichTextCallableSchemaDigest;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
 use crate::types::{SemanticTypeDigest, StandardMapFamily, TypeKind};
@@ -62,6 +66,13 @@ impl CallableName {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Returns the owner-issued bytes of this validated callable identity.
+    /// The projection is crate-visible so semantic products can consume the
+    /// typed name without reparsing its display spelling.
+    pub(crate) fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
@@ -367,6 +378,7 @@ pub struct EnvironmentCallableId {
     kind: EnvironmentCallableKind,
     key: CallableLookupKey,
     overload: CallableOverloadIndex,
+    canonical: Arc<[u8]>,
 }
 
 /// Durable digest of one structural environment callable identity.
@@ -387,18 +399,27 @@ impl PartialOrd for EnvironmentCallableId {
 }
 
 impl EnvironmentCallableId {
-    pub fn new(
+    pub fn try_new(
         owner: EnvironmentCallableOwner,
         kind: EnvironmentCallableKind,
         key: CallableLookupKey,
         overload: CallableOverloadIndex,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, crate::types::GenericScopeError> {
+        let canonical =
+            super::digest::environment_identity_bytes(&owner, kind, &key, overload)?.into();
+        Ok(Self {
             owner,
             kind,
             key,
             overload,
-        }
+            canonical,
+        })
+    }
+
+    /// The owning constructor has already validated and encoded the identity.
+    /// Ordering and hashing never reevaluate an arbitrary receiver type.
+    pub(crate) fn canonical_identity_bytes(&self) -> &[u8] {
+        &self.canonical
     }
     pub const fn owner(&self) -> &EnvironmentCallableOwner {
         &self.owner
@@ -704,9 +725,9 @@ pub struct EnumVariantSignatureId {
     case: u32,
 }
 impl EnumVariantSignatureId {
-    /// Identifies one constructor by its accepted semantic owner and
-    /// declaration ordinal. Diagnostic case spelling is deliberately not
-    /// part of equality or hashing.
+    /// Identifies one constructor by its declaration-template owner and
+    /// declaration ordinal. The completed application owns its instantiated
+    /// result type. Diagnostic spelling is not part of equality or hashing.
     pub(crate) const fn new(owner: SemanticTypeDigest, case: u32) -> Self {
         Self { owner, case }
     }
@@ -762,62 +783,17 @@ impl ReductionConstructorKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum FxCallableSignatureId {
-    Style,
-    Text,
-    Color,
-    Transform,
-    Mask,
-    Filter,
-    Shader,
-    Transition,
-    Conditional,
-    Stack,
-}
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum FxResolution {
-    NotFx,
-    Known(FxCallableSignatureId),
-    UnknownMember { member: CallableName },
-    InvalidNestedPath { path: CallablePath },
-}
-
-impl FxCallableSignatureId {
-    pub fn resolve(path: &CallablePath) -> FxResolution {
-        let [namespace, member] = path.segments() else {
-            return if path
-                .segments()
-                .first()
-                .is_some_and(|segment| segment.as_str() == "Fx")
-            {
-                FxResolution::InvalidNestedPath { path: path.clone() }
-            } else {
-                FxResolution::NotFx
-            };
-        };
-        if namespace.as_str() != "Fx" {
-            return FxResolution::NotFx;
-        }
-        let id = match member.as_str() {
-            "style" => Self::Style,
-            "text" => Self::Text,
-            "color" => Self::Color,
-            "transform" => Self::Transform,
-            "mask" => Self::Mask,
-            "filter" => Self::Filter,
-            "shader" => Self::Shader,
-            "transition" => Self::Transition,
-            "conditional" => Self::Conditional,
-            "stack" => Self::Stack,
-            _ => {
-                return FxResolution::UnknownMember {
-                    member: member.clone(),
-                };
-            }
-        };
-        FxResolution::Known(id)
-    }
+/// Resolves the sema-owned `Fx.<constructor>` namespace shape while leaving
+/// terminal constructor identity and its parameter/property schema to the
+/// presentation owner.  Paths outside the exact two-segment namespace are
+/// intentionally not considered language Fx callables.
+pub(crate) fn resolve_fx_source_constructor(path: &CallablePath) -> Option<FxSourceConstructor> {
+    let [namespace, member] = path.segments() else {
+        return None;
+    };
+    (namespace.as_str() == "Fx")
+        .then(|| FxSourceConstructor::from_source_name(member.as_str()))
+        .flatten()
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1427,6 +1403,15 @@ pub struct CheckedClosureId {
     expression: SourceSpan,
 }
 
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedClosureDigest([u8; 32]);
+
+impl CheckedClosureDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedEffectCallableId {
     Declaration(CheckedCallableId),
@@ -1510,8 +1495,12 @@ struct CheckedCallableDigestEncoder {
 
 impl CheckedCallableDigestEncoder {
     fn new() -> Self {
+        Self::with_domain(b"arcweft.checked-callable.v1\0")
+    }
+
+    fn with_domain(domain: &[u8]) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft.checked-callable.v1\0");
+        hasher.update(domain);
         Self { hasher }
     }
 
@@ -1660,11 +1649,111 @@ impl CheckedClosureId {
     pub const fn expression(&self) -> &SourceSpan {
         &self.expression
     }
+
+    /// Stable closure identity including its checked lexical owner and exact
+    /// document revision/range. Consumers do not reconstruct an owner from
+    /// source spelling or substitute the enclosing declaration's identity.
+    pub fn semantic_digest(&self) -> CheckedClosureDigest {
+        let mut encoder =
+            CheckedCallableDigestEncoder::with_domain(b"arcweft.checked-closure.v1\0");
+        encoder.context(self.owner.context());
+        encoder.declaration(self.owner.declaration());
+        let source = self.expression.source();
+        encoder.string(source.id().as_str());
+        encoder.hasher.update(source.revision().as_bytes());
+        encoder.u64(source.source_len());
+        encoder.u64(
+            u64::try_from(self.expression.range().start())
+                .expect("validated source offsets fit u64"),
+        );
+        encoder.u64(
+            u64::try_from(self.expression.range().end()).expect("validated source offsets fit u64"),
+        );
+        CheckedClosureDigest(encoder.finish())
+    }
+}
+
+/// Closed identity of one content callable.
+///
+/// Language operations are identified by their exact presentation definition
+/// row and owner-issued schema digest. A text proxy Object operation
+/// additionally carries the exact accepted nominal owner and checked schema
+/// dependency, so equal-shaped declarations cannot collapse into one callable.
+/// The Object operation is derived from the latter variant; it is not stored
+/// as a second identity field.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ContentCallableIdentity {
+    Language {
+        definition: PresentationContentCallableDefinitionId,
+        schema: RichTextCallableSchemaDigest,
+    },
+    TextProxyObject {
+        owner: SemanticTypeDigest,
+        definition: super::CallableSchemaDependencyDigest,
+    },
+}
+
+impl ContentCallableIdentity {
+    pub const fn language(
+        definition: PresentationContentCallableDefinitionId,
+        schema: RichTextCallableSchemaDigest,
+    ) -> Self {
+        Self::Language { definition, schema }
+    }
+
+    pub(crate) const fn text_proxy_object(
+        owner: SemanticTypeDigest,
+        definition: super::CallableSchemaDependencyDigest,
+    ) -> Self {
+        Self::TextProxyObject { owner, definition }
+    }
+
+    /// Stable family tag for canonical callable-schema encoding.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Language { .. } => 0,
+            Self::TextProxyObject { .. } => 1,
+        }
+    }
+
+    /// Returns the exact presentation definition for a language content row.
+    pub const fn definition(self) -> Option<PresentationContentCallableDefinitionId> {
+        match self {
+            Self::Language { definition, .. } => Some(definition),
+            Self::TextProxyObject { .. } => None,
+        }
+    }
+
+    /// Returns the owner-issued presentation schema digest for a language row.
+    pub const fn schema(self) -> Option<RichTextCallableSchemaDigest> {
+        match self {
+            Self::Language { schema, .. } => Some(schema),
+            Self::TextProxyObject { .. } => None,
+        }
+    }
+
+    pub const fn is_text_proxy_object(self) -> bool {
+        matches!(self, Self::TextProxyObject { .. })
+    }
+
+    pub const fn owner(self) -> Option<SemanticTypeDigest> {
+        match self {
+            Self::Language { .. } => None,
+            Self::TextProxyObject { owner, .. } => Some(owner),
+        }
+    }
+
+    pub const fn definition_digest(self) -> Option<super::CallableSchemaDependencyDigest> {
+        match self {
+            Self::Language { .. } => None,
+            Self::TextProxyObject { definition, .. } => Some(definition),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CallableCandidateId {
-    Fx(FxCallableSignatureId),
+    FxConstructor(FxSourceConstructor),
     EnumVariant(EnumVariantSignatureId),
     Result(ResultConstructorKind),
     Option(OptionConstructorKind),
@@ -1672,6 +1761,7 @@ pub enum CallableCandidateId {
     Agent(AgentIntrinsicSignatureId),
     Presentation(super::PresentationCallableId),
     Dialogue(super::DialogueCallableId),
+    Content(ContentCallableIdentity),
     Project(CallableDeclarationKey),
     Detached(DetachedCallableDeclarationId),
     Environment(EnvironmentCallableId),
@@ -1692,7 +1782,7 @@ pub enum CallableCandidateId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CallableFamily {
-    Fx,
+    FxConstructor,
     EnumConstructor,
     ResultConstructor,
     OptionConstructor,
@@ -1700,6 +1790,7 @@ pub enum CallableFamily {
     Agent,
     Presentation,
     Dialogue,
+    Content,
     Project,
     Environment,
     Lexical,
@@ -1719,8 +1810,8 @@ pub enum CallableFamily {
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 23] = [
-        Self::Fx,
+    pub const ALL: [Self; 24] = [
+        Self::FxConstructor,
         Self::EnumConstructor,
         Self::ResultConstructor,
         Self::OptionConstructor,
@@ -1743,13 +1834,14 @@ impl CallableFamily {
         Self::LineSchedule,
         Self::Drop,
         Self::Promotion,
+        Self::Content,
     ];
 }
 
 impl CallableCandidateId {
     pub(crate) const fn intrinsic_family(&self) -> CallableFamily {
         match self {
-            Self::Fx(_) => CallableFamily::Fx,
+            Self::FxConstructor(_) => CallableFamily::FxConstructor,
             Self::EnumVariant(_) => CallableFamily::EnumConstructor,
             Self::Result(_) => CallableFamily::ResultConstructor,
             Self::Option(_) => CallableFamily::OptionConstructor,
@@ -1757,6 +1849,7 @@ impl CallableCandidateId {
             Self::Agent(_) => CallableFamily::Agent,
             Self::Presentation(_) => CallableFamily::Presentation,
             Self::Dialogue(_) => CallableFamily::Dialogue,
+            Self::Content(_) => CallableFamily::Content,
             Self::Project(_) | Self::Detached(_) | Self::Standard(_) => CallableFamily::Project,
             Self::Environment(_) => CallableFamily::Environment,
             Self::Local(_) => CallableFamily::Lexical,
@@ -1777,7 +1870,7 @@ impl CallableCandidateId {
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum LanguageCallableFamily {
-    Fx,
+    FxConstructor,
     EnumConstructor,
     ResultConstructor,
     OptionConstructor,
@@ -1796,4 +1889,5 @@ pub enum LanguageCallableFamily {
     Drop,
     Promote,
     Assume,
+    Content,
 }

@@ -253,11 +253,13 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
         ),
         (
             TypeKind::Function {
+                binder: arcweft_lang_sema::types::GenericBinder::EMPTY,
                 params: vec![TypeKind::Unit, expected.clone()],
                 return_type: Box::new(TypeKind::Unit),
                 effects: EffectRow::unknown(),
             },
             TypeKind::Function {
+                binder: arcweft_lang_sema::types::GenericBinder::EMPTY,
                 params: vec![TypeKind::Unit, actual.clone()],
                 return_type: Box::new(TypeKind::Unit),
                 effects: EffectRow::unknown(),
@@ -266,11 +268,13 @@ fn every_current_type_child_has_a_deterministic_path_segment() {
         ),
         (
             TypeKind::Function {
+                binder: arcweft_lang_sema::types::GenericBinder::EMPTY,
                 params: vec![],
                 return_type: Box::new(expected.clone()),
                 effects: EffectRow::unknown(),
             },
             TypeKind::Function {
+                binder: arcweft_lang_sema::types::GenericBinder::EMPTY,
                 params: vec![],
                 return_type: Box::new(actual.clone()),
                 effects: EffectRow::unknown(),

@@ -16,7 +16,7 @@ use crate::slot::SlotSnapshot;
 use crate::source_index::block_projection::BlockValidationArenas;
 
 use super::callable::{
-    function_parameter_groups_match, item_callable_scope_matches,
+    attached_content_matches, function_parameter_groups_match, item_callable_scope_matches,
     item_owned_callable_scopes_are_exact, scope_children_are_exact_in_source_order,
 };
 use super::{
@@ -246,8 +246,19 @@ fn function_matches(
         context.slots,
         context.arenas,
         &context.block_arenas,
+        retained
+            .attached_content()
+            .map(|attached| attached.binding()),
+    )?;
+    let attached_content = attached_content_matches(
+        attached.attached_content(),
+        retained.attached_content(),
+        callable_scope,
+        context.slots,
+        context.arenas,
     )?;
     parameter_state.recovered |= attached.has_parameter_shape_recovery();
+    parameter_state.recovered |= attached_content.recovered;
     let (return_missing_type, return_recovery) =
         capability_return_matches(attached, retained, context.slots, context.arenas)?;
     let effects_recovery =

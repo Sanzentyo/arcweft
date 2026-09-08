@@ -228,7 +228,6 @@ pub fn prepare_bundle_parity_frame(
         fit: PlayerFrameFit::raw(),
         image_time_millis: options.visual_time_millis,
         visual_time_millis: options.visual_time_millis,
-        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
     let mut input = InputController::default();

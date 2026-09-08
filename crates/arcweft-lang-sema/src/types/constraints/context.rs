@@ -3,10 +3,8 @@
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
-#[cfg(test)]
-use std::collections::BTreeMap;
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
 };
@@ -16,9 +14,13 @@ use crate::effect_row::{
     EffectIssuerRebindError, EffectRow, EffectVar, EffectVarIssuer,
 };
 
+use super::super::generics::OpenedGenericScope;
 use super::super::{
-    GenericConstParameterId, GenericTypeParameterId, TypeCompatibilityControl, TypeKind,
+    ArrayLength, GenericBinder, GenericConstReference, GenericParameterKind, GenericScope,
+    GenericScopeError, GenericTypeReference, TypeCompatibilityControl, TypeKind,
 };
+#[cfg(test)]
+use super::super::{GenericConstParameterId, GenericTypeParameterId};
 #[cfg(test)]
 use super::NoConstraintClient;
 use super::{
@@ -334,17 +336,17 @@ pub(crate) enum TypeConstraintConstEligibility {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintTypeParameterScopeRow {
-    parameter: GenericTypeParameterId,
+    parameter: GenericTypeReference,
     eligibility: TypeConstraintParameterEligibility,
 }
 
 impl TypeConstraintTypeParameterScopeRow {
     pub(crate) fn new(
-        parameter: GenericTypeParameterId,
+        parameter: impl Into<GenericTypeReference>,
         eligibility: TypeConstraintParameterEligibility,
     ) -> Self {
         Self {
-            parameter,
+            parameter: parameter.into(),
             eligibility,
         }
     }
@@ -352,17 +354,17 @@ impl TypeConstraintTypeParameterScopeRow {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintConstParameterScopeRow {
-    parameter: GenericConstParameterId,
+    parameter: GenericConstReference,
     eligibility: TypeConstraintConstEligibility,
 }
 
 impl TypeConstraintConstParameterScopeRow {
     pub(crate) fn new(
-        parameter: GenericConstParameterId,
+        parameter: impl Into<GenericConstReference>,
         eligibility: TypeConstraintConstEligibility,
     ) -> Self {
         Self {
-            parameter,
+            parameter: parameter.into(),
             eligibility,
         }
     }
@@ -373,15 +375,26 @@ impl TypeConstraintConstParameterScopeRow {
 /// type and constant at the same owner/ordinal cannot alias.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct RequiredInheritedBindingKeys {
-    type_keys: Box<[GenericTypeParameterId]>,
-    const_keys: Box<[GenericConstParameterId]>,
+    type_keys: Box<[GenericTypeReference]>,
+    const_keys: Box<[GenericConstReference]>,
 }
 
 /// The complete lower-visible parameter inventory for one candidate.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintParameterScope {
+    opening: OpenedGenericScope,
+    contract: CompletedParameterScope,
+}
+
+/// Declaration and free-reference inventory retained after an application
+/// closes. It contains no application issuer or inference reference.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct CompletedParameterScope {
+    template_scope: GenericScope,
     type_parameters: Box<[TypeConstraintTypeParameterScopeRow]>,
     const_parameters: Box<[TypeConstraintConstParameterScopeRow]>,
+    free_types: Box<[GenericTypeReference]>,
+    free_consts: Box<[GenericConstReference]>,
     required_inherited: RequiredInheritedBindingKeys,
 }
 
@@ -391,6 +404,7 @@ impl TypeConstraintParameterScope {
     /// provide rows in canonical order and cannot ask the lower layer to sort
     /// or repair them.
     pub(crate) fn seal_call_scope<T, C, R, Q>(
+        template_binder: GenericBinder,
         type_parameters: T,
         const_parameters: C,
         required_inherited_keys: R,
@@ -399,13 +413,108 @@ impl TypeConstraintParameterScope {
     where
         T: IntoIterator<Item = TypeConstraintTypeParameterScopeRow>,
         C: IntoIterator<Item = TypeConstraintConstParameterScopeRow>,
-        R: IntoIterator<Item = GenericTypeParameterId>,
-        Q: IntoIterator<Item = GenericConstParameterId>,
+        R: IntoIterator<Item = GenericTypeReference>,
+        Q: IntoIterator<Item = GenericConstReference>,
     {
-        let type_parameters = type_parameters.into_iter().collect::<Vec<_>>();
+        let template_scope = GenericScope::default().with_binder(template_binder);
+        let (free_type_rows, type_parameters): (Vec<_>, Vec<_>) = type_parameters
+            .into_iter()
+            .partition(|row| row.eligibility == TypeConstraintParameterEligibility::Rigid);
+        let free_types = free_type_rows
+            .into_iter()
+            .map(|row| row.parameter)
+            .collect::<Vec<_>>();
+        validate_scope_rows(free_types.iter(), false)?;
         validate_scope_rows(type_parameters.iter().map(|row| &row.parameter), false)?;
-        let const_parameters = const_parameters.into_iter().collect::<Vec<_>>();
+        let (free_const_rows, const_parameters): (Vec<_>, Vec<_>) = const_parameters
+            .into_iter()
+            .partition(|row| row.eligibility == TypeConstraintConstEligibility::Rigid);
+        let free_consts = free_const_rows
+            .into_iter()
+            .map(|row| row.parameter)
+            .collect::<Vec<_>>();
+        validate_scope_rows(free_consts.iter(), true)?;
         validate_scope_rows(const_parameters.iter().map(|row| &row.parameter), true)?;
+
+        for parameter in &free_types {
+            if !matches!(parameter, GenericTypeReference::Free(_)) {
+                return Err(scope_invariant(
+                    TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
+                        parameter: parameter.clone(),
+                    },
+                ));
+            }
+        }
+        for parameter in &free_consts {
+            if !matches!(parameter, GenericConstReference::Free(_)) {
+                return Err(scope_invariant(
+                    TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                        parameter: parameter.clone(),
+                    },
+                ));
+            }
+        }
+        for row in &type_parameters {
+            match &row.parameter {
+                GenericTypeReference::Free(_) => {}
+                GenericTypeReference::Bound(parameter) if parameter.depth() == 0 => {
+                    template_scope
+                        .bound_type(0, parameter.slot())
+                        .map_err(TypeConstraintInvariant::GenericScope)?;
+                }
+                _ => {
+                    return Err(scope_invariant(
+                        TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
+                            parameter: row.parameter.clone(),
+                        },
+                    ));
+                }
+            }
+        }
+        for row in &const_parameters {
+            match &row.parameter {
+                GenericConstReference::Free(_) => {}
+                GenericConstReference::Bound(parameter) if parameter.depth() == 0 => {
+                    template_scope
+                        .bound_const(0, parameter.slot())
+                        .map_err(TypeConstraintInvariant::GenericScope)?;
+                }
+                _ => {
+                    return Err(scope_invariant(
+                        TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                            parameter: row.parameter.clone(),
+                        },
+                    ));
+                }
+            }
+        }
+
+        for slot in 0..template_binder.types() {
+            let parameter = template_scope
+                .bound_type(0, slot)
+                .map_err(TypeConstraintInvariant::GenericScope)?;
+            if type_parameters
+                .binary_search_by(|row| row.parameter.cmp(&parameter))
+                .is_err()
+            {
+                return Err(scope_invariant(
+                    TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { parameter },
+                ));
+            }
+        }
+        for slot in 0..template_binder.const_lengths() {
+            let parameter = template_scope
+                .bound_const(0, slot)
+                .map_err(TypeConstraintInvariant::GenericScope)?;
+            if const_parameters
+                .binary_search_by(|row| row.parameter.cmp(&parameter))
+                .is_err()
+            {
+                return Err(scope_invariant(
+                    TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { parameter },
+                ));
+            }
+        }
 
         let required_inherited_keys = required_inherited_keys.into_iter().collect::<Vec<_>>();
         validate_scope_rows(required_inherited_keys.iter(), false)?;
@@ -450,14 +559,32 @@ impl TypeConstraintParameterScope {
             }
         }
 
-        Ok(Self {
+        let type_count = u16::try_from(type_parameters.len()).map_err(|_| {
+            TypeConstraintInvariant::GenericScope(GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Type,
+                count: type_parameters.len(),
+            })
+        })?;
+        let const_count = u16::try_from(const_parameters.len()).map_err(|_| {
+            TypeConstraintInvariant::GenericScope(GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Const,
+                count: const_parameters.len(),
+            })
+        })?;
+        let opening = OpenedGenericScope::new(GenericBinder::new(type_count, const_count, 0))
+            .map_err(TypeConstraintInvariant::GenericScope)?;
+        let contract = CompletedParameterScope {
+            template_scope,
             type_parameters: type_parameters.into_boxed_slice(),
             const_parameters: const_parameters.into_boxed_slice(),
+            free_types: free_types.into_boxed_slice(),
+            free_consts: free_consts.into_boxed_slice(),
             required_inherited: RequiredInheritedBindingKeys {
                 type_keys: required_inherited_keys.into_boxed_slice(),
                 const_keys: required_inherited_const_keys.into_boxed_slice(),
             },
-        })
+        };
+        Ok(Self { opening, contract })
     }
 
     #[cfg(test)]
@@ -474,6 +601,7 @@ impl TypeConstraintParameterScope {
             }
         }
         Self::seal_call_scope(
+            GenericBinder::EMPTY,
             inventory.into_iter().map(|(parameter, eligibility)| {
                 TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
             }),
@@ -510,6 +638,7 @@ impl TypeConstraintParameterScope {
             }
         }
         Self::seal_call_scope(
+            GenericBinder::EMPTY,
             types.into_iter().map(|(parameter, eligibility)| {
                 TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
             }),
@@ -525,6 +654,7 @@ impl TypeConstraintParameterScope {
     #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self::seal_call_scope(
+            GenericBinder::EMPTY,
             std::iter::empty(),
             std::iter::empty(),
             std::iter::empty(),
@@ -533,9 +663,128 @@ impl TypeConstraintParameterScope {
         .expect("empty test scope is valid")
     }
 
+    pub(super) const fn completed_contract(&self) -> &CompletedParameterScope {
+        &self.contract
+    }
+
+    pub(crate) fn type_reference(
+        &self,
+        parameter: &GenericTypeReference,
+    ) -> Option<GenericTypeReference> {
+        let slot = self
+            .contract
+            .type_parameters
+            .binary_search_by(|row| row.parameter.cmp(parameter))
+            .ok()?;
+        self.opening.type_reference(u16::try_from(slot).ok()?).ok()
+    }
+
+    pub(crate) fn const_reference(
+        &self,
+        parameter: &GenericConstReference,
+    ) -> Option<GenericConstReference> {
+        let slot = self
+            .contract
+            .const_parameters
+            .binary_search_by(|row| row.parameter.cmp(parameter))
+            .ok()?;
+        self.opening.const_reference(u16::try_from(slot).ok()?).ok()
+    }
+
+    pub(super) fn type_declaration(
+        &self,
+        reference: &GenericTypeReference,
+    ) -> Option<&GenericTypeReference> {
+        let GenericTypeReference::Inference(variable) = reference else {
+            return None;
+        };
+        (variable.issuer() == self.opening.issuer()).then_some(())?;
+        self.contract
+            .type_parameters
+            .get(usize::from(variable.slot()))
+            .map(|row| &row.parameter)
+    }
+
+    pub(super) fn const_declaration(
+        &self,
+        reference: &GenericConstReference,
+    ) -> Option<&GenericConstReference> {
+        let GenericConstReference::Inference(variable) = reference else {
+            return None;
+        };
+        (variable.issuer() == self.opening.issuer()).then_some(())?;
+        self.contract
+            .const_parameters
+            .get(usize::from(variable.slot()))
+            .map(|row| &row.parameter)
+    }
+
     pub(crate) fn eligibility(
         &self,
-        parameter: &GenericTypeParameterId,
+        reference: &GenericTypeReference,
+    ) -> Option<TypeConstraintParameterEligibility> {
+        match reference {
+            GenericTypeReference::Free(_) => self
+                .contract
+                .free_types
+                .binary_search(reference)
+                .ok()
+                .map(|_| TypeConstraintParameterEligibility::Rigid),
+            GenericTypeReference::Inference(_) => self
+                .type_declaration(reference)
+                .and_then(|parameter| self.contract.eligibility(parameter)),
+            GenericTypeReference::Bound(_) => None,
+        }
+    }
+
+    pub(crate) fn const_eligibility(
+        &self,
+        reference: &GenericConstReference,
+    ) -> Option<TypeConstraintConstEligibility> {
+        match reference {
+            GenericConstReference::Free(_) => self
+                .contract
+                .free_consts
+                .binary_search(reference)
+                .ok()
+                .map(|_| TypeConstraintConstEligibility::Rigid),
+            GenericConstReference::Inference(_) => self
+                .const_declaration(reference)
+                .and_then(|parameter| self.contract.const_eligibility(parameter)),
+            GenericConstReference::Bound(_) => None,
+        }
+    }
+
+    pub(crate) fn iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&GenericTypeReference, &TypeConstraintParameterEligibility)>
+    {
+        self.contract.iter()
+    }
+
+    pub(crate) fn const_iter(
+        &self,
+    ) -> impl DoubleEndedIterator<Item = (&GenericConstReference, &TypeConstraintConstEligibility)>
+    {
+        self.contract.const_iter()
+    }
+
+    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeReference] {
+        self.contract.required_inherited_keys()
+    }
+
+    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstReference] {
+        self.contract.required_inherited_const_keys()
+    }
+}
+
+impl CompletedParameterScope {
+    pub(super) const fn template_scope(&self) -> &GenericScope {
+        &self.template_scope
+    }
+    pub(crate) fn eligibility(
+        &self,
+        parameter: &GenericTypeReference,
     ) -> Option<TypeConstraintParameterEligibility> {
         self.type_parameters
             .binary_search_by(|row| row.parameter.cmp(parameter))
@@ -545,7 +794,7 @@ impl TypeConstraintParameterScope {
 
     pub(crate) fn const_eligibility(
         &self,
-        parameter: &GenericConstParameterId,
+        parameter: &GenericConstReference,
     ) -> Option<TypeConstraintConstEligibility> {
         self.const_parameters
             .binary_search_by(|row| row.parameter.cmp(parameter))
@@ -555,7 +804,7 @@ impl TypeConstraintParameterScope {
 
     pub(crate) fn iter(
         &self,
-    ) -> impl DoubleEndedIterator<Item = (&GenericTypeParameterId, &TypeConstraintParameterEligibility)>
+    ) -> impl DoubleEndedIterator<Item = (&GenericTypeReference, &TypeConstraintParameterEligibility)>
     {
         self.type_parameters
             .iter()
@@ -566,7 +815,10 @@ impl TypeConstraintParameterScope {
     /// transitions. Rigid and completed bindable roles are stable;
     /// `FutureEligible` alone may become `Bindable` in a later group.
     pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
-        self.type_parameters.len() == other.type_parameters.len()
+        self.template_scope == other.template_scope
+            && self.free_types == other.free_types
+            && self.free_consts == other.free_consts
+            && self.type_parameters.len() == other.type_parameters.len()
             && self
                 .type_parameters
                 .iter()
@@ -612,17 +864,17 @@ impl TypeConstraintParameterScope {
                 })
     }
 
-    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeParameterId] {
+    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeReference] {
         &self.required_inherited.type_keys
     }
 
-    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstParameterId] {
+    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstReference] {
         &self.required_inherited.const_keys
     }
 
     pub(crate) fn const_iter(
         &self,
-    ) -> impl DoubleEndedIterator<Item = (&GenericConstParameterId, &TypeConstraintConstEligibility)>
+    ) -> impl DoubleEndedIterator<Item = (&GenericConstReference, &TypeConstraintConstEligibility)>
     {
         self.const_parameters
             .iter()
@@ -749,6 +1001,7 @@ pub(crate) struct TypeConstraintContext<'c, A: TypeConstraintAccounting, D: Cons
     accounting: A,
     pub(crate) parameter_scope: TypeConstraintParameterScope,
     pub(crate) effect_scope: TypeConstraintEffectScope,
+    lexical_scope: GenericScope,
     work: TypeConstraintWorkReport,
     domain: PhantomData<fn() -> D>,
 }
@@ -786,6 +1039,7 @@ where
             accounting,
             parameter_scope,
             effect_scope,
+            lexical_scope: GenericScope::default(),
             work: TypeConstraintWorkReport::default(),
             domain: PhantomData,
         }
@@ -829,23 +1083,162 @@ where
 
     pub(crate) fn parameter_eligibility(
         &self,
-        parameter: &GenericTypeParameterId,
+        parameter: &GenericTypeReference,
     ) -> Option<TypeConstraintParameterEligibility> {
+        if let GenericTypeReference::Bound(parameter) = parameter {
+            return self
+                .lexical_scope
+                .bound_type(parameter.depth(), parameter.slot())
+                .ok()
+                .map(|_| TypeConstraintParameterEligibility::Rigid);
+        }
         self.parameter_scope.eligibility(parameter)
     }
 
     pub(crate) fn const_parameter_eligibility(
         &self,
-        parameter: &GenericConstParameterId,
+        parameter: &GenericConstReference,
     ) -> Option<TypeConstraintConstEligibility> {
+        if let GenericConstReference::Bound(parameter) = parameter {
+            return self
+                .lexical_scope
+                .bound_const(parameter.depth(), parameter.slot())
+                .ok()
+                .map(|_| TypeConstraintConstEligibility::Rigid);
+        }
         self.parameter_scope.const_eligibility(parameter)
     }
 
-    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeParameterId] {
+    pub(crate) fn with_binder<T>(
+        &mut self,
+        binder: GenericBinder,
+        action: impl FnOnce(&mut Self) -> Result<T, TypeConstraintError>,
+    ) -> Result<T, TypeConstraintError> {
+        let enclosing = self.enter_binder_scope(binder);
+        let result = action(self);
+        self.restore_binder_scope(enclosing);
+        result
+    }
+
+    /// The iterative type projector retains the returned enclosing scope on
+    /// its frame and restores it when that frame finishes. Its outer scoped
+    /// call also restores the original scope on every error return.
+    pub(super) fn enter_binder_scope(&mut self, binder: GenericBinder) -> GenericScope {
+        let nested = self.lexical_scope.with_binder(binder);
+        std::mem::replace(&mut self.lexical_scope, nested)
+    }
+
+    pub(super) fn restore_binder_scope(&mut self, enclosing: GenericScope) {
+        self.lexical_scope = enclosing;
+    }
+
+    /// Required type/constant keys must be bound before final projection and
+    /// publication. Future groups and rigid references remain open.
+    pub(super) fn validate_type_and_const_completion(
+        &self,
+        bindings: &BTreeMap<GenericTypeReference, TypeKind>,
+        const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    ) -> Result<(), TypeConstraintError> {
+        for (parameter, eligibility) in self.parameter_scope.iter() {
+            if matches!(eligibility, TypeConstraintParameterEligibility::Bindable)
+                && !self
+                    .parameter_scope
+                    .type_reference(parameter)
+                    .is_some_and(|reference| bindings.contains_key(&reference))
+            {
+                return Err(super::TypeConstraintRejection::IncompleteInstantiation {
+                    parameter: parameter.clone().into(),
+                }
+                .into());
+            }
+        }
+        for (parameter, eligibility) in self.parameter_scope.const_iter() {
+            if matches!(eligibility, TypeConstraintConstEligibility::Bindable)
+                && !self
+                    .parameter_scope
+                    .const_reference(parameter)
+                    .is_some_and(|reference| const_bindings.contains_key(&reference))
+            {
+                return Err(super::TypeConstraintRejection::IncompleteInstantiation {
+                    parameter: parameter.clone().into(),
+                }
+                .into());
+            }
+        }
+        Ok(())
+    }
+
+    /// Validates references carried by a type node's header in the current
+    /// lexical scope. Child traversal enters the node's binder separately.
+    pub(crate) fn validate_type_header(
+        &self,
+        shape: TypeConstraintShape<'_>,
+    ) -> Result<(), TypeConstraintError> {
+        match shape {
+            TypeConstraintShape::Generic(parameter)
+                if self.parameter_eligibility(parameter).is_none() =>
+            {
+                Err(super::references::type_out_of_scope(parameter))
+            }
+            TypeConstraintShape::Array {
+                len: super::super::ArrayLength::Generic(parameter),
+                ..
+            } if self.const_parameter_eligibility(parameter).is_none() => {
+                Err(super::references::const_out_of_scope(parameter))
+            }
+            TypeConstraintShape::Array {
+                len: super::super::ArrayLength::Error(_) | super::super::ArrayLength::Inferred,
+                ..
+            } => Err(super::TypeConstraintRejection::UnresolvedType.into()),
+            _ => Ok(()),
+        }
+    }
+
+    /// Opens formal references in the declaration or function-scheme template.
+    /// Actual operand values enter unchanged and do not use this boundary.
+    pub(crate) fn open_template_type(
+        &mut self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, TypeConstraintError> {
+        self.with_template_scope(|context| {
+            super::references::map_type(ty, &super::references::OpenTemplateReferences, context)
+        })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_template_length(
+        &mut self,
+        length: &super::super::ArrayLength,
+    ) -> Result<super::super::ArrayLength, TypeConstraintError> {
+        self.with_template_scope(|context| {
+            super::references::map_length(
+                length,
+                &super::references::OpenTemplateReferences,
+                context,
+            )
+        })
+    }
+
+    fn with_template_scope<R>(&mut self, operation: impl FnOnce(&mut Self) -> R) -> R {
+        let template = self
+            .parameter_scope
+            .completed_contract()
+            .template_scope()
+            .clone();
+        let enclosing = std::mem::replace(&mut self.lexical_scope, template);
+        let result = operation(self);
+        self.lexical_scope = enclosing;
+        result
+    }
+
+    pub(super) fn lexical_scope(&self) -> &GenericScope {
+        &self.lexical_scope
+    }
+    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeReference] {
         self.parameter_scope.required_inherited_keys()
     }
 
-    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstParameterId] {
+    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstReference] {
         self.parameter_scope.required_inherited_const_keys()
     }
 
@@ -909,7 +1302,7 @@ where
     pub(crate) fn add_binding(
         &mut self,
         path: ConstraintPath<D>,
-        parameter: GenericTypeParameterId,
+        parameter: GenericTypeReference,
         value: &TypeKind,
         value_shape: TypeConstraintShape<'_>,
     ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
@@ -962,7 +1355,7 @@ where
     pub(crate) fn add_const_binding(
         &mut self,
         path: ConstraintPath<D>,
-        parameter: GenericConstParameterId,
+        parameter: GenericConstReference,
         value: &super::super::ArrayLength,
     ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError> {
         self.check_cancelled()?;
@@ -1014,7 +1407,7 @@ where
     pub(crate) fn add_sealed_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
-        parameter: GenericTypeParameterId,
+        parameter: GenericTypeReference,
         value: TypeKind,
     ) -> Result<(), TypeConstraintError> {
         self.check_cancelled()?;
@@ -1041,7 +1434,7 @@ where
     pub(crate) fn add_sealed_const_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
-        parameter: GenericConstParameterId,
+        parameter: GenericConstReference,
         value: super::super::ArrayLength,
     ) -> Result<(), TypeConstraintError> {
         self.check_cancelled()?;
@@ -1070,9 +1463,19 @@ where
     pub(super) fn restore_completed_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
-        parameter: GenericTypeParameterId,
+        parameter: GenericTypeReference,
         value: TypeKind,
     ) -> Result<(), TypeConstraintError> {
+        let reference = self
+            .parameter_scope
+            .type_reference(&parameter)
+            .ok_or_else(|| {
+                TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                    TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
+                        parameter: parameter.into(),
+                    },
+                ))
+            })?;
         let binding_count = path
             .bindings
             .len()
@@ -1084,7 +1487,7 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         assert!(
-            path.bindings.insert(parameter, value).is_none(),
+            path.bindings.insert(reference, value).is_none(),
             "completed solution rows are uniquely sealed before restoration"
         );
         Ok(())
@@ -1093,9 +1496,19 @@ where
     pub(super) fn restore_completed_const_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
-        parameter: GenericConstParameterId,
+        parameter: GenericConstReference,
         value: super::super::ArrayLength,
     ) -> Result<(), TypeConstraintError> {
+        let reference = self
+            .parameter_scope
+            .const_reference(&parameter)
+            .ok_or_else(|| {
+                TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                    TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                        parameter: parameter.into(),
+                    },
+                ))
+            })?;
         let binding_count = path
             .bindings
             .len()
@@ -1107,7 +1520,7 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         assert!(
-            path.const_bindings.insert(parameter, value).is_none(),
+            path.const_bindings.insert(reference, value).is_none(),
             "completed const solution rows are uniquely sealed before restoration"
         );
         Ok(())

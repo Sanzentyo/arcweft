@@ -1,13 +1,19 @@
+mod function_call;
+
 use super::dialogue::{DialogueActivationFrame, DialogueLineTaskState, DialogueRuntimePhase};
 use super::{
     AwaitState, ChoiceState, Engine, FlowControlStackEntry, FlowControlStackEntryKind, FlowCursor,
-    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, HostCallState, RuntimeDiagnostic,
-    RuntimeEvalError, RuntimeExpr, RuntimeIterator, RuntimePattern, RuntimeStepOutput,
-    RuntimeValue, runtime_value_label,
+    FlowEvent, FlowFiberStatus, FlowOp, FlowScopeCleanup, FunctionCallFrame,
+    FunctionReturnContinuation, HostCallState, RuntimeDiagnostic, RuntimeEvalError, RuntimeExpr,
+    RuntimeIterator, RuntimePattern, RuntimeStepOutput, RuntimeValue, runtime_value_label,
 };
 use crate::effect::LineEffectRequest;
 use crate::pattern::pattern_binding_capacity;
-use crate::plan::{RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeReceiverMode};
+use crate::plan::{
+    RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable, RuntimeProjectCallAttachedPresence,
+    RuntimeProjectCallDefaultCaptureSource, RuntimeProjectCallInput,
+    RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOutcome, RuntimeReceiverMode,
+};
 use crate::pure::RuntimeCallBackend;
 use crate::step::{RuntimeHostCallId, RuntimeHostCallRequest};
 use crate::task::{
@@ -15,7 +21,9 @@ use crate::task::{
     TaskKey, TaskPolicy, TaskPriority, TaskSpec,
 };
 use crate::time::LogicalDuration;
-use crate::value::{RuntimeEnv, RuntimeLocalBinding};
+use crate::value::{
+    RuntimeEnv, RuntimeLocalBinding, RuntimeProjectContinuation, RuntimeProjectContinuationError,
+};
 use std::sync::Arc;
 
 impl Engine {
@@ -28,6 +36,10 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
         drop_policy: &mut Option<crate::effect::RuntimeDropPolicy>,
     ) {
+        if self.fiber.pending_ops.is_empty() && self.has_active_project_call() {
+            self.fail_function_call_fallthrough(output, pure_backend);
+            return;
+        }
         let (op, next_op_index) = if let Some(op) = self.fiber.pending_ops.pop_front() {
             (op, None)
         } else {
@@ -104,9 +116,10 @@ impl Engine {
                 };
                 let mut values = Vec::with_capacity(content_plan.values().len());
                 for site in content_plan.values() {
-                    match self.evaluate_dialogue_site(site.function(), pure_backend) {
+                    match self.evaluate_dialogue_site(site, pure_backend) {
                         Ok(value) => values.push(crate::plan::RuntimeDialogueValueBinding {
                             slot: site.slot(),
+                            role: site.role(),
                             value,
                         }),
                         Err(error) => {
@@ -114,6 +127,41 @@ impl Engine {
                             return;
                         }
                     }
+                }
+                let mut effect_callbacks = Vec::with_capacity(content_plan.effect_sites().len());
+                for site in content_plan.effect_sites() {
+                    let callback = match self.evaluate_function_expr(
+                        site.function(),
+                        site.captures(),
+                        pure_backend,
+                    ) {
+                        Ok(RuntimeValue::Function(callback)) => callback,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                        Ok(_) => unreachable!(
+                            "structured function-site construction returned a non-function"
+                        ),
+                    };
+                    let remaining = match callback.remaining_arity() {
+                        Ok(remaining) => remaining,
+                        Err(error) => {
+                            self.fail_eval(error, output);
+                            return;
+                        }
+                    };
+                    if remaining != 0 || !callback.is_structured_executable_callback() {
+                        self.fiber.status = FlowFiberStatus::Failed(
+                            "dialogue effect callback is not an executable zero-argument function"
+                                .to_owned(),
+                        );
+                        return;
+                    }
+                    effect_callbacks.push(crate::value::RuntimeDialogueContentEffectBinding::new(
+                        site.site(),
+                        callback,
+                    ));
                 }
                 let line = content_plan.line().clone();
                 let Some(task_group) = content_plan.line_task_group() else {
@@ -169,6 +217,7 @@ impl Engine {
                     result_target: result,
                     voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
                     values: values.into_boxed_slice(),
+                    effect_callbacks: effect_callbacks.into_boxed_slice(),
                     activation_pc: 0,
                     pending_line_operation: None,
                     failure: None,
@@ -278,6 +327,31 @@ impl Engine {
                     id,
                     resume: self.resume_cursor(next_op_index),
                 });
+            }
+            FlowOp::ProjectCall { site } => {
+                self.start_project_call(site, next_op_index, output, pure_backend);
+            }
+            FlowOp::ApplyFunction {
+                callee,
+                args,
+                result,
+            } => {
+                let resume = self.resume_cursor(next_op_index);
+                let application = (|| {
+                    let callee = self.evaluate_expr_with_backend(&callee, pure_backend)?;
+                    let args = self.evaluate_function_call_args(&args, pure_backend)?;
+                    self.start_function_value_call(
+                        callee,
+                        args,
+                        result,
+                        resume,
+                        output,
+                        pure_backend,
+                    )
+                })();
+                if let Err(error) = application {
+                    self.fail_eval(error, output);
+                }
             }
             FlowOp::If {
                 condition,
@@ -525,7 +599,14 @@ impl Engine {
                 } else {
                     match self.evaluate_expr_with_backend(&expr, pure_backend) {
                         Ok(value) => {
-                            self.return_value(runtime_value_label(&value), output, pure_backend);
+                            if !self.return_function_call_value(value.clone(), output, pure_backend)
+                            {
+                                self.return_value(
+                                    runtime_value_label(&value),
+                                    output,
+                                    pure_backend,
+                                );
+                            }
                         }
                         Err(error) => self.fail_eval(error, output),
                     }
@@ -604,6 +685,339 @@ impl Engine {
             }
             FlowOp::Noop => {
                 self.advance_if_needed(next_op_index);
+            }
+        }
+    }
+
+    fn has_active_project_call(&self) -> bool {
+        self.fiber
+            .control_stack
+            .iter()
+            .any(|entry| matches!(entry.kind, FlowControlStackEntryKind::FunctionCall(_)))
+    }
+
+    fn start_project_call(
+        &mut self,
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+        next_op_index: Option<usize>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let plan_owner = Arc::clone(&self.plan);
+        let Some(site_row) = plan_owner.project_call_sites().get(site) else {
+            self.fiber.status =
+                FlowFiberStatus::Failed(format!("missing project-call site {site}"));
+            return;
+        };
+        let plan = site_row.plan();
+        let resume = self.resume_cursor(next_op_index);
+        let prefix_values = match plan.input() {
+            RuntimeProjectCallInput::Direct => Vec::new(),
+            RuntimeProjectCallInput::Continuation {
+                callee,
+                expected_abi,
+            } => {
+                let value = match self.evaluate_expr_with_backend(callee, pure_backend) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        self.fail_eval(error, output);
+                        return;
+                    }
+                };
+                let RuntimeValue::ProjectContinuation(continuation) = value else {
+                    self.fail_eval(
+                        RuntimeEvalError::ExpectedFunction(runtime_value_label(&value)),
+                        output,
+                    );
+                    return;
+                };
+                if let Err(error) = continuation.validate_expected_abi(expected_abi) {
+                    self.fail_eval(RuntimeEvalError::ProjectContinuation(error), output);
+                    return;
+                }
+                continuation.prefix_values().to_vec()
+            }
+        };
+        let operands = match self.evaluate_project_call_operands(&plan, pure_backend) {
+            Ok(operands) => operands,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        let logical_values = match self.materialize_project_call_ordinary(&plan, &operands) {
+            Ok(values) => values,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        self.advance_if_needed(next_op_index);
+
+        let default_call = plan.attached().and_then(|attached| {
+            if let RuntimeProjectCallAttachedPresence::DefaultedOmitted(default) =
+                attached.presence()
+            {
+                Some((default.site(), default.captures().to_vec()))
+            } else {
+                None
+            }
+        });
+        if let Some((default_site, default_captures)) = default_call {
+            let captures = match default_captures
+                .iter()
+                .map(|source| match source {
+                    RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix { position } => {
+                        usize::try_from(*position)
+                            .ok()
+                            .and_then(|position| prefix_values.get(position))
+                            .cloned()
+                            .ok_or(RuntimeEvalError::ProjectContinuation(
+                                RuntimeProjectContinuationError::PrefixArity {
+                                    expected: prefix_values.len(),
+                                    actual: usize::try_from(*position).unwrap_or(usize::MAX) + 1,
+                                },
+                            ))
+                    }
+                    RuntimeProjectCallDefaultCaptureSource::CurrentLogical { position } => {
+                        usize::try_from(*position)
+                            .ok()
+                            .and_then(|position| logical_values.get(position))
+                            .cloned()
+                            .ok_or(RuntimeEvalError::FunctionArgumentCount {
+                                expected: logical_values.len(),
+                                found: usize::try_from(*position).unwrap_or(usize::MAX) + 1,
+                            })
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(captures) => captures,
+                Err(error) => {
+                    self.fail_eval(error, output);
+                    return;
+                }
+            };
+            let frame = FunctionCallFrame::new(
+                default_site,
+                resume,
+                FunctionReturnContinuation::ProjectDefault {
+                    site,
+                    prefix_values,
+                    logical_values,
+                },
+            );
+            if let Err(error) =
+                self.start_function_site_call(captures, Vec::new(), frame, output, pure_backend)
+            {
+                self.fail_eval(error, output);
+            }
+            return;
+        }
+
+        let logical_values = match self.materialize_project_call_attached(&plan, &operands) {
+            Ok(Some(value)) => {
+                let mut values = logical_values;
+                values.push(value);
+                values
+            }
+            Ok(None) => logical_values,
+            Err(error) => {
+                self.fail_eval(error, output);
+                return;
+            }
+        };
+        self.finish_project_call_terminal(
+            site,
+            prefix_values,
+            logical_values,
+            resume,
+            output,
+            pure_backend,
+        );
+    }
+
+    fn evaluate_project_call_operands(
+        &mut self,
+        plan: &crate::plan::RuntimeProjectCallPlan,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<Vec<Vec<RuntimeValue>>, RuntimeEvalError> {
+        plan.operands()
+            .iter()
+            .map(|operand| {
+                let value = self.evaluate_expr_with_backend(operand.value(), pure_backend)?;
+                match operand.mode() {
+                    crate::value::RuntimeCallArgumentMode::Value => Ok(vec![value]),
+                    crate::value::RuntimeCallArgumentMode::Spread => {
+                        crate::value::runtime_value_into_sequence_values(value).map_err(|value| {
+                            RuntimeEvalError::InvalidSpread(runtime_value_label(&value))
+                        })
+                    }
+                }
+            })
+            .collect()
+    }
+
+    fn materialize_project_call_ordinary(
+        &self,
+        plan: &crate::plan::RuntimeProjectCallPlan,
+        operands: &[Vec<RuntimeValue>],
+    ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
+        let mut values = Vec::with_capacity(plan.ordinary().len());
+        for row in plan.ordinary() {
+            match row {
+                RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
+                    let value = self.project_call_source_value(operands, row.source_index())?;
+                    self.require_project_call_value(row.binding_ty(), &value)?;
+                    values.push(value);
+                }
+                RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
+                    let mut elements = Vec::new();
+                    for &index in row.source_indices() {
+                        let source = operands
+                            .get(usize::try_from(index).map_err(|_| {
+                                RuntimeEvalError::InvalidExpressionType(row.binding_ty())
+                            })?)
+                            .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?;
+                        for value in source {
+                            self.require_project_call_value(row.abi_ty(), value)?;
+                            elements.push(value.clone());
+                        }
+                    }
+                    let value = crate::value::runtime_sequence_values(elements);
+                    self.require_project_call_value(row.binding_ty(), &value)?;
+                    values.push(value);
+                }
+            }
+        }
+        Ok(values)
+    }
+
+    fn materialize_project_call_attached(
+        &self,
+        plan: &crate::plan::RuntimeProjectCallPlan,
+        operands: &[Vec<RuntimeValue>],
+    ) -> Result<Option<RuntimeValue>, RuntimeEvalError> {
+        let Some(row) = plan.attached() else {
+            return Ok(None);
+        };
+        let value = match row.presence() {
+            RuntimeProjectCallAttachedPresence::RequiredPresent
+            | RuntimeProjectCallAttachedPresence::DefaultedPresent => {
+                let value = self.project_call_source_value(
+                    operands,
+                    row.source_index()
+                        .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?,
+                )?;
+                self.require_project_call_value(row.binding_ty(), &value)?;
+                value
+            }
+            RuntimeProjectCallAttachedPresence::OptionalPresent => {
+                let value = self.project_call_source_value(
+                    operands,
+                    row.source_index()
+                        .ok_or(RuntimeEvalError::InvalidExpressionType(row.binding_ty()))?,
+                )?;
+                let value = RuntimeValue::option_some(value);
+                self.require_project_call_value(row.binding_ty(), &value)?;
+                value
+            }
+            RuntimeProjectCallAttachedPresence::OptionalOmitted => {
+                let value = RuntimeValue::option_none();
+                self.require_project_call_value(row.binding_ty(), &value)?;
+                value
+            }
+            RuntimeProjectCallAttachedPresence::DefaultedOmitted(_) => return Ok(None),
+        };
+        Ok(Some(value))
+    }
+
+    fn project_call_source_value(
+        &self,
+        operands: &[Vec<RuntimeValue>],
+        index: u32,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let source = operands
+            .get(usize::try_from(index).map_err(|_| {
+                RuntimeEvalError::InvalidSpread(
+                    "project-call source index exceeds platform limits".to_owned(),
+                )
+            })?)
+            .ok_or_else(|| {
+                RuntimeEvalError::InvalidSpread("project-call source is absent".to_owned())
+            })?;
+        if source.len() != 1 {
+            return Err(RuntimeEvalError::InvalidSpread(
+                "fixed project-call source expanded more than one ABI value".to_owned(),
+            ));
+        }
+        Ok(source[0].clone())
+    }
+
+    fn require_project_call_value(
+        &self,
+        expected: crate::runtime_id::RuntimePlanTypeId,
+        value: &RuntimeValue,
+    ) -> Result<(), RuntimeEvalError> {
+        if self.plan.value_matches_type(expected, value)? {
+            Ok(())
+        } else {
+            Err(RuntimeEvalError::InvalidExpressionType(expected))
+        }
+    }
+
+    fn finish_project_call_terminal(
+        &mut self,
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+        prefix_values: Vec<RuntimeValue>,
+        logical_values: Vec<RuntimeValue>,
+        resume: Option<FlowCursor>,
+        output: &mut RuntimeStepOutput,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) {
+        let plan_owner = Arc::clone(&self.plan);
+        let Some(site_row) = plan_owner.project_call_sites().get(site) else {
+            self.fiber.status =
+                FlowFiberStatus::Failed(format!("missing project-call site {site}"));
+            return;
+        };
+        let plan = site_row.plan();
+        let result = site_row.result();
+        match plan.outcome() {
+            RuntimeProjectCallOutcome::Continue { result_abi, .. } => {
+                let mut values = prefix_values;
+                values.extend(logical_values);
+                let continuation = match RuntimeProjectContinuation::try_new(
+                    &self.plan,
+                    result_abi.clone(),
+                    values,
+                ) {
+                    Ok(value) => RuntimeValue::ProjectContinuation(value),
+                    Err(error) => {
+                        self.fail_eval(RuntimeEvalError::ProjectContinuation(error), output);
+                        return;
+                    }
+                };
+                self.complete_function_call_result(result, resume, continuation, output);
+            }
+            RuntimeProjectCallOutcome::Invoke { function_site } => {
+                let frame = FunctionCallFrame::new(
+                    *function_site,
+                    resume,
+                    FunctionReturnContinuation::Bind {
+                        result: result.clone(),
+                        remaining_args: Vec::new(),
+                    },
+                );
+                if let Err(error) = self.start_function_site_call(
+                    prefix_values,
+                    logical_values,
+                    frame,
+                    output,
+                    pure_backend,
+                ) {
+                    self.fail_eval(error, output);
+                }
             }
         }
     }
@@ -1015,14 +1429,18 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Option<FlowControlStackEntryKind> {
         self.pop_scope_frames_until_loop(output, pure_backend);
-        match self.fiber.control_stack.pop() {
-            Some(FlowControlStackEntry {
-                kind:
-                    kind @ (FlowControlStackEntryKind::Loop { .. }
+        let is_loop = self.fiber.control_stack.last().is_some_and(|entry| {
+            matches!(
+                entry.kind,
+                FlowControlStackEntryKind::Loop { .. }
                     | FlowControlStackEntryKind::While { .. }
-                    | FlowControlStackEntryKind::WhileLet { .. }),
-            }) => Some(kind),
-            _ => None,
+                    | FlowControlStackEntryKind::WhileLet { .. }
+            )
+        });
+        if is_loop {
+            self.fiber.control_stack.pop().map(|entry| entry.kind)
+        } else {
+            None
         }
     }
 
@@ -1061,6 +1479,7 @@ impl Engine {
                 }
             }
             FlowControlStackEntryKind::Scope { .. } => return false,
+            FlowControlStackEntryKind::FunctionCall(_) => return false,
         }
         true
     }
@@ -1100,6 +1519,10 @@ impl Engine {
                 }]);
             }
             FlowControlStackEntryKind::Scope { .. } => {
+                self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
+                return false;
+            }
+            FlowControlStackEntryKind::FunctionCall(_) => {
                 self.fail_eval(RuntimeEvalError::MisplacedLoopControl("continue"), output);
                 return false;
             }

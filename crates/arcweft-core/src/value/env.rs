@@ -106,7 +106,7 @@ impl RuntimeEnv {
     ) -> Result<(), RuntimeValue> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.binding_mut(local) {
-                return set_runtime_record_field(&mut binding.value, field, value);
+                return binding.value.replace_record_field(field, value);
             }
         }
         Err(value)
@@ -273,17 +273,6 @@ impl RuntimeScope {
         }
         true
     }
-}
-
-fn set_runtime_record_field(
-    target: &mut RuntimeValue,
-    field: RuntimeRecordFieldId,
-    value: RuntimeValue,
-) -> Result<(), RuntimeValue> {
-    let RuntimeValue::NominalRecord(record) = target else {
-        return Err(value);
-    };
-    record.replace_field(field, value)
 }
 
 #[cfg(test)]

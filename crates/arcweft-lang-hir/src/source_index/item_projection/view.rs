@@ -97,6 +97,7 @@ pub(super) fn payload_matches(
         slots,
         arenas,
         &block_arenas,
+        None,
     )
     .is_none()
     {

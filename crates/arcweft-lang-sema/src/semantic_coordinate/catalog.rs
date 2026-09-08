@@ -1,7 +1,9 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_lang_hir::{
-    dialogue_application::{HirDialogueMarkId, HirRichTextTagIdentity, HirRichTextTagPayload},
+    dialogue_application::{
+        HirDialogueMarkId, HirDialogueNodeKind, HirDialoguePointActionIdentity,
+    },
     expr::HirExprKind,
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
@@ -148,6 +150,29 @@ impl AcceptedSemanticRootCatalog {
             .ok_or_else(|| AcceptedSemanticRootCatalogError::MissingRoot { root: root.clone() })
     }
 
+    /// Returns the accepted item root for one generation-local HIR item.
+    /// Item-root identity is issued once by this catalog; transcript writers
+    /// must use this relation instead of serializing the arena item ID.
+    pub(crate) fn item_for_hir(
+        &self,
+        item: ItemId,
+    ) -> Result<AcceptedSemanticRoot, AcceptedSemanticRootCatalogError> {
+        self.roots
+            .iter()
+            .find_map(|(root, accepted)| match root {
+                HirSemanticPathRoot::Item { item: owner, .. } if *owner == item => Some(*accepted),
+                HirSemanticPathRoot::Declaration(_) => None,
+                HirSemanticPathRoot::Item { .. } => None,
+            })
+            .ok_or(AcceptedSemanticRootCatalogError::MissingRoot {
+                root: HirSemanticPathRoot::Item {
+                    item,
+                    entry_ordinal: u32::MAX,
+                    role: HirItemEvaluationEntryRole::Item,
+                },
+            })
+    }
+
     pub(crate) fn semantic_path(
         &self,
         owner: HirSemanticPathOwnerId,
@@ -204,7 +229,6 @@ fn accepted_declaration_id(
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.lang.accepted-declaration-semantic.v1\0");
     hasher.update(declaration.semantic_digest().as_bytes());
-    hasher.update(facts.interface_digest().as_bytes());
     Ok(AcceptedDeclarationSemanticId::from_bytes(
         *hasher.finalize().as_bytes(),
     ))
@@ -319,6 +343,22 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .map(|coordinate| CheckedExpressionCoordinateEvidence::new(owner, coordinate))
     }
 
+    /// Returns the accepted declaration-root identity for one exact callable
+    /// declaration. Only declaration roots are admitted; item roots and
+    /// nested expression paths cannot satisfy this boundary.
+    pub(crate) fn accepted_declaration(
+        &self,
+        declaration: &CallableDeclarationKey,
+    ) -> Result<AcceptedDeclarationSemanticId, SemanticCoordinateIndexError> {
+        match self
+            .catalog
+            .root_for_hir(&HirSemanticPathRoot::Declaration(declaration.clone()))?
+        {
+            AcceptedSemanticRoot::Declaration(identity) => Ok(*identity),
+            AcceptedSemanticRoot::Item(_) => Err(SemanticCoordinateIndexError::InvalidRootPath),
+        }
+    }
+
     /// Issues the sole stable coordinate for an exact HIR dialogue marker.
     ///
     /// The executable-project borrow is mandatory so issuance checks the
@@ -348,7 +388,7 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
                 .map_err(|_| SemanticCoordinateIndexError::MissingOwner {
                     owner: HirSemanticPathOwnerId::Expression(owner),
                 })?;
-        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
             return Err(SemanticCoordinateIndexError::InvalidRootPath);
         };
         let content = application.content();
@@ -362,16 +402,20 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
             .get(ordinal)
             .filter(|row| row.id() == mark)
             .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
-        let tag_ordinal = usize::try_from(row.tag().ordinal())
+        let action = row.action();
+        let action_ordinal = usize::try_from(action.ordinal())
             .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
-        let tag = content
-            .tags()
-            .get(tag_ordinal)
-            .filter(|tag| tag.id() == row.tag())
+        let action_node = content
+            .nodes()
+            .get(action_ordinal)
+            .filter(|node| node.id() == action)
             .ok_or(SemanticCoordinateIndexError::InvalidRootPath)?;
-        if tag.identity() != &HirRichTextTagIdentity::Marker
-            || tag.payload() != &HirRichTextTagPayload::Marker(mark)
-        {
+        if !matches!(
+            action_node.kind(),
+            HirDialogueNodeKind::PointAction(point)
+                if point.id() == action
+                    && matches!(point.identity(), HirDialoguePointActionIdentity::Mark(_))
+        ) {
             return Err(SemanticCoordinateIndexError::InvalidRootPath);
         }
         Ok(StableCheckedDialogueMarkCoordinate::new(
@@ -643,7 +687,8 @@ fn is_binding_local_path(path: &HirSemanticOwnerPath) -> bool {
         Some(
             HirSemanticPathStep::Statement(HirStatementChildRole::SelectBinding { .. })
             | HirSemanticPathStep::DeclarationMember { .. }
-            | HirSemanticPathStep::DeclarationResult,
+            | HirSemanticPathStep::DeclarationResult
+            | HirSemanticPathStep::AttachedContentBinding,
         ) => true,
         Some(HirSemanticPathStep::Pattern(role)) => matches!(
             role,
@@ -666,7 +711,8 @@ fn is_binding_local_path(path: &HirSemanticOwnerPath) -> bool {
             | HirSemanticPathStep::Expression(_)
             | HirSemanticPathStep::MatchPattern { .. }
             | HirSemanticPathStep::ParameterPattern { .. }
-            | HirSemanticPathStep::ParameterDefault { .. },
+            | HirSemanticPathStep::ParameterDefault { .. }
+            | HirSemanticPathStep::AttachedContentDefault,
         )
         | None => false,
     }
@@ -688,6 +734,8 @@ fn checked_path_from_owner_path(
                         | HirSemanticPathStep::DeclarationContract(_)
                         | HirSemanticPathStep::ParameterPattern { .. }
                         | HirSemanticPathStep::ParameterDefault { .. }
+                        | HirSemanticPathStep::AttachedContentBinding
+                        | HirSemanticPathStep::AttachedContentDefault
                         | HirSemanticPathStep::DeclarationResult
                 )
             ) && !path.iter().any(|step| {
@@ -703,6 +751,8 @@ fn checked_path_from_owner_path(
                         | HirSemanticPathStep::DeclarationContract(_)
                         | HirSemanticPathStep::ParameterPattern { .. }
                         | HirSemanticPathStep::ParameterDefault { .. }
+                        | HirSemanticPathStep::AttachedContentBinding
+                        | HirSemanticPathStep::AttachedContentDefault
                         | HirSemanticPathStep::DeclarationResult
                 )
             })
@@ -725,6 +775,8 @@ fn checked_path_from_owner_path(
                             | HirSemanticPathStep::DeclarationContract(_)
                             | HirSemanticPathStep::ParameterPattern { .. }
                             | HirSemanticPathStep::ParameterDefault { .. }
+                            | HirSemanticPathStep::AttachedContentBinding
+                            | HirSemanticPathStep::AttachedContentDefault
                             | HirSemanticPathStep::DeclarationResult
                     ) || (index > 0
                         && matches!(
@@ -792,6 +844,12 @@ fn checked_path_from_owner_path(
                     group: *group,
                     parameter: *parameter,
                 }
+            }
+            HirSemanticPathStep::AttachedContentBinding => {
+                CheckedSemanticPathStep::AttachedContentBinding
+            }
+            HirSemanticPathStep::AttachedContentDefault => {
+                CheckedSemanticPathStep::AttachedContentDefault
             }
             HirSemanticPathStep::DeclarationMember { member } => {
                 CheckedSemanticPathStep::DeclarationMember { member: *member }

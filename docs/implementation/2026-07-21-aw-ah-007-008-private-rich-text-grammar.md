@@ -2,6 +2,12 @@
 
 Date: 2026-07-21
 
+> Superseded implementation evidence. The paired-markup grammar and shared
+> scanner described below were later deleted. Current dialogue content owns
+> structural Text, Ruby, RawLiteral, Interpolation, PointAction, and typed
+> ContentApplication nodes directly. The remaining detail records the dated
+> migration state and is not current source authority.
+
 ## Outcome
 
 This cut implements the private syntax prerequisite for the later Proof public
@@ -12,7 +18,7 @@ with SHA-256
 Implementation started from Git
 `118a987065f7a2985086794a604e3bc4ee8623b0`.
 
-The private lossless document grammar now owns `RichText` tags and their
+The private lossless document grammar then owned provisional markup nodes and their
 argument descendants directly inside `DialogueCallExpression`. It uses the
 document parser's existing lexer cursor, event stream, attachment transaction,
 and identity allocation. It does not call the public dialogue parser, reparse a
@@ -26,10 +32,10 @@ internal shared scanner, not a second public reader.
 
 ## Private node ownership
 
-Each authored tag receives `RichTextTag(n)` in source order. The private tree
-owns exact nodes for:
+Each authored markup item received a source-ordered private identity. The
+private tree owned exact nodes for:
 
-- opening tags, end tags, and tag names;
+- paired delimiters and their provisional names;
 - ordinary argument payloads and ordered `Argument(n)` descendants;
 - positional, named, invalid, and missing-value arguments;
 - named keys, the first unescaped unquoted `=`, and value nodes;
@@ -54,7 +60,7 @@ An unterminated double-quoted value no longer hides the recovering `]` from the
 private grammar. A normally closed string remains one token, including `]` in
 its content, and an escaped `\]` does not become a recovery boundary. The
 unterminated quote diagnostic retains its exact authored range, and subsequent
-RichText tags remain attached in source order. The recovery token has a
+provisional RichText markup items remained attached in source order. The recovery token had a
 dedicated unterminated-string kind, so the same lexer change cannot turn a
 malformed ordinary expression string into a valid literal.
 
@@ -65,7 +71,7 @@ receive invented RichText identities. The classifier retains the public
 content-limit charges without constructing or reading a public dialogue AST.
 
 The private grammar also applies the public 4,096-tag, 32,768-content-argument,
-and 16,384-byte tag-body limits before allocating descendants. Excess and
+and 16,384-byte markup-body limits before allocating descendants. Excess and
 overlong markup remains lossless and opaque, including nested bracket bytes.
 Each exhausted content budget emits its diagnostic once, latches for the rest
 of the dialogue, suppresses every further over-budget descendant allocation,
@@ -96,17 +102,17 @@ that previously blocked that migration.
 
 The focused and crate-wide tests prove:
 
-- authored tag and argument order, roles, ranges, and lossless Rowan text;
+- authored markup and argument order, roles, ranges, and lossless Rowan text;
 - agreement between public and private tag/argument/key/equals/value/quote
   ranges across CRLF, Unicode whitespace, and Unicode content;
 - exact partitioning when one lexer token contains both `=` and value bytes;
 - distinct present-empty and zero-width missing value identities;
 - invalid escape and unterminated quote issue ranges;
 - dedicated typed expression children for `fx`, `call`, and `if` payloads;
-- recovery before a following tag after an unterminated quote;
-- absence of invented tag identities inside escape, interpolation, ruby, raw,
+- recovery before following markup after an unterminated quote;
+- absence of invented markup identities inside escape, interpolation, ruby, raw,
   inline-raw, and inline-style surfaces;
-- exact content-tag, content-argument, and tag-body limits, including a single
+- exact content-item, content-argument, and markup-body limits, including a single
   latched limit diagnostic, allocation suppression after exhaustion, and
   opaque recovery for an overlong body containing an inner tag spelling;
 - rejection of a non-dialogue unterminated string as a literal expression;
@@ -139,7 +145,7 @@ No manifest, dependency, feature, public API, or crate boundary changed. The
 new `parser/rich_text_grammar.rs` responsibility module owns only private event
 emission over the shared scan and document cursor. The small
 `text/dialogue_opaque.rs` module owns bounded classification of non-tag
-dialogue surfaces. Neutral tag and argument facts remain with the RichText
+dialogue surfaces. Neutral provisional markup and argument facts remain with the RichText
 scanner, while attachment access, exact-kind markers, family membership, and
 semantic roles remain in their existing responsibility modules.
 
@@ -156,7 +162,7 @@ development workspace dependency edges; no edge changed in this cut.
 | `src/grammar/kinds.rs` | 38,328 | 1,174 | production with embedded tests | 60 | exhaustive node/token and identity vocabulary |
 | `src/text.rs` | 37,189 | 1,061 | production with embedded tests | 260 | public dialogue scan orchestration and latched text limits |
 | `src/parser/document.rs` | 32,317 | 999 | production | 0 | one-pass document cursor and exact token partition access |
-| `src/text/rich_text_tag.rs` | 31,455 | 936 | production | 0 | shared neutral RichText tag/argument lexical scan |
+| `src/text/rich_text_tag.rs` | 31,455 | 936 | production | 0 | historical shared neutral markup/argument lexical scan; file later deleted |
 | `src/parser.rs` | 25,809 | 775 | parser facade | 0 | private parser responsibility modules and public entry points |
 | `src/attachment/access.rs` | 25,197 | 737 | production with embedded tests | 22 | role-driven attached RichText accessors |
 | `src/parser/rich_text_grammar.rs` | 24,118 | 691 | production | 0 | private RichText event emission, token partitioning, and latched limits |

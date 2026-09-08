@@ -2088,6 +2088,7 @@ const fn value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
+        RuntimeValue::ProjectContinuation(_) => "project continuation",
         RuntimeValue::Variant { .. } => "variant",
     }
 }

@@ -55,6 +55,22 @@ pub enum DialogueCharacterProjection {
 }
 
 impl DialogueProjectionCoordinate {
+    /// Stable semantic coordinate tag used by checked semantic owners.
+    ///
+    /// This is deliberately owned by the dialogue-view coordinate algebra;
+    /// transcript consumers must not derive identity from the source field
+    /// spelling returned by [`Self::field`].
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Character(character) => 0x00 + character.semantic_tag(),
+            Self::Content => 0x10,
+            Self::Occurrence => 0x11,
+            Self::Stage => 0x12,
+            Self::Reveal => 0x13,
+            Self::PrimaryAction => 0x14,
+        }
+    }
+
     /// Canonical field that exposes this projection.
     pub const fn field(self) -> &'static str {
         match self {
@@ -93,6 +109,14 @@ impl DialogueProjectionCoordinate {
 }
 
 impl DialogueCharacterProjection {
+    /// Stable semantic coordinate tag used by checked semantic owners.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Id => 0,
+            Self::DisplayName => 1,
+        }
+    }
+
     pub const fn field(self) -> &'static str {
         match self {
             Self::Id => "id",

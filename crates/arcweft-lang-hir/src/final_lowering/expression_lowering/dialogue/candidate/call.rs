@@ -16,7 +16,7 @@ use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use crate::expr::{
     HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
-    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallInvocation,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
     HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirPoisonState,
     HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState,
@@ -54,7 +54,7 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         cursor: &mut CandidateCursor,
         projection: &SyntaxCallProjection,
-    ) -> Result<(HirCallExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
+    ) -> Result<(HirCallInvocation, Option<HirRecoveryIssue>), HirLowerFailure> {
         let expression_projection = node
             .expression_projection()
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
@@ -433,8 +433,8 @@ fn build_candidate_call(
     terminator: SyntaxCallArgumentListTerminator,
     argument_states: &[HirCallChildPoison],
     type_argument_states: &[HirCallChildPoison],
-) -> Result<(HirCallExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
-    let (call, state) = HirCallExpr::try_new(
+) -> Result<(HirCallInvocation, Option<HirRecoveryIssue>), HirLowerFailure> {
+    let (call, state) = HirCallInvocation::try_new(
         callee,
         explicit_type_application,
         arguments,

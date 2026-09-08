@@ -15,23 +15,24 @@ use arcweft_dialogue::{
 use arcweft_id::TextKey;
 use arcweft_presentation::{
     fx::{
-        Angle, FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxContextSlot,
-        FxDefinition, FxDiagnostic, FxEvaluationBinding, FxGraph, FxGraphChildPath,
-        FxInstanceSnapshot, FxLogicalTime, FxNode, FxPhase, FxProperty, FxResourceId,
-        FxRuntimeType, FxRuntimeValue, FxSamplerProgram, FxStaticValue, FxTarget, Length,
-        Transform2D, ValueInstruction, ValueProgramSchema,
+        Angle, FiniteF32, FxApplication, FxApplicationDraft, FxApplicationResolver, FxAuthoredSeed,
+        FxColor, FxContextSlot, FxDefinition, FxDiagnostic, FxEvaluationBinding, FxGraph,
+        FxGraphChildPath, FxInstanceActivation, FxInstanceOwnerKey, FxInstanceSnapshot,
+        FxLogicalTime, FxNode, FxPhase, FxProperty, FxPropertyId, FxResourceId, FxRuntimeType,
+        FxRuntimeValue, FxSamplerProgram, FxShaderStage, FxStaticValue, FxTarget, FxUniformField,
+        FxUniformRecord, FxUniformValue, Length, Transform2D, ValueInstruction, ValueProgramSchema,
     },
     hit::HitRect,
 };
-use arcweft_render_text::{RuntimeLineContext, TextWeight, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, TextWeight, resolve_frame_with_template};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
     ProductSourceRef, SourceDocument, SourceDocumentId, SourceName, SourceSetRevision,
 };
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
-    LineDisplayFrame, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
-    RichTextSpanKind, RichTextStyle, RichTextWritingMode,
+    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
+    DialoguePresentationCharacter, LineDisplayFrame, RichTextControl, RichTextDocument,
+    RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::collections::BTreeMap;
@@ -148,21 +149,59 @@ fn finite(value: f32) -> FiniteF32 {
     FiniteF32::try_new(value).expect("test value is finite")
 }
 
+fn owner(bytes: &[u8]) -> FxInstanceOwnerKey {
+    FxInstanceOwnerKey::from_dialogue_canonical_bytes(bytes)
+}
+
+fn bind_empty(definition: &FxDefinition, authored_ordinal: u32) -> FxApplication {
+    let draft = FxApplicationDraft::try_new(
+        definition.id().clone(),
+        vec![None; definition.parameters().len()],
+        authored_ordinal,
+        None,
+    )
+    .expect("empty Fx application draft");
+    FxApplication::bind(definition, draft).expect("empty Fx application binds")
+}
+
+fn snapshot(
+    application: &FxApplication,
+    definition: &FxDefinition,
+    owner_bytes: &[u8],
+    activation_logical_time: FxLogicalTime,
+    authored_seed: u32,
+) -> FxInstanceSnapshot {
+    FxInstanceSnapshot::try_new(
+        application.instance_identity(owner(owner_bytes)),
+        definition,
+        FxInstanceActivation::new(
+            activation_logical_time,
+            Some(FxAuthoredSeed::new(authored_seed)),
+            FxGraphChildPath::default(),
+        ),
+        application.template().clone(),
+        application
+            .template()
+            .initial_runtime()
+            .to_vec()
+            .into_boxed_slice(),
+        Vec::new(),
+    )
+    .expect("Fx snapshot")
+}
+
 fn resolver(
     definition: FxDefinition,
     application: &FxApplication,
     runtime_millis: u64,
 ) -> TestFxResolver {
-    let instance = FxInstanceSnapshot {
-        instance: application.derive_instance_id(["dialogue", "typed-fixture"]),
-        definition: definition.id().clone(),
-        abi_hash: definition.abi_hash(),
-        activation_logical_time: FxLogicalTime::zero(),
-        deterministic_seed: 17,
-        parameters: application.parameters().to_vec(),
-        child_path: FxGraphChildPath::default(),
-        provider_state: Vec::new(),
-    };
+    let instance = snapshot(
+        application,
+        &definition,
+        b"dialogue-typed-fixture",
+        FxLogicalTime::zero(),
+        17,
+    );
     TestFxResolver {
         definition,
         instance,
@@ -174,23 +213,25 @@ fn resolver(
 
 #[test]
 fn vertical_ruby_stage_uses_canonical_layout_and_prepared_glyphs() {
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    writing_mode: RichTextWritingMode::VerticalRl,
-                    ..RichTextLayout::default()
-                },
-            }),
-        },
-        RichTextNode::Ruby {
-            base: "漢字".to_owned(),
-            ruby: "かんじ".to_owned(),
-        },
-        RichTextNode::Text {
-            text: "ABC2026".to_owned(),
-        },
-    ]);
+    let frame = frame(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Layout {
+            layout: RichTextLayout {
+                writing_mode: RichTextWritingMode::VerticalRl,
+                ..RichTextLayout::default()
+            },
+        }),
+        body: vec![
+            RichTextNode::Ruby {
+                body: vec![RichTextNode::Text {
+                    text: "漢字".to_owned(),
+                }],
+                ruby: "かんじ".to_owned(),
+            },
+            RichTextNode::Text {
+                text: "ABC2026".to_owned(),
+            },
+        ],
+    }]);
     let (item, complete, diagnostics) = prepare(&frame, 0, false, true, &NoFxResolver);
 
     assert!(complete);
@@ -284,25 +325,28 @@ fn typed_sampler_uses_logical_glyph_ordinal_and_time_only_changes_paint() {
     let graph = FxGraph::try_new(vec![FxNode::Transform {
         fx: id.clone(),
         properties: vec![
-            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
-            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphTransform)),
-            FxProperty::new("sampler", FxStaticValue::Sampler(sampler)),
+            FxProperty::new(FxPropertyId::Target, FxStaticValue::Target(FxTarget::Glyph)),
+            FxProperty::new(
+                FxPropertyId::Phase,
+                FxStaticValue::Phase(FxPhase::GlyphTransform),
+            ),
+            FxProperty::new(FxPropertyId::Sampler, FxStaticValue::Sampler(sampler)),
         ],
     }])
     .expect("wave graph");
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
-    let application = FxApplication::try_new(id, Vec::new(), 0, None).expect("application");
+    let application = bind_empty(&definition, 0);
     let frame = frame(vec![
         RichTextNode::Text {
             text: "前".to_owned(),
         },
-        RichTextNode::StyleStart {
+        RichTextNode::Scope {
             style: Box::new(RichTextStyle::Fx {
                 application: application.clone(),
             }),
-        },
-        RichTextNode::Text {
-            text: "漢字".to_owned(),
+            body: vec![RichTextNode::Text {
+                text: "漢字".to_owned(),
+            }],
         },
     ]);
     let at_zero_resolver = resolver(definition.clone(), &application, 0);
@@ -331,46 +375,43 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
     };
     let graph = FxGraph::try_new(vec![
         FxNode::Text {
-            properties: vec![FxProperty::new("weight", FxRuntimeValue::I32(700).into())],
+            properties: vec![FxProperty::new(
+                FxPropertyId::Weight,
+                FxRuntimeValue::I32(700).into(),
+            )],
         },
         FxNode::Transform {
             fx: id.clone(),
             properties: vec![
-                FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
-                FxProperty::new("transform", FxRuntimeValue::Transform2D(transform).into()),
+                FxProperty::new(FxPropertyId::Target, FxStaticValue::Target(FxTarget::Glyph)),
+                FxProperty::new(
+                    FxPropertyId::Transform,
+                    FxRuntimeValue::Transform2D(transform).into(),
+                ),
             ],
         },
     ])
     .expect("typed graph");
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
-    let application =
-        FxApplication::try_new(id.clone(), Vec::new(), 0, None).expect("typed application");
-    let instance = FxInstanceSnapshot {
-        instance: application.derive_instance_id(["dialogue", "fixture", "occurrence.1"]),
-        definition: id,
-        abi_hash: definition.abi_hash(),
-        activation_logical_time: FxLogicalTime::zero(),
-        deterministic_seed: 17,
-        parameters: Vec::new(),
-        child_path: FxGraphChildPath::default(),
-        provider_state: Vec::new(),
-    };
+    let application = bind_empty(&definition, 0);
+    let instance = snapshot(
+        &application,
+        &definition,
+        b"dialogue-fixture-occurrence",
+        FxLogicalTime::zero(),
+        17,
+    );
     let resolver = TestFxResolver {
         definition,
         instance,
         runtime_time: FxLogicalTime::zero(),
     };
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Fx { application }),
-        },
-        RichTextNode::Text {
+    let frame = frame(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Fx { application }),
+        body: vec![RichTextNode::Text {
             text: "typed".to_owned(),
-        },
-        RichTextNode::StyleEnd {
-            span: RichTextSpanKind::Fx,
-        },
-    ]);
+        }],
+    }]);
     let (item, _, diagnostics) = prepare(&frame, 0, false, true, &resolver);
 
     assert!(diagnostics.is_empty(), "{diagnostics:?}");
@@ -389,28 +430,39 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
 fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
     let id =
         arcweft_presentation::fx::FxId::try_new("test", "dialogue.source_glow").expect("Fx id");
-    let shader_node = |stage: &str, amount: f32, color: [u8; 4]| FxNode::Shader {
+    let shader_node = |stage: FxShaderStage, amount: f32, color: [u8; 4]| FxNode::Shader {
         fx: id.clone(),
         properties: vec![
             FxProperty::new(
-                "resource",
+                FxPropertyId::Resource,
                 FxStaticValue::Resource(
                     FxResourceId::try_new("shader.source_glow").expect("resource"),
                 ),
             ),
-            FxProperty::new("stage", FxStaticValue::Selector(stage.to_owned())),
+            FxProperty::new(FxPropertyId::Stage, FxStaticValue::ShaderStage(stage)),
             FxProperty::new(
-                "uniforms",
-                FxStaticValue::Record(vec![
-                    FxProperty::new(
-                        "amount",
-                        FxRuntimeValue::F32(FiniteF32::try_new(amount).expect("finite")).into(),
-                    ),
-                    FxProperty::new(
-                        "color",
-                        FxRuntimeValue::Color(FxColor::from_rgba8(color)).into(),
-                    ),
-                ]),
+                FxPropertyId::Uniforms,
+                FxStaticValue::UniformRecord(
+                    FxUniformRecord::try_new(vec![
+                        FxUniformField::try_new(
+                            "amount",
+                            FxUniformValue::constant(FxRuntimeValue::F32(
+                                FiniteF32::try_new(amount).expect("finite"),
+                            ))
+                            .expect("amount uniform"),
+                        )
+                        .expect("amount field"),
+                        FxUniformField::try_new(
+                            "color",
+                            FxUniformValue::constant(FxRuntimeValue::Color(FxColor::from_rgba8(
+                                color,
+                            )))
+                            .expect("color uniform"),
+                        )
+                        .expect("color field"),
+                    ])
+                    .expect("uniform record"),
+                ),
             ),
         ],
     };
@@ -423,47 +475,41 @@ fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
     )
     .expect("mask sampler");
     let graph = FxGraph::try_new(vec![
-        shader_node("glyph_color", 0.9, [96, 64, 255, 255]),
+        shader_node(FxShaderStage::GlyphColor, 0.9, [96, 64, 255, 255]),
         FxNode::Mask {
             fx: id.clone(),
             properties: vec![
-                FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
-                FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphMask)),
-                FxProperty::new("coverage", FxStaticValue::Sampler(coverage)),
+                FxProperty::new(FxPropertyId::Target, FxStaticValue::Target(FxTarget::Glyph)),
+                FxProperty::new(
+                    FxPropertyId::Phase,
+                    FxStaticValue::Phase(FxPhase::GlyphMask),
+                ),
+                FxProperty::new(FxPropertyId::Coverage, FxStaticValue::Sampler(coverage)),
             ],
         },
-        shader_node("post_process", 0.65, [64, 176, 255, 255]),
+        shader_node(FxShaderStage::PostProcess, 0.65, [64, 176, 255, 255]),
     ])
     .expect("typed graph");
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
-    let application =
-        FxApplication::try_new(id.clone(), Vec::new(), 0, None).expect("typed application");
-    let instance = FxInstanceSnapshot {
-        instance: application.derive_instance_id(["dialogue", "fixture", "source.glow"]),
-        definition: id,
-        abi_hash: definition.abi_hash(),
-        activation_logical_time: FxLogicalTime::zero(),
-        deterministic_seed: 91,
-        parameters: Vec::new(),
-        child_path: FxGraphChildPath::default(),
-        provider_state: Vec::new(),
-    };
+    let application = bind_empty(&definition, 0);
+    let instance = snapshot(
+        &application,
+        &definition,
+        b"dialogue-fixture-source",
+        FxLogicalTime::zero(),
+        91,
+    );
     let resolver = TestFxResolver {
         definition,
         instance,
         runtime_time: FxLogicalTime::zero(),
     };
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Fx { application }),
-        },
-        RichTextNode::Text {
+    let frame = frame(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Fx { application }),
+        body: vec![RichTextNode::Text {
             text: "source".to_owned(),
-        },
-        RichTextNode::StyleEnd {
-            span: RichTextSpanKind::Fx,
-        },
-    ]);
+        }],
+    }]);
 
     let (item, _, diagnostics) = prepare(&frame, 0, false, true, &resolver);
 
@@ -494,40 +540,35 @@ fn stage_local_fx_time_reaches_dialogue_prepared_glyph_mask() {
     let graph = FxGraph::try_new(vec![FxNode::Mask {
         fx: id.clone(),
         properties: vec![
-            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
-            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphMask)),
-            FxProperty::new("coverage", FxStaticValue::Sampler(coverage)),
+            FxProperty::new(FxPropertyId::Target, FxStaticValue::Target(FxTarget::Glyph)),
+            FxProperty::new(
+                FxPropertyId::Phase,
+                FxStaticValue::Phase(FxPhase::GlyphMask),
+            ),
+            FxProperty::new(FxPropertyId::Coverage, FxStaticValue::Sampler(coverage)),
         ],
     }])
     .expect("typed mask graph");
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
-    let application = FxApplication::try_new(id.clone(), Vec::new(), 0, None).expect("application");
+    let application = bind_empty(&definition, 0);
     let activation_logical_time = FxLogicalTime::zero()
         .try_advance_millis(7_000)
         .expect("activation time");
-    let instance = FxInstanceSnapshot {
-        instance: application.derive_instance_id(["dialogue", "stage-time"]),
-        definition: id,
-        abi_hash: definition.abi_hash(),
+    let instance = snapshot(
+        &application,
+        &definition,
+        b"dialogue-stage-time",
         activation_logical_time,
-        deterministic_seed: 5,
-        parameters: Vec::new(),
-        child_path: FxGraphChildPath::default(),
-        provider_state: Vec::new(),
-    };
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Fx {
-                application: application.clone(),
-            }),
-        },
-        RichTextNode::Text {
+        5,
+    );
+    let frame = frame(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Fx {
+            application: application.clone(),
+        }),
+        body: vec![RichTextNode::Text {
             text: "時".to_owned(),
-        },
-        RichTextNode::StyleEnd {
-            span: RichTextSpanKind::Fx,
-        },
-    ]);
+        }],
+    }]);
     let at_stage_start = TestFxResolver {
         definition: definition.clone(),
         instance: instance.clone(),
@@ -566,31 +607,37 @@ fn missing_typed_shader_is_a_typed_diagnostic() {
     let graph = FxGraph::try_new(vec![FxNode::Shader {
         fx: id.clone(),
         properties: vec![
-            FxProperty::new("target", FxStaticValue::Target(FxTarget::Glyph)),
-            FxProperty::new("phase", FxStaticValue::Phase(FxPhase::GlyphColor)),
+            FxProperty::new(FxPropertyId::Target, FxStaticValue::Target(FxTarget::Glyph)),
             FxProperty::new(
-                "resource",
+                FxPropertyId::Phase,
+                FxStaticValue::Phase(FxPhase::GlyphColor),
+            ),
+            FxProperty::new(
+                FxPropertyId::Resource,
                 FxStaticValue::Resource(
                     FxResourceId::try_new("missing.shader").expect("resource id"),
                 ),
             ),
-            FxProperty::new("uniforms", FxStaticValue::Record(Vec::new())),
+            FxProperty::new(
+                FxPropertyId::Uniforms,
+                FxStaticValue::UniformRecord(
+                    FxUniformRecord::try_new(Vec::new()).expect("empty uniform record"),
+                ),
+            ),
         ],
     }])
     .expect("shader graph");
     let definition = FxDefinition::new(id.clone(), Vec::new(), graph).expect("definition");
-    let application = FxApplication::try_new(id, Vec::new(), 0, None).expect("application");
+    let application = bind_empty(&definition, 0);
     let resolver = resolver(definition, &application, 0);
-    let frame = frame(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Fx {
-                application: application.clone(),
-            }),
-        },
-        RichTextNode::Text {
+    let frame = frame(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Fx {
+            application: application.clone(),
+        }),
+        body: vec![RichTextNode::Text {
             text: "missing".to_owned(),
-        },
-    ]);
+        }],
+    }]);
 
     let (item, _, diagnostics) = prepare(&frame, 0, false, true, &resolver);
 
@@ -624,7 +671,9 @@ fn prepare(
         default_style: ResolvedTextStyle::new(vec![TextFontFamily::SansSerif], 24_000, 32_000)
             .expect("paragraph style resolves")
             .with_color(TextColor::rgba(245, 245, 245, 255)),
-        visual_time_millis,
+        reveal_elapsed: arcweft_text_model::DialogueRevealElapsed::from_nanos(
+            visual_time_millis * 1_000_000,
+        ),
         reveal_complete,
     };
     let (item, complete, diagnostics, _) = prepare_stage(
@@ -640,10 +689,18 @@ fn prepare(
 }
 
 fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
-    let spec = DialogueContentSpec::new(
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(nodes),
+    )
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
         RuntimeLineId::canonical("prepared.dialogue.test").expect("line id"),
         TextKey::try_new("text.prepared.dialogue.test").expect("text key"),
-        RichTextDocument::new(nodes),
+        &template,
         test_character_plan(),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             DialoguePresentationProfile::engine_default(),
@@ -651,8 +708,18 @@ fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
         ),
         Vec::new(),
         test_source_ref(),
-    );
-    resolve_frame(&spec, &runtime_line_context()).expect("frame resolves")
+    )
+    .expect("dialogue spec");
+    let content = arcweft_core::value::RuntimeDialogueContentValue::try_new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+            .expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope");
+    resolve_frame_with_template(&spec, &template, &content, &runtime_line_context())
+        .expect("frame resolves")
 }
 
 const fn viewport() -> RenderViewport {

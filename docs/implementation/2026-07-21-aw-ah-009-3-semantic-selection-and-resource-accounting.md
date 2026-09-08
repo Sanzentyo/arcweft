@@ -79,7 +79,7 @@ compatibility extension or dual reader.
 `SignatureFamilySupport::NativeFacts` describes native resolver/checker fact
 ownership for a `CallableFamily`. It does not assert that every historical
 source spelling is a reachable signature-help surface. In particular,
-dialogue tags and the superseded speaker/content-call carriers are not ordinary
+provisional dialogue markup and the superseded speaker/content-call carriers are not ordinary
 call surfaces.
 
 ## Public query limits and reports
@@ -152,8 +152,9 @@ the boundary by scanning source text.
 
 The scanner traverses ordinary expressions inside dialogue interpolation,
 dialogue option values, and line plans. It does not reinterpret the dialogue
-container itself as an ordinary call. Every dialogue tag range and `goto`
-target range is explicitly `UnsupportedSurface`; unknown and non-callable
+container itself as an ordinary call. Every non-expression dialogue-content
+surface range and `goto` target range is explicitly `UnsupportedSurface`;
+unknown and non-callable
 ordinary callees become the unit public outcomes
 `SignatureNotApplicable::UnknownCallee` and
 `SignatureNotApplicable::NonCallableCallee`. Internally, missing facts retain

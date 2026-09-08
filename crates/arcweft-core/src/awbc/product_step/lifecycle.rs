@@ -336,6 +336,7 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::Dialogue {
                 content: _,
                 values: _,
+                effects: _,
                 line_task_captures: _,
                 result: _,
             } => self.dialogues.active_frame().map_or(

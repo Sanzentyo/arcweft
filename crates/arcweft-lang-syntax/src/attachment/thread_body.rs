@@ -4,11 +4,11 @@ use super::access::IfStatementHeadNode;
 use super::expression::AttachedExpressionNode;
 use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
-    AstNode, BlockKind, ChoiceStatementKind, CloseBraceKind,
-    DialogueContentApplicationExpressionKind, ErrorStatementKind, FlowBodyKind, ForStatementKind,
-    IfStatementKind, IncludeStatementKind, MatchStatementKind, MissingBodyKind, OpenBraceKind,
-    ScopeStatementKind, SelectStatementKind, SourceLocaleStatementKind, ThreadExpressionKind,
-    WhileLetStatementKind, WhileStatementKind,
+    AstNode, AttachedContentApplicationExpressionKind, BlockKind, ChoiceStatementKind,
+    CloseBraceKind, ErrorStatementKind, FlowBodyKind, ForStatementKind, IfStatementKind,
+    IncludeStatementKind, MatchStatementKind, MissingBodyKind, OpenBraceKind, ScopeStatementKind,
+    SelectStatementKind, SourceLocaleStatementKind, ThreadExpressionKind, WhileLetStatementKind,
+    WhileStatementKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::{SyntaxAccessError, SyntaxNodeHandle};
@@ -37,7 +37,7 @@ pub enum AttachedThreadFlowItemFamily {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedThreadFlowItem {
     Statement(StatementNode),
-    DialogueApplication(AstNode<DialogueContentApplicationExpressionKind>),
+    DialogueApplication(AstNode<AttachedContentApplicationExpressionKind>),
     Choice(AstNode<ChoiceStatementKind>),
     If(AstNode<IfStatementKind>),
     IfLet(AstNode<IfStatementKind>),
@@ -59,7 +59,7 @@ impl AttachedThreadFlowItem {
             return Err(SyntaxAccessError::InvalidThreadFlowItemShape { id: syntax.id() });
         }
         match kind {
-            SyntaxKind::DialogueContentApplicationExpression => {
+            SyntaxKind::AttachedContentApplicationExpression => {
                 Ok(Self::DialogueApplication(syntax.cast()?))
             }
             SyntaxKind::ChoiceStatement => Ok(Self::Choice(syntax.cast()?)),

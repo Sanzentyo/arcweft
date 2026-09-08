@@ -63,6 +63,10 @@ pub(crate) enum PendingDeclarationName {
         value: SyntaxName,
         source: SourceRange,
     },
+    Derived {
+        value: SyntaxName,
+        source: SourceRange,
+    },
     Missing {
         insertion: SourceRange,
     },
@@ -82,6 +86,10 @@ impl PendingDeclarationName {
         };
         Some(match self {
             Self::Resolved { value, source } => Self::Resolved {
+                value: value.clone(),
+                source: rebase(*source)?,
+            },
+            Self::Derived { value, source } => Self::Derived {
                 value: value.clone(),
                 source: rebase(*source)?,
             },
@@ -126,7 +134,10 @@ impl PendingDeclarationHeaderProjection {
         !matches!(
             self.public_id,
             PendingDeclarationPublicId::Derived | PendingDeclarationPublicId::Explicit { .. }
-        ) || !matches!(self.name, PendingDeclarationName::Resolved { .. })
+        ) || !matches!(
+            self.name,
+            PendingDeclarationName::Resolved { .. } | PendingDeclarationName::Derived { .. }
+        )
     }
 
     pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {
@@ -137,41 +148,7 @@ impl PendingDeclarationHeaderProjection {
     }
 }
 
-/// Optional Character surface-alias state selected by the parser.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PendingCharacterSurfaceAlias {
-    Absent,
-    Resolved {
-        value: SyntaxName,
-        source: SourceRange,
-    },
-    Missing {
-        insertion: SourceRange,
-    },
-}
-
-impl PendingCharacterSurfaceAlias {
-    fn rebased(&self, offset: usize) -> Option<Self> {
-        let rebase = |range: SourceRange| {
-            Some(SourceRange::new(
-                range.start().checked_add(offset)?,
-                range.end().checked_add(offset)?,
-            ))
-        };
-        Some(match self {
-            Self::Absent => Self::Absent,
-            Self::Resolved { value, source } => Self::Resolved {
-                value: value.clone(),
-                source: rebase(*source)?,
-            },
-            Self::Missing { insertion } => Self::Missing {
-                insertion: rebase(*insertion)?,
-            },
-        })
-    }
-}
-
-/// Required assignment token owned by a Character display-name member.
+/// Required assignment token owned by a Character display member.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum PendingCharacterAssignment {
     Authored(SourceRange),
@@ -207,7 +184,7 @@ pub(crate) enum PendingCharacterInitializer {
 /// One Character body member in exact source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PendingCharacterMemberProjection {
-    DisplayName {
+    Display {
         source_ordinal: u16,
         name: SourceRange,
         duplicate: bool,
@@ -222,7 +199,7 @@ pub(crate) enum PendingCharacterMemberProjection {
 impl PendingCharacterMemberProjection {
     pub(crate) const fn source_ordinal(&self) -> u16 {
         match self {
-            Self::DisplayName { source_ordinal, .. } | Self::Recovery { source_ordinal } => {
+            Self::Display { source_ordinal, .. } | Self::Recovery { source_ordinal } => {
                 *source_ordinal
             }
         }
@@ -230,13 +207,13 @@ impl PendingCharacterMemberProjection {
 
     fn rebased(&self, offset: usize) -> Option<Self> {
         Some(match self {
-            Self::DisplayName {
+            Self::Display {
                 source_ordinal,
                 name,
                 duplicate,
                 assignment,
                 initializer,
-            } => Self::DisplayName {
+            } => Self::Display {
                 source_ordinal: *source_ordinal,
                 name: SourceRange::new(
                     name.start().checked_add(offset)?,
@@ -282,7 +259,6 @@ impl PendingCharacterBodyProjection {
 /// Sole parser-owned semantic projection for one Character declaration item.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingCharacterDeclarationProjection {
-    surface_alias: PendingCharacterSurfaceAlias,
     body: PendingCharacterBodyProjection,
     unexpected_header: bool,
     trailing_syntax: bool,
@@ -290,21 +266,15 @@ pub(crate) struct PendingCharacterDeclarationProjection {
 
 impl PendingCharacterDeclarationProjection {
     pub(crate) const fn new(
-        surface_alias: PendingCharacterSurfaceAlias,
         body: PendingCharacterBodyProjection,
         unexpected_header: bool,
         trailing_syntax: bool,
     ) -> Self {
         Self {
-            surface_alias,
             body,
             unexpected_header,
             trailing_syntax,
         }
-    }
-
-    pub(crate) const fn surface_alias(&self) -> &PendingCharacterSurfaceAlias {
-        &self.surface_alias
     }
 
     pub(crate) const fn body(&self) -> &PendingCharacterBodyProjection {
@@ -320,16 +290,13 @@ impl PendingCharacterDeclarationProjection {
     }
 
     pub(crate) fn has_recovery(&self) -> bool {
-        matches!(
-            self.surface_alias,
-            PendingCharacterSurfaceAlias::Missing { .. }
-        ) || match &self.body {
+        (match &self.body {
             PendingCharacterBodyProjection::Missing => true,
             PendingCharacterBodyProjection::Braced { closed, members } => {
                 !closed
                     || members.iter().any(|member| match member {
                         PendingCharacterMemberProjection::Recovery { .. } => true,
-                        PendingCharacterMemberProjection::DisplayName {
+                        PendingCharacterMemberProjection::Display {
                             duplicate,
                             assignment,
                             initializer,
@@ -341,13 +308,12 @@ impl PendingCharacterDeclarationProjection {
                         }
                     })
             }
-        } || self.unexpected_header
+        }) || self.unexpected_header
             || self.trailing_syntax
     }
 
     pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {
         Some(Self {
-            surface_alias: self.surface_alias.rebased(offset)?,
             body: self.body.rebased(offset)?,
             unexpected_header: self.unexpected_header,
             trailing_syntax: self.trailing_syntax,

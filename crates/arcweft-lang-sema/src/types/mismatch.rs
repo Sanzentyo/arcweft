@@ -47,9 +47,17 @@ pub enum TypeMismatchPathSegment {
     ThreadResult,
     SharedInner,
     FunctionArity,
+    FunctionBinder,
     FunctionEffects,
     FunctionParameter(usize),
     FunctionReturn,
+    CompileTimeCallable,
+    CompileTimeScalar,
+    CompileTimeEnum,
+    CompileTimeFx,
+    FixedVectorDimensions,
+    FixedVectorComponent,
+    MetaTypeInner,
     GenericIdentity,
     ProjectNominalDeclaration,
     ProjectNominalArgument(usize),
@@ -775,11 +783,13 @@ impl TypeKind {
                     .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::SharedInner))
             }
             Self::Function {
+                binder: expected_binder,
                 params: expected_params,
                 return_type: expected_return,
                 effects: expected_effects,
             } => {
                 let Self::Function {
+                    binder: actual_binder,
                     params: actual_params,
                     return_type: actual_return,
                     effects: actual_effects,
@@ -787,7 +797,14 @@ impl TypeKind {
                 else {
                     unreachable!("equal discriminants")
                 };
-                if expected_params.len() != actual_params.len() {
+                if expected_binder != actual_binder {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::FunctionBinder,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                } else if expected_params.len() != actual_params.len() {
                     Some(TypeMismatch::at(
                         self,
                         actual,
@@ -822,6 +839,87 @@ impl TypeKind {
                                 })
                         })
                 }
+            }
+            Self::CompileTimeCallable(expected) => {
+                let Self::CompileTimeCallable(actual_callable) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_callable).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CompileTimeCallable,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::CompileTimeScalar(expected) => {
+                let Self::CompileTimeScalar(actual_scalar) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_scalar).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CompileTimeScalar,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::CompileTimeEnum(expected) => {
+                let Self::CompileTimeEnum(actual_enum) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.accepts(*actual_enum) {
+                    None
+                } else {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CompileTimeEnum,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                }
+            }
+            Self::CompileTimeFx(expected) => {
+                let Self::CompileTimeFx(actual_fx) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.accepts(actual_fx) {
+                    None
+                } else {
+                    Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CompileTimeFx,
+                        TypeMismatchReason::NonTypeParameter,
+                    ))
+                }
+            }
+            Self::FixedVector(expected) => {
+                let Self::FixedVector(actual_vector) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                if expected.dimensions() != actual_vector.dimensions() {
+                    return Some(TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::FixedVectorDimensions,
+                        TypeMismatchReason::NonTypeParameter,
+                    ));
+                }
+                expected
+                    .component()
+                    .first_mismatch(actual_vector.component())
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::FixedVectorComponent))
+            }
+            Self::MetaType(expected) => {
+                let Self::MetaType(actual) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                expected
+                    .first_mismatch(actual)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::MetaTypeInner))
             }
             Self::GenericParam(expected_id) => {
                 let Self::GenericParam(actual_id) = actual else {

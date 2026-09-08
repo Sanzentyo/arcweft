@@ -8,7 +8,7 @@ use super::{
     HirNestedExpressionPathSegment, HirThreadBody,
 };
 use crate::body_edges::{HirBodyChildEdge, HirBodyProjectionError, HirBodyRoleProjection};
-use crate::dialogue_application::{HirDialogueContentApplication, HirLinePlanItem};
+use crate::dialogue_application::{HirAttachedContentApplication, HirLinePlanItem};
 use crate::identity::{PatternId, StmtId};
 use crate::stmt::{HirContextualStmtBody, HirTrigger};
 
@@ -289,7 +289,7 @@ impl HirExprKind {
                 }
             }
             Self::Choice(expression) => append_choice_owned_events(expression, &mut events)?,
-            Self::DialogueContentApplication(expression) => {
+            Self::AttachedContentApplication(expression) => {
                 append_dialogue_owned_events(expression, &mut events)?;
             }
             Self::Unit
@@ -594,10 +594,14 @@ fn append_choice_plan_events<'choice>(
 }
 
 fn append_dialogue_owned_events<'plan>(
-    expression: &'plan HirDialogueContentApplication,
+    expression: &'plan HirAttachedContentApplication,
     events: &mut Vec<HirExpressionOwnedEvent<'plan>>,
 ) -> Result<(), HirExpressionOwnedChildEdgeError> {
-    if let Some(plan) = expression.plan() {
+    if let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan: Some(plan),
+        ..
+    } = expression.family()
+    {
         append_line_plan_owned_events(plan.items(), events)?;
     }
     Ok(())

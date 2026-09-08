@@ -13,11 +13,12 @@ use arcweft_bundle::{
         ViewInputResource, ViewInstructionSpan, ViewParameterResource, ViewProductBuildError,
         ViewProductValidationError, ViewProductValidationLimits, ViewProgramResource,
         ViewProgramStyleResources, ViewResourceMergeError, ViewTextBlockBounds,
-        ViewTextBlockResource, ViewTextResource,
+        ViewTextBlockResource, ViewTextResource, ViewValueInputResource,
         view::{
             DialogueTextProjection, ViewActionButtonActionResource, ViewActionButtonResource,
-            ViewDefinitionRef, ViewParameterRole, ViewProgramInstruction, ViewRuntimeButtonBounds,
-            ViewTextSourceKind, ViewTextSourceRecord, ViewTextSurface,
+            ViewDefinitionRef, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef,
+            ViewParameterRole, ViewProgramInstruction, ViewRuntimeButtonBounds, ViewTextSourceKind,
+            ViewTextSourceRecord, ViewTextSurface, ViewValueInputNamespace, ViewValueInputSource,
         },
     },
     standard_view,
@@ -38,15 +39,23 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_sema::{
     CheckedOwnershipError, CheckedOwnershipLimits,
-    callable::CallableValidator,
+    callable::{
+        CallableValidator, CheckedCallApplicationDigest, CheckedCallArgumentSlotSource,
+        CheckedCallReceiverProjection, CheckedCallSite,
+    },
     dialogue_view::{DialogueCharacterProjection, DialogueProjectionCoordinate},
-    effect_row::EffectRowTail,
+    effect_row::EffectRow,
     final_analysis::{
-        CheckedBindingRole, CheckedExpressionResolution, CheckedSelectResolution,
-        CheckedValueResolution, CheckedViewCall, FinalSemanticAnalysis,
+        CheckedBindingRole, CheckedExpressionResolution, CheckedFxBindingDecision,
+        CheckedSelectResolution, CheckedValueResolution, CheckedViewCall, CheckedViewFxApplication,
+        CheckedViewFxBinding, CheckedViewValueProgram, FinalSemanticAnalysis,
     },
     registration::RegisteredSemanticWorld,
     types::TypeKind,
+};
+use arcweft_presentation::fx::{
+    FxDefinitionParameterType, FxId, FxRuntimeType, ValueInstruction, ValueProgramSchema,
+    ValueProgramValidationError,
 };
 use arcweft_project::sources::ProjectSources;
 use arcweft_resource_model::registry::{ResourceTypeRegistry, ResourceTypeRegistryDigest};
@@ -56,11 +65,12 @@ use arcweft_source::{
 };
 use arcweft_view::{
     ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId, ViewId,
-    ViewParameterCoordinate, ViewProgramId, style::ViewStyleSheetId,
+    ViewParameterCoordinate, ViewProgramId, ViewValueProgram, ViewValueProgramId,
+    style::ViewStyleSheetId,
 };
 use thiserror::Error;
 
-use crate::style::CompiledViewStyleArtifact;
+use crate::{fx_catalog::CompiledFxCatalog, style::CompiledViewStyleArtifact};
 
 // Canonical baseline layout retained from the authored-View runtime contract.
 // Explicit typed layout/modifier facts will override these values when that
@@ -111,6 +121,7 @@ pub(crate) struct ViewProjectLowerer<'a> {
     semantic_analysis: &'a FinalSemanticAnalysis,
     registered_world: &'a RegisteredSemanticWorld,
     style: &'a CompiledViewStyleArtifact,
+    fx_catalog: &'a CompiledFxCatalog,
     source_map: SourceMapSection,
     resource_types: &'a ResourceTypeRegistry,
 }
@@ -118,6 +129,8 @@ pub(crate) struct ViewProjectLowerer<'a> {
 /// Failure to build one complete compiler-owned View product.
 #[derive(Debug, Error)]
 pub(crate) enum ViewProjectLowerError {
+    #[error(transparent)]
+    GenericScope(#[from] arcweft_lang_sema::types::GenericScopeError),
     #[error("project source module `{module}` has no matching lowered HIR module")]
     MissingHirProjectModule { module: String },
     #[error("project source module `{module}` is bound to {actual:?}, not HIR source {expected:?}")]
@@ -134,6 +147,23 @@ pub(crate) enum ViewProjectLowerError {
     MissingViewSource { owner: ItemId, role: &'static str },
     #[error("final-HIR View item {owner:?} has an unsupported parameter at ordinal {ordinal}")]
     InvalidViewParameter { owner: ItemId, ordinal: usize },
+    #[error("checked View Fx application {expression:?} is inconsistent with its final authority")]
+    InvalidViewFxApplication { expression: ExprId },
+    #[error(
+        "checked View Fx application {expression:?} references missing compiled definition `{definition}`"
+    )]
+    MissingCompiledFxDefinition {
+        expression: ExprId,
+        definition: FxId,
+    },
+    #[error("checked View value program {expression:?} is invalid after global input projection")]
+    InvalidViewValueProgram {
+        expression: ExprId,
+        #[source]
+        source: ValueProgramValidationError,
+    },
+    #[error("checked View value input count {actual} exceeds the u16 slot domain")]
+    TooManyViewValueInputs { actual: usize },
     #[error("semantic analysis does not belong to the accepted HIR generation")]
     SemanticGenerationMismatch,
     #[error("View handler {owner:?} capture {capture:?} is not snapshot-retainable")]
@@ -245,6 +275,7 @@ impl<'a> ViewProjectLowerer<'a> {
         symbols: &ProjectSymbolTable,
         registered_world: &'a RegisteredSemanticWorld,
         style: &'a CompiledViewStyleArtifact,
+        fx_catalog: &'a CompiledFxCatalog,
         project: &ProjectSources,
         resource_types: &'a ResourceTypeRegistry,
     ) -> Result<Self, ViewProjectLowerError> {
@@ -273,6 +304,7 @@ impl<'a> ViewProjectLowerer<'a> {
             semantic_analysis,
             registered_world,
             style,
+            fx_catalog,
             source_map,
             resource_types,
         })
@@ -283,8 +315,12 @@ impl<'a> ViewProjectLowerer<'a> {
             .hir_project
             .executable_view()
             .map_err(|_| ViewProjectLowerError::SemanticGenerationMismatch)?;
-        let authored =
-            lower_authored_views(executable, self.semantic_analysis, self.registered_world)?;
+        let authored = lower_authored_views(
+            executable,
+            self.semantic_analysis,
+            self.registered_world,
+            self.fx_catalog,
+        )?;
 
         let authored_sources = self.source_map.source_set_revision();
         let standard_view_source = standard_view::dialogue_view_source_document();
@@ -354,6 +390,11 @@ struct AuthoredViewArtifact {
 
 struct AuthoredViewLowering {
     definitions: Vec<ViewDefinitionResource>,
+    value_programs: Vec<ViewValueProgram>,
+    value_inputs: Vec<ViewValueInputResource>,
+    global_value_inputs:
+        BTreeMap<(ViewDefinitionRef, ViewParameterCoordinate), GlobalViewValueInput>,
+    global_parameter_types: Vec<FxRuntimeType>,
     instructions: Vec<ViewProgramInstruction>,
     text_blocks: Vec<ViewTextBlockResource>,
     action_buttons: Vec<ViewActionButtonResource>,
@@ -362,20 +403,199 @@ struct AuthoredViewLowering {
     handlers: Vec<CheckedViewHandlerProgram>,
 }
 
+struct PreparedAuthoredView<'a> {
+    module: &'a HirModule,
+    owner: ItemId,
+    declaration: &'a HirViewDeclaration,
+    id: ViewId,
+    parameters: BTreeMap<LocalId, CheckedViewParameter>,
+    parameter_resources: Vec<ViewParameterResource>,
+    source: SourceSpan,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct GlobalViewValueInput {
+    slot: u16,
+    value_type: FxRuntimeType,
+}
+
+fn collect_view_fx_inputs(
+    owner: ItemId,
+    root: ExprId,
+    analysis: &FinalSemanticAnalysis,
+    view: &ViewDefinitionRef,
+    inputs: &mut BTreeMap<(ViewDefinitionRef, ViewParameterCoordinate), FxRuntimeType>,
+) -> Result<(), ViewProjectLowerError> {
+    let mut expression = root;
+    loop {
+        let checked = analysis
+            .expression(expression)
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+        if let CheckedExpressionResolution::ViewFxApplication(application) = checked.resolution() {
+            for argument in application.arguments() {
+                let CheckedFxBindingDecision::Explicit(CheckedViewFxBinding::Reactive(program)) =
+                    argument.decision()
+                else {
+                    continue;
+                };
+                if program.inputs().len() != program.program().schema().parameter_types().len() {
+                    return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+                }
+                for input in program.inputs() {
+                    let key = (view.clone(), input.parameter());
+                    match inputs.entry(key) {
+                        std::collections::btree_map::Entry::Vacant(entry) => {
+                            entry.insert(input.value_type());
+                        }
+                        std::collections::btree_map::Entry::Occupied(entry)
+                            if *entry.get() == input.value_type() => {}
+                        std::collections::btree_map::Entry::Occupied(_) => {
+                            return Err(ViewProjectLowerError::InvalidViewFxApplication {
+                                expression,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        if !matches!(
+            checked.resolution(),
+            CheckedExpressionResolution::ViewFxApplication(_) | CheckedExpressionResolution::Call
+        ) {
+            return Ok(());
+        }
+        let projection = checked_view_modifier_projection(analysis, owner, expression)?;
+        if projection.receiver == expression {
+            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+        }
+        expression = projection.receiver;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct CheckedViewModifierProjection {
+    application: CheckedCallApplicationDigest,
+    receiver: ExprId,
+}
+
+fn checked_view_modifier_projection(
+    analysis: &FinalSemanticAnalysis,
+    owner: ItemId,
+    expression: ExprId,
+) -> Result<CheckedViewModifierProjection, ViewProjectLowerError> {
+    let application = analysis
+        .call(expression)
+        .and_then(arcweft_lang_sema::callable::CallTargetFacts::selected_application)
+        .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+    if application.core().application_site().raw() != CheckedCallSite::HirCall(expression) {
+        return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner });
+    }
+    let CheckedCallReceiverProjection::Operand { source, .. } =
+        application.core().execution().receiver()
+    else {
+        return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner });
+    };
+    let CheckedCallArgumentSlotSource::Expression(receiver) = source.raw() else {
+        return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner });
+    };
+    if let Some(fx) =
+        analysis
+            .expression(expression)
+            .and_then(|checked| match checked.resolution() {
+                CheckedExpressionResolution::ViewFxApplication(application) => Some(application),
+                _ => None,
+            })
+    {
+        if fx.outer_application() != application.digest()
+            || fx.receiver_expression() != Some(receiver)
+        {
+            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+        }
+    }
+    Ok(CheckedViewModifierProjection {
+        application: application.digest(),
+        receiver,
+    })
+}
+
 fn lower_authored_views(
     project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
     registered_world: &RegisteredSemanticWorld,
+    fx_catalog: &CompiledFxCatalog,
 ) -> Result<AuthoredViewArtifact, ViewProjectLowerError> {
-    let views = project
+    let mut views = project
         .items()
         .filter_map(|item| match item.item().kind() {
-            HirItemKind::View(view) => Some((item, view)),
+            HirItemKind::View(view) => Some(prepare_authored_view(
+                item.module(),
+                item.id(),
+                view,
+                analysis,
+            )),
             _ => None,
         })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let mut input_types = BTreeMap::new();
+    for view in &views {
+        let definition = ViewDefinitionRef::new(view.id.clone());
+        for value in view.declaration.values() {
+            collect_view_fx_inputs(view.owner, *value, analysis, &definition, &mut input_types)?;
+        }
+    }
+    let global_value_inputs = input_types
+        .into_iter()
+        .enumerate()
+        .map(|(slot, (key, value_type))| {
+            let slot = u16::try_from(slot)
+                .map_err(|_| ViewProjectLowerError::TooManyViewValueInputs { actual: slot + 1 })?;
+            Ok::<_, ViewProjectLowerError>((key, GlobalViewValueInput { slot, value_type }))
+        })
+        .collect::<Result<BTreeMap<_, _>, _>>()?;
+    for view in &mut views {
+        let definition = ViewDefinitionRef::new(view.id.clone());
+        for (ordinal, parameter) in view.parameter_resources.iter_mut().enumerate() {
+            let coordinate = ViewParameterCoordinate::try_from_index(ordinal).ok_or(
+                ViewProjectLowerError::InvalidViewParameter {
+                    owner: view.owner,
+                    ordinal,
+                },
+            )?;
+            if let Some(input) = global_value_inputs.get(&(definition.clone(), coordinate)) {
+                if parameter.role == ViewParameterRole::Dialogue {
+                    return Err(ViewProjectLowerError::InvalidViewParameter {
+                        owner: view.owner,
+                        ordinal,
+                    });
+                }
+                parameter.value_type = Some(input.value_type);
+                parameter.value_slot = Some(input.slot);
+            }
+        }
+    }
+    let global_parameter_types = global_value_inputs
+        .values()
+        .map(|input| input.value_type)
         .collect::<Vec<_>>();
+    let value_inputs = global_value_inputs
+        .iter()
+        .map(|((view, parameter), input)| ViewValueInputResource {
+            namespace: ViewValueInputNamespace::Parameter,
+            slot: input.slot,
+            value_type: input.value_type,
+            source: ViewValueInputSource::DefinitionParameter {
+                view: view.clone(),
+                parameter: *parameter,
+            },
+        })
+        .collect();
     let mut output = AuthoredViewLowering {
         definitions: Vec::new(),
+        value_programs: Vec::new(),
+        value_inputs,
+        global_value_inputs,
+        global_parameter_types,
         instructions: Vec::new(),
         text_blocks: Vec::new(),
         action_buttons: Vec::new(),
@@ -383,15 +603,8 @@ fn lower_authored_views(
         sources: BTreeMap::new(),
         handlers: Vec::new(),
     };
-    for (item, view) in views {
-        lower_authored_view(
-            item.module(),
-            item.id(),
-            view,
-            analysis,
-            registered_world,
-            &mut output,
-        )?;
+    for view in &views {
+        lower_authored_view(view, analysis, registered_world, fx_catalog, &mut output)?;
     }
     let program_id = output.definitions.first().map(|first| {
         ViewProgramId::try_new(format!(
@@ -403,6 +616,8 @@ fn lower_authored_views(
     let program = program_id.map(|program_id| ViewProgramResource {
         program_id,
         definitions: output.definitions,
+        value_programs: output.value_programs,
+        value_inputs: output.value_inputs,
         instructions: output.instructions,
         handlers: output
             .handlers
@@ -431,14 +646,12 @@ fn lower_authored_views(
     })
 }
 
-fn lower_authored_view(
-    module: &HirModule,
+fn prepare_authored_view<'a>(
+    module: &'a HirModule,
     owner: ItemId,
-    view: &HirViewDeclaration,
+    view: &'a HirViewDeclaration,
     analysis: &FinalSemanticAnalysis,
-    registered_world: &RegisteredSemanticWorld,
-    output: &mut AuthoredViewLowering,
-) -> Result<(), ViewProjectLowerError> {
+) -> Result<PreparedAuthoredView<'a>, ViewProjectLowerError> {
     if view.header().family() != DeclarationIdentityFamily::View {
         return Err(ViewProjectLowerError::InvalidViewIdentity { owner });
     }
@@ -466,9 +679,6 @@ fn lower_authored_view(
     }
     .map_err(|_| ViewProjectLowerError::InvalidViewIdentity { owner })?;
     let source = view_source_span(module, owner, HirViewSourceRole::Whole, "whole declaration")?;
-    if output.sources.insert(view_id.clone(), source).is_some() {
-        return Err(ViewProjectLowerError::InvalidViewIdentity { owner });
-    }
     let mut parameters = BTreeMap::new();
     let parameter_resources = view
         .parameters()
@@ -490,14 +700,15 @@ fn lower_authored_view(
                 .to_owned();
             let coordinate = ViewParameterCoordinate::try_from_index(ordinal)
                 .ok_or(ViewProjectLowerError::InvalidViewParameter { owner, ordinal })?;
+            let semantic_type = ViewHandlerValueTypeId::from_semantic_digest(
+                *local_fact.ty().semantic_identity_digest()?.as_bytes(),
+            );
             parameters.insert(
                 local,
                 CheckedViewParameter {
                     coordinate,
                     name: name.clone(),
-                    value_type: ViewHandlerValueTypeId::from_semantic_digest(
-                        *local_fact.ty().semantic_identity_digest().as_bytes(),
-                    ),
+                    value_type: semantic_type,
                 },
             );
             Ok(ViewParameterResource {
@@ -509,41 +720,65 @@ fn lower_authored_view(
                 } else {
                     ViewParameterRole::Value
                 },
-                semantic_type: ViewHandlerValueTypeId::from_semantic_digest(
-                    *local_fact.ty().semantic_identity_digest().as_bytes(),
-                ),
+                semantic_type,
                 value_type: None,
                 value_slot: None,
                 default_program: None,
             })
         })
         .collect::<Result<Vec<_>, _>>()?;
+    Ok(PreparedAuthoredView {
+        module,
+        owner,
+        declaration: view,
+        id: view_id,
+        parameters,
+        parameter_resources,
+        source,
+    })
+}
+
+fn lower_authored_view(
+    view: &PreparedAuthoredView<'_>,
+    analysis: &FinalSemanticAnalysis,
+    registered_world: &RegisteredSemanticWorld,
+    fx_catalog: &CompiledFxCatalog,
+    output: &mut AuthoredViewLowering,
+) -> Result<(), ViewProjectLowerError> {
+    if output
+        .sources
+        .insert(view.id.clone(), view.source.clone())
+        .is_some()
+    {
+        return Err(ViewProjectLowerError::InvalidViewIdentity { owner: view.owner });
+    }
     let start = u32::try_from(output.instructions.len())
-        .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+        .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner })?;
     {
         let mut lowerer = AuthoredViewBodyLowerer {
-            module,
-            owner,
+            module: view.module,
+            owner: view.owner,
             analysis,
             registered_world,
-            parameters: &parameters,
-            view: &view_id,
+            fx_catalog,
+            parameters: &view.parameters,
+            view: &view.id,
             text_ordinal: 0,
             element_ordinal: 0,
             output,
         };
-        for value in view.values() {
+        for value in view.declaration.values() {
             lowerer.lower_value(*value)?;
         }
     }
     let end = u32::try_from(output.instructions.len())
-        .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+        .map_err(|_| ViewProjectLowerError::MissingCheckedViewProjection { owner: view.owner })?;
     output.definitions.push(ViewDefinitionResource {
-        public_id: ViewDefinitionRef::new(view_id.clone()),
+        public_id: ViewDefinitionRef::new(view.id.clone()),
         body: ViewInstructionSpan::new(start, end),
         styles: Vec::new(),
-        parameters: parameter_resources,
-        state_schema_hash: view_schema_hash(&view_id, &parameters),
+        parameters: view.parameter_resources.clone(),
+        state_schema_hash: view_schema_hash(&view.id, &view.parameters),
     });
     Ok(())
 }
@@ -553,6 +788,7 @@ struct AuthoredViewBodyLowerer<'a> {
     owner: ItemId,
     analysis: &'a FinalSemanticAnalysis,
     registered_world: &'a RegisteredSemanticWorld,
+    fx_catalog: &'a CompiledFxCatalog,
     parameters: &'a BTreeMap<LocalId, CheckedViewParameter>,
     view: &'a ViewId,
     text_ordinal: u32,
@@ -580,10 +816,13 @@ impl AuthoredViewBodyLowerer<'_> {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
         let CheckedExpressionResolution::ViewCall(kind) = checked.resolution() else {
-            if matches!(checked.resolution(), CheckedExpressionResolution::Call) {
-                return self.lower_modifier(value, call);
-            }
-            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
+            return match checked.resolution() {
+                CheckedExpressionResolution::ViewFxApplication(application) => {
+                    self.lower_fx_modifier(value, application)
+                }
+                CheckedExpressionResolution::Call => self.lower_handler_modifier(value, call),
+                _ => Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }),
+            };
         };
         match kind {
             CheckedViewCall::Element(element) => {
@@ -654,10 +893,157 @@ impl AuthoredViewBodyLowerer<'_> {
         Ok(())
     }
 
-    fn lower_modifier(
+    fn lower_fx_modifier(
+        &mut self,
+        expression: ExprId,
+        application: &CheckedViewFxApplication,
+    ) -> Result<(), ViewProjectLowerError> {
+        let definition_id = application.definition().definition();
+        let definition = self.fx_catalog.get(definition_id).ok_or_else(|| {
+            ViewProjectLowerError::MissingCompiledFxDefinition {
+                expression,
+                definition: definition_id.clone(),
+            }
+        })?;
+        if definition.id() != definition_id
+            || definition.parameter_layout().digest() != application.definition().layout()
+        {
+            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+        }
+
+        let mut arguments = Vec::new();
+        for argument in application.arguments() {
+            let abi_parameter = self
+                .analysis
+                .checked_fx_definitions()
+                .abi_parameter(application.definition(), argument.parameter())
+                .map_err(|_| ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+            let CheckedFxBindingDecision::Explicit(binding) = argument.decision() else {
+                continue;
+            };
+            match binding {
+                CheckedViewFxBinding::Closed(binding) => {
+                    let Some(value) = binding.abi_value() else {
+                        if abi_parameter.is_some() {
+                            return Err(ViewProjectLowerError::InvalidViewFxApplication {
+                                expression,
+                            });
+                        }
+                        continue;
+                    };
+                    let parameter = abi_parameter
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    let definition_parameter = definition
+                        .parameters()
+                        .get(usize::from(parameter.get()))
+                        .filter(|row| row.index() == parameter)
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    if definition_parameter.parameter_type() != value.parameter_type() {
+                        return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+                    }
+                    arguments.push(ViewFxArgumentBindingRef {
+                        parameter,
+                        source: ViewFxArgumentSourceRef::Closed(value.clone()),
+                    });
+                }
+                CheckedViewFxBinding::Reactive(program) => {
+                    let parameter = abi_parameter
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    let definition_parameter = definition
+                        .parameters()
+                        .get(usize::from(parameter.get()))
+                        .filter(|row| row.index() == parameter)
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    if definition_parameter.parameter_type()
+                        != FxDefinitionParameterType::Runtime(program.return_type())
+                    {
+                        return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+                    }
+                    let program = self.lower_view_value_program(expression, program)?;
+                    arguments.push(ViewFxArgumentBindingRef {
+                        parameter,
+                        source: ViewFxArgumentSourceRef::Reactive(program),
+                    });
+                }
+            }
+        }
+        arguments.sort_by_key(|argument| argument.parameter);
+        if arguments
+            .windows(2)
+            .any(|pair| pair[0].parameter == pair[1].parameter)
+        {
+            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+        }
+
+        let projection = checked_view_modifier_projection(self.analysis, self.owner, expression)?;
+        if projection.application != application.outer_application() {
+            return Err(ViewProjectLowerError::InvalidViewFxApplication { expression });
+        }
+        self.lower_value(projection.receiver)?;
+        self.output
+            .instructions
+            .push(ViewProgramInstruction::ApplyFx {
+                fx: definition_id.clone(),
+                parameter_layout: application.definition().layout(),
+                arguments,
+                key_program: None,
+                application_ordinal: application.ordinal().get(),
+                source: None,
+            });
+        Ok(())
+    }
+
+    fn lower_view_value_program(
+        &mut self,
+        expression: ExprId,
+        checked: &CheckedViewValueProgram,
+    ) -> Result<ViewValueProgramId, ViewProjectLowerError> {
+        let id = ViewValueProgramId(
+            u32::try_from(self.output.value_programs.len())
+                .map_err(|_| ViewProjectLowerError::InvalidViewFxApplication { expression })?,
+        );
+        let schema = ValueProgramSchema::new(
+            self.output.global_parameter_types.clone(),
+            Vec::new(),
+            checked.return_type(),
+        );
+        let view = ViewDefinitionRef::new(self.view.clone());
+        let mut instructions = Vec::with_capacity(checked.program().instructions().len());
+        for instruction in checked.program().instructions() {
+            let instruction = match instruction {
+                ValueInstruction::LoadParameter { parameter } => {
+                    let input = checked
+                        .inputs()
+                        .get(usize::from(parameter.slot().get()))
+                        .filter(|input| input.value_type() == parameter.runtime_type())
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    let global = self
+                        .output
+                        .global_value_inputs
+                        .get(&(view.clone(), input.parameter()))
+                        .filter(|global| global.value_type == input.value_type())
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    let parameter = schema
+                        .parameter_ref(usize::from(global.slot))
+                        .filter(|parameter| parameter.runtime_type() == input.value_type())
+                        .ok_or(ViewProjectLowerError::InvalidViewFxApplication { expression })?;
+                    ValueInstruction::LoadParameter { parameter }
+                }
+                instruction => instruction.clone(),
+            };
+            instructions.push(instruction);
+        }
+        let program = ViewValueProgram::validate(id, schema, instructions).map_err(|source| {
+            ViewProjectLowerError::InvalidViewValueProgram { expression, source }
+        })?;
+        self.output.value_programs.push(program);
+        Ok(id)
+    }
+
+    fn lower_handler_modifier(
         &mut self,
         owner: ExprId,
-        call: &arcweft_lang_hir::expr::HirCallExpr,
+        call: &arcweft_lang_hir::expr::HirCallInvocation,
     ) -> Result<(), ViewProjectLowerError> {
         let application = self
             .analysis
@@ -674,6 +1060,15 @@ impl AuthoredViewBodyLowerer<'_> {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
         let modifier = *modifier;
+        let event = modifier
+            .event()
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let handler_result_role = modifier
+            .handler_result_role()
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let handler_result_type = modifier
+            .handler_result_type()
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
         let arcweft_lang_hir::expr::HirCallCallee::Value { value: callee } = call.callee() else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
@@ -722,20 +1117,15 @@ impl AuthoredViewBodyLowerer<'_> {
         else {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         };
-        let TypeKind::Function {
-            params,
-            return_type,
-            effects,
-        } = checked_handler.ty()
-        else {
-            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
-        };
-        if closure.owner() != handler_source
-            || !params.is_empty()
-            || effects.tail() != EffectRowTail::Closed
-            || !effects.concrete().is_empty()
-            || return_type.as_ref() != &modifier.handler_result_type()
-        {
+        let handler_type = checked_handler
+            .value_type()
+            .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner })?;
+        let expected_handler = TypeKind::function_with_effects(
+            [],
+            handler_result_type.clone(),
+            EffectRow::closed(arcweft_lang_sema::effects::EffectSet::new()),
+        );
+        if closure.owner() != handler_source || handler_type != &expected_handler {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
         if hir_closure.captures().len() != closure.captures().len() {
@@ -758,7 +1148,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 let capture_fact = self.analysis.capture(capture_id).ok_or(
                     ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner },
                 )?;
-                if capture_fact.ty().semantic_identity_digest().as_bytes()
+                if capture_fact.ty().semantic_identity_digest()?.as_bytes()
                     != parameter.value_type.as_bytes()
                 {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
@@ -810,14 +1200,14 @@ impl AuthoredViewBodyLowerer<'_> {
         }
         self.output.handlers.push(CheckedViewHandlerProgram {
             id: program_id,
-            event: modifier.event(),
+            event,
             closure: handler_source,
             body: hir_closure.body(),
             captures,
             result: ViewHandlerResult::new(
-                modifier.handler_result_role(),
+                handler_result_role,
                 ViewHandlerValueTypeId::from_semantic_digest(
-                    *return_type.semantic_identity_digest().as_bytes(),
+                    *handler_result_type.semantic_identity_digest()?.as_bytes(),
                 ),
             ),
         });
@@ -826,7 +1216,7 @@ impl AuthoredViewBodyLowerer<'_> {
         self.output
             .instructions
             .push(ViewProgramInstruction::BindHandler {
-                event: modifier.event(),
+                event,
                 handler: program_id,
                 source: None,
             });

@@ -1,55 +1,9 @@
 pub character lumi {
     display = "Lumi"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#eaf6ff")
-                size = 32px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 12px
-                gap = 0px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub character iris {
     display = "Iris"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Meiryo"
-                color = rgb("#ffe6f1")
-                size = 30px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 12px
-                gap = 0px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub style animation_panel {
@@ -116,20 +70,20 @@ entry cli @entry.rich_text_effects_animation {
 }
 
 flow rich_text_effects_animation {
-    lumi.say(id=@say.effects.shader, voice=auto, look=.focus)[
-        Shader: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]soft glow shader[/color][/effect]、[effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm glow shader[/color][/effect]、[effect .shader id=soft_glow amount=1 phase=glyph_color]glyph color shader[/effect]、[effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post process shader[/effect] と、[.sparkle amp=1.5px seed=shader-demo]sparkle[/]、[.sparkle phase=glyph_color seed=color-demo]色sparkle[/] を同時に表示する。[p]
+    lumi(id=@say.effects.shader, voice=auto, look=.focus)[
+        Shader: #fx(shader(resource=@.soft_glow, amount=0.65, direction=vec2(1.0, 0.0), phase=.offscreen_pass))[#color(rgb("#b9dcff"))[soft glow shader]]、#fx(shader(resource=@.warm_glow, amount=0.7, direction=vec2(-1.0, 0.0), phase=.offscreen_pass))[#color(rgb("#ffd8b0"))[warm glow shader]]、#fx(shader(resource=@.soft_glow, amount=1, phase=.glyph_color))[glyph color shader]、#fx(shader(resource=@.screen_tint, amount=0.55, color=rgb("#ff4050"), phase=.post_process))[post process shader] と、#fx(sparkle(amplitude=1.5px))[sparkle]、#fx(sparkle(phase=.glyph_color))[色sparkle] を同時に表示する。[p]
     ]
 
-    lumi.say(id=@say.effects.post, voice=auto, look=.focus)[
-        PostFX: [effect .wave phase=post_process amp=8px period=64px dir=1,0]post wave effect[/effect]、[fx source_drift(amplitude=5px, speed=0.8)]source Fx transform[/fx]、[.host id=sparkle phase=post_process amount=0.9 seed=screen-sparkle]post sparkle[/]。[p]
+    lumi(id=@say.effects.post, voice=auto, look=.focus)[
+        PostFX: #fx(wave(phase=.post_process, amplitude=8px, period=64px, direction=vec2(1.0, 0.0)))[post wave effect]、#fx(source_drift(amplitude=5px, speed=0.8))[source Fx transform]、post sparkle。[p]
     ]
 
-    iris.say(id=@say.effects.motion, voice=auto, look=.bright)[
-        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]ゆらゆら波[/]、[.shake amp=2px seed=voice-shake target=glyph phase=glyph_transform]文字が揺れる[/]、[effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform]jitter[/effect]、[.sparkle amp=2px seed=custom-sparkle]sparkle[/]。[r]Fx関数: [fx breath_orbit(amplitude=5px, speed=0.75)]関数motion[/fx]、[fx source_drift(amplitude=5px, speed=0.8)]関数transform[/fx]。Event: [.host id=beat phase=host_event channel=debug]host cue[/]。[p]
+    iris(id=@say.effects.motion, voice=auto, look=.bright)[
+        Motion: #fx(wave(amplitude=4px, direction=vec2(0.0, 1.0), period=8, speed=1.6, target=.glyph, phase=.glyph_transform))[ゆらゆら波]、#fx(shake(amplitude=2px, target=.glyph, phase=.glyph_transform))[文字が揺れる]、#fx(jitter(amplitude=1.5px, target=.glyph, phase=.glyph_transform))[jitter]、#fx(sparkle(amplitude=2px))[sparkle]。[r]Fx関数: #fx(breath_orbit(amplitude=5px, speed=0.75))[関数motion]、#fx(source_drift(amplitude=5px, speed=0.8))[関数transform]。Event: host cue。[p]
     ]
 
-    lumi.say(id=@say.effects.reveal, voice=auto, look=.smile)[
-        Reveal: [.typewriter cps=5 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask]遅れて一文字ずつ見えるtypewriter[/] と [.typewriter cps=4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]重ね掛けtypewriter[/][/][/][/]。[r]さらに [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]回転して膨らむ文字[/][/]。縦も [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/]ABC2026[/font][/]。[p]
+    lumi(id=@say.effects.reveal, voice=auto, look=.smile)[
+        Reveal: #fx(typewriter(characters_per_second=5, delay=500ms, cursor=true, cursor_alpha=0.4, phase=.glyph_mask))[遅れて一文字ずつ見えるtypewriter] と #fx(typewriter(characters_per_second=4, phase=.glyph_mask))[#fx(wave(amplitude=3px, direction=vec2(0.0, 1.0), speed=1.2, target=.glyph, phase=.glyph_transform))[#fx(shake(amplitude=1px, target=.glyph, phase=.glyph_transform))[#fx(sparkle(amplitude=1.5px))[重ね掛けtypewriter]]]]。[r]さらに #fx(spin(rotation_amplitude=8deg, speed=0.8, target=.glyph))[#fx(pulse(scale_amplitude=0.16, speed=1.15, target=.glyph))[回転して膨らむ文字]]。縦も #layout(.vertical_rl, jlreq=.strict)[#font("Yu Mincho")[#fx(spin(rotation_amplitude=8deg, speed=0.8, target=.glyph))[#fx(pulse(scale_amplitude=0.12, speed=1.1, target=.glyph))[縦回転]]]ABC2026]。[p]
     ]
 
     return "rich_text_effects_animation"

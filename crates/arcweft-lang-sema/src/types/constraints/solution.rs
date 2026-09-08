@@ -11,45 +11,55 @@ use std::{
 };
 
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectIssuerRebindError, EffectRow, EffectSubstitution, EffectVar,
-    EffectVarIssuer,
+    EffectConstraintEligibility, EffectIssuerRebindError, EffectRow, EffectVar, EffectVarIssuer,
 };
 
-use super::super::{ArrayLength, GenericConstParameterId, GenericTypeParameterId, TypeKind};
+use super::super::{
+    ArrayLength, GenericConstReference, GenericScope, GenericTypeReference, ScopedArrayLengthView,
+    ScopedConstReferenceView, ScopedTypeReferenceView, ScopedTypeView, TypeKind,
+};
+#[cfg(test)]
+use super::super::{GenericConstParameterId, GenericTypeParameterId};
 use super::context::{
-    TypeConstraintAccounting, TypeConstraintContext, TypeConstraintEffectScope,
-    TypeConstraintParameterScope,
+    CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext,
+    TypeConstraintEffectScope,
 };
-use super::normalization::{
-    ConstraintBindingLookup, ConstraintConstBindingLookup, project_const_argument, project_type,
-    validate_selected_call_self,
-};
+use super::normalization::{project_const_argument, project_type, validate_selected_call_self};
 use super::{
     ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, TypeConstraintError,
     TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
     TypeConstraintShape,
 };
 
+mod residual;
+use residual::ResidualGenericBinder;
+mod instantiation;
+mod template;
+#[cfg(test)]
+mod tests;
+pub(crate) use instantiation::ClosedTypeInstantiation;
+pub use instantiation::TypeInstantiationError;
+
 #[derive(Debug, Eq, PartialEq)]
 struct CheckedTypeArgumentBinding {
-    parameter: GenericTypeParameterId,
+    parameter: GenericTypeReference,
     value: TypeKind,
 }
 
 #[derive(Debug, Eq, PartialEq)]
 struct CheckedConstArgumentBinding {
-    parameter: GenericConstParameterId,
+    parameter: GenericConstReference,
     value: ArrayLength,
 }
 
 impl CheckedConstArgumentBinding {
-    fn new(parameter: GenericConstParameterId, value: ArrayLength) -> Self {
+    fn new(parameter: GenericConstReference, value: ArrayLength) -> Self {
         Self { parameter, value }
     }
 }
 
 impl CheckedTypeArgumentBinding {
-    fn new(parameter: GenericTypeParameterId, value: TypeKind) -> Self {
+    fn new(parameter: GenericTypeReference, value: TypeKind) -> Self {
         Self { parameter, value }
     }
 }
@@ -73,7 +83,7 @@ impl CheckedEffectArgumentBinding {
 /// constant, and effect-variable inventories before it can restore the rows.
 #[derive(Debug, Eq, PartialEq)]
 struct CompletedTypeConstraintAuthority {
-    parameter_scope: TypeConstraintParameterScope,
+    parameter_scope: CompletedParameterScope,
     effect_scope: TypeConstraintEffectScope,
 }
 
@@ -101,14 +111,40 @@ impl CompletedSolutionInput {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintSolution {
     authority: CompletedTypeConstraintAuthority,
+    residual: ResidualGenericBinder,
     bindings: Box<[CheckedTypeArgumentBinding]>,
     const_bindings: Box<[CheckedConstArgumentBinding]>,
     effect_bindings: Box<[CheckedEffectArgumentBinding]>,
 }
 
 impl TypeConstraintSolution {
+    pub(crate) fn type_parameter_view<'a>(
+        &'a self,
+        parameter: &'a GenericTypeReference,
+    ) -> ScopedTypeReferenceView<'a> {
+        ScopedTypeReferenceView::sealed(parameter, self.authority.parameter_scope.template_scope())
+    }
+
+    pub(crate) fn const_parameter_view<'a>(
+        &'a self,
+        parameter: &'a GenericConstReference,
+    ) -> ScopedConstReferenceView<'a> {
+        ScopedConstReferenceView::sealed(parameter, self.authority.parameter_scope.template_scope())
+    }
+    pub(crate) fn has_residual_type(&self, parameter: &GenericTypeReference) -> bool {
+        self.residual.contains_type(parameter)
+    }
+
+    pub(crate) fn has_residual_const(&self, parameter: &GenericConstReference) -> bool {
+        self.residual.contains_const(parameter)
+    }
+
     pub(crate) fn bindings(&self) -> TypeConstraintBindingIter<'_> {
-        TypeConstraintBindingIter(self.bindings.iter())
+        TypeConstraintBindingIter {
+            rows: self.bindings.iter(),
+            scope: self.residual.scope(),
+            template_scope: self.authority.parameter_scope.template_scope(),
+        }
     }
 
     pub(crate) fn effect_bindings(&self) -> TypeConstraintEffectBindingIter<'_> {
@@ -116,15 +152,33 @@ impl TypeConstraintSolution {
     }
 
     pub(crate) fn const_bindings(&self) -> TypeConstraintConstBindingIter<'_> {
-        TypeConstraintConstBindingIter(self.const_bindings.iter())
+        TypeConstraintConstBindingIter {
+            rows: self.const_bindings.iter(),
+            scope: self.residual.scope(),
+            template_scope: self.authority.parameter_scope.template_scope(),
+        }
+    }
+
+    pub(super) fn reify_projection<A: TypeConstraintAccounting, D: ConstraintDomain, P>(
+        &self,
+        key: P,
+        ty: &TypeKind,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<super::KeyedConstraintProjection<P>, TypeConstraintError> {
+        let value = self.residual.reify_type(ty, context)?;
+        Ok(super::KeyedConstraintProjection::new(
+            key,
+            value,
+            self.residual.scope().clone(),
+        ))
     }
 
     /// Complete and seal one active lower path. No caller may publish or
     /// inherit its rows until this owner has projected the whole path and
     /// checked its scope and completeness.
     pub(super) fn complete_path<A, D>(
-        bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
-        const_bindings: BTreeMap<GenericConstParameterId, ArrayLength>,
+        bindings: BTreeMap<GenericTypeReference, TypeKind>,
+        const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
         effect_bindings: BTreeMap<EffectVar, EffectRow>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
@@ -153,6 +207,23 @@ impl TypeConstraintSolution {
         B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
         E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
+        let bindings = bindings
+            .into_iter()
+            .map(|(parameter, value)| {
+                let reference = context
+                    .parameter_scope
+                    .type_reference(&parameter.clone().into())
+                    .unwrap_or(GenericTypeReference::Free(parameter));
+                let value = context.open_template_type(&value).map_err(|error| {
+                    map_completed_self_error(
+                        error,
+                        reference.clone().into(),
+                        CompletedSolutionInput::ClaimedCompleted,
+                    )
+                })?;
+                Ok((reference, value))
+            })
+            .collect::<Result<Vec<_>, TypeConstraintError>>()?;
         Self::seal_rows(
             bindings,
             std::iter::empty(),
@@ -176,6 +247,34 @@ impl TypeConstraintSolution {
         C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
         E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
+        let bindings = bindings
+            .into_iter()
+            .map(|(parameter, value)| {
+                let reference = context
+                    .parameter_scope
+                    .type_reference(&parameter.clone().into())
+                    .unwrap_or(GenericTypeReference::Free(parameter));
+                let value = context.open_template_type(&value).map_err(|error| {
+                    map_completed_self_error(
+                        error,
+                        reference.clone().into(),
+                        CompletedSolutionInput::ClaimedCompleted,
+                    )
+                })?;
+                Ok((reference, value))
+            })
+            .collect::<Result<Vec<_>, TypeConstraintError>>()?;
+        let const_bindings = const_bindings
+            .into_iter()
+            .map(|(parameter, value)| {
+                let reference = context
+                    .parameter_scope
+                    .const_reference(&parameter.clone().into())
+                    .unwrap_or(GenericConstReference::Free(parameter));
+                let value = context.open_template_length(&value)?;
+                Ok((reference, value))
+            })
+            .collect::<Result<Vec<_>, TypeConstraintError>>()?;
         Self::seal_rows(
             bindings,
             const_bindings,
@@ -195,8 +294,8 @@ impl TypeConstraintSolution {
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
-        B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
-        C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
+        B: IntoIterator<Item = (GenericTypeReference, TypeKind)>,
+        C: IntoIterator<Item = (GenericConstReference, ArrayLength)>,
         E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
         let source_bindings = bindings.into_iter().collect::<Vec<_>>();
@@ -224,6 +323,7 @@ impl TypeConstraintSolution {
             .iter()
             .cloned()
             .collect::<BTreeMap<_, _>>();
+        let residual = ResidualGenericBinder::for_path(&lookup, &const_lookup, context)?;
         let mut bindings = Vec::with_capacity(source_bindings.len());
         for (parameter, value) in source_bindings {
             match context.parameter_eligibility(&parameter) {
@@ -278,19 +378,13 @@ impl TypeConstraintSolution {
             validate_selected_call_self(&projected.value, context).map_err(|error| {
                 map_completed_self_error(error, parameter.clone().into(), input)
             })?;
-            bindings.push((parameter, projected.value));
+            let declaration = context
+                .parameter_scope
+                .type_declaration(&parameter)
+                .ok_or_else(|| super::references::type_out_of_scope(&parameter))?
+                .clone();
+            bindings.push((declaration, residual.reify_type(&projected.value, context)?));
         }
-        for (parameter, eligibility) in context.parameter_scope.iter() {
-            if matches!(eligibility, TypeConstraintParameterEligibility::Bindable)
-                && !lookup.contains_key(parameter)
-            {
-                return Err(TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone().into(),
-                }
-                .into());
-            }
-        }
-
         let mut const_bindings = Vec::with_capacity(source_const_bindings.len());
         for (parameter, value) in source_const_bindings {
             match context.const_parameter_eligibility(&parameter) {
@@ -344,18 +438,14 @@ impl TypeConstraintSolution {
                     Some(parameter.clone().into()),
                 ));
             }
-            const_bindings.push((parameter, projected));
+            let declaration = context
+                .parameter_scope
+                .const_declaration(&parameter)
+                .ok_or_else(|| super::references::const_out_of_scope(&parameter))?
+                .clone();
+            const_bindings.push((declaration, residual.reify_length(&projected, context)?));
         }
-        for (parameter, eligibility) in context.parameter_scope.const_iter() {
-            if matches!(eligibility, super::TypeConstraintConstEligibility::Bindable)
-                && !const_lookup.contains_key(parameter)
-            {
-                return Err(TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone().into(),
-                }
-                .into());
-            }
-        }
+        context.validate_type_and_const_completion(&lookup, &const_lookup)?;
 
         let effect_bindings = effect_bindings.into_iter().collect::<Vec<_>>();
         if let Some(rows) = effect_bindings
@@ -395,8 +485,9 @@ impl TypeConstraintSolution {
         }
 
         Ok(Self {
+            residual,
             authority: CompletedTypeConstraintAuthority {
-                parameter_scope: context.parameter_scope.clone(),
+                parameter_scope: context.parameter_scope.completed_contract().clone(),
                 effect_scope: context.effect_scope.clone(),
             },
             bindings: bindings
@@ -429,44 +520,46 @@ impl TypeConstraintSolution {
         if !self
             .authority
             .parameter_scope
-            .accepts_continuation_scope(&context.parameter_scope)
+            .accepts_continuation_scope(context.parameter_scope.completed_contract())
         {
             if let Some((parameter, _)) = self.bindings().find(|(parameter, _)| {
                 matches!(
-                    context.parameter_eligibility(parameter),
+                    context.parameter_eligibility(parameter.value()),
                     Some(TypeConstraintParameterEligibility::Rigid)
                 )
             }) {
                 return Err(completed_solution_invariant(
                     super::InheritedSolutionInvariantKind::RigidBinding,
-                    Some(parameter.clone().into()),
+                    Some(parameter.value().clone().into()),
                 ));
             }
             if let Some((parameter, _)) = self.const_bindings().find(|(parameter, _)| {
                 matches!(
-                    context.const_parameter_eligibility(parameter),
+                    context.const_parameter_eligibility(parameter.value()),
                     Some(super::TypeConstraintConstEligibility::Rigid)
                 )
             }) {
                 return Err(completed_solution_invariant(
                     super::InheritedSolutionInvariantKind::RigidBinding,
-                    Some(parameter.clone().into()),
+                    Some(parameter.value().clone().into()),
                 ));
             }
             let parameter = self
                 .bindings()
                 .find_map(|(parameter, _)| {
                     context
-                        .parameter_eligibility(parameter)
+                        .parameter_scope
+                        .type_reference(parameter.value())
                         .is_none()
-                        .then(|| parameter.clone().into())
+                        .then(|| parameter.value().clone().into())
                 })
                 .or_else(|| {
                     self.const_bindings().find_map(|(parameter, _)| {
                         context
-                            .const_parameter_eligibility(parameter)
+                            .parameter_scope
+                            .const_reference(parameter.value())
                             .is_none()
-                            .then(|| parameter.clone().into())
+                            .then(|| parameter.value().clone().into())
                     })
                 })
                 .or_else(|| {
@@ -504,37 +597,18 @@ impl TypeConstraintSolution {
 
         let mut path = context.start_path()?;
         for (parameter, value) in self.bindings() {
-            context.restore_completed_binding(&mut path, parameter.clone(), value.clone())?;
+            let value = self.residual.reopen_type(value.value(), context)?;
+            context.restore_completed_binding(&mut path, parameter.value().clone(), value)?;
         }
         for (parameter, value) in self.const_bindings() {
-            context.restore_completed_const_binding(&mut path, parameter.clone(), value.clone())?;
+            let value = self.residual.reopen_length(value.value(), context)?;
+            context.restore_completed_const_binding(&mut path, parameter.value().clone(), value)?;
         }
         for (variable, value) in self.effect_bindings() {
             path.effects
                 .restore_completed_inherited(*variable, value.concrete());
         }
         Ok(path)
-    }
-
-    /// Apply the sealed lower solution without exposing a caller-owned
-    /// substitution table. Callers only receive the normalized type result.
-    pub(crate) fn apply(&self, ty: &TypeKind) -> TypeKind {
-        let bindings = self
-            .bindings()
-            .map(|(parameter, value)| (parameter.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        let effects = EffectSubstitution::from_rows(
-            self.effect_bindings()
-                .map(|(variable, value)| (*variable, value.clone())),
-        );
-        let const_bindings = self
-            .const_bindings()
-            .map(|(parameter, value)| (parameter.clone(), value.clone()))
-            .collect::<BTreeMap<_, _>>();
-        ty.substitute_type_parameters(&bindings)
-            .substitute_const_parameters(&const_bindings)
-            .substitute_effect_rows(&effects)
-            .expect("sealed constraint solutions contain only canonical effect rows")
     }
 
     pub(crate) fn checked_rebind_effect_issuer(
@@ -547,8 +621,12 @@ impl TypeConstraintSolution {
             .bindings()
             .map(|(parameter, value)| {
                 Ok(CheckedTypeArgumentBinding::new(
-                    parameter.clone(),
-                    value.checked_rebind_effect_rows(prepared, checked, authorized_ordinals)?,
+                    parameter.value().clone(),
+                    value.value().checked_rebind_effect_rows(
+                        prepared,
+                        checked,
+                        authorized_ordinals,
+                    )?,
                 ))
             })
             .collect::<Result<Box<[_]>, _>>()?;
@@ -574,10 +652,11 @@ impl TypeConstraintSolution {
         let const_bindings = self
             .const_bindings()
             .map(|(parameter, value)| {
-                CheckedConstArgumentBinding::new(parameter.clone(), value.clone())
+                CheckedConstArgumentBinding::new(parameter.value().clone(), value.value().clone())
             })
             .collect();
         Ok(Self {
+            residual: self.residual.clone(),
             authority: CompletedTypeConstraintAuthority {
                 parameter_scope: self.authority.parameter_scope.clone(),
                 effect_scope: self.authority.effect_scope.checked_rebind_issuer(
@@ -595,9 +674,12 @@ impl TypeConstraintSolution {
 
 fn require_exact_type_keys(
     solution: &TypeConstraintSolution,
-    required: &[GenericTypeParameterId],
+    required: &[GenericTypeReference],
 ) -> Result<(), TypeConstraintError> {
-    let rows = solution.bindings().collect::<Vec<_>>();
+    let rows = solution
+        .bindings()
+        .map(|(key, value)| (key.value(), value))
+        .collect::<Vec<_>>();
     let mut row_index = 0;
     for required_key in required {
         if row_index < rows.len() && rows[row_index].0 < required_key {
@@ -625,9 +707,12 @@ fn require_exact_type_keys(
 
 fn require_exact_const_keys(
     solution: &TypeConstraintSolution,
-    required: &[GenericConstParameterId],
+    required: &[GenericConstReference],
 ) -> Result<(), TypeConstraintError> {
-    let rows = solution.const_bindings().collect::<Vec<_>>();
+    let rows = solution
+        .const_bindings()
+        .map(|(key, value)| (key.value(), value))
+        .collect::<Vec<_>>();
     let mut row_index = 0;
     for required_key in required {
         if row_index < rows.len() && rows[row_index].0 < required_key {
@@ -780,88 +865,81 @@ fn map_completed_self_error(
     }
 }
 
-impl ConstraintBindingLookup for TypeConstraintSolution {
-    fn binding(&self, parameter: &GenericTypeParameterId) -> Option<&TypeKind> {
-        self.bindings
-            .binary_search_by(|binding| binding.parameter.cmp(parameter))
-            .ok()
-            .map(|index| &self.bindings[index].value)
-    }
+pub(crate) struct TypeConstraintBindingIter<'a> {
+    rows: slice::Iter<'a, CheckedTypeArgumentBinding>,
+    scope: &'a GenericScope,
+    template_scope: &'a GenericScope,
 }
 
-impl ConstraintConstBindingLookup for TypeConstraintSolution {
-    fn const_binding(&self, parameter: &GenericConstParameterId) -> Option<&ArrayLength> {
-        self.const_bindings
-            .binary_search_by(|binding| binding.parameter.cmp(parameter))
-            .ok()
-            .map(|index| &self.const_bindings[index].value)
-    }
+pub(crate) struct TypeConstraintConstBindingIter<'a> {
+    rows: slice::Iter<'a, CheckedConstArgumentBinding>,
+    scope: &'a GenericScope,
+    template_scope: &'a GenericScope,
 }
-
-pub(crate) struct TypeConstraintBindingIter<'a>(slice::Iter<'a, CheckedTypeArgumentBinding>);
-
-pub(crate) struct TypeConstraintConstBindingIter<'a>(slice::Iter<'a, CheckedConstArgumentBinding>);
 
 pub(crate) struct TypeConstraintEffectBindingIter<'a>(
     slice::Iter<'a, CheckedEffectArgumentBinding>,
 );
 
 impl<'a> Iterator for TypeConstraintBindingIter<'a> {
-    type Item = (&'a GenericTypeParameterId, &'a TypeKind);
-
+    type Item = (ScopedTypeReferenceView<'a>, ScopedTypeView<'a>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|binding| (&binding.parameter, &binding.value))
+        self.rows.next().map(|binding| {
+            (
+                ScopedTypeReferenceView::sealed(&binding.parameter, self.template_scope),
+                ScopedTypeView::sealed(&binding.value, self.scope),
+            )
+        })
     }
-
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.rows.size_hint()
     }
 }
-
 impl DoubleEndedIterator for TypeConstraintBindingIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_back()
-            .map(|binding| (&binding.parameter, &binding.value))
+        self.rows.next_back().map(|binding| {
+            (
+                ScopedTypeReferenceView::sealed(&binding.parameter, self.template_scope),
+                ScopedTypeView::sealed(&binding.value, self.scope),
+            )
+        })
     }
 }
-
 impl ExactSizeIterator for TypeConstraintBindingIter<'_> {
     fn len(&self) -> usize {
-        self.0.len()
+        self.rows.len()
     }
 }
 
 impl<'a> Iterator for TypeConstraintConstBindingIter<'a> {
-    type Item = (&'a GenericConstParameterId, &'a ArrayLength);
-
+    type Item = (ScopedConstReferenceView<'a>, ScopedArrayLengthView<'a>);
     fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|binding| (&binding.parameter, &binding.value))
+        self.rows.next().map(|binding| {
+            (
+                ScopedConstReferenceView::sealed(&binding.parameter, self.template_scope),
+                ScopedArrayLengthView::sealed(&binding.value, self.scope),
+            )
+        })
     }
-
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.rows.size_hint()
     }
 }
-
 impl DoubleEndedIterator for TypeConstraintConstBindingIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_back()
-            .map(|binding| (&binding.parameter, &binding.value))
+        self.rows.next_back().map(|binding| {
+            (
+                ScopedConstReferenceView::sealed(&binding.parameter, self.template_scope),
+                ScopedArrayLengthView::sealed(&binding.value, self.scope),
+            )
+        })
     }
 }
-
 impl ExactSizeIterator for TypeConstraintConstBindingIter<'_> {
     fn len(&self) -> usize {
-        self.0.len()
+        self.rows.len()
     }
 }
-
 impl<'a> Iterator for TypeConstraintEffectBindingIter<'a> {
     type Item = (&'a EffectVar, &'a EffectRow);
 

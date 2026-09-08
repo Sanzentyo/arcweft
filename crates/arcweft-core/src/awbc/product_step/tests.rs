@@ -8,13 +8,13 @@ use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
     AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcContentUnit, AwbcContentUnitId,
-    AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId,
-    AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcPattern,
-    AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcDialogueContentTemplate, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId,
+    AwbcEntryId, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId,
+    AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId, AwbcHostCallMode,
+    AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePoint,
+    AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
@@ -72,6 +72,7 @@ fn product_dialogue_failure_commits_abandoned_before_trapping_parent() {
                 .expect("fixture line identity"),
             captures: Box::new([]),
             values: Box::new([]),
+            effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -121,6 +122,8 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
     .expect("product executor starts");
     executor.program.content_units.push(AwbcContentUnit {
         public_id: AwbcStringId(0),
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+            .expect("template identity"),
         marks: Vec::new(),
         effect_site_count: 0,
         line_task_group: Some(crate::awbc::schema::AwbcLineTaskGroupId(0)),
@@ -171,10 +174,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
         let activation_batch = crate::line_task::progress_live_line_task_group(
             &view,
             crate::time::LogicalDuration::default(),
-            crate::line_task::LineTaskReadyEvents::new(
-                &std::collections::BTreeSet::new(),
-                &std::collections::BTreeSet::new(),
-            ),
+            crate::line_task::LineTaskReadyEvents::new(&std::collections::BTreeSet::new()),
             &mut live,
         )
         .expect("activate action");
@@ -194,6 +194,7 @@ fn product_dialogue_failure_cancels_joined_child_before_abandoning() {
                 .expect("line"),
             captures: Box::new([]),
             values: Box::new([]),
+            effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),
@@ -910,8 +911,17 @@ fn content_ensure_program() -> AwbcProgram {
             slots: Vec::new(),
             max_scope_depth: 0,
         }],
+        content_templates: vec![AwbcDialogueContentTemplate {
+            id: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("template identity"),
+            digest: crate::entry::RuntimeDialogueContentTemplateDigest::ZERO,
+            slots: Vec::new(),
+            effects: Vec::new(),
+        }],
         content_units: vec![AwbcContentUnit {
             public_id: AwbcStringId(1),
+            template: crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("template identity"),
             marks: Vec::new(),
             effect_site_count: 0,
             line_task_group: None,

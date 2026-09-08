@@ -165,6 +165,369 @@ fn manifest_document(name: &str) -> Arc<SourceDocument> {
     )
 }
 
+#[test]
+fn runtime_call_facts_retain_named_argument_source_order_and_abi_destinations() {
+    let (project, context) = removed_role_project(
+        r#"
+fn reorder(first: String, second: String) -> String { first }
+
+flow main() -> String {
+    return reorder(second = "second", first = "first")
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("named project call compiles through runtime fact publication");
+    let call = compiled
+        .runtime_facts()
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| call.operands().len() == 2)
+        .expect("project call has two physical operands");
+    assert_eq!(
+        call.operands()
+            .iter()
+            .map(|operand| (operand.origin().clone(), operand.abi_position()))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 0,
+                    slot: 0,
+                },
+                1,
+            ),
+            (
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 1,
+                    slot: 0,
+                },
+                0,
+            ),
+        ]
+    );
+    assert_eq!(
+        call.abi_operands()
+            .map(|operand| operand.abi_position())
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+}
+
+#[test]
+fn runtime_project_materialization_indexes_the_source_row_for_rest_spread() {
+    let (project, context) = removed_role_project(
+        r#"
+fn collect(head: i64, tail: ...i64) -> i64 { head }
+
+flow main() -> i64 {
+    return collect(1i64, [2i64, 3i64]...)
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("rest-spread project call compiles through runtime fact publication");
+    let call = compiled
+        .runtime_facts()
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| call.project_function().is_some())
+        .expect("project call fact");
+    assert_eq!(
+        call.operands()
+            .iter()
+            .map(|operand| (operand.origin().clone(), operand.abi_position()))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 0,
+                    slot: 0,
+                },
+                0,
+            ),
+            (
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 1,
+                    slot: 0,
+                },
+                1,
+            ),
+            (
+                arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandOrigin::Argument {
+                    argument: 1,
+                    slot: 1,
+                },
+                2,
+            ),
+        ]
+    );
+    let materialization = call
+        .project_function()
+        .expect("project materialization")
+        .current_group_materialization();
+    assert_eq!(materialization.len(), 2);
+    assert_eq!(materialization[0].operand_indices(), &[0]);
+    assert_eq!(materialization[1].operand_indices(), &[1, 2]);
+    assert!(matches!(
+        materialization[1].kind(),
+        arcweft_lang_hir::item::HirParameterKind::RestPositional
+    ));
+    assert!(matches!(
+        call.operands()[1].projection(),
+        arcweft_runtime_plan::semantic_facts::RuntimeResolvedCallOperandProjection::Scalar
+    ));
+}
+
+#[test]
+fn generic_project_function_instances_close_one_body_under_distinct_runtime_types() {
+    let (project, context) = removed_role_project(
+        r#"
+fn identity<T>(value: T) -> T { value }
+
+flow main() -> i64 {
+    identity(1i64)
+    identity("text")
+    return 0i64
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("one generic body publishes two closed runtime instances");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted executable project");
+    let (_, module) = executable.modules().next().expect("root module");
+    let (function_owner, parameter_local) = module
+        .items()
+        .find_map(|(owner, item)| {
+            let HirItemKind::Function(function) = item.kind() else {
+                return None;
+            };
+            (function.name().resolved().map(|name| name.as_str()) == Some("identity")).then(|| {
+                (
+                    owner,
+                    function.parameter_groups()[0].parameters()[0].locals()[0],
+                )
+            })
+        })
+        .expect("identity Function owner");
+    let instances = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .filter(|instance| instance.callable().owner() == function_owner)
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    assert_ne!(instances[0].key(), instances[1].key());
+    let mut closed = instances
+        .iter()
+        .map(|instance| {
+            let arcweft_runtime_plan::semantic_facts::RuntimeTypeShape::Function {
+                parameters,
+                result,
+            } = instance.function_type().shape()
+            else {
+                panic!("closed instance function type")
+            };
+            assert_eq!(parameters.len(), 1);
+            assert_eq!(parameters[0], **result);
+            assert_eq!(
+                instance.semantics().local_type(parameter_local),
+                Some(parameters.first().expect("closed parameter type")),
+            );
+            parameters[0].identity()
+        })
+        .collect::<Vec<_>>();
+    closed.sort();
+    closed.dedup();
+    assert_eq!(
+        closed.len(),
+        2,
+        "i64 and String remain distinct closed types"
+    );
+}
+
+#[test]
+fn generic_project_closure_instances_are_closed_per_parent_without_global_fallback() {
+    let (project, context) = removed_role_project(
+        r#"
+fn make_reader<T>(value: T) -> ((Unit) -> T effects {}) {
+    |_unit: Unit| -> T { value }
+}
+
+flow main() -> i64 {
+    let number_reader = make_reader(1i64)
+    let _ = number_reader(())
+    let text_reader = make_reader("text")
+    let _ = text_reader(())
+    return 0i64
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("generic captured closure publishes one closed closure per parent instance");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted executable project");
+    let (_, module) = executable.modules().next().expect("root module");
+    let function_owner = module
+        .items()
+        .find_map(|(owner, item)| match item.kind() {
+            HirItemKind::Function(function)
+                if function.name().resolved().map(|name| name.as_str()) == Some("make_reader") =>
+            {
+                Some(owner)
+            }
+            _ => None,
+        })
+        .expect("make_reader Function owner");
+    let instances = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .filter(|instance| instance.callable().owner() == function_owner)
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    let mut closure_owner = None;
+    let mut capture_types = Vec::new();
+    for instance in instances {
+        let closure = instance
+            .semantics()
+            .expressions()
+            .iter()
+            .find_map(|expression| match expression.payload() {
+                arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExpressionPayload::Closure(
+                    closure,
+                ) => Some(closure.as_ref()),
+                _ => None,
+            })
+            .expect("instance semantic catalog owns its explicit closure");
+        assert_eq!(closure.key().enclosing_instance(), Some(instance.key()));
+        match closure_owner {
+            Some(owner) => assert_eq!(owner, closure.owner()),
+            None => closure_owner = Some(closure.owner()),
+        }
+        let [capture] = closure.captures() else {
+            panic!("closure captures the generic parameter once")
+        };
+        assert_eq!(
+            closure.semantics().local_type(capture.source()),
+            None,
+            "the captured source local belongs to the parent catalog, not the closure body",
+        );
+        assert_eq!(
+            instance.semantics().local_type(capture.source()),
+            Some(capture.ty()),
+        );
+        assert_eq!(
+            closure.semantics().expression_type(closure.body()),
+            Some(capture.ty()),
+        );
+        assert!(
+            compiled
+                .runtime_facts()
+                .expression_type(closure.body())
+                .is_none(),
+            "instance closure body must not fall back to the global semantic catalog",
+        );
+        capture_types.push(capture.ty().identity());
+    }
+    capture_types.sort();
+    capture_types.dedup();
+    assert_eq!(
+        capture_types.len(),
+        2,
+        "i64 and String captures stay closed"
+    );
+}
+
+#[test]
+fn generic_project_dialogue_instances_own_closed_templates_without_global_fallback() {
+    let (project, context) = removed_role_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+
+fn speak<T>(value: T) {
+    alice[#[value]];
+}
+
+flow main() {
+    speak(1i64);
+    speak("text");
+}
+"#,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("generic dialogue publishes one closed content occurrence per instance");
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted executable project");
+    let (_, module) = executable.modules().next().expect("root module");
+    let function_owner = module
+        .items()
+        .find_map(|(owner, item)| match item.kind() {
+            HirItemKind::Function(function)
+                if function.name().resolved().map(|name| name.as_str()) == Some("speak") =>
+            {
+                Some(owner)
+            }
+            _ => None,
+        })
+        .expect("speak Function owner");
+    let instances = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .filter(|instance| instance.callable().owner() == function_owner)
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 2);
+    assert!(
+        compiled
+            .runtime_facts()
+            .dialogue_content_fragments()
+            .is_empty(),
+        "closed generic content must not leak into the global semantic catalog",
+    );
+    let mut templates = Vec::new();
+    let mut slot_types = Vec::new();
+    for instance in instances {
+        let mut applications = 0_usize;
+        instance.visit_dialogue_applications(&mut |_, owner, application| {
+            applications += 1;
+            let fragment = instance
+                .semantics()
+                .dialogue_content_fragment_for_source(owner)
+                .expect("instance dialogue source owns its closed fragment");
+            assert_eq!(
+                fragment.template().id(),
+                application.content().template_id()
+            );
+            let [slot] = fragment.values() else {
+                panic!("generic interpolation owns one closed value slot")
+            };
+            templates.push(fragment.template().id());
+            slot_types.push(slot.ty().identity());
+        });
+        assert_eq!(applications, 1);
+    }
+    templates.sort();
+    templates.dedup();
+    slot_types.sort();
+    slot_types.dedup();
+    assert_eq!(templates.len(), 2, "template identities are plan-unique");
+    assert_eq!(
+        slot_types.len(),
+        2,
+        "interpolation types close per instance"
+    );
+}
+
 fn dialogue_manifest_document(name: &str) -> Arc<SourceDocument> {
     Arc::new(
         SourceDocument::try_new(
@@ -326,10 +689,10 @@ fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
 fn dialogue_line_reference_reaches_runtime_lowering_from_one_accepted_generation() {
     let (project, context) = removed_role_dialogue_project(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice[前[strong]強調[/strong]後];
+    alice[前#strong()[強調]後];
 }
 
 flow reference {
@@ -341,7 +704,7 @@ flow reference {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("typed dialogue-line reference compiles through runtime lowering");
 
-    let [line] = compiled.hir_project().dialogue_lines().records() else {
+    let [line] = compiled.final_analysis().dialogue_lines().records() else {
         panic!("one accepted dialogue line")
     };
     assert_eq!(
@@ -467,10 +830,8 @@ fn dialogue_collision_project() -> (
 ) {
     let child = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("child").expect("module segment"));
-    let root_text =
-        "fn root_line() {\n    alice(id = @say.shared)[before[strong]root[/strong]after];\n}\n";
-    let child_text =
-        "fn child_line() {\n    bob(id = @say.shared)[before[strong]child[/strong]after];\n}\n";
+    let root_text = "pub character alice { display = \"Alice\" }\nfn root_line() {\n    alice(id = @say.shared)[before#strong()[root]after];\n}\n";
+    let child_text = "pub character bob { display = \"Bob\" }\nfn child_line() {\n    bob(id = @say.shared)[before#strong()[child]after];\n}\n";
     let root_document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-project://dialogue-collision/src/main.arcw")
@@ -489,12 +850,13 @@ fn dialogue_collision_project() -> (
         )
         .expect("child source document"),
     );
+    let manifest = dialogue_manifest_document("dialogue-collision");
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
         package("org.arcweft.dialogue-collision"),
         BuildSpec::default(),
-        manifest_document("dialogue-collision"),
+        Arc::clone(&manifest),
         [
             ProjectSourceFile::new(
                 CanonicalModulePath::crate_root(),
@@ -519,19 +881,42 @@ fn dialogue_collision_project() -> (
     .expect("symbol world");
     let facts = ProjectRegistrationFacts::try_new(
         world,
-        vec![Arc::clone(&root_document), Arc::clone(&child_document)],
+        vec![
+            Arc::clone(&root_document),
+            Arc::clone(&child_document),
+            Arc::clone(&manifest),
+        ],
         Vec::new(),
         Vec::new(),
         Vec::new(),
     )
     .expect("registration facts");
+    let resource_types = Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty());
     let context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
-        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        Arc::clone(&resource_types),
         None,
         None,
     );
+    let accepted = Arc::new(SourceBackedManifest::decode(Arc::clone(&manifest)).unwrap());
+    let profile_id = ProfileId::new("dev").unwrap();
+    let resolved = accepted
+        .resolve_profile(LaunchProfileSelection::Explicit(profile_id.as_str()))
+        .unwrap();
+    let revision = SourceSetRevision::try_for_identities([
+        manifest.identity(),
+        root_document.identity(),
+        child_document.identity(),
+    ])
+    .unwrap();
+    let context = context.with_accepted_launch_profile(AcceptedLaunchProfileInput::new(
+        accepted,
+        profile_id,
+        resolved,
+        revision,
+        resource_types,
+    ));
     (project, context, root_document, child_document)
 }
 
@@ -544,7 +929,7 @@ fn project_dialogue_collision_projects_exact_cross_module_source_labels() {
         .expect_err("duplicate dialogue line IDs reject the project transaction");
     assert_eq!(
         error.stage(),
-        ProjectCompileStage::HirProject.as_str(),
+        ProjectCompileStage::TypeCheck.as_str(),
         "diagnostics={:?}",
         error.diagnostics(),
     );
@@ -613,7 +998,7 @@ fn failed_project_build_preserves_the_previous_accepted_hir_project_arc() {
         &collision_context,
     )
     .expect_err("collision candidate rejects without replacing accepted cache");
-    assert_eq!(error.stage(), ProjectCompileStage::HirProject.as_str());
+    assert_eq!(error.stage(), ProjectCompileStage::TypeCheck.as_str());
 
     let rebuilt = compile_project(
         &mut session,
@@ -972,39 +1357,106 @@ fn registration_failure_discards_project() {
 }
 
 #[test]
-fn reached_suspending_function_is_rejected_by_runtime_emission() {
-    let (project, context) = removed_role_project(concat!(
-        "type ArcResult<T> = Result<T, ArcError>\n",
-        "fn load_opening_assets() -> ArcResult<Unit> {\n",
-        "    let _bg = try await load_bg()\n",
-        "    Ok(())\n",
-        "}\n",
-        "flow main() -> String {\n",
-        "    let assets = load_opening_assets()\n",
-        "    return \"done\"\n",
-        "}\n",
-    ));
-    let mut cache = InMemoryProjectCompileCache::default();
-    let (mut compiler, parsed_sources) = compilation_state(&project);
-    let error = compile_project_with_cache(
-        &mut compiler,
-        &project,
-        &parsed_sources,
-        &context,
-        &mut cache,
-    )
-    .expect_err("reached authored suspension is not runtime-emittable in this cut");
-    let codes = error
-        .diagnostics()
-        .iter()
-        .filter_map(|diagnostic| {
-            diagnostic
-                .diagnostic()
-                .code()
-                .map(arcweft_source::DiagnosticCode::as_str)
-        })
+fn generic_suspending_function_uses_its_closed_await_frame() {
+    use arcweft_adapter_context::manifest::{
+        AdapterCallableGroupIndex, AdapterEffectCapability, AdapterFunctionSignature,
+        AdapterHostCall, AdapterManifest, AdapterParameterGroup, AdapterTypeKind,
+    };
+    use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
+
+    let (project, context) = removed_role_project(
+        r#"
+extern capability fixture {
+    fn load() -> Need<Result<Unit, String>> effects { control.suspend }
+}
+fn load_opening_assets<T>(value: T) -> Result<T, String> {
+    let _bg = try await fixture.load()
+    Ok(value)
+}
+fn wait_tail<T>(value: T) -> Result<Unit, String> {
+    await fixture.load()
+}
+flow main() -> Result<i64, String> {
+    wait_tail("ready")
+    wait_tail(1i64)
+    load_opening_assets("ready")
+    return load_opening_assets(1i64)
+}
+"#,
+    );
+    let effect = AdapterEffectCapability::new("control.suspend");
+    let manifest = AdapterManifest::new("test.suspending-function", "Suspending function test")
+        .with_effect(effect.clone())
+        .with_host_call(AdapterHostCall::with_signature(
+            "fixture.load",
+            AdapterFunctionSignature::try_new(
+                vec![
+                    AdapterParameterGroup::try_new(
+                        AdapterCallableGroupIndex::try_from_usize(0).unwrap(),
+                        Vec::new(),
+                    )
+                    .unwrap(),
+                ],
+                AdapterTypeKind::Need {
+                    item: Box::new(AdapterTypeKind::Result {
+                        ok: Box::new(AdapterTypeKind::Unit),
+                        error: Box::new(AdapterTypeKind::String),
+                    }),
+                },
+            )
+            .unwrap(),
+            [effect],
+        ));
+    let registration = AdapterSemanticRegistration::new(&manifest);
+    let parts = registration.source_backed_facts(0).unwrap().into_parts();
+    let mut documents = project
+        .modules()
+        .map(|module| Arc::clone(module.document()))
         .collect::<Vec<_>>();
-    assert!(codes.contains(&"compiler.runtime_emission.suspending_function_unsupported"));
+    documents.push(parts.document);
+    let facts = ProjectRegistrationFacts::try_new(
+        context.facts().world().clone(),
+        documents,
+        parts.externals.into_vec(),
+        Vec::new(),
+        vec![parts.environment],
+    )
+    .unwrap();
+    let context = ProjectCompilationContext::new(
+        Arc::new(registration.declare_target_effects(TypeCheckEnv::standard())),
+        Arc::new(facts),
+        Arc::clone(context.resource_types()),
+        None,
+        None,
+    );
+    let (mut compiler, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut compiler, &project, &parsed_sources, &context)
+        .expect("a reached suspending project function owns an executable frame");
+    let instances = compiled
+        .runtime_facts()
+        .project_function_instances()
+        .collect::<Vec<_>>();
+    assert_eq!(instances.len(), 4);
+    for instance in instances {
+        assert_eq!(
+            instance.suspension(),
+            arcweft_lang_sema::final_analysis::CheckedSuspensionRole::MaySuspend
+        );
+        assert_eq!(instance.execution(), arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionExecution::ExecutableFunctionSite);
+    }
+    assert_eq!(
+        compiled
+            .runtime_plan()
+            .plan
+            .function_sites()
+            .iter()
+            .filter(|site| {
+                matches!(site.body(), arcweft_core::plan::RuntimeFunctionSiteBody::Executable(body)
+            if body.ops().iter().any(|op| matches!(op, arcweft_core::plan::FlowOp::Await { .. })))
+            })
+            .count(),
+        4
+    );
 }
 
 #[test]

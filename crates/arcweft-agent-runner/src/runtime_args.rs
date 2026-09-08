@@ -9,6 +9,7 @@ use arcweft_core::{
     value::{RuntimePayload, RuntimeValue},
 };
 
+use crate::error::AgentHostRequestAdmissionError;
 use crate::label_parse::parse_pointer_button_label;
 use crate::runtime_value::{
     runtime_agent_value_map, runtime_bool, runtime_capture_format, runtime_capture_target,
@@ -176,16 +177,28 @@ impl<'a> RuntimeAgentArgs<'a> {
         Ok(AgentAction::PointerClick { x, y, button })
     }
 
-    pub(crate) fn attach_request(&self) -> Result<AgentAttachment, String> {
+    pub(crate) fn attach_request(&self) -> Result<AgentAttachment, AgentHostRequestAdmissionError> {
         let resource = self
             .positional(0)
             .or_else(|| self.named("resource"))
-            .ok_or_else(|| "attach requires a resource argument".to_owned())?;
+            .ok_or(AgentHostRequestAdmissionError::MissingArgument {
+                operation: "attach",
+                argument: "resource",
+            })?;
         if self.positional(1).is_some() {
-            return Err("attach received too many positional arguments".to_owned());
+            return Err(AgentHostRequestAdmissionError::InvalidArguments {
+                operation: "attach".to_owned(),
+                detail: "received too many positional arguments".to_owned(),
+            });
         }
         Ok(AgentAttachment {
-            resource: Box::new(runtime_value_to_json(resource)),
+            resource: Box::new(runtime_value_to_json(resource).map_err(|source| {
+                AgentHostRequestAdmissionError::RuntimeValueSerialization {
+                    operation: "attach",
+                    argument: "resource",
+                    source,
+                }
+            })?),
         })
     }
 }

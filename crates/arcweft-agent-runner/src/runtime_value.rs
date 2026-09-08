@@ -7,123 +7,321 @@ use arcweft_agent_protocol::{
     value::AgentValue,
 };
 use arcweft_core::value::{
-    RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentPredicate, RuntimeAgentProbe,
-    RuntimeAgentValue, RuntimePayload, RuntimeValue,
+    DenseSeq, RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentPredicate,
+    RuntimeAgentProbe, RuntimeAgentValue, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
 
+use crate::error::AgentRuntimeValueSerializationError;
 use crate::label_parse::{
     parse_bool_label, parse_capture_format, parse_public_id_arg, parse_public_id_list,
 };
 
-pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
+pub(crate) fn runtime_value_to_json(
+    value: &RuntimeValue,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
+    ensure_finite_runtime_value(value, "$runtime")?;
+    runtime_value_to_json_at(value, "$runtime")
+}
+
+fn runtime_value_to_json_at(
+    value: &RuntimeValue,
+    path: &str,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
     match value {
-        RuntimeValue::Unit => serde_json::Value::Null,
-        RuntimeValue::Bool(value) => serde_json::Value::Bool(*value),
-        RuntimeValue::Int(value) => runtime_int_to_json(*value),
-        RuntimeValue::UInt(value) => runtime_uint_to_json(*value),
-        RuntimeValue::F32(value) => serde_json::json!(*value),
-        RuntimeValue::F64(value) => serde_json::json!(*value),
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => {
-            serde_json::Value::String(value.clone())
-        }
-        RuntimeValue::Char(value) => serde_json::Value::String(value.to_string()),
-        RuntimeValue::Tuple(values) => {
-            serde_json::Value::Array(values.iter().map(runtime_value_to_json).collect())
-        }
-        RuntimeValue::Seq(values) => {
-            serde_json::to_value(values).unwrap_or(serde_json::Value::Null)
-        }
-        RuntimeValue::Record(fields) => serde_json::Value::Object(
-            fields
-                .iter()
-                .map(|field| {
-                    (
-                        field.name().to_owned(),
-                        runtime_value_to_json(field.value()),
-                    )
-                })
-                .collect(),
-        ),
-        RuntimeValue::NominalRecord(record) => serde_json::json!({
-            "kind": "nominal_record",
-            "type": record.type_id().as_str(),
-            "layout": record.layout(),
-            "fields": record
+        RuntimeValue::Unit => Ok(serde_json::Value::Null),
+        RuntimeValue::Bool(value) => Ok(serde_json::Value::Bool(*value)),
+        RuntimeValue::Int(value) => Ok(runtime_int_to_json(*value)),
+        RuntimeValue::UInt(value) => Ok(runtime_uint_to_json(*value)),
+        RuntimeValue::F32(value) => finite_json_number(f64::from(*value), path),
+        RuntimeValue::F64(value) => finite_json_number(*value, path),
+        RuntimeValue::String(value) => Ok(serde_json::Value::String(value.clone())),
+        RuntimeValue::EntityRef(value) => Ok(serde_json::Value::String(value.runtime_label())),
+        RuntimeValue::Char(value) => Ok(serde_json::Value::String(value.to_string())),
+        RuntimeValue::Tuple(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| runtime_value_to_json_at(value, &format!("{path}[{index}]")))
+            .collect::<Result<Vec<_>, _>>()
+            .map(serde_json::Value::Array),
+        RuntimeValue::Seq(values) => serialize_runtime_json(values, path),
+        RuntimeValue::Record(fields) => fields
+            .iter()
+            .map(|field| {
+                runtime_value_to_json_at(field.value(), &format!("{path}.{}", field.name()))
+                    .map(|value| (field.name().to_owned(), value))
+            })
+            .collect::<Result<serde_json::Map<_, _>, _>>()
+            .map(serde_json::Value::Object),
+        RuntimeValue::NominalRecord(record) => {
+            let fields = record
                 .fields()
                 .iter()
-                .map(runtime_value_to_json)
-                .collect::<Vec<_>>(),
-        }),
-        RuntimeValue::Opaque(value) => runtime_value_to_json(value.payload()),
-        RuntimeValue::Agent(value) => runtime_agent_to_json(value),
+                .enumerate()
+                .map(|(index, value)| {
+                    runtime_value_to_json_at(value, &format!("{path}.fields[{index}]"))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(serde_json::json!({
+                "kind": "nominal_record",
+                "type": record.type_id().as_str(),
+                "layout": serialize_runtime_json(&record.layout(), &format!("{path}.layout"))?,
+                "fields": fields,
+            }))
+        }
+        RuntimeValue::Opaque(value) => {
+            runtime_value_to_json_at(value.payload(), &format!("{path}.payload"))
+        }
+        RuntimeValue::Agent(value) => runtime_agent_to_json(value, path),
         RuntimeValue::Variant {
             owner,
             ordinal,
             name,
             payload,
-        } => serde_json::json!({
-            "owner": owner,
-            "ordinal": ordinal,
-            "name": name,
-            "payload": payload.as_deref().map(runtime_value_to_json),
-        }),
-        RuntimeValue::Range(range) => {
-            serde_json::to_value(range).unwrap_or(serde_json::Value::Null)
+        } => {
+            let payload = payload
+                .as_deref()
+                .map(|payload| runtime_value_to_json_at(payload, &format!("{path}.payload")))
+                .transpose()?;
+            Ok(serde_json::json!({
+                "owner": owner,
+                "ordinal": ordinal,
+                "name": name,
+                "payload": payload,
+            }))
         }
-        RuntimeValue::Iterator(_) => serde_json::json!({
+        RuntimeValue::Range(range) => serialize_runtime_json(range, path),
+        RuntimeValue::Iterator(_) => Ok(serde_json::json!({
             "kind": "runtime_internal",
             "value": "iterator",
-        }),
-        RuntimeValue::Reduction(_) => serde_json::json!({
+        })),
+        RuntimeValue::Reduction(_) => Ok(serde_json::json!({
             "kind": "runtime_internal",
             "value": "reduction",
-        }),
-        RuntimeValue::Function(function) => serde_json::json!({
+        })),
+        RuntimeValue::Function(function) => function
+            .remaining_arity()
+            .map(|arity| {
+                serde_json::json!({
+                    "kind": "runtime_internal",
+                    "value": "function",
+                    "arity": arity,
+                })
+            })
+            .map_err(
+                |error| AgentRuntimeValueSerializationError::InvalidRuntimeState {
+                    path: path.to_owned(),
+                    detail: error.to_string(),
+                },
+            ),
+        RuntimeValue::ProjectContinuation(continuation) => Ok(serde_json::json!({
             "kind": "runtime_internal",
-            "value": "function",
-            "arity": function.remaining_arity().ok(),
-        }),
+            "value": "project_continuation",
+            "prefix_count": continuation.prefix_values().len(),
+        })),
         RuntimeValue::Duration(_)
         | RuntimeValue::Progress(_)
         | RuntimeValue::MatrixF32(_)
         | RuntimeValue::MatrixF64(_)
         | RuntimeValue::TensorF32(_)
-        | RuntimeValue::TensorF64(_) => {
-            serde_json::to_value(value).unwrap_or(serde_json::Value::Null)
-        }
+        | RuntimeValue::TensorF64(_) => serialize_runtime_json(value, path),
     }
 }
 
-fn runtime_agent_to_json(value: &RuntimeAgentValue) -> serde_json::Value {
+fn serialize_runtime_json<T: serde::Serialize>(
+    value: &T,
+    path: &str,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
+    serde_json::to_value(value).map_err(|source| {
+        AgentRuntimeValueSerializationError::JsonSerialization {
+            path: path.to_owned(),
+            source,
+        }
+    })
+}
+
+fn finite_json_number(
+    value: f64,
+    path: &str,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
+    serde_json::Number::from_f64(value)
+        .map(serde_json::Value::Number)
+        .ok_or_else(|| AgentRuntimeValueSerializationError::NonFiniteNumber {
+            path: path.to_owned(),
+            value: value.to_string(),
+        })
+}
+
+fn ensure_finite_numbers<T>(
+    values: &[T],
+    path: &str,
+) -> Result<(), AgentRuntimeValueSerializationError>
+where
+    T: Copy + Into<f64>,
+{
+    values.iter().enumerate().try_for_each(|(index, value)| {
+        let value = (*value).into();
+        value.is_finite().then_some(()).ok_or_else(|| {
+            AgentRuntimeValueSerializationError::NonFiniteNumber {
+                path: format!("{path}.values[{index}]"),
+                value: value.to_string(),
+            }
+        })
+    })
+}
+
+fn ensure_finite_runtime_sequence(
+    sequence: &RuntimeSeq,
+    path: &str,
+) -> Result<(), AgentRuntimeValueSerializationError> {
+    match sequence {
+        RuntimeSeq::Values(values) => values.iter().enumerate().try_for_each(|(index, value)| {
+            ensure_finite_runtime_value(value, &format!("{path}.values[{index}]"))
+        }),
+        RuntimeSeq::Dense(DenseSeq::F32(values)) => ensure_finite_numbers(values.as_slice(), path),
+        RuntimeSeq::Dense(DenseSeq::F64(values)) => ensure_finite_numbers(values.as_slice(), path),
+        RuntimeSeq::Dense(_) => Ok(()),
+        RuntimeSeq::TupleColumns(columns) => {
+            columns
+                .columns()
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, column)| {
+                    ensure_finite_runtime_sequence(column, &format!("{path}.columns[{index}]"))
+                })
+        }
+        RuntimeSeq::RecordColumns(records) => records.fields().iter().try_for_each(|field| {
+            ensure_finite_runtime_sequence(
+                field.values(),
+                &format!("{path}.fields.{}", field.name()),
+            )
+        }),
+    }
+}
+
+fn ensure_finite_runtime_value(
+    value: &RuntimeValue,
+    path: &str,
+) -> Result<(), AgentRuntimeValueSerializationError> {
     match value {
-        RuntimeAgentValue::ActionTarget(target) => serde_json::json!({
+        RuntimeValue::F32(value) => finite_json_number(f64::from(*value), path).map(|_| ()),
+        RuntimeValue::F64(value) => finite_json_number(*value, path).map(|_| ()),
+        RuntimeValue::Tuple(values) => values.iter().enumerate().try_for_each(|(index, value)| {
+            ensure_finite_runtime_value(value, &format!("{path}[{index}]"))
+        }),
+        RuntimeValue::Seq(sequence) => ensure_finite_runtime_sequence(sequence, path),
+        RuntimeValue::Record(fields) => fields.iter().try_for_each(|field| {
+            ensure_finite_runtime_value(field.value(), &format!("{path}.{}", field.name()))
+        }),
+        RuntimeValue::NominalRecord(record) => {
+            record
+                .fields()
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, value)| {
+                    ensure_finite_runtime_value(value, &format!("{path}.fields[{index}]"))
+                })
+        }
+        RuntimeValue::Opaque(value) => {
+            ensure_finite_runtime_value(value.payload(), &format!("{path}.payload"))
+        }
+        RuntimeValue::Agent(RuntimeAgentValue::Predicate(predicate)) => {
+            ensure_finite_runtime_predicate(predicate, path)
+        }
+        RuntimeValue::Variant {
+            payload: Some(payload),
+            ..
+        } => ensure_finite_runtime_value(payload, &format!("{path}.payload")),
+        RuntimeValue::ProjectContinuation(continuation) => continuation
+            .prefix_values()
+            .iter()
+            .enumerate()
+            .try_for_each(|(index, value)| {
+                ensure_finite_runtime_value(value, &format!("{path}.prefix_values[{index}]"))
+            }),
+        RuntimeValue::MatrixF32(value) => ensure_finite_numbers(value.values(), path),
+        RuntimeValue::MatrixF64(value) => ensure_finite_numbers(value.values(), path),
+        RuntimeValue::TensorF32(value) => ensure_finite_numbers(value.values(), path),
+        RuntimeValue::TensorF64(value) => ensure_finite_numbers(value.values(), path),
+        RuntimeValue::Unit
+        | RuntimeValue::Bool(_)
+        | RuntimeValue::Int(_)
+        | RuntimeValue::UInt(_)
+        | RuntimeValue::String(_)
+        | RuntimeValue::Char(_)
+        | RuntimeValue::EntityRef(_)
+        | RuntimeValue::Range(_)
+        | RuntimeValue::Iterator(_)
+        | RuntimeValue::Reduction(_)
+        | RuntimeValue::Function(_)
+        | RuntimeValue::Duration(_)
+        | RuntimeValue::Progress(_)
+        | RuntimeValue::Agent(_)
+        | RuntimeValue::Variant { payload: None, .. } => Ok(()),
+    }
+}
+
+fn ensure_finite_runtime_predicate(
+    predicate: &RuntimeAgentPredicate,
+    path: &str,
+) -> Result<(), AgentRuntimeValueSerializationError> {
+    match predicate {
+        RuntimeAgentPredicate::Compare { value, .. } => {
+            ensure_finite_runtime_value(value, &format!("{path}.value"))
+        }
+        RuntimeAgentPredicate::All { predicates } | RuntimeAgentPredicate::Any { predicates } => {
+            predicates
+                .iter()
+                .enumerate()
+                .try_for_each(|(index, predicate)| {
+                    ensure_finite_runtime_predicate(
+                        predicate,
+                        &format!("{path}.predicates[{index}]"),
+                    )
+                })
+        }
+        RuntimeAgentPredicate::Not { predicate } => {
+            ensure_finite_runtime_predicate(predicate, &format!("{path}.predicate"))
+        }
+        RuntimeAgentPredicate::Exists { .. }
+        | RuntimeAgentPredicate::ActionEnabled { .. }
+        | RuntimeAgentPredicate::DiagnosticsHasError => Ok(()),
+    }
+}
+
+fn runtime_agent_to_json(
+    value: &RuntimeAgentValue,
+    path: &str,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
+    match value {
+        RuntimeAgentValue::ActionTarget(target) => Ok(serde_json::json!({
             "id": target.id().as_str(),
             "target": target.target().as_str(),
             "action": target.action().as_label(),
             "kind": target.dispatch().as_label(),
             "enabled": target.enabled(),
-        }),
+        })),
         RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Viewport) => {
-            serde_json::json!({ "kind": "viewport" })
+            Ok(serde_json::json!({ "kind": "viewport" }))
         }
         RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Layer { target }) => {
-            serde_json::json!({ "kind": "layer", "target": target.as_str() })
+            Ok(serde_json::json!({ "kind": "layer", "target": target.as_str() }))
         }
         RuntimeAgentValue::CaptureTarget(RuntimeAgentCaptureTarget::Object { target }) => {
-            serde_json::json!({ "kind": "object", "target": target.as_str() })
+            Ok(serde_json::json!({ "kind": "object", "target": target.as_str() }))
         }
-        RuntimeAgentValue::DebugStatePath(path) => serde_json::json!({
+        RuntimeAgentValue::DebugStatePath(value) => Ok(serde_json::json!({
             "kind": "state_path",
-            "path": path.as_str(),
-        }),
-        RuntimeAgentValue::ObservationFieldPath(path) => serde_json::json!({
+            "path": value.as_str(),
+        })),
+        RuntimeAgentValue::ObservationFieldPath(value) => Ok(serde_json::json!({
             "kind": "observation_field",
-            "path": path.as_str(),
-        }),
-        RuntimeAgentValue::Probe(probe) => runtime_agent_probe_to_json(probe),
-        RuntimeAgentValue::Diagnostics => serde_json::json!({ "kind": "diagnostics" }),
-        RuntimeAgentValue::Predicate(predicate) => runtime_agent_predicate_to_json(predicate),
-        RuntimeAgentValue::ViewportPoint { x, y } => serde_json::json!({ "x": x, "y": y }),
+            "path": value.as_str(),
+        })),
+        RuntimeAgentValue::Probe(probe) => Ok(runtime_agent_probe_to_json(probe)),
+        RuntimeAgentValue::Diagnostics => Ok(serde_json::json!({ "kind": "diagnostics" })),
+        RuntimeAgentValue::Predicate(predicate) => runtime_agent_predicate_to_json(predicate, path),
+        RuntimeAgentValue::ViewportPoint { x, y } => Ok(serde_json::json!({ "x": x, "y": y })),
+        RuntimeAgentValue::BinaryData(data) => Ok(serde_json::json!({ "data": data })),
     }
 }
 
@@ -144,43 +342,48 @@ fn runtime_agent_probe_to_json(probe: &RuntimeAgentProbe) -> serde_json::Value {
     }
 }
 
-fn runtime_agent_predicate_to_json(predicate: &RuntimeAgentPredicate) -> serde_json::Value {
+fn runtime_agent_predicate_to_json(
+    predicate: &RuntimeAgentPredicate,
+    path: &str,
+) -> Result<serde_json::Value, AgentRuntimeValueSerializationError> {
     match predicate {
-        RuntimeAgentPredicate::Compare { probe, op, value } => serde_json::json!({
+        RuntimeAgentPredicate::Compare { probe, op, value } => Ok(serde_json::json!({
             "kind": "compare",
             "probe": runtime_agent_probe_to_json(probe),
             "op": op.as_label(),
-            "value": runtime_value_to_json(value),
-        }),
-        RuntimeAgentPredicate::Exists { probe } => serde_json::json!({
+            "value": runtime_value_to_json_at(value, &format!("{path}.value"))?,
+        })),
+        RuntimeAgentPredicate::Exists { probe } => Ok(serde_json::json!({
             "kind": "exists",
             "probe": runtime_agent_probe_to_json(probe),
-        }),
-        RuntimeAgentPredicate::ActionEnabled { target } => serde_json::json!({
+        })),
+        RuntimeAgentPredicate::ActionEnabled { target } => Ok(serde_json::json!({
             "kind": "action_enabled",
             "target": target.as_str(),
-        }),
+        })),
         RuntimeAgentPredicate::DiagnosticsHasError => {
-            serde_json::json!({ "kind": "diagnostics_has_error" })
+            Ok(serde_json::json!({ "kind": "diagnostics_has_error" }))
         }
-        RuntimeAgentPredicate::All { predicates } => serde_json::json!({
-            "kind": "all",
-            "predicates": predicates
-                .iter()
-                .map(runtime_agent_predicate_to_json)
-                .collect::<Vec<_>>(),
-        }),
-        RuntimeAgentPredicate::Any { predicates } => serde_json::json!({
-            "kind": "any",
-            "predicates": predicates
-                .iter()
-                .map(runtime_agent_predicate_to_json)
-                .collect::<Vec<_>>(),
-        }),
-        RuntimeAgentPredicate::Not { predicate } => serde_json::json!({
+        RuntimeAgentPredicate::All { predicates } => predicates
+            .iter()
+            .enumerate()
+            .map(|(index, predicate)| {
+                runtime_agent_predicate_to_json(predicate, &format!("{path}.predicates[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|predicates| serde_json::json!({ "kind": "all", "predicates": predicates })),
+        RuntimeAgentPredicate::Any { predicates } => predicates
+            .iter()
+            .enumerate()
+            .map(|(index, predicate)| {
+                runtime_agent_predicate_to_json(predicate, &format!("{path}.predicates[{index}]"))
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(|predicates| serde_json::json!({ "kind": "any", "predicates": predicates })),
+        RuntimeAgentPredicate::Not { predicate } => Ok(serde_json::json!({
             "kind": "not",
-            "predicate": runtime_agent_predicate_to_json(predicate),
-        }),
+            "predicate": runtime_agent_predicate_to_json(predicate, &format!("{path}.predicate"))?,
+        })),
     }
 }
 
@@ -296,8 +499,16 @@ pub(crate) fn runtime_record(fields: Vec<(String, RuntimeValue)>) -> RuntimeValu
 
 pub(crate) fn runtime_string(value: &RuntimeValue) -> Result<String, String> {
     match value {
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Ok(value.clone()),
-        RuntimeValue::Variant { name, .. } => Ok(name.clone()),
+        RuntimeValue::String(value) => Ok(value.clone()),
+        RuntimeValue::EntityRef(value) => Ok(value.runtime_label()),
+        RuntimeValue::Variant { .. } => value
+            .builtin_variant_case()
+            .and_then(|(case, _)| {
+                case.owner()
+                    .resolve_case(case)
+                    .map(|(_, schema)| schema.name().to_owned())
+            })
+            .ok_or_else(|| "expected a canonical builtin variant value".to_owned()),
         other => Err(format!(
             "expected string-like value, got `{}`",
             value_label(other)
@@ -458,7 +669,9 @@ fn runtime_agent_value(value: &RuntimeValue) -> Result<AgentValue, String> {
         RuntimeValue::F32(value) => Ok(AgentValue::F64(f64::from(*value))),
         RuntimeValue::F64(value) => Ok(AgentValue::F64(*value)),
         RuntimeValue::String(value) => Ok(AgentValue::String(value.clone())),
-        RuntimeValue::EntityRef(value) => parse_public_id_arg(value).map(AgentValue::Entity),
+        RuntimeValue::EntityRef(value) => {
+            parse_public_id_arg(&value.runtime_label()).map(AgentValue::Entity)
+        }
         RuntimeValue::Iterator(_) => Err("runtime iterator state is not an Agent value".to_owned()),
         RuntimeValue::Tuple(values) => values
             .iter()

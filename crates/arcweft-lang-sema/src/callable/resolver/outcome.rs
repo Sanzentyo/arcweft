@@ -10,6 +10,7 @@ use super::{
     LanguageCallableFamily, LocalCallableId, ProjectCallablePath, PromotionCallableId,
     ResolveCallError, ResolvedAssociatedTypeReceiver, TypeKind,
 };
+use crate::callable::CallableResultSchema;
 
 use crate::types::constraints::{
     CheckedConstraintSourceProjection, PreparedConstraintSourceProjection,
@@ -87,9 +88,6 @@ enum PreparedCallableEffectProjectionPlan {
     GroupResult {
         current_group: CallableGroupIndex,
     },
-    RemainingFunction {
-        current_group: CallableGroupIndex,
-    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -143,7 +141,11 @@ impl PreparedResolvedCallableDefinition {
             return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
         }
         let effects = self.source_invocation_effects();
-        let mut result = self.schema().result().clone();
+        let mut result = self
+            .schema()
+            .value_type()
+            .cloned()
+            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
         for group in self.schema().groups().iter().skip(start.get()).rev() {
             let parameters = group
                 .parameters()
@@ -219,7 +221,11 @@ impl PreparedResolvedCallableDefinition {
             if self.schema().group(current_group).is_none() {
                 return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
             }
-            return Ok(self.schema().result().clone());
+            return self
+                .schema()
+                .value_type()
+                .cloned()
+                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory);
         }
         self.source_function_type_from_group(next)
     }
@@ -228,6 +234,18 @@ impl PreparedResolvedCallableDefinition {
         &self,
         current_group: CallableGroupIndex,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
+        let CallableResultSchema::Value(result) =
+            self.projected_result_schema_for_group(current_group)?
+        else {
+            return Err(super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch);
+        };
+        Ok(result)
+    }
+
+    fn projected_result_schema_for_group(
+        &self,
+        current_group: CallableGroupIndex,
+    ) -> Result<CallableResultSchema, super::super::CallConstraintInvariant> {
         let next = CallableGroupIndex::try_from_usize(
             current_group
                 .get()
@@ -243,9 +261,18 @@ impl PreparedResolvedCallableDefinition {
             if self.schema().group(current_group).is_none() {
                 return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
             }
-            return self.effect_instantiation.project_result(self.schema());
+            return match self.schema().result_schema() {
+                CallableResultSchema::Value(_) => self
+                    .effect_instantiation
+                    .project_result(self.schema())
+                    .map(CallableResultSchema::Value),
+                CallableResultSchema::ContentEmission(operation) => {
+                    Ok(CallableResultSchema::ContentEmission(*operation))
+                }
+            };
         }
         self.projected_function_type_from_group(next)
+            .map(CallableResultSchema::Value)
     }
 }
 
@@ -272,9 +299,6 @@ impl PreparedCallableEffectProjectionToken<'_> {
             PreparedCallableEffectProjectionPlan::GroupResult { current_group } => self
                 .definition
                 .projected_result_type_for_group(*current_group),
-            PreparedCallableEffectProjectionPlan::RemainingFunction { current_group } => self
-                .definition
-                .projected_function_type_from_group(*current_group),
         }
     }
 
@@ -328,12 +352,6 @@ impl PreparedCallableEffectProjectionToken<'_> {
                     .source_result_type_for_group(*current_group)?,
                 self.definition
                     .projected_result_type_for_group(*current_group)?,
-            ),
-            PreparedCallableEffectProjectionPlan::RemainingFunction { current_group } => (
-                self.definition
-                    .source_function_type_from_group(*current_group)?,
-                self.definition
-                    .projected_function_type_from_group(*current_group)?,
             ),
         };
         self.definition
@@ -681,9 +699,7 @@ impl TypeReceiverInstantiation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableInstantiation {
     None,
-    ExpectedEnum {
-        expected: TypeKind,
-    },
+    EnumConstructor,
     Result {
         kind: super::ResultConstructorKind,
     },
@@ -748,13 +764,10 @@ impl PreparedResolvedCallable {
         let CallableCandidateId::EnumVariant(candidate) = &id else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        let CallableInstantiation::ExpectedEnum { expected } = &instantiation else {
+        let CallableInstantiation::EnumConstructor = &instantiation else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        if seed.id() != candidate
-            || seed.expected() != expected
-            || seed.schema.semantic_digest() != schema.semantic_digest()
-        {
+        if seed.id() != candidate || seed.schema.semantic_digest() != schema.semantic_digest() {
             return Err(ResolveCallError::InvalidResolvedCallable);
         }
         let family = id.intrinsic_family();
@@ -976,14 +989,6 @@ impl PreparedResolvedCallable {
             .project_parameter(self.schema(), coordinate)
     }
 
-    pub(crate) fn constraint_result_type(
-        &self,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        self.definition
-            .effect_instantiation
-            .project_result(self.schema())
-    }
-
     /// Projects the complete callable type through this definition's sole
     /// higher-order effect overlay while using the caller-supplied checked
     /// invocation row only for each curried application boundary.
@@ -1036,19 +1041,42 @@ impl PreparedResolvedCallable {
         })
     }
 
-    pub(crate) fn issue_remaining_function_effect_projection(
+    /// Checks a value callee against the authority that selected it. A saved
+    /// continuation already carries its quantified function type and frozen
+    /// solution; its next application opens that solution, not the value's
+    /// quantifiers through a second structural constraint. An independent
+    /// function value still supplies its source effects to the base schema.
+    pub(crate) fn prepare_function_value_constraint(
         &self,
         current_group: CallableGroupIndex,
-    ) -> Result<PreparedCallableEffectProjectionToken<'_>, super::super::CallConstraintInvariant>
-    {
-        self.definition
-            .source_function_type_from_group(current_group)?;
-        self.definition
-            .projected_function_type_from_group(current_group)?;
-        Ok(PreparedCallableEffectProjectionToken {
-            definition: &self.definition,
-            plan: PreparedCallableEffectProjectionPlan::RemainingFunction { current_group },
-        })
+        actual: &TypeKind,
+    ) -> Result<Option<(TypeKind, TypeKind)>, super::super::CallConstraintInvariant> {
+        if current_group != self.call_group() {
+            return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
+        }
+        match &self.state {
+            PreparedResolvedCallableState::PreparedContinuation { function_type, .. } => {
+                if actual != function_type {
+                    return Err(
+                        super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    );
+                }
+                Ok(None)
+            }
+            PreparedResolvedCallableState::Base => {
+                let source = self
+                    .definition
+                    .source_function_type_from_group(current_group)?;
+                let pattern = self
+                    .definition
+                    .projected_function_type_from_group(current_group)?;
+                let actual = self
+                    .definition
+                    .effect_instantiation
+                    .seal_source_actual(&source, &pattern, actual)?;
+                Ok(Some((pattern, actual)))
+            }
+        }
     }
 
     pub(crate) fn prepared_effect_instantiation(
@@ -1070,7 +1098,7 @@ impl PreparedResolvedCallable {
         match &self.definition.instantiation {
             CallableInstantiation::Extension { .. }
             | CallableInstantiation::None
-            | CallableInstantiation::ExpectedEnum { .. }
+            | CallableInstantiation::EnumConstructor
             | CallableInstantiation::Result { .. }
             | CallableInstantiation::Option
             | CallableInstantiation::Character { .. }
@@ -1103,19 +1131,12 @@ impl PreparedResolvedCallable {
             })
     }
 
-    /// Projects the result owned by one exact selected group.
-    ///
-    /// A non-final group returns the typed function for all remaining groups;
-    /// a final group returns the callable's declared result.  Unknown effect
-    /// tails remain unknown in the projected function type, matching the
-    /// existing resolver's typed partial-call rule.
-    pub(crate) fn result_type_for_group(
+    pub(crate) fn result_schema_for_group(
         &self,
         current_group: CallableGroupIndex,
-    ) -> Option<TypeKind> {
+    ) -> Result<CallableResultSchema, super::super::CallConstraintInvariant> {
         self.definition
-            .projected_result_type_for_group(current_group)
-            .ok()
+            .projected_result_schema_for_group(current_group)
     }
 }
 
@@ -1209,24 +1230,22 @@ fn origin_matches(
 const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCallableFamily) -> bool {
     matches!(
         (id, family),
-        (CallableCandidateId::Fx(_), LanguageCallableFamily::Fx)
-            | (
-                CallableCandidateId::EnumVariant(_),
-                LanguageCallableFamily::EnumConstructor
-            )
-            | (
-                CallableCandidateId::Result(_),
-                LanguageCallableFamily::ResultConstructor
-            )
-            | (
-                CallableCandidateId::Option(_),
-                LanguageCallableFamily::OptionConstructor
-            )
-            | (
-                CallableCandidateId::Builtin(_),
-                LanguageCallableFamily::Builtin
-            )
-            | (CallableCandidateId::Agent(_), LanguageCallableFamily::Agent)
+        (
+            CallableCandidateId::FxConstructor(_),
+            LanguageCallableFamily::FxConstructor,
+        ) | (
+            CallableCandidateId::EnumVariant(_),
+            LanguageCallableFamily::EnumConstructor
+        ) | (
+            CallableCandidateId::Result(_),
+            LanguageCallableFamily::ResultConstructor
+        ) | (
+            CallableCandidateId::Option(_),
+            LanguageCallableFamily::OptionConstructor
+        ) | (
+            CallableCandidateId::Builtin(_),
+            LanguageCallableFamily::Builtin
+        ) | (CallableCandidateId::Agent(_), LanguageCallableFamily::Agent)
             | (
                 CallableCandidateId::Presentation(_),
                 LanguageCallableFamily::Presentation
@@ -1234,6 +1253,10 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
             | (
                 CallableCandidateId::Dialogue(_),
                 LanguageCallableFamily::Dialogue
+            )
+            | (
+                CallableCandidateId::Content(_),
+                LanguageCallableFamily::Content
             )
             | (
                 CallableCandidateId::CollectionMethod(_),
@@ -1286,7 +1309,7 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
         (CallableCandidateId::Result(id_kind), CallableInstantiation::Result { kind }) => {
             id_kind == kind
         }
-        (CallableCandidateId::EnumVariant(_), CallableInstantiation::ExpectedEnum { .. })
+        (CallableCandidateId::EnumVariant(_), CallableInstantiation::EnumConstructor)
         | (CallableCandidateId::Option(_), CallableInstantiation::Option)
         | (
             CallableCandidateId::Project(_)
@@ -1315,13 +1338,14 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
         | (CallableCandidateId::Environment(_), CallableInstantiation::Receiver { .. })
         | (CallableCandidateId::Environment(_), CallableInstantiation::TypeReceiver { .. })
         | (
-            CallableCandidateId::Fx(_)
+            CallableCandidateId::FxConstructor(_)
             | CallableCandidateId::Builtin(_)
             | CallableCandidateId::Agent(_)
             | CallableCandidateId::Project(_)
             | CallableCandidateId::Detached(_)
             | CallableCandidateId::Environment(_)
             | CallableCandidateId::Standard(_)
+            | CallableCandidateId::Content(_)
             | CallableCandidateId::Local(_)
             | CallableCandidateId::FunctionValue(_)
             | CallableCandidateId::LineSchedule(_)

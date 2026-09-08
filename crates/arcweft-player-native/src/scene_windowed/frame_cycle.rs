@@ -113,7 +113,7 @@ impl NativeSceneState {
             .with_owned_window_driver(owned_window)
             .build();
         let audio = NativeAudioRuntime::from_bundle(&bundle)?;
-        let (runtime, input, dialogue_visual_clock) = restored_windowed_runtime_and_input(
+        let (runtime, input) = restored_windowed_runtime_and_input(
             &bundle,
             backend,
             options.session_load.as_deref(),
@@ -146,7 +146,6 @@ impl NativeSceneState {
             session_save_on_exit_completed: false,
             prepared: None,
             pending_environment: VecDeque::new(),
-            dialogue_visual_clock,
             started_at: Instant::now(),
             next_tick: 1,
         })
@@ -163,13 +162,7 @@ impl NativeSceneState {
         let Some(path) = self.session_save_out.clone() else {
             return Ok(());
         };
-        save_native_player_session(
-            &path,
-            &self.runtime,
-            &self.input,
-            &self.dialogue_visual_clock,
-            self.elapsed_millis(),
-        )?;
+        save_native_player_session(&path, &self.runtime, &self.input)?;
         self.session_save_on_exit_completed = true;
         Ok(())
     }
@@ -334,11 +327,6 @@ impl NativeSceneState {
         let session = self.runtime.session();
         let presentation = session.presentation();
         let fx_definitions = session.fx_definitions();
-        let dialogue_visual = self.dialogue_visual_clock.progress(
-            presentation.dialogue.latest_active(),
-            elapsed,
-            None,
-        );
         let style_environment = session.presentation_environment();
         Ok(self.frame_planner.prepare_candidate(
             &self.input,
@@ -352,8 +340,7 @@ impl NativeSceneState {
                 viewport,
                 fit: self.frame_fit,
                 image_time_millis: elapsed,
-                visual_time_millis: dialogue_visual.elapsed_millis(),
-                dialogue_reveal_complete: dialogue_visual.is_complete(),
+                visual_time_millis: elapsed,
                 preferences: RenderPreferences::default(),
             },
         )?)

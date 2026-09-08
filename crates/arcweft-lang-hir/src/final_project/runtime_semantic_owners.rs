@@ -16,7 +16,7 @@ use self::digest::reachability_digest;
 use self::validation::validate_roots_and_edges;
 
 use super::{HirExecutableProjectView, selected_expressions::HirSelectedRuntimeExpressionOwners};
-use crate::expr::HirExprKind;
+use crate::expr::{HirExprKind, HirExpressionTypeRoot, HirTypeRootDisposition};
 use crate::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, ScopeId, StmtId,
     TypeId,
@@ -30,7 +30,10 @@ use crate::symbol::{
     CallableDeclarationKey, ImplMethodDeclarationId, ProjectSymbolRevision, ProjectSymbolWorldId,
 };
 
-use super::{HirRuntimeExpressionProjection, HirSelectedExpressionInventoryError};
+use super::{
+    HirExpressionTypeRootProjection, HirRuntimeExpressionProjection,
+    HirSelectedExpressionInventoryError,
+};
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirRuntimeEmissionMode {
@@ -396,8 +399,63 @@ pub enum HirRuntimeReachabilityError {
         actual: usize,
         limit: usize,
     },
+    #[error("runtime reachability transcript length {actual} exceeds the canonical u64 count")]
+    TranscriptLengthOverflow { actual: usize },
     #[error(transparent)]
     SelectedExpressions(#[from] HirSelectedExpressionInventoryError),
+    #[error(transparent)]
+    TypeRootProjection(#[from] super::HirExpressionTypeRootProjectionError),
+}
+
+/// Exact structural/selected semantic owner partition of one reachable
+/// executable. Nested closure bodies belong to their own executable row and
+/// are therefore absent from the enclosing function row.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirRuntimeExecutableSemanticOwners {
+    locals: Box<[LocalId]>,
+    expressions: BTreeSet<ExprId>,
+    expression_type_owners: BTreeSet<ExprId>,
+    expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
+    statements: BTreeSet<StmtId>,
+    types: BTreeSet<TypeId>,
+    patterns: BTreeSet<PatternId>,
+    captures: BTreeSet<CaptureId>,
+}
+
+impl HirRuntimeExecutableSemanticOwners {
+    pub fn locals(&self) -> impl ExactSizeIterator<Item = LocalId> + '_ {
+        self.locals.iter().copied()
+    }
+
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = ExprId> + '_ {
+        self.expressions.iter().copied()
+    }
+
+    pub fn expression_type_owners(&self) -> impl ExactSizeIterator<Item = ExprId> + '_ {
+        self.expression_type_owners.iter().copied()
+    }
+
+    pub fn expression_children(&self, owner: ExprId) -> &[ExprId] {
+        self.expression_children
+            .get(&owner)
+            .map_or(&[], Box::as_ref)
+    }
+
+    pub fn statements(&self) -> impl ExactSizeIterator<Item = StmtId> + '_ {
+        self.statements.iter().copied()
+    }
+
+    pub fn types(&self) -> impl ExactSizeIterator<Item = TypeId> + '_ {
+        self.types.iter().copied()
+    }
+
+    pub fn patterns(&self) -> impl ExactSizeIterator<Item = PatternId> + '_ {
+        self.patterns.iter().copied()
+    }
+
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = CaptureId> + '_ {
+        self.captures.iter().copied()
+    }
 }
 
 pub struct HirRuntimeSemanticReachability<'project> {
@@ -407,9 +465,11 @@ pub struct HirRuntimeSemanticReachability<'project> {
     edges: Box<[HirRuntimeReachabilityEdge]>,
     reachable_executables: BTreeSet<HirRuntimeExecutableOwner>,
     first_paths: BTreeMap<HirRuntimeExecutableOwner, HirRuntimeReachabilityPath>,
+    executable_owners: BTreeMap<HirRuntimeExecutableOwner, HirRuntimeExecutableSemanticOwners>,
     locals: Box<[LocalId]>,
     expressions: BTreeSet<ExprId>,
     expression_type_owners: BTreeSet<ExprId>,
+    expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     statements: BTreeSet<StmtId>,
     types: BTreeSet<TypeId>,
     patterns: BTreeSet<PatternId>,
@@ -451,6 +511,13 @@ impl HirRuntimeSemanticReachability<'_> {
         self.first_paths.get(owner)
     }
 
+    pub fn executable_owners(
+        &self,
+        owner: &HirRuntimeExecutableOwner,
+    ) -> Option<&HirRuntimeExecutableSemanticOwners> {
+        self.executable_owners.get(owner)
+    }
+
     pub fn edge_from(
         &self,
         source: HirRuntimeReachabilitySite,
@@ -464,6 +531,22 @@ impl HirRuntimeSemanticReachability<'_> {
 
     pub fn patterns(&self) -> impl ExactSizeIterator<Item = PatternId> + '_ {
         self.patterns.iter().copied()
+    }
+
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = ExprId> + '_ {
+        self.expressions.iter().copied()
+    }
+
+    pub fn statements(&self) -> impl ExactSizeIterator<Item = StmtId> + '_ {
+        self.statements.iter().copied()
+    }
+
+    pub fn types(&self) -> impl ExactSizeIterator<Item = TypeId> + '_ {
+        self.types.iter().copied()
+    }
+
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = CaptureId> + '_ {
+        self.captures.iter().copied()
     }
 
     pub fn contains_runtime_owner(&self, owner: &HirRuntimeExecutableOwner) -> bool {
@@ -497,6 +580,20 @@ impl HirRuntimeSemanticReachability<'_> {
     pub(super) const fn expression_type_owners(&self) -> &BTreeSet<ExprId> {
         &self.expression_type_owners
     }
+
+    /// Returns the selected owning expression children sealed into this exact
+    /// runtime reachability generation.
+    pub fn expression_children(&self, owner: ExprId) -> &[ExprId] {
+        self.expression_children
+            .get(&owner)
+            .map_or(&[], Box::as_ref)
+    }
+
+    pub fn expression_child_rows(&self) -> impl ExactSizeIterator<Item = (ExprId, &[ExprId])> + '_ {
+        self.expression_children
+            .iter()
+            .map(|(owner, children)| (*owner, children.as_ref()))
+    }
 }
 
 #[derive(Clone)]
@@ -514,11 +611,12 @@ struct ScopedOwners {
     patterns: Vec<PatternId>,
 }
 
-struct StructuralIndex {
+struct StructuralIndex<'projection> {
     scopes: BTreeMap<ScopeId, ScopeEdges>,
     scope_members: BTreeMap<ScopeId, ScopedOwners>,
     local_types: BTreeMap<LocalId, Option<TypeId>>,
-    expression_edges: BTreeMap<ExprId, (Vec<ExprId>, Vec<TypeId>, bool)>,
+    expression_edges: BTreeMap<ExprId, (Vec<ExprId>, Vec<HirExpressionTypeRoot>, bool)>,
+    type_root_projection: &'projection HirExpressionTypeRootProjection,
     statement_edges: BTreeMap<StmtId, Vec<HirStatementChild>>,
     type_edges: BTreeMap<TypeId, Vec<TypeId>>,
     pattern_edges: BTreeMap<PatternId, Vec<HirPatternChild>>,
@@ -649,11 +747,14 @@ impl<'project> HirExecutableProjectView<'project> {
     ) -> Result<HirRuntimeSemanticReachability<'project>, HirRuntimeReachabilityError> {
         self.validate_reachability_generation(&input, topology)?;
         validate_roots_and_edges(self, &input)?;
-        let index = StructuralIndex::new(self);
+        let type_root_projection = self.type_root_projection()?;
+        let index = StructuralIndex::new(self, &type_root_projection);
         let mut reachable_executables = BTreeSet::new();
         let mut first_paths = BTreeMap::new();
+        let mut executable_owners = BTreeMap::new();
         let mut accepted = StructuralOwners::default();
         let mut expression_type_owners = BTreeSet::new();
+        let mut expression_children = BTreeMap::new();
         let mut pending = input
             .roots
             .iter()
@@ -674,14 +775,70 @@ impl<'project> HirExecutableProjectView<'project> {
             }
             first_paths.insert(owner.clone(), path.clone());
             let (structural, execution_expression_roots) = self.close_executable(&index, &owner)?;
-            let HirSelectedRuntimeExpressionOwners { reached, typed } = self
-                .selected_runtime_expression_owners(
-                    topology,
-                    &structural.expressions,
-                    &execution_expression_roots,
-                    &mut selected_postfix,
-                    &mut expression_projection,
-                )?;
+            let HirSelectedRuntimeExpressionOwners {
+                reached,
+                typed,
+                edges,
+            } = self.selected_runtime_expression_owners(
+                topology,
+                &structural.expressions,
+                &execution_expression_roots,
+                &mut selected_postfix,
+                &mut expression_projection,
+            )?;
+            let mut selected_children = BTreeMap::new();
+            for owner in &reached {
+                // A closure expression is a value in its enclosing frame, but
+                // its body is a separate executable boundary.  Its enclosing
+                // traversal therefore cannot publish a partial child row;
+                // the closure execution traversal owns the complete row.
+                if !execution_expression_roots.contains(owner)
+                    && index
+                        .expression_edges
+                        .get(owner)
+                        .is_some_and(|(_, _, is_closure)| *is_closure)
+                {
+                    continue;
+                }
+                let children = edges
+                    .get(owner)
+                    .into_iter()
+                    .flat_map(|edges| edges.iter())
+                    .filter_map(|edge| match edge {
+                        super::HirExpressionEvaluationEdge::Expression {
+                            ownership: crate::expr::HirExpressionChildOwnership::Owning,
+                            child,
+                            ..
+                        } if reached.contains(child) => Some(*child),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice();
+                selected_children.insert(*owner, children.clone());
+                if let Some(previous) = expression_children.insert(*owner, children.clone())
+                    && previous != children
+                {
+                    return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph.into());
+                }
+            }
+            let executable_row = HirRuntimeExecutableSemanticOwners {
+                locals: structural.locals.iter().copied().collect(),
+                expressions: reached.clone(),
+                expression_type_owners: typed.clone(),
+                expression_children: selected_children,
+                statements: structural.statements.clone(),
+                types: structural.types.clone(),
+                patterns: structural.patterns.clone(),
+                captures: structural.captures.clone(),
+            };
+            if executable_owners
+                .insert(owner.clone(), executable_row)
+                .is_some()
+            {
+                return Err(HirRuntimeReachabilityError::DuplicateRoot {
+                    root: path.root.clone(),
+                });
+            }
             expression_type_owners.extend(typed);
             accepted.locals.extend(structural.locals);
             accepted.expressions.extend(reached.iter().copied());
@@ -728,9 +885,12 @@ impl<'project> HirExecutableProjectView<'project> {
             &input.roots,
             &input.edges,
             &reachable_executables,
+            &executable_owners,
             &locals,
             &accepted,
-        );
+            &expression_type_owners,
+            &expression_children,
+        )?;
         let identity = HirRuntimeReachabilityIdentity {
             module_snapshots,
             symbol_world: input.symbol_world,
@@ -745,9 +905,11 @@ impl<'project> HirExecutableProjectView<'project> {
             edges: input.edges.into_boxed_slice(),
             reachable_executables,
             first_paths,
+            executable_owners,
             locals,
             expressions: accepted.expressions,
             expression_type_owners,
+            expression_children,
             statements: accepted.statements,
             types: accepted.types,
             patterns: accepted.patterns,
@@ -791,13 +953,17 @@ impl<'project> HirExecutableProjectView<'project> {
     }
 }
 
-impl StructuralIndex {
-    fn new(project: HirExecutableProjectView<'_>) -> Self {
+impl<'projection> StructuralIndex<'projection> {
+    fn new(
+        project: HirExecutableProjectView<'_>,
+        type_root_projection: &'projection HirExpressionTypeRootProjection,
+    ) -> Self {
         let mut index = Self {
             scopes: BTreeMap::new(),
             scope_members: BTreeMap::new(),
             local_types: BTreeMap::new(),
             expression_edges: BTreeMap::new(),
+            type_root_projection,
             statement_edges: BTreeMap::new(),
             type_edges: BTreeMap::new(),
             pattern_edges: BTreeMap::new(),
@@ -831,6 +997,7 @@ impl StructuralIndex {
             index.local_types.insert(owner, local.annotation());
         }
         for (owner, expression) in module.expressions() {
+            let type_roots = expression.kind().direct_type_roots();
             index
                 .scope_members
                 .entry(expression.scope())
@@ -841,7 +1008,7 @@ impl StructuralIndex {
                 owner,
                 (
                     expression.kind().direct_expression_children(),
-                    expression.kind().direct_type_roots(),
+                    type_roots,
                     matches!(expression.kind(), HirExprKind::Closure(_)),
                 ),
             );
@@ -864,12 +1031,14 @@ impl StructuralIndex {
             );
         }
         for (owner, ty) in module.types() {
-            index
-                .scope_members
-                .entry(ty.scope())
-                .or_default()
-                .types
-                .push(owner);
+            if !index.type_root_projection.is_non_runtime(owner) {
+                index
+                    .scope_members
+                    .entry(ty.scope())
+                    .or_default()
+                    .types
+                    .push(owner);
+            }
             index
                 .type_edges
                 .insert(owner, ty.kind().direct_type_children());
@@ -982,16 +1151,14 @@ impl StructuralIndex {
                                 .map(PendingOwner::Scope),
                         );
                     }
-                    if active_closure == Some(owner) {
-                        pending.extend(
-                            self.closure_captures
-                                .get(&owner)
-                                .into_iter()
-                                .flatten()
-                                .map(|(_, local)| PendingOwner::Local(*local)),
-                        );
-                    }
-                    pending.extend(types.iter().copied().map(PendingOwner::Type));
+                    pending.extend(
+                        types
+                            .iter()
+                            .filter(|root| {
+                                root.disposition() == HirTypeRootDisposition::RuntimeBearing
+                            })
+                            .map(|root| PendingOwner::Type(root.type_id())),
+                    );
                 }
                 PendingOwner::Statement(owner) => {
                     if !owners.statements.insert(owner) {
@@ -1036,7 +1203,7 @@ impl StructuralIndex {
             self.capture_closures
                 .iter()
                 .filter_map(|(capture, closure)| {
-                    owners.expressions.contains(closure).then_some(*capture)
+                    (active_closure == Some(*closure)).then_some(*capture)
                 }),
         );
         Ok(owners)
@@ -1086,13 +1253,14 @@ fn execution_roots(
             let expression = module.resolve_expr(*owner).map_err(|_| {
                 HirRuntimeReachabilityError::UnresolvedExpression { expression: *owner }
             })?;
-            if !matches!(expression.kind(), HirExprKind::Closure(_)) {
+            let HirExprKind::Closure(closure) = expression.kind() else {
                 return Err(HirRuntimeReachabilityError::UnknownRoot {
                     owner: HirRuntimeExecutableOwner::Closure(*owner),
                 });
-            }
+            };
             Ok(HirRuntimeExecutionRoots {
-                expressions: vec![*owner],
+                scopes: vec![closure.scope()],
+                expressions: vec![closure.body()],
                 ..HirRuntimeExecutionRoots::default()
             })
         }

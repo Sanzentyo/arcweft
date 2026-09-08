@@ -43,7 +43,6 @@ use arcweft_bundle::{
 use arcweft_compiler::view::CompiledViewProduct;
 use arcweft_core::{
     effect::{LineEffectRequest, RuntimeCall},
-    line_task::{LineTaskGroup, LineTaskNode, ScopeExit},
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
     value::{RuntimeExpr, RuntimeExprKind, RuntimeValue},
 };
@@ -386,30 +385,35 @@ fn hydrate_default_view_localization(
             .iter()
             .find(|spec| spec.text_key().as_str() == key.as_str())
         {
-            resource.localized.push(ViewLocalizedTextResource {
-                key,
-                locale: None,
-                document: spec.content().clone(),
-            });
+            if let Some(template) = dialogue_content.find_template(spec.template_id()) {
+                resource.localized.push(ViewLocalizedTextResource {
+                    key,
+                    locale: None,
+                    document: template.content().clone(),
+                });
+            }
         }
     }
 }
 
 fn bundle_required_host_calls(plan: &RuntimePlan) -> Vec<String> {
-    let mut required_host_calls = plan
-        .flows()
-        .iter()
-        .flat_map(|flow| flow.ops.iter())
-        .flat_map(collect_flow_op_host_calls)
-        .chain(
-            plan.line_task_groups()
-                .iter()
-                .flat_map(collect_line_task_group_host_calls),
-        )
-        .collect::<Vec<_>>();
-    required_host_calls.sort();
-    required_host_calls.dedup();
-    required_host_calls
+    let mut calls = Vec::new();
+    plan.visit_flow_ops(&mut |op| match op {
+        FlowOp::Await { target, .. } => calls.push(host_call_id_for_template(
+            target.request.capability.0.as_str(),
+            target.request.operation.as_str(),
+        )),
+        FlowOp::AwaitMany { target, .. } => calls.push(host_call_id_for_template(
+            target.request.capability.0.as_str(),
+            target.request.operation.as_str(),
+        )),
+        FlowOp::HostCall { target, .. } => calls.push(target.public_id.clone()),
+        FlowOp::Thread { .. } => calls.push("flow_thread.run_child".to_owned()),
+        _ => {}
+    });
+    calls.sort();
+    calls.dedup();
+    calls
 }
 
 fn bundle_manifest(
@@ -699,118 +703,6 @@ fn bundle_runner_error_exit_code(error: &BundleRunnerError) -> ExitCode {
     }
 }
 
-fn collect_flow_op_host_calls(op: &FlowOp) -> Vec<String> {
-    match op {
-        FlowOp::Await {
-            target, observers, ..
-        } => std::iter::once(host_call_id_for_template(
-            target.request.capability.0.as_str(),
-            target.request.operation.as_str(),
-        ))
-        .chain(
-            observers
-                .iter()
-                .flat_map(|observer| collect_flow_ops_host_calls(&observer.ops)),
-        )
-        .collect(),
-        FlowOp::AwaitMany { target, .. } => vec![host_call_id_for_template(
-            target.request.capability.0.as_str(),
-            target.request.operation.as_str(),
-        )],
-        FlowOp::HostCall { target, .. } => {
-            vec![target.public_id.clone()]
-        }
-        FlowOp::LetElse { else_ops, .. } => collect_flow_ops_host_calls(else_ops),
-        FlowOp::If {
-            then_ops, else_ops, ..
-        }
-        | FlowOp::IfLet {
-            then_ops, else_ops, ..
-        } => collect_flow_ops_host_calls(then_ops)
-            .into_iter()
-            .chain(collect_flow_ops_host_calls(else_ops))
-            .collect(),
-        FlowOp::Match { arms, .. } => arms
-            .iter()
-            .flat_map(|arm| collect_flow_ops_host_calls(&arm.ops))
-            .collect(),
-        FlowOp::Loop { body, .. }
-        | FlowOp::While { body, .. }
-        | FlowOp::WhileLet { body, .. }
-        | FlowOp::For { body, .. }
-        | FlowOp::Thread { body, .. } => {
-            let mut calls = collect_flow_ops_host_calls(body);
-            if matches!(op, FlowOp::Thread { .. }) {
-                calls.push("flow_thread.run_child".to_owned());
-            }
-            calls
-        }
-        FlowOp::LoopNext { body }
-        | FlowOp::WhileNext { body, .. }
-        | FlowOp::WhileLetNext { body, .. }
-        | FlowOp::ForNext { body, .. } => collect_flow_ops_host_calls(body.as_ref().iter()),
-        FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => collect_flow_ops_host_calls(ops),
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
-        | FlowOp::AssignNominalField { .. }
-        | FlowOp::LineOperation { .. }
-        | FlowOp::CommitDialogueResult { .. }
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_)
-        | FlowOp::Return(_)
-        | FlowOp::ReturnExpr(_)
-        | FlowOp::Effect(_)
-        | FlowOp::EvaluatedEffect(_)
-        | FlowOp::RegisterCleanup { .. }
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::ExitScopeBind { .. }
-        | FlowOp::CompleteAwaitObserver
-        | FlowOp::Noop => Vec::new(),
-    }
-}
-
-fn collect_line_task_group_host_calls(group: &LineTaskGroup) -> Vec<String> {
-    group
-        .nodes()
-        .iter()
-        .filter_map(|node| match node {
-            LineTaskNode::Action(ops) => Some(ops.as_ref()),
-            LineTaskNode::Sequence(_)
-            | LineTaskNode::Start(_)
-            | LineTaskNode::Parallel { .. }
-            | LineTaskNode::Child { .. } => None,
-        })
-        .flat_map(collect_flow_ops_host_calls)
-        .chain(
-            group
-                .cancel_rules()
-                .iter()
-                .flat_map(|rule| collect_flow_ops_host_calls(rule.action())),
-        )
-        .chain(
-            [
-                ScopeExit::Completed,
-                ScopeExit::Cancelled,
-                ScopeExit::Failed,
-            ]
-            .into_iter()
-            .flat_map(|exit| collect_flow_ops_host_calls(group.cleanup().actions(exit))),
-        )
-        .collect()
-}
-
-fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) -> Vec<String> {
-    ops.into_iter()
-        .flat_map(collect_flow_op_host_calls)
-        .collect()
-}
-
 fn validate_referenced_bundle_image_assets(
     plan: &RuntimePlan,
     image_assets: &[BundleImageAsset],
@@ -834,99 +726,25 @@ fn validate_referenced_bundle_image_assets(
 }
 
 fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
-    let mut refs = plan
-        .flows()
-        .iter()
-        .flat_map(|flow| flow.ops.iter())
-        .flat_map(collect_flow_op_static_image_asset_refs)
-        .chain(
-            plan.line_task_groups()
-                .iter()
-                .flat_map(collect_line_task_group_static_image_asset_refs),
-        )
-        .collect::<Vec<_>>();
+    let mut refs = Vec::new();
+    plan.visit_flow_ops(&mut |op| match op {
+        FlowOp::Await { target, .. } => {
+            refs.extend(static_image_asset_ref_for_template(&target.request));
+        }
+        FlowOp::AwaitMany {
+            target, pending, ..
+        } => {
+            refs.extend(static_image_asset_ref_for_template(&target.request));
+            refs.extend(collect_line_effects_static_image_asset_refs(pending));
+        }
+        FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
+            refs.extend(collect_line_effect_static_image_asset_refs(effect));
+        }
+        _ => {}
+    });
     refs.sort();
     refs.dedup();
     refs
-}
-
-fn collect_flow_op_static_image_asset_refs(op: &FlowOp) -> Vec<String> {
-    match op {
-        FlowOp::Await {
-            target, observers, ..
-        } => static_image_asset_ref_for_template(&target.request)
-            .into_iter()
-            .chain(
-                observers
-                    .iter()
-                    .flat_map(|observer| collect_flow_ops_static_image_asset_refs(&observer.ops)),
-            )
-            .collect(),
-        FlowOp::AwaitMany {
-            target, pending, ..
-        } => static_image_asset_ref_for_template(&target.request)
-            .into_iter()
-            .chain(collect_line_effects_static_image_asset_refs(pending))
-            .collect(),
-        FlowOp::LetElse { else_ops, .. } => collect_flow_ops_static_image_asset_refs(else_ops),
-        FlowOp::If {
-            then_ops, else_ops, ..
-        }
-        | FlowOp::IfLet {
-            then_ops, else_ops, ..
-        } => collect_flow_ops_static_image_asset_refs(then_ops)
-            .into_iter()
-            .chain(collect_flow_ops_static_image_asset_refs(else_ops))
-            .collect(),
-        FlowOp::Match { arms, .. } => arms
-            .iter()
-            .flat_map(|arm| collect_flow_ops_static_image_asset_refs(&arm.ops))
-            .collect(),
-        FlowOp::Loop { body, .. }
-        | FlowOp::While { body, .. }
-        | FlowOp::WhileLet { body, .. }
-        | FlowOp::For { body, .. }
-        | FlowOp::Thread { body, .. } => collect_flow_ops_static_image_asset_refs(body),
-        FlowOp::LoopNext { body }
-        | FlowOp::WhileNext { body, .. }
-        | FlowOp::WhileLetNext { body, .. }
-        | FlowOp::ForNext { body, .. } => collect_flow_ops_static_image_asset_refs(body.iter()),
-        FlowOp::Scope(ops) | FlowOp::LetScope { ops, .. } => {
-            collect_flow_ops_static_image_asset_refs(ops)
-        }
-        FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
-            collect_line_effect_static_image_asset_refs(effect)
-        }
-        FlowOp::Bind(_)
-        | FlowOp::Let { .. }
-        | FlowOp::AssignNominalField { .. }
-        | FlowOp::LineOperation { .. }
-        | FlowOp::CommitDialogueResult { .. }
-        | FlowOp::Dialogue { .. }
-        | FlowOp::Choice { .. }
-        | FlowOp::HostCall { .. }
-        | FlowOp::Break(_)
-        | FlowOp::Continue
-        | FlowOp::Goto(_)
-        | FlowOp::GotoExpr(_)
-        | FlowOp::Return(_)
-        | FlowOp::ReturnExpr(_)
-        | FlowOp::EvaluatedEffect(_)
-        | FlowOp::CancelCleanup { .. }
-        | FlowOp::EnterScope
-        | FlowOp::ExitScope
-        | FlowOp::ExitScopeBind { .. }
-        | FlowOp::CompleteAwaitObserver
-        | FlowOp::Noop => Vec::new(),
-    }
-}
-
-fn collect_flow_ops_static_image_asset_refs<'a>(
-    ops: impl IntoIterator<Item = &'a FlowOp>,
-) -> Vec<String> {
-    ops.into_iter()
-        .flat_map(collect_flow_op_static_image_asset_refs)
-        .collect()
 }
 
 fn static_image_asset_ref_for_template(
@@ -948,38 +766,6 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         RuntimeExprKind::Value(RuntimeValue::String(id)) => Some(id.clone()),
         _ => None,
     }
-}
-
-fn collect_line_task_group_static_image_asset_refs(group: &LineTaskGroup) -> Vec<String> {
-    group
-        .nodes()
-        .iter()
-        .filter_map(|node| match node {
-            LineTaskNode::Action(ops) => Some(ops.as_ref()),
-            LineTaskNode::Sequence(_)
-            | LineTaskNode::Start(_)
-            | LineTaskNode::Parallel { .. }
-            | LineTaskNode::Child { .. } => None,
-        })
-        .flat_map(collect_flow_ops_static_image_asset_refs)
-        .chain(
-            group
-                .cancel_rules()
-                .iter()
-                .flat_map(|rule| collect_flow_ops_static_image_asset_refs(rule.action())),
-        )
-        .chain(
-            [
-                ScopeExit::Completed,
-                ScopeExit::Cancelled,
-                ScopeExit::Failed,
-            ]
-            .into_iter()
-            .flat_map(|exit| {
-                collect_flow_ops_static_image_asset_refs(group.cleanup().actions(exit))
-            }),
-        )
-        .collect()
 }
 
 fn collect_line_effects_static_image_asset_refs<'a>(

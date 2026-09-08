@@ -1,4 +1,5 @@
 use arcweft_core::time::LogicalDuration;
+use arcweft_lang_hir::identity::ExprId;
 
 use super::{CallableEvaluatedEffect, CallableLogLevel, DropCallableId, OpenArgumentId, TypeKind};
 
@@ -149,22 +150,50 @@ pub enum CheckedEvaluatedEffectOperation {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedEvaluatedEffect {
     application: crate::callable::CheckedCallApplicationSite,
+    application_digest: crate::callable::CheckedCallApplicationDigest,
+    result: TypeKind,
+    site_root: ExprId,
     operation: CheckedEvaluatedEffectOperation,
 }
 
 impl CheckedEvaluatedEffect {
     pub(crate) const fn new(
         application: crate::callable::CheckedCallApplicationSite,
+        application_digest: crate::callable::CheckedCallApplicationDigest,
+        result: TypeKind,
+        site_root: ExprId,
         operation: CheckedEvaluatedEffectOperation,
     ) -> Self {
         Self {
             application,
+            application_digest,
+            result,
+            site_root,
             operation,
         }
     }
 
     pub const fn application(&self) -> &crate::callable::CheckedCallApplicationSite {
         &self.application
+    }
+
+    /// Digest of the exact selected call application that owns this effect.
+    pub const fn application_digest(&self) -> crate::callable::CheckedCallApplicationDigest {
+        self.application_digest
+    }
+
+    /// Exact result type of the selected terminal operation application.
+    ///
+    /// This is retained independently of runtime value retention: a dialogue
+    /// callback still has to prove that its operation returns the checked
+    /// `Unit` type even though the operation does not publish a value.
+    pub const fn result(&self) -> &TypeKind {
+        &self.result
+    }
+
+    /// Root expression whose statement or line-plan site owns this effect.
+    pub const fn site_root(&self) -> ExprId {
+        self.site_root
     }
 
     pub const fn operation(&self) -> &CheckedEvaluatedEffectOperation {

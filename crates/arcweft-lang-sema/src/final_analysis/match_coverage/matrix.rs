@@ -179,7 +179,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         {
             return Ok(None);
         }
-        let type_digest = head_type.semantic_identity_digest();
+        let type_digest = head_type.semantic_identity_digest()?;
         let already_active = active_witness_types.contains(&type_digest);
         if !already_active {
             active_witness_types.push(type_digest);
@@ -187,12 +187,16 @@ impl MatchCoverageAnalyzer<'_, '_> {
         let mut recursive_witness_skipped = false;
         for constructor in &constructors {
             self.poll()?;
-            if already_active
-                && constructor
-                    .field_types
-                    .iter()
-                    .any(|field| active_witness_types.contains(&field.semantic_identity_digest()))
-            {
+            let mut repeats_active_type = false;
+            if already_active {
+                for field in &constructor.field_types {
+                    if active_witness_types.contains(&field.semantic_identity_digest()?) {
+                        repeats_active_type = true;
+                        break;
+                    }
+                }
+            }
+            if repeats_active_type {
                 recursive_witness_skipped = true;
                 continue;
             }

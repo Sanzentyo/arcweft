@@ -2,6 +2,7 @@
 
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 
+use super::callable::attached_content_parameter;
 use super::family::{ExpressionFamily, TypeFamily};
 use super::node::{
     AstNode, CloseBraceKind, ErrorItemKind, ErrorNodeKind, ExternCapabilityItemKind,
@@ -9,9 +10,10 @@ use super::node::{
 };
 use super::nominal::{optional_generics, required_name};
 use super::{
-    AttachedCallableReturn, AttachedExpressionNode, AttachedFixedParameterGroup,
-    AttachedGenericParameterGroup, AttachedItemPrefix, AttachedRequiredName, AttachedTypeFamily,
-    AttachedTypeRefNode, SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
+    AttachedCallableContentParameter, AttachedCallableReturn, AttachedExpressionNode,
+    AttachedFixedParameterGroup, AttachedGenericParameterGroup, AttachedItemPrefix,
+    AttachedRequiredName, AttachedTypeFamily, AttachedTypeRefNode, SyntaxAccessError,
+    SyntaxNodeHandle, TypedItemNode,
 };
 
 /// One source-ordered external-effect expression list.
@@ -105,6 +107,7 @@ pub struct AttachedCapabilityFunction {
     name: AttachedRequiredName,
     generics: Option<AttachedGenericParameterGroup>,
     parameter_groups: Box<[AttachedFixedParameterGroup]>,
+    attached_content: Option<AttachedCallableContentParameter>,
     authored_return: Option<AttachedCallableReturn>,
     effects: Option<AttachedCapabilityEffects>,
     trailing_recovery: Box<[AstNode<ErrorNodeKind>]>,
@@ -133,6 +136,10 @@ impl AttachedCapabilityFunction {
 
     pub const fn parameter_groups(&self) -> &[AttachedFixedParameterGroup] {
         &self.parameter_groups
+    }
+
+    pub const fn attached_content(&self) -> Option<&AttachedCallableContentParameter> {
+        self.attached_content.as_ref()
     }
 
     pub fn parameters(&self) -> impl Iterator<Item = &super::AttachedCallableParameter> {
@@ -168,6 +175,10 @@ impl AttachedCapabilityFunction {
                 .parameter_groups
                 .iter()
                 .any(AttachedFixedParameterGroup::has_recovery)
+            || self
+                .attached_content
+                .as_ref()
+                .is_some_and(AttachedCallableContentParameter::has_recovery)
             || self
                 .authored_return
                 .as_ref()
@@ -372,6 +383,7 @@ fn attach_member(
                     name: required_name(&syntax.syntax(), false)?,
                     generics: optional_generics(&syntax.syntax())?,
                     parameter_groups: syntax.callable_parameter_groups()?,
+                    attached_content: attached_content_parameter(&syntax.syntax())?,
                     authored_return: syntax
                         .optional_exact_child::<ReturnTypeKind>(SyntaxRole::ReturnType)?
                         .map(|return_type| return_type.callable_semantics())

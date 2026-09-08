@@ -12,8 +12,8 @@ use thiserror::Error;
 use crate::types::{TypeKind, constraints::TypeConstraintSolution};
 
 use super::{
-    CallConstraintInvariant, CallableGroupIndex, CallableSignatureSchemaDigest,
-    DetachedPreparedResolvedCallable, PreparedResolvedCallable,
+    CallConstraintInvariant, CallableGroupIndex, CallableResultSchema,
+    CallableSignatureSchemaDigest, DetachedPreparedResolvedCallable, PreparedResolvedCallable,
     PreparedResolvedCallableDetachArena,
 };
 
@@ -94,12 +94,28 @@ impl PreparedCallableApplication {
         self.selected.schema().semantic_digest()
     }
 
-    pub(crate) fn result_type(&self) -> Result<TypeKind, CallConstraintInvariant> {
+    pub(crate) fn result_schema(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
         let declared = self
             .selected
-            .result_type_for_group(self.completed_group)
-            .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)?;
-        Ok(self.solution.apply(&declared))
+            .result_schema_for_group(self.completed_group)?;
+        Ok(match declared {
+            CallableResultSchema::Value(value) => CallableResultSchema::Value(
+                self.solution
+                    .apply_template(&value)?
+                    .view()
+                    .to_quantified_type()?,
+            ),
+            CallableResultSchema::ContentEmission(operation) => {
+                CallableResultSchema::ContentEmission(operation)
+            }
+        })
+    }
+
+    pub(crate) fn result_type(&self) -> Result<TypeKind, CallConstraintInvariant> {
+        self.result_schema()?
+            .value_type()
+            .cloned()
+            .ok_or(CallConstraintInvariant::PreparedFunctionTypeMismatch)
     }
 
     pub(crate) fn function_type(&self) -> Result<TypeKind, CallConstraintInvariant> {

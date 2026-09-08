@@ -12,9 +12,8 @@ use crate::lowering::HirModuleKey;
 use super::{
     DialogueIdentityCoordinateKind, DialogueIdentityErrorKind, DialogueLineBuildFatal,
     DialogueLineBuildOperation, DialogueLineDiagnostic, DialogueLineIdOrigin,
-    DialogueLineLimitKind, DialogueTextKeyOrigin, HirDialogueLineCandidate,
-    HirDialogueLineCandidates, HirDialogueLineSourceOwner, HirDialogueLineSourceSite,
-    OwnerlessLineRequestKind,
+    DialogueLineLimitKind, DialogueTextKeyOrigin, HirDialogueLineCandidate, HirDialogueLineSite,
+    HirDialogueLineSourceOwner, OwnerlessLineRequestKind,
 };
 
 const GENERATED_ORDINAL_MAXIMUM: u32 = 262_144;
@@ -26,7 +25,7 @@ struct DialogueLinePrefix(String);
 impl DialogueLinePrefix {
     fn for_site(
         module: &HirModuleKey,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
         retained_scope_count: usize,
     ) -> Result<Self, DialogueLineBuildFatal> {
         let scopes = site
@@ -103,6 +102,60 @@ impl DialogueLinePrefix {
     }
 }
 
+/// Resolves an authored `id` coordinate without allocating a candidate or
+/// touching generated-ordinal/project state.  This is used by semantic
+/// preparation solely as typed coordinate evidence; the selected-line seal
+/// still owns candidate materialization and project acceptance.
+pub(crate) fn resolve_explicit_line_id(
+    module: &HirModuleKey,
+    site: &HirDialogueLineSite,
+    reference: &HirIdRef,
+) -> Option<(DialogueLineId, DialogueLineIdOrigin)> {
+    let (value, origin) = match reference {
+        HirIdRef::Absolute(reference)
+            if reference.segments().next() == Some(DialogueLineId::family_prefix()) =>
+        {
+            (
+                reference.as_str().to_owned(),
+                DialogueLineIdOrigin::ExplicitAbsolute,
+            )
+        }
+        HirIdRef::Absolute(_) => return None,
+        HirIdRef::Relative(relative) => {
+            let prefix = explicit_relative_prefix(module, site, relative.parent_depth())?;
+            (
+                prefix.append(relative.suffix().as_str()).ok()?,
+                DialogueLineIdOrigin::ExplicitRelative,
+            )
+        }
+        HirIdRef::FamilyRelative(relative)
+            if relative.family().as_str() == DialogueLineId::family_prefix() =>
+        {
+            let relative = relative.relative();
+            let prefix = explicit_relative_prefix(module, site, relative.parent_depth())?;
+            (
+                prefix.append(relative.suffix().as_str()).ok()?,
+                DialogueLineIdOrigin::ExplicitFamilyRelative,
+            )
+        }
+        HirIdRef::FamilyRelative(_) => return None,
+    };
+    DialogueLineId::try_new(value).ok().map(|id| (id, origin))
+}
+
+fn explicit_relative_prefix(
+    module: &HirModuleKey,
+    site: &HirDialogueLineSite,
+    parent_depth: usize,
+) -> Option<DialogueLinePrefix> {
+    if matches!(site.owner(), HirDialogueLineSourceOwner::Ownerless)
+        || parent_depth > site.named_scopes().len()
+    {
+        return None;
+    }
+    DialogueLinePrefix::for_site(module, site, site.named_scopes().len() - parent_depth).ok()
+}
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 struct DialogueGeneratedOrdinal(u32);
 
@@ -154,7 +207,7 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
     /// owns all durable identity, limit, ordinal, and candidate mutation.
     pub(crate) fn push(
         &mut self,
-        site: HirDialogueLineSourceSite,
+        site: HirDialogueLineSite,
         id: Option<&HirIdRef>,
         text_key: Option<&HirIdRef>,
     ) -> Result<(), DialogueLineBuildFatal> {
@@ -188,47 +241,39 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
         Ok(())
     }
 
+    /// Retains the source-order coordinate for a selected site that cannot
+    /// produce a candidate because its typed identity value is invalid.
     pub(crate) fn reject(
         &mut self,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
         diagnostic: DialogueLineDiagnostic,
     ) -> Result<(), DialogueLineBuildFatal> {
         self.accept_site(site)?;
         self.push_diagnostic(diagnostic)
     }
 
+    /// Retains the source-order coordinate for a recovered or unselected
+    /// site without allocating an ID or consuming a generated ordinal.
     pub(crate) fn skip(
         &mut self,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
     ) -> Result<(), DialogueLineBuildFatal> {
         self.accept_site(site)
     }
 
-    pub(crate) fn finish(mut self) -> (HirDialogueLineCandidates, Arc<[DialogueLineDiagnostic]>) {
+    pub(crate) fn finish(
+        mut self,
+    ) -> (Vec<HirDialogueLineCandidate>, Arc<[DialogueLineDiagnostic]>) {
         if !self.diagnostics.is_empty() {
             self.candidates.clear();
         }
-        (
-            HirDialogueLineCandidates {
-                module: self.module.clone(),
-                records: Arc::from(self.candidates),
-            },
-            Arc::from(self.diagnostics),
-        )
+        (self.candidates, Arc::from(self.diagnostics))
     }
 
-    fn accept_site(
-        &mut self,
-        site: &HirDialogueLineSourceSite,
-    ) -> Result<(), DialogueLineBuildFatal> {
+    fn accept_site(&mut self, site: &HirDialogueLineSite) -> Result<(), DialogueLineBuildFatal> {
         self.charge_work(CANDIDATE_WORK_UNITS)?;
-        let next_source_order =
-            self.source_order
-                .checked_add(1)
-                .ok_or(DialogueLineBuildFatal::ArithmeticOverflow {
-                    operation: DialogueLineBuildOperation::SourceOrder,
-                })?;
-        if site.source_order().get() != next_source_order
+        let source_order = site.source_order().get();
+        if source_order <= self.source_order
             || site.application_span().source() != self.module.source()
         {
             return Err(DialogueLineBuildFatal::SourceIdentityMismatch {
@@ -236,13 +281,13 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
                 actual: site.application_span().source().clone(),
             });
         }
-        self.source_order = next_source_order;
+        self.source_order = source_order;
         Ok(())
     }
 
     fn resolve_line(
         &mut self,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
         reference: Option<&HirIdRef>,
     ) -> Result<Option<ResolvedLine>, DialogueLineBuildFatal> {
         let span = site.id_coordinate_span().unwrap_or(site.application_span());
@@ -312,7 +357,7 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
 
     fn resolve_relative(
         &mut self,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
         relative: &HirRelativeId,
         origin: DialogueLineIdOrigin,
         request: OwnerlessLineRequestKind,
@@ -359,7 +404,7 @@ impl<'module> HirDialogueLineCandidateBuilder<'module> {
 
     fn resolve_text_key(
         &mut self,
-        site: &HirDialogueLineSourceSite,
+        site: &HirDialogueLineSite,
         line: &DialogueLineId,
         reference: Option<&HirIdRef>,
     ) -> Result<Option<(DialogueTextKey, DialogueTextKeyOrigin)>, DialogueLineBuildFatal> {

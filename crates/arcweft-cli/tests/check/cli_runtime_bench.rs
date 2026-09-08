@@ -112,7 +112,7 @@ fn check_accepts_valid_arcw_file() {
         "valid",
         r#"
 character alice {
-    display_name = "Alice"
+    display = "Alice"
 }
 
 flow opening {
@@ -394,7 +394,7 @@ fn verify_json_reports_semantic_thread_join_conflict() {
     let path = temp_arcw(
         "verify-thread-join",
         r#"
-character alice { display_name = "Alice" }
+character alice { display = "Alice" }
 
 flow thread_join {
     alice[待って。[p]]
@@ -560,7 +560,7 @@ fn verify_json_respects_semantic_defer_cancel_discharge() {
         "verify-cancel-defer",
         r#"
 character alice {
-    display_name = "Alice"
+    display = "Alice"
 }
 
 flow cancel_cleanup {

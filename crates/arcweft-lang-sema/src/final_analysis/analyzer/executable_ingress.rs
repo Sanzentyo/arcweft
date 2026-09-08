@@ -24,10 +24,7 @@ use crate::{
 #[cfg(test)]
 use crate::types::SemanticTypeDigest;
 
-use super::{
-    Analyzer, FinalSemanticAnalysisError, HirCallArgument, HirExprKind, HirModule,
-    preparation::simple_binding_source,
-};
+use super::{Analyzer, FinalSemanticAnalysisError, HirCallArgument, HirExprKind, HirModule};
 
 #[path = "executable_ingress/inventory.rs"]
 mod inventory;
@@ -303,11 +300,7 @@ impl Analyzer<'_, '_, '_> {
                 &statement,
                 &mut self.facts,
             )?;
-            if let Some((pattern, initializer, annotation)) = simple_binding_source(&statement) {
-                self.infer_simple_statement_binding(owner, pattern, initializer, annotation)?;
-            } else {
-                self.infer_control_statement_bindings(owner, statement)?;
-            }
+            self.check_statement_bindings_published(owner, &statement)?;
         }
         Ok(())
     }

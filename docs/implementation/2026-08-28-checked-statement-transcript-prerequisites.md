@@ -357,8 +357,8 @@ The maintained language surface is the authority for dialogue marks. The only
 authored forms are `[mark @.point]` and `on mark(@.point)`; the reserved wait
 form is `wait(mark(@.point))`. Syntax projects the shared lexer-owned
 entity-reference grammar, HIR retains a typed relative suffix, and sema issues
-the accepted mark identity. Removed `.point` and inferred `[.point]` forms do
-not receive a compatibility reader. Unknown dot heads never become marker,
+the accepted mark identity. Earlier inferred mark spellings do not receive a
+compatibility reader. Unknown dot heads never become marker,
 proxy, or custom-effect identities. Formatter proxy inference, raw declaration
 scans, and `type|struct|proxy` shorthand discovery were deleted; explicit
 object syntax remains.

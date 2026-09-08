@@ -6,23 +6,27 @@ use super::{
     AgentIntrinsicSignatureId, BTreeMap, BuiltinCallableId, CallCalleeClassificationFact,
     CallResolverAuthority, CallableLimits, CallableName, CallablePath, CallableSignatureSchema,
     CheckedExpressionResolution, CheckedValueResolution, ExprId, FinalCallCalleeFacts,
-    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, HirAssociatedCallSyntax,
-    HirAssociatedReceiver, HirAssociatedSeparator, HirCallCallee, HirCallExpr, HirExpr,
-    HirExprKind, HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
+    FunctionValueSignatureId, HirAssociatedCallSyntax, HirAssociatedReceiver,
+    HirAssociatedSeparator, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
+    HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
     HirRecoveredName, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
     PrepareFinalCallCalleeError, PreparedCallCallee, PreparedFinalCallCallee,
-    PreparedFreeCallScope, PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
-    PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
-    PreparedFunctionValueOriginQuery, PreparedFunctionValueOriginQueryError,
-    PresentationCallableId, ProjectValueLookup, PromotionCallableId, ResolveCallError,
-    ResolvedAssociatedTypeReceiver, ResolvedFunctionValueSeed, TypeId, TypeKind,
-    TypeResolutionReport,
+    PreparedFreeCallContext, PreparedFreeCallScope, PreparedFunctionValueCallee,
+    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
+    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQuery,
+    PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
+    PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
+    ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
 };
 use crate::{
-    callable::{CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity},
+    callable::{
+        CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity,
+        resolve_fx_source_constructor,
+    },
     final_analysis::PreparedExpressionFact,
     types::{CharacterDialogueCharacterType, EntityKind},
 };
+use arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily;
 /// Prepares the only callee representation admitted by the shared resolver
 /// from final-HIR structure and already checked child facts.
 ///
@@ -44,8 +48,23 @@ where
     let expression_node = module
         .resolve_expr(expression)
         .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression })?;
-    let HirExprKind::Call(call) = expression_node.kind() else {
-        return Err(PrepareFinalCallCalleeError::InvalidCallExpression { expression });
+    let context = match expression_node.kind() {
+        HirExprKind::AttachedContentApplication(application) if application.is_content_call() => {
+            PreparedFreeCallContext::AttachedContent
+        }
+        _ => PreparedFreeCallContext::Ordinary,
+    };
+    let call = match expression_node.kind() {
+        HirExprKind::Call(call) => call,
+        HirExprKind::AttachedContentApplication(application) => {
+            let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+                application.family()
+            else {
+                return Err(PrepareFinalCallCalleeError::InvalidCallExpression { expression });
+            };
+            invocation
+        }
+        _ => return Err(PrepareFinalCallCalleeError::InvalidCallExpression { expression }),
     };
     if !matches!(call.callee(), HirCallCallee::Value { .. })
         && facts.function_value_origin.is_some()
@@ -55,7 +74,7 @@ where
 
     match call.callee() {
         HirCallCallee::Value { value } => {
-            prepare_value_call_callee(authority, *value, facts, dialogue_context, limits)
+            prepare_value_call_callee(authority, *value, facts, dialogue_context, context, limits)
         }
         HirCallCallee::UnresolvedDot {
             value_receiver,
@@ -86,6 +105,7 @@ fn prepare_value_call_callee<'a, P, U>(
     value: ExprId,
     mut facts: FinalCallCalleeFacts<'a, P, U>,
     dialogue_context: CharacterDialoguePatchContext,
+    context: PreparedFreeCallContext,
     limits: &CallableLimits,
 ) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError>
 where
@@ -126,33 +146,30 @@ where
                 expression: value,
             });
         }
+        let receiver_type = receiver
+            .value_type()
+            .ok_or(PrepareFinalCallCalleeError::MissingValueType {
+                expression: select.target(),
+            })?
+            .clone();
         return Ok(PreparedFinalCallCallee::Selected {
             receiver_expression: select.target(),
-            receiver_type: Box::new(receiver.ty().clone()),
+            receiver_type: Box::new(receiver_type),
             method: CallableName::try_new(member.as_str())
                 .map_err(|_| PrepareFinalCallCalleeError::InvalidValuePath { expression: value })?,
         });
     }
 
-    if let Some(checked) = facts.expressions.get(&value)
-        && (matches!(checked, PreparedExpressionFact::ProjectVariant(_))
-            || matches!(
-                checked.checked_resolution(),
-                Some(CheckedExpressionResolution::Variant(_))
-            ))
-    {
+    if let Some(PreparedExpressionFact::Variant(prepared)) = facts.expressions.get(&value) {
         if function_origin.is_some() {
             return Err(PrepareFinalCallCalleeError::UnexpectedFunctionValueOrigin {
                 expression: value,
             });
         }
-        let seed = super::AcceptedEnumVariantCase::try_from_checked(checked, limits)
+        let seed = super::AcceptedEnumVariantCase::try_from_prepared(authority, prepared, limits)
             .map_err(
-                |_| PrepareFinalCallCalleeError::InvalidEnumVariantAuthority { expression: value },
-            )?
-            .ok_or(PrepareFinalCallCalleeError::InvalidEnumVariantAuthority {
-                expression: value,
-            })?;
+            |_| PrepareFinalCallCalleeError::InvalidEnumVariantAuthority { expression: value },
+        )?;
         return Ok(PreparedFinalCallCallee::EnumConstructor {
             seed: Box::new(seed),
         });
@@ -167,13 +184,16 @@ where
                 ))
             )
         {
-            if matches!(checked.ty(), TypeKind::Function { .. }) {
+            let checked_type = checked
+                .value_type()
+                .ok_or(PrepareFinalCallCalleeError::MissingValueType { expression: value })?;
+            if matches!(checked_type, TypeKind::Function { .. }) {
                 let origin = function_origin.take().ok_or(
                     PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value },
                 )?;
                 return prepare_function_value(
                     value,
-                    checked.ty(),
+                    checked_type,
                     origin,
                     facts.prepared_calls,
                     limits,
@@ -189,7 +209,7 @@ where
             }
             return Ok(PreparedFinalCallCallee::NonCallableValue {
                 expression: value,
-                ty: Box::new(checked.ty().clone()),
+                ty: Box::new(checked_type.clone()),
             });
         }
         let lookup = resolve_final_project_value(authority, value, path)?;
@@ -230,6 +250,7 @@ where
             path: Box::new(callable_path_from_hir(value, path, limits)?),
             project: project.map(Box::new),
             scope,
+            context,
         });
     }
 
@@ -238,11 +259,14 @@ where
         .get(&value)
         .ok_or(PrepareFinalCallCalleeError::MissingExpressionFact { expression: value })?;
 
-    if matches!(checked.ty(), TypeKind::Function { .. }) {
+    let checked_type = checked
+        .value_type()
+        .ok_or(PrepareFinalCallCalleeError::MissingValueType { expression: value })?;
+    if matches!(checked_type, TypeKind::Function { .. }) {
         let origin = function_origin
             .take()
             .ok_or(PrepareFinalCallCalleeError::MissingFunctionValueOrigin { expression: value })?;
-        return prepare_function_value(value, checked.ty(), origin, facts.prepared_calls, limits)
+        return prepare_function_value(value, checked_type, origin, facts.prepared_calls, limits)
             .map(|value| PreparedFinalCallCallee::FunctionValue {
                 value: Box::new(value),
             });
@@ -256,26 +280,45 @@ where
 
     Ok(PreparedFinalCallCallee::NonCallableValue {
         expression: value,
-        ty: Box::new(checked.ty().clone()),
+        ty: Box::new(checked_type.clone()),
     })
 }
 
 /// Resolve a function value's callable origin from typed HIR ownership.  A
 /// direct call and a local whose canonical initializer is a call must carry a
 /// graph site; only values with no call origin remain independent.
+#[cfg(test)]
 pub(crate) fn prepare_function_value_origin_query(
     topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
     module: &HirModule,
     expression: ExprId,
     expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
 ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
-    PreparedFunctionValueOriginQuery::start(topology, module, expression)
+    prepare_function_value_origin_query_with_pending_captures(
+        topology,
+        module,
+        expression,
+        expressions,
+        std::sync::Arc::new(BTreeMap::new()),
+    )
+}
+
+pub(crate) fn prepare_function_value_origin_query_with_pending_captures(
+    topology: std::sync::Arc<arcweft_lang_hir::project::HirProjectEvaluationTopology>,
+    module: &HirModule,
+    expression: ExprId,
+    expressions: &BTreeMap<ExprId, PreparedExpressionFact>,
+    pending_capture_rows: std::sync::Arc<
+        BTreeMap<ExprId, Box<[super::PreparedCaptureIdentityRow]>>,
+    >,
+) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
+    PreparedFunctionValueOriginQuery::start(topology, module, expression, pending_capture_rows)
         .advance(module, expressions)
 }
 
 pub(crate) fn prepare_presentation_callee_id(
     module: &HirModule,
-    call: &HirCallExpr,
+    call: &HirCallInvocation,
     limits: &CallableLimits,
 ) -> Result<Option<PresentationCallableId>, PrepareFinalCallCalleeError> {
     let HirCallCallee::Value { value } = call.callee() else {
@@ -309,7 +352,10 @@ fn character_dialogue_callee(
             character: CharacterDialogueCharacterType::Exact(character),
         }));
     }
-    Ok(match checked.ty() {
+    let Some(checked_type) = checked.value_type() else {
+        return Ok(None);
+    };
+    Ok(match checked_type {
         TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character => {
             Some(DialogueCalleeIdentity::Character {
                 character: CharacterDialogueCharacterType::Any,
@@ -373,6 +419,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                         path: Box::new(callable_path_from_hir(value_receiver, &full_path, limits)?),
                         project: Some(Box::new(symbol.declaration().clone())),
                         scope,
+                        context: PreparedFreeCallContext::Ordinary,
                     });
                 }
                 ProjectValueLookup::Absent => {}
@@ -418,6 +465,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                     path: Box::new(path),
                     project: None,
                     scope: PreparedFreeCallScope::Implicit,
+                    context: PreparedFreeCallContext::Ordinary,
                 });
             }
             return prepare_associated_callee(nominal_receiver, member, facts.nominal_receivers);
@@ -431,7 +479,14 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
 
     Ok(PreparedFinalCallCallee::Selected {
         receiver_expression: value_receiver,
-        receiver_type: Box::new(checked.ty().clone()),
+        receiver_type: Box::new(
+            checked
+                .value_type()
+                .ok_or(PrepareFinalCallCalleeError::MissingValueType {
+                    expression: value_receiver,
+                })?
+                .clone(),
+        ),
         method: CallableName::try_new(member.as_str()).map_err(|_| {
             PrepareFinalCallCalleeError::InvalidValuePath {
                 expression: value_receiver,
@@ -460,10 +515,8 @@ pub(crate) fn prepare_language_free_dot_path(
         return Ok(None);
     }
     let path = callable_path_from_hir(expression, &path.with_terminal_member(member), limits)?;
-    let is_language_free = matches!(
-        FxCallableSignatureId::resolve(&path),
-        FxResolution::Known(_)
-    ) || BuiltinCallableId::resolve(&path).is_some()
+    let is_language_free = resolve_fx_source_constructor(&path).is_some()
+        || BuiltinCallableId::resolve(&path).is_some()
         || AgentIntrinsicSignatureId::resolve(&path).is_some()
         || PresentationCallableId::resolve(&path).is_some()
         || PromotionCallableId::resolve(&path).is_some()
@@ -562,7 +615,7 @@ where
             }
         }
         PreparedFunctionValueOriginProducer::Call(
-            super::super::CheckedCallSite::DialogueApplication(_),
+            super::super::CheckedCallSite::AttachedContentApplication { .. },
         ) => return Err(PrepareFinalCallCalleeError::InvalidFunctionValue { expression }),
         PreparedFunctionValueOriginProducer::Lexical { local } => {
             if !captures.is_empty() {
@@ -667,7 +720,7 @@ fn callable_path_from_hir(
 
 pub(super) fn classify_prepared_callee(
     prepared: &PreparedCallCallee<'_>,
-    call: &HirCallExpr,
+    call: &HirCallInvocation,
     module: &HirModule,
 ) -> Result<CallCalleeClassificationFact, ResolveCallError> {
     let module_id = module.module_id();

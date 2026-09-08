@@ -32,6 +32,25 @@ pub fn compile_source_with_env(
     source: &str,
     env: &TypeCheckEnv,
 ) -> Result<CompiledSource, CompileSourceError> {
+    compile_source_with_env_and_control(
+        source,
+        env,
+        crate::lower::ProjectInstantiationControl::default(),
+    )
+}
+
+/// Compiles one source with explicit instance-discovery limits and cancellation.
+/// The standard source entry points use the same pipeline with production limits.
+///
+/// # Panics
+///
+/// Panics only if the compiler-owned single-source package constants or the
+/// internally constructed one-root project violate their static invariants.
+pub fn compile_source_with_env_and_control(
+    source: &str,
+    env: &TypeCheckEnv,
+    control: crate::lower::ProjectInstantiationControl,
+) -> Result<CompiledSource, CompileSourceError> {
     let document = source_document(source);
     let manifest = manifest_document();
     let package = PackageSpec {
@@ -73,7 +92,8 @@ pub fn compile_source_with_env(
         Arc::new(ResourceTypeRegistry::empty()),
         None,
         None,
-    );
+    )
+    .with_instantiation_control(control);
     let mut syntax = SyntaxDatabase::try_new()?;
     let parsed = syntax.parse_initial(
         SourceSnapshotId::initial(document.display_name().clone()),
@@ -136,7 +156,7 @@ mod tests {
         compile_source(
             r#"
 character alice {
-    display_name = "Alice"
+    display = "Alice"
 }
 
 flow main() -> String {
@@ -146,6 +166,47 @@ flow main() -> String {
 "#,
         )
         .expect("project-default dialogue compiles with the engine locale policy");
+    }
+
+    #[test]
+    fn canonical_content_fx_application_uses_the_checked_builtin_catalog() {
+        let compiled = compile_source(
+            r#"
+character alice {
+    display = "Alice"
+}
+
+flow main() -> Unit {
+    alice: #fx(wave(amplitude=4px))[wave][p]
+}
+"#,
+        )
+        .expect("canonical #fx(builtin(...))[...] compiles");
+
+        assert_eq!(compiled.fx_definitions.len(), 1);
+    }
+
+    #[test]
+    fn canonical_content_fx_application_uses_one_sealed_project_definition() {
+        let compiled = compile_source(
+            r##"
+character alice {
+    display = "Alice"
+}
+
+#[fx]
+fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
+    Fx.text(color = accent)
+}
+
+flow main() -> Unit {
+    alice: #fx(emphasis(accent=rgb("#ff6b8a")))[text][p]
+}
+"##,
+        )
+        .expect("canonical #fx(project_fx(...))[...] compiles");
+
+        assert_eq!(compiled.fx_definitions.len(), 1);
     }
 
     #[test]

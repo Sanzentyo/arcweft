@@ -5,8 +5,9 @@ use arcweft_presentation::fx::FxColor;
 use arcweft_text_model::{
     LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage, RichTextAngle,
     RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
-    RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextSpanKind,
-    RichTextStyle, RichTextWritingMode, presentation_from_styles,
+    RichTextNode, RichTextNodeIndex, RichTextNodeRange, RichTextPresentation, RichTextRange,
+    RichTextRubyPosition, RichTextStyle, RichTextTextRunRange, RichTextWritingMode,
+    presentation_from_styles,
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
@@ -381,8 +382,7 @@ impl ResolvedTextStyle {
                     self.direction = layout.direction;
                 }
             }
-            RichTextStyle::Ruby { .. }
-            | RichTextStyle::Speed { .. }
+            RichTextStyle::Speed { .. }
             | RichTextStyle::Transform { .. }
             | RichTextStyle::Fx { .. }
             | RichTextStyle::Object { .. }
@@ -557,6 +557,9 @@ impl ResolvedTextRun {
 /// Ruby annotation attached to a canonical base range.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTextRuby {
+    owner_node: RichTextNodeIndex,
+    body_nodes: RichTextNodeRange,
+    base_runs: RichTextTextRunRange,
     base_range: RichTextRange,
     source_base_range: RichTextRange,
     text: String,
@@ -565,8 +568,12 @@ pub struct ResolvedTextRuby {
 }
 
 impl ResolvedTextRuby {
-    /// Creates a non-empty annotation with equal-length base mappings.
+    /// Creates a non-empty annotation with exact source-tree and run
+    /// ownership intervals.
     pub fn new(
+        owner_node: RichTextNodeIndex,
+        body_nodes: RichTextNodeRange,
+        base_runs: RichTextTextRunRange,
         base_range: RichTextRange,
         source_base_range: RichTextRange,
         text: impl Into<String>,
@@ -579,12 +586,32 @@ impl ResolvedTextRuby {
             return Err(TextResolveError::EmptyRubyText { index: 0 });
         }
         Ok(Self {
+            owner_node,
+            body_nodes,
+            base_runs,
             base_range,
             source_base_range,
             text,
             style,
             presentation,
         })
+    }
+
+    /// Creates an annotation while retaining its exact source-tree and
+    /// resolved-run ownership intervals.
+    #[must_use]
+    pub const fn owner_node(&self) -> RichTextNodeIndex {
+        self.owner_node
+    }
+
+    #[must_use]
+    pub const fn body_nodes(&self) -> RichTextNodeRange {
+        self.body_nodes
+    }
+
+    #[must_use]
+    pub const fn base_runs(&self) -> RichTextTextRunRange {
+        self.base_runs
     }
 
     #[must_use]
@@ -711,16 +738,23 @@ impl<'a> ResolvedTextDocument<'a> {
                     end: range.end,
                     text_len: self.text.len(),
                 })?;
+        let mut run_index_map = vec![None; self.runs.len()];
         let runs = self
             .runs
             .iter()
-            .filter_map(|run| intersect(run.range, range).map(|clipped| (run, clipped)))
-            .map(|(run, clipped)| {
+            .enumerate()
+            .filter_map(|(run_index, run)| {
+                intersect(run.range, range).map(|clipped| (run_index, run, clipped))
+            })
+            .map(|(run_index, run, clipped)| {
                 let source_start = run.source_range.start + clipped.start - run.range.start;
                 let source_range = RichTextRange::new(
                     source_start,
                     source_start + clipped.end.saturating_sub(clipped.start),
                 );
+                let projected_index = u32::try_from(run_index_map.iter().flatten().count())
+                    .map_err(|_| TextResolveError::RunIndexOverflow { index: run_index })?;
+                run_index_map[run_index] = Some(projected_index);
                 ResolvedTextRun::new(
                     rebase(clipped, range.start),
                     source_range,
@@ -735,7 +769,20 @@ impl<'a> ResolvedTextDocument<'a> {
             .iter()
             .filter(|annotation| contains(range, annotation.base_range))
             .map(|annotation| {
+                let old_run_range = annotation.base_runs.as_usize_range();
+                let projected_run_start = old_run_range
+                    .clone()
+                    .find_map(|index| run_index_map.get(index).copied().flatten())
+                    .ok_or(TextResolveError::RubyRunMissing { index: 0 })?;
+                let projected_run_end = old_run_range
+                    .rev()
+                    .find_map(|index| run_index_map.get(index).copied().flatten())
+                    .and_then(|index| index.checked_add(1))
+                    .ok_or(TextResolveError::RubyRunMissing { index: 0 })?;
                 ResolvedTextRuby::new(
+                    annotation.owner_node,
+                    annotation.body_nodes,
+                    RichTextTextRunRange::new(projected_run_start, projected_run_end),
                     rebase(annotation.base_range, range.start),
                     annotation.source_base_range,
                     annotation.text.clone(),
@@ -795,6 +842,8 @@ pub enum TextResolveError {
     },
     #[error("text runs cover {covered_end} of {text_len} bytes")]
     IncompleteRunCoverage { covered_end: usize, text_len: usize },
+    #[error("resolved text run index {index} exceeds u32::MAX")]
+    RunIndexOverflow { index: usize },
     #[error(
         "{kind} {index} source range is {actual_start}..{actual_end}, expected {expected_start}..{expected_end}"
     )]
@@ -809,7 +858,7 @@ pub enum TextResolveError {
     #[error("ruby annotation {index} has empty text")]
     EmptyRubyText { index: usize },
     #[error("ruby annotation {index} is not contained in a resolved text run")]
-    RubyBaseRunMissing { index: usize },
+    RubyRunMissing { index: usize },
     #[error("source origin {source_origin} plus text length {text_len} overflows usize")]
     SourceOriginOverflow {
         source_origin: usize,
@@ -822,6 +871,11 @@ pub enum TextResolveError {
         node_index: usize,
         start: usize,
         end: usize,
+    },
+    #[error("control {node_index} `{control}` is not allowed inside Ruby")]
+    RubyControlForbidden {
+        node_index: usize,
+        control: &'static str,
     },
     #[error("font family stack must not be empty")]
     EmptyFontFamilyStack,
@@ -847,34 +901,44 @@ pub fn resolve_stage_document<'a>(
     frame.validate()?;
     let source_extent = stage.text_range();
     let text = stage.text();
-    let runs = frame
+    let projection = stage.projection();
+    let runs = projection
         .display_map
         .text_runs
         .iter()
-        .filter_map(|run| intersect(run.range, source_extent).map(|range| (run, range)))
-        .map(|(run, source_range)| {
+        .map(|run| {
+            let source_range = RichTextRange::new(
+                source_extent.start + run.range.start,
+                source_extent.start + run.range.end,
+            );
             let style = cascade.resolve_style(run.styles.iter())?;
             ResolvedTextRun::new(
-                rebase(source_range, source_extent.start),
+                run.range,
                 source_range,
                 style,
                 cascade.resolve_presentation(&run.presentation),
                 ResolvedTextRunSource::Dialogue {
-                    node_index: run.node_index,
+                    node_index: run.node_index.as_usize(),
                 },
             )
         })
         .collect::<Result<Vec<_>, _>>()?;
-    let ruby = frame
+    let ruby = projection
         .display_map
         .ruby_annotations
         .iter()
-        .filter(|ruby| contains(source_extent, ruby.base_range))
         .map(|ruby| {
             let style = cascade.resolve_style(ruby.styles.iter())?;
+            let source_base_range = RichTextRange::new(
+                source_extent.start + ruby.base_range.start,
+                source_extent.start + ruby.base_range.end,
+            );
             ResolvedTextRuby::new(
-                rebase(ruby.base_range, source_extent.start),
+                ruby.owner_node,
+                ruby.body_nodes,
+                ruby.base_runs,
                 ruby.base_range,
+                source_base_range,
                 ruby.ruby.clone(),
                 style,
                 cascade.resolve_presentation(&ruby.presentation),
@@ -904,48 +968,11 @@ pub fn resolve_document_with_source<'a>(
     cascade: &TextStyleCascade,
     source: ResolvedTextRunSource,
 ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
-    let mut active_styles = Vec::new();
     let mut ruby = Vec::new();
     let mut resolver = StaticDocumentResolver::new(document.resolved_text(), cascade, source);
-    for (node_index, node) in document.nodes.iter().enumerate() {
-        match node {
-            RichTextNode::Text { text }
-            | RichTextNode::Control {
-                control: RichTextControl::Raw { text },
-            } => {
-                let range = resolver.push_text(text, node_index, &active_styles)?;
-                push_active_ruby(&mut ruby, range, &active_styles, cascade)?;
-            }
-            RichTextNode::Ruby { base, ruby: text } => {
-                let range = resolver.push_text(base, node_index, &active_styles)?;
-                if !base.is_empty() {
-                    let presentation = presentation_from_styles(active_styles.iter());
-                    let style = cascade.resolve_style(active_styles.iter())?;
-                    ruby.push(ResolvedTextRuby::new(
-                        range,
-                        range,
-                        text.clone(),
-                        style,
-                        cascade.resolve_presentation(&presentation),
-                    )?);
-                }
-            }
-            RichTextNode::StyleStart { style } => active_styles.push(style.as_ref().clone()),
-            RichTextNode::StyleEnd { span } => remove_style(&mut active_styles, *span),
-            RichTextNode::Control {
-                control: RichTextControl::HardBreak,
-            } => {
-                resolver.push_text("\n", node_index, &active_styles)?;
-            }
-            RichTextNode::Interpolation { .. }
-            | RichTextNode::ConditionalStart { .. }
-            | RichTextNode::ConditionalElse
-            | RichTextNode::ConditionalEnd => {
-                return Err(TextResolveError::DynamicNode { node_index });
-            }
-            RichTextNode::Control { .. } | RichTextNode::HostEvent { .. } => {}
-        }
-    }
+    let mut node_index = 0;
+    resolver.resolve_nodes(&document.nodes, &[], &mut node_index, false, &mut ruby)?;
+    ruby.sort_by_key(ResolvedTextRuby::owner_node);
     ResolvedTextDocument::new(
         document.resolved_text(),
         0,
@@ -953,33 +980,6 @@ pub fn resolve_document_with_source<'a>(
         ruby,
         TextDocumentRevision::for_source(document),
     )
-}
-
-fn push_active_ruby(
-    ruby: &mut Vec<ResolvedTextRuby>,
-    range: RichTextRange,
-    active_styles: &[RichTextStyle],
-    cascade: &TextStyleCascade,
-) -> Result<(), TextResolveError> {
-    let Some(annotation) = active_styles.iter().rev().find_map(|style| match style {
-        RichTextStyle::Ruby { annotation } => Some(annotation),
-        _ => None,
-    }) else {
-        return Ok(());
-    };
-    if range.start == range.end {
-        return Ok(());
-    }
-    let presentation = presentation_from_styles(active_styles.iter());
-    let style = cascade.resolve_style(active_styles.iter())?;
-    ruby.push(ResolvedTextRuby::new(
-        range,
-        range,
-        annotation.clone(),
-        style,
-        cascade.resolve_presentation(&presentation),
-    )?);
-    Ok(())
 }
 
 struct StaticDocumentResolver<'a> {
@@ -1010,6 +1010,7 @@ impl<'a> StaticDocumentResolver<'a> {
         text: &str,
         node_index: usize,
         styles: &[RichTextStyle],
+        source: ResolvedTextRunSource,
     ) -> Result<RichTextRange, TextResolveError> {
         let range = RichTextRange::new(self.offset, self.offset + text.len());
         if self.document_text.get(range.start..range.end) != Some(text) {
@@ -1028,19 +1029,116 @@ impl<'a> StaticDocumentResolver<'a> {
                 range,
                 style,
                 self.cascade.resolve_presentation(&presentation),
-                self.source,
+                source,
             )?);
         }
         Ok(range)
     }
-}
 
-fn remove_style(active_styles: &mut Vec<RichTextStyle>, kind: RichTextSpanKind) {
-    if let Some(index) = active_styles
-        .iter()
-        .rposition(|style| style.span_kind() == kind)
-    {
-        active_styles.remove(index);
+    fn resolve_nodes(
+        &mut self,
+        nodes: &[RichTextNode],
+        styles: &[RichTextStyle],
+        node_index: &mut usize,
+        in_ruby: bool,
+        ruby: &mut Vec<ResolvedTextRuby>,
+    ) -> Result<(), TextResolveError> {
+        for node in nodes {
+            let current_index = *node_index;
+            *node_index =
+                (*node_index)
+                    .checked_add(1)
+                    .ok_or(TextResolveError::SourceOriginOverflow {
+                        source_origin: current_index,
+                        text_len: 1,
+                    })?;
+            match node {
+                RichTextNode::Text { text } => {
+                    self.push_text(text, current_index, styles, self.source)?;
+                }
+                RichTextNode::Raw { text } => {
+                    self.push_text(text, current_index, styles, self.source)?;
+                }
+                RichTextNode::Scope { style, body } => {
+                    let mut nested_styles = styles.to_vec();
+                    nested_styles.push(style.as_ref().clone());
+                    self.resolve_nodes(body, &nested_styles, node_index, in_ruby, ruby)?;
+                }
+                RichTextNode::Ruby { body, ruby: text } => {
+                    let start = self.offset;
+                    let body_start = *node_index;
+                    let run_start = self.runs.len();
+                    self.resolve_nodes(body, styles, node_index, true, ruby)?;
+                    let range = RichTextRange::new(start, self.offset);
+                    if range.start != range.end {
+                        let presentation = presentation_from_styles(styles.iter());
+                        let style = self.cascade.resolve_style(styles.iter())?;
+                        let owner_node =
+                            RichTextNodeIndex::try_from_index(current_index).map_err(|_| {
+                                TextResolveError::RunIndexOverflow {
+                                    index: current_index,
+                                }
+                            })?;
+                        let body_start =
+                            RichTextNodeIndex::try_from_index(body_start).map_err(|_| {
+                                TextResolveError::RunIndexOverflow { index: body_start }
+                            })?;
+                        let body_end =
+                            RichTextNodeIndex::try_from_index(*node_index).map_err(|_| {
+                                TextResolveError::RunIndexOverflow { index: *node_index }
+                            })?;
+                        let run_start = u32::try_from(run_start)
+                            .map_err(|_| TextResolveError::RunIndexOverflow { index: run_start })?;
+                        let run_end = u32::try_from(self.runs.len()).map_err(|_| {
+                            TextResolveError::RunIndexOverflow {
+                                index: self.runs.len(),
+                            }
+                        })?;
+                        ruby.push(ResolvedTextRuby::new(
+                            owner_node,
+                            RichTextNodeRange::new(body_start, body_end),
+                            RichTextTextRunRange::new(run_start, run_end),
+                            range,
+                            range,
+                            text.clone(),
+                            style,
+                            self.cascade.resolve_presentation(&presentation),
+                        )?);
+                    }
+                }
+                RichTextNode::Control {
+                    control: RichTextControl::HardBreak,
+                } => {
+                    self.push_text("\n", current_index, styles, self.source)?;
+                }
+                RichTextNode::Control { control }
+                    if in_ruby
+                        && matches!(
+                            control,
+                            RichTextControl::Page
+                                | RichTextControl::LineWait
+                                | RichTextControl::Clear
+                        ) =>
+                {
+                    return Err(TextResolveError::RubyControlForbidden {
+                        node_index: current_index,
+                        control: match control {
+                            RichTextControl::Page => "page",
+                            RichTextControl::LineWait => "line_wait",
+                            RichTextControl::Clear => "clear",
+                            _ => unreachable!("guard restricts ruby controls"),
+                        },
+                    });
+                }
+                RichTextNode::Interpolation { .. } | RichTextNode::ContentInsert { .. } => {
+                    return Err(TextResolveError::DynamicNode {
+                        node_index: current_index,
+                    });
+                }
+                RichTextNode::Control { .. } | RichTextNode::HostEvent { .. } => {}
+            }
+        }
+        Ok(())
     }
 }
 
@@ -1133,14 +1231,61 @@ fn validate_ruby(
         if annotation.text.is_empty() {
             return Err(TextResolveError::EmptyRubyText { index });
         }
-        if !runs
-            .iter()
-            .any(|run| contains(run.range, annotation.base_range))
+        if annotation.body_nodes.start.get() != annotation.owner_node.get().saturating_add(1)
+            || annotation.body_nodes.start > annotation.body_nodes.end
         {
-            return Err(TextResolveError::RubyBaseRunMissing { index });
+            return Err(TextResolveError::RubyRunMissing { index });
+        }
+        let run_range = annotation.base_runs().as_usize_range();
+        if run_range.start >= run_range.end || run_range.end > runs.len() {
+            return Err(TextResolveError::RubyRunMissing { index });
+        }
+        let mut covered_end = annotation.base_range().start;
+        for run in &runs[run_range] {
+            if run.range().start != covered_end {
+                return Err(TextResolveError::RubyRunMissing { index });
+            }
+            covered_end = run.range().end;
+        }
+        if covered_end != annotation.base_range().end {
+            return Err(TextResolveError::RubyRunMissing { index });
+        }
+        if let Some(previous) = ruby.get(index.wrapping_sub(1))
+            && annotation.owner_node() <= previous.owner_node()
+        {
+            return Err(TextResolveError::RubyRunMissing { index });
+        }
+    }
+    for first in 0..ruby.len() {
+        for second in first.saturating_add(1)..ruby.len() {
+            let left = &ruby[first];
+            let right = &ruby[second];
+            if ranges_cross(
+                &left.body_nodes.start.get(),
+                &left.body_nodes.end.get(),
+                &right.body_nodes.start.get(),
+                &right.body_nodes.end.get(),
+            ) || ranges_cross(
+                &left.base_range.start,
+                &left.base_range.end,
+                &right.base_range.start,
+                &right.base_range.end,
+            ) || ranges_cross(
+                &u64::from(left.base_runs.start),
+                &u64::from(left.base_runs.end),
+                &u64::from(right.base_runs.start),
+                &u64::from(right.base_runs.end),
+            ) {
+                return Err(TextResolveError::RubyRunMissing { index: second });
+            }
         }
     }
     Ok(())
+}
+
+fn ranges_cross<T: Ord>(left_start: &T, left_end: &T, right_start: &T, right_end: &T) -> bool {
+    (left_start < right_start && right_start < left_end && left_end < right_end)
+        || (right_start < left_start && left_start < right_end && right_end < left_end)
 }
 
 fn validate_text_range(

@@ -4,8 +4,9 @@ use crate::pattern::{
     RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeVariantIdentity, match_runtime_pattern,
 };
 use crate::plan::{
-    RuntimePlan, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureHelper,
-    RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
+    RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeDeclaration,
+    RuntimePlanTypeProjection, RuntimePureHelper, RuntimePureHelperId, RuntimePureInputType,
+    RuntimePureOutputType,
 };
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::step::RuntimePureCallStats;
@@ -895,6 +896,86 @@ impl VmPureFunctionBackend {
 }
 
 impl VmPureFunctionScratch {
+    /// Evaluates a capture-free structured function-site body for an Entry
+    /// root callable. Function-site input rows are the sole ABI authority:
+    /// each logical parameter is installed at its synthetic input local and
+    /// then passed through the same checked pattern binder used by ordinary
+    /// structured calls. Executable sites are rejected here because a root
+    /// callable evaluator is deliberately synchronous; they must enter the
+    /// flow runtime instead of being treated as pure helpers.
+    pub fn evaluate_function_site(
+        &mut self,
+        plan: &Arc<RuntimePlan>,
+        site: RuntimeFunctionSiteId,
+        args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let declaration =
+            plan.function_sites()
+                .get(site)
+                .ok_or(RuntimeEvalError::FunctionApply(
+                    RuntimeFunctionApplyError::UnknownStructuredSite { site },
+                ))?;
+        if declaration.capture_inputs().next().is_some() {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "structured.function".to_owned(),
+                reason: "an Entry function site must be capture-free".to_owned(),
+            });
+        }
+        let parameter_inputs = declaration.parameter_inputs().collect::<Vec<_>>();
+        if args.len() != parameter_inputs.len() {
+            return Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: parameter_inputs.len(),
+                found: args.len(),
+            });
+        }
+
+        let mut bindings = Vec::with_capacity(declaration.inputs().len());
+        for (index, input) in parameter_inputs.iter().enumerate() {
+            let RuntimeFunctionInputSource::Parameter { position } = input.source() else {
+                unreachable!("capture-free function-site parameter inventory is filtered above")
+            };
+            let expected_position = u32::try_from(index).map_err(|_| {
+                RuntimeEvalError::FunctionApply(
+                    RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
+                )
+            })?;
+            if position != expected_position {
+                return Err(RuntimeEvalError::FunctionApply(
+                    RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
+                ));
+            }
+            let value = args.get(index).ok_or(RuntimeEvalError::FunctionApply(
+                RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site },
+            ))?;
+            bindings.push(RuntimeLocalBinding {
+                local: input.input_local(),
+                value: value.clone(),
+            });
+            let matched = match_runtime_pattern(plan, input.pattern(), value)?;
+            let Some(pattern_bindings) = matched else {
+                return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+                    value,
+                )));
+            };
+            bindings.extend(pattern_bindings);
+        }
+        let body = match declaration.body() {
+            RuntimeFunctionSiteBody::Expression(body) => body,
+            RuntimeFunctionSiteBody::Executable(_) => {
+                return Err(RuntimeEvalError::UnsupportedPure {
+                    name: "structured.function".to_owned(),
+                    reason: "an executable Entry function site requires the flow runtime"
+                        .to_owned(),
+                });
+            }
+        };
+        self.env.replace_scopes_with_bindings([bindings]);
+        let mut evaluator = PureEvaluator::with_env(plan, std::mem::take(&mut self.env));
+        let result = evaluator.evaluate_expr(body);
+        self.env = evaluator.into_env();
+        result
+    }
+
     pub fn evaluate_i32_args(
         &mut self,
         plan: &Arc<RuntimePlan>,
@@ -1620,6 +1701,11 @@ impl<'a> PureEvaluator<'a> {
                 expr,
                 body,
             } => self.evaluate_let_expr(*binding, expr, body),
+            RuntimeExprKind::DialogueContent {
+                template,
+                values,
+                effects,
+            } => self.evaluate_dialogue_content_expr(*template, values, effects),
             RuntimeExprKind::Tuple(items) => self.evaluate_items(items, RuntimeValue::Tuple),
             RuntimeExprKind::BracketSeq(items) => {
                 self.evaluate_items(items, runtime_sequence_values)
@@ -1650,7 +1736,9 @@ impl<'a> PureEvaluator<'a> {
                 body,
             } => self.evaluate_assign_field_expr(*base, *field, expr, body),
             RuntimeExprKind::Call { callee, args } => self.evaluate_call_expr(callee, args),
-            RuntimeExprKind::Function(site) => self.evaluate_function_expr(*site),
+            RuntimeExprKind::Function { site, captures } => {
+                self.evaluate_function_expr(*site, captures)
+            }
             RuntimeExprKind::Apply { callee, args } => self.evaluate_apply_expr(callee, args),
             RuntimeExprKind::TraitCall { .. } => Self::unsupported_flow_runtime_expr(),
             RuntimeExprKind::PureCall { helper, args } => {
@@ -1699,6 +1787,101 @@ impl<'a> PureEvaluator<'a> {
             return Err(RuntimeEvalError::InvalidExpressionType(expr.ty()));
         }
         Ok(value)
+    }
+
+    fn evaluate_dialogue_content_expr(
+        &mut self,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        values: &[RuntimeExpr],
+        effects: &[crate::value::RuntimeDialogueContentEffectBindingExpr],
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if self
+            .plan
+            .dialogue_content_templates()
+            .get(template)
+            .is_none()
+        {
+            return Err(RuntimeEvalError::MissingDialogueTemplateManifest { template });
+        }
+        let evaluated = values
+            .iter()
+            .map(|expression| self.evaluate_expr(expression))
+            .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
+        let manifest = self
+            .plan
+            .dialogue_content_templates()
+            .get(template)
+            .expect("dialogue content template was checked before evaluation");
+        if evaluated.len() != manifest.slots().len() {
+            return Err(RuntimeEvalError::DialogueContentBindingCount {
+                expected: manifest.slots().len(),
+                actual: evaluated.len(),
+            });
+        }
+        let evaluated = values
+            .iter()
+            .zip(evaluated)
+            .zip(manifest.slots())
+            .map(|((_, value), slot)| {
+                Ok(crate::plan::RuntimeDialogueValueBinding {
+                    slot: slot.slot(),
+                    role: slot.role(),
+                    value,
+                })
+            })
+            .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
+        if effects.len() != manifest.effects().len() {
+            return Err(RuntimeEvalError::DialogueContentConstruction(format!(
+                "evaluated effect count {} does not match template count {}",
+                effects.len(),
+                manifest.effects().len()
+            )));
+        }
+        let mut effect_bindings = Vec::with_capacity(effects.len());
+        for (index, effect) in effects.iter().enumerate() {
+            let expected = manifest.effects().get(index).ok_or_else(|| {
+                RuntimeEvalError::DialogueContentConstruction(
+                    "dialogue content effect site is absent".to_owned(),
+                )
+            })?;
+            if effect.site != expected.site() {
+                return Err(RuntimeEvalError::DialogueContentConstruction(
+                    "dialogue content effect sites are not canonical".to_owned(),
+                ));
+            }
+            let captures = effect
+                .captures
+                .iter()
+                .map(|capture| self.evaluate_expr(capture))
+                .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
+            let callback = RuntimeFunctionValue::capture_site(
+                Arc::clone(self.plan),
+                effect.function,
+                captures,
+            )?;
+            if callback.remaining_arity()? != 0 {
+                return Err(RuntimeEvalError::FunctionArgumentCount {
+                    expected: 0,
+                    found: callback.remaining_arity()?,
+                });
+            }
+            effect_bindings.push(crate::value::RuntimeDialogueContentEffectBinding::new(
+                effect.site,
+                callback,
+            ));
+        }
+        let artifact = self
+            .plan
+            .artifact()
+            .ok_or(RuntimeEvalError::DialogueContentUnboundArtifact)?;
+        crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_with_effects(
+            artifact,
+            manifest,
+            &evaluated,
+            &effect_bindings,
+        )
+        .map(crate::value::RuntimeDialogueContentValue::into_runtime_value)
+        .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))
     }
 
     fn evaluate_items(
@@ -2559,23 +2742,29 @@ impl<'a> PureEvaluator<'a> {
     }
 
     fn evaluate_function_expr(
-        &self,
+        &mut self,
         site: RuntimeFunctionSiteId,
+        captures: &[RuntimeExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        let declaration = self
+        let capture_count = self
             .plan
             .function_sites()
             .get(site)
-            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
-        let captures = declaration
-            .captures()
+            .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?
+            .capture_inputs()
+            .count();
+        if captures.len() != capture_count {
+            return Err(RuntimeEvalError::FunctionApply(
+                RuntimeFunctionApplyError::CaptureCountMismatch {
+                    site,
+                    expected: capture_count,
+                    actual: captures.len(),
+                },
+            ));
+        }
+        let captures = captures
             .iter()
-            .map(|&local| {
-                self.env
-                    .get(local)
-                    .cloned()
-                    .ok_or(RuntimeEvalError::UnboundStructuredCapture { site, local })
-            })
+            .map(|capture| self.evaluate_expr(capture))
             .collect::<Result<Vec<_>, _>>()?;
         Ok(RuntimeValue::Function(RuntimeFunctionValue::capture_site(
             Arc::clone(self.plan),
@@ -2657,22 +2846,46 @@ impl<'a> PureEvaluator<'a> {
             .function_sites()
             .get(site)
             .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
-        let capture_locals = declaration.captures().to_vec();
-        let params = declaration.params().to_vec();
-        let body = declaration.body().clone();
+        let body = match declaration.body() {
+            RuntimeFunctionSiteBody::Expression(body) => body,
+            RuntimeFunctionSiteBody::Executable(_) => {
+                return Err(RuntimeEvalError::UnsupportedPure {
+                    name: "structured.function".to_owned(),
+                    reason: "an executable runtime function requires reveal activation".to_owned(),
+                });
+            }
+        };
         self.env
-            .push_scope_with_capacity(capture_locals.len() + params.len());
-        for (&local, value) in capture_locals.iter().zip(closure.capture_values()) {
-            self.env.set_ref(local, value);
+            .push_scope_with_capacity(declaration.inputs().len());
+        let mut parameter_values = closure.bound_args().to_vec();
+        parameter_values.extend_from_slice(args);
+        for input in declaration.inputs() {
+            let value = match input.source() {
+                RuntimeFunctionInputSource::Capture { position } => closure
+                    .capture_values()
+                    .get(usize::try_from(position).map_err(|_| {
+                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
+                    })?)
+                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?,
+                RuntimeFunctionInputSource::Parameter { position } => parameter_values
+                    .get(usize::try_from(position).map_err(|_| {
+                        RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site }
+                    })?)
+                    .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site })?,
+            };
+            self.env.set_ref(input.input_local(), value);
+            let bindings = match match_runtime_pattern(self.plan, input.pattern(), value)? {
+                Some(bindings) => bindings,
+                None => {
+                    self.env.pop_scope();
+                    return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+                        value,
+                    )));
+                }
+            };
+            self.env.bind_all(bindings);
         }
-        let bound_count = closure.bound_args().len();
-        for (&local, value) in params[..bound_count].iter().zip(closure.bound_args()) {
-            self.env.set_ref(local, value);
-        }
-        for (&local, value) in params[bound_count..].iter().zip(args) {
-            self.env.set_ref(local, value);
-        }
-        let result = self.evaluate_expr(&body);
+        let result = self.evaluate_expr(body);
         self.env.pop_scope();
         result
     }
@@ -2695,15 +2908,19 @@ impl<'a> PureEvaluator<'a> {
         &mut self,
         args: &[RuntimeCallArgument],
     ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
-        let mut values = Vec::with_capacity(args.len());
+        let mut materialized = Vec::with_capacity(args.len());
         for argument in args {
             let value = self.evaluate_expr(argument.value())?;
-            match argument.mode() {
-                RuntimeCallArgumentMode::Value => values.push(value),
-                RuntimeCallArgumentMode::Spread => {
-                    values.extend(spread_runtime_values(value)?);
-                }
-            }
+            let values = match argument.mode() {
+                RuntimeCallArgumentMode::Value => vec![value],
+                RuntimeCallArgumentMode::Spread => spread_runtime_values(value)?,
+            };
+            materialized.push((argument.abi_position(), values));
+        }
+        materialized.sort_by_key(|(position, _)| *position);
+        let mut values = Vec::new();
+        for (_, materialized) in materialized {
+            values.extend(materialized);
         }
         Ok(values)
     }

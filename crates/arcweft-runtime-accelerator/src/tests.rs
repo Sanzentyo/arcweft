@@ -9,10 +9,11 @@ use arcweft_core::{
     pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
     plan::{
         FlowRuntimeId, RuntimeCallArgumentSeed, RuntimeExprSeed, RuntimeExprSeedKind,
-        RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeLocalDeclarationSeed,
-        RuntimeLocalSeedId, RuntimePlan, RuntimePlanBuilder, RuntimePlanSequenceKind,
-        RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimePureHelperOrigin,
-        RuntimePureHelperSeed,
+        RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
+        RuntimeFunctionInputSource, RuntimeLocalDeclarationSeed, RuntimeLocalSeedId,
+        RuntimePatternSeed, RuntimePatternSeedKind, RuntimePlan, RuntimePlanBuilder,
+        RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed,
+        RuntimePureHelperOrigin, RuntimePureHelperSeed,
     },
     pure::{PureFunctionRequest, RuntimePureHelperRef},
     step::{RuntimeStepInput, RuntimeStepOptions},
@@ -2123,8 +2124,17 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .expect("u32 flow helper is admitted");
     let mapping = builder
         .push_function_site_seed(
-            [locals[0].clone()],
-            [],
+            [RuntimeFunctionInputBindingSeed {
+                source: RuntimeFunctionInputSource::Parameter { position: 0 },
+                input_local: locals[0].clone(),
+                pattern: RuntimePatternSeed::new(
+                    u32_ty,
+                    RuntimePatternSeedKind::Bind {
+                        mutable: false,
+                        local: locals[0].clone(),
+                    },
+                ),
+            }],
             RuntimeExprSeed::new(
                 u32_ty,
                 RuntimeExprSeedKind::PureCall {
@@ -2133,10 +2143,12 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                         RuntimeCallArgumentSeed::new(
                             local_expr(u32_ty, locals[0].clone()),
                             RuntimeCallArgumentMode::Value,
+                            0,
                         ),
                         RuntimeCallArgumentSeed::new(
                             value_expr(u32_ty, RuntimeValue::u32(1)),
                             RuntimeCallArgumentMode::Value,
+                            1,
                         ),
                     ]),
                 },
@@ -2164,7 +2176,10 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
                             order: RuntimeStandardMapOperandOrder::MappingThenReceiver,
                             mapping: Box::new(RuntimeExprSeed::new(
                                 u32_mapping_ty,
-                                RuntimeExprSeedKind::Function(mapping),
+                                RuntimeExprSeedKind::Function {
+                                    site: mapping,
+                                    captures: Box::new([]),
+                                },
                             )),
                             source: Box::new(value_expr(
                                 u32_seq_ty,

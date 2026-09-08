@@ -1,56 +1,40 @@
 //! Candidate-wide equations, prepared source traces, and finalization.
 
+#[cfg(test)]
+mod tests;
+
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
-use super::super::{ArrayLength, GenericConstParameterId, GenericTypeParameterId, TypeKind};
+use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
 use super::RejectedConstraintSourceProjection;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{project_type, validate_selected_call_self};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
     ConstraintClosurePolicy, ConstraintDomain, ExpectedHint, InheritedSolutionInvariant,
-    InheritedSolutionInvariantKind, KeyedConstraintProjection, MaterializationImmediateFailure,
-    MaterializedSourceRequest, PreparedConstraintSourceProjection, PreparedSourceConstraint,
-    ProjectedExpectedHint, SolvedCandidate, SourceAlternativeHint, SourceError, SourcePhase,
-    SourceProbeResult, SourceProbeSelection, TypeConstraintAbort, TypeConstraintCandidateFailure,
-    TypeConstraintError, TypeConstraintFailure, TypeConstraintInvariant,
-    TypeConstraintProjectionClosure, TypeConstraintProjectionInvariant, TypeConstraintRejection,
-    TypeConstraintSolution, TypeConstraintSourceProtocolInvariant, bindings_equal,
-    relate_selected_call, seal_path, seal_type, validate_type,
+    InheritedSolutionInvariantKind, MaterializationImmediateFailure, MaterializedSourceRequest,
+    PreparedConstraintSourceProjection, PreparedSourceConstraint, ProjectedExpectedHint,
+    SolvedCandidate, SourceAlternativeHint, SourceError, SourcePhase, SourceProbeResult,
+    SourceProbeSelection, TypeConstraintAbort, TypeConstraintCandidateFailure, TypeConstraintError,
+    TypeConstraintFailure, TypeConstraintInvariant, TypeConstraintProjectionClosure,
+    TypeConstraintProjectionInvariant, TypeConstraintRejection, TypeConstraintSolution,
+    TypeConstraintSourceProtocolInvariant, bindings_equal, relate_selected_call, seal_path,
+    seal_type, validate_type,
 };
 
-/// One complete equation retained until candidate closure.  Source equations
-/// retain their selected schema row and lower-derived projection; ordinary
-/// equations leave those fields empty.
-pub(crate) struct PendingEquation<D: ConstraintDomain> {
+/// One equation retained until candidate closure. Source ordinals connect to
+/// the single source trace; selection and container evidence stay there.
+#[derive(Clone)]
+pub(crate) struct PendingEquation {
     pub(crate) ordinal: u32,
     pub(crate) direction: ConstraintAcceptance,
     pub(crate) pattern: TypeKind,
     pub(crate) actual: TypeKind,
     pub(crate) source_ordinal: Option<u32>,
-    pub(crate) alternative: Option<D::AlternativeIndex>,
-    pub(crate) evidence: Option<Arc<D::CheckedEvidence>>,
-    pub(crate) source_projection: Option<CheckedConstraintSourceProjection>,
     pub(crate) final_expected: Option<TypeKind>,
-}
-
-impl<D: ConstraintDomain> Clone for PendingEquation<D> {
-    fn clone(&self) -> Self {
-        Self {
-            ordinal: self.ordinal,
-            direction: self.direction,
-            pattern: self.pattern.clone(),
-            actual: self.actual.clone(),
-            source_ordinal: self.source_ordinal,
-            alternative: self.alternative,
-            evidence: self.evidence.as_ref().map(Arc::clone),
-            source_projection: self.source_projection.clone(),
-            final_expected: self.final_expected.clone(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -74,30 +58,15 @@ pub(crate) struct DeferredCycleWitness {
     pub(crate) parameters: BTreeSet<super::ConstraintGenericParameterId>,
 }
 
-/// Semantic evidence retained by one closed source row.  The value/evidence
-/// cells are private `Arc`s: path forks share them without adding `Clone`,
-/// `Copy`, or `Ord` requirements to the domain values.
-pub(crate) struct ConstraintProbe<D: ConstraintDomain> {
-    pub(crate) source: D::Source,
-    pub(crate) source_ordinal: u32,
-    pub(crate) branch: Arc<D::ProbeSemanticBranch>,
-    pub(crate) selection: StoredSourceSelection<D>,
-    pub(crate) prepared_source_projection: PreparedConstraintSourceProjection,
-    pub(crate) value_expected: Option<TypeKind>,
-    pub(crate) actual: TypeKind,
-    pub(crate) source_projection: CheckedConstraintSourceProjection,
-    pub(crate) final_expected: Option<TypeKind>,
-}
-
-/// Name the closed row explicitly for higher sealing without introducing a
-/// second representation.
-pub(crate) type ClosedConstraintProbe<D> = ConstraintProbe<D>;
+mod source;
+pub(crate) use source::ClosedConstraintProbe;
+use source::{ActiveConstraintProbe, ClosedSourceSelection, ConstraintProbe};
 
 pub(crate) enum StoredSourceSelection<D: ConstraintDomain> {
     Unchecked,
     Checked {
         alternative: D::AlternativeIndex,
-        evidence: Arc<D::CheckedEvidence>,
+        evidence: Arc<D::ObservedEvidence>,
     },
 }
 
@@ -112,26 +81,6 @@ impl<D: ConstraintDomain> Clone for StoredSourceSelection<D> {
                 alternative: *alternative,
                 evidence: Arc::clone(evidence),
             },
-        }
-    }
-}
-
-impl<D: ConstraintDomain> StoredSourceSelection<D> {
-    pub(crate) const fn is_unchecked(&self) -> bool {
-        matches!(self, Self::Unchecked)
-    }
-
-    pub(crate) const fn alternative(&self) -> Option<D::AlternativeIndex> {
-        match self {
-            Self::Unchecked => None,
-            Self::Checked { alternative, .. } => Some(*alternative),
-        }
-    }
-
-    pub(crate) fn evidence(&self) -> Option<&D::CheckedEvidence> {
-        match self {
-            Self::Unchecked => None,
-            Self::Checked { evidence, .. } => Some(evidence.as_ref()),
         }
     }
 }
@@ -157,72 +106,14 @@ impl<D: ConstraintDomain> PartialEq for StoredSourceSelection<D> {
 
 impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 
-impl<D: ConstraintDomain> Clone for ConstraintProbe<D> {
-    fn clone(&self) -> Self {
-        Self {
-            source: self.source,
-            source_ordinal: self.source_ordinal,
-            branch: Arc::clone(&self.branch),
-            selection: self.selection.clone(),
-            prepared_source_projection: self.prepared_source_projection,
-            value_expected: self.value_expected.clone(),
-            actual: self.actual.clone(),
-            source_projection: self.source_projection.clone(),
-            final_expected: self.final_expected.clone(),
-        }
-    }
-}
-
-impl<D: ConstraintDomain> PartialEq for ConstraintProbe<D> {
-    fn eq(&self, other: &Self) -> bool {
-        self.source == other.source
-            && self.source_ordinal == other.source_ordinal
-            && self.branch == other.branch
-            && self.selection == other.selection
-            && self.prepared_source_projection == other.prepared_source_projection
-            && self.value_expected == other.value_expected
-            && self.actual == other.actual
-            && self.source_projection == other.source_projection
-            && self.final_expected == other.final_expected
-    }
-}
-
-impl<D: ConstraintDomain> Eq for ConstraintProbe<D> {}
-
-impl<D: ConstraintDomain> ConstraintProbe<D> {
-    pub(crate) const fn source(&self) -> D::Source {
-        self.source
-    }
-
-    pub(crate) const fn actual(&self) -> &TypeKind {
-        &self.actual
-    }
-
-    pub(crate) const fn final_expected(&self) -> Option<&TypeKind> {
-        self.final_expected.as_ref()
-    }
-
-    pub(crate) const fn selection(&self) -> &StoredSourceSelection<D> {
-        &self.selection
-    }
-
-    pub(crate) const fn prepared_source_projection(&self) -> PreparedConstraintSourceProjection {
-        self.prepared_source_projection
-    }
-
-    pub(crate) const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
-        &self.source_projection
-    }
-}
-
 pub(crate) struct ConstraintPath<D: ConstraintDomain> {
-    pub(crate) bindings: BTreeMap<GenericTypeParameterId, TypeKind>,
-    pub(crate) const_bindings: BTreeMap<GenericConstParameterId, ArrayLength>,
+    pub(crate) bindings: BTreeMap<GenericTypeReference, TypeKind>,
+    pub(crate) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
-    pub(crate) equations: Vec<PendingEquation<D>>,
+    pub(crate) equations: Vec<PendingEquation>,
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
-    pub(crate) probe_trace: Vec<ConstraintProbe<D>>,
+    pub(super) probe_trace: Vec<ConstraintProbe<D>>,
 }
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
@@ -668,6 +559,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() || self.closed {
             return;
         }
+        let pattern = match context.open_template_type(pattern) {
+            Ok(pattern) => pattern,
+            Err(error) => {
+                self.first_failure = Some(error.into());
+                return;
+            }
+        };
         let ordinal = match self.next_equation.checked_add(1) {
             Some(next) => {
                 self.next_equation = next;
@@ -689,12 +587,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 pattern: pattern.clone(),
                 actual: actual.clone(),
                 source_ordinal: None,
-                alternative: None,
-                evidence: None,
-                source_projection: None,
                 final_expected: None,
             });
-            match relate_selected_call(pattern, actual, path, context, acceptance) {
+            match relate_selected_call(&pattern, actual, path, context, acceptance) {
                 Ok(paths) => advanced.extend(paths),
                 Err(error) => {
                     self.first_failure = Some(error.into());
@@ -710,16 +605,24 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
-    pub(crate) fn request_projection(
+    pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
         if self.first_failure.is_none() && !self.closed {
+            let value = match context.open_template_type(value) {
+                Ok(value) => value,
+                Err(error) => {
+                    self.first_failure = Some(projection_error(error));
+                    return;
+                }
+            };
             self.projections.push(ProjectionRequest {
                 key,
-                value: value.clone(),
+                value,
                 closure,
             });
         }
@@ -899,8 +802,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         };
         let mut hints = Vec::new();
         for alternative in operation.prepared.alternatives() {
+            let expected = context.open_template_type(alternative.value_expected())?;
             let projected = project_type(
-                alternative.value_expected(),
+                &expected,
                 &path.bindings,
                 &path.const_bindings,
                 ConstraintClosurePolicy::Hint,
@@ -944,7 +848,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     .path
                     .probe_trace
                     .iter()
-                    .any(|probe| probe.source == ticket.source)
+                    .any(|probe| probe.source() == ticket.source)
                 {
                     return Err(protocol_error(
                         TypeConstraintSourceProtocolInvariant::Outcome,
@@ -968,7 +872,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                             TypeConstraintSourceProtocolInvariant::UnknownAlternative,
                         ));
                     };
-                    match validate_checked_selection(
+                    match validate_source_selection(
                         &ticket.prepared,
                         alternative,
                         evidence,
@@ -996,6 +900,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         )
                     }
                     Some((alternative, evidence, value_expected, source_projection)) => {
+                        let value_expected = context.open_template_type(&value_expected)?;
                         let pattern = source_projection.compose_expected(&value_expected);
                         (
                             Some(pattern),
@@ -1016,19 +921,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         pattern: expected.clone(),
                         actual: actual.clone(),
                         source_ordinal: Some(operation.source_ordinal),
-                        alternative: match &stored_selection {
-                            StoredSourceSelection::Checked { alternative, .. } => {
-                                Some(*alternative)
-                            }
-                            StoredSourceSelection::Unchecked => None,
-                        },
-                        evidence: match &stored_selection {
-                            StoredSourceSelection::Checked { evidence, .. } => {
-                                Some(Arc::clone(evidence))
-                            }
-                            StoredSourceSelection::Unchecked => None,
-                        },
-                        source_projection: Some(source_projection.clone()),
                         final_expected: None,
                     });
                 }
@@ -1046,7 +938,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         actual.clone(),
                     )
                 });
-                let probe = ConstraintProbe {
+                let probe = ConstraintProbe::Active(ActiveConstraintProbe {
                     source: ticket.source,
                     source_ordinal: operation.source_ordinal,
                     branch: Arc::new(branch),
@@ -1054,9 +946,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     prepared_source_projection: ticket.prepared.source_projection(),
                     value_expected,
                     actual: actual.clone(),
-                    source_projection,
-                    final_expected: None,
-                };
+                });
                 ticket.path.probe_trace.push(probe);
 
                 let related = if let Some(expected) = pattern.as_ref() {
@@ -1352,12 +1242,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
         let mut groups: Vec<Vec<ConstraintPath<D>>> = Vec::new();
         for path in finalized {
-            let group_index = groups.iter().position(|group| {
-                group
-                    .first()
-                    .map(|first| bindings_equal(first, &path, context).unwrap_or(false))
-                    .unwrap_or(false)
-            });
+            let mut group_index = None;
+            for (index, group) in groups.iter().enumerate() {
+                if let Some(first) = group.first()
+                    && bindings_equal(first, &path, context)?
+                {
+                    group_index = Some(index);
+                    break;
+                }
+            }
             if let Some(index) = group_index {
                 groups[index].push(path);
             } else {
@@ -1519,6 +1412,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
         let (path, sealed_branch) = candidates.pop().expect("candidate length checked");
         context.check_cancelled()?;
+        context.validate_type_and_const_completion(&path.bindings, &path.const_bindings)?;
         let projections = self.finish_projections(&path, context)?;
         let effect_bindings = path
             .effects
@@ -1532,11 +1426,20 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             effect_bindings,
             context,
         )?);
+        let projections = projections
+            .into_iter()
+            .map(|(key, value)| solution.reify_projection(key, &value, context))
+            .collect::<Result<Box<[_]>, _>>()?;
+        let closed_sources = path
+            .probe_trace
+            .into_iter()
+            .map(ConstraintProbe::into_closed)
+            .collect::<Result<Box<[_]>, _>>()?;
         Ok(SolvedCandidate {
             solution,
             sealed_branch,
             projections,
-            closed_sources: path.probe_trace.into_boxed_slice(),
+            closed_sources,
         })
     }
 
@@ -1544,18 +1447,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         &mut self,
         path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Box<[KeyedConstraintProjection<D::Projection>]>, TypeConstraintFailure<D>>
+    ) -> Result<Vec<(D::Projection, TypeKind)>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
-        let mut requests = core::mem::take(&mut self.projections);
-        requests.extend(path.probe_trace.iter().filter_map(|probe| {
-            D::projection_for_source(&probe.source).map(|key| ProjectionRequest {
-                key,
-                value: probe.actual.clone(),
-                closure: TypeConstraintProjectionClosure::Closed,
-            })
-        }));
+        let requests = core::mem::take(&mut self.projections);
         let effect_substitution = path
             .effects
             .substitution()
@@ -1587,13 +1483,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 )
             })?;
             validate_selected_call_self(&value, context).map_err(projection_error::<D>)?;
-            projections.push(KeyedConstraintProjection::new(request.key, value));
+            projections.push((request.key, value));
         }
-        projections.sort_by(|left, right| left.key().cmp(right.key()));
-        if projections
-            .windows(2)
-            .any(|pair| pair[0].key() == pair[1].key())
-        {
+        projections.sort_by(|left, right| left.0.cmp(&right.0));
+        if projections.windows(2).any(|pair| pair[0].0 == pair[1].0) {
             return Err(
                 TypeConstraintError::Invariant(TypeConstraintInvariant::Projection(
                     TypeConstraintProjectionInvariant::DuplicateKey,
@@ -1601,7 +1494,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 .into(),
             );
         }
-        Ok(projections.into_boxed_slice())
+        Ok(projections)
     }
 
     fn seed<A>(
@@ -1661,11 +1554,11 @@ fn materialization_immediate<D: ConstraintDomain>(
 
 fn projection_error<D: ConstraintDomain>(error: TypeConstraintError) -> TypeConstraintFailure<D> {
     match error {
-        TypeConstraintError::Rejected(_) => {
-            TypeConstraintFailure::Invariant(super::TypeConstraintFailureInvariant::Constraint(
-                TypeConstraintInvariant::Projection(TypeConstraintProjectionInvariant::Mismatch),
-            ))
-        }
+        TypeConstraintError::Rejected(rejection) => TypeConstraintFailure::Invariant(
+            super::TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
+                TypeConstraintProjectionInvariant::Mismatch(rejection),
+            )),
+        ),
         TypeConstraintError::Abort(error) => TypeConstraintFailure::Abort(error),
         TypeConstraintError::Invariant(error) => TypeConstraintFailure::Invariant(
             super::TypeConstraintFailureInvariant::Constraint(error),
@@ -1673,15 +1566,15 @@ fn projection_error<D: ConstraintDomain>(error: TypeConstraintError) -> TypeCons
     }
 }
 
-fn validate_checked_selection<D: ConstraintDomain>(
+fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,
     selected: D::AlternativeIndex,
-    evidence: D::CheckedEvidence,
+    evidence: D::ObservedEvidence,
     actual: &TypeKind,
 ) -> Result<
     Option<(
         D::AlternativeIndex,
-        Arc<D::CheckedEvidence>,
+        Arc<D::ObservedEvidence>,
         TypeKind,
         CheckedConstraintSourceProjection,
     )>,
@@ -1749,7 +1642,7 @@ fn ensure_unique_sources<D: ConstraintDomain>(
     if path
         .probe_trace
         .iter()
-        .any(|probe| !sources.insert(probe.source))
+        .any(|probe| !sources.insert(probe.source()))
     {
         Err(protocol_error(
             TypeConstraintSourceProtocolInvariant::Ticket,
@@ -1765,42 +1658,29 @@ fn closed_materialization_requests<D: ConstraintDomain>(
     path.probe_trace
         .iter()
         .map(|probe| {
-            let row = match (
-                &probe.selection,
-                probe.final_expected.as_ref(),
-                probe.value_expected.as_ref(),
-            ) {
-                (
-                    StoredSourceSelection::Checked {
-                        alternative,
-                        evidence,
-                    },
-                    Some(expected),
-                    Some(_),
-                ) => ClosedMaterializationRequestRow::Checked {
+            let probe = probe.closed()?;
+            let row = match probe.selection() {
+                ClosedSourceSelection::Checked {
+                    alternative,
+                    evidence,
+                    expected,
+                } => ClosedMaterializationRequestRow::Checked {
                     alternative: *alternative,
                     evidence: Arc::clone(evidence),
-                    source_projection: probe.source_projection.clone(),
-                    actual: probe.actual.clone(),
+                    source_projection: probe.source_projection().clone(),
+                    actual: probe.actual().clone(),
                     expected: expected.clone(),
-                    canonical_branch: Arc::clone(&probe.branch),
+                    canonical_branch: Arc::clone(probe.branch()),
                 },
-                (StoredSourceSelection::Unchecked, None, None) => {
-                    ClosedMaterializationRequestRow::Unchecked {
-                        source_projection: probe.source_projection.clone(),
-                        actual: probe.actual.clone(),
-                        canonical_branch: Arc::clone(&probe.branch),
-                    }
-                }
-                _ => {
-                    return Err(protocol_error(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
+                ClosedSourceSelection::Unchecked => ClosedMaterializationRequestRow::Unchecked {
+                    source_projection: probe.source_projection().clone(),
+                    actual: probe.actual().clone(),
+                    canonical_branch: Arc::clone(probe.branch()),
+                },
             };
             Ok(ClosedMaterializationRequest {
-                source: probe.source,
-                source_ordinal: PreparedSourceOrdinal(probe.source_ordinal),
+                source: probe.source(),
+                source_ordinal: PreparedSourceOrdinal(probe.ordinal()),
                 row,
             })
         })
@@ -1857,78 +1737,27 @@ where
         .effects
         .substitution()
         .map_err(super::map_effect_environment_error)?;
-    for probe in &mut path.probe_trace {
-        let actual = project_type(
-            &probe.actual,
+    let probes = core::mem::take(&mut path.probe_trace);
+    let mut closed = Vec::with_capacity(probes.len());
+    for probe in probes {
+        let probe = probe.close(
             &path.bindings,
             &path.const_bindings,
-            ConstraintClosurePolicy::SolutionCompletion,
+            &effect_substitution,
             context,
-        )?
-        .value
-        .substitute_effect_rows(&effect_substitution)
-        .map_err(|_| {
-            super::effect_invariant(
-                super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                None,
-            )
-        })?;
-        probe.actual = actual.clone();
-        if let StoredSourceSelection::Checked { evidence, .. } = &mut probe.selection {
-            let projected =
-                D::project_checked_evidence(evidence.as_ref(), &actual).ok_or_else(|| {
-                    protocol_error(TypeConstraintSourceProtocolInvariant::InvalidEvidence)
-                })?;
-            *evidence = Arc::new(projected);
-        }
-
-        let Some(source_projection) =
-            CheckedConstraintSourceProjection::derive(probe.prepared_source_projection, &actual)
-        else {
-            return Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            ));
-        };
-        probe.source_projection = source_projection.clone();
-
-        let Some(value_expected) = probe.value_expected.as_ref() else {
-            for equation in &mut path.equations {
-                if equation.source_ordinal == Some(probe.source_ordinal) {
-                    equation.actual = actual.clone();
+        )?;
+        for equation in &mut path.equations {
+            if equation.source_ordinal == Some(probe.ordinal()) {
+                equation.actual = probe.actual().clone();
+                if let Some(expected) = probe.final_expected() {
+                    equation.final_expected = Some(expected.clone());
+                    equation.pattern = expected.clone();
                 }
             }
-            continue;
-        };
-        let value_expected = project_type(
-            value_expected,
-            &path.bindings,
-            &path.const_bindings,
-            ConstraintClosurePolicy::SolutionCompletion,
-            context,
-        )?
-        .value
-        .substitute_effect_rows(&effect_substitution)
-        .map_err(|_| {
-            super::effect_invariant(
-                super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                None,
-            )
-        })?;
-        probe.value_expected = Some(value_expected.clone());
-        probe.final_expected = Some(source_projection.compose_expected(&value_expected));
-        for equation in &mut path.equations {
-            if equation.source_ordinal == Some(probe.source_ordinal) {
-                equation.actual = actual.clone();
-                equation.source_projection = Some(source_projection.clone());
-                equation.final_expected = probe.final_expected.clone();
-                equation.pattern = probe
-                    .final_expected
-                    .as_ref()
-                    .expect("just assigned final expected")
-                    .clone();
-            }
         }
+        closed.push(ConstraintProbe::Closed(probe));
     }
+    path.probe_trace = closed;
     Ok(())
 }
 
@@ -1941,12 +1770,12 @@ fn path_correlation_cmp<D: ConstraintDomain>(
         .then_with(|| {
             left.probe_trace
                 .iter()
-                .map(|probe| (probe.source_ordinal, probe.source))
+                .map(|probe| (probe.ordinal(), probe.source()))
                 .cmp(
                     right
                         .probe_trace
                         .iter()
-                        .map(|probe| (probe.source_ordinal, probe.source)),
+                        .map(|probe| (probe.ordinal(), probe.source())),
                 )
         })
         .then_with(|| left.probe_trace.len().cmp(&right.probe_trace.len()))

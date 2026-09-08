@@ -1,13 +1,12 @@
 //! Candidate selection and final callable semantic projections.
 
 use super::super::{
-    AcceptedCandidateRank, CallableAuthorityRank, CallableGroupIndex, CallableInstantiation,
-    CandidateSelection, CheckedCallArgumentSlotSource, CheckedCallableCatalog,
-    CheckedProjectNominal, EffectRow, EffectSet, FinalSemanticAnalysisError,
-    GenericParameterOwnerId, GenericTypeParameterId, HirCallArgument, HirCallValue,
-    MappedCallArgumentSlot, Ordering, PhysicalArgumentEvaluationKind, PreparedResolvedCallable,
-    ProjectNominalDeclaration, ProjectNominalType, SpreadArgumentPolicy, TypeKind,
-    TypeParameterSubstitutions,
+    AcceptedCandidateRank, Analyzer, CallableAuthorityRank, CallableGroupIndex, CandidateSelection,
+    CheckedCallArgumentSlotSource, CheckedCallableCatalog, CheckedProjectNominal, EffectRow,
+    EffectSet, FinalSemanticAnalysisError, GenericParameterOwnerId, GenericTypeParameterId,
+    HirCallArgument, HirCallValue, MappedCallArgumentSlot, Ordering,
+    PhysicalArgumentEvaluationKind, PreparedResolvedCallable, ProjectNominalDeclaration,
+    ProjectNominalType, SpreadArgumentPolicy, TypeKind, TypeParameterSubstitutions,
 };
 use super::PreparedCandidateOutcome;
 use crate::callable::ResolvedCallable;
@@ -40,7 +39,7 @@ pub(super) fn physical_evaluation_kind(
 pub(in super::super) fn source_callable_schema_type(
     schema: &crate::callable::CallableSignatureSchema,
 ) -> Option<TypeKind> {
-    let mut result = schema.result().clone();
+    let mut result = schema.value_type()?.clone();
     for group in schema.groups().iter().rev() {
         let parameters = group
             .parameters()
@@ -56,46 +55,41 @@ pub(in super::super) fn source_callable_schema_type(
     Some(result)
 }
 
-pub(super) fn provisional_call_effects(
-    candidate: &PreparedResolvedCallable,
-    current_group: CallableGroupIndex,
-) -> Result<EffectRow, FinalSemanticAnalysisError> {
-    let next = CallableGroupIndex::try_from_usize(
-        current_group
-            .get()
-            .checked_add(1)
-            .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?,
-    )
-    .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-    if matches!(
-        candidate.instantiation(),
-        CallableInstantiation::Extension { group, .. } if *group == next
-    ) {
-        return Ok(candidate
-            .schema()
-            .effects()
-            .fixed_row()
-            .cloned()
-            .unwrap_or_else(|| EffectRow::closed(EffectSet::new())));
+impl Analyzer<'_, '_, '_> {
+    pub(super) fn source_call_effects(
+        &self,
+        candidate: &PreparedResolvedCallable,
+        current_group: CallableGroupIndex,
+    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
+        if candidate.next_group_for(current_group).is_some() {
+            return Ok(EffectRow::closed(EffectSet::new()));
+        }
+        self.source_callable_effects(candidate)
     }
-    if candidate.schema().group(next).is_some() {
-        return Ok(EffectRow::closed(EffectSet::new()));
-    }
-    Ok(candidate
-        .schema()
-        .effects()
-        .fixed_row()
-        .cloned()
-        .unwrap_or_else(|| EffectRow::closed(EffectSet::new())))
-}
 
-pub(super) fn provisional_callable_effects(candidate: &PreparedResolvedCallable) -> EffectRow {
-    candidate
-        .schema()
-        .effects()
-        .fixed_row()
-        .cloned()
-        .unwrap_or_else(|| EffectRow::closed(EffectSet::new()))
+    pub(super) fn source_callable_effects(
+        &self,
+        candidate: &PreparedResolvedCallable,
+    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
+        if let Some(row) = candidate.schema().effects().fixed_row() {
+            return Ok(row.clone());
+        }
+        let owner = candidate
+            .checked()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let callable = staged
+            .builder
+            .pending_by_id(owner)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        Ok(callable
+            .known_exposed_row()
+            .cloned()
+            .unwrap_or_else(EffectRow::unknown))
+    }
 }
 
 pub(in super::super) fn final_callable_effects(
@@ -210,7 +204,7 @@ pub(in super::super) fn checked_project_nominal(
     Ok(CheckedProjectNominal::new(
         declaration.id().clone(),
         declaration.owner(),
-        ty.semantic_identity_digest(),
+        ty.semantic_identity_digest()?,
         nominal.arguments().to_vec(),
     ))
 }
@@ -230,7 +224,7 @@ pub(in super::super) fn nominal_substitutions(
         .iter()
         .zip(nominal.arguments())
     {
-        let parameter = TypeKind::GenericParam(GenericTypeParameterId::new(
+        let parameter = TypeKind::generic_parameter(GenericTypeParameterId::new(
             GenericParameterOwnerId::Nominal(declaration.id().clone()),
             parameter.ordinal(),
         ));

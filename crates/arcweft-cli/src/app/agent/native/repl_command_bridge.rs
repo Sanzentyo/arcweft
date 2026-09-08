@@ -10,7 +10,7 @@ use super::repl_command_format::{
 };
 use super::{
     AgentControllerRunConfig, AgentReplOptions, AgentRunnerConfig, CollectingDebugSink,
-    NativeAdapterRegistrar, NoopRagService, PathBuf, agent_cli_session_id,
+    DisabledRagService, NativeAdapterRegistrar, PathBuf, agent_cli_session_id,
 };
 #[cfg(feature = "native-player")]
 use arcweft_agent_repl::command::RuntimeTaskReplCommandHost;
@@ -72,7 +72,7 @@ fn agent_repl_eval_typed_cell(
     };
 
     let mut debug = CollectingDebugSink::default();
-    let mut rag = NoopRagService;
+    let mut rag = DisabledRagService;
     let runtime = ReplEvaluationRuntime::new(
         command_agent_session,
         &mut debug,

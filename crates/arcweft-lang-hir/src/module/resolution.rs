@@ -4,7 +4,7 @@ use arcweft_lang_syntax::attachment::SyntaxNodeId;
 use arcweft_source::SourceSpan;
 
 use crate::arena::{ArenaIter, ArenaSnapshot, HirArenaError};
-use crate::expr::{HirCallExpr, HirExpr, HirExprKind};
+use crate::expr::{HirCallInvocation, HirExpr, HirExprKind};
 use crate::identity::{
     CaptureId, ExprId, HirIdKind, HirTypedId, IdResolveError, ItemId, LocalId, PatternId, ScopeId,
     StmtId, TypeId,
@@ -112,7 +112,7 @@ impl HirModule {
     /// lowering, not the carrier itself.
     pub fn resolve_call_value_receiver(
         &self,
-        call: &HirCallExpr,
+        call: &HirCallInvocation,
     ) -> Result<Option<ExprId>, IdResolveError> {
         let Some(callee) = call.callee().value_expression() else {
             return Ok(None);

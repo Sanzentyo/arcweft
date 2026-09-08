@@ -1,783 +1,221 @@
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+#[cfg(test)]
+mod tests {
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_document;
-use crate::expressions::{
-    ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueApplicationForm,
-    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxExpressionSlot,
-    SyntaxPostfixBracketProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
-};
-use crate::grammar::build::UnattachedGrammarEntry;
-use crate::grammar::kinds::SyntaxKind;
-use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefPart};
-use crate::text::{
-    MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS,
-    MAX_RICH_TEXT_TAG_BODY_BYTES,
-};
+    use crate::expressions::{
+        ExpressionProjection, SyntaxAttachedContentApplicationForm,
+        SyntaxDialogueActionArgumentProjection, SyntaxDialogueContentProjection,
+        SyntaxDialogueNodeProjection, SyntaxDialoguePointActionPayload, SyntaxExpressionSlot,
+    };
+    use crate::grammar::build::UnattachedGrammarEntry;
+    use crate::grammar::kinds::SyntaxKind;
+    use crate::parser::parse_document;
 
-fn document(source: &str) -> SourceDocument {
-    SourceDocument::try_new(
-        SourceDocumentId::try_new("memory:dialogue-expression").unwrap(),
-        SourceName::Memory,
-        source,
-    )
-    .unwrap()
-}
+    fn document(source: &str) -> SourceDocument {
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("memory:dialogue-expression-final").unwrap(),
+            SourceName::Memory,
+            source,
+        )
+        .unwrap()
+    }
 
-#[test]
-fn thread_flow_colon_dialogue_forms_are_typed_and_lossless() {
-    for source in [
-        "flow opening {\n    alice: Hello.[p]\n}\n",
-        "flow opening {\n    alice:\n        Hello.[p]\n}\n",
-    ] {
-        let built =
-            parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-        let applications = built
+    fn applications<'a>(
+        built: &'a crate::grammar::build::GrammarBuild,
+    ) -> Vec<&'a crate::expressions::SyntaxAttachedContentApplicationProjection> {
+        built
             .index()
             .entries()
             .iter()
             .filter_map(UnattachedGrammarEntry::expression_projection)
             .filter_map(|projection| match projection.projection() {
-                ExpressionProjection::DialogueContentApplication(application) => Some(application),
+                ExpressionProjection::AttachedContentApplication(application) => Some(application),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn ordinary_dialogue_forms_keep_typed_body_applications() {
+        let bracket_source = "flow opening {\n    let handles = alice()[本文です。[p]]\n}\n";
+        let built = parse_document(
+            &document(bracket_source),
+            crate::parser::ParseOptions::default(),
+        )
+        .expect("ordinary bracket dialogue parses");
+        let bracket = applications(&built);
+        assert_eq!(bracket.len(), 1);
+        assert!(matches!(
+            bracket[0].form(),
+            SyntaxAttachedContentApplicationForm::Bracket { .. }
+        ));
+        assert_eq!(built.green().to_string(), bracket_source);
+
+        let colon_source = "flow opening {\n    alice: inline\n}\n";
+        let built = parse_document(
+            &document(colon_source),
+            crate::parser::ParseOptions::default(),
+        )
+        .expect("ordinary colon dialogue parses");
+        let colon = applications(&built);
+        assert_eq!(colon.len(), 1);
+        assert!(matches!(
+            colon[0].form(),
+            SyntaxAttachedContentApplicationForm::Colon
+        ));
+        assert_eq!(built.green().to_string(), colon_source);
+    }
+
+    #[test]
+    fn retained_ruby_is_a_typed_dialogue_node_surface() {
+        let source = "flow opening {\n    alice[｜漢字《かんじ》|[base](reading)]\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("ruby surface parses");
+        let application = applications(&built)
+            .into_iter()
+            .find(|application| {
+                matches!(
+                    application.content(),
+                    SyntaxDialogueContentProjection::Present(content)
+                        if content.nodes().iter().any(|node| matches!(node, SyntaxDialogueNodeProjection::Ruby { .. }))
+                )
+            })
+            .expect("ruby node remains in typed content");
+        assert!(matches!(
+            application.content(),
+            SyntaxDialogueContentProjection::Present(_)
+        ));
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
+    fn raw_call_body_is_opaque_in_the_syntax_projection() {
+        let source = "flow opening {\n    alice[#raw()[a[b][p]]]\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("raw call parses");
+        let application = applications(&built)
+            .into_iter()
+            .find(|application| {
+                matches!(
+                    application.content(),
+                    SyntaxDialogueContentProjection::RawLiteral(literal)
+                        if literal.value() == "a[b][p]"
+                )
+            })
+            .expect("raw call owns opaque literal body");
+        assert!(matches!(
+            application.content(),
+            SyntaxDialogueContentProjection::RawLiteral(_)
+        ));
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
+    fn raw_call_spacing_keeps_the_typed_body_opaque() {
+        let source = "flow opening {\n    alice[#raw ()[a[b][p]]]\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("spaced raw call parses");
+        let application = applications(&built)
+            .into_iter()
+            .find(|application| {
+                matches!(
+                    application.content(),
+                    SyntaxDialogueContentProjection::RawLiteral(literal)
+                        if literal.value() == "a[b][p]"
+                )
+            })
+            .expect("spaced raw call owns opaque literal body");
+        assert!(matches!(
+            application.content(),
+            SyntaxDialogueContentProjection::RawLiteral(_)
+        ));
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
+    fn non_raw_content_calls_still_parse_nested_dialogue_content() {
+        let source = "flow opening {\n    alice[#obj()[#[value]]]\n}\n";
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("ordinary content call parses");
+        let application = applications(&built)
+            .into_iter()
+            .find(|application| {
+                matches!(
+                    application.content(),
+                    SyntaxDialogueContentProjection::Present(content)
+                        if content.nodes().iter().any(|node| {
+                            matches!(node, SyntaxDialogueNodeProjection::Interpolation(_))
+                        })
+                )
+            })
+            .expect("ordinary content call reparses its nested body");
+        assert!(matches!(
+            application.content(),
+            SyntaxDialogueContentProjection::Present(_)
+        ));
+        assert_eq!(built.green().to_string(), source);
+    }
+
+    #[test]
+    fn point_actions_keep_one_typed_call_payload_and_timed_cue_duration() {
+        let source = concat!(
+            "flow opening {\n",
+            "    let line = alice[本文。[call log.info(\"content\")] [at 120ms call=log.info(\"delay\")]]\n",
+            "}\n",
+        );
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("point-action payloads parse");
+        let application = applications(&built)
+            .into_iter()
+            .next()
+            .expect("one dialogue application");
+        let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+            panic!("point actions retain dialogue content");
+        };
+        let actions = content
+            .nodes()
+            .iter()
+            .filter_map(|node| match node {
+                SyntaxDialogueNodeProjection::PointAction(action) => Some(action),
                 _ => None,
             })
             .collect::<Vec<_>>();
-
-        assert_eq!(applications.len(), 1, "{source}: {applications:?}");
-        assert_eq!(
-            applications[0].form(),
-            &SyntaxDialogueApplicationForm::Colon
-        );
+        let [call, timed] = actions.as_slice() else {
+            panic!("call and timed cue remain two point actions");
+        };
         assert!(matches!(
-            applications[0].content(),
-            SyntaxDialogueContentProjection::Present(_)
+            call.payload(),
+            SyntaxDialoguePointActionPayload::Call(SyntaxExpressionSlot::Authored)
         ));
-        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-        assert!(
-            !built
+        assert!(call.arguments().is_empty());
+        assert!(matches!(
+            timed.payload(),
+            SyntaxDialoguePointActionPayload::TimedCue(SyntaxExpressionSlot::Authored)
+        ));
+        assert!(matches!(
+            timed.arguments(),
+            [SyntaxDialogueActionArgumentProjection::Positional { value }]
+                if value.decoded() == "120ms"
+        ));
+        assert_eq!(
+            built
                 .index()
                 .entries()
                 .iter()
-                .any(|entry| entry.kind() == SyntaxKind::ErrorExpression)
-        );
-        assert_eq!(built.green().to_string(), source);
-    }
-}
-
-#[test]
-fn flow_postfix_brackets_select_distinct_typed_lossless_owners() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let handles = alice()[本文です。[p]]\n",
-        "    let direct = alice[おはよう。[p]]\n",
-        "    let selected = rows[0]\n",
-        "    let named = rows[index]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let kinds = built
-        .index()
-        .entries()
-        .iter()
-        .map(UnattachedGrammarEntry::kind)
-        .collect::<Vec<_>>();
-
-    for expected in [
-        SyntaxKind::FlowBody,
-        SyntaxKind::Block,
-        SyntaxKind::LetStatement,
-        SyntaxKind::PostfixBracketExpression,
-        SyntaxKind::DialogueContentApplicationExpression,
-        SyntaxKind::CallExpression,
-        SyntaxKind::PostfixBracketPayload,
-    ] {
-        assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
-    }
-    assert_eq!(
-        kinds
-            .iter()
-            .filter(|kind| **kind == SyntaxKind::PostfixBracketExpression)
-            .count(),
-        2
-    );
-    assert_eq!(
-        kinds
-            .iter()
-            .filter(|kind| **kind == SyntaxKind::DialogueContentApplicationExpression)
-            .count(),
-        2
-    );
-    assert!(!kinds.contains(&SyntaxKind::ErrorExpression));
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn dot_selector_and_empty_close_are_typed_inference_owned_by_dialogue_grammar() {
-    let source = "flow opening {\n    let line = alice[[.shake]effect[/][p]]\n}\n";
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("dialogue application retains its typed projection");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("selected dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("dialogue application retains content");
-    };
-
-    assert!(matches!(
-        content.nodes().first(),
-        Some(SyntaxDialogueNodeProjection::InferredStartTag { tag: 0 })
-    ));
-    assert!(matches!(
-        content.nodes().get(2),
-        Some(SyntaxDialogueNodeProjection::InferredEndTag(end))
-            if end.is_inferred() && end.issue().is_none()
-    ));
-    assert_eq!(content.tags()[0].paired_end_node(), Some(2));
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-}
-
-#[test]
-fn unclosed_dialogue_content_recovers_before_the_next_item() {
-    let source = concat!(
-        "flow broken {\n",
-        "    let handles = alice()[unfinished\n",
-        "}\n",
-        "proof next() = true\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let kinds = built
-        .index()
-        .entries()
-        .iter()
-        .map(UnattachedGrammarEntry::kind)
-        .collect::<Vec<_>>();
-
-    assert!(kinds.contains(&SyntaxKind::PostfixBracketExpression));
-    assert!(kinds.contains(&SyntaxKind::ProofItem));
-    assert!(built.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == "syntax.expression.missing_postfix_bracket_close"
-    }));
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn unterminated_rich_text_quote_recovers_before_following_tags() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文。",
-        "[effect .wave note=\"unfinished][.sparkle]next[/]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let entries = built.index().entries();
-    let rich_text_kinds = entries
-        .iter()
-        .filter(|entry| {
-            matches!(
-                entry.kind(),
-                SyntaxKind::RichTextTag
-                    | SyntaxKind::RichTextEndTag
-                    | SyntaxKind::RichTextInvalidArgument
-                    | SyntaxKind::RichTextInvalidArgumentIssue
-            )
-        })
-        .map(UnattachedGrammarEntry::kind)
-        .collect::<Vec<_>>();
-
-    assert_eq!(
-        rich_text_kinds,
-        [
-            SyntaxKind::RichTextTag,
-            SyntaxKind::RichTextInvalidArgument,
-            SyntaxKind::RichTextInvalidArgumentIssue,
-            SyntaxKind::RichTextTag,
-            SyntaxKind::RichTextEndTag,
-        ]
-    );
-    let diagnostic = built
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.code() == "syntax.rich_text.attribute.unterminated_quote")
-        .expect("unterminated RichText quote diagnostic");
-    assert_eq!(&source[diagnostic.range().as_range()], r#""unfinished]"#);
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn dedicated_rich_text_payloads_share_unterminated_quote_recovery() {
-    for payload in [
-        r#"[fx call(note="unfinished]"#,
-        r#"[call target(note="unfinished]"#,
-        r#"[! target(note="unfinished]"#,
-        r#"[if predicate("unfinished]"#,
-    ] {
-        let source =
-            format!("flow opening {{\n    let line = alice[本文。{payload}[.sparkle]]\n}}\n");
-        let built =
-            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-        let diagnostics = built
-            .diagnostics()
-            .iter()
-            .filter(|diagnostic| {
-                diagnostic.code() == "syntax.rich_text.attribute.unterminated_quote"
-            })
-            .collect::<Vec<_>>();
-        assert_eq!(diagnostics.len(), 1, "{payload}: {:?}", built.diagnostics());
-        assert!(
-            source[diagnostics[0].range().as_range()].ends_with(']'),
-            "{payload}"
+                .filter(|entry| entry.kind() == SyntaxKind::DialogueActionTimedCuePayload)
+                .count(),
+            1
         );
         assert_eq!(
             built
                 .index()
                 .entries()
                 .iter()
-                .filter(|entry| entry.kind() == SyntaxKind::RichTextTag)
+                .filter(|entry| entry.kind() == SyntaxKind::DialogueActionDialogueCallPayload)
                 .count(),
-            2,
-            "{payload}"
+            2
         );
+        assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
         assert_eq!(built.green().to_string(), source);
     }
-}
-
-#[test]
-fn private_rich_text_grammar_stops_at_the_content_tag_limit() {
-    let tags = "[p]".repeat(MAX_RICH_TEXT_CONTENT_TAGS + 3);
-    let source = format!("flow opening {{\n    let line = alice[本文。{tags}]\n}}\n");
-    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextTag)
-            .count(),
-        MAX_RICH_TEXT_CONTENT_TAGS
-    );
-    assert_eq!(
-        built
-            .diagnostics()
-            .iter()
-            .filter(|diagnostic| diagnostic.code() == "syntax.rich_text.content.tag_limit")
-            .count(),
-        1
-    );
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn private_rich_text_grammar_reports_the_content_argument_limit_once() {
-    let one_tag = format!(
-        "[effect {}][/effect]",
-        (0..MAX_RICH_TEXT_TAG_ARGUMENTS)
-            .map(|index| format!("k{index}=v"))
-            .collect::<Vec<_>>()
-            .join(" ")
-    );
-    let content = one_tag.repeat(MAX_RICH_TEXT_CONTENT_ARGUMENTS / MAX_RICH_TEXT_TAG_ARGUMENTS + 3);
-    let source = format!("flow opening {{\n    let line = alice[本文。{content}]\n}}\n");
-    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-
-    assert_eq!(
-        built
-            .diagnostics()
-            .iter()
-            .filter(|diagnostic| { diagnostic.code() == "syntax.rich_text.content.argument_limit" })
-            .count(),
-        1
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextNamedArgument)
-            .count(),
-        MAX_RICH_TEXT_CONTENT_ARGUMENTS
-    );
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity() {
-    let arguments = (0..=MAX_RICH_TEXT_TAG_ARGUMENTS)
-        .map(|index| format!("k{index}=v"))
-        .collect::<Vec<_>>()
-        .join(" ");
-    let source = format!(
-        "flow opening {{\n    let line = alice[本文。[effect {arguments}]text[/effect]]\n}}\n"
-    );
-    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-
-    assert_eq!(
-        built
-            .diagnostics()
-            .iter()
-            .filter(|diagnostic| diagnostic.code() == "syntax.rich_text.attribute.too_many")
-            .count(),
-        1
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextTag)
-            .count(),
-        0
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| {
-                matches!(
-                    entry.kind(),
-                    SyntaxKind::RichTextNamedArgument | SyntaxKind::RichTextPositionalArgument
-                )
-            })
-            .count(),
-        0
-    );
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn explicit_mark_selector_is_one_typed_identity_without_generic_arguments() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文。[mark @.checkpoint]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("mark remains inside one typed Dialogue application");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("selected Dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("mark Dialogue application retains content");
-    };
-    let [tag] = content.tags() else {
-        panic!("one explicit marker tag");
-    };
-    assert!(matches!(
-        tag.identity(),
-        SyntaxRichTextTagIdentity::Marker(selector)
-            if selector
-                .name()
-                .is_some_and(|name| name.as_str() == "checkpoint")
-                && matches!(
-                    selector.reference().value(),
-                    Ok(reference)
-                        if matches!(reference.root(), AuthoredIdRoot::Relative { parent_depth: 0 })
-                            && reference.segments().len() == 1
-                            && reference.segments()[0].as_str() == "checkpoint"
-                )
-                && selector
-                    .components()
-                    .iter()
-                    .map(|component| component.part())
-                    .eq([
-                        SyntaxIdRefPart::Whole,
-                        SyntaxIdRefPart::SuffixSegment { ordinal: 0 },
-                    ])
-                && !selector.has_recovery()
-    ));
-    assert!(tag.arguments().is_empty());
-
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextTag)
-            .count(),
-        1
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextPositionalArgument)
-            .count(),
-        0
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextArgumentPayload)
-            .count(),
-        0
-    );
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn explicit_mark_rejects_noncanonical_entity_reference_shapes() {
-    let cases = [
-        (" .point", "missing-reference"),
-        (" @point", "invalid-root"),
-        (" @flow:.point", "invalid-root"),
-        (" @super.point", "invalid-root"),
-        (" @.point.more", "multiple-segments"),
-        (" \"@.point\"", "quoted"),
-        (" type=@.point", "attributed"),
-        ("", "missing-suffix"),
-        (" @.point @.other", "multiple-arguments"),
-    ];
-    for (authored, expected) in cases {
-        let source = format!("flow opening {{\n    let line = alice[本文.[mark{authored}]]\n}}\n");
-        let built =
-            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-        let projection = built
-            .index()
-            .entries()
-            .iter()
-            .find(|entry| entry.kind() == SyntaxKind::PostfixBracketExpression)
-            .and_then(UnattachedGrammarEntry::expression_projection)
-            .expect("noncanonical marker retains a bounded postfix recovery projection");
-        let ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
-            dialogue,
-            ..
-        }) = projection.projection()
-        else {
-            panic!("noncanonical marker retains the dialogue candidate");
-        };
-        let SyntaxDialogueContentProjection::Present(content) = dialogue.content() else {
-            panic!("mark Dialogue application retains content");
-        };
-        let [tag] = content.tags() else {
-            panic!("one explicit marker tag");
-        };
-        let SyntaxRichTextTagIdentity::Marker(selector) = tag.identity() else {
-            panic!("explicit mark remains a Marker identity");
-        };
-        assert!(
-            selector.has_recovery(),
-            "{authored:?} accepted unexpectedly"
-        );
-        let issue = match selector.issue() {
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MissingReference) => {
-                "missing-reference"
-            }
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::InvalidReference(_))
-            | Some(crate::expressions::SyntaxDialogueMarkNameIssue::InvalidRoot) => "invalid-root",
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MultipleSegments) => {
-                "multiple-segments"
-            }
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Quoted) => "quoted",
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Attributed) => "attributed",
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MissingSuffix) => {
-                "missing-suffix"
-            }
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::MultipleArguments) => {
-                "multiple-arguments"
-            }
-            Some(crate::expressions::SyntaxDialogueMarkNameIssue::Malformed) | None => "other",
-        };
-        assert_eq!(issue, expected, "unexpected mark issue for {authored:?}");
-        assert!(tag.arguments().is_empty());
-        assert_eq!(built.green().to_string(), source);
-    }
-}
-
-#[test]
-fn inferred_dot_selectors_remain_unresolved_and_retain_arguments() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文.[.checkpoint]word[/]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("unresolved dot selector remains inside one typed Dialogue application");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("selected Dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("unresolved dot selector Dialogue application retains content");
-    };
-    let [tag] = content.tags() else {
-        panic!("one unresolved dot-selector tag");
-    };
-    assert!(matches!(
-        tag.identity(),
-        SyntaxRichTextTagIdentity::DotSelector(Ok(selector))
-            if selector.as_str() == "checkpoint"
-    ));
-    assert!(tag.arguments().is_empty());
-    assert!(matches!(
-        tag.payload(),
-        crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-    ));
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-    assert_eq!(built.green().to_string(), source);
-
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文。[.checkpoint]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    assert!(
-        built
-            .diagnostics()
-            .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.rich_text.tag.unclosed")
-    );
-    assert_eq!(built.green().to_string(), source);
-
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文.[.hotspot type=KeywordHit channel=inventory]proxy[/]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("attributed dot selector remains inside one typed Dialogue application");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("selected Dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("attributed dot selector retains content");
-    };
-    let [tag] = content.tags() else {
-        panic!("one attributed dot-selector tag");
-    };
-    assert!(matches!(
-        tag.identity(),
-        SyntaxRichTextTagIdentity::DotSelector(Ok(selector))
-            if selector.as_str() == "hotspot"
-    ));
-    let [first, second] = tag.arguments() else {
-        panic!("dot-selector arguments retain source order");
-    };
-    assert!(matches!(
-        first,
-        SyntaxRichTextArgumentProjection::Named {
-            name: Ok(name),
-            value,
-        } if name.as_str() == "type" && value.decoded() == "KeywordHit"
-    ));
-    assert!(matches!(
-        second,
-        SyntaxRichTextArgumentProjection::Named {
-            name: Ok(name),
-            value,
-        } if name.as_str() == "channel" && value.decoded() == "inventory"
-    ));
-    assert!(matches!(
-        tag.payload(),
-        crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-    ));
-    assert!(!tag.has_recovery());
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn inline_timed_cue_selects_duration_argument_and_dialogue_call_payload() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文。[at 120ms call=log.info(\"delay\")]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("inline timed cue remains in the typed dialogue projection");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("selected dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("timed cue retains dialogue content");
-    };
-    let [tag] = content.tags() else {
-        panic!("one timed cue tag");
-    };
-    assert!(matches!(
-        tag.identity(),
-        SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::HostEvent(
-            crate::expressions::SyntaxRichTextHostEvent::TimedCue
-        ))
-    ));
-    assert!(matches!(
-        tag.arguments(),
-        [SyntaxRichTextArgumentProjection::Positional { value }]
-            if value.decoded() == "120ms"
-    ));
-    assert!(matches!(
-        tag.payload(),
-        crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
-            SyntaxExpressionSlot::Authored
-        )
-    ));
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextTimedCuePayload)
-            .count(),
-        1
-    );
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn inline_timed_cue_keeps_nested_call_equals_inside_the_call_expression() {
-    let source = concat!(
-        "flow opening {\n",
-        "    let line = alice[本文。[at 120ms call = log.info(message = nested(call = inner()))]]\n",
-        "}\n",
-    );
-    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    let projection = built
-        .index()
-        .entries()
-        .iter()
-        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-        .and_then(UnattachedGrammarEntry::expression_projection)
-        .expect("timed cue projection");
-    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-    else {
-        panic!("dialogue application projection");
-    };
-    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-        panic!("dialogue content projection");
-    };
-    let [tag] = content.tags() else {
-        panic!("one timed cue tag");
-    };
-    assert!(matches!(
-        tag.payload(),
-        crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
-            SyntaxExpressionSlot::Authored
-        )
-    ));
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextTimedCuePayload)
-            .count(),
-        1
-    );
-    assert_eq!(
-        built
-            .index()
-            .entries()
-            .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::RichTextDialogueCallPayload)
-            .count(),
-        1
-    );
-    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
-    assert_eq!(built.green().to_string(), source);
-}
-
-#[test]
-fn inline_timed_cue_missing_duplicate_and_extra_parts_never_become_ordinary_arguments() {
-    for payload in [
-        "[at]",
-        "[at 120ms]",
-        "[at call=log.info(\"delay\")]",
-        "[at 120ms call=one() call=two()]",
-        "[at 120ms extra call=one()]",
-    ] {
-        let source = format!("flow opening {{\n    let line = alice[本文。{payload}]\n}}\n");
-        let built =
-            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-        let projection = built
-            .index()
-            .entries()
-            .iter()
-            .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
-            .and_then(UnattachedGrammarEntry::expression_projection)
-            .expect("timed cue projection");
-        let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
-        else {
-            panic!("dialogue application projection: {payload}");
-        };
-        let SyntaxDialogueContentProjection::Present(content) = application.content() else {
-            panic!("dialogue content projection: {payload}");
-        };
-        let [tag] = content.tags() else {
-            panic!("one timed cue tag: {payload}");
-        };
-        assert!(matches!(
-            tag.payload(),
-            crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(
-                SyntaxExpressionSlot::Missing
-            )
-        ));
-        assert!(!matches!(
-            tag.payload(),
-            crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-        ));
-        assert_eq!(built.green().to_string(), source, "{payload}");
-    }
-}
-
-#[test]
-fn overlong_rich_text_body_is_opaque_to_inner_tag_identity() {
-    let oversized = format!("[{}[p]]", "a".repeat(MAX_RICH_TEXT_TAG_BODY_BYTES + 1));
-    let source =
-        format!("flow opening {{\n    let line = alice[本文。{oversized}[.sparkle]]\n}}\n");
-    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
-
-    let tags = built
-        .index()
-        .entries()
-        .iter()
-        .filter(|entry| entry.kind() == SyntaxKind::RichTextTag)
-        .collect::<Vec<_>>();
-    assert_eq!(tags.len(), 1);
-    let diagnostic = built
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.code() == "syntax.rich_text.tag.body_too_long")
-        .expect("overlong RichText body diagnostic");
-    assert!(diagnostic.range().start() < diagnostic.range().end());
-    assert_eq!(built.green().to_string(), source);
 }

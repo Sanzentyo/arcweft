@@ -1,6 +1,5 @@
 pub character narrator {
-    display_name = "Environment test narrator"
-    default_voice = auto
+    display = "Environment test narrator"
 }
 
 pub style environment_panel {

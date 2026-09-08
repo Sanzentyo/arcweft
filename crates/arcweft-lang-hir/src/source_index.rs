@@ -73,9 +73,10 @@ pub use flow_role::{
 };
 pub(crate) use item_projection::ItemValidationArenas;
 pub use item_role::{
-    HirCallableEffectSourcePart, HirCallableParameterSourcePart, HirCallableSourceOwner,
-    HirCallableSourceRole, HirDeclarationSourceRole, HirEntrySourcePart, HirItemSourceRole,
-    HirNominalMemberSourcePart, HirTestBenchSourceRole, HirUseBindingSourcePart, HirUseSourceRole,
+    HirCallableAttachedContentSourcePart, HirCallableEffectSourcePart,
+    HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+    HirDeclarationSourceRole, HirEntrySourcePart, HirItemSourceRole, HirNominalMemberSourcePart,
+    HirTestBenchSourceRole, HirUseBindingSourcePart, HirUseSourceRole,
 };
 pub use style_role::{
     HirStyleBodyPath, HirStyleBodySourcePart, HirStyleSourceRole, HirStyleTokenSourcePart,
@@ -229,31 +230,30 @@ pub enum HirMatchArmSourcePart {
 pub enum HirDialogueNodeSourcePart {
     Whole,
     Text,
-    Raw,
     Escape,
-    RubyBase,
-    RubyText,
+    Ruby,
     Interpolation,
+    Hash,
+    Expression,
+    PointAction,
     LineBreak,
     Error,
 }
 
-/// Source component of one `RichText` tag.
+/// Source component of one zero-width dialogue point action.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirRichTextTagSourcePart {
+pub enum HirDialoguePointActionSourcePart {
     Whole,
     OpenDelimiter,
     Name,
     Payload,
     CloseDelimiter,
-    InferenceInsertion,
-    EndTag,
     Marker(HirIdRefSourcePart),
 }
 
-/// Source component of one `RichText` argument.
+/// Source component of one point-action argument.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirRichTextArgumentSourcePart {
+pub enum HirDialoguePointActionArgumentSourcePart {
     Whole,
     Name,
     Equals,
@@ -264,6 +264,7 @@ pub enum HirRichTextArgumentSourcePart {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirExprSourceRole {
     Whole,
+    Hash,
     Target,
     OpenBracket,
     CloseBracket,
@@ -358,14 +359,14 @@ pub enum HirExprSourceRole {
         ordinal: u32,
         part: HirDialogueNodeSourcePart,
     },
-    RichTextTag {
-        tag: u32,
-        part: HirRichTextTagSourcePart,
+    DialoguePointAction {
+        ordinal: u32,
+        part: HirDialoguePointActionSourcePart,
     },
-    RichTextArgument {
-        tag: u32,
+    DialoguePointActionArgument {
+        action: u32,
         argument: u16,
-        part: HirRichTextArgumentSourcePart,
+        part: HirDialoguePointActionArgumentSourcePart,
     },
     Recovery,
 }

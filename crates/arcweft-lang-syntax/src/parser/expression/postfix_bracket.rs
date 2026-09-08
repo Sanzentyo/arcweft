@@ -3,8 +3,8 @@ use arcweft_source::SourceRange;
 use super::{CompletedNode, completed_slot, parse_binding_power};
 use crate::expressions::{
     ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
-    PendingExpressionProjection, SyntaxBracketTerminator, SyntaxCandidateQuality,
-    SyntaxDialogueApplicationForm, SyntaxDialogueApplicationProjection,
+    PendingExpressionProjection, SyntaxAttachedContentApplicationForm,
+    SyntaxAttachedContentApplicationProjection, SyntaxBracketTerminator, SyntaxCandidateQuality,
     SyntaxDialogueContentProjection, SyntaxDialogueContentRecoveryBoundary, SyntaxExpressionSlot,
     SyntaxIndexProjection, SyntaxPostfixBracketProjection, SyntaxPostfixBracketRecoveryBoundary,
     SyntaxPostfixCandidateFailure, SyntaxPostfixCandidateFailureKind,
@@ -55,7 +55,7 @@ pub(super) fn emit_postfix_bracket(
     );
     if matches!(
         projection.projection(),
-        ExpressionProjection::DialogueContentApplication(_)
+        ExpressionProjection::AttachedContentApplication(_)
     ) && let Some((with, _, "with")) = parser.next_significant()
         && with < end
     {
@@ -65,7 +65,7 @@ pub(super) fn emit_postfix_bracket(
             end,
             SyntaxKind::FlowItem,
         );
-        let ExpressionProjection::DialogueContentApplication(application) =
+        let ExpressionProjection::AttachedContentApplication(application) =
             projection.projection().clone()
         else {
             unreachable!("selected Dialogue projection remains Dialogue-owned")
@@ -76,8 +76,8 @@ pub(super) fn emit_postfix_bracket(
             plan,
         ));
         projection = PendingExpressionProjection::new(
-            ExpressionProjection::DialogueContentApplication(
-                SyntaxDialogueApplicationProjection::new(
+            ExpressionProjection::AttachedContentApplication(
+                SyntaxAttachedContentApplicationProjection::new(
                     application.form().clone(),
                     application.content().clone(),
                     true,
@@ -88,10 +88,10 @@ pub(super) fn emit_postfix_bracket(
     }
     if matches!(
         projection.projection(),
-        ExpressionProjection::DialogueContentApplication(_)
+        ExpressionProjection::AttachedContentApplication(_)
     ) && let Some(owner) = owner
     {
-        parser.set_start_kind(owner, SyntaxKind::DialogueContentApplicationExpression);
+        parser.set_start_kind(owner, SyntaxKind::AttachedContentApplicationExpression);
     }
     parser.set_expression_projection(owner, projection);
     parser.finish();
@@ -228,9 +228,9 @@ fn select_postfix_bracket_projection(
             let mut source_components = dialogue_application_components(sources);
             source_components.extend(components);
             PendingExpressionProjection::new(
-                ExpressionProjection::DialogueContentApplication(
-                    SyntaxDialogueApplicationProjection::new(
-                        SyntaxDialogueApplicationForm::Bracket {
+                ExpressionProjection::AttachedContentApplication(
+                    SyntaxAttachedContentApplicationProjection::new(
+                        SyntaxAttachedContentApplicationForm::Bracket {
                             terminator: sources.terminator.clone(),
                         },
                         content,

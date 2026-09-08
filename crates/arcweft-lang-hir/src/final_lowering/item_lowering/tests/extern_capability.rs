@@ -274,6 +274,65 @@ fn canonical_extern_capability_freezes_interleaved_members_and_callable_scope() 
 }
 
 #[test]
+fn extern_capability_function_retains_attached_content_slot() {
+    let module = lower_capability_case(
+        "attached-content",
+        "extern capability host {\n    fn render(value: String)[body: DialogueContent]\n}\n",
+    );
+    assert_eq!(
+        module.status(),
+        crate::module::HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, item, capability) = capability(&module, 0);
+    let HirCapabilityMember::Function(function) = &capability.members()[0] else {
+        panic!("capability function")
+    };
+    let attached = function
+        .attached_content()
+        .expect("attached-content declaration");
+    assert_eq!(
+        attached.role(),
+        crate::item::HirAttachedContentRole::Dialogue
+    );
+    assert_eq!(
+        attached.presence(),
+        crate::item::HirAttachedContentPresence::Required
+    );
+    let scope = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), function.callable_scope())
+        .unwrap();
+    assert_eq!(scope.locals().len(), 2);
+    assert_eq!(scope.locals()[1], attached.binding());
+    assert_eq!(item.members().len(), 0);
+}
+
+#[test]
+fn extern_capability_attached_content_defaults_are_rejected() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-extern-capability-attached-content-default",
+        "extern capability host {\n    fn render(value: String)[body: InlineContent = fallback]\n}\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let database = HirDatabase::try_new().unwrap();
+    let mut transaction = stage(&database, &parsed, &key);
+    assert!(matches!(
+        transaction.lower_parsed_source_items(&parsed),
+        Err(crate::lowering::HirLowerFailure::Invariant(
+            crate::lowering::HirInvariantFailure::InvalidArenaCommit
+        ))
+    ));
+}
+
+#[test]
 fn extern_capability_recovery_preserves_the_typed_family_and_primary_issue_order() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-extern-capability-recovery",
@@ -578,6 +637,7 @@ fn extern_capability_freeze_rejects_function_effect_substitution() {
                     function.generic_parameters().into(),
                     function.parameter_groups().into(),
                     function.return_type(),
+                    function.attached_content(),
                     function.callable_scope(),
                     effects.into_boxed_slice(),
                 )
@@ -656,6 +716,7 @@ fn extern_capability_freeze_rejects_parameter_type_default_and_return_substituti
                 first.generic_parameters().into(),
                 vec![group].into_boxed_slice(),
                 first.return_type(),
+                first.attached_content(),
                 first.callable_scope(),
                 first.effects().into(),
             )
@@ -692,6 +753,7 @@ fn extern_capability_freeze_rejects_parameter_type_default_and_return_substituti
                 first.generic_parameters().into(),
                 vec![group].into_boxed_slice(),
                 first.return_type(),
+                first.attached_content(),
                 first.callable_scope(),
                 first.effects().into(),
             )
@@ -714,6 +776,7 @@ fn extern_capability_freeze_rejects_parameter_type_default_and_return_substituti
                 first.generic_parameters().into(),
                 first.parameter_groups().into(),
                 second_return,
+                first.attached_content(),
                 first.callable_scope(),
                 first.effects().into(),
             )
@@ -745,6 +808,7 @@ fn extern_capability_freeze_rejects_callable_scope_substitution_and_reordering()
                 first.generic_parameters().into(),
                 first.parameter_groups().into(),
                 first.return_type(),
+                first.attached_content(),
                 second_scope,
                 first.effects().into(),
             )

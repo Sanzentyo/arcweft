@@ -756,7 +756,8 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             | RuntimeValue::TensorF64(_)
             | RuntimeValue::Range(_)
             | RuntimeValue::Iterator(_)
-            | RuntimeValue::Function(_) => Err(RuntimeSchemaError::Encoding {
+            | RuntimeValue::Function(_)
+            | RuntimeValue::ProjectContinuation(_) => Err(RuntimeSchemaError::Encoding {
                 message: "runtime-only value has no replay/save encoding".to_owned(),
             }),
         }
@@ -1523,6 +1524,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Reduction(_) => "Reduction value",
         RuntimeValue::Agent(_) => "Agent value",
         RuntimeValue::Function(_) => "function",
+        RuntimeValue::ProjectContinuation(_) => "project continuation",
         RuntimeValue::Variant { .. } => "variant",
     }
 }

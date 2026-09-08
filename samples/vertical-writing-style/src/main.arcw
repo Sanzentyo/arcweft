@@ -1,16 +1,5 @@
 pub character vertical_guide {
     display = "Vertical Writing"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            ruby {
-                size = 14px
-                gap = 1px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub style vertical_writing_showcase {
@@ -86,16 +75,16 @@ entry game @entry.vertical_writing_style {
 
 flow vertical_writing_style(state: GameState) {
     vertical_guide(id=@say.vertical_writing_style.vertical_rl, voice=auto):
-        [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人」2026ARC。|[夢](ゆめ)山川海[/font][/][/size][p]
+        #size(42pt)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人」2026ARC。|[夢](ゆめ)山川海]]][p]
 
     vertical_guide(id=@say.vertical_writing_style.vertical_lr, voice=auto):
-        [size 42][.vertical_lr jlreq=strict][font "Noto Sans JP"]縦[.ruby_under]|[夢](ゆめ)[/]へ[.ruby_inter_character]|[夢星](ゆめ)[/]人2026XYZ。山川[/font][/][/size][p]
+        #size(42pt)[#layout(.vertical_lr, jlreq=.strict)[#font("Noto Sans JP")[縦#layout(.ruby_under)[|[夢](ゆめ)]へ#layout(.ruby_inter_character)[|[夢星](ゆめ)]人2026XYZ。山川]]][p]
 
     vertical_guide(id=@say.vertical_writing_style.jlreq_loose, voice=auto):
-        [size 42][.vertical_rl jlreq=loose][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+        #size(42pt)[#layout(.vertical_rl, jlreq=.loose)[#font("Noto Sans JP")[天地。「人山川海]]][p]
 
     vertical_guide(id=@say.vertical_writing_style.jlreq_strict, voice=auto):
-        [size 42][.vertical_rl jlreq=strict][font "Noto Sans JP"]天地。「人山川海[/font][/][/size][p]
+        #size(42pt)[#layout(.vertical_rl, jlreq=.strict)[#font("Noto Sans JP")[天地。「人山川海]]][p]
 
     return "vertical_writing_style_done"
 }

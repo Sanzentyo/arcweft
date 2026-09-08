@@ -197,6 +197,9 @@ fn layout_one_ruby<S: TextShaper>(
     .unwrap_or(base_bounds);
     Ok(TextLayoutRuby {
         ruby_index: saturating_u32(ruby_index),
+        owner_node: annotation.owner_node(),
+        body_nodes: annotation.body_nodes(),
+        base_runs: annotation.base_runs(),
         base_range: annotation.source_base_range(),
         text: annotation.text().to_owned(),
         base_bounds,

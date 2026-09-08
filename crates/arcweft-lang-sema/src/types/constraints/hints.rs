@@ -25,6 +25,7 @@ pub(crate) trait ConstraintDomain {
     type Source: Copy + Ord;
     type AlternativeIndex: Copy + Eq + Ord;
     type EvidenceRule: Eq;
+    type ObservedEvidence: Eq;
     type CheckedEvidence: Eq;
     type ProbeSemanticBranch: Eq;
     type SealedBranchValue: Eq;
@@ -32,22 +33,16 @@ pub(crate) trait ConstraintDomain {
     type SourceErrorCause;
     type ClientInvariant;
 
-    /// Project a callback source into the higher owner's closed result-key
-    /// algebra. Sources that are retained only in the closed trace return
-    /// `None`; the lower transaction never reconstructs a caller key.
-    fn projection_for_source(_source: &Self::Source) -> Option<Self::Projection> {
-        None
-    }
-
-    /// Validate issuer-owned checked evidence against one prepared rule.
-    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::CheckedEvidence) -> bool;
+    /// Select a prepared rule from source observation, before stable evidence
+    /// is issued at completion.
+    fn evidence_accepts(rule: &Self::EvidenceRule, observed: &Self::ObservedEvidence) -> bool;
 
     /// Project observed evidence alongside the lower-owned terminal actual
     /// type. Domains may retain semantic coordinates that change identity
     /// when generic/effect substitutions close; lower never interprets or
     /// reconstructs those coordinates itself.
     fn project_checked_evidence(
-        checked: &Self::CheckedEvidence,
+        observed: &Self::ObservedEvidence,
         actual: &TypeKind,
     ) -> Option<Self::CheckedEvidence>;
 
@@ -69,6 +64,7 @@ impl ConstraintDomain for NoConstraintClient {
     type Source = ();
     type AlternativeIndex = ();
     type EvidenceRule = ();
+    type ObservedEvidence = ();
     type CheckedEvidence = ();
     type ProbeSemanticBranch = ();
     type SealedBranchValue = ();
@@ -76,11 +72,11 @@ impl ConstraintDomain for NoConstraintClient {
     type SourceErrorCause = ();
     type ClientInvariant = ();
 
-    fn evidence_accepts(_: &Self::EvidenceRule, _: &Self::CheckedEvidence) -> bool {
+    fn evidence_accepts(_: &Self::EvidenceRule, _: &Self::ObservedEvidence) -> bool {
         false
     }
 
-    fn project_checked_evidence(_: &Self::CheckedEvidence, _: &TypeKind) -> Option<()> {
+    fn project_checked_evidence(_: &Self::ObservedEvidence, _: &TypeKind) -> Option<()> {
         Some(())
     }
 
@@ -570,7 +566,7 @@ pub(crate) enum SourceProbeSelection<A, E> {
 pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
     actual: TypeKind,
     canonical_branch: D::ProbeSemanticBranch,
-    selection: SourceProbeSelection<D::AlternativeIndex, D::CheckedEvidence>,
+    selection: SourceProbeSelection<D::AlternativeIndex, D::ObservedEvidence>,
 }
 
 impl<D: ConstraintDomain> SourceProbeResult<D> {
@@ -586,7 +582,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         actual: TypeKind,
         canonical_branch: D::ProbeSemanticBranch,
         alternative: D::AlternativeIndex,
-        evidence: D::CheckedEvidence,
+        evidence: D::ObservedEvidence,
     ) -> Self {
         Self {
             actual,
@@ -603,7 +599,7 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
     ) -> (
         TypeKind,
         D::ProbeSemanticBranch,
-        SourceProbeSelection<D::AlternativeIndex, D::CheckedEvidence>,
+        SourceProbeSelection<D::AlternativeIndex, D::ObservedEvidence>,
     ) {
         (self.actual, self.canonical_branch, self.selection)
     }

@@ -68,6 +68,13 @@ impl Engine {
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
+        if self.return_function_call_value(
+            crate::value::RuntimeValue::String(value.clone()),
+            output,
+            pure_backend,
+        ) {
+            return;
+        }
         self.fiber.pending_ops.clear();
         self.fiber.await_observer = None;
         self.unwind_control_stack(output, pure_backend);
@@ -83,9 +90,19 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         while let Some(entry) = self.fiber.control_stack.pop() {
-            if let FlowControlStackEntryKind::Scope { cleanups } = entry.kind {
-                self.fiber.env.pop_scope();
-                self.emit_scope_cleanups(cleanups, output, pure_backend);
+            match entry.kind {
+                FlowControlStackEntryKind::Scope { cleanups } => {
+                    self.fiber.env.pop_scope();
+                    self.emit_scope_cleanups(cleanups, output, pure_backend);
+                }
+                FlowControlStackEntryKind::FunctionCall(frame) => {
+                    if frame.function_scope {
+                        self.fiber.env.pop_scope();
+                    }
+                }
+                FlowControlStackEntryKind::Loop { .. }
+                | FlowControlStackEntryKind::While { .. }
+                | FlowControlStackEntryKind::WhileLet { .. } => {}
             }
         }
         self.drain_root_cleanups(output, pure_backend);

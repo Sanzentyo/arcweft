@@ -6,7 +6,7 @@ use arcweft_core::plan::{
     RuntimeLocalSeedId, RuntimePatternRestSeed, RuntimePatternSeed, RuntimePatternSeedKind,
     RuntimeRecordFieldSeedId, RuntimeRecordPatternFieldSeed,
 };
-use arcweft_core::value::RuntimeEntityReference;
+use arcweft_core::value::{RuntimeEntityReference, RuntimeValue};
 use arcweft_lang_hir::identity::{LocalId, PatternId};
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{
@@ -14,13 +14,14 @@ use arcweft_lang_hir::pattern::{
 };
 
 use crate::semantic_facts::{
-    RuntimePlanSemanticFacts, RuntimeProjectItem, RuntimeRecordPatternRest,
-    RuntimeRecordPatternSource,
+    RuntimeExecutableSemanticFactView, RuntimePlanSemanticFacts,
+    RuntimeProjectFunctionInstanceSemanticFacts, RuntimeProjectItem, RuntimeRecordPatternFact,
+    RuntimeRecordPatternRest, RuntimeRecordPatternSource, RuntimeResolvedVariant,
 };
 
 pub(crate) struct FinalPatternLowerer<'hir> {
     module: &'hir HirModule,
-    facts: &'hir RuntimePlanSemanticFacts,
+    semantic_facts: RuntimeExecutableSemanticFactView<'hir>,
     locals: &'hir BTreeMap<LocalId, RuntimeLocalSeedId>,
 }
 
@@ -32,9 +33,53 @@ impl<'hir> FinalPatternLowerer<'hir> {
     ) -> Self {
         Self {
             module,
-            facts,
+            semantic_facts: RuntimeExecutableSemanticFactView::global(facts),
             locals,
         }
+    }
+
+    pub(crate) fn with_semantic_facts(
+        mut self,
+        semantic_facts: RuntimeExecutableSemanticFactView<'hir>,
+    ) -> Self {
+        self.semantic_facts = semantic_facts;
+        self
+    }
+
+    pub(crate) fn with_project_semantics(
+        self,
+        semantics: &'hir RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        self.with_semantic_facts(RuntimeExecutableSemanticFactView::project_instance(
+            semantics,
+        ))
+    }
+
+    fn pattern_literal(&self, id: PatternId) -> Option<&RuntimeValue> {
+        self.semantic_facts.pattern_literal(id)
+    }
+
+    fn pattern_item(&self, id: PatternId) -> Option<&RuntimeProjectItem> {
+        self.semantic_facts.pattern_item(id)
+    }
+
+    fn pattern_nominal_record(&self, id: PatternId) -> Option<&RuntimeRecordPatternFact> {
+        self.semantic_facts.pattern_nominal_record(id)
+    }
+
+    fn pattern_variant(&self, id: PatternId) -> Option<&RuntimeResolvedVariant> {
+        self.semantic_facts.pattern_variant(id)
+    }
+
+    fn pattern_type_ref(
+        &self,
+        id: PatternId,
+    ) -> Option<&crate::semantic_facts::RuntimeNormalizedType> {
+        self.semantic_facts.pattern_type(id)
+    }
+
+    fn local_type_ref(&self, id: LocalId) -> Option<&crate::semantic_facts::RuntimeNormalizedType> {
+        self.semantic_facts.local_type(id)
     }
 
     #[allow(
@@ -55,19 +100,17 @@ impl<'hir> FinalPatternLowerer<'hir> {
             HirPatternKind::Binding(binding) => self.binding(binding, false)?,
             HirPatternKind::MutableBinding(binding) => self.binding(binding, true)?,
             HirPatternKind::Literal(_) => RuntimePatternSeedKind::Literal(
-                self.facts
-                    .pattern_literal(id)
+                self.pattern_literal(id)
                     .cloned()
                     .ok_or_else(|| format!("checked literal fact is missing for pattern {id:?}"))?,
             ),
             HirPatternKind::EntityReference(_) => RuntimePatternSeedKind::Entity(
-                project_entity_reference(self.facts.pattern_item(id).ok_or_else(|| {
+                project_entity_reference(self.pattern_item(id).ok_or_else(|| {
                     format!("checked project-item fact is missing for entity pattern {id:?}")
                 })?),
             ),
             HirPatternKind::Variant(variant) => {
                 let selected = self
-                    .facts
                     .pattern_variant(id)
                     .ok_or_else(|| format!("checked variant fact is missing for pattern {id:?}"))?;
                 let payload = match (
@@ -78,7 +121,8 @@ impl<'hir> FinalPatternLowerer<'hir> {
                 ) {
                     (HirVariantPatternPayload::Absent, None) => None,
                     (HirVariantPatternPayload::Pattern(payload), Some(expected)) => {
-                        if self.facts.pattern_type(*payload) != Some(expected) {
+                        let payload_type = self.pattern_type_ref(*payload);
+                        if payload_type != Some(expected) {
                             return Err(format!(
                                 "variant payload pattern {payload:?} does not match its selected normalized payload type"
                             ));
@@ -112,7 +156,6 @@ impl<'hir> FinalPatternLowerer<'hir> {
             ),
             HirPatternKind::Record { .. } => {
                 let record = self
-                    .facts
                     .pattern_nominal_record(id)
                     .ok_or_else(|| format!("checked nominal fact is missing for pattern {id:?}"))?;
                 let lowered = record
@@ -209,8 +252,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
         &self,
         pattern: PatternId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
-        self.facts
-            .pattern_type(pattern)
+        self.pattern_type_ref(pattern)
             .map(crate::semantic_facts::RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for pattern {pattern:?}"))
     }
@@ -219,8 +261,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
         &self,
         local: LocalId,
     ) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, String> {
-        self.facts
-            .local_type(local)
+        self.local_type_ref(local)
             .map(crate::semantic_facts::RuntimeNormalizedType::identity)
             .ok_or_else(|| format!("accepted type is missing for local {local:?}"))
     }

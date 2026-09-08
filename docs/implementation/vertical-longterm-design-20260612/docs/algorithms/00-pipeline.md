@@ -47,7 +47,7 @@ struct FlattenedText {
 `StyleRun` は authored span の重なりを解消した non-overlap run にします。
 
 ```text
-input: nested StyleStart / StyleEnd / base_styles
+input: nested structural style scopes / base_styles
 output: sorted non-overlap StyleRun[]
 ```
 

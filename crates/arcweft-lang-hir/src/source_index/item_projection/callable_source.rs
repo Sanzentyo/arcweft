@@ -3,9 +3,10 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::attachment::{
-    AttachedCallableContractClause, AttachedCallableParameter, AttachedCallableReturn,
-    AttachedFixedParameterGroup, AttachedImplMember, AttachedMethodParameter,
-    AttachedMethodParameterGroup, AttachedRetainedName, AttachedTraitMember, TypedItemNode,
+    AttachedCallableContentParameter, AttachedCallableContractClause, AttachedCallableParameter,
+    AttachedCallableReturn, AttachedFixedParameterGroup, AttachedImplMember,
+    AttachedMethodParameter, AttachedMethodParameterGroup, AttachedRetainedName,
+    AttachedTraitMember, TypedItemNode,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::patterns::PatternComponentRole;
@@ -13,13 +14,15 @@ use arcweft_source::{SourceRange, SourceSpan};
 
 use crate::identity::{ItemId, SyntheticOwner};
 use crate::item::{
-    HirCapabilityMember, HirContractOperandList, HirFunctionParameterGroup, HirImplMember,
-    HirItemKind, HirMethodParameter, HirParameter, HirTraitMember,
+    HirCallableAttachedContentParameter, HirCapabilityMember, HirContractOperandList,
+    HirFunctionParameterGroup, HirImplMember, HirItemKind, HirMethodParameter, HirParameter,
+    HirTraitMember,
 };
 use crate::source_index::{
-    HirCallableEffectSourcePart, HirCallableParameterSourcePart, HirCallableSourceOwner,
-    HirCallableSourceRole, HirItemSourceRole, HirSourceCommitInvariantError, HirSourceIndex,
-    HirSourceQuery, HirSourceQueryError, HirSourceRequirement, HirSourceSite, StagedHirSourceIndex,
+    HirCallableAttachedContentSourcePart, HirCallableEffectSourcePart,
+    HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+    HirItemSourceRole, HirSourceCommitInvariantError, HirSourceIndex, HirSourceQuery,
+    HirSourceQueryError, HirSourceRequirement, HirSourceSite, StagedHirSourceIndex,
 };
 
 #[derive(Default)]
@@ -119,6 +122,39 @@ impl HirItemKind {
         item: ItemId,
         role: HirCallableSourceRole,
     ) -> Result<(), HirSourceQueryError> {
+        if let HirCallableSourceRole::AttachedContent { owner, .. } = role {
+            let present = match (self, owner) {
+                (Self::Function(function), HirCallableSourceOwner::Item) => {
+                    function.attached_content().is_some()
+                }
+                (
+                    Self::ExternCapability(capability),
+                    HirCallableSourceOwner::ExternCapabilityFunction { member },
+                ) => matches!(
+                    capability.members().get(usize::from(member)),
+                    Some(HirCapabilityMember::Function(function))
+                        if function.attached_content().is_some()
+                ),
+                (Self::Trait(trait_item), HirCallableSourceOwner::TraitFunction { member }) => {
+                    matches!(
+                        trait_item.members().get(usize::from(member)),
+                        Some(HirTraitMember::Function(function))
+                            if function.attached_content().is_some()
+                    )
+                }
+                (Self::Impl(impl_item), HirCallableSourceOwner::ImplFunction { member }) => {
+                    matches!(
+                        impl_item.members().get(usize::from(member)),
+                        Some(HirImplMember::Function(function))
+                            if function.attached_content().is_some()
+                    )
+                }
+                _ => false,
+            };
+            return present
+                .then_some(())
+                .ok_or_else(|| callable_role_not_applicable(item, role));
+        }
         if let HirCallableSourceRole::EffectClause { owner, clause, .. } = role {
             return match (self, owner) {
                 (Self::Function(function), HirCallableSourceOwner::Item)
@@ -198,6 +234,9 @@ impl HirItemKind {
             HirCallableSourceRole::EffectClause { .. } => {
                 unreachable!("effect-clause roles return before parameter validation")
             }
+            HirCallableSourceRole::AttachedContent { .. } => {
+                unreachable!("attached-content roles return before parameter validation")
+            }
         }
     }
 }
@@ -266,6 +305,8 @@ fn callable_manifest(
                     .map(HirFunctionParameterGroup::parameters)
                     .collect(),
                 callable_return_span(parsed, item, attached.authored_return())?,
+                attached.attached_content(),
+                retained.attached_content(),
             )?;
             stage_effect_clauses(
                 &mut manifest,
@@ -291,6 +332,8 @@ fn callable_manifest(
                 std::slice::from_ref(attached.parameter_group()),
                 vec![retained.parameters()],
                 None,
+                None,
+                None,
             )?;
         }
         (TypedItemNode::Proof(attached), HirItemKind::Proof(retained)) => {
@@ -309,6 +352,8 @@ fn callable_manifest(
                 std::slice::from_ref(attached.parameter_group()),
                 vec![retained.parameters()],
                 callable_return_span(parsed, item, attached.authored_return())?,
+                None,
+                None,
             )?;
         }
         (TypedItemNode::View(attached), HirItemKind::View(retained)) => {
@@ -326,6 +371,8 @@ fn callable_manifest(
                 retained_name_source(attached.header().name()),
                 std::slice::from_ref(attached.parameter_group()),
                 vec![retained.parameters()],
+                None,
+                None,
                 None,
             )?;
         }
@@ -382,6 +429,8 @@ fn callable_manifest(
                         .map(HirFunctionParameterGroup::parameters)
                         .collect(),
                     callable_return_span(parsed, item, attached.authored_return())?,
+                    attached.attached_content(),
+                    retained.attached_content(),
                 )?;
             }
         }
@@ -432,6 +481,8 @@ fn callable_manifest(
                     attached.parameter_groups(),
                     retained.parameter_groups(),
                     callable_return_span(parsed, item, attached.authored_return())?,
+                    attached.attached_content(),
+                    retained.attached_content(),
                 )?;
             }
         }
@@ -482,6 +533,8 @@ fn callable_manifest(
                     attached.parameter_groups(),
                     retained.parameter_groups(),
                     callable_return_span(parsed, item, attached.authored_return())?,
+                    attached.attached_content(),
+                    retained.attached_content(),
                 )?;
             }
         }
@@ -563,6 +616,7 @@ fn retained_name_source(name: &AttachedRetainedName) -> SourceSpan {
         AttachedRetainedName::Resolved { syntax, .. }
         | AttachedRetainedName::Missing { syntax }
         | AttachedRetainedName::Invalid { syntax } => syntax.source_span(),
+        AttachedRetainedName::Derived { public_id, .. } => public_id.source_span(),
     }
 }
 
@@ -609,6 +663,8 @@ fn stage_callable(
     attached_groups: &[AttachedFixedParameterGroup],
     retained_groups: Vec<&[HirParameter]>,
     result: Option<SourceSpan>,
+    attached_content: Option<&AttachedCallableContentParameter>,
+    retained_content: Option<HirCallableAttachedContentParameter>,
 ) -> Result<(), HirSourceCommitInvariantError> {
     if attached_groups.len() != retained_groups.len() {
         return Err(
@@ -619,14 +675,16 @@ fn stage_callable(
     }
     let signature_end = result
         .as_ref()
-        .map_or_else(
-            || {
-                attached_groups
-                    .last()
-                    .map(|group| group.syntax().range().end())
-            },
-            |result| Some(result.range().end()),
-        )
+        .map(|result| result.range().end())
+        .or_else(|| {
+            attached_content
+                .map(|attached| attached.close().range().end())
+                .or_else(|| {
+                    attached_groups
+                        .last()
+                        .map(|group| group.syntax().range().end())
+                })
+        })
         .ok_or(
             HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
                 owner: SyntheticOwner::Item(item),
@@ -694,6 +752,14 @@ fn stage_callable(
             stage_parameter(manifest, parsed, item, owner, group, parameter, attached)?;
         }
     }
+    stage_attached_content(
+        manifest,
+        parsed,
+        item,
+        owner,
+        attached_content,
+        retained_content,
+    )?;
     Ok(())
 }
 
@@ -715,6 +781,8 @@ fn stage_method_callable(
     attached_groups: &[AttachedMethodParameterGroup],
     retained_groups: &[crate::item::HirMethodParameterGroup],
     result: Option<SourceSpan>,
+    attached_content: Option<&AttachedCallableContentParameter>,
+    retained_content: Option<HirCallableAttachedContentParameter>,
 ) -> Result<(), HirSourceCommitInvariantError> {
     if attached_groups.len() != retained_groups.len() {
         return Err(
@@ -725,14 +793,16 @@ fn stage_method_callable(
     }
     let signature_end = result
         .as_ref()
-        .map_or_else(
-            || {
-                attached_groups
-                    .last()
-                    .map(|group| group.syntax().range().end())
-            },
-            |result| Some(result.range().end()),
-        )
+        .map(|result| result.range().end())
+        .or_else(|| {
+            attached_content
+                .map(|attached| attached.close().range().end())
+                .or_else(|| {
+                    attached_groups
+                        .last()
+                        .map(|group| group.syntax().range().end())
+                })
+        })
         .ok_or(
             HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
                 owner: SyntheticOwner::Item(item),
@@ -840,7 +910,94 @@ fn stage_method_callable(
             }
         }
     }
+    stage_attached_content(
+        manifest,
+        parsed,
+        item,
+        owner,
+        attached_content,
+        retained_content,
+    )?;
     Ok(())
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "attached-content staging preserves every typed declaration component"
+)]
+fn stage_attached_content(
+    manifest: &mut CallableManifest,
+    parsed: &ParsedSource,
+    item: ItemId,
+    owner: HirCallableSourceOwner,
+    attached: Option<&AttachedCallableContentParameter>,
+    retained: Option<HirCallableAttachedContentParameter>,
+) -> Result<(), HirSourceCommitInvariantError> {
+    let (Some(attached), Some(_retained)) = (attached, retained) else {
+        if attached.is_some() || retained.is_some() {
+            return Err(
+                HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
+                    owner: SyntheticOwner::Item(item),
+                },
+            );
+        }
+        return Ok(());
+    };
+    let query = |part| callable_query(item, HirCallableSourceRole::AttachedContent { owner, part });
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Whole),
+        attached.syntax().source_span(),
+    )?;
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Open),
+        attached.open().source_span(),
+    )?;
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Binding),
+        attached.binding().syntax().source_span(),
+    )?;
+    manifest.optional(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Question),
+        attached
+            .presence()
+            .question()
+            .map(|question| question.source_span()),
+    )?;
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Colon),
+        attached.colon().source_span().clone(),
+    )?;
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Role),
+        attached.role_syntax().source_span(),
+    )?;
+    manifest.optional(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Equals),
+        attached
+            .presence()
+            .equals()
+            .map(|equals| equals.source_span()),
+    )?;
+    manifest.optional(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Default),
+        attached
+            .presence()
+            .value()
+            .map(|value| value.syntax().source_span()),
+    )?;
+    manifest.required(
+        parsed,
+        query(HirCallableAttachedContentSourcePart::Close),
+        attached.close().source_span(),
+    )
 }
 
 #[allow(

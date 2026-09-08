@@ -1128,9 +1128,10 @@ mod tests {
         let definition = FxDefinition::new(
             FxId::try_new("test", "fx.pulse").expect("valid Fx ID"),
             Vec::new(),
-            FxGraph::new(vec![FxNode::Text {
+            FxGraph::try_new(vec![FxNode::Text {
                 properties: Vec::new(),
-            }]),
+            }])
+            .expect("valid graph"),
         )
         .expect("valid Fx definition");
         let bundle = empty_bundle()

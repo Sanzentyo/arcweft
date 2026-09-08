@@ -42,6 +42,7 @@ digest_type!(CallableContractHash);
 digest_type!(FlowContractHash);
 digest_type!(AgentPolicyHash);
 digest_type!(RuntimeValueDigest);
+digest_type!(RuntimeDialogueContentTemplateDigest);
 
 /// Stable nominal identity selected by a checked entry role.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]

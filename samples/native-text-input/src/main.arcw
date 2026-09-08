@@ -1,6 +1,5 @@
 pub character narrator {
   display = "Arcweft Native IME"
-  default_voice = auto
 }
 
 struct GameState {

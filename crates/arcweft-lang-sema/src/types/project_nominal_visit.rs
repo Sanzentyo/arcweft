@@ -1,16 +1,17 @@
 //! Exhaustive traversal of project-nominal occurrences in semantic types.
 
-use super::{ProjectNominalType, TypeKind};
+use super::{ProjectNominalType, ScopedTypeView, TypeKind};
 
 /// Visits every project nominal and all nested type arguments in source-owned
 /// semantic order. The caller supplies only the operation performed at an
 /// accepted nominal occurrence; recursion remains owned by the `TypeKind`
 /// algebra so new constructors cannot silently escape the C2 inventory.
 pub(crate) fn visit_project_nominals<E>(
-    ty: &TypeKind,
-    visitor: &mut impl FnMut(&ProjectNominalType) -> Result<(), E>,
+    ty: ScopedTypeView<'_>,
+    visitor: &mut impl FnMut(ScopedTypeView<'_>, &ProjectNominalType) -> Result<(), E>,
 ) -> Result<(), E> {
-    match ty {
+    let scope = ty.scope();
+    match ty.value() {
         TypeKind::Bool
         | TypeKind::I8
         | TypeKind::I16
@@ -69,6 +70,10 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::FocusPatch
         | TypeKind::CharacterDialogue(_)
         | TypeKind::ViewValue
+        | TypeKind::CompileTimeCallable(_)
+        | TypeKind::CompileTimeScalar(_)
+        | TypeKind::CompileTimeEnum(_)
+        | TypeKind::CompileTimeFx(_)
         | TypeKind::CharacterNominal(_)
         | TypeKind::Named(_)
         | TypeKind::Unit
@@ -84,60 +89,68 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)
         | TypeKind::BorrowRef { inner, .. }
-        | TypeKind::Projection { subject: inner, .. } => visit_project_nominals(inner, visitor),
-        TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
-            visit_project_nominals(item, visitor)
+        | TypeKind::Projection { subject: inner, .. }
+        | TypeKind::MetaType(inner) => {
+            visit_project_nominals(ScopedTypeView::sealed(inner, scope), visitor)
         }
-        TypeKind::Ref(entity) => entity
-            .value()
-            .map_or(Ok(()), |value| visit_project_nominals(value, visitor)),
+        TypeKind::FixedVector(vector) => {
+            visit_project_nominals(ScopedTypeView::sealed(vector.component(), scope), visitor)
+        }
+        TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
+            visit_project_nominals(ScopedTypeView::sealed(item, scope), visitor)
+        }
+        TypeKind::Ref(entity) => entity.value().map_or(Ok(()), |value| {
+            visit_project_nominals(ScopedTypeView::sealed(value, scope), visitor)
+        }),
         TypeKind::Map { key, value, .. } => {
-            visit_project_nominals(key, visitor)?;
-            visit_project_nominals(value, visitor)
+            visit_project_nominals(ScopedTypeView::sealed(key, scope), visitor)?;
+            visit_project_nominals(ScopedTypeView::sealed(value, scope), visitor)
         }
         TypeKind::Stream { item, error }
         | TypeKind::Parser { item, error }
         | TypeKind::Result { ok: item, error } => {
-            visit_project_nominals(item, visitor)?;
-            visit_project_nominals(error, visitor)
+            visit_project_nominals(ScopedTypeView::sealed(item, scope), visitor)?;
+            visit_project_nominals(ScopedTypeView::sealed(error, scope), visitor)
         }
         TypeKind::Function {
+            binder,
             params,
             return_type,
             ..
         } => {
+            let nested_scope = scope.with_binder(*binder);
             for parameter in params {
-                visit_project_nominals(parameter, visitor)?;
+                visit_project_nominals(ScopedTypeView::sealed(parameter, &nested_scope), visitor)?;
             }
-            visit_project_nominals(return_type, visitor)
+            visit_project_nominals(ScopedTypeView::sealed(return_type, &nested_scope), visitor)
         }
         TypeKind::ProjectNominal(nominal) => {
-            visitor(nominal)?;
+            visitor(ty, nominal)?;
             for argument in nominal.arguments() {
-                visit_project_nominals(argument, visitor)?;
+                visit_project_nominals(ScopedTypeView::sealed(argument, scope), visitor)?;
             }
             Ok(())
         }
         TypeKind::AcceptedNominal(nominal) => {
             for argument in nominal.arguments() {
-                visit_project_nominals(argument, visitor)?;
+                visit_project_nominals(ScopedTypeView::sealed(argument, scope), visitor)?;
             }
             Ok(())
         }
         TypeKind::OpenNominal(nominal) => {
             for argument in nominal.arguments() {
-                visit_project_nominals(argument, visitor)?;
+                visit_project_nominals(ScopedTypeView::sealed(argument, scope), visitor)?;
             }
             Ok(())
         }
         TypeKind::Tuple(items) | TypeKind::Choice(items) => {
             for item in items {
-                visit_project_nominals(item, visitor)?;
+                visit_project_nominals(ScopedTypeView::sealed(item, scope), visitor)?;
             }
             Ok(())
         }
-        TypeKind::VariantPayload(payload) => payload
-            .shape()
-            .visit_types(&mut |field| visit_project_nominals(field, visitor)),
+        TypeKind::VariantPayload(payload) => payload.visit_types(&mut |field| {
+            visit_project_nominals(ScopedTypeView::sealed(field, scope), visitor)
+        }),
     }
 }

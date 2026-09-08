@@ -524,15 +524,15 @@ fn assert_full_grammar_nested_proxy_observed_object(
     );
 }
 
-fn assert_full_grammar_inferred_text_object_proxy(source_path: &Path, json: &serde_json::Value) {
+fn assert_full_grammar_typed_text_object_proxy(source_path: &Path, json: &serde_json::Value) {
     let proxy_run = find_rich_text_run_object(json, "typed proxy");
     assert_eq!(proxy_run["rich_text_ref"]["hit_test"], true);
     assert_eq!(proxy_run["rich_text_ref"]["object_depth"], 4000);
     let proxies = proxy_run["rich_text_ref"]["presentation"]["object_proxies"]
         .as_array()
-        .expect("inferred proxy run should expose object_proxies");
+        .expect("typed proxy run should expose object_proxies");
     let [proxy] = proxies.as_slice() else {
-        panic!("inferred proxy run should carry one proxy: {proxy_run}");
+        panic!("typed proxy run should carry one proxy: {proxy_run}");
     };
     assert_eq!(proxy["id"], "KeywordHit");
     assert_eq!(proxy["type_name"], "KeywordHit");
@@ -548,13 +548,13 @@ fn assert_full_grammar_inferred_text_object_proxy(source_path: &Path, json: &ser
     assert_agent_observe_object_capture_refs(proxy_object);
     let proxy_object_id = proxy_object["id"]
         .as_str()
-        .expect("inferred proxy object id");
+        .expect("typed proxy object id");
     let proxy_object_width = proxy_object["bbox"]["width"]
         .as_u64()
-        .expect("inferred proxy object bbox width");
+        .expect("typed proxy object bbox width");
     let proxy_object_height = proxy_object["bbox"]["height"]
         .as_u64()
-        .expect("inferred proxy object bbox height");
+        .expect("typed proxy object bbox height");
     let proxy_object_id_uri =
         rich_text_object_capture_uri(proxy_object, "object_id", "application/octet-stream");
     assert_agent_read_uri_object_id_image_matches_object_color(

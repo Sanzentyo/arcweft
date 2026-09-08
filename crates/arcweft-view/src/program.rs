@@ -15,7 +15,9 @@ use crate::{
     ViewValueProgramId, ViewValueProgramInventory,
 };
 use arcweft_id::PublicId;
-use arcweft_presentation::fx::FxId;
+use arcweft_presentation::fx::{
+    FxDefinitionArgumentValue, FxDefinitionParameterIndex, FxDefinitionParameterLayoutDigest, FxId,
+};
 use arcweft_presentation::input::{InputEventKind, PointerPhase};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -362,13 +364,20 @@ pub struct ViewLocalBinding {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewFxCallArgument {
-    pub parameter: String,
-    pub value: ViewValueProgramId,
+    pub parameter: FxDefinitionParameterIndex,
+    pub source: ViewFxArgumentSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewFxArgumentSource {
+    Reactive(ViewValueProgramId),
+    Closed(FxDefinitionArgumentValue),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewFxApplicationInstruction {
     pub fx: FxId,
+    pub parameter_layout: FxDefinitionParameterLayoutDigest,
     pub arguments: Vec<ViewFxCallArgument>,
     pub key: Option<ViewValueProgramId>,
     pub application_ordinal: u32,

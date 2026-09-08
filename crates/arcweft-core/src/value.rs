@@ -28,6 +28,7 @@ mod nominal_record_expr;
 mod opaque;
 mod option_value;
 pub mod ownership;
+mod project_continuation;
 mod range;
 mod record_id;
 mod reduction;
@@ -64,7 +65,9 @@ pub use agent::{
     RuntimeAgentPredicateExpr, RuntimeAgentProbe, RuntimeAgentProbeExpr, RuntimeAgentTargetExpr,
     RuntimeAgentValue,
 };
-pub use awbc_save::{AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError};
+pub use awbc_save::{
+    AwbcRuntimeProjectContinuationSnapshot, AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError,
+};
 pub use expression_locals::RuntimeExprFreeLocalError;
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
@@ -74,13 +77,20 @@ pub use nominal_record::{
 };
 pub use nominal_record_expr::{RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr};
 pub use opaque::{
-    RuntimeDialogueActionValue, RuntimeDialogueAdvanceAction, RuntimeDialogueOpaqueRole,
-    RuntimeDialogueValueError, RuntimeDialogueViewField, RuntimeDialogueViewValue,
-    RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass,
-    RuntimeOpaqueValueError,
+    RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION, RuntimeDialogueActionValue,
+    RuntimeDialogueAdvanceAction, RuntimeDialogueContentBinding,
+    RuntimeDialogueContentEffectBinding, RuntimeDialogueContentValue,
+    RuntimeDialogueContentValueError, RuntimeDialogueOpaqueRole, RuntimeDialogueValueError,
+    RuntimeDialogueViewField, RuntimeDialogueViewValue, RuntimeHandleKind, RuntimeInlineTextValue,
+    RuntimeInlineTextValueError, RuntimeOpaquePersistence, RuntimeOpaqueValue,
+    RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
 };
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
+};
+pub use project_continuation::{
+    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeProjectContinuationAbiError,
+    RuntimeProjectContinuationError,
 };
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
@@ -215,19 +225,16 @@ impl RuntimeFunctionValue {
             .function_sites()
             .get(site)
             .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site })?;
-        if capture_values.len() != site_declaration.captures().len() {
+        let capture_inputs = site_declaration.capture_inputs().collect::<Vec<_>>();
+        if capture_values.len() != capture_inputs.len() {
             return Err(RuntimeFunctionApplyError::CaptureCountMismatch {
                 site,
-                expected: site_declaration.captures().len(),
+                expected: capture_inputs.len(),
                 actual: capture_values.len(),
             });
         }
-        for (index, (&local, value)) in site_declaration
-            .captures()
-            .iter()
-            .zip(&capture_values)
-            .enumerate()
-        {
+        for (index, (input, value)) in capture_inputs.iter().zip(&capture_values).enumerate() {
+            let local = input.input_local();
             let expected = plan
                 .local_declarations()
                 .get(local)
@@ -276,10 +283,45 @@ impl RuntimeFunctionValue {
         }
     }
 
+    /// Returns whether this structured function value denotes the executable
+    /// zero-argument callback body required by dialogue reveal.  AWBC-backed
+    /// values are validated against their program at the AWBC activation
+    /// boundary and therefore return `false` here.
+    pub(crate) fn is_structured_executable_callback(&self) -> bool {
+        let Some(closure) = self.as_structured() else {
+            return false;
+        };
+        if !closure.bound_args.is_empty() {
+            return false;
+        }
+        let Some(site) = closure.plan.function_sites().get(closure.site) else {
+            return false;
+        };
+        site.parameter_inputs().next().is_none()
+            && matches!(
+                site.body(),
+                crate::plan::RuntimeFunctionSiteBody::Executable(_)
+            )
+            && matches!(
+                closure.plan.checked_type(site.result()),
+                Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
+            )
+    }
+
     pub fn remaining_arity(&self) -> Result<usize, RuntimeFunctionApplyError> {
         match &self.body {
             RuntimeFunctionBody::Structured(closure) => closure.remaining_arity(),
             RuntimeFunctionBody::Awbc(closure) => Ok(closure.remaining_params.len()),
+        }
+    }
+
+    /// Number of values captured by this closure.  Content effect admission
+    /// uses this alongside the template's static capture ABI; the values
+    /// themselves remain owned by the existing closure representation.
+    pub(crate) fn capture_count(&self) -> usize {
+        match &self.body {
+            RuntimeFunctionBody::Structured(closure) => closure.capture_values.len(),
+            RuntimeFunctionBody::Awbc(closure) => closure.captures.len(),
         }
     }
 
@@ -340,11 +382,13 @@ impl RuntimeFunctionValue {
                     RuntimeFunctionApplyError::UnknownStructuredSite { site: closure.site },
                 )?;
                 let parameter_offset = closure.bound_args.len();
-                for (relative_index, (argument, &local)) in args
+                let parameter_inputs = site.parameter_inputs().collect::<Vec<_>>();
+                for (relative_index, (argument, input)) in args
                     .iter()
-                    .zip(&site.params()[parameter_offset..])
+                    .zip(&parameter_inputs[parameter_offset..])
                     .enumerate()
                 {
+                    let local = input.input_local();
                     let expected = closure.plan.local_declarations().get(local).ok_or(
                         RuntimeFunctionApplyError::UnknownStructuredLocal {
                             site: closure.site,
@@ -390,8 +434,8 @@ impl RuntimeStructuredClosure {
             .function_sites()
             .get(self.site)
             .ok_or(RuntimeFunctionApplyError::UnknownStructuredSite { site: self.site })?;
-        site.params()
-            .len()
+        site.parameter_inputs()
+            .count()
             .checked_sub(self.bound_args.len())
             .ok_or(RuntimeFunctionApplyError::InvalidBoundArgumentPrefix { site: self.site })
     }
@@ -505,6 +549,7 @@ pub enum RuntimeValue {
     Reduction(RuntimeReductionValue),
     Agent(RuntimeAgentValue),
     Function(RuntimeFunctionValue),
+    ProjectContinuation(RuntimeProjectContinuation),
     Variant {
         owner: RuntimeVariantIdentity,
         ordinal: u32,
@@ -525,6 +570,38 @@ pub enum RuntimeBuiltinVariantValueError {
 }
 
 impl RuntimeValue {
+    /// Reads a field from either physical record representation by admitted
+    /// ordinal. The executable type schema remains the field's owner.
+    pub(crate) fn record_field(&self, field: RuntimeRecordFieldId) -> Option<&RuntimeValue> {
+        let ordinal = field.zero_based() as usize;
+        match self {
+            Self::NominalRecord(record) => record.fields().get(ordinal),
+            Self::Record(fields) => fields.get(ordinal).map(RuntimeFieldValue::value),
+            _ => None,
+        }
+    }
+
+    /// Replaces one admitted record field by its typed ordinal. Both physical
+    /// record representations share this mutation boundary; callers validate
+    /// the owning schema and replacement type before invoking it.
+    pub(crate) fn replace_record_field(
+        &mut self,
+        field: RuntimeRecordFieldId,
+        value: RuntimeValue,
+    ) -> Result<(), RuntimeValue> {
+        match self {
+            Self::NominalRecord(record) => record.replace_field(field, value),
+            Self::Record(fields) => {
+                let Some(target) = fields.get_mut(field.zero_based() as usize) else {
+                    return Err(value);
+                };
+                *target.value_mut() = value;
+                Ok(())
+            }
+            _ => Err(value),
+        }
+    }
+
     /// Returns whether this value graph contains a snapshot-only opaque leaf.
     #[must_use]
     pub fn contains_nonconstant_opaque(&self) -> bool {
@@ -588,6 +665,10 @@ impl RuntimeValue {
             | Self::Iterator(RuntimeIterator::Range(_))
             | Self::EntityRef(_)
             | Self::Function(_) => false,
+            Self::ProjectContinuation(continuation) => continuation
+                .prefix_values()
+                .iter()
+                .any(Self::contains_nonconstant_opaque),
         }
     }
 
@@ -598,7 +679,7 @@ impl RuntimeValue {
     #[must_use]
     pub fn contains_function(&self) -> bool {
         match self {
-            Self::Function(_) => true,
+            Self::Function(_) | Self::ProjectContinuation(_) => true,
             Self::Tuple(values) => values.iter().any(Self::contains_function),
             Self::Record(fields) => fields.iter().any(|field| field.value().contains_function()),
             Self::Seq(sequence) => sequence_contains_function(sequence),
@@ -1739,6 +1820,25 @@ impl RuntimeExpr {
         Self { ty, kind }
     }
 
+    /// Constructs an admitted `DialogueContent` expression with effect-site
+    /// callback captures.  The plan builder has already sealed the template,
+    /// callback sites, and expression types before this constructor is used.
+    pub(crate) fn dialogue_content_with_effects(
+        ty: RuntimePlanTypeId,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        values: Vec<Self>,
+        effects: Vec<RuntimeDialogueContentEffectBindingExpr>,
+    ) -> Self {
+        Self::from_admitted_parts(
+            ty,
+            RuntimeExprKind::DialogueContent {
+                template,
+                values,
+                effects,
+            },
+        )
+    }
+
     #[must_use]
     pub const fn ty(&self) -> RuntimePlanTypeId {
         self.ty
@@ -1764,6 +1864,13 @@ pub enum RuntimeExprKind {
         body: Box<RuntimeExpr>,
     },
     Tuple(Vec<RuntimeExpr>),
+    /// Constructs an exact `DialogueContent` envelope from values evaluated
+    /// against the plan-owned immutable template manifest.
+    DialogueContent {
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        values: Vec<RuntimeExpr>,
+        effects: Vec<RuntimeDialogueContentEffectBindingExpr>,
+    },
     BracketSeq(Vec<RuntimeExpr>),
     RepeatSeq {
         value: Box<RuntimeExpr>,
@@ -1801,7 +1908,14 @@ pub enum RuntimeExprKind {
         callee: RuntimeCallTarget,
         args: Vec<RuntimeCallArgument>,
     },
-    Function(RuntimeFunctionSiteId),
+    /// Constructs a structured function value from the exact outer-scope
+    /// capture expressions supplied by the checked caller.  The function
+    /// site's `Capture` input rows describe the callee ABI destination; they
+    /// are never looked up in the outer environment by input-local id.
+    Function {
+        site: RuntimeFunctionSiteId,
+        captures: Vec<RuntimeExpr>,
+    },
     Apply {
         callee: Box<RuntimeExpr>,
         args: Vec<RuntimeCallArgument>,
@@ -1865,6 +1979,14 @@ pub enum RuntimeExprKind {
     },
 }
 
+/// Final plan-local callback binding for one content effect site.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentEffectBindingExpr {
+    pub site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    pub function: crate::runtime_id::RuntimeFunctionSiteId,
+    pub captures: Vec<RuntimeExpr>,
+}
+
 /// Closed executable family of the standard `map` callable.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeStandardMapFamily {
@@ -1887,14 +2009,20 @@ pub enum RuntimeStandardMapOperandOrder {
 pub struct RuntimeCallArgument {
     value: RuntimeExpr,
     mode: RuntimeCallArgumentMode,
+    abi_position: u32,
 }
 
 impl RuntimeCallArgument {
     pub(crate) const fn from_admitted_parts(
         value: RuntimeExpr,
         mode: RuntimeCallArgumentMode,
+        abi_position: u32,
     ) -> Self {
-        Self { value, mode }
+        Self {
+            value,
+            mode,
+            abi_position,
+        }
     }
 
     #[must_use]
@@ -1905,6 +2033,14 @@ impl RuntimeCallArgument {
     #[must_use]
     pub const fn mode(&self) -> RuntimeCallArgumentMode {
         self.mode
+    }
+
+    /// Returns the first logical ABI position occupied by this source
+    /// argument. A spread argument occupies the statically admitted range
+    /// beginning at this position; source evaluation remains in vector order.
+    #[must_use]
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
     }
 }
 
@@ -1947,6 +2083,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::Agent(_)
             | RuntimeExprKind::EntityRef(_)
             | RuntimeExprKind::Tuple(_)
+            | RuntimeExprKind::DialogueContent { .. }
             | RuntimeExprKind::BracketSeq(_)
             | RuntimeExprKind::RepeatSeq { .. }
             | RuntimeExprKind::Range { .. }
@@ -1957,7 +2094,7 @@ impl RuntimeExpr {
             | RuntimeExprKind::ProjectRecord { .. }
             | RuntimeExprKind::AssignNominalField { .. }
             | RuntimeExprKind::Call { .. }
-            | RuntimeExprKind::Function(_)
+            | RuntimeExprKind::Function { .. }
             | RuntimeExprKind::Apply { .. }
             | RuntimeExprKind::TraitCall { .. }
             | RuntimeExprKind::PureCall { .. }
@@ -1980,6 +2117,18 @@ impl fmt::Display for RuntimeExpr {
             RuntimeExprKind::EntityRef(target) => write!(f, "@{}", target.runtime_label()),
             RuntimeExprKind::Let { binding, .. } => write!(f, "let local#{binding}"),
             RuntimeExprKind::Tuple(items) => write!(f, "tuple/{}", items.len()),
+            RuntimeExprKind::DialogueContent {
+                template,
+                values,
+                effects,
+            } => {
+                write!(
+                    f,
+                    "dialogue_content/{template}/{}+{}",
+                    values.len(),
+                    effects.len()
+                )
+            }
             RuntimeExprKind::BracketSeq(items) => write!(f, "bracket_seq/{}", items.len()),
             RuntimeExprKind::RepeatSeq { len, .. } => write!(f, "repeat_seq/{len}"),
             RuntimeExprKind::Range { inclusive, .. } => f.write_str(if *inclusive {
@@ -1998,7 +2147,9 @@ impl fmt::Display for RuntimeExpr {
                 write!(f, "assign .field#{}", field.zero_based())
             }
             RuntimeExprKind::Call { callee, .. } => write!(f, "{callee}()"),
-            RuntimeExprKind::Function(site) => write!(f, "fn#{site}"),
+            RuntimeExprKind::Function { site, captures } => {
+                write!(f, "fn#{site}/captures{}", captures.len())
+            }
             RuntimeExprKind::Apply { .. } => f.write_str("apply"),
             RuntimeExprKind::TraitCall { callable, .. } => write!(f, "trait#{}()", callable.0),
             RuntimeExprKind::PureCall { helper, .. } => write!(f, "pure#{}()", helper.0),
@@ -2205,6 +2356,18 @@ pub enum RuntimeEvalError {
     MissingVariantDomain(RuntimePlanTypeId),
     #[error("runtime plan type {ty} has no variant case {ordinal}")]
     UnknownVariantCase { ty: RuntimePlanTypeId, ordinal: u32 },
+    #[error("runtime DialogueContent construction failed: {0}")]
+    DialogueContentConstruction(String),
+    #[error("runtime DialogueContent construction requires an artifact-bound plan")]
+    DialogueContentUnboundArtifact,
+    #[error(
+        "runtime DialogueContent evaluated binding count {actual} does not match template count {expected}"
+    )]
+    DialogueContentBindingCount { expected: usize, actual: usize },
+    #[error("runtime plan has no dialogue content template manifest for {template}")]
+    MissingDialogueTemplateManifest {
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+    },
     #[error("runtime plan type {0} is not valid for this expression kind")]
     InvalidExpressionType(RuntimePlanTypeId),
     #[error(transparent)]
@@ -2242,8 +2405,12 @@ pub enum RuntimeEvalError {
     FunctionArgumentCount { expected: usize, found: usize },
     #[error(transparent)]
     FunctionApply(#[from] RuntimeFunctionApplyError),
+    #[error(transparent)]
+    ProjectContinuation(#[from] RuntimeProjectContinuationError),
     #[error("structured function site {site} belongs to a different admitted runtime plan")]
     ForeignStructuredFunction { site: RuntimeFunctionSiteId },
+    #[error("structured function site {site} exhausted without a typed return")]
+    FunctionFallthrough { site: RuntimeFunctionSiteId },
     #[error("structured function site {site} capture local {local} is not bound")]
     UnboundStructuredCapture {
         site: RuntimeFunctionSiteId,
@@ -3616,6 +3783,12 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
             |_| "function/invalid".to_owned(),
             |arity| format!("function/{arity}"),
         ),
+        RuntimeValue::ProjectContinuation(continuation) => {
+            format!(
+                "project-continuation/{}",
+                continuation.prefix_values().len()
+            )
+        }
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")

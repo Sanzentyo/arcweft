@@ -12,7 +12,7 @@ use thiserror::Error;
 use crate::{
     callable::{
         CheckedCallArgumentPassing, CheckedCallArgumentSlotSource, CheckedCallCalleeExecution,
-        CheckedCallRuntimeOperand, CheckedCallRuntimeOperandOrder,
+        CheckedCallRuntimeOperand,
     },
     env::RegisteredSemanticWorld,
     final_analysis::{
@@ -24,7 +24,7 @@ use crate::{
         OwnershipEvidenceDigest, RetainedValueDisposition, classify_checked_producer_arguments,
     },
     semantic_coordinate::StableCheckedValueCoordinate,
-    types::{SemanticTypeDigest, TypeKind},
+    types::{GenericScopeError, SemanticTypeDigest, TypeKind},
 };
 
 /// Stable digest proving that the exact source-ordered Need producer values
@@ -96,6 +96,8 @@ impl CheckedNeedProducerAdmission {
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedNeedProducerAdmissionError {
     #[error(transparent)]
+    GenericScope(#[from] GenericScopeError),
+    #[error(transparent)]
     Generation(Box<crate::final_analysis::FinalSemanticAnalysisError>),
     #[error("selected callable join is missing")]
     MissingCallableJoin,
@@ -156,14 +158,14 @@ impl FinalSemanticAnalysis {
         let arguments = values
             .into_iter()
             .zip(dispositions)
-            .map(
-                |((coordinate, ty), disposition)| CheckedProducerArgumentAdmission {
+            .map(|((coordinate, ty), disposition)| {
+                Ok::<_, GenericScopeError>(CheckedProducerArgumentAdmission {
                     coordinate,
-                    ty: ty.semantic_identity_digest(),
+                    ty: ty.semantic_identity_digest()?,
                     disposition,
-                },
-            )
-            .collect::<Vec<_>>()
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
         let digest = need_producer_admission_digest(&arguments, ownership.evidence())?;
         Ok(CheckedNeedProducerAdmission {
@@ -196,7 +198,7 @@ impl FinalSemanticAnalysis {
             return Err(CheckedNeedProducerAdmissionError::UnsupportedCapture);
         }
         let execution = core.execution();
-        let operands = execution.ordered_runtime_operands(CheckedCallRuntimeOperandOrder::Source);
+        let operands = core.runtime_operands();
         if u64::try_from(operands.len()).unwrap_or(u64::MAX) > limits.max_producer_arguments {
             return Err(CheckedNeedProducerAdmissionError::WorkLimit);
         }

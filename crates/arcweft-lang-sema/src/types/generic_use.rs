@@ -3,22 +3,182 @@
 //! Generic ownership is a property of the checked type graph, not of callable
 //! source spelling.  This module is deliberately independent of the callable
 //! layer: it only knows the complete [`TypeKind`] algebra and records the
-//! exact type/constant identities it encounters.  Callable schema construction
+//! exact type, constant, and effect identities it encounters. Callable schema construction
 //! supplies an opaque occurrence position when it needs first-use rows.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use thiserror::Error;
 
+use crate::effect_row::{EffectRowTail, EffectVar};
+
 use super::{
-    ArrayLength, GenericConstParameterId, GenericParameterOwnerId, GenericTypeParameterId, TypeKind,
+    ArrayLength, GenericConstParameterId, GenericConstReference, GenericParameterKind,
+    GenericParameterOwnerId, GenericScope, GenericScopeError, GenericTypeParameterId,
+    GenericTypeReference, TypeKind,
 };
+
+#[cfg(test)]
+pub(crate) type TypeGenericUseCollector = GenericUseCollector<DeclarationUses>;
+pub(crate) type TypeGenericReferenceUseCollector = GenericUseCollector<ReferenceUses>;
+pub(crate) type StableGenericReferenceUseCollector = GenericUseCollector<StableReferenceUses>;
+
+/// The same structural visitor serves stable declaration inventories and
+/// application-local hint inventories. Only the latter admits inference atoms.
+pub(crate) trait GenericUseDomain {
+    type TypeKey: Clone + Ord + std::fmt::Debug;
+    type ConstKey: Clone + Ord + std::fmt::Debug;
+    fn type_key(
+        reference: &GenericTypeReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::TypeKey>, TypeGenericUseError>;
+    fn const_key(
+        reference: &GenericConstReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::ConstKey>, TypeGenericUseError>;
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DeclarationUses;
+
+#[derive(Clone, Debug)]
+pub(crate) struct ReferenceUses;
+
+#[derive(Clone, Debug)]
+pub(crate) struct StableReferenceUses;
+
+impl GenericUseDomain for StableReferenceUses {
+    type TypeKey = GenericTypeReference;
+    type ConstKey = GenericConstReference;
+
+    fn type_key(
+        reference: &GenericTypeReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::TypeKey>, TypeGenericUseError> {
+        if matches!(reference, GenericTypeReference::Inference(_)) {
+            return Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Type,
+            }
+            .into());
+        }
+        ReferenceUses::type_key(reference, scope, local_depth)
+    }
+
+    fn const_key(
+        reference: &GenericConstReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::ConstKey>, TypeGenericUseError> {
+        if matches!(reference, GenericConstReference::Inference(_)) {
+            return Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Const,
+            }
+            .into());
+        }
+        ReferenceUses::const_key(reference, scope, local_depth)
+    }
+}
+
+impl GenericUseDomain for DeclarationUses {
+    type TypeKey = GenericTypeParameterId;
+    type ConstKey = GenericConstParameterId;
+
+    fn type_key(
+        reference: &GenericTypeReference,
+        scope: &GenericScope,
+        _local_depth: usize,
+    ) -> Result<Option<Self::TypeKey>, TypeGenericUseError> {
+        match reference {
+            GenericTypeReference::Free(parameter) if valid_type_ordinal(parameter) => {
+                Ok(Some(parameter.clone()))
+            }
+            GenericTypeReference::Free(parameter) => {
+                Err(TypeGenericUseError::MalformedTypeParameter {
+                    parameter: parameter.clone(),
+                })
+            }
+            GenericTypeReference::Bound(parameter) => {
+                scope.bound_type(parameter.depth(), parameter.slot())?;
+                Ok(None)
+            }
+            GenericTypeReference::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Type,
+            }
+            .into()),
+        }
+    }
+
+    fn const_key(
+        reference: &GenericConstReference,
+        scope: &GenericScope,
+        _local_depth: usize,
+    ) -> Result<Option<Self::ConstKey>, TypeGenericUseError> {
+        match reference {
+            GenericConstReference::Free(parameter) if valid_const_ordinal(parameter) => {
+                Ok(Some(parameter.clone()))
+            }
+            GenericConstReference::Free(parameter) => {
+                Err(TypeGenericUseError::MalformedConstParameter {
+                    parameter: parameter.clone(),
+                })
+            }
+            GenericConstReference::Bound(parameter) => {
+                scope.bound_const(parameter.depth(), parameter.slot())?;
+                Ok(None)
+            }
+            GenericConstReference::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Const,
+            }
+            .into()),
+        }
+    }
+}
+
+impl GenericUseDomain for ReferenceUses {
+    type TypeKey = GenericTypeReference;
+    type ConstKey = GenericConstReference;
+
+    fn type_key(
+        reference: &GenericTypeReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::TypeKey>, TypeGenericUseError> {
+        match reference {
+            GenericTypeReference::Inference(_) => Ok(Some(reference.clone())),
+            GenericTypeReference::Bound(_) => reference
+                .template_key(&scope.without_inner(local_depth)?, scope)
+                .map_err(Into::into),
+            _ => DeclarationUses::type_key(reference, scope, local_depth)
+                .map(|key| key.map(GenericTypeReference::Free)),
+        }
+    }
+
+    fn const_key(
+        reference: &GenericConstReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::ConstKey>, TypeGenericUseError> {
+        match reference {
+            GenericConstReference::Inference(_) => Ok(Some(reference.clone())),
+            GenericConstReference::Bound(_) => reference
+                .template_key(&scope.without_inner(local_depth)?, scope)
+                .map_err(Into::into),
+            _ => DeclarationUses::const_key(reference, scope, local_depth)
+                .map(|key| key.map(GenericConstReference::Free)),
+        }
+    }
+}
 
 /// A malformed generic identity or an inferable array length encountered while
 /// walking a schema type.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum TypeGenericUseError {
+    #[error(transparent)]
+    Scope(#[from] GenericScopeError),
     #[error("generic type parameter identity is not valid for its intrinsic owner: {parameter:?}")]
     MalformedTypeParameter { parameter: GenericTypeParameterId },
     #[error(
@@ -36,41 +196,57 @@ pub enum TypeGenericUseError {
 /// They let a higher schema owner project the lower collection into its own
 /// typed first-use algebra without teaching this layer about callable groups.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct TypeGenericUseInventory {
-    types: Arc<[GenericTypeParameterId]>,
-    consts: Arc<[GenericConstParameterId]>,
-    type_first_use: BTreeMap<GenericTypeParameterId, u32>,
-    const_first_use: BTreeMap<GenericConstParameterId, u32>,
+pub(crate) struct TypeGenericUseInventory<T = GenericTypeParameterId, C = GenericConstParameterId> {
+    types: Arc<[T]>,
+    consts: Arc<[C]>,
+    effects: Arc<[EffectVar]>,
+    type_first_use: BTreeMap<T, u32>,
+    const_first_use: BTreeMap<C, u32>,
 }
 
-impl TypeGenericUseInventory {
-    pub(crate) fn types(&self) -> &[GenericTypeParameterId] {
+impl<T: Ord, C: Ord> TypeGenericUseInventory<T, C> {
+    pub(crate) fn types(&self) -> &[T] {
         &self.types
     }
 
-    pub(crate) fn consts(&self) -> &[GenericConstParameterId] {
+    pub(crate) fn consts(&self) -> &[C] {
         &self.consts
     }
 
-    pub(crate) fn first_type_use(&self, parameter: &GenericTypeParameterId) -> Option<u32> {
+    pub(crate) fn effects(&self) -> &[EffectVar] {
+        &self.effects
+    }
+
+    pub(crate) fn first_type_use(&self, parameter: &T) -> Option<u32> {
         self.type_first_use.get(parameter).copied()
     }
 
-    pub(crate) fn first_const_use(&self, parameter: &GenericConstParameterId) -> Option<u32> {
+    pub(crate) fn first_const_use(&self, parameter: &C) -> Option<u32> {
         self.const_first_use.get(parameter).copied()
     }
 }
 
 /// Exhaustive, metered-free visitor for generic occurrences in [`TypeKind`].
-#[derive(Clone, Debug, Default)]
-pub(crate) struct TypeGenericUseCollector {
-    types: BTreeMap<GenericTypeParameterId, u32>,
-    consts: BTreeMap<GenericConstParameterId, u32>,
+#[derive(Clone, Debug)]
+pub(crate) struct GenericUseCollector<M: GenericUseDomain> {
+    scope: GenericScope,
+    incoming_depth: usize,
+    types: BTreeMap<M::TypeKey, u32>,
+    consts: BTreeMap<M::ConstKey, u32>,
+    effects: BTreeSet<EffectVar>,
+    domain: std::marker::PhantomData<M>,
 }
 
-impl TypeGenericUseCollector {
+impl<M: GenericUseDomain> GenericUseCollector<M> {
     pub(crate) fn new() -> Self {
-        Self::default()
+        Self {
+            scope: GenericScope::default(),
+            incoming_depth: 0,
+            types: BTreeMap::new(),
+            consts: BTreeMap::new(),
+            effects: BTreeSet::new(),
+            domain: std::marker::PhantomData,
+        }
     }
 
     /// Visits a type at the default position.  This is useful to callers that
@@ -145,7 +321,12 @@ impl TypeGenericUseCollector {
             | TypeKind::Named(_)
             | TypeKind::Unit
             | TypeKind::Never
-            | TypeKind::Error(_) => Ok(()),
+            | TypeKind::Error(_)
+            | TypeKind::CompileTimeCallable(_)
+            | TypeKind::CompileTimeScalar(_)
+            | TypeKind::CompileTimeEnum(_)
+            | TypeKind::CompileTimeFx(_) => Ok(()),
+            TypeKind::FixedVector(vector) => self.visit_at(vector.component(), position),
             TypeKind::Range(inner)
             | TypeKind::Probe(inner)
             | TypeKind::Vec(inner)
@@ -156,6 +337,7 @@ impl TypeGenericUseCollector {
             | TypeKind::ThreadHandle(inner)
             | TypeKind::Shared(inner)
             | TypeKind::DialogueLine(inner) => self.visit_at(inner, position),
+            TypeKind::MetaType(inner) => self.visit_at(inner, position),
             TypeKind::IteratorState { item, .. } => self.visit_at(item, position),
             TypeKind::Array { item, len } => {
                 self.visit_at(item, position)?;
@@ -173,16 +355,38 @@ impl TypeGenericUseCollector {
                 self.visit_at(error, position)
             }
             TypeKind::Function {
+                binder,
                 params,
                 return_type,
-                ..
+                effects,
             } => {
-                for parameter in params {
-                    self.visit_at(parameter, position)?;
+                if let EffectRowTail::Variable(variable) = effects.tail() {
+                    self.effects.insert(variable);
                 }
-                self.visit_at(return_type, position)
+                let nested = self.scope.with_binder(*binder);
+                let enclosing = std::mem::replace(&mut self.scope, nested);
+                let result = (|| {
+                    for parameter in params {
+                        self.visit_at(parameter, position)?;
+                    }
+                    self.visit_at(return_type, position)
+                })();
+                self.scope = enclosing;
+                result
             }
-            TypeKind::GenericParam(parameter) => self.visit_type_parameter(parameter, position),
+            TypeKind::GenericParam(reference) => {
+                if let Some(key) = M::type_key(
+                    reference,
+                    &self.scope,
+                    self.scope.binders().len() - self.incoming_depth,
+                )? {
+                    self.types
+                        .entry(key)
+                        .and_modify(|first| *first = (*first).min(position))
+                        .or_insert(position);
+                }
+                Ok(())
+            }
             TypeKind::Ref(entity) => entity
                 .value()
                 .map_or(Ok(()), |value| self.visit_at(value, position)),
@@ -212,35 +416,57 @@ impl TypeGenericUseCollector {
                 }
                 Ok(())
             }
-            TypeKind::VariantPayload(payload) => payload
-                .shape()
-                .visit_types(&mut |field| self.visit_at(field, position)),
+            TypeKind::VariantPayload(payload) => {
+                payload.visit_types(&mut |field| self.visit_at(field, position))
+            }
             TypeKind::Handle { .. } => Ok(()),
         }
     }
 
-    pub(crate) fn collect(ty: &TypeKind) -> Result<TypeGenericUseInventory, TypeGenericUseError> {
+    pub(crate) fn collect(
+        ty: &TypeKind,
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
+        Self::collect_in_scope(ty, &GenericScope::default())
+    }
+
+    pub(crate) fn collect_in_scope(
+        ty: &TypeKind,
+        scope: &GenericScope,
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
         let mut collector = Self::new();
+        collector.scope = scope.clone();
+        collector.incoming_depth = scope.binders().len();
         collector.visit(ty)?;
         Ok(collector.finish())
     }
 
+    #[cfg(test)]
     pub(crate) fn collect_many<'a>(
         types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
-    ) -> Result<TypeGenericUseInventory, TypeGenericUseError> {
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
+        Self::collect_many_in_scope(types, &GenericScope::default())
+    }
+
+    pub(crate) fn collect_many_in_scope<'a>(
+        types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
+        scope: &GenericScope,
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
         let mut collector = Self::new();
+        collector.scope = scope.clone();
+        collector.incoming_depth = scope.binders().len();
         for (ty, position) in types {
             collector.visit_at(ty, position)?;
         }
         Ok(collector.finish())
     }
 
-    pub(crate) fn finish(self) -> TypeGenericUseInventory {
+    pub(crate) fn finish(self) -> TypeGenericUseInventory<M::TypeKey, M::ConstKey> {
         let types = self.types.keys().cloned().collect::<Vec<_>>().into();
         let consts = self.consts.keys().cloned().collect::<Vec<_>>().into();
         TypeGenericUseInventory {
             types,
             consts,
+            effects: self.effects.into_iter().collect(),
             type_first_use: self.types,
             const_first_use: self.consts,
         }
@@ -253,43 +479,21 @@ impl TypeGenericUseCollector {
     ) -> Result<(), TypeGenericUseError> {
         match length {
             ArrayLength::Const(_) | ArrayLength::Error(_) => Ok(()),
-            ArrayLength::Generic(parameter) => self.visit_const_parameter(parameter, position),
+            ArrayLength::Generic(reference) => {
+                if let Some(key) = M::const_key(
+                    reference,
+                    &self.scope,
+                    self.scope.binders().len() - self.incoming_depth,
+                )? {
+                    self.consts
+                        .entry(key)
+                        .and_modify(|first| *first = (*first).min(position))
+                        .or_insert(position);
+                }
+                Ok(())
+            }
             ArrayLength::Inferred => Err(TypeGenericUseError::InferableArrayLength),
         }
-    }
-
-    fn visit_type_parameter(
-        &mut self,
-        parameter: &GenericTypeParameterId,
-        position: u32,
-    ) -> Result<(), TypeGenericUseError> {
-        if !valid_type_ordinal(parameter) {
-            return Err(TypeGenericUseError::MalformedTypeParameter {
-                parameter: parameter.clone(),
-            });
-        }
-        self.types
-            .entry(parameter.clone())
-            .and_modify(|first| *first = (*first).min(position))
-            .or_insert(position);
-        Ok(())
-    }
-
-    fn visit_const_parameter(
-        &mut self,
-        parameter: &GenericConstParameterId,
-        position: u32,
-    ) -> Result<(), TypeGenericUseError> {
-        if !valid_const_ordinal(parameter) {
-            return Err(TypeGenericUseError::MalformedConstParameter {
-                parameter: parameter.clone(),
-            });
-        }
-        self.consts
-            .entry(parameter.clone())
-            .and_modify(|first| *first = (*first).min(position))
-            .or_insert(position);
-        Ok(())
     }
 }
 
@@ -347,10 +551,10 @@ mod tests {
         let length = constant(2, 0);
         let ty = TypeKind::Map {
             kind: crate::types::MapKind::Ordered,
-            key: Box::new(TypeKind::GenericParam(first.clone())),
+            key: Box::new(TypeKind::generic_parameter(first.clone())),
             value: Box::new(TypeKind::Array {
-                item: Box::new(TypeKind::GenericParam(second.clone())),
-                len: ArrayLength::Generic(length.clone()),
+                item: Box::new(TypeKind::generic_parameter(second.clone())),
+                len: ArrayLength::generic_parameter(length.clone()),
             }),
         };
 
@@ -385,7 +589,7 @@ mod tests {
             )
             .expect("poison length");
         collector
-            .visit_array_length(&ArrayLength::Generic(constant.clone()), 2)
+            .visit_array_length(&ArrayLength::generic_parameter(constant.clone()), 2)
             .expect("rigid generic length");
         assert_eq!(collector.finish().consts(), &[constant]);
         assert_eq!(
@@ -396,7 +600,7 @@ mod tests {
 
     #[test]
     fn intrinsic_identity_validation_rejects_wrong_ordinal_and_const_namespace() {
-        let wrong_type = TypeKind::GenericParam(GenericTypeParameterId::new(
+        let wrong_type = TypeKind::generic_parameter(GenericTypeParameterId::new(
             GenericParameterOwnerId::LanguageIntrinsic(
                 LanguageIntrinsicGenericOwner::OptionConstructor,
             ),
@@ -409,7 +613,7 @@ mod tests {
 
         let wrong_const = TypeKind::Array {
             item: Box::new(TypeKind::I32),
-            len: ArrayLength::Generic(GenericConstParameterId::new(
+            len: ArrayLength::generic_parameter(GenericConstParameterId::new(
                 GenericParameterOwnerId::LanguageIntrinsic(
                     LanguageIntrinsicGenericOwner::OptionConstructor,
                 ),
@@ -427,11 +631,11 @@ mod tests {
         let parameter = parameter(3, 0);
         let constant = constant(4, 0);
         let result = TypeKind::Array {
-            item: Box::new(TypeKind::GenericParam(parameter.clone())),
-            len: ArrayLength::Generic(constant.clone()),
+            item: Box::new(TypeKind::generic_parameter(parameter.clone())),
+            len: ArrayLength::generic_parameter(constant.clone()),
         };
         let inventory = TypeGenericUseCollector::collect_many([
-            (&TypeKind::GenericParam(parameter.clone()), 1),
+            (&TypeKind::generic_parameter(parameter.clone()), 1),
             (&result, 2),
         ])
         .expect("valid typed positions");
@@ -448,7 +652,7 @@ mod tests {
         };
         use arcweft_lang_syntax::reference::BorrowKind;
 
-        let generic = |owner| TypeKind::GenericParam(parameter(owner, 0));
+        let generic = |owner| TypeKind::generic_parameter(parameter(owner, 0));
         let cases = vec![
             TypeKind::Range(Box::new(generic(100))),
             TypeKind::IteratorState {
@@ -491,6 +695,7 @@ mod tests {
             TypeKind::ThreadHandle(Box::new(generic(117))),
             TypeKind::Shared(Box::new(generic(118))),
             TypeKind::Function {
+                binder: crate::types::GenericBinder::EMPTY,
                 params: vec![generic(119)],
                 return_type: Box::new(generic(120)),
                 effects: EffectRow::closed(EffectSet::new()),
@@ -513,5 +718,103 @@ mod tests {
         assert_eq!(inventory.types().len(), 27);
         assert_eq!(inventory.first_type_use(&parameter(100, 0)), Some(0));
         assert_eq!(inventory.first_type_use(&parameter(124, 0)), Some(21));
+    }
+
+    #[test]
+    fn scoped_inventory_distinguishes_outer_references_from_function_local_binders() {
+        use crate::{effect_row::EffectRow, effects::EffectSet, types::GenericBinder};
+        let binder = GenericBinder::new(1, 1, 0);
+        let incoming = GenericScope::default().with_binder(binder);
+        let outer_type = incoming.bound_type(0, 0).expect("outer type");
+        let outer_length = incoming.bound_const(0, 0).expect("outer length");
+        let function = TypeKind::function_with_binder(
+            binder,
+            [TypeKind::GenericParam(outer_type.clone())],
+            TypeKind::Array {
+                item: Box::new(TypeKind::GenericParam(outer_type.clone())),
+                len: ArrayLength::Generic(outer_length.clone()),
+            },
+            EffectRow::closed(EffectSet::new()),
+        );
+        let locals = StableGenericReferenceUseCollector::collect_in_scope(&function, &incoming)
+            .expect("function owns its references");
+        assert!(locals.types().is_empty() && locals.consts().is_empty());
+        assert!(function.semantic_identity_digest().is_ok());
+
+        let mixed = TypeKind::Tuple(vec![
+            TypeKind::GenericParam(outer_type.clone()),
+            function,
+            TypeKind::Array {
+                item: Box::new(TypeKind::Bool),
+                len: ArrayLength::Generic(outer_length.clone()),
+            },
+        ]);
+        let external = StableGenericReferenceUseCollector::collect_in_scope(&mixed, &incoming)
+            .expect("incoming binder supplies the outer references");
+        assert_eq!(external.types(), [outer_type]);
+        assert_eq!(external.consts(), [outer_length]);
+        assert!(StableGenericReferenceUseCollector::collect(&mixed).is_err());
+    }
+
+    #[test]
+    fn active_hint_references_cannot_become_a_stable_type_inventory() {
+        let opening = super::super::generics::OpenedGenericScope::new(
+            crate::types::GenericBinder::new(1, 0, 0),
+        )
+        .expect("fresh application");
+        let reference = opening.type_reference(0).expect("inference slot");
+        let value = TypeKind::Vec(Box::new(TypeKind::GenericParam(reference.clone())));
+        let active =
+            TypeGenericReferenceUseCollector::collect(&value).expect("application-local hint");
+        assert_eq!(active.types(), [reference]);
+        assert!(matches!(
+            StableGenericReferenceUseCollector::collect(&value),
+            Err(TypeGenericUseError::Scope(
+                GenericScopeError::EscapedInference {
+                    kind: GenericParameterKind::Type
+                }
+            ))
+        ));
+        assert!(value.semantic_identity_digest().is_err());
+    }
+
+    #[test]
+    fn nested_occurrences_share_the_same_incoming_type_and_const_keys() {
+        use crate::{effect_row::EffectRow, effects::EffectSet, types::GenericBinder};
+        let binder = GenericBinder::new(1, 1, 0);
+        let incoming = GenericScope::default().with_binder(binder);
+        let type_key = incoming.bound_type(0, 0).expect("incoming type");
+        let const_key = incoming.bound_const(0, 0).expect("incoming length");
+        let direct = TypeKind::Array {
+            item: Box::new(TypeKind::GenericParam(type_key.clone())),
+            len: ArrayLength::Generic(const_key.clone()),
+        };
+        let inner = incoming.with_binder(binder);
+        let nested = TypeKind::function_with_binder(
+            binder,
+            [TypeKind::GenericParam(
+                inner.bound_type(0, 0).expect("local type is excluded"),
+            )],
+            TypeKind::Array {
+                item: Box::new(TypeKind::GenericParam(
+                    inner.bound_type(1, 0).expect("outer type under one binder"),
+                )),
+                len: ArrayLength::Generic(
+                    inner
+                        .bound_const(1, 0)
+                        .expect("outer length under one binder"),
+                ),
+            },
+            EffectRow::closed(EffectSet::new()),
+        );
+        let uses = StableGenericReferenceUseCollector::collect_many_in_scope(
+            [(&direct, 2), (&nested, 1)],
+            &incoming,
+        )
+        .expect("scoped occurrence inventory");
+        assert_eq!(uses.types(), &[type_key.clone()]);
+        assert_eq!(uses.consts(), &[const_key.clone()]);
+        assert_eq!(uses.first_type_use(&type_key), Some(1));
+        assert_eq!(uses.first_const_use(&const_key), Some(1));
     }
 }

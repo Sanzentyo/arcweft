@@ -240,14 +240,16 @@ fn nanos_per_character(milli_cps: i32) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Milli, RichTextPresentation, RichTextRange, RichTextTextSource};
+    use crate::{
+        Milli, RichTextNodeIndex, RichTextPresentation, RichTextRange, RichTextTextSource,
+    };
     use arcweft_core::runtime_id::{RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId};
 
     fn run(text: &str, milli_cps: i32) -> RichTextTextRun {
         RichTextTextRun {
             range: RichTextRange::new(0, text.len()),
             source: RichTextTextSource::Text,
-            node_index: 0,
+            node_index: RichTextNodeIndex::new(0),
             styles: vec![RichTextStyle::Speed {
                 milli_cps: Milli(milli_cps),
             }],
@@ -261,7 +263,7 @@ mod tests {
         control: RichTextControl,
     ) -> RichTextControlMarker {
         RichTextControlMarker {
-            node_index,
+            node_index: RichTextNodeIndex::try_from_index(node_index).expect("node index"),
             text_offset,
             control,
             range: None,

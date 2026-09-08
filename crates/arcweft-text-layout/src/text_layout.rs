@@ -3,7 +3,10 @@
 use std::{fmt, ops::Range};
 
 use arcweft_render_text::ResolvedTextStyle;
-use arcweft_text_model::{RichTextPresentation, RichTextRange, RichTextWritingMode};
+use arcweft_text_model::{
+    RichTextNodeIndex, RichTextNodeRange, RichTextPresentation, RichTextRange,
+    RichTextTextRunRange, RichTextWritingMode,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -75,6 +78,9 @@ pub struct TextLayoutRubyGlyph {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TextLayoutRuby {
     pub ruby_index: u32,
+    pub owner_node: RichTextNodeIndex,
+    pub body_nodes: RichTextNodeRange,
+    pub base_runs: RichTextTextRunRange,
     pub base_range: RichTextRange,
     pub text: String,
     pub base_bounds: LayoutRect,

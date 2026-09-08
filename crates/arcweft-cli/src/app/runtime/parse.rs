@@ -26,7 +26,7 @@ fn parse_runtime_value(raw: &str) -> Result<RuntimeValue, String> {
         value if value.starts_with("tensor/f32/") => parse_runtime_tensor_f32(value),
         value if value.starts_with("tensor/f64/") => parse_runtime_tensor_f64(value),
         value if value.starts_with("seq/f32:") => parse_runtime_f32_sequence(value),
-        value if value.starts_with('@') => Ok(RuntimeValue::EntityRef(value[1..].to_owned())),
+        value if value.starts_with('@') => Ok(RuntimeValue::String(value[1..].to_owned())),
         value => value
             .parse::<i64>()
             .map(RuntimeValue::i64)

@@ -124,10 +124,7 @@ impl FxProviderOutput {
                 limit: self.limits.max_operations,
             });
         }
-        let value_count = match &operation {
-            ResolvedFxOperation::Transform(_) => 0,
-            ResolvedFxOperation::Values(operation) => operation.values.len(),
-        };
+        let value_count = operation.value_count();
         if value_count > usize::from(self.limits.max_values_per_operation) {
             return Err(FxProviderError::ValueBudgetExceeded {
                 actual: value_count,

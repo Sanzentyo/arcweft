@@ -269,8 +269,8 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
                     report
                         .expression(expression)
                         .expect("timeout expression")
-                        .ty(),
-                    &TypeKind::Duration
+                        .value_type(),
+                    Some(&TypeKind::Duration)
                 );
                 continue;
             }
@@ -279,8 +279,8 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
                     report
                         .expression(expression)
                         .expect("expression trigger child")
-                        .ty(),
-                    &TypeKind::Bool
+                        .value_type(),
+                    Some(&TypeKind::Bool)
                 );
                 continue;
             }
@@ -334,7 +334,8 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
         let target_type = signal_report
             .expression(target)
             .expect("Signal target expression")
-            .ty();
+            .value_type()
+            .expect("Signal target value");
         assert!(
             matches!(target_type, TypeKind::Ref(entity) if entity.kind() == &EntityKind::Signal && entity.value() == Some(&TypeKind::Bool))
         );
@@ -389,7 +390,12 @@ fn p02_event_trigger_uses_the_reachable_stateful_entry_event_type() {
         .collect::<Vec<_>>();
     assert_eq!(expected_digest.len(), 1);
     let pattern_type = report.pattern(pattern).expect("Event pattern").ty();
-    assert_eq!(pattern_type.semantic_identity_digest(), expected_digest[0]);
+    assert_eq!(
+        pattern_type
+            .semantic_identity_digest()
+            .expect("stable fixture type"),
+        expected_digest[0]
+    );
     assert_pattern_and_local_type(&report, module, pattern, pattern_type);
 }
 
@@ -397,7 +403,7 @@ fn p02_event_trigger_uses_the_reachable_stateful_entry_event_type() {
 fn p06_mark_trigger_has_no_scrutinee_child_and_publishes_checked_view() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 flow main() -> String {
     alice[before [mark @.checkpoint] after] with {
         on mark(@.checkpoint) => return "done"
@@ -644,8 +650,11 @@ fn p17_select_branches_retain_source_order_and_checked_branch_evidence() {
             HirSelectBranchHead::Bind { binding, source } => {
                 let local = binding.resolved().expect("Bind local");
                 assert_eq!(
-                    report.expression(*source).expect("Bind source").ty(),
-                    &TypeKind::Bool
+                    report
+                        .expression(*source)
+                        .expect("Bind source")
+                        .value_type(),
+                    Some(&TypeKind::Bool)
                 );
                 assert_eq!(
                     report.local(local).expect("Bind checked local").ty(),
@@ -660,7 +669,12 @@ fn p17_select_branches_retain_source_order_and_checked_branch_evidence() {
             }
             HirSelectBranchHead::Event { pattern, locals } => {
                 let pattern_type = report.pattern(*pattern).expect("Event pattern").ty();
-                assert_eq!(pattern_type.semantic_identity_digest(), expected_event);
+                assert_eq!(
+                    pattern_type
+                        .semantic_identity_digest()
+                        .expect("stable fixture type"),
+                    expected_event
+                );
                 assert_eq!(locals.len(), 1);
                 assert_eq!(
                     report.local(locals[0]).expect("Event local").ty(),
@@ -712,7 +726,11 @@ flow row(source: Result<i64, String>) -> Result<i64, String> {
     let local = binding.resolved().expect("Try binding local");
     assert_eq!(
         report.local(local).expect("checked Try binding local").ty(),
-        report.expression(*source).expect("checked Try source").ty()
+        report
+            .expression(*source)
+            .expect("checked Try source")
+            .value_type()
+            .expect("Try source value")
     );
     assert!(matches!(
         checked_select(&report, owner).view(),

@@ -262,7 +262,7 @@ pub struct RichTextTextProxySchema {
 /// Declaration-order field schema for one typed text proxy.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextTextProxyFieldSchema {
-    pub id: u16,
+    pub id: u32,
     pub name: String,
     pub kind: RichTextTextProxyFieldKind,
     pub optional: bool,
@@ -293,7 +293,7 @@ pub enum RichTextTextProxyFieldKind {
 /// Declaration-order value for one typed text-proxy field.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RichTextTextProxyField {
-    pub id: u16,
+    pub id: u32,
     pub name: String,
     pub value: RichTextTextProxyScalar,
 }
@@ -309,7 +309,7 @@ pub enum RichTextTextProxyScalar {
     Length { value: RichTextTextProxyLength },
     Angle { milli_degrees: i32 },
     Duration { millis: u64 },
-    ClosedEnum { enum_id: String, variant: u16 },
+    ClosedEnum { enum_id: String, variant: u32 },
     PublicId { value: String },
     Text { value: String },
     Color { value: crate::style::RichTextColor },

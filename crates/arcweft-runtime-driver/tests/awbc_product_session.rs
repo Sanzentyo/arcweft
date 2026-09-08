@@ -36,8 +36,9 @@ use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
 use arcweft_presentation::fx::{
-    FiniteF32, FxAbiHash, FxDefinition, FxDiagnosticCode, FxGraph, FxGraphChildPath, FxId,
-    FxInstanceId, FxParameter, FxRuntimeType, FxRuntimeValue,
+    FiniteF32, FxAbiHash, FxDefinition, FxDefinitionParameter, FxDefinitionParameterType,
+    FxDiagnosticCode, FxGraph, FxGraphChildPath, FxId, FxInstanceIdentity, FxInstanceOwnerKey,
+    FxRuntimeType, FxRuntimeValue,
 };
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
@@ -367,16 +368,19 @@ fn fx_instances_and_logical_time_restore_atomically_with_the_session() {
         RuntimeClockStep::from_millis(1, 250).expect("clock"),
         BundleStepInput::default(),
     );
-    let instance = FxInstanceId::derive(definition.id(), ["view.hud", "node.1", "fx.0"]);
+    let identity = FxInstanceIdentity::new(
+        definition.id(),
+        FxInstanceOwnerKey::from_view_canonical_bytes(b"view-node-fx"),
+        0,
+    );
     session
         .retain_fx_instance(
-            definition.id(),
-            instance,
+            identity,
             vec![FxRuntimeValue::F32(
                 FiniteF32::try_new(1.5).expect("finite"),
             )],
             FxGraphChildPath::try_new(vec![2, 4]).expect("child path"),
-            Some(b"authored-seed"),
+            Some(arcweft_presentation::fx::FxAuthoredSeed::new(0xa17e_5eed)),
         )
         .expect("Fx activates");
     session.step_with_clock(
@@ -404,7 +408,11 @@ fn fx_instances_and_logical_time_restore_atomically_with_the_session() {
         .expect("restored snapshot exports");
     let mut invalid = before_rejection.clone();
     invalid.runtime.source_label = "must not leak".to_owned();
-    invalid.presentation.fx.instances[0].abi_hash = FxAbiHash::derive(["wrong"]);
+    let mut invalid_fx = serde_json::to_value(&invalid.presentation.fx).expect("Fx snapshot JSON");
+    invalid_fx["instances"][0]["abi_hash"] =
+        serde_json::to_value(FxAbiHash::from_bytes([0xa5; 32])).expect("ABI hash JSON");
+    invalid.presentation.fx =
+        serde_json::from_value(invalid_fx).expect("intrinsically valid Fx snapshot");
     let error = restored
         .restore_session_snapshot(invalid)
         .expect_err("ABI mismatch is rejected");
@@ -1119,7 +1127,15 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
 fn fx_definition() -> FxDefinition {
     FxDefinition::new(
         FxId::try_new("test", "pulse").expect("Fx identity"),
-        vec![FxParameter::try_new("speed", FxRuntimeType::F32, None).expect("Fx parameter")],
+        vec![
+            FxDefinitionParameter::try_new(
+                0,
+                "speed",
+                FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                None,
+            )
+            .expect("Fx parameter"),
+        ],
         FxGraph::default(),
     )
     .expect("Fx definition")

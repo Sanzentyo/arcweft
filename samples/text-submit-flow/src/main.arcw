@@ -1,6 +1,5 @@
 pub character narrator {
   display = "Arcweft Text Submit"
-  default_voice = auto
 }
 
 pub action feedback.submit(value: String)

@@ -858,7 +858,9 @@ impl Resolver<'_, '_> {
                     },
                 )
             }
-            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Record(_) => (
+            AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::Record(_)
+            | AcceptedNominalSemantics::CompileTimeScalar(_) => (
                 instantiated.clone(),
                 ExternalNominalResolution::Exact {
                     external: external.declaration(),

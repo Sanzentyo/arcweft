@@ -6,8 +6,10 @@ effects { debug.read }
     expect(meta.id == "flow.opening")
     expect(meta.kind == "flow")
     expect(meta.semantic_hash != "")
-    expect(meta.source.has_source)
-    expect(meta.source.end_byte > meta.source.start_byte)
+    match meta.source {
+        .Some(source) => expect(source.end_byte > source.start_byte)
+        .None => expect(false, "flow.opening source anchor is absent")
+    }
 
     return Ok(())
 }

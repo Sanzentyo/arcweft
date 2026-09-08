@@ -31,7 +31,7 @@ use arcweft_presentation::{
     layer::LayerId,
     semantic::SemanticRole,
 };
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_runtime_driver::dialogue::{
     DialoguePageIndex, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
     DialogueViewReveal, DialogueViewStage, DialogueViewState,
@@ -49,17 +49,17 @@ use arcweft_runtime_driver::view_runtime::{
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
-    LineDisplayFrame, RichTextDocument, RichTextNode,
+    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
+    DialoguePresentationCharacter, LineDisplayFrame, RichTextDocument, RichTextNode,
 };
 use arcweft_view::{
     AcceptedViewProgramRevision, ContainerKind, DialogueAdvanceTarget, DialogueEntryId,
     DialogueInstanceId, DialoguePresentationId, DialogueRevision, DialogueStageIndex, EventKind,
     FragmentKind, NodeKey, RustViewId, SemanticSpecId, ViewDescriptor, ViewFragmentBuilder,
     ViewHandlerInvocation, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerRouteTable, ViewId,
-    ViewImplementation, ViewInstruction, ViewMountId, ViewPartLocalName, ViewPartName,
-    ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId, ViewSemanticFragmentBuilder,
-    ViewSemanticNode,
+    ViewImplementation, ViewInstruction, ViewMountId, ViewParameterCoordinate, ViewPartLocalName,
+    ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewSchemaId,
+    ViewSemanticFragmentBuilder, ViewSemanticNode,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use std::{
@@ -124,10 +124,18 @@ fn dialogue_frame(
     display_name: &str,
     nodes: Vec<RichTextNode>,
 ) -> LineDisplayFrame {
-    let spec = DialogueContentSpec::new(
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(nodes),
+    )
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
         RuntimeLineId::from_runtime_line_value(line).expect("runtime line identity"),
         TextKey::try_new(line.replacen("say.", "text.", 1)).expect("text key"),
-        RichTextDocument::new(nodes),
+        &template,
         support::character_plan("character.test"),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             support::dialogue_profile(),
@@ -135,9 +143,20 @@ fn dialogue_frame(
         ),
         Vec::new(),
         dialogue_source_ref(),
-    );
-    resolve_frame(
+    )
+    .expect("dialogue spec");
+    let content = arcweft_core::value::RuntimeDialogueContentValue::try_new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+            .expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope");
+    resolve_frame_with_template(
         &spec,
+        &template,
+        &content,
         &RuntimeLineContext::new(
             Vec::new(),
             DialoguePresentationCharacter {
@@ -1024,6 +1043,13 @@ fn value_program(
     .unwrap()
 }
 
+fn load_parameter(ty: FxRuntimeType) -> ValueInstruction {
+    let schema = ValueProgramSchema::new(vec![ty], vec![], ty);
+    ValueInstruction::LoadParameter {
+        parameter: schema.parameter_ref(0).unwrap(),
+    }
+}
+
 fn text_resource(
     records: impl IntoIterator<Item = (&'static str, ViewTextSourceKind)>,
 ) -> ViewTextResource {
@@ -1509,10 +1535,7 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
             Vec::new(),
             FxRuntimeType::Bool,
             vec![
-                ValueInstruction::LoadParameter {
-                    slot: 0,
-                    ty: FxRuntimeType::Bool,
-                },
+                load_parameter(FxRuntimeType::Bool),
                 ValueInstruction::Return,
             ],
         )],
@@ -1521,8 +1544,8 @@ fn branch_reacts_per_mount_and_missing_input_never_uses_placeholder() {
             slot: 0,
             value_type: FxRuntimeType::Bool,
             source: ViewValueInputSource::DefinitionParameter {
-                view: "view.Root".to_owned(),
-                name: "active".to_owned(),
+                view: definition_ref("view.Root"),
+                parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
             },
         }],
         instructions: vec![
@@ -1683,8 +1706,8 @@ fn view_save_round_trips_stable_nested_owners_and_allocator_stays_fresh() {
             slot: 0,
             value_type: FxRuntimeType::I32,
             source: ViewValueInputSource::DefinitionParameter {
-                view: "view.Child".to_owned(),
-                name: "count".to_owned(),
+                view: definition_ref("view.Child"),
+                parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
             },
         }],
         instructions: vec![
@@ -2216,8 +2239,8 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
             slot: 0,
             value_type: FxRuntimeType::I32,
             source: ViewValueInputSource::DefinitionParameter {
-                view: "view.Exact".to_owned(),
-                name: "count".to_owned(),
+                view: definition_ref("view.Exact"),
+                parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
             },
         }],
         value_programs: vec![value_program(
@@ -2225,13 +2248,7 @@ fn exact_i32_width_is_enforced_at_the_runtime_boundary() {
             vec![FxRuntimeType::I32],
             Vec::new(),
             FxRuntimeType::I32,
-            vec![
-                ValueInstruction::LoadParameter {
-                    slot: 0,
-                    ty: FxRuntimeType::I32,
-                },
-                ValueInstruction::Return,
-            ],
+            vec![load_parameter(FxRuntimeType::I32), ValueInstruction::Return],
         )],
         ..ViewProgramResource::default()
     };
@@ -2294,7 +2311,9 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         text: "こんにちは".to_owned(),
     }]);
     let rich_document = RichTextDocument::new(vec![RichTextNode::Ruby {
-        base: "夢".to_owned(),
+        body: vec![RichTextNode::Text {
+            text: "夢".to_owned(),
+        }],
         ruby: "ゆめ".to_owned(),
     }]);
     let display_frame = dialogue_frame(
@@ -2581,7 +2600,9 @@ fn typed_dialogue_display_frame() -> LineDisplayFrame {
         "view.Dialogue",
         "Hero",
         vec![RichTextNode::Ruby {
-            base: "夢".to_owned(),
+            body: vec![RichTextNode::Text {
+                text: "夢".to_owned(),
+            }],
             ruby: "ゆめ".to_owned(),
         }],
     )

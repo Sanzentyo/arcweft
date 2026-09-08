@@ -4,8 +4,8 @@
 
 Arcweft's provisional `decoration` declaration has been replaced directly by
 the single authoring surface `#[fx] fn ... -> Fx`. There is no compatibility
-alias for `decoration`, `[decorate]`, `#[text_motion]`, `#[text_effect]`, or
-`#[text_shader]`.
+alias for the former decoration declaration/invocation surface or the former
+text-motion/effect/shader attributes.
 
 This cut implements:
 
@@ -24,10 +24,10 @@ This cut implements:
   instance identity, and runtime-host sidecar preservation;
 - canonical View Fx argument ordering, duplicate/name validation, and an
   aggregate bundle decode budget;
-- RichText `[fx call(...)]...[/fx]` validation, closed argument binding, and
+- RichText `#fx(call(...))[content]` validation, closed argument binding, and
   expansion of supported static text/color/style nodes;
-- typed `DialogueTagKind` classification for `fx`, `reset`, point, span, and
-  other tags instead of repeated raw-string comparisons;
+- typed content-call and point-action classification instead of repeated
+  raw-string comparisons;
 - removal of the former source-local scalar exporter/registry bridge;
 - grammar, samples, LSP/tooling fixtures, and `just test-rich-text` updates.
 

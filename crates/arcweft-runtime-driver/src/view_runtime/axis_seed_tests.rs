@@ -857,6 +857,15 @@ fn ordinary_and_dialogue_restore_roots_cannot_share_a_handle_identity() {
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
+        content: arcweft_core::value::RuntimeDialogueContentValue::try_new(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+                .expect("fixture artifact"),
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("fixture template"),
+            arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x72; 32]),
+            [],
+        )
+        .expect("fixture Content envelope"),
     };
     let dialogue_view = arcweft_view::ViewId::try_new("view.Dialogue").unwrap();
     let dialogue = crate::dialogue::DialogueViewInput {

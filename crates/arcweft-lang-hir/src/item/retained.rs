@@ -1,9 +1,6 @@
 //! Retained-identity declarations and their secondary member arena.
 
-use arcweft_id::{
-    CharacterSurfaceAlias, DeclarationIdentityFamily, DeclarationName, PublicId,
-    PublicIdFamilyError,
-};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId, PublicIdFamilyError};
 use thiserror::Error;
 
 use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, ScopeId, TypeId};
@@ -149,33 +146,23 @@ pub enum HirRetainedHeaderError {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirCharacterDeclaration {
     header: HirRetainedHeader,
-    surface_alias: HirCharacterSurfaceAlias,
-    display_name: Option<HirDeclarationMemberId>,
+    display: Option<HirDeclarationMemberId>,
 }
 
 impl HirCharacterDeclaration {
     pub(crate) const fn new(
         header: HirRetainedHeader,
-        surface_alias: HirCharacterSurfaceAlias,
-        display_name: Option<HirDeclarationMemberId>,
+        display: Option<HirDeclarationMemberId>,
     ) -> Self {
-        Self {
-            header,
-            surface_alias,
-            display_name,
-        }
+        Self { header, display }
     }
 
     pub const fn header(&self) -> &HirRetainedHeader {
         &self.header
     }
 
-    pub const fn surface_alias(&self) -> &HirCharacterSurfaceAlias {
-        &self.surface_alias
-    }
-
-    pub const fn display_name(&self) -> Option<HirDeclarationMemberId> {
-        self.display_name
+    pub const fn display(&self) -> Option<HirDeclarationMemberId> {
+        self.display
     }
 
     pub(super) fn validate_module(
@@ -184,14 +171,6 @@ impl HirCharacterDeclaration {
     ) -> Result<(), HirItemInvariantError> {
         validate_retained_family(&self.header, DeclarationIdentityFamily::Character)
     }
-}
-
-/// Optional Character surface alias with missing syntax kept distinct.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum HirCharacterSurfaceAlias {
-    Absent,
-    Resolved(CharacterSurfaceAlias),
-    Missing,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -883,7 +862,7 @@ pub enum HirDeclarationMemberKind {
     MetricUnit(HirMetricUnitMember),
     MetricLabel(HirMetricLabelMember),
     MetricBuckets(HirMetricBucketsMember),
-    CharacterDisplayName(HirCharacterDisplayNameMember),
+    CharacterDisplay(HirCharacterDisplayMember),
     CharacterRecovery(HirCharacterMemberRecovery),
     LayerReference(HirLayerReferenceMember),
     LayerPolicy(HirLayerPolicyMember),
@@ -904,7 +883,7 @@ impl HirDeclarationMemberKind {
                     HirItemFamily::Metric
                 )
                 | (
-                    Self::CharacterDisplayName(_) | Self::CharacterRecovery(_),
+                    Self::CharacterDisplay(_) | Self::CharacterRecovery(_),
                     HirItemFamily::Character
                 )
                 | (
@@ -929,7 +908,7 @@ impl HirDeclarationMemberKind {
             Self::MetricUnit(member) => member.validate_module(expected),
             Self::MetricLabel(label) => validate_type(expected, label.ty),
             Self::MetricBuckets(member) => member.validate_module(expected),
-            Self::CharacterDisplayName(member) => {
+            Self::CharacterDisplay(member) => {
                 if let Some(value) = member.initializer() {
                     validate_expr(expected, value)?;
                 }
@@ -969,7 +948,7 @@ fn member_state_matches_kind(
                 )
             }
         }
-        HirDeclarationMemberKind::CharacterDisplayName(member) => {
+        HirDeclarationMemberKind::CharacterDisplay(member) => {
             let structural_issue = if member.duplicate {
                 Some(HirDeclarationMemberIssue::Duplicate)
             } else if member.assignment == HirCharacterAssignmentState::Missing {
@@ -1135,15 +1114,15 @@ fn state_matches_structural_issue(
     }
 }
 
-/// Semantic payload of a Character `display_name` member.
+/// Semantic payload of a Character `display` member.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HirCharacterDisplayNameMember {
+pub struct HirCharacterDisplayMember {
     assignment: HirCharacterAssignmentState,
     initializer: Option<ExprId>,
     duplicate: bool,
 }
 
-impl HirCharacterDisplayNameMember {
+impl HirCharacterDisplayMember {
     pub(crate) const fn new(
         assignment: HirCharacterAssignmentState,
         initializer: Option<ExprId>,

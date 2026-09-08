@@ -2,9 +2,10 @@ use std::sync::Arc;
 
 use arcweft_lang_syntax::{
     attachment::{
-        AttachedPathRoot, AttachedStyleBody, AttachedStyleEnvironment,
-        AttachedStyleEnvironmentClause, AttachedStyleExpression, AttachedStyleMember,
-        SyntaxAccessError, TypedItemNode,
+        AttachedCallableContentParameter, AttachedCapabilityMember, AttachedContentPresenceSyntax,
+        AttachedContentRoleSyntax, AttachedImplMember, AttachedPathRoot, AttachedStyleBody,
+        AttachedStyleEnvironment, AttachedStyleEnvironmentClause, AttachedStyleExpression,
+        AttachedStyleMember, AttachedTraitMember, SyntaxAccessError, TypedItemNode,
     },
     expressions::ExpressionProjection,
     incremental::{ParsedSource, SyntaxDatabase},
@@ -40,6 +41,10 @@ pub fn format_document(
     let mut edits =
         view::canonical_edits(source, &parsed).map_err(|error| syntax_attachment_error(&error))?;
     edits.extend(
+        canonical_callable_edits(source, &parsed)
+            .map_err(|error| syntax_attachment_error(&error))?,
+    );
+    edits.extend(
         canonical_environment_edits(source, &parsed)
             .map_err(|error| syntax_attachment_error(&error))?,
     );
@@ -53,6 +58,126 @@ pub fn format_document(
         })
         .collect();
     Ok(report)
+}
+
+/// Canonicalizes the dedicated trailing attached-content declaration owned by
+/// every admitted callable family. The declaration is already a typed syntax
+/// node; this projection only normalizes punctuation spacing and never scans
+/// source bytes for an attribute or an ordinary parameter alias.
+fn canonical_callable_edits(
+    source: &str,
+    parsed: &ParsedSource,
+) -> Result<Vec<TextEdit>, SyntaxAccessError> {
+    let mut edits = Vec::new();
+    for item in parsed.items()? {
+        match item {
+            TypedItemNode::Function(function) => {
+                let declaration = function.semantics()?;
+                push_attached_content_edit(source, declaration.attached_content(), &mut edits);
+            }
+            TypedItemNode::Trait(trait_item) => {
+                let declaration = trait_item.semantics()?;
+                for member in declaration.body().members() {
+                    let AttachedTraitMember::Function(function) = member else {
+                        continue;
+                    };
+                    push_attached_content_edit(source, function.attached_content(), &mut edits);
+                }
+            }
+            TypedItemNode::Impl(impl_item) => {
+                let declaration = impl_item.semantics()?;
+                for member in declaration.body().members() {
+                    let AttachedImplMember::Function(function) = member else {
+                        continue;
+                    };
+                    push_attached_content_edit(source, function.attached_content(), &mut edits);
+                }
+            }
+            TypedItemNode::ExternCapability(capability) => {
+                let declaration = capability.semantics()?;
+                for member in declaration.body().members() {
+                    let AttachedCapabilityMember::Function(function) = member else {
+                        continue;
+                    };
+                    push_attached_content_edit(source, function.attached_content(), &mut edits);
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(edits)
+}
+
+fn push_attached_content_edit(
+    source: &str,
+    attached: Option<&AttachedCallableContentParameter>,
+    edits: &mut Vec<TextEdit>,
+) {
+    let Some(attached) = attached.filter(|attached| !attached.has_recovery()) else {
+        return;
+    };
+    let Some(binding) = attached.binding().value() else {
+        return;
+    };
+    let presence = match attached.presence() {
+        AttachedContentPresenceSyntax::Required => "",
+        AttachedContentPresenceSyntax::Optional { .. } => "?",
+        AttachedContentPresenceSyntax::Defaulted { value, .. } => {
+            let Some(value) = source.get(value.syntax().range().as_range()) else {
+                return;
+            };
+            let role = attached_content_role(attached.role());
+            let replacement = format!("[{}: {} = {}]", binding.as_str(), role, value.trim(),);
+            push_if_changed(
+                source,
+                attached.syntax().range().start(),
+                attached.syntax().range().end(),
+                replacement,
+                edits,
+            );
+            return;
+        }
+    };
+    let replacement = format!(
+        "[{}{}: {}]",
+        binding.as_str(),
+        presence,
+        attached_content_role(attached.role()),
+    );
+    push_if_changed(
+        source,
+        attached.syntax().range().start(),
+        attached.syntax().range().end(),
+        replacement,
+        edits,
+    );
+}
+
+const fn attached_content_role(role: AttachedContentRoleSyntax) -> &'static str {
+    match role {
+        AttachedContentRoleSyntax::InlineContent => "InlineContent",
+        AttachedContentRoleSyntax::RichContent => "RichContent",
+        AttachedContentRoleSyntax::DialogueContent => "DialogueContent",
+    }
+}
+
+fn push_if_changed(
+    source: &str,
+    start: usize,
+    end: usize,
+    replacement: String,
+    edits: &mut Vec<TextEdit>,
+) {
+    if source
+        .get(start..end)
+        .is_some_and(|authored| authored != replacement)
+    {
+        edits.push(TextEdit {
+            start,
+            end,
+            replacement,
+        });
+    }
 }
 
 fn syntax_attachment_error(error: &SyntaxAccessError) -> ToolingError {

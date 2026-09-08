@@ -4,9 +4,9 @@ use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
 use super::declaration::{
-    FixedParameterGrammar, emit_fixed_parameters, emit_generic_parameters,
-    emit_missing_parameter_group, emit_name, emit_outer_prefixes, emit_visibility,
-    emit_where_clause,
+    FixedParameterGrammar, emit_attached_content_parameter_until, emit_fixed_parameters,
+    emit_generic_parameters, emit_missing_parameter_group, emit_name, emit_outer_prefixes,
+    emit_visibility, emit_where_clause,
 };
 use super::lexer::LexToken;
 use super::shadow_recovery::{
@@ -283,6 +283,9 @@ fn emit_function_member(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal
         emit_missing_parameter_group(parser, "fn", "at least one parameter group");
         parser.bump_trivia();
     }
+
+    emit_attached_content_parameter_until(parser, content_end);
+    parser.bump_trivia_before(content_end);
 
     if parser.at("->") {
         emit_member_return_type(parser, content_end);

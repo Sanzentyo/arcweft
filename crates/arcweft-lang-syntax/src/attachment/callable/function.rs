@@ -1,8 +1,8 @@
 //! Attached ordinary-Function declaration and body ownership.
 
 use super::{
-    AttachedCallableContractClause, AttachedCallableParameter, AttachedCallableReturn,
-    AttachedFixedParameterGroup, parameter_shape_has_recovery,
+    AttachedCallableContentParameter, AttachedCallableContractClause, AttachedCallableParameter,
+    AttachedCallableReturn, AttachedFixedParameterGroup, parameter_shape_has_recovery,
 };
 use crate::attachment::node::{
     AstNode, BlockKind, ErrorNodeKind, FunctionBodyKind, FunctionItemKind, MissingBodyKind,
@@ -63,6 +63,7 @@ pub struct AttachedFunctionDeclaration {
     pub(super) name: AttachedRequiredName,
     pub(super) generics: Option<AttachedGenericParameterGroup>,
     pub(super) parameter_groups: Box<[AttachedFixedParameterGroup]>,
+    pub(super) attached_content: Option<AttachedCallableContentParameter>,
     pub(super) where_clauses: Box<[AttachedWhereClause]>,
     pub(super) contracts: Box<[AttachedCallableContractClause]>,
     pub(super) authored_return: Option<AttachedCallableReturn>,
@@ -91,6 +92,10 @@ impl AttachedFunctionDeclaration {
         &self.parameter_groups
     }
 
+    pub const fn attached_content(&self) -> Option<&AttachedCallableContentParameter> {
+        self.attached_content.as_ref()
+    }
+
     pub fn parameters(&self) -> impl Iterator<Item = &AttachedCallableParameter> {
         self.parameter_groups
             .iter()
@@ -103,6 +108,12 @@ impl AttachedFunctionDeclaration {
     /// exact recovery even when this returns `true`.
     pub fn has_parameter_shape_recovery(&self) -> bool {
         parameter_shape_has_recovery(&self.parameter_groups)
+    }
+
+    pub fn has_attached_content_recovery(&self) -> bool {
+        self.attached_content
+            .as_ref()
+            .is_some_and(AttachedCallableContentParameter::has_recovery)
     }
 
     pub const fn where_clauses(&self) -> &[AttachedWhereClause] {
@@ -132,6 +143,9 @@ impl AttachedFunctionDeclaration {
     /// Panics only if a malformed attached declaration bypasses the grammar,
     /// which always emits one authored or missing parameter group.
     pub fn parameter_end_source_span(&self) -> arcweft_source::SourceSpan {
+        if let Some(attached) = self.attached_content() {
+            return attached.end_source_span();
+        }
         self.parameter_groups
             .last()
             .expect("grammar always emits one authored or missing parameter group")

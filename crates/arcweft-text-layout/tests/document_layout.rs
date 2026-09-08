@@ -10,8 +10,9 @@ use arcweft_text_layout::{
     TextShapeRequest, TextShaper, layout_document,
 };
 use arcweft_text_model::{
-    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextPresentation,
-    RichTextRange, RichTextRubyPosition, RichTextWritingMode,
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextNodeIndex,
+    RichTextNodeRange, RichTextPresentation, RichTextRange, RichTextRubyPosition,
+    RichTextTextRunRange, RichTextWritingMode,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -130,23 +131,30 @@ fn document_with_presentation(
     ruby: Vec<ResolvedTextRuby>,
     revision: u64,
 ) -> ResolvedTextDocument<'_> {
-    let range = RichTextRange::new(0, text.len());
-    let run = ResolvedTextRun::new(
-        range,
-        range,
-        style,
-        presentation,
-        ResolvedTextRunSource::Plain,
-    )
-    .expect("test run is valid");
-    ResolvedTextDocument::new(
-        text,
-        0,
-        vec![run],
-        ruby,
-        TextDocumentRevision::new(revision),
-    )
-    .expect("test document is valid")
+    let mut boundaries = vec![0, text.len()];
+    boundaries.extend(
+        ruby.iter()
+            .flat_map(|annotation| [annotation.base_range().start, annotation.base_range().end]),
+    );
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    let runs = boundaries
+        .windows(2)
+        .filter(|window| window[0] < window[1])
+        .map(|window| {
+            let range = RichTextRange::new(window[0], window[1]);
+            ResolvedTextRun::new(
+                range,
+                range,
+                style.clone(),
+                presentation.clone(),
+                ResolvedTextRunSource::Plain,
+            )
+            .expect("test run is valid")
+        })
+        .collect::<Vec<_>>();
+    ResolvedTextDocument::new(text, 0, runs, ruby, TextDocumentRevision::new(revision))
+        .expect("test document is valid")
 }
 
 fn style() -> ResolvedTextStyle {
@@ -312,6 +320,9 @@ fn vertical_lr_reserves_the_left_ruby_track_before_body_layout() {
     );
     let range = RichTextRange::new(0, text.len());
     let ruby = ResolvedTextRuby::new(
+        RichTextNodeIndex::new(0),
+        RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+        RichTextTextRunRange::new(0, 1),
         range,
         range,
         "ゆめ",
@@ -336,6 +347,9 @@ fn horizontal_over_ruby_stacks_outside_the_base_cell() {
     let text = "夢";
     let range = RichTextRange::new(0, text.len());
     let ruby = ResolvedTextRuby::new(
+        RichTextNodeIndex::new(0),
+        RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+        RichTextTextRunRange::new(0, 1),
         range,
         range,
         "ゆめ",
@@ -375,6 +389,9 @@ fn vertical_inter_character_has_the_same_effect_as_over() {
             ..RichTextPresentation::default()
         };
         let ruby = ResolvedTextRuby::new(
+            RichTextNodeIndex::new(0),
+            RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+            RichTextTextRunRange::new(0, 1),
             base_range,
             base_range,
             "ゆめ",
@@ -414,6 +431,9 @@ fn horizontal_inter_character_is_inserted_to_the_right_of_its_base() {
         ..RichTextPresentation::default()
     };
     let ruby = ResolvedTextRuby::new(
+        RichTextNodeIndex::new(0),
+        RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+        RichTextTextRunRange::new(0, 1),
         base_range,
         base_range,
         "ゆめ",

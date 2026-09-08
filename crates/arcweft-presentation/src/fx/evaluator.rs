@@ -32,10 +32,10 @@ pub(super) fn evaluate(
         budget.charge(index)?;
         match instruction {
             ValueInstruction::Constant { value } => stack.push(*value),
-            ValueInstruction::LoadParameter { slot, .. } => stack.push(
+            ValueInstruction::LoadParameter { parameter } => stack.push(
                 inputs
                     .parameters
-                    .get(usize::from(*slot))
+                    .get(usize::from(parameter.slot().get()))
                     .copied()
                     .ok_or(FxEvaluationError::InvalidProgramState { instruction: index })?,
             ),
@@ -111,6 +111,30 @@ fn execute_operator(
                 return Err(FxEvaluationError::InvalidProgramState { instruction: index });
             };
             stack.push(FxRuntimeValue::I32(floor_to_i32(index, value)?));
+        }
+        ValueInstruction::BitcastU32ToI32 => {
+            let FxRuntimeValue::U32(value) = pop_one(index, stack)? else {
+                return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+            };
+            stack.push(FxRuntimeValue::I32(i32::from_ne_bytes(value.to_ne_bytes())));
+        }
+        ValueInstruction::SecondsValue => {
+            let FxRuntimeValue::Seconds(value) = pop_one(index, stack)? else {
+                return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+            };
+            stack.push(FxRuntimeValue::F32(value.value()));
+        }
+        ValueInstruction::Vec2X => {
+            let FxRuntimeValue::Vec2(value) = pop_one(index, stack)? else {
+                return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+            };
+            stack.push(FxRuntimeValue::F32(value.x));
+        }
+        ValueInstruction::Vec2Y => {
+            let FxRuntimeValue::Vec2(value) = pop_one(index, stack)? else {
+                return Err(FxEvaluationError::InvalidProgramState { instruction: index });
+            };
+            stack.push(FxRuntimeValue::F32(value.y));
         }
         ValueInstruction::MakeVec2 => {
             let (FxRuntimeValue::F32(x), FxRuntimeValue::F32(y)) = pop_two(index, stack)? else {

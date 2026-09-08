@@ -5,7 +5,10 @@
 //! here before a lower work session is opened; callback execution is kept in
 //! the affine client below so it cannot mint an expected type or projection.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use arcweft_lang_hir::{
     expr::HirCallArgumentOrdinal, identity::ExprId, project::HirSelectedCallExpressionInventory,
@@ -16,18 +19,20 @@ use crate::{
         CallConstraintInvariant, CallableArgumentSemanticAction, CallableArgumentSlotIndex,
         CallableCandidateId, CallableGroupIndex, CallableInstantiation, CallableParameterAdmission,
         CallableParameterConsumer, CallableParameterCoordinate, CallableRestContainerPolicy,
-        CallableSemanticValueGuard, CheckedCallArgumentSlotSource, CheckedCallSite,
-        CheckedSemanticValueEvidence, DetachedPreparedResolvedCallable,
-        EnclosingGenericParameterScope, ParameterExpectedTypeProjection,
+        CallableResultSchema, CallableSemanticValueGuard, CallableValidator,
+        CheckedCallArgumentSlotSource, CheckedCallSite, CheckedSemanticValueEvidence,
+        DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
+        ObservedSemanticValueEvidence, ParameterExpectedTypeProjection,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
-        PreparedCallInputProjection, PreparedCallPrefixPayload, PreparedCallableApplication,
+        PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperandOwner,
+        PreparedCallSemanticOperandRole, PreparedCallableApplication,
         PreparedConstraintInitialization, PreparedDialogueApplicationMetadataArgument,
-        PreparedDialogueCallOperandSource, PreparedFunctionValueOriginEvidence,
-        PreparedResolvedCallable, PreparedResolvedCallableDetachArena,
-        PreparedSourceConstraintGroup, VariantPayloadRequirement,
+        PreparedFunctionValueOriginEvidence, PreparedResolvedCallable,
+        PreparedResolvedCallableDetachArena, PreparedSourceConstraintGroup,
+        VariantPayloadRequirement,
     },
     types::{
-        GenericTypeParameterId, TypeKind,
+        GenericTypeReference, TypeKind,
         constraints::{
             ClosedConstraintProbe, ConstraintAcceptance, ConstraintDomain, ExpectedHint,
             KeyedConstraintProjection, MaterializationOutcome, MaterializedSourceRequest,
@@ -53,6 +58,27 @@ use super::super::{
         MaterializationFactCheckpoint, ProbeFactCheckpoint,
     },
 };
+
+fn static_content_callee_matches(
+    inputs: &PreparedCallCalleeConstraintInputs,
+    selected: &CallableCandidateId,
+    schema: crate::callable::CallableSignatureSchemaDigest,
+) -> bool {
+    match inputs {
+        PreparedCallCalleeConstraintInputs::StaticContentCallee(static_callee) => {
+            selected == &CallableCandidateId::Content(static_callee.identity())
+                && schema == static_callee.schema()
+        }
+        PreparedCallCalleeConstraintInputs::Free
+        | PreparedCallCalleeConstraintInputs::EnumConstructor
+        | PreparedCallCalleeConstraintInputs::ValueReceiver { .. }
+        | PreparedCallCalleeConstraintInputs::AssociatedType { .. }
+        | PreparedCallCalleeConstraintInputs::DialogueCallee
+        | PreparedCallCalleeConstraintInputs::DialogueApplication
+        | PreparedCallCalleeConstraintInputs::FunctionValue { .. }
+        | PreparedCallCalleeConstraintInputs::NonCallable => true,
+    }
+}
 
 /// Exact source identity used by analyzer callback work.  The HIR expression
 /// identity is already generation-owned and ordered; no source spelling is
@@ -83,7 +109,14 @@ pub(crate) enum AnalyzerCallConstraintSource {
         coordinate: crate::callable::DialogueApplicationMetadataCoordinate,
     },
     DialogueApplicationOperand {
-        source: PreparedDialogueCallOperandSource,
+        owner: PreparedCallSemanticOperandOwner,
+        source: ExprId,
+        role: PreparedCallSemanticOperandRole,
+        coordinate: CallableParameterCoordinate,
+    },
+    TextProxyObjectOperand {
+        argument: HirCallArgumentOrdinal,
+        source: ExprId,
         coordinate: CallableParameterCoordinate,
     },
     Result {
@@ -92,6 +125,21 @@ pub(crate) enum AnalyzerCallConstraintSource {
 }
 
 impl AnalyzerCallConstraintSource {
+    fn value_coordinate(self) -> Option<AnalyzerCallValueCoordinate> {
+        match self {
+            Self::Receiver { .. } => Some(AnalyzerCallValueCoordinate::Receiver),
+            Self::Argument { argument, slot, .. }
+            | Self::DialoguePatch { argument, slot, .. }
+            | Self::DialogueApplicationMetadata { argument, slot, .. } => {
+                Some(AnalyzerCallValueCoordinate::Argument { argument, slot })
+            }
+            Self::BaseInstantiation
+            | Self::DialogueApplicationOperand { .. }
+            | Self::TextProxyObjectOperand { .. }
+            | Self::Result { .. } => None,
+        }
+    }
+
     fn physical_argument(self) -> Option<PhysicalCandidateArgument> {
         let (argument, slot, source, physical_kind) = match self {
             Self::Argument {
@@ -162,6 +210,17 @@ impl AnalyzerCallConstraintSource {
             _ => false,
         }
     }
+}
+
+/// Uniqueness coordinate of an evaluated receiver or argument slot. Source
+/// evidence owns its type; this coordinate does not index a second projection.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+enum AnalyzerCallValueCoordinate {
+    Receiver,
+    Argument {
+        argument: HirCallArgumentOrdinal,
+        slot: CallableArgumentSlotIndex,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -254,6 +313,37 @@ pub(crate) struct AnalyzerPreparedDialoguePatchAdmission {
     field_span: arcweft_source::SourceSpan,
     value_span: arcweft_source::SourceSpan,
     declaration_span: arcweft_source::SourceSpan,
+}
+
+/// Definition-owned coordinate row for one semantic compile-time scalar
+/// parameter. The callable schema retains the closed kind and exact value
+/// type; this analyzer row additionally carries the checked reduction grammar.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AnalyzerPreparedCompileTimeScalarAdmission {
+    coordinate: CallableParameterCoordinate,
+    admission: Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+}
+
+impl AnalyzerPreparedCompileTimeScalarAdmission {
+    pub(crate) fn new(
+        coordinate: CallableParameterCoordinate,
+        admission: crate::checked_compile_time::PreparedCompileTimeScalarAdmission,
+    ) -> Self {
+        Self {
+            coordinate,
+            admission: Arc::new(admission),
+        }
+    }
+
+    pub(crate) const fn coordinate(&self) -> CallableParameterCoordinate {
+        self.coordinate
+    }
+
+    pub(crate) fn admission(
+        &self,
+    ) -> &Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission> {
+        &self.admission
+    }
 }
 
 impl AnalyzerPreparedDialoguePatchAdmission {
@@ -439,7 +529,7 @@ impl AnalyzerCallSealedBranch {
             CandidateSemanticReplayMismatch::Expressions => {
                 CallConstraintInvariant::ReplayBranchExpressionFactsMismatch
             }
-            CandidateSemanticReplayMismatch::DialogueMarkCatalogs => {
+            CandidateSemanticReplayMismatch::CheckedContent => {
                 CallConstraintInvariant::ReplayBranchDialogueMarkCatalogMismatch
             }
             CandidateSemanticReplayMismatch::Iterations => {
@@ -461,13 +551,8 @@ pub(crate) struct AnalyzerCallPreparedSealedBranch;
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum AnalyzerCallProjection {
     BaseInstantiation,
-    Receiver,
-    Argument {
-        argument: HirCallArgumentOrdinal,
-        slot: CallableArgumentSlotIndex,
-    },
     Result,
-    Future(GenericTypeParameterId),
+    Future(GenericTypeReference),
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -587,6 +672,7 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
     type Source = AnalyzerCallConstraintSource;
     type AlternativeIndex = u32;
     type EvidenceRule = AnalyzerCallEvidenceRule;
+    type ObservedEvidence = ObservedSemanticValueEvidence;
     type CheckedEvidence = CheckedSemanticValueEvidence;
     type ProbeSemanticBranch = AnalyzerCallProbeSemanticBranch;
     type SealedBranchValue = AnalyzerCallSealedBranch;
@@ -594,43 +680,17 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
     type SourceErrorCause = AnalyzerCallSourceFailureCause;
     type ClientInvariant = AnalyzerCallClientInvariant;
 
-    fn projection_for_source(source: &Self::Source) -> Option<Self::Projection> {
-        match source {
-            AnalyzerCallConstraintSource::Receiver { .. } => Some(AnalyzerCallProjection::Receiver),
-            AnalyzerCallConstraintSource::Argument { argument, slot, .. }
-            | AnalyzerCallConstraintSource::DialoguePatch { argument, slot, .. }
-            | AnalyzerCallConstraintSource::DialogueApplicationMetadata {
-                argument, slot, ..
-            } => Some(AnalyzerCallProjection::Argument {
-                argument: *argument,
-                slot: *slot,
-            }),
-            AnalyzerCallConstraintSource::BaseInstantiation
-            | AnalyzerCallConstraintSource::DialogueApplicationOperand { .. }
-            | AnalyzerCallConstraintSource::Result { .. } => None,
-        }
-    }
-
-    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::CheckedEvidence) -> bool {
+    fn evidence_accepts(rule: &Self::EvidenceRule, checked: &Self::ObservedEvidence) -> bool {
         rule.accepts(checked)
     }
 
     fn project_checked_evidence(
-        checked: &Self::CheckedEvidence,
+        checked: &Self::ObservedEvidence,
         actual: &TypeKind,
     ) -> Option<Self::CheckedEvidence> {
-        Some(match checked {
-            CheckedSemanticValueEvidence::VariantCase {
-                ordinal, payload, ..
-            } => CheckedSemanticValueEvidence::VariantCase {
-                owner: actual.semantic_identity_digest(),
-                ordinal: *ordinal,
-                payload: *payload,
-            },
-            CheckedSemanticValueEvidence::NoVariantCase => {
-                CheckedSemanticValueEvidence::NoVariantCase
-            }
-        })
+        checked
+            .try_project_owner(|_| actual.semantic_identity_digest())
+            .ok()
     }
 
     fn alternative_ordinal(index: &Self::AlternativeIndex) -> u32 {
@@ -650,6 +710,8 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
 pub(crate) struct AnalyzerCallEvidenceRule {
     kind: AnalyzerCallEvidenceRuleKind,
     effect_projection: Option<AnalyzerCallEffectProjectionRequest>,
+    compile_time_scalar:
+        Option<Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -677,6 +739,7 @@ impl AnalyzerCallEvidenceRule {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Guarded { guard, declared },
             effect_projection,
+            compile_time_scalar: None,
         }
     }
 
@@ -684,27 +747,38 @@ impl AnalyzerCallEvidenceRule {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Otherwise,
             effect_projection,
+            compile_time_scalar: None,
         }
     }
 
-    fn accepts(&self, checked: &CheckedSemanticValueEvidence) -> bool {
+    fn compile_time_scalar(
+        admission: Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+    ) -> Self {
+        Self {
+            kind: AnalyzerCallEvidenceRuleKind::Otherwise,
+            effect_projection: None,
+            compile_time_scalar: Some(admission),
+        }
+    }
+
+    fn accepts(&self, checked: &ObservedSemanticValueEvidence) -> bool {
         match &self.kind {
             AnalyzerCallEvidenceRuleKind::Guarded { guard, declared } => {
-                guard.accepts(declared, checked)
+                guard.accepts_observation(declared, checked)
             }
             AnalyzerCallEvidenceRuleKind::Otherwise => true,
         }
     }
 }
 
-struct AnalyzerCallCheckedSource {
+struct AnalyzerCallObservedSource {
     actual: TypeKind,
-    evidence: CheckedSemanticValueEvidence,
+    evidence: ObservedSemanticValueEvidence,
 }
 
 fn validate_materialized_source_request(
     request: &MaterializedSourceRequest<'_, AnalyzerCallConstraintDomain>,
-    checked: &AnalyzerCallCheckedSource,
+    checked: &AnalyzerCallObservedSource,
 ) -> Result<(), TypeConstraintInvariant> {
     let source = *request.source();
     if request.canonical_branch().source != source {
@@ -716,7 +790,9 @@ fn validate_materialized_source_request(
         || !request.source_projection().matches_actual(&checked.actual)
     {
         return Err(TypeConstraintInvariant::Projection(
-            crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch,
+            crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
+                crate::types::constraints::TypeConstraintRejection::Mismatch,
+            ),
         ));
     }
     if request.evidence().is_some_and(|evidence| {
@@ -743,6 +819,7 @@ enum AnalyzerPreparedSourceActual {
     ValueReceiver(TypeKind),
     DialogueApplicationMetadata(PreparedDialogueApplicationMetadataArgument),
     DialogueApplicationOperand(TypeKind),
+    TextProxyObjectOperand(TypeKind),
 }
 
 impl AnalyzerPreparedSourceActual {
@@ -752,6 +829,10 @@ impl AnalyzerPreparedSourceActual {
             | (
                 Self::DialogueApplicationOperand(_),
                 AnalyzerCallConstraintSource::DialogueApplicationOperand { .. },
+            ) => true,
+            (
+                Self::TextProxyObjectOperand(_),
+                AnalyzerCallConstraintSource::TextProxyObjectOperand { .. },
             ) => true,
             (
                 Self::DialogueApplicationMetadata(prepared),
@@ -772,16 +853,19 @@ impl AnalyzerPreparedSourceActual {
 
     const fn actual(&self) -> &TypeKind {
         match self {
-            Self::ValueReceiver(actual) | Self::DialogueApplicationOperand(actual) => actual,
+            Self::ValueReceiver(actual)
+            | Self::DialogueApplicationOperand(actual)
+            | Self::TextProxyObjectOperand(actual) => actual,
             Self::DialogueApplicationMetadata(prepared) => prepared.actual(),
         }
     }
 
-    fn evidence(&self) -> CheckedSemanticValueEvidence {
+    fn evidence(&self) -> ObservedSemanticValueEvidence {
         match self {
             Self::ValueReceiver(_)
             | Self::DialogueApplicationMetadata(_)
-            | Self::DialogueApplicationOperand(_) => CheckedSemanticValueEvidence::NoVariantCase,
+            | Self::DialogueApplicationOperand(_)
+            | Self::TextProxyObjectOperand(_) => ObservedSemanticValueEvidence::NoVariantCase,
         }
     }
 }
@@ -810,6 +894,10 @@ pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control>
     candidate: Option<Arc<PreparedResolvedCallable>>,
     effect_projections:
         BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallEffectProjectionRequest>,
+    compile_time_scalar_admissions: BTreeMap<
+        (AnalyzerCallConstraintSource, u32),
+        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+    >,
     prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
@@ -829,6 +917,10 @@ impl<'a, 'project, 'catalog, 'control>
             (AnalyzerCallConstraintSource, u32),
             AnalyzerCallEffectProjectionRequest,
         >,
+        compile_time_scalar_admissions: BTreeMap<
+            (AnalyzerCallConstraintSource, u32),
+            Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+        >,
         prepared_source_actuals: BTreeMap<
             AnalyzerCallConstraintSource,
             AnalyzerPreparedSourceActual,
@@ -845,6 +937,7 @@ impl<'a, 'project, 'catalog, 'control>
             context,
             candidate,
             effect_projections,
+            compile_time_scalar_admissions,
             prepared_source_actuals,
             dialogue_patch_admissions,
             pass,
@@ -1036,12 +1129,15 @@ impl<'a, 'project, 'catalog, 'control>
         source: AnalyzerCallConstraintSource,
         expectation: AnalyzerExpressionExpectation<'_>,
         effect_projection: Option<&AnalyzerCallEffectProjectionRequest>,
+        compile_time_scalar: Option<
+            &crate::checked_compile_time::PreparedCompileTimeScalarAdmission,
+        >,
         phase: SourcePhase,
-    ) -> Result<AnalyzerCallCheckedSource, AnalyzerCallCheckFailure> {
+    ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
         self.active_source_check(source, phase)
             .map_err(AnalyzerCallCheckFailure::Invariant)?;
         if let Some(prepared) = self.prepared_source_actuals.get(&source) {
-            if !prepared.validates(source) {
+            if compile_time_scalar.is_some() || !prepared.validates(source) {
                 return Err(AnalyzerCallCheckFailure::Invariant(
                     AnalyzerCallClientInvariant::constraint(
                         source,
@@ -1078,7 +1174,7 @@ impl<'a, 'project, 'catalog, 'control>
                     })?
                 }
             };
-            return Ok(AnalyzerCallCheckedSource {
+            return Ok(AnalyzerCallObservedSource {
                 actual,
                 evidence: prepared.evidence(),
             });
@@ -1088,6 +1184,7 @@ impl<'a, 'project, 'catalog, 'control>
             AnalyzerCallConstraintSource::Receiver { .. }
                 | AnalyzerCallConstraintSource::DialogueApplicationMetadata { .. }
                 | AnalyzerCallConstraintSource::DialogueApplicationOperand { .. }
+                | AnalyzerCallConstraintSource::TextProxyObjectOperand { .. }
         ) {
             return Err(AnalyzerCallCheckFailure::Invariant(
                 AnalyzerCallClientInvariant::constraint(
@@ -1112,9 +1209,25 @@ impl<'a, 'project, 'catalog, 'control>
                 ))
             })?;
         let child_context = self.context.child_candidate(authority);
-        let result =
-            self.analyzer
-                .evaluate_call_constraint_source(&child_context, source, expectation);
+        let child_context = if matches!(source, AnalyzerCallConstraintSource::Argument { .. })
+            && self.candidate.as_ref().is_some_and(|candidate| {
+                candidate.schema().validator()
+                    == &crate::callable::CallableValidator::ViewModifier(
+                        crate::callable::ViewModifierId::Fx,
+                    )
+            }) {
+            child_context.with_consumer(
+                super::super::expression_error::AnalyzerExpressionConsumer::ViewFxProducer,
+            )
+        } else {
+            child_context
+        };
+        let result = self.analyzer.evaluate_call_constraint_source(
+            &child_context,
+            source,
+            expectation,
+            compile_time_scalar,
+        );
         drop(child_context);
         match result {
             Ok(checked) => {
@@ -1130,10 +1243,12 @@ impl<'a, 'project, 'catalog, 'control>
                         ),
                     )
                 };
+                let Some(checked_type) = checked.value_type() else {
+                    return Err(AnalyzerCallCheckFailure::Mismatch);
+                };
                 let variant = match &checked {
-                    crate::final_analysis::PreparedExpressionFact::ProjectVariant(prepared) => {
-                        if prepared.owner().nominal().identity()
-                            != checked.ty().semantic_identity_digest()
+                    crate::final_analysis::PreparedExpressionFact::Variant(prepared) => {
+                        if &prepared.owner().ty() != checked_type
                         {
                             return Err(invalid_variant_evidence());
                         }
@@ -1158,8 +1273,7 @@ impl<'a, 'project, 'catalog, 'control>
                         complete.resolution()
                     {
                         crate::final_analysis::CheckedExpressionResolution::Variant(variant) => {
-                        if variant.owner().semantic_type()
-                            != checked.ty().semantic_identity_digest()
+                        if &variant.owner().ty() != checked_type
                         {
                             return Err(invalid_variant_evidence());
                         }
@@ -1174,14 +1288,20 @@ impl<'a, 'project, 'catalog, 'control>
                         }
                         _ => None,
                     },
-                    crate::final_analysis::PreparedExpressionFact::DialogueApplication(_)
+                    crate::final_analysis::PreparedExpressionFact::OwnerBound(_)
+                    | crate::final_analysis::PreparedExpressionFact::DialogueApplication(_)
+                    | crate::final_analysis::PreparedExpressionFact::ContentApplication(_)
+                    | crate::final_analysis::PreparedExpressionFact::CompileTimeScalar(_)
                     | crate::final_analysis::PreparedExpressionFact::Method(_)
                     | crate::final_analysis::PreparedExpressionFact::Entry(_)
                     | crate::final_analysis::PreparedExpressionFact::ProjectField(_)
-                    | crate::final_analysis::PreparedExpressionFact::ProjectRecord(_) => None,
+                    | crate::final_analysis::PreparedExpressionFact::ProjectRecord(_)
+                    | crate::final_analysis::PreparedExpressionFact::ProjectNominalTypeValue(_) => {
+                        None
+                    }
                 };
                 let actual = match effect_projection {
-                    None => checked.ty().clone(),
+                    None => checked_type.clone(),
                     Some(request) => {
                         let candidate = self.candidate.as_ref().ok_or_else(|| {
                             AnalyzerCallCheckFailure::Invariant(
@@ -1202,7 +1322,7 @@ impl<'a, 'project, 'catalog, 'control>
                                     AnalyzerCallClientInvariant::constraint(source, invariant),
                                 )
                             })?;
-                        token.seal_actual(checked.ty()).map_err(|invariant| {
+                        token.seal_actual(checked_type).map_err(|invariant| {
                             AnalyzerCallCheckFailure::Invariant(
                                 AnalyzerCallClientInvariant::constraint(source, invariant),
                             )
@@ -1210,14 +1330,14 @@ impl<'a, 'project, 'catalog, 'control>
                     }
                 };
                 let evidence = variant.map_or(
-                    CheckedSemanticValueEvidence::NoVariantCase,
-                    |(ordinal, payload)| CheckedSemanticValueEvidence::VariantCase {
-                        owner: actual.semantic_identity_digest(),
+                    ObservedSemanticValueEvidence::NoVariantCase,
+                    |(ordinal, payload)| ObservedSemanticValueEvidence::VariantCase {
+                        owner: actual.clone(),
                         ordinal,
                         payload,
                     },
                 );
-                Ok(AnalyzerCallCheckedSource { actual, evidence })
+                Ok(AnalyzerCallObservedSource { actual, evidence })
             }
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Rejected(_)) => {
                 Err(AnalyzerCallCheckFailure::Mismatch)
@@ -1448,6 +1568,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 source,
                 AnalyzerExpressionExpectation::from_complete(Some(&clear_expected)),
                 Some(&effect_projection),
+                None,
                 SourcePhase::Probe,
             ) {
                 Ok(checked) => {
@@ -1456,7 +1577,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         ordinal: 1,
                         payload: VariantPayloadRequirement::Unit,
                     };
-                    if guard.accepts(admission.declared(), &checked.evidence) {
+                    if guard.accepts_observation(admission.declared(), &checked.evidence) {
                         return Err(crate::callable::SourceCallbackFailure::fatal(
                             SourceError::new(
                                 source,
@@ -1478,6 +1599,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 match self.check_source(
                     source,
                     AnalyzerExpressionExpectation::Unconstrained,
+                    None,
                     None,
                     SourcePhase::Probe,
                 ) {
@@ -1525,6 +1647,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         source,
                         expectation,
                         alternative.evidence().effect_projection.as_ref(),
+                        alternative.evidence().compile_time_scalar.as_deref(),
                         SourcePhase::Probe,
                     ) {
                         Ok(checked) => {
@@ -1744,10 +1867,16 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 .alternative()
                 .and_then(|alternative| self.effect_projections.get(&(source, alternative)))
                 .cloned();
+            let compile_time_scalar = request.alternative().and_then(|alternative| {
+                self.compile_time_scalar_admissions
+                    .get(&(source, alternative))
+                    .cloned()
+            });
             match self.check_source(
                 source,
                 AnalyzerExpressionExpectation::from_complete(expected),
                 effect_projection.as_ref(),
+                compile_time_scalar.as_deref(),
                 SourcePhase::Materialize,
             ) {
                 Ok(checked) => {
@@ -1978,14 +2107,138 @@ struct PreparedCallProjectionRequest {
     closure: crate::types::constraints::TypeConstraintProjectionClosure,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum AnalyzerCallConsumerAdmission {
+    Ordinary,
+    ViewFxProducer {
+        candidate: CallableCandidateId,
+        schema: crate::callable::CallableSignatureSchemaDigest,
+        validator: CallableValidator,
+        runtime_parameters: BTreeMap<CallableParameterCoordinate, TypeKind>,
+    },
+}
+
+impl AnalyzerCallConsumerAdmission {
+    pub(crate) const fn ordinary() -> Self {
+        Self::Ordinary
+    }
+
+    pub(in crate::final_analysis::analyzer) fn view_fx_producer(
+        candidate: &PreparedResolvedCallable,
+        runtime_parameters: BTreeMap<CallableParameterCoordinate, TypeKind>,
+    ) -> Self {
+        Self::ViewFxProducer {
+            candidate: candidate.id().clone(),
+            schema: candidate.schema().semantic_digest(),
+            validator: candidate.schema().validator().clone(),
+            runtime_parameters,
+        }
+    }
+
+    pub(crate) fn runtime_parameter(
+        &self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Option<&TypeKind> {
+        match self {
+            Self::Ordinary => None,
+            Self::ViewFxProducer {
+                runtime_parameters, ..
+            } => runtime_parameters.get(&coordinate),
+        }
+    }
+
+    fn runtime_parameters(&self) -> Option<&BTreeMap<CallableParameterCoordinate, TypeKind>> {
+        match self {
+            Self::Ordinary => None,
+            Self::ViewFxProducer {
+                runtime_parameters, ..
+            } => Some(runtime_parameters),
+        }
+    }
+
+    fn validates_candidate(&self, candidate: &PreparedResolvedCallable) -> bool {
+        match self {
+            Self::Ordinary => true,
+            Self::ViewFxProducer {
+                candidate: expected,
+                schema,
+                validator,
+                runtime_parameters,
+            } => {
+                expected == candidate.id()
+                    && *schema == candidate.schema().semantic_digest()
+                    && validator == candidate.schema().validator()
+                    && runtime_parameters.keys().all(|coordinate| {
+                        coordinate.group() == candidate.call_group()
+                            && candidate
+                                .schema()
+                                .group(coordinate.group())
+                                .and_then(|group| group.parameter(coordinate.parameter()))
+                                .is_some()
+                    })
+            }
+        }
+    }
+
+    pub(crate) fn validates_resolved_candidate(
+        &self,
+        candidate: &crate::callable::ResolvedCallable,
+    ) -> bool {
+        match self {
+            Self::Ordinary => true,
+            Self::ViewFxProducer {
+                candidate: expected,
+                schema,
+                validator,
+                runtime_parameters,
+            } => {
+                expected == candidate.id()
+                    && *schema == candidate.schema().semantic_digest()
+                    && validator == candidate.schema().validator()
+                    && runtime_parameters.keys().all(|coordinate| {
+                        coordinate.group() == candidate.call_group()
+                            && candidate
+                                .schema()
+                                .group(coordinate.group())
+                                .and_then(|group| group.parameter(coordinate.parameter()))
+                                .is_some()
+                    })
+            }
+        }
+    }
+
+    pub(crate) fn checked_seal(
+        &self,
+        candidate: &crate::callable::ResolvedCallable,
+    ) -> Result<crate::callable::CheckedCallConsumerAdmissionSeal, CallConstraintInvariant> {
+        if !self.validates_resolved_candidate(candidate) {
+            return Err(CallConstraintInvariant::MalformedMapperSeal);
+        }
+        match self {
+            Self::Ordinary => Ok(crate::callable::CheckedCallConsumerAdmissionSeal::Ordinary),
+            Self::ViewFxProducer {
+                runtime_parameters, ..
+            } => Ok(
+                crate::callable::CheckedCallConsumerAdmissionSeal::ViewFxProducer {
+                    runtime_parameters: runtime_parameters
+                        .iter()
+                        .map(|(coordinate, ty)| (*coordinate, ty.clone()))
+                        .collect(),
+                },
+            ),
+        }
+    }
+}
+
 /// The only analyzer-owned pairing of a candidate, mapper seal, source plans,
 /// direct equations, and lower initialization.  The runner consumes this
 /// carrier as one affine value, so a caller cannot provide a token from one
 /// candidate with the mapping or source plans from another.
 pub(crate) struct PreparedCallConstraintSet {
     candidate: Arc<PreparedResolvedCallable>,
+    consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
-    input_projection: PreparedCallInputProjection,
+    inputs: PreparedCallInputs,
     source_groups: Box<[PreparedSourceConstraintGroup<AnalyzerCallConstraintDomain>]>,
     prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
     dialogue_patch_admissions:
@@ -1993,9 +2246,14 @@ pub(crate) struct PreparedCallConstraintSet {
     receiver_sources: Box<[PreparedSourceConstraint<AnalyzerCallConstraintDomain>]>,
     effect_projections:
         BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallEffectProjectionRequest>,
+    compile_time_scalar_admissions: BTreeMap<
+        (AnalyzerCallConstraintSource, u32),
+        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+    >,
     base_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     result_constraint: Option<PreparedCallTypeConstraint>,
+    result_schema: CallableResultSchema,
     projection_requests: Box<[PreparedCallProjectionRequest]>,
     initialization: PreparedConstraintInitialization,
 }
@@ -2004,10 +2262,11 @@ pub(crate) struct PreparedCallConstraintSet {
 /// attached.  The runner owns this value until the candidate role is sealed.
 pub(crate) struct RanCandidateTransaction {
     candidate: Arc<PreparedResolvedCallable>,
+    consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
-    input_projection: PreparedCallInputProjection,
+    inputs: PreparedCallInputs,
     current_group: CallableGroupIndex,
-    result: TypeKind,
+    result: CallableResultSchema,
     solved: crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
 }
 
@@ -2017,8 +2276,9 @@ pub(crate) struct RanCandidateTransaction {
 /// fields are evidence needed for replay and publication.
 pub(crate) struct PreparedCallApplicationTransaction {
     application: PreparedCallableApplication,
+    consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
-    input_projection: PreparedCallInputProjection,
+    inputs: PreparedCallInputs,
     sealed_branch: AnalyzerCallSealedBranch,
     closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
     projections: Box<[KeyedConstraintProjection<AnalyzerCallProjection>]>,
@@ -2041,9 +2301,7 @@ impl PreparedCallArgumentSemanticProjection {
 
 impl RanCandidateTransaction {
     pub(crate) fn declared_exact_argument_matches(&self) -> usize {
-        let Some(mapping) = self.input_projection.authored() else {
-            return 0;
-        };
+        let mapping = self.inputs.mapping();
         self.solved
             .closed_sources
             .iter()
@@ -2085,8 +2343,9 @@ impl RanCandidateTransaction {
     ) -> Result<PreparedCallApplicationTransaction, CallConstraintInvariant> {
         let Self {
             candidate,
+            consumer,
             callee_inputs,
-            input_projection,
+            inputs,
             current_group,
             result,
             solved,
@@ -2099,14 +2358,15 @@ impl RanCandidateTransaction {
         } = solved;
         let application =
             PreparedCallableApplication::seal_from_selected_transaction(candidate, solution)?;
-        let projected_result = application.result_type()?;
+        let projected_result = application.result_schema()?;
         if application.completed_group() != current_group || projected_result != result {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         Ok(PreparedCallApplicationTransaction {
             application,
+            consumer,
             callee_inputs,
-            input_projection,
+            inputs,
             sealed_branch,
             closed_sources,
             projections,
@@ -2127,8 +2387,8 @@ impl PreparedCallApplicationTransaction {
         self.application.completed_group()
     }
 
-    pub(crate) fn result(&self) -> Result<TypeKind, CallConstraintInvariant> {
-        self.application.result_type()
+    pub(crate) fn result(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
+        self.application.result_schema()
     }
 
     /// Project one authored scalar argument from the selected mapper/lower
@@ -2140,10 +2400,7 @@ impl PreparedCallApplicationTransaction {
         argument: HirCallArgumentOrdinal,
         expression: ExprId,
     ) -> Result<PreparedCallArgumentSemanticProjection, CallConstraintInvariant> {
-        let mapping = self
-            .input_projection
-            .authored()
-            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
+        let mapping = self.inputs.mapping();
         let mapped = mapping
             .arguments()
             .get(usize::from(argument.get()))
@@ -2220,27 +2477,15 @@ impl PreparedCallApplicationTransaction {
                             .map(crate::callable::CallableParameterValueAlternative::action)
                             .ok_or(CallConstraintInvariant::MalformedMapperSeal)?
                     }
+                    CallableParameterAdmission::Semantic(_) => {
+                        return Err(CallConstraintInvariant::MalformedMapperSeal);
+                    }
                 }
             }
         };
         Ok(PreparedCallArgumentSemanticProjection {
             action,
-            inferred: self
-                .projections
-                .iter()
-                .find(|projection| {
-                    projection.key()
-                        == &AnalyzerCallProjection::Argument {
-                            argument,
-                            slot: slot.slot(),
-                        }
-                })
-                .map(|projection| projection.value().clone())
-                .ok_or(CallConstraintInvariant::Lower(
-                    TypeConstraintInvariant::Projection(
-                        crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
-                    ),
-                ))?,
+            inferred: closed.actual().clone(),
         })
     }
 
@@ -2248,10 +2493,13 @@ impl PreparedCallApplicationTransaction {
         if !self.application.replay_eq(&other.application) {
             return Some(CallConstraintInvariant::ReplayApplicationMismatch);
         }
+        if self.consumer != other.consumer {
+            return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
+        }
         if self.callee_inputs != other.callee_inputs {
             return Some(CallConstraintInvariant::ReplayCalleeInputsMismatch);
         }
-        if self.input_projection != other.input_projection {
+        if self.inputs != other.inputs {
             return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
         }
         if let Some(mismatch) = self
@@ -2273,16 +2521,18 @@ impl PreparedCallApplicationTransaction {
         self,
     ) -> (
         PreparedCallableApplication,
+        AnalyzerCallConsumerAdmission,
         PreparedCallCalleeConstraintInputs,
-        PreparedCallInputProjection,
+        PreparedCallInputs,
         AnalyzerCallSealedBranch,
         Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
         Box<[KeyedConstraintProjection<AnalyzerCallProjection>]>,
     ) {
         (
             self.application,
+            self.consumer,
             self.callee_inputs,
-            self.input_projection,
+            self.inputs,
             self.sealed_branch,
             self.closed_sources,
             self.projections,
@@ -2316,7 +2566,7 @@ impl SealedAcceptedCandidate {
 }
 
 impl RanCandidateTransaction {
-    pub(crate) fn result(&self) -> &TypeKind {
+    pub(crate) fn result(&self) -> &CallableResultSchema {
         &self.result
     }
 
@@ -2329,7 +2579,7 @@ impl RanCandidateTransaction {
     ) -> (
         Arc<PreparedResolvedCallable>,
         CallableGroupIndex,
-        TypeKind,
+        CallableResultSchema,
         AnalyzerCallSealedBranch,
     ) {
         let Self {
@@ -2356,7 +2606,10 @@ impl AnalyzerPreparedCallPrefix {
         record: AnalyzerPreparedCandidateRecord,
     ) -> Result<Self, CallConstraintInvariant> {
         let owner = match site {
-            CheckedCallSite::HirCall(owner) | CheckedCallSite::DialogueApplication(owner) => owner,
+            CheckedCallSite::HirCall(owner)
+            | CheckedCallSite::AttachedContentApplication {
+                expression: owner, ..
+            } => owner,
         };
         if record.expression() != owner {
             return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
@@ -2388,10 +2641,10 @@ impl AnalyzerPreparedCallPrefix {
         }
         let arguments = self
             .record
-            .input_projection
-            .authored()
-            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?
-            .owned_expression_sources();
+            .inputs()
+            .mapping()
+            .selected_expression_arguments()
+            .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
         let requires_value_callee = self.application.selected().requires_value_callee();
         let callee = match &self.record.callee_inputs {
             PreparedCallCalleeConstraintInputs::ValueReceiver { source, .. } => {
@@ -2417,7 +2670,7 @@ impl AnalyzerPreparedCallPrefix {
                 )
             }
             PreparedCallCalleeConstraintInputs::Free
-            | PreparedCallCalleeConstraintInputs::ExpectedEnum { .. }
+            | PreparedCallCalleeConstraintInputs::EnumConstructor
             | PreparedCallCalleeConstraintInputs::AssociatedType { .. }
             | PreparedCallCalleeConstraintInputs::DialogueCallee => {
                 if requires_value_callee {
@@ -2426,11 +2679,14 @@ impl AnalyzerPreparedCallPrefix {
                 self.record.metadata.callee_expression.semantic_expression()
             }
             PreparedCallCalleeConstraintInputs::DialogueApplication
+            | PreparedCallCalleeConstraintInputs::StaticContentCallee(_)
             | PreparedCallCalleeConstraintInputs::NonCallable => {
                 return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
             }
         };
-        Ok(HirSelectedCallExpressionInventory::new(arguments, callee))
+        Ok(HirSelectedCallExpressionInventory::with_argument_semantics(
+            arguments, callee,
+        ))
     }
 
     pub(crate) fn into_parts(
@@ -2470,7 +2726,13 @@ impl PreparedCallPrefixPayload for AnalyzerPreparedCallPrefix {
             && matches!(
                 (site, self.record.expression()),
                 (CheckedCallSite::HirCall(owner), expression)
-                    | (CheckedCallSite::DialogueApplication(owner), expression)
+                    | (
+                        CheckedCallSite::AttachedContentApplication {
+                            expression: owner,
+                            ..
+                        },
+                        expression,
+                    )
                     if owner == expression
             ))
         .then_some(())
@@ -2742,6 +3004,7 @@ impl AnalyzerPreparedCalleeExpression {
 pub(crate) enum AnalyzerPreparedExpressionResolution {
     Complete(crate::final_analysis::CheckedExpressionResolution),
     DialogueApplication,
+    ContentApplication,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -2787,36 +3050,57 @@ impl AnalyzerPreparedCandidateMetadata {
 #[derive(Eq, PartialEq)]
 pub(crate) struct AnalyzerPreparedCandidateRecord {
     metadata: AnalyzerPreparedCandidateMetadata,
+    consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
-    input_projection: PreparedCallInputProjection,
+    inputs: PreparedCallInputs,
     closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
 }
 
 impl AnalyzerPreparedCandidateRecord {
     pub(in crate::final_analysis::analyzer) fn seal(
         metadata: AnalyzerPreparedCandidateMetadata,
-        selected: &CallableCandidateId,
+        selected: &PreparedResolvedCallable,
+        consumer: AnalyzerCallConsumerAdmission,
         callee_inputs: PreparedCallCalleeConstraintInputs,
-        input_projection: PreparedCallInputProjection,
+        inputs: PreparedCallInputs,
         closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
     ) -> Result<Self, CallConstraintInvariant> {
-        let projection_matches = match (&callee_inputs, &input_projection) {
-            (_, PreparedCallInputProjection::Authored(mapping)) => {
-                mapping.candidate() == Some(selected)
-            }
-            (
-                PreparedCallCalleeConstraintInputs::DialogueApplication,
-                PreparedCallInputProjection::SemanticOnly(inputs),
-            ) => inputs.candidate() == selected,
-            _ => false,
-        };
-        if !projection_matches {
+        let semantic_operands = inputs.semantic_operands();
+        let is_dialogue_application = matches!(
+            callee_inputs,
+            PreparedCallCalleeConstraintInputs::DialogueApplication
+        );
+        let is_static_content_callee = matches!(
+            callee_inputs,
+            PreparedCallCalleeConstraintInputs::StaticContentCallee(_)
+        );
+        if !consumer.validates_candidate(selected)
+            || inputs.candidate() != Some(selected.id())
+            || !static_content_callee_matches(&callee_inputs, selected.id(), inputs.schema())
+            || (is_dialogue_application && semantic_operands.is_empty())
+            || (!is_dialogue_application
+                && !is_static_content_callee
+                && !semantic_operands.is_empty())
+            || (is_dialogue_application
+                && semantic_operands.iter().any(|operand| {
+                    operand.owner() != PreparedCallSemanticOperandOwner::DialogueApplication
+                }))
+            || (is_static_content_callee
+                && (semantic_operands.len() != 1
+                    || semantic_operands.iter().any(|operand| {
+                        operand.owner() != PreparedCallSemanticOperandOwner::TextProxyObject
+                            || operand.role()
+                                != PreparedCallSemanticOperandRole::TextProxyNominalDiscriminator
+                            || operand.argument().is_none()
+                    })))
+        {
             return Err(CallConstraintInvariant::MalformedMapperSeal);
         }
         Ok(Self {
             metadata,
+            consumer,
             callee_inputs,
-            input_projection,
+            inputs,
             closed_sources,
         })
     }
@@ -2829,8 +3113,8 @@ impl AnalyzerPreparedCandidateRecord {
         &self.metadata.inventory
     }
 
-    pub(crate) const fn input_projection(&self) -> &PreparedCallInputProjection {
-        &self.input_projection
+    pub(crate) const fn inputs(&self) -> &PreparedCallInputs {
+        &self.inputs
     }
 
     pub(crate) fn function_value_origin(&self) -> Option<&PreparedFunctionValueOriginEvidence> {
@@ -2840,8 +3124,9 @@ impl AnalyzerPreparedCandidateRecord {
     pub(crate) fn into_parts(self) -> AnalyzerPreparedCandidateRecordParts {
         let Self {
             metadata,
+            consumer,
             callee_inputs,
-            input_projection,
+            inputs,
             closed_sources,
         } = self;
         AnalyzerPreparedCandidateRecordParts {
@@ -2852,8 +3137,9 @@ impl AnalyzerPreparedCandidateRecord {
             inventory: metadata.inventory,
             diagnostics: metadata.diagnostics,
             accounting: metadata.accounting,
+            consumer,
             callee_inputs,
-            input_projection,
+            inputs,
             closed_sources,
         }
     }
@@ -2867,8 +3153,9 @@ pub(crate) struct AnalyzerPreparedCandidateRecordParts {
     pub(crate) inventory: AnalyzerPreparedCandidateInventory,
     pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
+    pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
-    pub(crate) input_projection: PreparedCallInputProjection,
+    pub(crate) inputs: PreparedCallInputs,
     pub(in crate::final_analysis::analyzer) closed_sources:
         Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
 }
@@ -2886,8 +3173,9 @@ impl AnalyzerPreparedCandidateRecordParts {
             inventory: self.inventory.detach(arena)?,
             diagnostics: self.diagnostics,
             accounting: self.accounting,
+            consumer: self.consumer,
             callee_inputs: self.callee_inputs,
-            input_projection: self.input_projection,
+            inputs: self.inputs,
             closed_sources: self.closed_sources,
         })
     }
@@ -2904,31 +3192,35 @@ pub(crate) struct AnalyzerDetachedCandidateRecord {
     pub(crate) inventory: Box<[AnalyzerDetachedConsideredCandidate]>,
     pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
+    pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
-    pub(crate) input_projection: PreparedCallInputProjection,
+    pub(crate) inputs: PreparedCallInputs,
     pub(in crate::final_analysis::analyzer) closed_sources:
         Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
 }
 
-/// The single analyzer preparation gate. It seals either one authored mapper
-/// inventory or one schema-owned semantic-only inventory and asks the callable
-/// graph issuer for the exact lower scope/seed token before any driver
-/// callback or accounting charge is possible.
+/// The single analyzer preparation gate. It seals one composite prepared-input
+/// inventory containing the ordinary mapper and any schema-owned semantic
+/// operands, then asks the callable graph issuer for the exact lower scope/seed
+/// token before any driver callback or accounting charge is possible.
 pub(crate) fn validate_and_prepare_call_constraints(
     graph: &AnalyzerPreparedCallGraph,
     candidate: Arc<PreparedResolvedCallable>,
-    input_projection: PreparedCallInputProjection,
+    inputs: PreparedCallInputs,
     authored_arguments: &[arcweft_lang_hir::expr::HirCallArgument],
     expected_result: Option<&TypeKind>,
     result_source: ExprId,
     callee_inputs: PreparedCallCalleeConstraintInputs,
     dialogue_patch_admissions: &[AnalyzerPreparedDialoguePatchAdmission],
+    compile_time_scalar_admissions: &[AnalyzerPreparedCompileTimeScalarAdmission],
+    scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
+    consumer: AnalyzerCallConsumerAdmission,
     enclosing: &EnclosingGenericParameterScope,
 ) -> CallAnalysisResult<PreparedCallConstraintSet> {
     let group = candidate.call_group();
-    if input_projection.candidate() != Some(candidate.id())
-        || input_projection.group() != Some(group)
-        || input_projection.schema() != Some(candidate.schema().semantic_digest())
+    if inputs.candidate() != Some(candidate.id())
+        || inputs.group() != group
+        || inputs.schema() != candidate.schema().semantic_digest()
     {
         return Err(CallAnalysisFailure::Invariant(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
@@ -2940,104 +3232,181 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
         })?;
     let future_parameters = initialization.future_parameters().to_vec();
+    if !consumer.validates_candidate(&candidate) {
+        return Err(CallAnalysisFailure::Invariant(
+            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+        ));
+    }
+    let view_fx_runtime_parameters = consumer.runtime_parameters();
+    let mut compile_time_scalar_admission_map = BTreeMap::new();
+    for row in compile_time_scalar_admissions {
+        if compile_time_scalar_admission_map
+            .insert(row.coordinate(), Arc::clone(row.admission()))
+            .is_some()
+        {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+    }
     let mut dialogue_patch_admission_map = BTreeMap::new();
-    let (source_groups, mut prepared_source_actuals) = match &input_projection {
-        PreparedCallInputProjection::Authored(mapping) => {
-            if matches!(
-                callee_inputs,
-                PreparedCallCalleeConstraintInputs::DialogueApplication
-            ) || mapping.arguments().len() != authored_arguments.len()
-            {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
-                ));
-            }
-            let mut actuals = BTreeMap::new();
-            let mut groups = Vec::with_capacity(mapping.arguments().len());
-            for (argument_index, argument) in mapping.arguments().iter().enumerate() {
-                let ordinal =
-                    HirCallArgumentOrdinal::try_from_usize(argument_index).map_err(|_| {
+    let (source_groups, mut prepared_source_actuals) = if inputs.semantic_operands().is_empty() {
+        if !compile_time_scalar_admission_map.is_empty() {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+        let mapping = inputs.mapping();
+        if matches!(
+            callee_inputs,
+            PreparedCallCalleeConstraintInputs::DialogueApplication
+        ) || mapping.arguments().len() != authored_arguments.len()
+        {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+        let mut actuals = BTreeMap::new();
+        let mut groups = Vec::with_capacity(mapping.arguments().len());
+        for (argument_index, argument) in mapping.arguments().iter().enumerate() {
+            let ordinal = HirCallArgumentOrdinal::try_from_usize(argument_index).map_err(|_| {
+                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ))
+            })?;
+            let authored =
+                authored_arguments
+                    .get(argument_index)
+                    .ok_or(CallAnalysisFailure::Invariant(
+                        CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ))?;
+            let mut sources = Vec::with_capacity(argument.slots().len());
+            for slot in argument.slots() {
+                let consumer = slot.coordinate().and_then(|coordinate| {
+                    candidate
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameter(coordinate.parameter()))
+                        .map(|parameter| (coordinate, parameter.consumer()))
+                });
+                let metadata_coordinate = match consumer {
+                    Some((_, crate::callable::CallableParameterConsumer::Content(_))) => {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        ));
+                    }
+                    Some((
+                        _,
+                        crate::callable::CallableParameterConsumer::DialogueApplicationMetadata(
+                            coordinate,
+                        ),
+                    )) => Some(*coordinate),
+                    Some((_, crate::callable::CallableParameterConsumer::Value))
+                    | Some((_, crate::callable::CallableParameterConsumer::DialoguePatch(_)))
+                    | None => None,
+                };
+                let dialogue_patch_coordinate = match consumer {
+                    Some((_, crate::callable::CallableParameterConsumer::DialoguePatch(_))) => {
+                        slot.coordinate()
+                    }
+                    Some((_, crate::callable::CallableParameterConsumer::Content(_))) => {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        ));
+                    }
+                    Some((
+                        _,
+                        crate::callable::CallableParameterConsumer::Value
+                        | crate::callable::CallableParameterConsumer::DialogueApplicationMetadata(_),
+                    ))
+                    | None => None,
+                };
+                let source = if let Some(coordinate) = metadata_coordinate {
+                    let CheckedCallArgumentSlotSource::Expression(source) = slot.source() else {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        ));
+                    };
+                    let mut rows = mapping
+                        .dialogue_application_metadata()
+                        .iter()
+                        .filter(|row| {
+                            row.argument() == ordinal
+                                && row.source() == source
+                                && row.coordinate() == coordinate
+                        });
+                    let row = rows.next().cloned().ok_or_else(|| {
                         CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
                             CallConstraintInvariant::MalformedMapperSeal,
                         ))
                     })?;
-                let authored = authored_arguments.get(argument_index).ok_or(
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedMapperSeal,
-                    )),
-                )?;
-                let mut sources = Vec::with_capacity(argument.slots().len());
-                for slot in argument.slots() {
-                    let metadata_coordinate = slot.coordinate().and_then(|coordinate| {
-                        candidate
-                            .schema()
-                            .group(coordinate.group())
-                            .and_then(|group| group.parameter(coordinate.parameter()))
-                            .and_then(|parameter| match parameter.consumer() {
-                                crate::callable::CallableParameterConsumer::DialogueApplicationMetadata(
-                                    coordinate,
-                                ) => Some(*coordinate),
-                                crate::callable::CallableParameterConsumer::Value
-                                | crate::callable::CallableParameterConsumer::DialoguePatch(_) => {
-                                    None
-                                }
-                            })
-                    });
-                    let dialogue_patch_coordinate = slot.coordinate().and_then(|coordinate| {
-                        candidate
-                            .schema()
-                            .group(coordinate.group())
-                            .and_then(|group| group.parameter(coordinate.parameter()))
-                            .and_then(|parameter| match parameter.consumer() {
-                                crate::callable::CallableParameterConsumer::DialoguePatch(_) => {
-                                    Some(coordinate)
-                                }
-                                crate::callable::CallableParameterConsumer::Value
-                                | crate::callable::CallableParameterConsumer::DialogueApplicationMetadata(_) => None,
-                            })
-                    });
-                    let source = if let Some(coordinate) = metadata_coordinate {
-                        let CheckedCallArgumentSlotSource::Expression(source) = slot.source()
-                        else {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
-                            ));
-                        };
-                        let mut rows =
-                            mapping
-                                .dialogue_application_metadata()
-                                .iter()
-                                .filter(|row| {
-                                    row.argument() == ordinal
-                                        && row.source() == source
-                                        && row.coordinate() == coordinate
-                                });
-                        let row = rows.next().cloned().ok_or_else(|| {
-                            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    if rows.next().is_some() {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
                                 CallConstraintInvariant::MalformedMapperSeal,
-                            ))
-                        })?;
-                        if rows.next().is_some() {
-                            return Err(CallAnalysisFailure::Invariant(
-                                CallAnalysisInvariant::Constraint(
-                                    CallConstraintInvariant::MalformedMapperSeal,
-                                ),
-                            ));
-                        }
-                        let source = AnalyzerCallConstraintSource::DialogueApplicationMetadata {
-                            argument: ordinal,
-                            slot: slot.slot(),
+                            ),
+                        ));
+                    }
+                    let source = AnalyzerCallConstraintSource::DialogueApplicationMetadata {
+                        argument: ordinal,
+                        slot: slot.slot(),
+                        source,
+                        coordinate,
+                    };
+                    if actuals
+                        .insert(
                             source,
-                            coordinate,
-                        };
-                        if actuals
-                            .insert(
-                                source,
-                                AnalyzerPreparedSourceActual::DialogueApplicationMetadata(row),
-                            )
-                            .is_some()
+                            AnalyzerPreparedSourceActual::DialogueApplicationMetadata(row),
+                        )
+                        .is_some()
+                    {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        ));
+                    }
+                    source
+                } else if let Some(coordinate) = dialogue_patch_coordinate {
+                    let source = AnalyzerCallConstraintSource::DialoguePatch {
+                        argument: ordinal,
+                        slot: slot.slot(),
+                        source: slot.source(),
+                        coordinate,
+                        physical_kind: super::semantics::physical_evaluation_kind(
+                            authored,
+                            slot,
+                            false,
+                            candidate.schema().argument_policy().spread(),
+                        ),
+                    };
+                    let mut rows = dialogue_patch_admissions.iter().filter(|row| {
+                        row.argument() == ordinal
+                            && slot.source()
+                                == CheckedCallArgumentSlotSource::Expression(row.source())
+                            && row.coordinate() == coordinate
+                    });
+                    if let Some(row) = rows.next().cloned() {
+                        let parameter = candidate
+                            .schema()
+                            .group(coordinate.group())
+                            .and_then(|group| group.parameter(coordinate.parameter()))
+                            .ok_or(CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    CallConstraintInvariant::MalformedSchemaInventory,
+                                ),
+                            ))?;
+                        if rows.next().is_some()
+                            || !row.validates_parameter(coordinate, parameter)
+                            || dialogue_patch_admission_map.insert(source, row).is_some()
                         {
                             return Err(CallAnalysisFailure::Invariant(
                                 CallAnalysisInvariant::Constraint(
@@ -3045,94 +3414,99 @@ pub(crate) fn validate_and_prepare_call_constraints(
                                 ),
                             ));
                         }
-                        source
-                    } else if let Some(coordinate) = dialogue_patch_coordinate {
-                        let source = AnalyzerCallConstraintSource::DialoguePatch {
-                            argument: ordinal,
-                            slot: slot.slot(),
-                            source: slot.source(),
-                            coordinate,
-                            physical_kind: super::semantics::physical_evaluation_kind(
-                                authored,
-                                slot,
-                                false,
-                                candidate.schema().argument_policy().spread(),
-                            ),
-                        };
-                        let mut rows = dialogue_patch_admissions.iter().filter(|row| {
-                            row.argument() == ordinal
-                                && slot.source()
-                                    == CheckedCallArgumentSlotSource::Expression(row.source())
-                                && row.coordinate() == coordinate
-                        });
-                        if let Some(row) = rows.next().cloned() {
-                            let parameter = candidate
-                                .schema()
-                                .group(coordinate.group())
-                                .and_then(|group| group.parameter(coordinate.parameter()))
-                                .ok_or(CallAnalysisFailure::Invariant(
-                                    CallAnalysisInvariant::Constraint(
-                                        CallConstraintInvariant::MalformedSchemaInventory,
-                                    ),
-                                ))?;
-                            if rows.next().is_some()
-                                || !row.validates_parameter(coordinate, parameter)
-                                || dialogue_patch_admission_map.insert(source, row).is_some()
-                            {
-                                return Err(CallAnalysisFailure::Invariant(
-                                    CallAnalysisInvariant::Constraint(
-                                        CallConstraintInvariant::MalformedMapperSeal,
-                                    ),
-                                ));
-                            }
-                        }
-                        source
-                    } else {
-                        AnalyzerCallConstraintSource::Argument {
-                            argument: ordinal,
-                            slot: slot.slot(),
-                            source: slot.source(),
-                            physical_kind: super::semantics::physical_evaluation_kind(
-                                authored,
-                                slot,
-                                false,
-                                candidate.schema().argument_policy().spread(),
-                            ),
-                        }
-                    };
-                    sources.push(prepare_source_constraint(&candidate, source, slot)?);
-                }
-                groups.push(
-                    PreparedSourceConstraintGroup::seal(sources).map_err(|error| {
-                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::Lower(error),
-                        ))
-                    })?,
-                );
+                    }
+                    source
+                } else {
+                    AnalyzerCallConstraintSource::Argument {
+                        argument: ordinal,
+                        slot: slot.slot(),
+                        source: slot.source(),
+                        physical_kind: super::semantics::physical_evaluation_kind(
+                            authored,
+                            slot,
+                            false,
+                            candidate.schema().argument_policy().spread(),
+                        ),
+                    }
+                };
+                sources.push(prepare_source_constraint(
+                    &candidate,
+                    source,
+                    slot,
+                    scalar_types,
+                    view_fx_runtime_parameters,
+                )?);
             }
-            if dialogue_patch_admission_map.len() != dialogue_patch_admissions.len() {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
-                ));
-            }
-            (groups.into_boxed_slice(), actuals)
+            groups.push(
+                PreparedSourceConstraintGroup::seal(sources).map_err(|error| {
+                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::Lower(error),
+                    ))
+                })?,
+            );
         }
-        PreparedCallInputProjection::SemanticOnly(inputs) => {
-            if !matches!(
-                callee_inputs,
-                PreparedCallCalleeConstraintInputs::DialogueApplication
-            ) || !authored_arguments.is_empty()
-                || !inputs.validates(&candidate)
-            {
+        if dialogue_patch_admission_map.len() != dialogue_patch_admissions.len() {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+        (groups.into_boxed_slice(), actuals)
+    } else {
+        let semantic_operands = inputs.semantic_operands();
+        let is_dialogue_application = matches!(
+            callee_inputs,
+            PreparedCallCalleeConstraintInputs::DialogueApplication
+        );
+        let is_static_content_callee = matches!(
+            callee_inputs,
+            PreparedCallCalleeConstraintInputs::StaticContentCallee(_)
+        );
+        if (!is_dialogue_application && !is_static_content_callee)
+            || !inputs.validates(&candidate)
+            || !callee_inputs.validates_candidate(&candidate)
+            || (is_dialogue_application
+                && (!authored_arguments.is_empty()
+                    || !inputs.mapping().arguments().is_empty()
+                    || !inputs.mapping().dialogue_application_metadata().is_empty()
+                    || semantic_operands.iter().any(|operand| {
+                        operand.owner() != PreparedCallSemanticOperandOwner::DialogueApplication
+                    })))
+            || (is_static_content_callee
+                && (inputs.mapping().arguments().len() != authored_arguments.len()
+                    || inputs
+                        .mapping()
+                        .dialogue_application_metadata()
+                        .iter()
+                        .next()
+                        .is_some()
+                    || semantic_operands.len() != 1
+                    || !matches!(
+                        semantic_operands.first(),
+                        Some(operand)
+                            if operand.owner() == PreparedCallSemanticOperandOwner::TextProxyObject
+                                && operand.role()
+                                    == PreparedCallSemanticOperandRole::TextProxyNominalDiscriminator
+                                && operand.argument().is_some()
+                    )))
+        {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+        let mut actuals = BTreeMap::new();
+        let mut groups = Vec::new();
+        if is_dialogue_application {
+            if !compile_time_scalar_admission_map.is_empty() {
                 return Err(CallAnalysisFailure::Invariant(
                     CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
                 ));
             }
-            let mut actuals = BTreeMap::new();
-            let mut groups = Vec::with_capacity(inputs.operands().len());
-            for operand in inputs.operands() {
+            groups.reserve(semantic_operands.len());
+            for operand in semantic_operands {
                 let source = AnalyzerCallConstraintSource::DialogueApplicationOperand {
+                    owner: operand.owner(),
                     source: operand.source(),
+                    role: operand.role(),
                     coordinate: operand.coordinate(),
                 };
                 if actuals
@@ -3155,6 +3529,8 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     source,
                     operand.coordinate(),
                     PreparedConstraintSourceProjection::Scalar,
+                    scalar_types,
+                    view_fx_runtime_parameters,
                 )?;
                 groups.push(
                     PreparedSourceConstraintGroup::seal([prepared]).map_err(|error| {
@@ -3164,11 +3540,203 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     })?,
                 );
             }
-            (groups.into_boxed_slice(), actuals)
+        } else {
+            let discriminator = semantic_operands
+                .first()
+                .ok_or(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                ))?;
+            let crate::callable::CallableCandidateId::Content(
+                crate::callable::ContentCallableIdentity::TextProxyObject { owner, .. },
+            ) = candidate.id()
+            else {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                ));
+            };
+            let actual_owner =
+                discriminator
+                    .actual()
+                    .semantic_identity_digest()
+                    .map_err(|error| {
+                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error.into(),
+                        ))
+                    })?;
+            if actual_owner != *owner {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                ));
+            }
+            let discriminator_argument =
+                discriminator
+                    .argument()
+                    .ok_or(CallAnalysisFailure::Invariant(
+                        CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ))?;
+            let discriminator_source = AnalyzerCallConstraintSource::TextProxyObjectOperand {
+                argument: discriminator_argument,
+                source: discriminator.source(),
+                coordinate: discriminator.coordinate(),
+            };
+            let Some(parameter) = candidate
+                .schema()
+                .group(discriminator.coordinate().group())
+                .and_then(|group| group.parameter(discriminator.coordinate().parameter()))
+            else {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::MalformedSchemaInventory,
+                    ),
+                ));
+            };
+            if !matches!(
+                parameter.consumer(),
+                crate::callable::CallableParameterConsumer::Content(
+                    crate::callable::CallableContentParameterConsumer::ObjectType
+                )
+            ) || !matches!(
+                parameter.admission(),
+                CallableParameterAdmission::Semantic(
+                    crate::callable::CallableSemanticAdmission::TextProxyNominal
+                )
+            ) {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                ));
+            }
+            if actuals
+                .insert(
+                    discriminator_source,
+                    AnalyzerPreparedSourceActual::TextProxyObjectOperand(
+                        discriminator.actual().clone(),
+                    ),
+                )
+                .is_some()
+            {
+                return Err(CallAnalysisFailure::Invariant(
+                    CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+                ));
+            }
+            for (argument_index, argument) in inputs.mapping().arguments().iter().enumerate() {
+                let ordinal =
+                    HirCallArgumentOrdinal::try_from_usize(argument_index).map_err(|_| {
+                        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ))
+                    })?;
+                let authored = authored_arguments.get(argument_index).ok_or(
+                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                )?;
+                for slot in argument.slots() {
+                    let coordinate = slot.coordinate().ok_or(CallAnalysisFailure::Invariant(
+                        CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ))?;
+                    let parameter = candidate
+                        .schema()
+                        .group(coordinate.group())
+                        .and_then(|group| group.parameter(coordinate.parameter()))
+                        .ok_or(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedSchemaInventory,
+                            ),
+                        ))?;
+                    if !matches!(
+                        parameter.consumer(),
+                        crate::callable::CallableParameterConsumer::Content(_)
+                    ) {
+                        return Err(CallAnalysisFailure::Invariant(
+                            CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::MalformedMapperSeal,
+                            ),
+                        ));
+                    }
+                    let source = if matches!(
+                        parameter.consumer(),
+                        crate::callable::CallableParameterConsumer::Content(
+                            crate::callable::CallableContentParameterConsumer::ObjectType
+                        )
+                    ) {
+                        if ordinal != discriminator_argument
+                            || slot.source()
+                                != CheckedCallArgumentSlotSource::Expression(discriminator.source())
+                            || coordinate != discriminator.coordinate()
+                        {
+                            return Err(CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    CallConstraintInvariant::MalformedMapperSeal,
+                                ),
+                            ));
+                        }
+                        discriminator_source
+                    } else {
+                        AnalyzerCallConstraintSource::Argument {
+                            argument: ordinal,
+                            slot: slot.slot(),
+                            source: slot.source(),
+                            physical_kind: super::semantics::physical_evaluation_kind(
+                                authored,
+                                slot,
+                                false,
+                                candidate.schema().argument_policy().spread(),
+                            ),
+                        }
+                    };
+                    let prepared = if source == discriminator_source {
+                        typed_source_constraint(source, discriminator.actual())?
+                    } else {
+                        let admission = compile_time_scalar_admission_map
+                            .get(&coordinate)
+                            .cloned()
+                            .ok_or(CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    CallConstraintInvariant::MalformedMapperSeal,
+                                ),
+                            ))?;
+                        let CallableParameterAdmission::Semantic(
+                            crate::callable::CallableSemanticAdmission::CompileTimeScalar(
+                                schema_admission,
+                            ),
+                        ) = parameter.admission()
+                        else {
+                            return Err(CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    CallConstraintInvariant::MalformedMapperSeal,
+                                ),
+                            ));
+                        };
+                        if schema_admission.kind() != admission.kind().callable_kind()
+                            || schema_admission.value_type() != admission.value_type()
+                        {
+                            return Err(CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    CallConstraintInvariant::MalformedMapperSeal,
+                                ),
+                            ));
+                        }
+                        compile_time_scalar_source_constraint(source, admission)?
+                    };
+                    groups.push(PreparedSourceConstraintGroup::seal([prepared]).map_err(
+                        |error| {
+                            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                                CallConstraintInvariant::Lower(error),
+                            ))
+                        },
+                    )?);
+                }
+            }
         }
+        (groups.into_boxed_slice(), actuals)
     };
 
     let mut effect_projections = BTreeMap::new();
+    let mut compile_time_scalar_admissions = BTreeMap::new();
     for group in &source_groups {
         for prepared in group.sources() {
             if prepared.is_unchecked() {
@@ -3176,6 +3744,17 @@ pub(crate) fn validate_and_prepare_call_constraints(
             }
             let source = prepared.source();
             for alternative in prepared.alternatives() {
+                if let Some(admission) = alternative.evidence().compile_time_scalar.as_ref()
+                    && compile_time_scalar_admissions
+                        .insert((source, alternative.alternative()), Arc::clone(admission))
+                        .is_some()
+                {
+                    return Err(CallAnalysisFailure::Invariant(
+                        CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ));
+                }
                 let Some(request) = alternative.evidence().effect_projection.as_ref() else {
                     continue;
                 };
@@ -3198,27 +3777,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
     let mut receiver_constraints = Vec::new();
     match (&callee_inputs, candidate.instantiation()) {
         (
-            PreparedCallCalleeConstraintInputs::ExpectedEnum { expected },
-            CallableInstantiation::ExpectedEnum {
-                expected: candidate_expected,
-            },
-        ) => {
-            if candidate_expected != expected {
-                return Err(CallAnalysisFailure::Invariant(
-                    CallAnalysisInvariant::Constraint(
-                        CallConstraintInvariant::MalformedSchemaInventory,
-                    ),
-                ));
-            }
-            base_constraints.push(PreparedCallTypeConstraint {
-                source: AnalyzerCallConstraintSource::BaseInstantiation,
-                pattern: candidate.constraint_result_type().map_err(|error| {
-                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })?,
-                actual: expected.clone(),
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
-            });
-        }
+            PreparedCallCalleeConstraintInputs::EnumConstructor,
+            CallableInstantiation::EnumConstructor,
+        ) => {}
         (PreparedCallCalleeConstraintInputs::Free, instantiation)
             if matches!(
                 instantiation,
@@ -3310,23 +3871,19 @@ pub(crate) fn validate_and_prepare_call_constraints(
             PreparedCallCalleeConstraintInputs::FunctionValue { actual },
             CallableInstantiation::None,
         ) => {
-            let token = candidate
-                .issue_remaining_function_effect_projection(group)
+            let constraint = candidate
+                .prepare_function_value_constraint(group, actual)
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
                 })?;
-            let pattern = token.projected_type().map_err(|error| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-            })?;
-            let projected_actual = token.seal_actual(actual).map_err(|error| {
-                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-            })?;
-            base_constraints.push(PreparedCallTypeConstraint {
-                source: AnalyzerCallConstraintSource::BaseInstantiation,
-                pattern,
-                actual: projected_actual,
-                acceptance: ConstraintAcceptance::PatternAcceptsActual,
-            });
+            if let Some((pattern, actual)) = constraint {
+                base_constraints.push(PreparedCallTypeConstraint {
+                    source: AnalyzerCallConstraintSource::BaseInstantiation,
+                    pattern,
+                    actual,
+                    acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                });
+            }
         }
         (
             PreparedCallCalleeConstraintInputs::DialogueCallee
@@ -3335,6 +3892,10 @@ pub(crate) fn validate_and_prepare_call_constraints(
         ) if matches!(
             instantiation,
             CallableInstantiation::None | CallableInstantiation::Character { .. }
+        ) => {}
+        (
+            PreparedCallCalleeConstraintInputs::StaticContentCallee(_),
+            CallableInstantiation::None,
         ) => {}
         (PreparedCallCalleeConstraintInputs::NonCallable, _) => {
             return Err(CallAnalysisFailure::Invariant(
@@ -3388,16 +3949,22 @@ pub(crate) fn validate_and_prepare_call_constraints(
             closure: result_closure,
         })
         .collect::<Vec<_>>();
-    let result_projection = candidate.result_type_for_group(group).ok_or_else(|| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-            CallConstraintInvariant::PreparedFunctionTypeMismatch,
-        ))
+    let result_schema = candidate.result_schema_for_group(group).map_err(|error| {
+        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
     })?;
-    projection_requests.push(PreparedCallProjectionRequest {
-        key: AnalyzerCallProjection::Result,
-        value: result_projection,
-        closure: result_closure,
-    });
+    if let CallableResultSchema::Value(result_projection) = &result_schema {
+        projection_requests.push(PreparedCallProjectionRequest {
+            key: AnalyzerCallProjection::Result,
+            value: result_projection.clone(),
+            closure: result_closure,
+        });
+    } else if expected_result.is_some() {
+        return Err(CallAnalysisFailure::Invariant(
+            CallAnalysisInvariant::Constraint(
+                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+            ),
+        ));
+    }
     projection_requests.extend(future_parameters.into_iter().map(|parameter| {
         PreparedCallProjectionRequest {
             key: AnalyzerCallProjection::Future(parameter.clone()),
@@ -3408,16 +3975,19 @@ pub(crate) fn validate_and_prepare_call_constraints(
     }));
     Ok(PreparedCallConstraintSet {
         candidate,
+        consumer,
         callee_inputs,
-        input_projection,
+        inputs,
         source_groups,
         prepared_source_actuals,
         dialogue_patch_admissions: dialogue_patch_admission_map,
         receiver_sources: receiver_sources.into_boxed_slice(),
         effect_projections,
+        compile_time_scalar_admissions,
         base_constraints: base_constraints.into_boxed_slice(),
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         result_constraint,
+        result_schema,
         projection_requests: projection_requests.into_boxed_slice(),
         initialization,
     })
@@ -3476,6 +4046,92 @@ fn typed_source_constraint(
     })
 }
 
+fn compile_time_scalar_source_constraint(
+    source: AnalyzerCallConstraintSource,
+    admission: Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+) -> CallAnalysisResult<PreparedSourceConstraint<AnalyzerCallConstraintDomain>> {
+    PreparedSourceConstraint::checked(
+        source,
+        PreparedConstraintSourceProjection::Scalar,
+        [],
+        PreparedSourceAlternative::new(
+            0,
+            AnalyzerCallEvidenceRule::compile_time_scalar(Arc::clone(&admission)),
+            admission.value_type().clone(),
+        ),
+    )
+    .map_err(|error| {
+        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+            CallConstraintInvariant::Lower(match error {
+                crate::types::constraints::TypeConstraintError::Invariant(error) => error,
+                crate::types::constraints::TypeConstraintError::Rejected(_)
+                | crate::types::constraints::TypeConstraintError::Abort(_) => {
+                    TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                    )
+                }
+            }),
+        ))
+    })
+}
+
+fn prepare_compile_time_scalar_type_admission(
+    value_type: &TypeKind,
+    scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
+) -> Option<crate::checked_compile_time::PreparedCompileTimeScalarAdmission> {
+    use crate::{
+        checked_compile_time::{
+            CheckedCompileTimeScalarKind, CompileTimeScalarSourceMode,
+            PreparedCompileTimeScalarAdmission,
+        },
+        registration::CompileTimeScalarTypeRoleId,
+    };
+
+    let TypeKind::CompileTimeScalar(scalar) = value_type else {
+        return None;
+    };
+    let (kind, role, source_mode) = match scalar.kind() {
+        crate::types::CompileTimeScalarKind::Milli => (
+            CheckedCompileTimeScalarKind::Milli,
+            CompileTimeScalarTypeRoleId::Milli,
+            CompileTimeScalarSourceMode::Literal,
+        ),
+        crate::types::CompileTimeScalarKind::Ratio => (
+            CheckedCompileTimeScalarKind::Ratio,
+            CompileTimeScalarTypeRoleId::Ratio,
+            CompileTimeScalarSourceMode::Literal,
+        ),
+        crate::types::CompileTimeScalarKind::Length => (
+            CheckedCompileTimeScalarKind::Length,
+            CompileTimeScalarTypeRoleId::Length,
+            CompileTimeScalarSourceMode::Literal,
+        ),
+        crate::types::CompileTimeScalarKind::Angle => (
+            CheckedCompileTimeScalarKind::Angle,
+            CompileTimeScalarTypeRoleId::Angle,
+            CompileTimeScalarSourceMode::Literal,
+        ),
+        crate::types::CompileTimeScalarKind::PublicId => (
+            CheckedCompileTimeScalarKind::PublicId,
+            CompileTimeScalarTypeRoleId::PublicId,
+            CompileTimeScalarSourceMode::PublicId,
+        ),
+        crate::types::CompileTimeScalarKind::Color => (
+            CheckedCompileTimeScalarKind::Color,
+            CompileTimeScalarTypeRoleId::Color,
+            CompileTimeScalarSourceMode::Typed(
+                scalar_types
+                    .type_for(CompileTimeScalarTypeRoleId::Color)
+                    .clone(),
+            ),
+        ),
+    };
+    if scalar_types.type_for(role) != value_type {
+        return None;
+    }
+    PreparedCompileTimeScalarAdmission::try_new(kind, value_type.clone(), source_mode)
+}
+
 /// Convert one mapper slot into the lower-owned source algebra.  In
 /// particular, a typed rest slot keeps its prepared container policy; the
 /// callback only supplies an actual container and lower derives the final
@@ -3484,12 +4140,21 @@ pub(crate) fn prepare_source_constraint(
     candidate: &PreparedResolvedCallable,
     source: AnalyzerCallConstraintSource,
     slot: &crate::callable::MappedCallArgumentSlot,
+    scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
+    view_fx_runtime_parameters: Option<&BTreeMap<CallableParameterCoordinate, TypeKind>>,
 ) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallAnalysisFailure> {
     let projection = lower_source_projection(slot.source_projection());
     let Some(coordinate) = slot.coordinate() else {
         return Ok(PreparedSourceConstraint::unchecked(source, projection));
     };
-    prepare_parameter_source_constraint(candidate, source, coordinate, projection)
+    prepare_parameter_source_constraint(
+        candidate,
+        source,
+        coordinate,
+        projection,
+        scalar_types,
+        view_fx_runtime_parameters,
+    )
 }
 
 fn prepare_parameter_source_constraint(
@@ -3497,6 +4162,8 @@ fn prepare_parameter_source_constraint(
     source: AnalyzerCallConstraintSource,
     coordinate: CallableParameterCoordinate,
     projection: PreparedConstraintSourceProjection,
+    scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
+    view_fx_runtime_parameters: Option<&BTreeMap<CallableParameterCoordinate, TypeKind>>,
 ) -> Result<PreparedSourceConstraint<AnalyzerCallConstraintDomain>, CallAnalysisFailure> {
     let Some(parameter) = candidate
         .schema()
@@ -3507,19 +4174,49 @@ fn prepare_parameter_source_constraint(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedSchemaInventory),
         ));
     };
-    let Some(declared) = candidate
-        .constraint_parameter_type(coordinate)
-        .map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?
-    else {
-        return Ok(PreparedSourceConstraint::unchecked(source, projection));
+    if parameter.admission().is_semantic()
+        || matches!(
+            parameter.consumer(),
+            crate::callable::CallableParameterConsumer::Content(_)
+        )
+    {
+        return Err(CallAnalysisFailure::Invariant(
+            CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+        ));
+    }
+    let runtime_override = view_fx_runtime_parameters.and_then(|rows| rows.get(&coordinate));
+    let declared = if let Some(runtime) = runtime_override {
+        runtime.clone()
+    } else {
+        let Some(declared) = candidate
+            .constraint_parameter_type(coordinate)
+            .map_err(|error| {
+                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+            })?
+        else {
+            return Ok(PreparedSourceConstraint::unchecked(source, projection));
+        };
+        declared
     };
     let rule = parameter.value_rule().ok_or_else(|| {
         CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
             CallConstraintInvariant::MalformedSchemaInventory,
         ))
     })?;
+    if runtime_override.is_none() && matches!(declared, TypeKind::CompileTimeScalar(_)) {
+        if !projection.is_scalar() || rule != &crate::callable::CallableParameterValueRule::supply()
+        {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
+            ));
+        }
+        let admission = prepare_compile_time_scalar_type_admission(&declared, scalar_types).ok_or(
+            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                CallConstraintInvariant::MalformedSchemaInventory,
+            )),
+        )?;
+        return compile_time_scalar_source_constraint(source, Arc::new(admission));
+    }
     let guarded = rule
         .guarded()
         .iter()
@@ -3583,16 +4280,19 @@ pub(crate) fn run_prepared_candidate(
 ) -> Result<RanCandidateTransaction, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
     let PreparedCallConstraintSet {
         candidate,
+        consumer,
         callee_inputs,
-        input_projection,
+        inputs,
         source_groups,
         prepared_source_actuals,
         dialogue_patch_admissions,
         receiver_sources,
         effect_projections,
+        compile_time_scalar_admissions,
         base_constraints,
         receiver_constraints,
         result_constraint,
+        result_schema,
         projection_requests,
         initialization,
     } = set;
@@ -3611,6 +4311,7 @@ pub(crate) fn run_prepared_candidate(
         context,
         Some(Arc::clone(&candidate)),
         effect_projections,
+        compile_time_scalar_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
         pass,
@@ -3672,9 +4373,20 @@ pub(crate) fn run_prepared_candidate(
     }
     let solved_result = driver.finish().complete();
     let solved = solved_result?;
-    expected_projection_keys.extend(solved.closed_sources.iter().filter_map(|source| {
-        <AnalyzerCallConstraintDomain as ConstraintDomain>::projection_for_source(&source.source())
-    }));
+    let mut source_coordinates = BTreeSet::new();
+    for source in &solved.closed_sources {
+        if let Some(coordinate) = source.source().value_coordinate()
+            && !source_coordinates.insert(coordinate)
+        {
+            return Err(TypeConstraintFailure::Invariant(
+                TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Ticket,
+                    ),
+                ),
+            ));
+        }
+    }
     expected_projection_keys.sort();
     let actual_projection_keys = solved
         .projections
@@ -3689,22 +4401,38 @@ pub(crate) fn run_prepared_candidate(
         ));
     }
     let current_group = candidate.call_group();
-    let result = solved
-        .projections
-        .iter()
-        .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
-        .map(|projection| projection.value().clone())
-        .ok_or_else(|| {
-            TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-                TypeConstraintInvariant::Projection(
-                    crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
-                ),
-            ))
-        })?;
+    let result = match result_schema {
+        CallableResultSchema::ContentEmission(operation) => {
+            CallableResultSchema::ContentEmission(operation)
+        }
+        CallableResultSchema::Value(_) => solved
+            .projections
+            .iter()
+            .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
+            .map(|projection| {
+                projection
+                    .value()
+                    .to_quantified_type()
+                    .map(CallableResultSchema::Value)
+            })
+            .ok_or_else(|| {
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::Projection(
+                        crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
+                    ),
+                ))
+            })?
+            .map_err(|error| {
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::Instantiation(error),
+                ))
+            })?,
+    };
     Ok(RanCandidateTransaction {
         candidate,
+        consumer,
         callee_inputs,
-        input_projection,
+        inputs,
         current_group,
         result,
         solved,
@@ -3732,63 +4460,6 @@ mod tests {
     }
 
     #[test]
-    fn projection_key_algebra_covers_explicit_and_source_owned_call_values() {
-        let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
-        let owner = callback_test_owner(&fixture);
-        let argument = HirCallArgumentOrdinal::try_from_usize(0).expect("argument ordinal");
-        let slot = CallableArgumentSlotIndex::try_from_usize(0).expect("slot index");
-        let future = crate::types::GenericTypeParameterId::new(
-            crate::types::GenericParameterOwnerId::Detached(
-                crate::types::DetachedGenericOwnerId::new(7),
-            ),
-            0,
-        );
-
-        assert_eq!(
-            AnalyzerCallConstraintDomain::projection_for_source(
-                &AnalyzerCallConstraintSource::Receiver { source: owner },
-            ),
-            Some(AnalyzerCallProjection::Receiver),
-        );
-        assert_eq!(
-            AnalyzerCallConstraintDomain::projection_for_source(
-                &AnalyzerCallConstraintSource::Argument {
-                    argument,
-                    slot,
-                    source: CheckedCallArgumentSlotSource::Expression(owner),
-                    physical_kind: PhysicalArgumentEvaluationKind::Authored,
-                },
-            ),
-            Some(AnalyzerCallProjection::Argument { argument, slot }),
-        );
-        assert_eq!(
-            AnalyzerCallConstraintDomain::projection_for_source(
-                &AnalyzerCallConstraintSource::BaseInstantiation,
-            ),
-            None,
-        );
-        assert_eq!(
-            AnalyzerCallConstraintDomain::projection_for_source(
-                &AnalyzerCallConstraintSource::Result { source: owner },
-            ),
-            None,
-        );
-
-        let keys = std::collections::BTreeSet::from([
-            AnalyzerCallProjection::BaseInstantiation,
-            AnalyzerCallProjection::Receiver,
-            AnalyzerCallProjection::Argument { argument, slot },
-            AnalyzerCallProjection::Result,
-            AnalyzerCallProjection::Future(future),
-        ]);
-        assert_eq!(
-            keys.len(),
-            5,
-            "the accepted projection key algebra is closed"
-        );
-    }
-
-    #[test]
     fn materialization_request_rejects_projection_branch_actual_and_evidence_tamper() {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
@@ -3797,9 +4468,9 @@ mod tests {
         let expected = TypeKind::I32;
         let scalar = crate::types::constraints::CheckedConstraintSourceProjection::Scalar;
         let branch = AnalyzerCallProbeSemanticBranch { source };
-        let checked = AnalyzerCallCheckedSource {
+        let checked = AnalyzerCallObservedSource {
             actual: actual.clone(),
-            evidence: CheckedSemanticValueEvidence::NoVariantCase,
+            evidence: ObservedSemanticValueEvidence::NoVariantCase,
         };
         let evidence = CheckedSemanticValueEvidence::NoVariantCase;
         let request = MaterializedSourceRequest::Checked {
@@ -3827,7 +4498,9 @@ mod tests {
         assert!(matches!(
             validate_materialized_source_request(&request, &checked),
             Err(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch
+                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
+                    crate::types::constraints::TypeConstraintRejection::Mismatch,
+                )
             ))
         ));
 
@@ -3843,7 +4516,9 @@ mod tests {
         assert!(matches!(
             validate_materialized_source_request(&request, &checked),
             Err(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch
+                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
+                    crate::types::constraints::TypeConstraintRejection::Mismatch,
+                )
             ))
         ));
 
@@ -3864,7 +4539,9 @@ mod tests {
         ));
 
         let wrong_evidence = CheckedSemanticValueEvidence::VariantCase {
-            owner: actual.semantic_identity_digest(),
+            owner: actual
+                .semantic_identity_digest()
+                .expect("stable fixture type"),
             ordinal: 0,
             payload: VariantPayloadRequirement::Unit,
         };
@@ -3953,6 +4630,7 @@ mod tests {
             &mut analyzer,
             &context,
             None,
+            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
@@ -4064,6 +4742,7 @@ mod tests {
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
+            BTreeMap::new(),
             CandidateEvaluationPass::Probe,
             None,
         );
@@ -4106,6 +4785,7 @@ mod tests {
             &mut analyzer,
             &context,
             None,
+            BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),

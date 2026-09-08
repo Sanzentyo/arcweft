@@ -333,6 +333,7 @@ impl SignatureQuery<'_> {
         }
         project::project_signature_help(project::SignatureProjection {
             document: self.document,
+            hir: self.hir,
             control: self.control,
             site: &site,
             facts,

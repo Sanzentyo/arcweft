@@ -58,7 +58,6 @@ pub struct PlayerFrameRequest<'a> {
     pub fit: PlayerFrameFit,
     pub image_time_millis: u64,
     pub visual_time_millis: u64,
-    pub dialogue_reveal_complete: bool,
     pub preferences: RenderPreferences,
 }
 
@@ -903,8 +902,6 @@ fn prepare_mapped_frame(
             scene: &resolved.scene,
             presentation: request.presentation,
             fx_definitions: request.fx_definitions,
-            visual_time_millis: request.visual_time_millis,
-            latest_reveal_complete: request.dialogue_reveal_complete,
             styles: &resolved.styles,
             geometry: &resolved.geometry,
             content: content_rect,

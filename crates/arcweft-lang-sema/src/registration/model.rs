@@ -33,14 +33,20 @@ use crate::{
             AcceptedNominalId, AcceptedNominalRecord,
         },
     },
+    nominal::{
+        BuiltinTypeConstructor, ResolvedTypeRefOutcome, TypeNameResolution, TypeResolutionReport,
+    },
     registration::{EnvironmentHostCallContractInput, EnvironmentPublicationItemId},
-    types::{CharacterNominalType, EntityKind, TypeKind},
+    types::{
+        CharacterNominalType, CompileTimeScalarKind, CompileTimeScalarType, EntityKind, TypeKind,
+    },
 };
 
 use super::environment_input::{
     BoundEnvironmentRegistrationInput, SourceBackedEnvironmentRegistrationInput,
 };
 use super::{
+    closed_enum::RegisteredClosedEnumDomainCatalog,
     diagnostic::{
         CharacterRegistrationDiagnostic, CharacterRegistrationDiagnosticKind,
         CharacterRegistrationReport, RequiredCharacterToken,
@@ -125,6 +131,8 @@ pub struct ProofReturnRegistrationPrelude {
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) statement_ingress: RegisteredStatementIngressTypes,
+    pub(crate) compile_time_scalars: RegisteredCompileTimeScalarTypes,
+    pub(crate) closed_enum_domains: RegisteredClosedEnumDomainCatalog,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
@@ -216,6 +224,41 @@ pub enum StatementIngressTypeRoleId {
     Frame,
 }
 
+/// Closed roles consumed by the registered compile-time scalar catalog.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeScalarTypeRoleId {
+    Bool,
+    Int,
+    Milli,
+    Ratio,
+    Length,
+    Angle,
+    Duration,
+    PublicId,
+    Color,
+    Text,
+}
+
+/// Language-owned builtin atom used by the compile-time scalar catalog.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeScalarBuiltinAtom {
+    Duration,
+}
+
+/// Exact builtin constructor or atom used by one compile-time scalar role.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeScalarBuiltinIdentity {
+    Constructor(BuiltinTypeConstructor),
+    Atom(CompileTimeScalarBuiltinAtom),
+}
+
+/// Exact semantic identity used by one compile-time scalar role.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeScalarTypeIdentity {
+    Builtin(CompileTimeScalarBuiltinIdentity),
+    AcceptedExact(AcceptedNominalId),
+}
+
 /// One fixed base-environment contribution consumed by registration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct StatementIngressTypePublicationInput {
@@ -246,6 +289,125 @@ pub enum StatementIngressRegistrationError {
     },
 }
 
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum CompileTimeScalarTypeRegistrationError {
+    #[error(
+        "compile-time scalar role {role:?} refers to accepted nominal {id:?}, which is missing from the accepted catalog"
+    )]
+    MissingAcceptedNominal {
+        role: CompileTimeScalarTypeRoleId,
+        id: AcceptedNominalId,
+    },
+    #[error(
+        "compile-time scalar role {role:?} accepted nominal {id:?} has type {actual:?}, not {expected:?}"
+    )]
+    AcceptedNominalTypeMismatch {
+        role: CompileTimeScalarTypeRoleId,
+        id: AcceptedNominalId,
+        expected: TypeKind,
+        actual: TypeKind,
+    },
+    #[error(
+        "compile-time scalar role {role:?} refers to accepted nominal {id:?} with an invalid scalar instantiation"
+    )]
+    InvalidAcceptedNominal {
+        role: CompileTimeScalarTypeRoleId,
+        id: AcceptedNominalId,
+    },
+}
+
+impl Ord for CompileTimeScalarTypeRegistrationError {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        let rank = |error: &Self| match error {
+            Self::MissingAcceptedNominal { .. } => 0_u8,
+            Self::AcceptedNominalTypeMismatch { .. } => 1,
+            Self::InvalidAcceptedNominal { .. } => 2,
+        };
+        rank(self)
+            .cmp(&rank(other))
+            .then_with(|| match (self, other) {
+                (
+                    Self::MissingAcceptedNominal { role, id },
+                    Self::MissingAcceptedNominal {
+                        role: other_role,
+                        id: other_id,
+                    },
+                ) => role.cmp(other_role).then_with(|| id.cmp(other_id)),
+                (
+                    Self::AcceptedNominalTypeMismatch {
+                        role,
+                        id,
+                        expected,
+                        actual,
+                    },
+                    Self::AcceptedNominalTypeMismatch {
+                        role: other_role,
+                        id: other_id,
+                        expected: other_expected,
+                        actual: other_actual,
+                    },
+                ) => role
+                    .cmp(other_role)
+                    .then_with(|| id.cmp(other_id))
+                    .then_with(|| expected.stable_ordering(other_expected))
+                    .then_with(|| actual.stable_ordering(other_actual)),
+                (
+                    Self::InvalidAcceptedNominal { role, id },
+                    Self::InvalidAcceptedNominal {
+                        role: other_role,
+                        id: other_id,
+                    },
+                ) => role.cmp(other_role).then_with(|| id.cmp(other_id)),
+                _ => std::cmp::Ordering::Equal,
+            })
+    }
+}
+
+impl PartialOrd for CompileTimeScalarTypeRegistrationError {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// One normalized scalar type paired with its exact resolution identity.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisteredCompileTimeScalarType {
+    ty: TypeKind,
+    identity: CompileTimeScalarTypeIdentity,
+}
+
+/// Exact scalar types shared by compile-time Content parameters and registered
+/// text-proxy payloads.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RegisteredCompileTimeScalarTypes {
+    rows: Box<[RegisteredCompileTimeScalarType]>,
+}
+
+/// Failure while correlating a complete nominal report with a registered row.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum CompileTimeScalarTypeResolutionError {
+    #[error("compile-time scalar resolution is not complete for root {root:?}")]
+    Incomplete {
+        root: arcweft_lang_hir::identity::TypeId,
+    },
+    #[error("compile-time scalar resolution root {root:?} has no root node")]
+    MissingRoot {
+        root: arcweft_lang_hir::identity::TypeId,
+    },
+    #[error("compile-time scalar resolution root {root:?} has inconsistent recovered types")]
+    RootTypeMismatch {
+        root: arcweft_lang_hir::identity::TypeId,
+    },
+    #[error(
+        "compile-time scalar role {role:?} has normalized type {actual:?} but a different exact resolution identity"
+    )]
+    MismappedIdentity {
+        role: CompileTimeScalarTypeRoleId,
+        expected: CompileTimeScalarTypeIdentity,
+        actual: TypeNameResolution,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CharacterInventoryDescriptorV1 {
     pub(crate) characters: Vec<(CharacterId, CharacterManifestFingerprint)>,
@@ -259,6 +421,8 @@ pub struct RegisteredTypeCheckEnv {
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) statement_ingress: RegisteredStatementIngressTypes,
+    pub(crate) compile_time_scalars: RegisteredCompileTimeScalarTypes,
+    pub(crate) closed_enum_domains: RegisteredClosedEnumDomainCatalog,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
     pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
@@ -939,6 +1103,189 @@ impl StatementIngressTypePublicationInput {
     }
 }
 
+impl CompileTimeScalarTypeRoleId {
+    pub const ALL: [Self; 10] = [
+        Self::Bool,
+        Self::Int,
+        Self::Milli,
+        Self::Ratio,
+        Self::Length,
+        Self::Angle,
+        Self::Duration,
+        Self::PublicId,
+        Self::Color,
+        Self::Text,
+    ];
+
+    const fn index(self) -> usize {
+        match self {
+            Self::Bool => 0,
+            Self::Int => 1,
+            Self::Milli => 2,
+            Self::Ratio => 3,
+            Self::Length => 4,
+            Self::Angle => 5,
+            Self::Duration => 6,
+            Self::PublicId => 7,
+            Self::Color => 8,
+            Self::Text => 9,
+        }
+    }
+
+    fn builtin_type(self) -> Option<TypeKind> {
+        match self {
+            Self::Bool => Some(TypeKind::Bool),
+            Self::Int => Some(TypeKind::I64),
+            Self::Duration => Some(TypeKind::Duration),
+            Self::Text => Some(TypeKind::String),
+            Self::Milli
+            | Self::Ratio
+            | Self::Length
+            | Self::Angle
+            | Self::PublicId
+            | Self::Color => None,
+        }
+    }
+
+    fn builtin_identity(self) -> Option<CompileTimeScalarTypeIdentity> {
+        let identity = match self {
+            Self::Bool => {
+                CompileTimeScalarBuiltinIdentity::Constructor(BuiltinTypeConstructor::Bool)
+            }
+            Self::Int => CompileTimeScalarBuiltinIdentity::Constructor(BuiltinTypeConstructor::I64),
+            Self::Duration => {
+                CompileTimeScalarBuiltinIdentity::Atom(CompileTimeScalarBuiltinAtom::Duration)
+            }
+            Self::Text => {
+                CompileTimeScalarBuiltinIdentity::Constructor(BuiltinTypeConstructor::String)
+            }
+            Self::Milli
+            | Self::Ratio
+            | Self::Length
+            | Self::Angle
+            | Self::PublicId
+            | Self::Color => return None,
+        };
+        Some(CompileTimeScalarTypeIdentity::Builtin(identity))
+    }
+
+    fn compile_time_scalar_kind(self) -> Option<CompileTimeScalarKind> {
+        match self {
+            Self::Milli => Some(CompileTimeScalarKind::Milli),
+            Self::Ratio => Some(CompileTimeScalarKind::Ratio),
+            Self::Length => Some(CompileTimeScalarKind::Length),
+            Self::Angle => Some(CompileTimeScalarKind::Angle),
+            Self::PublicId => Some(CompileTimeScalarKind::PublicId),
+            Self::Color => Some(CompileTimeScalarKind::Color),
+            Self::Bool | Self::Int | Self::Duration | Self::Text => None,
+        }
+    }
+
+    const fn semantic_tag(self) -> u8 {
+        self.index() as u8
+    }
+}
+
+impl CompileTimeScalarBuiltinAtom {
+    fn expected_accepted_nominal(self) -> AcceptedNominalId {
+        match self {
+            Self::Duration => crate::env::nominal::standard_nominal_id("Duration"),
+        }
+    }
+
+    const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Duration => 0,
+        }
+    }
+}
+
+impl CompileTimeScalarBuiltinIdentity {
+    fn semantic_tag(self) -> (u8, u8) {
+        match self {
+            Self::Constructor(constructor) => {
+                let tag = BuiltinTypeConstructor::ALL
+                    .iter()
+                    .position(|candidate| *candidate == constructor)
+                    .and_then(|tag| u8::try_from(tag).ok())
+                    .expect("the closed builtin constructor inventory fits one identity tag");
+                (0, tag)
+            }
+            Self::Atom(atom) => (1, atom.semantic_tag()),
+        }
+    }
+
+    fn matches_resolution(&self, ty: &TypeKind, outcome: &TypeNameResolution) -> bool {
+        match self {
+            Self::Constructor(expected) => {
+                matches!(outcome, TypeNameResolution::Builtin(actual) if actual == expected)
+            }
+            Self::Atom(CompileTimeScalarBuiltinAtom::Duration) => {
+                ty == &TypeKind::Duration
+                    && matches!(
+                        outcome,
+                        TypeNameResolution::AcceptedExact {
+                            accepted,
+                            ty: actual,
+                        } if accepted
+                            == &crate::env::nominal::standard_nominal_id("Duration")
+                            && actual == &TypeKind::Duration
+                    )
+            }
+        }
+    }
+}
+
+impl CompileTimeScalarTypeIdentity {
+    fn matches_resolution(&self, ty: &TypeKind, outcome: &TypeNameResolution) -> bool {
+        match self {
+            Self::Builtin(identity) => identity.matches_resolution(ty, outcome),
+            Self::AcceptedExact(expected) => matches!(
+                outcome,
+                TypeNameResolution::AcceptedExact {
+                    accepted,
+                    ty: actual,
+                } if accepted == expected && actual == ty
+            ),
+        }
+    }
+
+    fn semantic_digest(&self) -> [u8; 32] {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.compile-time-scalar-type-identity.v1\0");
+        match self {
+            Self::Builtin(identity) => {
+                let (family, tag) = identity.semantic_tag();
+                hasher.update(&[0, family, tag]);
+                if let CompileTimeScalarBuiltinIdentity::Atom(atom) = identity {
+                    hasher.update(
+                        atom.expected_accepted_nominal()
+                            .semantic_digest()
+                            .as_bytes(),
+                    );
+                }
+            }
+            Self::AcceptedExact(id) => {
+                hasher.update(&[1]);
+                hasher.update(id.semantic_digest().as_bytes());
+            }
+        }
+        *hasher.finalize().as_bytes()
+    }
+}
+
+impl RegisteredCompileTimeScalarType {
+    /// Normalized semantic type retained for this scalar role.
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+
+    /// Exact builtin or accepted-nominal identity retained for this role.
+    pub const fn identity(&self) -> &CompileTimeScalarTypeIdentity {
+        &self.identity
+    }
+}
+
 impl RegisteredStatementIngressTypes {
     pub(crate) fn try_new(
         inputs: Box<[StatementIngressTypePublicationInput]>,
@@ -998,6 +1345,179 @@ impl RegisteredStatementIngressTypes {
     }
 }
 
+impl RegisteredCompileTimeScalarTypes {
+    /// Derives the complete scalar catalog from an already sealed nominal
+    /// world. Builtin rows are closed language facts; nominal scalar rows are
+    /// accepted only when the world contains the exact compile-time-scalar
+    /// declaration and kind assigned to that role.
+    pub(crate) fn try_from_world(
+        world: &AcceptedNominalWorld,
+    ) -> Result<Self, CompileTimeScalarTypeRegistrationError> {
+        let rows = CompileTimeScalarTypeRoleId::ALL
+            .into_iter()
+            .map(|role| {
+                if let (Some(ty), Some(identity)) = (role.builtin_type(), role.builtin_identity()) {
+                    return Ok(RegisteredCompileTimeScalarType { ty, identity });
+                }
+
+                let kind = role
+                    .compile_time_scalar_kind()
+                    .expect("every non-builtin compile-time scalar role has a closed scalar kind");
+                let id = crate::env::nominal::standard_nominal_id(kind.source_label());
+                let record = world.accepted_record(&id).map_err(|_| {
+                    CompileTimeScalarTypeRegistrationError::MissingAcceptedNominal {
+                        role,
+                        id: id.clone(),
+                    }
+                })?;
+                if record.arity() != 0
+                    || !matches!(
+                        record.semantics(),
+                        crate::env::nominal::AcceptedNominalSemantics::CompileTimeScalar(_)
+                    )
+                {
+                    return Err(
+                        CompileTimeScalarTypeRegistrationError::InvalidAcceptedNominal { role, id },
+                    );
+                }
+                let actual = record.try_instantiate([]).map_err(|_| {
+                    CompileTimeScalarTypeRegistrationError::InvalidAcceptedNominal {
+                        role,
+                        id: id.clone(),
+                    }
+                })?;
+                let expected =
+                    TypeKind::CompileTimeScalar(CompileTimeScalarType::new(id.clone(), kind));
+                if actual != expected {
+                    return Err(
+                        CompileTimeScalarTypeRegistrationError::AcceptedNominalTypeMismatch {
+                            role,
+                            id,
+                            expected,
+                            actual,
+                        },
+                    );
+                }
+                Ok(RegisteredCompileTimeScalarType {
+                    ty: actual,
+                    identity: CompileTimeScalarTypeIdentity::AcceptedExact(id),
+                })
+            })
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(Self { rows })
+    }
+
+    /// Returns the exact semantic type registered for one closed role.
+    pub fn type_for(&self, role: CompileTimeScalarTypeRoleId) -> &TypeKind {
+        &self.rows[role.index()].ty
+    }
+
+    /// Returns the exact identity registered for one closed role.
+    pub fn identity_for(
+        &self,
+        role: CompileTimeScalarTypeRoleId,
+    ) -> &CompileTimeScalarTypeIdentity {
+        &self.rows[role.index()].identity
+    }
+
+    /// Returns the normalized type and exact identity registered for one role.
+    pub fn row(&self, role: CompileTimeScalarTypeRoleId) -> &RegisteredCompileTimeScalarType {
+        &self.rows[role.index()]
+    }
+
+    /// Classifies a complete nominal report by both normalized type and its
+    /// exact root-resolution identity.
+    pub fn classify_resolution(
+        &self,
+        report: &TypeResolutionReport,
+    ) -> Result<Option<CompileTimeScalarTypeRoleId>, CompileTimeScalarTypeResolutionError> {
+        let ResolvedTypeRefOutcome::Complete(product) = report.outcome() else {
+            return Err(CompileTimeScalarTypeResolutionError::Incomplete {
+                root: report.outcome().product().root(),
+            });
+        };
+        let root = product
+            .nodes()
+            .iter()
+            .find(|node| node.node() == product.root())
+            .ok_or(CompileTimeScalarTypeResolutionError::MissingRoot {
+                root: product.root(),
+            })?;
+        let Some(root_type) = root.recovered() else {
+            return Err(CompileTimeScalarTypeResolutionError::RootTypeMismatch {
+                root: product.root(),
+            });
+        };
+        if root_type != product.recovered() {
+            return Err(CompileTimeScalarTypeResolutionError::RootTypeMismatch {
+                root: product.root(),
+            });
+        }
+        self.classify_node(root)
+    }
+
+    /// Classifies one exact structural node from a complete resolution product.
+    pub fn classify_node(
+        &self,
+        node: &crate::nominal::ResolvedTypeNode,
+    ) -> Result<Option<CompileTimeScalarTypeRoleId>, CompileTimeScalarTypeResolutionError> {
+        let Some(ty) = node.recovered() else {
+            return Err(CompileTimeScalarTypeResolutionError::RootTypeMismatch {
+                root: node.node(),
+            });
+        };
+        let Some(role) = CompileTimeScalarTypeRoleId::ALL
+            .into_iter()
+            .find(|role| self.type_for(*role) == ty)
+        else {
+            return Ok(None);
+        };
+        let row = self.row(role);
+        if row.identity.matches_resolution(ty, node.outcome()) {
+            Ok(Some(role))
+        } else {
+            Err(CompileTimeScalarTypeResolutionError::MismappedIdentity {
+                role,
+                expected: row.identity.clone(),
+                actual: node.outcome().clone(),
+            })
+        }
+    }
+
+    /// Classifies a report while proving that its product belongs to `root`.
+    pub fn classify_root(
+        &self,
+        root: arcweft_lang_hir::identity::TypeId,
+        report: &TypeResolutionReport,
+    ) -> Result<Option<CompileTimeScalarTypeRoleId>, CompileTimeScalarTypeResolutionError> {
+        if report.outcome().product().root() != root {
+            return Err(CompileTimeScalarTypeResolutionError::RootTypeMismatch { root });
+        }
+        self.classify_resolution(report)
+    }
+
+    /// Tests one registered role against a complete exact type report.
+    pub fn matches_resolution(
+        &self,
+        role: CompileTimeScalarTypeRoleId,
+        report: &TypeResolutionReport,
+    ) -> Result<bool, CompileTimeScalarTypeResolutionError> {
+        Ok(self.classify_resolution(report)? == Some(role))
+    }
+
+    pub(crate) fn semantic_digest(&self) -> Result<[u8; 32], crate::types::GenericScopeError> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.registered-compile-time-scalars.v1\0");
+        for role in CompileTimeScalarTypeRoleId::ALL {
+            hasher.update(&[role.semantic_tag()]);
+            hasher.update(self.type_for(role).semantic_identity_digest()?.as_bytes());
+            let identity_digest = self.identity_for(role).semantic_digest();
+            hasher.update(&identity_digest);
+        }
+        Ok(*hasher.finalize().as_bytes())
+    }
+}
+
 impl RegisteredTypeCheckEnv {
     /// Immutable callable catalog accepted with this exact semantic world.
     pub fn callable_catalog(&self) -> &RegisteredCallableCatalog {
@@ -1007,6 +1527,16 @@ impl RegisteredTypeCheckEnv {
     /// Exact registered contextual statement-ingress types.
     pub const fn statement_ingress(&self) -> &RegisteredStatementIngressTypes {
         &self.statement_ingress
+    }
+
+    /// Exact scalar types shared by Content and text-proxy consumers.
+    pub const fn compile_time_scalars(&self) -> &RegisteredCompileTimeScalarTypes {
+        &self.compile_time_scalars
+    }
+
+    /// Exact owner-neutral closed-enum domains accepted with this world.
+    pub const fn closed_enum_domains(&self) -> &RegisteredClosedEnumDomainCatalog {
+        &self.closed_enum_domains
     }
 
     /// Exact accepted callable-catalog allocation retained by this world.
@@ -1391,6 +1921,184 @@ mod statement_ingress_tests {
                 expected: StandardStatementIngressTypeId::TaskEvent,
                 actual: StandardStatementIngressTypeId::ScopeExit,
             })
+        );
+    }
+}
+
+#[cfg(test)]
+mod compile_time_scalar_tests {
+    use super::*;
+    use arcweft_source::SourceName;
+
+    fn standard_world() -> AcceptedNominalWorld {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compile-time-scalars").unwrap(),
+                SourceName::Generated,
+                "",
+            )
+            .unwrap(),
+        );
+        let package = arcweft_lang_hir::symbol::CallablePackageId::try_new("scalar-world").unwrap();
+        let world =
+            ProjectSymbolWorldId::try_new(package, document.identity().id().clone(), "test")
+                .unwrap();
+        AcceptedNominalWorld::new(
+            Arc::new(TypeCheckEnv::standard()),
+            world,
+            ProjectSymbolRevision::try_for_documents([document.identity()]).unwrap(),
+            BTreeMap::new(),
+            AcceptedNominalVisibilityIndex::default(),
+        )
+    }
+
+    #[test]
+    fn standard_world_derives_all_compile_time_scalar_rows_with_exact_identity() {
+        let world = standard_world();
+        let registered = RegisteredCompileTimeScalarTypes::try_from_world(&world).unwrap();
+
+        assert_eq!(
+            registered.type_for(CompileTimeScalarTypeRoleId::Bool),
+            &TypeKind::Bool
+        );
+        assert_eq!(
+            registered.type_for(CompileTimeScalarTypeRoleId::Int),
+            &TypeKind::I64
+        );
+        assert_eq!(
+            registered.type_for(CompileTimeScalarTypeRoleId::Duration),
+            &TypeKind::Duration
+        );
+        assert_eq!(
+            registered.type_for(CompileTimeScalarTypeRoleId::Text),
+            &TypeKind::String
+        );
+
+        for (role, kind) in [
+            (
+                CompileTimeScalarTypeRoleId::Milli,
+                CompileTimeScalarKind::Milli,
+            ),
+            (
+                CompileTimeScalarTypeRoleId::Ratio,
+                CompileTimeScalarKind::Ratio,
+            ),
+            (
+                CompileTimeScalarTypeRoleId::Length,
+                CompileTimeScalarKind::Length,
+            ),
+            (
+                CompileTimeScalarTypeRoleId::Angle,
+                CompileTimeScalarKind::Angle,
+            ),
+            (
+                CompileTimeScalarTypeRoleId::PublicId,
+                CompileTimeScalarKind::PublicId,
+            ),
+            (
+                CompileTimeScalarTypeRoleId::Color,
+                CompileTimeScalarKind::Color,
+            ),
+        ] {
+            let id = crate::env::nominal::standard_nominal_id(kind.source_label());
+            let expected =
+                TypeKind::CompileTimeScalar(CompileTimeScalarType::new(id.clone(), kind));
+            assert_eq!(registered.type_for(role), &expected);
+            assert_eq!(
+                registered.identity_for(role),
+                &CompileTimeScalarTypeIdentity::AcceptedExact(id.clone())
+            );
+            assert_eq!(
+                world.accepted_record(&id).unwrap().try_instantiate([]),
+                Ok(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_registry_rejects_missing_and_wrong_kind_world_records() {
+        let missing = AcceptedNominalWorld::new(
+            Arc::new(TypeCheckEnv::default()),
+            standard_world().world().clone(),
+            standard_world().symbol_revision().clone(),
+            BTreeMap::new(),
+            AcceptedNominalVisibilityIndex::default(),
+        );
+        assert!(matches!(
+            RegisteredCompileTimeScalarTypes::try_from_world(&missing),
+            Err(
+                CompileTimeScalarTypeRegistrationError::MissingAcceptedNominal {
+                    role: CompileTimeScalarTypeRoleId::Milli,
+                    ..
+                }
+            )
+        ));
+
+        let id = crate::env::nominal::standard_nominal_id("Milli");
+        let wrong = TypeCheckEnv::default()
+            .try_with_nominal_record(
+                AcceptedNominalRecord::try_new(
+                    id.clone(),
+                    0,
+                    crate::env::nominal::AcceptedNominalSemantics::CompileTimeScalar(
+                        CompileTimeScalarKind::Ratio,
+                    ),
+                    crate::env::nominal::AcceptedNominalOrigin::Test,
+                    None,
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let wrong_world = AcceptedNominalWorld::new(
+            Arc::new(wrong),
+            standard_world().world().clone(),
+            standard_world().symbol_revision().clone(),
+            BTreeMap::new(),
+            AcceptedNominalVisibilityIndex::default(),
+        );
+        assert!(matches!(
+            RegisteredCompileTimeScalarTypes::try_from_world(&wrong_world),
+            Err(
+                CompileTimeScalarTypeRegistrationError::AcceptedNominalTypeMismatch {
+                    role: CompileTimeScalarTypeRoleId::Milli,
+                    ..
+                }
+            )
+        ));
+    }
+
+    #[test]
+    fn compile_time_scalar_records_reject_nonzero_arity() {
+        let id = crate::env::nominal::standard_nominal_id("Milli");
+        assert!(matches!(
+            AcceptedNominalRecord::try_new(
+                id,
+                1,
+                crate::env::nominal::AcceptedNominalSemantics::CompileTimeScalar(
+                    CompileTimeScalarKind::Milli,
+                ),
+                crate::env::nominal::AcceptedNominalOrigin::Test,
+                None,
+            ),
+            Err(crate::env::nominal::AcceptedNominalCatalogError::InvalidArity { .. })
+        ));
+    }
+
+    #[test]
+    fn compile_time_scalar_semantic_digest_is_type_sensitive() {
+        let registered =
+            RegisteredCompileTimeScalarTypes::try_from_world(&standard_world()).unwrap();
+        let mut changed = registered.clone();
+        changed.rows[CompileTimeScalarTypeRoleId::Length.index()].ty = TypeKind::I64;
+        assert_ne!(registered.semantic_digest(), changed.semantic_digest());
+        let mut changed_identity = registered.clone();
+        changed_identity.rows[CompileTimeScalarTypeRoleId::Milli.index()].identity =
+            CompileTimeScalarTypeIdentity::AcceptedExact(crate::env::nominal::standard_nominal_id(
+                "Ratio",
+            ));
+        assert_ne!(
+            registered.semantic_digest(),
+            changed_identity.semantic_digest()
         );
     }
 }

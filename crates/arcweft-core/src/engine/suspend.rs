@@ -128,6 +128,7 @@ impl Engine {
         let advance = transaction.take_advance();
         let mut frame = transaction.frame().clone();
         let mut start = None;
+        let mut callbacks = Vec::new();
         if let DialogueLineTaskState::Live(line_task) = &mut frame.line_task {
             let Some(group) = self
                 .plan
@@ -160,8 +161,31 @@ impl Engine {
                         return;
                     }
                 };
+            callbacks = match content_events
+                .iter()
+                .filter_map(|event| match event {
+                    crate::step::RuntimeDialogueContentEventKind::Mark(_) => None,
+                    crate::step::RuntimeDialogueContentEventKind::Effect(site) => Some(
+                        super::Engine::dialogue_effect_callback(&frame.effect_callbacks, *site)
+                            .map(|callback| (*site, callback))
+                            .ok_or_else(|| {
+                                RuntimeEvalError::Effect(format!(
+                                    "dialogue effect site {site} has no stored callback"
+                                ))
+                            }),
+                    ),
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(callbacks) => callbacks,
+                Err(error) => {
+                    *transaction.frame_mut() = frame;
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
+            };
             let marks = accepted_content.marks();
-            if let Some(cancelled) = cancel_live_line_task_group(&group, &marks, line_task) {
+            if let Some(cancelled) = cancel_live_line_task_group(&group, marks, line_task) {
                 let event = marks.iter().copied().find_map(|mark| {
                     group
                         .cancel_rules()
@@ -184,6 +208,7 @@ impl Engine {
                     group,
                     activation: cancelled,
                     captures: frame.captures.clone(),
+                    callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
                 self.commit_and_suspend_dialogue(transaction, output, start);
@@ -201,6 +226,7 @@ impl Engine {
                     group,
                     activation,
                     captures: frame.captures.clone(),
+                    callbacks: callbacks.clone(),
                 });
                 *transaction.frame_mut() = frame;
                 self.commit_and_suspend_dialogue(transaction, output, start);
@@ -232,6 +258,7 @@ impl Engine {
                 group,
                 activation,
                 captures: frame.captures.clone(),
+                callbacks: callbacks.clone(),
             });
         } else if !content_events.is_empty() {
             let event = content_events[0];
@@ -259,6 +286,7 @@ impl Engine {
                     group,
                     activation: cleanup,
                     captures: frame.captures.clone(),
+                    callbacks,
                 });
             }
             if matches!(frame.line_task, DialogueLineTaskState::Closed)
@@ -1054,7 +1082,7 @@ fn named_string_seq(args: &[EvaluatedHostArg], name: &str) -> Option<Vec<String>
             DenseSeq::EntityRefs(items) => items
                 .as_slice()
                 .iter()
-                .map(|value| value.runtime_label())
+                .map(crate::value::RuntimeEntityReference::runtime_label)
                 .collect(),
         },
         value => vec![runtime_value_to_string(value)],
@@ -1191,6 +1219,7 @@ fn runtime_value_to_string(value: &RuntimeValue) -> String {
         | RuntimeValue::Agent(_)
         | RuntimeValue::Reduction(_)
         | RuntimeValue::Function(_)
+        | RuntimeValue::ProjectContinuation(_)
         | RuntimeValue::Variant { .. } => super::runtime_value_label(value),
     }
 }

@@ -2,19 +2,20 @@
 
 use std::{cmp::Ordering, sync::Arc};
 
+use arcweft_lang_hir::module::HirModule;
 use arcweft_source::SourceDocument;
 
 use crate::callable::{
     CallAnalysisOutcome, CallPoison, CallTargetFacts, CallableCandidateId, CallableDiagnostic,
     CallableDiagnosticCode, CallableDiagnosticSeverity, CallableDiagnosticSubject,
-    CallableGroupIndex, CallableLimits, CallableLookupKey, CallableParameter,
+    CallableGroupIndex, CallableLimits, CallableLookupKey, CallableName, CallableParameter,
     CallableParameterCoordinate, CallableParameterPassing, CallableParameterPresence,
-    CallableRecord, CheckedCallApplication, CheckedCallExecutionArgument,
-    CheckedCallOperandDestination, CheckedCallableCatalog, ResolvedCallable,
-    ResolvedCallableBaseInstantiation, ResolvedCallableOrigin, SemanticParameter,
-    SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp, SemanticSignatureIndex,
-    SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits, SignatureQueryWorkMeter,
-    SignatureWorkKind, SignatureWorkReport,
+    CallableRecord, CallableResultSchema, CheckedCallApplication, CheckedCallExecutionArgument,
+    CheckedCallOperandDestination, CheckedCallResult, CheckedCallableCatalog, ResolvedCallable,
+    ResolvedCallableBaseInstantiation, ResolvedCallableOrigin, SemanticAttachedContentParameter,
+    SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp,
+    SemanticSignatureIndex, SemanticSignatureRecovery, SignatureOrigin, SignatureQueryLimits,
+    SignatureQueryWorkMeter, SignatureWorkKind, SignatureWorkReport,
 };
 use crate::types::TypeKind;
 
@@ -25,6 +26,7 @@ use super::{
 
 pub(super) struct SignatureProjection<'a> {
     pub(super) document: &'a SourceDocument,
+    pub(super) hir: &'a HirModule,
     pub(super) control: SignatureQueryControl<'a>,
     pub(super) site: &'a FocusedCallSite,
     pub(super) facts: &'a CallTargetFacts,
@@ -44,6 +46,7 @@ pub(super) fn project_signature_help(
 ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
     let SignatureProjection {
         document,
+        hir,
         control,
         site,
         facts,
@@ -105,6 +108,7 @@ pub(super) fn project_signature_help(
             record,
             authored_callee,
             checked,
+            hir,
             selected_application,
             is_selected,
             control,
@@ -120,6 +124,7 @@ pub(super) fn project_signature_help(
                 application.core().current_group(),
                 match application.result() {
                     crate::callable::CheckedCallResult::Value(_) => None,
+                    crate::callable::CheckedCallResult::ContentEmission(_) => None,
                     crate::callable::CheckedCallResult::Continuation(continuation) => {
                         Some(continuation.next_group())
                     }
@@ -180,6 +185,7 @@ fn project_signature(
     record: Option<&CallableRecord>,
     authored_callee: &str,
     checked: &CheckedCallableCatalog,
+    hir: &HirModule,
     selected_application: Option<&CheckedCallApplication>,
     active: bool,
     control: SignatureQueryControl<'_>,
@@ -229,10 +235,16 @@ fn project_signature(
         )?);
     }
     let selected_application = active.then_some(selected_application).flatten();
-    let result = selected_application.map_or_else(
-        || schema.result().clone(),
-        |application| application.result().ty().clone(),
-    );
+    let result = match selected_application.map(CheckedCallApplication::result) {
+        Some(CheckedCallResult::Value(value)) => CallableResultSchema::Value(value.clone()),
+        Some(CheckedCallResult::ContentEmission(operation)) => {
+            CallableResultSchema::ContentEmission(*operation)
+        }
+        Some(CheckedCallResult::Continuation(continuation)) => {
+            CallableResultSchema::Value(continuation.function_type().clone())
+        }
+        None => schema.result_schema().clone(),
+    };
     let effects = selected_application
         .map(|application| application.core().effects().clone())
         .map_or_else(|| candidate_effects(candidate, checked), Ok)?;
@@ -240,6 +252,7 @@ fn project_signature(
         application.core().current_group()
     });
     let canonical_callee = record.map_or_else(|| authored_callee.to_owned(), canonical_callee);
+    let attached_content = project_attached_content(candidate, checked, hir)?;
     let documentation = match record {
         Some(record) => {
             if authored_callee == canonical_callee {
@@ -267,10 +280,44 @@ fn project_signature(
         effects,
         documentation,
         record.and_then(CallableRecord::source).cloned(),
+        attached_content,
         current_group,
         CallPoison::Clean,
         callable_limits,
     )?)
+}
+
+fn project_attached_content(
+    candidate: &ResolvedCallable,
+    checked: &CheckedCallableCatalog,
+    hir: &HirModule,
+) -> Result<Option<SemanticAttachedContentParameter>, SignatureQueryError> {
+    if candidate.schema().attached_content().is_none() {
+        return Ok(None);
+    }
+    let CallableCandidateId::Project(_) = candidate.id() else {
+        return Ok(None);
+    };
+    let unavailable = || -> SignatureQueryError {
+        crate::signature::SignatureSemanticUnavailable::MissingCallableAuthority {
+            candidate: Box::new(candidate.id().clone()),
+        }
+        .into()
+    };
+    let checked_id = checked
+        .checked_for_candidate(candidate.id())
+        .map_err(|_| unavailable())?;
+    let facts = checked.callable(checked_id).map_err(|_| unavailable())?;
+    let attached = facts.attached_content().ok_or_else(unavailable)?;
+    let binding = hir
+        .resolve_local(attached.binding())
+        .map_err(|_| unavailable())?;
+    let binding = CallableName::try_new(binding.name().as_str()).map_err(|_| unavailable())?;
+    Ok(Some(SemanticAttachedContentParameter::new(
+        binding,
+        attached.admission(),
+        attached.presence(),
+    )))
 }
 
 fn signature_origin(candidate: &ResolvedCallable) -> Result<SignatureOrigin, SignatureQueryError> {

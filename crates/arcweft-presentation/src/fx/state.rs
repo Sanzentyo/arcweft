@@ -1,13 +1,15 @@
 //! Deterministic Fx time, identity state, seed derivation, and save snapshots.
 
-use std::collections::BTreeSet;
+use std::sync::Arc;
 
-use serde::{Deserialize, Deserializer, Serialize, de::Error as _};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error as _};
 use thiserror::Error;
 
 use super::{
+    application::FxBoundApplicationTemplate,
+    canonical::{CanonicalEncoder, CanonicalHashSink},
     graph::{FX_MAX_PARAMETERS_PER_DEFINITION, FxDefinition},
-    identity::{FxAbiHash, FxId, FxInstanceId, FxSemanticHash, hash_bytes, hash_str},
+    identity::{FxAbiHash, FxId, FxInstanceId, FxInstanceIdentity, FxSemanticHash},
     value::{FX_GOLDEN_ANGLE_RAD, FiniteF32, FiniteF32Error, FxRuntimeValue, Length, Seconds},
 };
 
@@ -20,35 +22,54 @@ pub const FX_MAX_PROVIDER_STATE_VALUES: usize = 256;
 /// Maximum number of provider-owned records retained by one live Fx instance.
 pub const FX_MAX_PROVIDER_STATES_PER_INSTANCE: usize = 64;
 
+const FX_PROVIDER_STATE_VERSION: u8 = 1;
+
 /// Non-negative deterministic runtime logical time.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
 pub struct FxLogicalTime(Seconds);
 
 /// Bounded nested authored graph path, retained across save/load.
-#[derive(Clone, Debug, Default, Eq, Hash, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Eq, Hash, PartialEq)]
+pub struct FxGraphChildPath {
+    ordinals: Vec<u32>,
+    depth: u8,
+}
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 #[serde(transparent)]
-pub struct FxGraphChildPath(Vec<u32>);
+pub struct FxAuthoredSeed(u32);
 
 /// Typed, bounded, provider-versioned save state.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct FxProviderStateRecord {
     provider: FxId,
-    version: u32,
+    version: FxProviderStateVersion,
     values: Vec<FxRuntimeValue>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct FxProviderStateVersion;
+
 /// Complete persisted state for one live Fx application.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FxInstanceSnapshot {
-    pub instance: FxInstanceId,
-    pub definition: FxId,
-    pub abi_hash: FxAbiHash,
-    pub activation_logical_time: FxLogicalTime,
-    pub deterministic_seed: u64,
-    pub parameters: Vec<FxRuntimeValue>,
-    pub child_path: FxGraphChildPath,
-    pub provider_state: Vec<FxProviderStateRecord>,
+    identity: FxInstanceIdentity,
+    abi_hash: FxAbiHash,
+    semantic_hash: FxSemanticHash,
+    activation_logical_time: FxLogicalTime,
+    authored_seed: Option<FxAuthoredSeed>,
+    template: Arc<FxBoundApplicationTemplate>,
+    parameters: Box<[FxRuntimeValue]>,
+    child_path: FxGraphChildPath,
+    provider_state: Vec<FxProviderStateRecord>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FxInstanceActivation {
+    logical_time: FxLogicalTime,
+    authored_seed: Option<FxAuthoredSeed>,
+    child_path: FxGraphChildPath,
 }
 
 /// Invalid bounded runtime/save state.
@@ -65,16 +86,25 @@ pub enum FxInstanceSnapshotError {
     #[error("Fx snapshot has {actual} provider records, exceeding the limit of {limit}")]
     TooManyProviderStates { actual: usize, limit: usize },
     #[error("Fx snapshot repeats provider state for `{provider}`")]
-    DuplicateProviderState { provider: FxId },
+    DuplicateProviderState { provider: Box<FxId> },
     #[error("Fx snapshot definition `{snapshot}` does not match `{actual}`")]
-    DefinitionMismatch { snapshot: FxId, actual: FxId },
+    DefinitionMismatch {
+        snapshot: Box<FxId>,
+        actual: Box<FxId>,
+    },
+    #[error("Fx snapshot instance identity does not match its owner and authored ordinal")]
+    IdentityMismatch,
     #[error("Fx snapshot ABI does not match definition `{definition}`")]
-    AbiMismatch { definition: FxId },
+    AbiMismatch { definition: Box<FxId> },
+    #[error("Fx snapshot semantic hash does not match definition `{definition}`")]
+    SemanticMismatch { definition: Box<FxId> },
+    #[error("Fx snapshot parameter layout does not match definition `{definition}`")]
+    LayoutMismatch { definition: Box<FxId> },
     #[error(
         "Fx snapshot has {actual} parameters, but definition `{definition}` requires {expected}"
     )]
     ParameterCount {
-        definition: FxId,
+        definition: Box<FxId>,
         expected: usize,
         actual: usize,
     },
@@ -82,7 +112,7 @@ pub enum FxInstanceSnapshotError {
         "Fx snapshot parameter {index} for `{definition}` has type {actual:?}, expected {expected:?}"
     )]
     ParameterType {
-        definition: FxId,
+        definition: Box<FxId>,
         index: usize,
         expected: super::value::FxRuntimeType,
         actual: super::value::FxRuntimeType,
@@ -176,17 +206,32 @@ impl FxGraphChildPath {
                 limit: FX_MAX_GRAPH_CHILD_DEPTH,
             });
         }
-        Ok(Self(ordinals))
+        let depth = u8::try_from(ordinals.len()).map_err(|_| {
+            FxInstanceSnapshotError::ChildPathTooDeep {
+                limit: FX_MAX_GRAPH_CHILD_DEPTH,
+            }
+        })?;
+        Ok(Self { ordinals, depth })
     }
 
     pub fn ordinals(&self) -> &[u32] {
-        &self.0
+        &self.ordinals
+    }
+
+    pub const fn depth(&self) -> u8 {
+        self.depth
     }
 
     pub fn try_with_child(&self, ordinal: u32) -> Result<Self, FxInstanceSnapshotError> {
-        let mut ordinals = self.0.clone();
+        let mut ordinals = self.ordinals.clone();
         ordinals.push(ordinal);
         Self::try_new(ordinals)
+    }
+}
+
+impl Serialize for FxGraphChildPath {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.ordinals.serialize(serializer)
     }
 }
 
@@ -199,10 +244,19 @@ impl<'de> Deserialize<'de> for FxGraphChildPath {
     }
 }
 
+impl FxAuthoredSeed {
+    pub const fn new(value: u32) -> Self {
+        Self(value)
+    }
+
+    pub const fn get(self) -> u32 {
+        self.0
+    }
+}
+
 impl FxProviderStateRecord {
     pub fn try_new(
         provider: FxId,
-        version: u32,
         values: Vec<FxRuntimeValue>,
     ) -> Result<Self, FxInstanceSnapshotError> {
         if values.len() > FX_MAX_PROVIDER_STATE_VALUES {
@@ -213,7 +267,7 @@ impl FxProviderStateRecord {
         }
         Ok(Self {
             provider,
-            version,
+            version: FxProviderStateVersion,
             values,
         })
     }
@@ -222,8 +276,8 @@ impl FxProviderStateRecord {
         &self.provider
     }
 
-    pub const fn version(&self) -> u32 {
-        self.version
+    pub const fn version(&self) -> u8 {
+        FX_PROVIDER_STATE_VERSION
     }
 
     pub fn values(&self) -> &[FxRuntimeValue] {
@@ -231,10 +285,36 @@ impl FxProviderStateRecord {
     }
 }
 
+impl FxInstanceActivation {
+    pub const fn new(
+        logical_time: FxLogicalTime,
+        authored_seed: Option<FxAuthoredSeed>,
+        child_path: FxGraphChildPath,
+    ) -> Self {
+        Self {
+            logical_time,
+            authored_seed,
+            child_path,
+        }
+    }
+
+    pub const fn logical_time(&self) -> FxLogicalTime {
+        self.logical_time
+    }
+
+    pub const fn authored_seed(&self) -> Option<FxAuthoredSeed> {
+        self.authored_seed
+    }
+
+    pub const fn child_path(&self) -> &FxGraphChildPath {
+        &self.child_path
+    }
+}
+
 #[derive(Deserialize)]
 struct FxProviderStateWire {
     provider: FxId,
-    version: u32,
+    version: FxProviderStateVersion,
     values: Vec<FxRuntimeValue>,
 }
 
@@ -244,13 +324,119 @@ impl<'de> Deserialize<'de> for FxProviderStateRecord {
         D: Deserializer<'de>,
     {
         let wire = FxProviderStateWire::deserialize(deserializer)?;
-        Self::try_new(wire.provider, wire.version, wire.values).map_err(D::Error::custom)
+        let _ = wire.version;
+        Self::try_new(wire.provider, wire.values).map_err(D::Error::custom)
+    }
+}
+
+impl Serialize for FxProviderStateVersion {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u8(FX_PROVIDER_STATE_VERSION)
+    }
+}
+
+impl<'de> Deserialize<'de> for FxProviderStateVersion {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let actual = u8::deserialize(deserializer)?;
+        if actual != FX_PROVIDER_STATE_VERSION {
+            return Err(D::Error::custom(format_args!(
+                "unsupported Fx provider state version {actual}"
+            )));
+        }
+        Ok(Self)
     }
 }
 
 impl FxInstanceSnapshot {
+    pub fn try_new(
+        identity: FxInstanceIdentity,
+        definition: &FxDefinition,
+        activation: FxInstanceActivation,
+        template: Arc<FxBoundApplicationTemplate>,
+        parameters: Box<[FxRuntimeValue]>,
+        provider_state: Vec<FxProviderStateRecord>,
+    ) -> Result<Self, FxInstanceSnapshotError> {
+        let snapshot = Self {
+            identity,
+            abi_hash: definition.abi_hash(),
+            semantic_hash: definition.semantic_hash(),
+            activation_logical_time: activation.logical_time,
+            authored_seed: activation.authored_seed,
+            template,
+            parameters,
+            child_path: activation.child_path,
+            provider_state,
+        }
+        .validate()?;
+        snapshot.validate_for_definition(definition)?;
+        Ok(snapshot)
+    }
+
+    pub const fn identity(&self) -> &FxInstanceIdentity {
+        &self.identity
+    }
+
+    pub const fn instance(&self) -> FxInstanceId {
+        self.identity.instance()
+    }
+
+    pub const fn definition(&self) -> &FxId {
+        self.identity.definition()
+    }
+
+    pub const fn abi_hash(&self) -> FxAbiHash {
+        self.abi_hash
+    }
+
+    pub const fn semantic_hash(&self) -> FxSemanticHash {
+        self.semantic_hash
+    }
+
+    pub const fn activation_logical_time(&self) -> FxLogicalTime {
+        self.activation_logical_time
+    }
+
+    pub const fn authored_seed(&self) -> Option<FxAuthoredSeed> {
+        self.authored_seed
+    }
+
+    pub fn template(&self) -> &Arc<FxBoundApplicationTemplate> {
+        &self.template
+    }
+
+    pub fn parameters(&self) -> &[FxRuntimeValue] {
+        &self.parameters
+    }
+
+    pub const fn child_path(&self) -> &FxGraphChildPath {
+        &self.child_path
+    }
+
+    pub fn provider_state(&self) -> &[FxProviderStateRecord] {
+        &self.provider_state
+    }
+
+    pub fn deterministic_seed(&self) -> u64 {
+        derive_deterministic_seed(
+            self.instance(),
+            self.semantic_hash,
+            self.authored_seed,
+            &self.child_path,
+        )
+    }
+
+    pub fn try_with_parameters(
+        mut self,
+        parameters: Box<[FxRuntimeValue]>,
+        definition: &FxDefinition,
+    ) -> Result<Self, FxInstanceSnapshotError> {
+        self.parameters = parameters;
+        self.validate_for_definition(definition)?;
+        Ok(self)
+    }
+
     /// Validates all bounded collections after programmatic construction.
-    pub fn validate(self) -> Result<Self, FxInstanceSnapshotError> {
+    pub fn validate(mut self) -> Result<Self, FxInstanceSnapshotError> {
         if self.parameters.len() > FX_MAX_PARAMETERS_PER_DEFINITION {
             return Err(FxInstanceSnapshotError::TooManyParameters {
                 actual: self.parameters.len(),
@@ -263,11 +449,12 @@ impl FxInstanceSnapshot {
                 limit: FX_MAX_PROVIDER_STATES_PER_INSTANCE,
             });
         }
-        let mut providers = BTreeSet::new();
-        for state in &self.provider_state {
-            if !providers.insert(state.provider()) {
+        self.provider_state
+            .sort_by(|left, right| left.provider().cmp(right.provider()));
+        for pair in self.provider_state.windows(2) {
+            if pair[0].provider() == pair[1].provider() {
                 return Err(FxInstanceSnapshotError::DuplicateProviderState {
-                    provider: state.provider().clone(),
+                    provider: Box::new(pair[0].provider().clone()),
                 });
             }
         }
@@ -279,35 +466,82 @@ impl FxInstanceSnapshot {
         &self,
         definition: &FxDefinition,
     ) -> Result<(), FxInstanceSnapshotError> {
-        if &self.definition != definition.id() {
+        if self.definition() != definition.id() {
             return Err(FxInstanceSnapshotError::DefinitionMismatch {
-                snapshot: self.definition.clone(),
-                actual: definition.id().clone(),
+                snapshot: Box::new(self.definition().clone()),
+                actual: Box::new(definition.id().clone()),
             });
         }
         if self.abi_hash != definition.abi_hash() {
             return Err(FxInstanceSnapshotError::AbiMismatch {
-                definition: self.definition.clone(),
+                definition: Box::new(self.definition().clone()),
             });
         }
-        if self.parameters.len() != definition.parameters().len() {
+        if self.semantic_hash != definition.semantic_hash() {
+            return Err(FxInstanceSnapshotError::SemanticMismatch {
+                definition: Box::new(self.definition().clone()),
+            });
+        }
+        if self.parameters.len() != definition.parameter_layout().runtime_rows().len() {
             return Err(FxInstanceSnapshotError::ParameterCount {
-                definition: self.definition.clone(),
-                expected: definition.parameters().len(),
+                definition: Box::new(self.definition().clone()),
+                expected: definition.parameter_layout().runtime_rows().len(),
                 actual: self.parameters.len(),
             });
+        }
+        if self.template.layout_digest() != definition.parameter_layout().digest()
+            || self.template.initial_runtime().len()
+                != definition.parameter_layout().runtime_rows().len()
+            || self.template.static_arguments().len()
+                != definition.parameter_layout().static_rows().len()
+        {
+            return Err(FxInstanceSnapshotError::LayoutMismatch {
+                definition: Box::new(self.definition().clone()),
+            });
+        }
+        for (value, row) in self
+            .template
+            .initial_runtime()
+            .iter()
+            .zip(definition.parameter_layout().runtime_rows())
+        {
+            if value.value_type() != row.reference().runtime_type() {
+                return Err(FxInstanceSnapshotError::LayoutMismatch {
+                    definition: Box::new(self.definition().clone()),
+                });
+            }
+        }
+        for (value, row) in self
+            .template
+            .static_arguments()
+            .iter()
+            .zip(definition.parameter_layout().static_rows())
+        {
+            if value.parameter_type() != row.parameter().parameter_type() {
+                return Err(FxInstanceSnapshotError::LayoutMismatch {
+                    definition: Box::new(self.definition().clone()),
+                });
+            }
+            if let super::FxStaticDefinitionArgumentValue::UniformRecord(record) = value {
+                record
+                    .validate_definition_layout(definition.parameter_layout())
+                    .map_err(|_| FxInstanceSnapshotError::LayoutMismatch {
+                        definition: Box::new(self.definition().clone()),
+                    })?;
+            }
         }
         for (index, (value, parameter)) in self
             .parameters
             .iter()
-            .zip(definition.parameters())
+            .zip(definition.parameter_layout().runtime_rows())
             .enumerate()
         {
-            if value.value_type() != parameter.value_type() {
+            let expected = parameter.reference().runtime_type();
+            if value.value_type() != expected {
                 return Err(FxInstanceSnapshotError::ParameterType {
-                    definition: self.definition.clone(),
+                    definition: Box::new(self.definition().clone()),
                     index,
-                    expected: parameter.value_type(),
+                    expected,
                     actual: value.value_type(),
                 });
             }
@@ -318,11 +552,12 @@ impl FxInstanceSnapshot {
 
 #[derive(Deserialize)]
 struct FxInstanceSnapshotWire {
-    instance: FxInstanceId,
-    definition: FxId,
+    identity: FxInstanceIdentity,
     abi_hash: FxAbiHash,
+    semantic_hash: FxSemanticHash,
     activation_logical_time: FxLogicalTime,
-    deterministic_seed: u64,
+    authored_seed: Option<FxAuthoredSeed>,
+    template: FxBoundApplicationTemplate,
     parameters: Vec<FxRuntimeValue>,
     child_path: FxGraphChildPath,
     provider_state: Vec<FxProviderStateRecord>,
@@ -335,17 +570,48 @@ impl<'de> Deserialize<'de> for FxInstanceSnapshot {
     {
         let wire = FxInstanceSnapshotWire::deserialize(deserializer)?;
         Self {
-            instance: wire.instance,
-            definition: wire.definition,
+            identity: wire.identity,
             abi_hash: wire.abi_hash,
+            semantic_hash: wire.semantic_hash,
             activation_logical_time: wire.activation_logical_time,
-            deterministic_seed: wire.deterministic_seed,
-            parameters: wire.parameters,
+            authored_seed: wire.authored_seed,
+            template: Arc::new(wire.template),
+            parameters: wire.parameters.into_boxed_slice(),
             child_path: wire.child_path,
             provider_state: wire.provider_state,
         }
         .validate()
         .map_err(D::Error::custom)
+    }
+}
+
+#[derive(Serialize)]
+struct FxInstanceSnapshotSerializeWire<'a> {
+    identity: &'a FxInstanceIdentity,
+    abi_hash: FxAbiHash,
+    semantic_hash: FxSemanticHash,
+    activation_logical_time: FxLogicalTime,
+    authored_seed: Option<FxAuthoredSeed>,
+    template: &'a FxBoundApplicationTemplate,
+    parameters: &'a [FxRuntimeValue],
+    child_path: &'a FxGraphChildPath,
+    provider_state: &'a [FxProviderStateRecord],
+}
+
+impl Serialize for FxInstanceSnapshot {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        FxInstanceSnapshotSerializeWire {
+            identity: &self.identity,
+            abi_hash: self.abi_hash,
+            semantic_hash: self.semantic_hash,
+            activation_logical_time: self.activation_logical_time,
+            authored_seed: self.authored_seed,
+            template: &self.template,
+            parameters: &self.parameters,
+            child_path: &self.child_path,
+            provider_state: &self.provider_state,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -432,10 +698,19 @@ impl FxSampleContext {
     /// ordinal, and an authored integer time bucket.
     pub fn deterministic_noise(self, bucket: i32) -> Result<FiniteF32, FiniteF32Error> {
         let mut hasher = blake3::Hasher::new();
-        hash_str(&mut hasher, "arcweft.fx-noise.v1");
-        hasher.update(&self.deterministic_seed.to_le_bytes());
-        hasher.update(&self.ordinal.to_le_bytes());
-        hasher.update(&bucket.to_le_bytes());
+        {
+            let mut encoder = CanonicalEncoder::new(CanonicalHashSink::new(&mut hasher));
+            let encoding = (|| {
+                encoder.domain_v1(b"arcweft.fx-noise")?;
+                encoder.unsigned(self.deterministic_seed)?;
+                encoder.unsigned(u64::from(self.ordinal))?;
+                encoder.signed_i32(bucket)
+            })();
+            match encoding {
+                Ok(()) => {}
+                Err(error) => match error {},
+            }
+        }
         let digest = hasher.finalize();
         let bytes = digest.as_bytes();
         let raw = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
@@ -448,25 +723,33 @@ impl FxSampleContext {
 pub fn derive_deterministic_seed(
     instance: FxInstanceId,
     semantic_hash: FxSemanticHash,
-    authored_seed: Option<&[u8]>,
+    authored_seed: Option<FxAuthoredSeed>,
     child_path: &FxGraphChildPath,
 ) -> u64 {
     let mut hasher = blake3::Hasher::new();
-    hash_str(&mut hasher, "arcweft.fx-seed.v1");
-    hash_bytes(&mut hasher, instance.as_bytes());
-    hash_bytes(&mut hasher, semantic_hash.as_bytes());
-    match authored_seed {
-        Some(seed) => {
-            hasher.update(&[1]);
-            hash_bytes(&mut hasher, seed);
+    {
+        let mut encoder = CanonicalEncoder::new(CanonicalHashSink::new(&mut hasher));
+        let encoding: Result<(), std::convert::Infallible> = (|| {
+            encoder.domain_v1(b"arcweft.fx-seed")?;
+            encoder.digest32(instance.as_bytes())?;
+            encoder.digest32(semantic_hash.as_bytes())?;
+            match authored_seed {
+                Some(seed) => {
+                    encoder.boolean(true)?;
+                    encoder.unsigned(u64::from(seed.get()))?;
+                }
+                None => encoder.boolean(false)?,
+            }
+            encoder.unsigned(u64::from(child_path.depth()))?;
+            for ordinal in child_path.ordinals() {
+                encoder.unsigned(u64::from(*ordinal))?;
+            }
+            Ok(())
+        })();
+        match encoding {
+            Ok(()) => {}
+            Err(error) => match error {},
         }
-        None => {
-            hasher.update(&[0]);
-        }
-    }
-    hasher.update(&(child_path.ordinals().len() as u64).to_le_bytes());
-    for ordinal in child_path.ordinals() {
-        hasher.update(&ordinal.to_le_bytes());
     }
     let digest = hasher.finalize();
     let bytes = digest.as_bytes();

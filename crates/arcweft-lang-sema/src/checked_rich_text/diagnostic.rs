@@ -1,19 +1,14 @@
 use arcweft_lang_hir::dialogue_application::{
-    HirDialogueContentId, HirDialogueNodeId, HirRichTextArgumentId, HirRichTextTagId,
+    HirDialogueContentId, HirDialogueNodeId, HirDialoguePointActionArgumentId,
 };
 use arcweft_lang_hir::source_index::HirSourceSite;
 
-/// Stable semantic `RichText` diagnostic identity.
+/// Stable semantic diagnostic identity for typed dialogue content.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum RichTextDiagnosticCode {
-    UnknownTag,
-    UnknownSelector,
     SchemaUnavailable,
     PositionalForbidden,
-    PositionalArity,
-    MixedForms,
     RequiredMissing,
-    UnexpectedValue,
     Duplicate,
     UnknownProperty,
     PropertyNotInPhase,
@@ -35,10 +30,6 @@ pub enum RichTextDiagnosticCode {
     InvalidVec2,
     InvalidDuration,
     InvalidArgument,
-    NestingLimit,
-    CrossingSpan,
-    UnmatchedClose,
-    UnclosedSpan,
     ResourceLimit,
 }
 
@@ -46,39 +37,30 @@ impl RichTextDiagnosticCode {
     /// Stable code shared by compiler and tooling projections.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::UnknownTag => "sema.rich_text.tag.unknown",
-            Self::UnknownSelector => "sema.rich_text.selector.unknown",
             Self::SchemaUnavailable => "sema.rich_text.schema.unavailable",
-            Self::PositionalForbidden => "sema.rich_text.attribute.positional_forbidden",
-            Self::PositionalArity => "sema.rich_text.attribute.positional_arity",
-            Self::MixedForms => "sema.rich_text.attribute.mixed_forms",
-            Self::RequiredMissing => "sema.rich_text.attribute.required_missing",
-            Self::UnexpectedValue => "sema.rich_text.attribute.unexpected_value",
-            Self::Duplicate => "sema.rich_text.attribute.duplicate",
-            Self::UnknownProperty => "sema.rich_text.attribute.unknown",
-            Self::PropertyNotInPhase => "sema.rich_text.attribute.property_not_in_phase",
-            Self::Conflict => "sema.rich_text.attribute.conflict",
-            Self::InvalidKind => "sema.rich_text.attribute.invalid_kind",
-            Self::InvalidBoolean => "sema.rich_text.attribute.invalid_boolean",
-            Self::InvalidInteger => "sema.rich_text.attribute.invalid_integer",
-            Self::InvalidDecimal => "sema.rich_text.attribute.invalid_decimal",
-            Self::NonFinite => "sema.rich_text.attribute.non_finite",
-            Self::Overflow => "sema.rich_text.attribute.overflow",
-            Self::Underflow => "sema.rich_text.attribute.underflow",
-            Self::Negative => "sema.rich_text.attribute.negative",
-            Self::OutOfRange => "sema.rich_text.attribute.out_of_range",
-            Self::InvalidUnit => "sema.rich_text.attribute.invalid_unit",
-            Self::InvalidEnum => "sema.rich_text.attribute.invalid_enum",
-            Self::InvalidSelector => "sema.rich_text.attribute.invalid_selector",
-            Self::EmptyValue => "sema.rich_text.attribute.empty_value",
-            Self::InvalidColor => "sema.rich_text.attribute.invalid_color",
-            Self::InvalidVec2 => "sema.rich_text.attribute.invalid_vec2",
-            Self::InvalidDuration => "sema.rich_text.attribute.invalid_duration",
-            Self::InvalidArgument => "sema.rich_text.attribute.invalid",
-            Self::NestingLimit => "sema.rich_text.span.nesting_limit",
-            Self::CrossingSpan => "sema.rich_text.span.crossing",
-            Self::UnmatchedClose => "sema.rich_text.span.unmatched_close",
-            Self::UnclosedSpan => "sema.rich_text.span.unclosed",
+            Self::PositionalForbidden => "sema.rich_text.argument.positional_forbidden",
+            Self::RequiredMissing => "sema.rich_text.argument.required_missing",
+            Self::Duplicate => "sema.rich_text.argument.duplicate",
+            Self::UnknownProperty => "sema.rich_text.argument.unknown",
+            Self::PropertyNotInPhase => "sema.rich_text.argument.property_not_in_phase",
+            Self::Conflict => "sema.rich_text.argument.conflict",
+            Self::InvalidKind => "sema.rich_text.argument.invalid_kind",
+            Self::InvalidBoolean => "sema.rich_text.argument.invalid_boolean",
+            Self::InvalidInteger => "sema.rich_text.argument.invalid_integer",
+            Self::InvalidDecimal => "sema.rich_text.argument.invalid_decimal",
+            Self::NonFinite => "sema.rich_text.argument.non_finite",
+            Self::Overflow => "sema.rich_text.argument.overflow",
+            Self::Underflow => "sema.rich_text.argument.underflow",
+            Self::Negative => "sema.rich_text.argument.negative",
+            Self::OutOfRange => "sema.rich_text.argument.out_of_range",
+            Self::InvalidUnit => "sema.rich_text.argument.invalid_unit",
+            Self::InvalidEnum => "sema.rich_text.argument.invalid_enum",
+            Self::InvalidSelector => "sema.rich_text.selector.invalid",
+            Self::EmptyValue => "sema.rich_text.argument.empty",
+            Self::InvalidColor => "sema.rich_text.argument.invalid_color",
+            Self::InvalidVec2 => "sema.rich_text.argument.invalid_vec2",
+            Self::InvalidDuration => "sema.rich_text.argument.invalid_duration",
+            Self::InvalidArgument => "sema.rich_text.argument.invalid",
             Self::ResourceLimit => "sema.rich_text.resource_limit",
         }
     }
@@ -105,10 +87,9 @@ impl RichTextRelatedSite {
     }
 }
 
-/// Required recovery/execution effect of a `RichText` failure.
+/// Required recovery/execution effect of a typed RichText failure.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RichTextFailureEffect {
-    RejectTag,
     RejectPointEvent,
     RejectCompilation,
 }
@@ -118,13 +99,13 @@ pub enum RichTextFailureEffect {
 pub enum RichTextDiagnosticOwner {
     Content(HirDialogueContentId),
     Node(HirDialogueNodeId),
-    Tag(HirRichTextTagId),
-    Argument(HirRichTextArgumentId),
+    PointAction(HirDialogueNodeId),
+    Argument(HirDialoguePointActionArgumentId),
 }
 
-/// Complete structured `RichText` diagnostic bound to final-HIR identities.
+/// Complete structured diagnostic bound to final-HIR identities.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RichTextAttributeDiagnostic {
+pub struct RichTextDiagnostic {
     code: RichTextDiagnosticCode,
     owner: RichTextDiagnosticOwner,
     primary: HirSourceSite,
@@ -132,7 +113,7 @@ pub struct RichTextAttributeDiagnostic {
     effect: RichTextFailureEffect,
 }
 
-impl RichTextAttributeDiagnostic {
+impl RichTextDiagnostic {
     pub(crate) const fn new(
         code: RichTextDiagnosticCode,
         owner: RichTextDiagnosticOwner,
@@ -161,20 +142,21 @@ impl RichTextAttributeDiagnostic {
         self.owner
     }
 
-    pub const fn tag(&self) -> Option<HirRichTextTagId> {
+    pub const fn point_action(&self) -> Option<HirDialogueNodeId> {
         match self.owner {
-            RichTextDiagnosticOwner::Tag(tag) => Some(tag),
-            RichTextDiagnosticOwner::Argument(argument) => Some(argument.tag()),
-            RichTextDiagnosticOwner::Content(_) | RichTextDiagnosticOwner::Node(_) => None,
+            RichTextDiagnosticOwner::PointAction(action) => Some(action),
+            RichTextDiagnosticOwner::Content(_)
+            | RichTextDiagnosticOwner::Node(_)
+            | RichTextDiagnosticOwner::Argument(_) => None,
         }
     }
 
-    pub const fn argument(&self) -> Option<HirRichTextArgumentId> {
+    pub const fn argument(&self) -> Option<HirDialoguePointActionArgumentId> {
         match self.owner {
             RichTextDiagnosticOwner::Argument(argument) => Some(argument),
             RichTextDiagnosticOwner::Content(_)
             | RichTextDiagnosticOwner::Node(_)
-            | RichTextDiagnosticOwner::Tag(_) => None,
+            | RichTextDiagnosticOwner::PointAction(_) => None,
         }
     }
 

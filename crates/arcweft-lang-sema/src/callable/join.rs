@@ -6,17 +6,30 @@
 //! seam for joining one clean selected call with its prepared application and
 //! the current callable authority.
 
-use arcweft_lang_hir::expr::HirCallArgumentOrdinal;
+use std::{collections::BTreeMap, sync::Arc};
+
+use arcweft_lang_hir::{
+    expr::HirCallArgumentOrdinal,
+    symbol::{CallableDeclarationKey, CallableDeclarationOwner},
+};
 use thiserror::Error;
 
-use crate::{effect_row::EffectRow, types::TypeKind};
+use crate::{
+    effect_row::{EffectRow, EffectRowError, EffectSubstitution},
+    final_analysis::{CheckedFunctionExecution, CheckedProjectNominal},
+    types::{ArrayLength, TypeKind, constraints::ClosedTypeInstantiation},
+};
 
 use super::{
     CallableArgumentSlotIndex, CallableCandidateId, CallableFamily, CallableGroupIndex,
-    CallableParameterCoordinate, CallableSignatureSchemaDigest, CheckedCallApplication,
-    CheckedCallExecutionArgument, CheckedCallOperandDestination, CheckedCallResult,
-    CheckedCallableCatalog, CheckedCallableDigest, CheckedCallableId, CheckedCallableLookupError,
-    CheckedMethodLookup, ResolvedCallable, ResolvedCallableBaseInstantiation,
+    CallableParameterConsumer, CallableParameterCoordinate, CallableParameterPassing,
+    CallableParameterPresence, CallableResultSchema, CallableSignatureSchemaDigest,
+    CheckedCallApplication, CheckedCallContinuationDigest, CheckedCallExecutionArgument,
+    CheckedCallOperandDestination, CheckedCallResult, CheckedCallableCatalog,
+    CheckedCallableDigest, CheckedCallableExecution, CheckedCallableFacts, CheckedCallableId,
+    CheckedCallableLookupError, CheckedMethodLookup, ContentCallableIdentity,
+    FrozenCallTypeSolution, ResolvedCallable, ResolvedCallableBaseInstantiation,
+    ResolvedCallableOrigin, ResolvedCallableState,
 };
 
 /// Failure while joining one final call fact with the current callable
@@ -24,6 +37,8 @@ use super::{
 /// source-identity fallback is available.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedCallableJoinError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
     #[error("call target is not a clean selected callable")]
     NotSelected,
     #[error("selected call fact does not belong to the prepared application authority")]
@@ -80,6 +95,790 @@ pub enum CheckedCallableJoinError {
     MissingIntrinsicAuthority,
     #[error("selected callable family disagrees with its typed candidate")]
     IntrinsicFamilyMismatch,
+    #[error("intrinsic callable does not own one exact fixed schema effect row")]
+    IntrinsicEffectSchemaMismatch,
+    #[error("selected callable instantiation transcript cannot be canonically encoded")]
+    InstantiationTranscript,
+}
+
+/// Exact runtime input lineage of one selected project-function application.
+///
+/// A direct declaration call has no prior runtime value. A continuation call
+/// must consume the lineage issued by the checked prefix application; runtime
+/// lowering may not infer that lineage from the callee value's shape.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProjectContinuationRuntimeAbi {
+    lineage: CheckedCallContinuationDigest,
+    function_type: TypeKind,
+    prefix_types: Box<[TypeKind]>,
+}
+
+impl CheckedProjectContinuationRuntimeAbi {
+    pub const fn lineage(&self) -> CheckedCallContinuationDigest {
+        self.lineage
+    }
+
+    pub const fn function_type(&self) -> &TypeKind {
+        &self.function_type
+    }
+
+    pub const fn prefix_types(&self) -> &[TypeKind] {
+        &self.prefix_types
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProjectFunctionParameterMaterialization {
+    coordinate: CallableParameterCoordinate,
+    passing: CallableParameterPassing,
+    abi_type: TypeKind,
+    binding_type: TypeKind,
+    /// Indices into `CheckedCallApplicationCore::runtime_operands()` in exact
+    /// source-evaluation order. These are never ABI destinations.
+    operand_indices: Box<[u32]>,
+}
+
+impl CheckedProjectFunctionParameterMaterialization {
+    pub const fn coordinate(&self) -> CallableParameterCoordinate {
+        self.coordinate
+    }
+
+    pub const fn passing(&self) -> CallableParameterPassing {
+        self.passing
+    }
+
+    pub const fn abi_type(&self) -> &TypeKind {
+        &self.abi_type
+    }
+
+    pub const fn binding_type(&self) -> &TypeKind {
+        &self.binding_type
+    }
+
+    pub const fn operand_indices(&self) -> &[u32] {
+        &self.operand_indices
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedProjectFunctionRuntimeInput {
+    Direct,
+    Continuation {
+        abi: CheckedProjectContinuationRuntimeAbi,
+    },
+}
+
+/// Checked outcome owned by one project-function call site.
+///
+/// Non-terminal groups produce another typed continuation. Only a terminal
+/// call with no deferred generic parameters may request an executable
+/// callable instance.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedProjectFunctionRuntimeOutcome {
+    Continue {
+        abi: CheckedProjectContinuationRuntimeAbi,
+        next_group: CallableGroupIndex,
+    },
+    Invoke {
+        result: TypeKind,
+    },
+}
+
+/// Final-sema runtime selection for one ordinary project function call.
+///
+/// This is the sole bridge from checked callable/continuation authority to a
+/// compiler-produced runtime callable instance. It deliberately retains the
+/// frozen substitution rather than exposing a call-site reconstruction API.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProjectFunctionRuntimeSelection {
+    declaration: CallableDeclarationKey,
+    group: CallableGroupIndex,
+    instantiation: CallableInstantiationDigest,
+    base_instantiation: ResolvedCallableBaseInstantiation,
+    solution: Arc<FrozenCallTypeSolution>,
+    function_type: TypeKind,
+    current_group_materialization: Box<[CheckedProjectFunctionParameterMaterialization]>,
+    effects: crate::effects::EffectSet,
+    input: CheckedProjectFunctionRuntimeInput,
+    outcome: CheckedProjectFunctionRuntimeOutcome,
+}
+
+/// Closed ordinary project-function instance selected by a checked runtime
+/// ingress that does not have a source call expression.
+///
+/// Entry roles are the first consumer. Their checked contracts prove one
+/// complete parameter group, no generic inventory, no attached-content ABI,
+/// and one closed effect row. This record lets the compiler issue the same
+/// instance key and body projection as an ordinary terminal call without
+/// fabricating a call solution or adopting types from the runtime ingress.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProjectFunctionRootRuntimeSelection {
+    declaration: CallableDeclarationKey,
+    group: CallableGroupIndex,
+    solution: CheckedProjectFunctionInstanceSolution,
+    function_type: TypeKind,
+    effects: crate::effects::EffectSet,
+}
+
+/// Flat, sealed declaration environment for one closed project-function
+/// instance. All right-hand sides have already been closed in the caller's
+/// environment; body projection applies these callee keys simultaneously.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedProjectFunctionInstanceSolution {
+    solution: Arc<ClosedTypeInstantiation>,
+    instantiation: CallableInstantiationDigest,
+    function_type: TypeKind,
+}
+
+impl CheckedProjectFunctionInstanceSolution {
+    pub const fn instantiation(&self) -> CallableInstantiationDigest {
+        self.instantiation
+    }
+
+    /// Callable ABI closed in the caller's environment during selection.
+    pub const fn function_type(&self) -> &TypeKind {
+        &self.function_type
+    }
+
+    pub fn instantiate_array_length(
+        &self,
+        length: &ArrayLength,
+    ) -> Result<ArrayLength, crate::types::TypeInstantiationError> {
+        self.solution.instantiate_array_length(length)
+    }
+
+    pub fn instantiate_type(
+        &self,
+        ty: &TypeKind,
+    ) -> Result<TypeKind, crate::types::TypeInstantiationError> {
+        self.solution.instantiate_type(ty)
+    }
+
+    /// Projects a declaration type through this instance while admitting each
+    /// structural occurrence to the caller's compilation work budget.
+    pub fn instantiate_type_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        ty: &TypeKind,
+        control: &mut C,
+    ) -> Result<TypeKind, crate::types::TypeProjectionError<C::Error>> {
+        self.solution.instantiate_type_with_control(ty, control)
+    }
+
+    pub fn instantiate_array_length_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        length: &ArrayLength,
+        control: &mut C,
+    ) -> Result<ArrayLength, crate::types::TypeProjectionError<C::Error>> {
+        self.solution
+            .instantiate_array_length_with_control(length, control)
+    }
+
+    pub fn instantiate_effect_row_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        row: &EffectRow,
+        control: &mut C,
+    ) -> Result<crate::effects::EffectSet, crate::types::TypeProjectionError<C::Error>> {
+        self.solution
+            .project_effect_row_with_control(row, 1, control)
+    }
+
+    /// Closes one checked project nominal under this exact instance solution
+    /// while retaining its declaration and HIR owner evidence. Downstream
+    /// runtime projection must not reconstruct a nominal from an open
+    /// declaration row and call-site arguments.
+    pub fn instantiate_project_nominal(
+        &self,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<CheckedProjectNominal, crate::types::TypeInstantiationError> {
+        self.instantiate_project_nominal_with_control(
+            nominal,
+            &mut crate::types::UnmeteredTypeProjection,
+        )
+        .map_err(crate::types::TypeProjectionError::into_instantiation)
+    }
+
+    pub fn instantiate_project_nominal_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        nominal: &CheckedProjectNominal,
+        control: &mut C,
+    ) -> Result<CheckedProjectNominal, crate::types::TypeProjectionError<C::Error>> {
+        let closed = self.instantiate_type_with_control(&nominal.ty(), control)?;
+        let identity = closed.semantic_identity_digest_in_scope_with_control(
+            &crate::types::GenericScope::default(),
+            control,
+        )?;
+        let TypeKind::ProjectNominal(closed) = closed else {
+            unreachable!("type specialization preserves the project nominal constructor");
+        };
+        Ok(CheckedProjectNominal::new(
+            closed.declaration().clone(),
+            nominal.owner(),
+            identity,
+            closed.arguments().to_vec(),
+        ))
+    }
+
+    /// Closes one executable effect row through the same flat environment
+    /// as the instance's value types. Closure/function-site emission
+    /// must not infer an effect set from body operations.
+    pub fn instantiate_effect_row(
+        &self,
+        row: &EffectRow,
+    ) -> Result<crate::effects::EffectSet, EffectRowError> {
+        self.solution.instantiate_effect_row(row)
+    }
+}
+
+impl CheckedProjectFunctionRuntimeSelection {
+    pub const fn declaration(&self) -> &CallableDeclarationKey {
+        &self.declaration
+    }
+
+    pub const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn instantiation(&self) -> CallableInstantiationDigest {
+        self.instantiation
+    }
+
+    /// Closes this terminal selection's caller-owned binding values once,
+    /// producing the flat environment used by the selected declaration body.
+    pub fn close_instance(
+        &self,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+    ) -> Result<CheckedProjectFunctionInstanceSolution, CheckedProjectFunctionRuntimeSelectionError>
+    {
+        self.close_instance_with_control(enclosing, &mut crate::types::UnmeteredTypeProjection)
+            .map_err(|error| match error {
+                CheckedProjectFunctionInstanceProjectionError::Selection(error) => error,
+                CheckedProjectFunctionInstanceProjectionError::Projection(error) => {
+                    error.into_instantiation().into()
+                }
+            })
+    }
+
+    /// Closes the same invocation under a consumer-owned type projection budget.
+    pub fn close_instance_with_control<C: crate::types::TypeProjectionControl>(
+        &self,
+        enclosing: Option<&CheckedProjectFunctionInstanceSolution>,
+        control: &mut C,
+    ) -> Result<
+        CheckedProjectFunctionInstanceSolution,
+        CheckedProjectFunctionInstanceProjectionError<C::Error>,
+    > {
+        control
+            .check()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        if !matches!(
+            self.outcome,
+            CheckedProjectFunctionRuntimeOutcome::Invoke { .. }
+        ) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult.into());
+        }
+        let solution = self.solution.close_instantiation_with_control(
+            enclosing.map(|row| row.solution.as_ref()),
+            control,
+        )?;
+        let empty = ClosedTypeInstantiation::default();
+        let caller = enclosing.map_or(&empty, |row| row.solution.as_ref());
+        let function_type = caller.instantiate_type_with_control(&self.function_type, control)?;
+        let instantiation = callable_instantiation_digest_from_bindings(
+            &self.base_instantiation,
+            solution.type_bindings(),
+            solution.const_bindings(),
+            solution
+                .effect_bindings()
+                .map(|(variable, value)| (*variable, value)),
+            |ty, control| caller.instantiate_type_with_control(ty, control),
+            control,
+        )
+        .map_err(|error| match error {
+            CallableInstantiationDigestError::Projection(error) => {
+                CheckedProjectFunctionInstanceProjectionError::Projection(error)
+            }
+            CallableInstantiationDigestError::TranscriptLength => {
+                CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript.into()
+            }
+        })?;
+        Ok(CheckedProjectFunctionInstanceSolution {
+            solution: Arc::new(solution),
+            instantiation,
+            function_type,
+        })
+    }
+
+    pub const fn solution(&self) -> &Arc<FrozenCallTypeSolution> {
+        &self.solution
+    }
+
+    pub const fn function_type(&self) -> &TypeKind {
+        &self.function_type
+    }
+
+    /// Materialized callee-binding ABI for the completed group. Rest
+    /// parameters own one binding row regardless of
+    /// how many authored execution slots supplied that value.
+    pub const fn current_group_materialization(
+        &self,
+    ) -> &[CheckedProjectFunctionParameterMaterialization] {
+        &self.current_group_materialization
+    }
+
+    pub const fn effects(&self) -> &crate::effects::EffectSet {
+        &self.effects
+    }
+
+    pub const fn input(&self) -> &CheckedProjectFunctionRuntimeInput {
+        &self.input
+    }
+
+    pub const fn outcome(&self) -> &CheckedProjectFunctionRuntimeOutcome {
+        &self.outcome
+    }
+}
+
+/// Runtime selection errors remain distinct from consumer-owned projection
+/// aborts; neither loses its structured cause at the instance boundary.
+#[derive(Debug, Error)]
+pub enum CheckedProjectFunctionInstanceProjectionError<E: std::error::Error + 'static> {
+    #[error(transparent)]
+    Selection(#[from] CheckedProjectFunctionRuntimeSelectionError),
+    #[error(transparent)]
+    Projection(#[from] crate::types::TypeProjectionError<E>),
+}
+
+impl CheckedProjectFunctionRootRuntimeSelection {
+    pub const fn declaration(&self) -> &CallableDeclarationKey {
+        &self.declaration
+    }
+
+    pub const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn solution(&self) -> &CheckedProjectFunctionInstanceSolution {
+        &self.solution
+    }
+
+    pub const fn function_type(&self) -> &TypeKind {
+        &self.function_type
+    }
+
+    pub const fn effects(&self) -> &crate::effects::EffectSet {
+        &self.effects
+    }
+}
+
+/// Opaque typed cause of a failed callable-template projection.
+/// The lower invariant vocabulary remains private to semantic analysis.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[error(transparent)]
+pub struct CheckedProjectFunctionProjectionFailure {
+    source: Box<super::CallConstraintInvariant>,
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum CheckedProjectFunctionRuntimeSelectionError {
+    #[error(transparent)]
+    Instantiation(#[from] crate::types::TypeInstantiationError),
+    #[error("project-function runtime selection disagrees with the checked callable join")]
+    JoinMismatch,
+    #[error("project-function runtime selection has no executable body authority")]
+    MissingRuntimeExecution,
+    #[error("stream-factory project functions do not use an ordinary runtime function site")]
+    StreamFactory,
+    #[error("terminal project-function runtime selection retains deferred generic parameters")]
+    OpenTerminalInstantiation,
+    #[error("project-function runtime selection has an invalid callable type or result")]
+    InvalidResult,
+    #[error("checked project callable lookup failed: {0:?}")]
+    Catalog(CheckedCallableLookupError),
+    #[error("checked project callable projection failed: {0}")]
+    CallableProjection(#[source] CheckedProjectFunctionProjectionFailure),
+    #[error("checked project callable effect row is not a closed instantiation: {0}")]
+    EffectRow(EffectRowError),
+    #[error("checked project continuation has no exact runtime prefix ABI")]
+    InvalidContinuationAbi,
+    #[error("checked project-function instance transcript cannot be canonically closed")]
+    InstantiationTranscript,
+    #[error("project-function runtime root is not an ordinary Function declaration")]
+    InvalidRootDeclaration,
+    #[error("project-function runtime root must own exactly one complete parameter group")]
+    InvalidRootGroup,
+    #[error("project-function runtime root retains a generic type or const inventory")]
+    OpenRootInstantiation,
+    #[error("project-function runtime root cannot require an attached-content operand")]
+    RootAttachedContent,
+}
+
+impl From<super::CallConstraintInvariant> for CheckedProjectFunctionRuntimeSelectionError {
+    fn from(error: super::CallConstraintInvariant) -> Self {
+        Self::CallableProjection(CheckedProjectFunctionProjectionFailure {
+            source: Box::new(error),
+        })
+    }
+}
+
+/// Selects one closed ordinary Function instance for a checked non-call
+/// runtime ingress.
+///
+/// This is deliberately narrower than call selection: an ingress cannot
+/// manufacture continuation groups, infer generic substitutions, or supply
+/// attached content. The checked Entry contract is expected to establish
+/// these preconditions before requesting this projection.
+pub fn select_project_function_root_runtime(
+    declaration: &CallableDeclarationKey,
+    catalog: &CheckedCallableCatalog,
+) -> Result<CheckedProjectFunctionRootRuntimeSelection, CheckedProjectFunctionRuntimeSelectionError>
+{
+    if declaration.owner() != CallableDeclarationOwner::Function {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidRootDeclaration);
+    }
+    let checked = catalog
+        .project_callable(declaration)
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
+    match checked.execution() {
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame) => {}
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::StreamFactory);
+        }
+        CheckedCallableExecution::DispatchContract => {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
+        }
+    }
+    if !checked.signature().generic_inventory().types().is_empty()
+        || !checked.signature().generic_inventory().consts().is_empty()
+    {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::OpenRootInstantiation);
+    }
+    let [group] = checked.signature().groups() else {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidRootGroup);
+    };
+    if checked.attached_content().is_some() {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::RootAttachedContent);
+    }
+    let effects = checked
+        .exposed_row()
+        .resolve(&EffectSubstitution::new())
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
+    let parameters = group
+        .parameters()
+        .iter()
+        .map(|parameter| parameter.declared_type().cloned())
+        .collect::<Option<Vec<_>>>()
+        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidResult)?;
+    let result = checked
+        .signature()
+        .value_type()
+        .cloned()
+        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidResult)?;
+    let function_type =
+        TypeKind::function_with_effects(parameters, result, checked.exposed_row().clone());
+    let instantiation = empty_callable_instantiation_digest()
+        .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InstantiationTranscript)?;
+    Ok(CheckedProjectFunctionRootRuntimeSelection {
+        declaration: declaration.clone(),
+        group: group.index(),
+        solution: CheckedProjectFunctionInstanceSolution {
+            solution: Arc::new(ClosedTypeInstantiation::default()),
+            instantiation,
+            function_type: ClosedTypeInstantiation::default().instantiate_type(&function_type)?,
+        },
+        function_type,
+        effects,
+    })
+}
+
+/// Selects the runtime continuation/instance contract for one checked project
+/// function application.
+///
+/// Project callables outside ordinary Function declarations (extern
+/// capabilities, methods, Views, predicates, and proofs) return `Ok(None)`;
+/// their existing typed runtime owners remain distinct. A Function selection
+/// is either complete or a typed error—there is no non-generic or single-group
+/// fallback.
+pub fn select_project_function_runtime(
+    application: &CheckedCallApplication,
+    join: &CheckedCallableJoin,
+    catalog: &CheckedCallableCatalog,
+) -> Result<
+    Option<CheckedProjectFunctionRuntimeSelection>,
+    CheckedProjectFunctionRuntimeSelectionError,
+> {
+    let selected = application.core().candidates().selected();
+    let ResolvedCallableOrigin::Project { declaration, .. } = selected.origin() else {
+        return Ok(None);
+    };
+    if declaration.owner() != CallableDeclarationOwner::Function {
+        return Ok(None);
+    }
+    if application.core().current_group() != join.current_group()
+        || selected.id() != &CallableCandidateId::Project(declaration.clone())
+        || join.checked_id() != selected.checked()
+    {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::JoinMismatch);
+    }
+    let checked = catalog
+        .project_callable(declaration)
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::Catalog)?;
+    match checked.execution() {
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame) => {}
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::StreamFactory);
+        }
+        CheckedCallableExecution::DispatchContract => {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::MissingRuntimeExecution);
+        }
+    }
+
+    let solution = Arc::clone(application.core().solution());
+    let (input, function_type) = match selected.state() {
+        ResolvedCallableState::Base => {
+            let ty = selected
+                .base()
+                .callable_type_with_invocation_effects(join.effects())
+                .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?;
+            (
+                CheckedProjectFunctionRuntimeInput::Direct,
+                solution
+                    .instantiate_result(&ty)
+                    .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?,
+            )
+        }
+        ResolvedCallableState::Continuation(continuation) => (
+            CheckedProjectFunctionRuntimeInput::Continuation {
+                abi: checked_project_continuation_runtime_abi(
+                    continuation.digest(),
+                    continuation.function_type().clone(),
+                    checked,
+                    selected,
+                    &solution,
+                    join.current_group().get(),
+                )?,
+            },
+            continuation.function_type().clone(),
+        ),
+    };
+    if !matches!(function_type, TypeKind::Function { .. }) {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+    }
+    let outcome = match application.result() {
+        CheckedCallResult::Continuation(continuation)
+            if join.next_group() == Some(continuation.next_group()) =>
+        {
+            CheckedProjectFunctionRuntimeOutcome::Continue {
+                abi: checked_project_continuation_runtime_abi(
+                    continuation.digest(),
+                    continuation.function_type().clone(),
+                    checked,
+                    selected,
+                    &solution,
+                    join.current_group().get().checked_add(1).ok_or(
+                        CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi,
+                    )?,
+                )?,
+                next_group: continuation.next_group(),
+            }
+        }
+        CheckedCallResult::Value(result) if join.next_group().is_none() => {
+            if !solution.is_fully_instantiated() {
+                return Err(CheckedProjectFunctionRuntimeSelectionError::OpenTerminalInstantiation);
+            }
+            CheckedProjectFunctionRuntimeOutcome::Invoke {
+                result: result.clone(),
+            }
+        }
+        CheckedCallResult::ContentEmission(_)
+        | CheckedCallResult::Continuation(_)
+        | CheckedCallResult::Value(_) => {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidResult);
+        }
+    };
+    let effects = solution
+        .instantiate_effect_row(join.schema_effects())
+        .map_err(CheckedProjectFunctionRuntimeSelectionError::EffectRow)?;
+    let current_group_materialization = checked_project_function_parameter_materialization(
+        application,
+        checked,
+        &solution,
+        join.current_group(),
+    )?;
+    Ok(Some(CheckedProjectFunctionRuntimeSelection {
+        declaration: declaration.clone(),
+        group: join.current_group(),
+        instantiation: join.instantiation(),
+        base_instantiation: selected.instantiation().clone(),
+        solution,
+        function_type,
+        current_group_materialization,
+        effects,
+        input,
+        outcome,
+    }))
+}
+
+fn checked_project_continuation_runtime_abi(
+    lineage: CheckedCallContinuationDigest,
+    function_type: TypeKind,
+    checked: &CheckedCallableFacts,
+    selected: &ResolvedCallable,
+    solution: &FrozenCallTypeSolution,
+    completed_group_count: usize,
+) -> Result<CheckedProjectContinuationRuntimeAbi, CheckedProjectFunctionRuntimeSelectionError> {
+    if !matches!(function_type, TypeKind::Function { .. })
+        || completed_group_count == 0
+        || completed_group_count >= checked.signature().groups().len()
+    {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+    }
+    let mut prefix_types = Vec::new();
+    for group in checked
+        .signature()
+        .groups()
+        .iter()
+        .take(completed_group_count)
+    {
+        prefix_types.extend(checked_project_function_parameter_binding_types(
+            selected, group, solution,
+        )?);
+    }
+    Ok(CheckedProjectContinuationRuntimeAbi {
+        lineage,
+        function_type,
+        prefix_types: prefix_types.into_boxed_slice(),
+    })
+}
+
+fn checked_project_function_parameter_materialization(
+    application: &CheckedCallApplication,
+    checked: &CheckedCallableFacts,
+    solution: &FrozenCallTypeSolution,
+    group: CallableGroupIndex,
+) -> Result<
+    Box<[CheckedProjectFunctionParameterMaterialization]>,
+    CheckedProjectFunctionRuntimeSelectionError,
+> {
+    let schema_group = checked
+        .signature()
+        .group(group)
+        .ok_or(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+    let mut physical = BTreeMap::<CallableParameterCoordinate, Vec<u32>>::new();
+    for (source_index, operand) in application
+        .core()
+        .runtime_operands()
+        .into_vec()
+        .into_iter()
+        .enumerate()
+    {
+        let source_index = u32::try_from(source_index)
+            .map_err(|_| CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)?;
+        let coordinate = match operand {
+            super::CheckedCallRuntimeOperand::Receiver {
+                mode:
+                    super::CallableReceiverMode::Extension {
+                        group, parameter, ..
+                    },
+                ..
+            } => CallableParameterCoordinate::new(*group, *parameter),
+            super::CheckedCallRuntimeOperand::Argument { slot, .. } => {
+                let CheckedCallOperandDestination::Parameter(coordinate) = slot.destination()
+                else {
+                    return Err(
+                        CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi,
+                    );
+                };
+                *coordinate
+            }
+            super::CheckedCallRuntimeOperand::Receiver { .. }
+            | super::CheckedCallRuntimeOperand::AttachedContent { .. } => continue,
+        };
+        if coordinate.group() != group {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+        }
+        physical.entry(coordinate).or_default().push(source_index);
+    }
+    let mut rows = Vec::with_capacity(schema_group.parameters().len());
+    for parameter in schema_group.parameters() {
+        if parameter.consumer() != &CallableParameterConsumer::Value {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+        }
+        let coordinate = CallableParameterCoordinate::new(group, parameter.index());
+        let operand_indices = physical.remove(&coordinate).unwrap_or_default();
+        if !operand_indices.windows(2).all(|pair| pair[0] < pair[1]) {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+        }
+        if parameter.passing() == CallableParameterPassing::RestNamed {
+            return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+        }
+        let rest = parameter.passing() == CallableParameterPassing::RestPositional;
+        match (rest, parameter.presence(), operand_indices.len()) {
+            (true, CallableParameterPresence::Required, _) => {}
+            (false, CallableParameterPresence::Required, 1) => {}
+            (true, CallableParameterPresence::Defaulted, _)
+            | (_, CallableParameterPresence::Optional, _)
+            | (false, CallableParameterPresence::Required, _)
+            | (false, CallableParameterPresence::Defaulted, _) => {
+                return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+            }
+        }
+        let declared = application
+            .core()
+            .candidates()
+            .selected()
+            .base()
+            .project_parameter_type(coordinate)?;
+        let abi_type = solution.instantiate_template(&declared)?;
+        let binding_type = if rest {
+            TypeKind::Vec(Box::new(abi_type.clone()))
+        } else {
+            abi_type.clone()
+        };
+        rows.push(CheckedProjectFunctionParameterMaterialization {
+            coordinate,
+            passing: parameter.passing(),
+            abi_type,
+            binding_type,
+            operand_indices: operand_indices.into_boxed_slice(),
+        });
+    }
+    if !physical.is_empty() {
+        return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+    }
+    Ok(rows.into_boxed_slice())
+}
+
+fn checked_project_function_parameter_binding_types(
+    selected: &ResolvedCallable,
+    group: &super::CallableParameterGroup,
+    solution: &FrozenCallTypeSolution,
+) -> Result<Vec<TypeKind>, CheckedProjectFunctionRuntimeSelectionError> {
+    group
+        .parameters()
+        .iter()
+        .map(|parameter| {
+            if parameter.consumer() != &CallableParameterConsumer::Value {
+                return Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi);
+            }
+            let declared =
+                selected
+                    .base()
+                    .project_parameter_type(CallableParameterCoordinate::new(
+                        group.index(),
+                        parameter.index(),
+                    ))?;
+            let abi_type = solution.instantiate_template(&declared)?;
+            match parameter.passing() {
+                CallableParameterPassing::RestPositional => Ok(TypeKind::Vec(Box::new(abi_type))),
+                CallableParameterPassing::RestNamed => {
+                    Err(CheckedProjectFunctionRuntimeSelectionError::InvalidContinuationAbi)
+                }
+                CallableParameterPassing::PositionalOnly
+                | CallableParameterPassing::PositionalOrNamed
+                | CallableParameterPassing::NamedOnly => Ok(abi_type),
+            }
+        })
+        .collect()
 }
 
 impl CheckedCallableJoinError {
@@ -88,7 +887,8 @@ impl CheckedCallableJoinError {
         _visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::NotSelected
+            Self::GenericScope(_)
+            | Self::NotSelected
             | Self::ApplicationAuthorityMismatch
             | Self::SelectedGroupMismatch
             | Self::CurrentGroupMissing
@@ -115,7 +915,9 @@ impl CheckedCallableJoinError {
             | Self::MethodLookupAmbiguous
             | Self::MethodLookupMismatch
             | Self::MissingIntrinsicAuthority
-            | Self::IntrinsicFamilyMismatch => Ok(()),
+            | Self::IntrinsicFamilyMismatch
+            | Self::IntrinsicEffectSchemaMismatch
+            | Self::InstantiationTranscript => Ok(()),
         }
     }
 }
@@ -123,7 +925,7 @@ impl CheckedCallableJoinError {
 /// Closed intrinsic candidate family tag retained by a checked join.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum IntrinsicCallableCandidateTag {
-    Fx,
+    FxConstructor,
     EnumVariant,
     Result,
     Option,
@@ -131,6 +933,7 @@ pub enum IntrinsicCallableCandidateTag {
     Agent,
     Presentation,
     Dialogue,
+    Content,
     Environment,
     Local,
     FunctionValue,
@@ -149,7 +952,7 @@ pub enum IntrinsicCallableCandidateTag {
 impl IntrinsicCallableCandidateTag {
     pub const fn semantic_tag(self) -> u16 {
         match self {
-            Self::Fx => 0,
+            Self::FxConstructor => 0,
             Self::EnumVariant => 1,
             Self::Result => 2,
             Self::Option => 3,
@@ -157,6 +960,7 @@ impl IntrinsicCallableCandidateTag {
             Self::Agent => 5,
             Self::Presentation => 6,
             Self::Dialogue => 7,
+            Self::Content => 22,
             Self::Environment => 8,
             Self::Local => 9,
             Self::FunctionValue => 10,
@@ -175,7 +979,7 @@ impl IntrinsicCallableCandidateTag {
 
     fn from_candidate(candidate: &CallableCandidateId) -> Option<Self> {
         Some(match candidate {
-            CallableCandidateId::Fx(_) => Self::Fx,
+            CallableCandidateId::FxConstructor(_) => Self::FxConstructor,
             CallableCandidateId::EnumVariant(_) => Self::EnumVariant,
             CallableCandidateId::Result(_) => Self::Result,
             CallableCandidateId::Option(_) => Self::Option,
@@ -183,6 +987,7 @@ impl IntrinsicCallableCandidateTag {
             CallableCandidateId::Agent(_) => Self::Agent,
             CallableCandidateId::Presentation(_) => Self::Presentation,
             CallableCandidateId::Dialogue(_) => Self::Dialogue,
+            CallableCandidateId::Content(_) => Self::Content,
             CallableCandidateId::Environment(_) => Self::Environment,
             CallableCandidateId::Local(_) => Self::Local,
             CallableCandidateId::FunctionValue(_) => Self::FunctionValue,
@@ -203,11 +1008,12 @@ impl IntrinsicCallableCandidateTag {
     }
 }
 
-/// Stable digest of the selected callable's typed instantiation.  Generic
-/// call-site bindings are not reconstructed here: current call facts do not
-/// retain a raw substitution map, so the selected resolver-owned
-/// [`ResolvedCallableBaseInstantiation`] is the accepted authority retained in
-/// the join.
+/// Stable digest of the selected callable's typed instantiation.
+///
+/// This commits both the selected base instantiation (receiver/extension
+/// family) and the resolver-owned frozen type/const/effect solution. It is
+/// independent of the call-site coordinate and may therefore key one runtime
+/// callable instance shared by equal checked applications.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableInstantiationDigest([u8; 32]);
 
@@ -318,7 +1124,7 @@ pub enum CheckedCallableJoin {
         signature: CallableSignatureSchemaDigest,
         catalog_effects: EffectRow,
         effects: EffectRow,
-        result: TypeKind,
+        result: CallableResultSchema,
         current_group: CallableGroupIndex,
         next_group: Option<CallableGroupIndex>,
         arguments: Box<[CheckedCallableArgument]>,
@@ -329,8 +1135,9 @@ pub enum CheckedCallableJoin {
         candidate: IntrinsicCallableCandidateTag,
         family: CallableFamily,
         signature: CallableSignatureSchemaDigest,
+        schema_effects: EffectRow,
         effects: EffectRow,
-        result: TypeKind,
+        result: CallableResultSchema,
         current_group: CallableGroupIndex,
         next_group: Option<CallableGroupIndex>,
         arguments: Box<[CheckedCallableArgument]>,
@@ -351,7 +1158,7 @@ impl CheckedCallableJoin {
             | Self::Intrinsic {
                 result, receiver, ..
             } => {
-                visitor(result)?;
+                result.visit_types(visitor)?;
                 receiver.visit_types(visitor)
             }
         }
@@ -399,7 +1206,7 @@ impl CheckedCallableJoin {
         }
     }
 
-    pub const fn result(&self) -> &TypeKind {
+    pub const fn result(&self) -> &CallableResultSchema {
         match self {
             Self::Catalog { result, .. } | Self::Intrinsic { result, .. } => result,
         }
@@ -408,6 +1215,19 @@ impl CheckedCallableJoin {
     pub const fn effects(&self) -> &EffectRow {
         match self {
             Self::Catalog { effects, .. } | Self::Intrinsic { effects, .. } => effects,
+        }
+    }
+
+    /// Callable-schema effect row whose concrete closed application is the
+    /// runtime function/callback ABI. Catalog-backed calls retain this row
+    /// separately from the application execution-fold row because evaluated
+    /// effect roles suppress ordinary runtime-call execution.
+    pub const fn schema_effects(&self) -> &EffectRow {
+        match self {
+            Self::Catalog {
+                catalog_effects, ..
+            } => catalog_effects,
+            Self::Intrinsic { schema_effects, .. } => schema_effects,
         }
     }
 
@@ -424,7 +1244,9 @@ impl CheckedCallableJoin {
     }
 
     /// Stable semantic transcript for the fully checked join.
-    pub fn semantic_digest(&self) -> CheckedCallableJoinDigest {
+    pub fn semantic_digest(
+        &self,
+    ) -> Result<CheckedCallableJoinDigest, crate::types::GenericScopeError> {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"arcweft.lang.checked-callable-authority-join.v1\0");
         match self {
@@ -447,17 +1269,18 @@ impl CheckedCallableJoin {
                 hasher.update(signature.as_bytes());
                 write_effect(&mut hasher, catalog_effects);
                 write_effect(&mut hasher, effects);
-                write_type(&mut hasher, result);
+                write_result_schema(&mut hasher, result)?;
                 write_group(&mut hasher, *current_group);
                 write_optional_group(&mut hasher, *next_group);
                 write_arguments(&mut hasher, arguments);
-                write_receiver(&mut hasher, receiver);
+                write_receiver(&mut hasher, receiver)?;
                 hasher.update(instantiation.bytes());
             }
             Self::Intrinsic {
                 candidate,
                 family,
                 signature,
+                schema_effects,
                 effects,
                 result,
                 current_group,
@@ -470,16 +1293,17 @@ impl CheckedCallableJoin {
                 hasher.update(&candidate.semantic_tag().to_le_bytes());
                 hasher.update(&[callable_family_tag(*family)]);
                 hasher.update(signature.as_bytes());
+                write_effect(&mut hasher, schema_effects);
                 write_effect(&mut hasher, effects);
-                write_type(&mut hasher, result);
+                write_result_schema(&mut hasher, result)?;
                 write_group(&mut hasher, *current_group);
                 write_optional_group(&mut hasher, *next_group);
                 write_arguments(&mut hasher, arguments);
-                write_receiver(&mut hasher, receiver);
+                write_receiver(&mut hasher, receiver)?;
                 hasher.update(instantiation.bytes());
             }
         }
-        CheckedCallableJoinDigest(*hasher.finalize().as_bytes())
+        Ok(CheckedCallableJoinDigest(*hasher.finalize().as_bytes()))
     }
 }
 
@@ -498,13 +1322,23 @@ pub(crate) fn validate_selected_application(
     let current_group = core.current_group();
     let next_group = match application.result() {
         CheckedCallResult::Value(_) => None,
+        CheckedCallResult::ContentEmission(_) => None,
         CheckedCallResult::Continuation(continuation) => Some(continuation.next_group()),
     };
     let arguments = checked_join_arguments(selected, current_group, core.execution().arguments())?;
     let receiver = checked_receiver_mode(selected)?;
     let signature = selected.schema().semantic_digest();
-    let instantiation = callable_instantiation_digest(selected.instantiation());
-    let result = application.result().ty().clone();
+    let instantiation = callable_instantiation_digest(selected.instantiation(), core.solution())
+        .map_err(|_| CheckedCallableJoinError::InstantiationTranscript)?;
+    let result = match application.result() {
+        CheckedCallResult::Value(value) => CallableResultSchema::Value(value.clone()),
+        CheckedCallResult::ContentEmission(operation) => {
+            CallableResultSchema::ContentEmission(*operation)
+        }
+        CheckedCallResult::Continuation(continuation) => {
+            CallableResultSchema::Value(continuation.function_type().clone())
+        }
+    };
     let effects = core.effects().clone();
 
     match selected.checked() {
@@ -566,10 +1400,17 @@ pub(crate) fn validate_selected_application(
             if selected.family() != selected.id().intrinsic_family() {
                 return Err(CheckedCallableJoinError::IntrinsicFamilyMismatch);
             }
+            let schema_effects = selected
+                .schema()
+                .effects()
+                .fixed_row()
+                .cloned()
+                .ok_or(CheckedCallableJoinError::IntrinsicEffectSchemaMismatch)?;
             Ok(CheckedCallableJoin::Intrinsic {
                 candidate,
                 family: selected.family(),
                 signature,
+                schema_effects,
                 effects,
                 result,
                 current_group,
@@ -621,10 +1462,12 @@ fn checked_join_arguments(
             slots.push(CheckedCallableArgumentSlot {
                 slot: slot.slot(),
                 mapped,
-                inferred: Some(*slot.inferred().semantic_identity_digest().as_bytes()),
+                inferred: Some(*slot.inferred().semantic_identity_digest()?.as_bytes()),
                 expected: slot
                     .expected()
-                    .map(|ty| *ty.semantic_identity_digest().as_bytes()),
+                    .map(TypeKind::semantic_identity_digest)
+                    .transpose()?
+                    .map(|identity| *identity.as_bytes()),
             });
         }
         arguments.push(CheckedCallableArgument {
@@ -640,7 +1483,7 @@ fn checked_receiver_mode(
 ) -> Result<CallableReceiverMode, CheckedCallableJoinError> {
     Ok(match selected.instantiation() {
         ResolvedCallableBaseInstantiation::None
-        | ResolvedCallableBaseInstantiation::ExpectedEnum { .. }
+        | ResolvedCallableBaseInstantiation::EnumConstructor
         | ResolvedCallableBaseInstantiation::Result { .. }
         | ResolvedCallableBaseInstantiation::Option
         | ResolvedCallableBaseInstantiation::Character { .. } => CallableReceiverMode::None,
@@ -664,18 +1507,86 @@ fn checked_receiver_mode(
     })
 }
 
+#[derive(Debug, Error)]
+enum CallableInstantiationDigestError<E: std::error::Error + 'static = std::convert::Infallible> {
+    #[error("callable instantiation transcript length exceeds u64")]
+    TranscriptLength,
+    #[error(transparent)]
+    Projection(#[from] crate::types::TypeProjectionError<E>),
+}
+
+impl<E: std::error::Error + 'static> From<crate::types::GenericScopeError>
+    for CallableInstantiationDigestError<E>
+{
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::Projection(error.into())
+    }
+}
+
 fn callable_instantiation_digest(
     instantiation: &ResolvedCallableBaseInstantiation,
-) -> CallableInstantiationDigest {
+    solution: &FrozenCallTypeSolution,
+) -> Result<CallableInstantiationDigest, CallableInstantiationDigestError> {
+    callable_instantiation_digest_from_bindings(
+        instantiation,
+        solution.type_bindings(),
+        solution.const_bindings(),
+        solution
+            .effect_bindings()
+            .iter()
+            .map(|row| (row.variable(), row.value())),
+        |ty, _| Ok(ty.clone()),
+        &mut crate::types::UnmeteredTypeProjection,
+    )
+}
+
+fn empty_callable_instantiation_digest()
+-> Result<CallableInstantiationDigest, CallableInstantiationDigestError> {
+    let solution = ClosedTypeInstantiation::default();
+    callable_instantiation_digest_from_bindings(
+        &ResolvedCallableBaseInstantiation::None,
+        solution.type_bindings(),
+        solution.const_bindings(),
+        solution
+            .effect_bindings()
+            .map(|(variable, value)| (*variable, value)),
+        |ty, control| solution.instantiate_type_with_control(ty, control),
+        &mut crate::types::UnmeteredTypeProjection,
+    )
+}
+
+fn callable_instantiation_digest_from_bindings<'a, C: crate::types::TypeProjectionControl>(
+    instantiation: &ResolvedCallableBaseInstantiation,
+    types: impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedTypeReferenceView<'a>,
+            crate::types::ScopedTypeView<'a>,
+        ),
+    >,
+    consts: impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedConstReferenceView<'a>,
+            crate::types::ScopedArrayLengthView<'a>,
+        ),
+    >,
+    effects: impl ExactSizeIterator<Item = (crate::effect_row::EffectVar, &'a EffectRow)>,
+    project_base: impl Fn(
+        &TypeKind,
+        &mut C,
+    ) -> Result<TypeKind, crate::types::TypeProjectionError<C::Error>>,
+    control: &mut C,
+) -> Result<CallableInstantiationDigest, CallableInstantiationDigestError<C::Error>> {
+    control
+        .check()
+        .map_err(crate::types::TypeProjectionError::Control)?;
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.lang.callable-instantiation.v1\0");
     match instantiation {
         ResolvedCallableBaseInstantiation::None => {
             hasher.update(&[0]);
         }
-        ResolvedCallableBaseInstantiation::ExpectedEnum { expected } => {
+        ResolvedCallableBaseInstantiation::EnumConstructor => {
             hasher.update(&[1]);
-            write_type(&mut hasher, expected);
         }
         ResolvedCallableBaseInstantiation::Result { kind } => {
             hasher.update(&[
@@ -688,15 +1599,29 @@ fn callable_instantiation_digest(
         }
         ResolvedCallableBaseInstantiation::Character { owner } => {
             hasher.update(&[4]);
-            write_bytes(&mut hasher, owner.character().as_str().as_bytes());
+            write_checked_bytes(&mut hasher, owner.character().canonical_identity_bytes())?;
         }
         ResolvedCallableBaseInstantiation::Receiver { receiver } => {
             hasher.update(&[5]);
-            write_type(&mut hasher, receiver);
+            let ty = project_base(receiver, control)?;
+            hasher.update(
+                ty.semantic_identity_digest_in_scope_with_control(
+                    &crate::types::GenericScope::default(),
+                    control,
+                )?
+                .as_bytes(),
+            );
         }
         ResolvedCallableBaseInstantiation::TypeReceiver { receiver } => {
             hasher.update(&[6]);
-            write_type(&mut hasher, receiver.receiver());
+            let ty = project_base(receiver.receiver(), control)?;
+            hasher.update(
+                ty.semantic_identity_digest_in_scope_with_control(
+                    &crate::types::GenericScope::default(),
+                    control,
+                )?
+                .as_bytes(),
+            );
         }
         ResolvedCallableBaseInstantiation::Extension {
             receiver,
@@ -704,20 +1629,143 @@ fn callable_instantiation_digest(
             parameter,
         } => {
             hasher.update(&[7]);
-            write_type(&mut hasher, receiver);
+            let ty = project_base(receiver, control)?;
+            hasher.update(
+                ty.semantic_identity_digest_in_scope_with_control(
+                    &crate::types::GenericScope::default(),
+                    control,
+                )?
+                .as_bytes(),
+            );
             write_group(&mut hasher, *group);
             hasher.update(
-                &u32::try_from(parameter.get())
-                    .unwrap_or(u32::MAX)
+                &u64::try_from(parameter.get())
+                    .map_err(|_| CallableInstantiationDigestError::TranscriptLength)?
                     .to_le_bytes(),
             );
         }
     }
-    CallableInstantiationDigest(*hasher.finalize().as_bytes())
+    write_checked_len(&mut hasher, types.len())?;
+    for (parameter, value) in types {
+        control
+            .visit_binding()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        hasher.update(
+            parameter
+                .semantic_identity_digest_with_control(control)?
+                .as_bytes(),
+        );
+        hasher.update(
+            value
+                .semantic_identity_digest_with_control(control)?
+                .as_bytes(),
+        );
+    }
+    write_checked_len(&mut hasher, consts.len())?;
+    for (parameter, value) in consts {
+        control
+            .check()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        control
+            .visit_binding()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        let parameter = parameter.canonical_checked_bytes_with_control(control)?;
+        let value = value.canonical_checked_bytes_with_control(control)?;
+        write_checked_bytes(&mut hasher, &parameter)?;
+        write_checked_bytes(&mut hasher, &value)?;
+    }
+    write_checked_len(&mut hasher, effects.len())?;
+    for (variable, value) in effects {
+        control
+            .check()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        control
+            .visit_binding()
+            .map_err(crate::types::TypeProjectionError::Control)?;
+        hasher.update(variable.issuer().as_bytes());
+        hasher.update(&variable.index().to_le_bytes());
+        hasher.update(
+            value
+                .semantic_identity_digest_with_control(control)?
+                .as_bytes(),
+        );
+    }
+    Ok(CallableInstantiationDigest(*hasher.finalize().as_bytes()))
+}
+fn write_checked_len<E: std::error::Error + 'static>(
+    hasher: &mut blake3::Hasher,
+    length: usize,
+) -> Result<(), CallableInstantiationDigestError<E>> {
+    hasher.update(
+        &u64::try_from(length)
+            .map_err(|_| CallableInstantiationDigestError::TranscriptLength)?
+            .to_le_bytes(),
+    );
+    Ok(())
 }
 
-fn write_type(hasher: &mut blake3::Hasher, ty: &TypeKind) {
-    hasher.update(ty.semantic_identity_digest().as_bytes());
+fn write_checked_bytes<E: std::error::Error + 'static>(
+    hasher: &mut blake3::Hasher,
+    bytes: &[u8],
+) -> Result<(), CallableInstantiationDigestError<E>> {
+    write_checked_len(hasher, bytes.len())?;
+    hasher.update(bytes);
+    Ok(())
+}
+
+fn write_type(
+    hasher: &mut blake3::Hasher,
+    ty: &TypeKind,
+) -> Result<(), crate::types::GenericScopeError> {
+    hasher.update(ty.semantic_identity_digest()?.as_bytes());
+    Ok(())
+}
+
+fn write_result_schema(
+    hasher: &mut blake3::Hasher,
+    result: &CallableResultSchema,
+) -> Result<(), crate::types::GenericScopeError> {
+    match result {
+        CallableResultSchema::Value(value) => {
+            hasher.update(&[0]);
+            write_type(hasher, value)?;
+        }
+        CallableResultSchema::ContentEmission(operation) => {
+            hasher.update(&[1, operation.semantic_tag()]);
+            match operation {
+                ContentCallableIdentity::Language { definition, schema } => {
+                    hasher.update(&[0]);
+                    hasher.update(&[content_definition_tag(*definition)]);
+                    hasher.update(schema.as_bytes());
+                }
+                ContentCallableIdentity::TextProxyObject { owner, definition } => {
+                    hasher.update(&[1]);
+                    hasher.update(owner.as_bytes());
+                    hasher.update(definition.as_bytes());
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn content_definition_tag(
+    definition: arcweft_presentation::rich_text::PresentationContentCallableDefinitionId,
+) -> u8 {
+    use arcweft_presentation::rich_text::PresentationContentCallableDefinitionId as Id;
+    match definition {
+        Id::Strong => 0,
+        Id::Em => 1,
+        Id::Color => 2,
+        Id::Font => 3,
+        Id::Size => 4,
+        Id::Style(_) => 5,
+        Id::Layout(_) => 6,
+        Id::Transform(_) => 7,
+        Id::Fx => 8,
+        Id::Ruby => 9,
+        Id::Raw => 10,
+    }
 }
 
 fn write_group(hasher: &mut blake3::Hasher, group: CallableGroupIndex) {
@@ -737,13 +1785,7 @@ fn write_optional_group(hasher: &mut blake3::Hasher, group: Option<CallableGroup
 }
 
 fn write_effect(hasher: &mut blake3::Hasher, effect: &EffectRow) {
-    let ty = TypeKind::function_with_effects([], TypeKind::Unit, effect.clone());
-    write_type(hasher, &ty);
-}
-
-fn write_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {
-    hasher.update(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_le_bytes());
-    hasher.update(bytes);
+    hasher.update(effect.semantic_identity_digest().as_bytes());
 }
 
 fn write_arguments(hasher: &mut blake3::Hasher, arguments: &[CheckedCallableArgument]) {
@@ -797,18 +1839,21 @@ fn write_optional_digest(hasher: &mut blake3::Hasher, digest: Option<[u8; 32]>) 
     }
 }
 
-fn write_receiver(hasher: &mut blake3::Hasher, receiver: &CallableReceiverMode) {
+fn write_receiver(
+    hasher: &mut blake3::Hasher,
+    receiver: &CallableReceiverMode,
+) -> Result<(), crate::types::GenericScopeError> {
     match receiver {
         CallableReceiverMode::None => {
             hasher.update(&[0]);
         }
         CallableReceiverMode::Value { receiver } => {
             hasher.update(&[1]);
-            write_type(hasher, receiver);
+            write_type(hasher, receiver)?;
         }
         CallableReceiverMode::Type { receiver } => {
             hasher.update(&[2]);
-            write_type(hasher, receiver);
+            write_type(hasher, receiver)?;
         }
         CallableReceiverMode::Extension {
             receiver,
@@ -816,7 +1861,7 @@ fn write_receiver(hasher: &mut blake3::Hasher, receiver: &CallableReceiverMode) 
             parameter,
         } => {
             hasher.update(&[3]);
-            write_type(hasher, receiver);
+            write_type(hasher, receiver)?;
             write_group(hasher, *group);
             hasher.update(
                 &u32::try_from(parameter.get())
@@ -825,11 +1870,12 @@ fn write_receiver(hasher: &mut blake3::Hasher, receiver: &CallableReceiverMode) 
             );
         }
     }
+    Ok(())
 }
 
 fn callable_family_tag(family: CallableFamily) -> u8 {
     match family {
-        CallableFamily::Fx => 0,
+        CallableFamily::FxConstructor => 0,
         CallableFamily::EnumConstructor => 1,
         CallableFamily::ResultConstructor => 2,
         CallableFamily::OptionConstructor => 3,
@@ -852,6 +1898,7 @@ fn callable_family_tag(family: CallableFamily) -> u8 {
         CallableFamily::LineSchedule => 20,
         CallableFamily::Drop => 21,
         CallableFamily::Promotion => 22,
+        CallableFamily::Content => 23,
     }
 }
 

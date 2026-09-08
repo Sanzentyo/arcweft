@@ -45,9 +45,13 @@ fields for ruby typography: `ruby_size`, `ruby_gap`, `ruby_overhang`, and
 `ruby_collision_gap` on layout selectors such as:
 
 ```arcw
-[.ruby_over ruby_size=13px ruby_gap=0px ruby_overhang=4px ruby_collision_gap=3px]
-|[夢](ゆめ)
-[/]
+#layout(
+    .ruby_over,
+    ruby_size=13px,
+    ruby_gap=0px,
+    ruby_overhang=4px,
+    ruby_collision_gap=3px,
+)[|[夢](ゆめ)]
 ```
 
 These values now flow through rich-text presentation data into Sans I/O layout,
@@ -74,6 +78,6 @@ follow-up issues.
 | `SVR-2026-06-15-004` | Native textbox object capture bounds now include measured vertical columns before crop, so the mixed horizontal/vertical showcase object includes the full vertical run. | Original: [`issue-004-vertical-mixed-crop-showcase.png`](issue-004-vertical-mixed-crop-showcase.png); fixed: [`issue-004-fixed-native-textbox-vertical-crop-showcase.png`](issue-004-fixed-native-textbox-vertical-crop-showcase.png). | `target\release\arcw.exe agent observe samples\rich-text-showcase.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-004-fixed-native-textbox-vertical-crop-showcase.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.3` |
 | `SVR-2026-06-15-005` | The Windows-font vertical sample uses the same native-measured textbox crop expansion and now includes the visible vertical text within the object PNG. | Original: [`issue-005-vertical-mixed-crop-windows-fonts.png`](issue-005-vertical-mixed-crop-windows-fonts.png); fixed: [`issue-005-fixed-native-textbox-vertical-crop-windows-fonts.png`](issue-005-fixed-native-textbox-vertical-crop-windows-fonts.png). | `target\release\arcw.exe agent observe samples\rich-text-windows-fonts.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-005-fixed-native-textbox-vertical-crop-windows-fonts.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.0` |
 | `SVR-2026-06-15-006` | `horizontal_tb` rich text now performs deterministic textbox-width wrapping before placing a cluster that would exceed the layout width, and native textbox object captures expand to include wrapped rows. | Original: [`issue-006-long-line-clips-windows-fonts.png`](issue-006-long-line-clips-windows-fonts.png); fixed: [`issue-006-fixed-horizontal-wrap-windows-fonts.png`](issue-006-fixed-horizontal-wrap-windows-fonts.png). | `cargo test -p arcweft-text-layout horizontal_layout -- --nocapture`; `target\release\arcw.exe agent observe samples\rich-text-windows-fonts.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-006-fixed-horizontal-wrap-windows-fonts.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.4` |
-| `SVR-2026-06-15-007` | `samples/rich-text-full-grammar.arcw` keeps the same inferred selector coverage but splits style/layout, transform, and effect examples across `[r]` rows so offset/rotate/scale/wave/shake/typewriter runs remain inspectable. | Original: [`issue-007-effect-transform-overlap-full-grammar.png`](issue-007-effect-transform-overlap-full-grammar.png); fixed: [`issue-007-fixed-split-effect-transform-full-grammar.png`](issue-007-fixed-split-effect-transform-full-grammar.png). | `target\release\arcw.exe agent observe samples\rich-text-full-grammar.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-007-fixed-split-effect-transform-full-grammar.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.4` |
+| `SVR-2026-06-15-007` | `samples/rich-text-full-grammar.arcw` covers the typed style/layout, transform, and effect calls across `[r]` rows so offset/rotate/scale/wave/shake/typewriter runs remain inspectable. | Original: [`issue-007-effect-transform-overlap-full-grammar.png`](issue-007-effect-transform-overlap-full-grammar.png); fixed: [`issue-007-fixed-split-effect-transform-full-grammar.png`](issue-007-fixed-split-effect-transform-full-grammar.png). | `target\release\arcw.exe agent observe samples\rich-text-full-grammar.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-007-fixed-split-effect-transform-full-grammar.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.4` |
 | `SVR-2026-06-15-008` | `samples/rich-text-full-grammar.arcw` pins the escape-syntax demonstration span to `Consolas`, avoiding the Windows/Japanese U+005C Yen-glyph presentation for literal syntax review. | Original: [`issue-008-escape-yen-glyph-full-grammar.png`](issue-008-escape-yen-glyph-full-grammar.png); fixed: [`issue-008-fixed-escape-consolas-full-grammar.png`](issue-008-fixed-escape-consolas-full-grammar.png). | `target\release\arcw.exe agent observe samples\rich-text-full-grammar.arcw --json --image png --out docs\implementation\visual-sample-review-issues\2026-06-15\issue-008-fixed-escape-consolas-full-grammar.png --mode drain --steps 16 --max-ops 256 --object object.dialogue.0.7` |
 

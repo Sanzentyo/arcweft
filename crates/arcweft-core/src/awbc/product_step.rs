@@ -27,14 +27,14 @@ pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSaveSnapshot,
     AwbcProductActiveDialogueSnapshot, AwbcProductChildFiberOwnerSnapshot,
     AwbcProductChildFiberSaveSnapshot, AwbcProductChildFiberSnapshot,
-    AwbcProductExecutorSaveSnapshot, AwbcProductExecutorSnapshot,
-    AwbcProductLineTaskCancelSnapshot, AwbcProductLineTaskExitPolicySnapshot,
-    AwbcProductLineTaskExitSnapshot, AwbcProductLineTaskFiberPhaseSnapshot,
-    AwbcProductLineTaskJoinSnapshot, AwbcProductLineTaskLiveSnapshot,
-    AwbcProductLineTaskNodeStateSnapshot, AwbcProductLineTaskPhaseSnapshot,
-    AwbcProductLineTaskWorkSnapshot, AwbcProductLineTaskWorkTagSnapshot,
-    AwbcProductPendingHostCallSnapshot, AwbcProductTaskEventKindSaveSnapshot,
-    AwbcProductTaskEventSaveSnapshot,
+    AwbcProductDialogueEffectSaveSnapshot, AwbcProductExecutorSaveSnapshot,
+    AwbcProductExecutorSnapshot, AwbcProductLineTaskCancelSnapshot,
+    AwbcProductLineTaskExitPolicySnapshot, AwbcProductLineTaskExitSnapshot,
+    AwbcProductLineTaskFiberPhaseSnapshot, AwbcProductLineTaskJoinSnapshot,
+    AwbcProductLineTaskLiveSnapshot, AwbcProductLineTaskNodeStateSnapshot,
+    AwbcProductLineTaskPhaseSnapshot, AwbcProductLineTaskWorkSnapshot,
+    AwbcProductLineTaskWorkTagSnapshot, AwbcProductPendingHostCallSnapshot,
+    AwbcProductTaskEventKindSaveSnapshot, AwbcProductTaskEventSaveSnapshot,
 };
 use crate::awbc::fiber::{
     FiberAwaitManyInFlight, FiberAwaitManyState, FiberAwaitTarget, FiberBudget, FiberCursor,
@@ -48,7 +48,9 @@ use crate::awbc::schema::{
     AwbcStreamPlanId, AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId,
 };
 use crate::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
-use crate::awbc::vm::{VmExit, VmObservation, VmStepOptions, step_with_host};
+use crate::awbc::vm::{
+    VmExecutionContext, VmExit, VmObservation, VmStepOptions, step_with_host_context,
+};
 use crate::engine::{
     AwaitState, ChoiceState, FlowExit, FlowFiber, FlowFiberId, FlowFiberOwner, FlowFiberStatus,
     HostCallState,
@@ -77,7 +79,8 @@ use crate::task::{
 };
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeEnv, RuntimeFlowParameterBinding, RuntimeLocalBinding, RuntimePayload, RuntimeValue,
+    RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeFlowParameterBinding,
+    RuntimeFunctionValue, RuntimeLocalBinding, RuntimePayload, RuntimeValue,
     runtime_sequence_values, runtime_value_label,
 };
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioDispatchId};
@@ -276,6 +279,7 @@ struct ActiveDialogue {
     line: crate::plan::RuntimeLineId,
     captures: Box<[RuntimeValue]>,
     values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+    effect_callbacks: Box<[RuntimeDialogueContentEffectBinding]>,
     voice: crate::presentation::RuntimeDialogueVoiceState,
     result: crate::awbc::schema::AwbcDialogueResultTarget,
     phase: ProductDialoguePhase,
@@ -355,32 +359,32 @@ impl ActiveDialogue {
     fn line_task(&self) -> Option<&LineTaskLiveState> {
         match &self.phase {
             ProductDialoguePhase::Reducing { line_task }
-            | ProductDialoguePhase::Publishing { line_task } => Some(line_task),
-            ProductDialoguePhase::Closing(ProductDialogueClosing {
+            | ProductDialoguePhase::Publishing { line_task }
+            | ProductDialoguePhase::Closing(ProductDialogueClosing {
                 state: ProductDialogueClosingState::LineTask { line_task },
                 ..
             }) => Some(line_task),
             ProductDialoguePhase::Closing(ProductDialogueClosing {
                 state: ProductDialogueClosingState::Activation { .. },
                 ..
-            }) => None,
-            ProductDialoguePhase::Activating { .. } => None,
+            })
+            | ProductDialoguePhase::Activating { .. } => None,
         }
     }
 
     fn line_task_mut(&mut self) -> Option<&mut LineTaskLiveState> {
         match &mut self.phase {
             ProductDialoguePhase::Reducing { line_task }
-            | ProductDialoguePhase::Publishing { line_task } => Some(line_task),
-            ProductDialoguePhase::Closing(ProductDialogueClosing {
+            | ProductDialoguePhase::Publishing { line_task }
+            | ProductDialoguePhase::Closing(ProductDialogueClosing {
                 state: ProductDialogueClosingState::LineTask { line_task },
                 ..
             }) => Some(line_task),
             ProductDialoguePhase::Closing(ProductDialogueClosing {
                 state: ProductDialogueClosingState::Activation { .. },
                 ..
-            }) => None,
-            ProductDialoguePhase::Activating { .. } => None,
+            })
+            | ProductDialoguePhase::Activating { .. } => None,
         }
     }
 
@@ -477,6 +481,8 @@ struct ProductChildFiber {
 /// validated and materialized.
 struct ProductLineTaskExecutionBatch {
     child_fibers: VecDeque<ProductChildFiber>,
+    dialogue_effect_callback_activations:
+        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
     next_generation: u64,
     next_fiber_instance: crate::runtime_id::RuntimeIdCursor,
     observations: Vec<VmObservation>,
@@ -618,9 +624,6 @@ impl LineTaskPlanView for AwbcLineTaskPlanView<'_> {
                 trigger: match trigger {
                     AwbcLineTaskTrigger::Immediate => LineTaskTrigger::Immediate,
                     AwbcLineTaskTrigger::Mark(mark) => LineTaskTrigger::Mark(*mark),
-                    AwbcLineTaskTrigger::ContentEffect(site) => {
-                        LineTaskTrigger::ContentEffect(*site)
-                    }
                     AwbcLineTaskTrigger::Scheduled(site) => LineTaskTrigger::Scheduled(
                         crate::runtime_id::RuntimeLineHandleSiteId::from_zero_based(site.0),
                     ),
@@ -735,6 +738,8 @@ pub struct AwbcProductStepExecutor {
     emitted_content: BTreeSet<AwbcContentUnitId>,
     stream_sequences: BTreeMap<AwbcStreamPlanId, u64>,
     child_fibers: VecDeque<ProductChildFiber>,
+    dialogue_effect_callback_activations:
+        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
     dialogue_occurrences: BTreeMap<
         (
             crate::runtime_id::RuntimePersistentFiberId,
@@ -950,6 +955,7 @@ impl AwbcProductStepExecutor {
             emitted_content: BTreeSet::new(),
             stream_sequences: BTreeMap::new(),
             child_fibers: VecDeque::new(),
+            dialogue_effect_callback_activations: BTreeSet::new(),
             dialogue_occurrences: BTreeMap::new(),
             next_generation: 1,
             next_fiber_instance,
@@ -970,6 +976,57 @@ impl AwbcProductStepExecutor {
 
     pub const fn compact_fiber(&self) -> &FiberState {
         &self.fiber
+    }
+
+    fn prepare_dialogue_effect_callback(
+        &self,
+        callback: &RuntimeFunctionValue,
+        next_fiber_instance: &mut crate::runtime_id::RuntimeIdCursor,
+    ) -> Result<ProductChildFiber, ProductStepError> {
+        let instance = next_fiber_instance
+            .take_next(crate::runtime_id::RuntimeIdNamespace::FiberInstance)
+            .map(crate::runtime_id::RuntimeFiberInstanceId::from_allocated)?;
+        let fiber = FiberState::for_runtime_function_callback(
+            &self.program,
+            self.fiber.entry,
+            callback,
+            instance,
+            self.fiber.generation,
+            self.fiber.budget.quantum.max(1),
+        )?;
+        Ok(ProductChildFiber {
+            owner: ProductChildFiberOwner::Independent,
+            fiber,
+        })
+    }
+
+    fn stage_dialogue_effect_callbacks(
+        &self,
+        batch: &mut ProductLineTaskExecutionBatch,
+        activation: &crate::runtime_id::DialogueActivationId,
+        callbacks: &[(
+            crate::runtime_id::RuntimeDialogueEffectSiteId,
+            RuntimeFunctionValue,
+        )],
+    ) -> Result<(), ProductStepError> {
+        for (site, callback) in callbacks {
+            let key = crate::runtime_id::RuntimeDialogueEffectCallbackActivationId::new(
+                activation.clone(),
+                *site,
+            );
+            if !batch
+                .dialogue_effect_callback_activations
+                .insert(key.clone())
+            {
+                return Err(ProductStepError::Input(format!(
+                    "dialogue effect callback activation was already reserved: {key:?}"
+                )));
+            }
+            let child =
+                self.prepare_dialogue_effect_callback(callback, &mut batch.next_fiber_instance)?;
+            batch.child_fibers.push_back(child);
+        }
+        Ok(())
     }
 
     fn latch_dialogue_step_input(
@@ -1224,17 +1281,20 @@ impl AwbcProductStepExecutor {
     ) -> usize {
         let before = self.fiber.clone();
         let mut candidate = before.clone();
-        let mut candidate_stats = self.compact_pure_stats.clone();
+        let mut candidate_stats = self.compact_pure_stats;
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
+            context: VmExecutionContext::new(self.artifact_fingerprint),
         };
-        match step_with_host(
+        let context = VmExecutionContext::new(self.artifact_fingerprint);
+        match step_with_host_context(
             &self.program,
             &mut candidate,
             VmStepOptions {
                 max_instructions: 1,
             },
+            &context,
             &mut host,
         ) {
             Ok(vm_output) => {
@@ -1338,13 +1398,16 @@ impl AwbcProductStepExecutor {
                 let mut host = ProductVmHost {
                     backend: pure_backend,
                     fallback_stats: &mut self.compact_pure_stats,
+                    context: VmExecutionContext::new(self.artifact_fingerprint),
                 };
-                step_with_host(
+                let context = VmExecutionContext::new(self.artifact_fingerprint);
+                step_with_host_context(
                     &self.program,
                     &mut fiber,
                     VmStepOptions {
                         max_instructions: 64,
                     },
+                    &context,
                     &mut host,
                 )
             };
@@ -1429,17 +1492,20 @@ impl AwbcProductStepExecutor {
             ProductChildFiberOwner::Independent => None,
         };
         child.fiber.replenish_budget();
-        let mut candidate_stats = self.compact_pure_stats.clone();
+        let mut candidate_stats = self.compact_pure_stats;
         let mut host = ProductVmHost {
             backend: pure_backend,
             fallback_stats: &mut candidate_stats,
+            context: VmExecutionContext::new(self.artifact_fingerprint),
         };
-        let vm_output = match step_with_host(
+        let context = VmExecutionContext::new(self.artifact_fingerprint);
+        let vm_output = match step_with_host_context(
             &self.program,
             &mut child.fiber,
             VmStepOptions {
                 max_instructions: 1,
             },
+            &context,
             &mut host,
         ) {
             Ok(vm_output) => vm_output,
@@ -1551,6 +1617,7 @@ impl AwbcProductStepExecutor {
             || phase == ProductLineTaskFiberPhase::Closing;
         let batch = ProductLineTaskExecutionBatch {
             child_fibers: remaining,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
             observations,
@@ -1611,9 +1678,12 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::Dialogue {
                 content,
                 values,
+                effects,
                 line_task_captures,
                 result,
-            } => self.present_dialogue(content, values, line_task_captures, result, output),
+            } => {
+                self.present_dialogue(content, values, effects, line_task_captures, result, output)
+            }
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
@@ -1664,11 +1734,13 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::Dialogue {
                 content,
                 values,
+                effects,
                 line_task_captures,
                 result,
             } => self.resume_dialogue(
                 content,
                 values,
+                effects,
                 line_task_captures,
                 result,
                 resume,
@@ -1701,10 +1773,141 @@ impl AwbcProductStepExecutor {
         }
     }
 
+    fn materialize_dialogue_effect_callbacks(
+        &self,
+        content: AwbcContentUnitId,
+        effects: &[crate::awbc::schema::AwbcDialogueContentEffectBinding],
+    ) -> Result<Box<[RuntimeDialogueContentEffectBinding]>, ProductStepError> {
+        let content_unit = self
+            .program
+            .content_units
+            .get(content.index())
+            .ok_or_else(|| ProductStepError::Input("dialogue content unit is absent".to_owned()))?;
+        let template = self
+            .program
+            .content_templates
+            .iter()
+            .find(|template| template.id == content_unit.template)
+            .ok_or_else(|| {
+                ProductStepError::Input("dialogue content template is absent".to_owned())
+            })?;
+        if effects.len() != template.effects.len() {
+            return Err(ProductStepError::Input(
+                "dialogue effect callback rows disagree with the content template".to_owned(),
+            ));
+        }
+        let frame = self
+            .fiber
+            .active_frame()
+            .map_err(|error| ProductStepError::Internal(error.to_string()))?;
+        let callbacks = effects
+            .iter()
+            .enumerate()
+            .map(|(index, binding)| {
+                let expected_site =
+                    crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                        .ok_or_else(|| {
+                            ProductStepError::Input(
+                                "dialogue effect site exceeds the runtime identity domain"
+                                    .to_owned(),
+                            )
+                        })?;
+                let declared = template.effects.get(index).ok_or_else(|| {
+                    ProductStepError::Input("dialogue effect slot is absent".to_owned())
+                })?;
+                if binding.site != expected_site || binding.site != declared.site {
+                    return Err(ProductStepError::Input(
+                        "dialogue effect callback site is not canonical".to_owned(),
+                    ));
+                }
+                let function = self.program.functions.get(binding.function.index()).ok_or(
+                    ProductStepError::Internal(
+                        "dialogue effect callback function is absent".to_owned(),
+                    ),
+                )?;
+                if function.kind != crate::awbc::schema::AwbcFunctionKind::Ordinary {
+                    return Err(ProductStepError::Input(
+                        "dialogue effect callback is not an ordinary function".to_owned(),
+                    ));
+                }
+                let signature = self
+                    .program
+                    .signatures
+                    .get(function.signature.index())
+                    .ok_or(ProductStepError::Internal(
+                        "dialogue effect callback signature is absent".to_owned(),
+                    ))?;
+                if signature.result.is_some()
+                    || signature.params.as_slice() != declared.capture_types.as_slice()
+                    || binding.captures.len() != declared.capture_types.len()
+                {
+                    return Err(ProductStepError::Input(
+                        "dialogue effect callback ABI disagrees with its manifest".to_owned(),
+                    ));
+                }
+                let layout = self
+                    .program
+                    .frame_layouts
+                    .get(function.frame_layout.index())
+                    .ok_or(ProductStepError::Internal(
+                        "dialogue effect callback frame layout is absent".to_owned(),
+                    ))?;
+                let parameters = layout
+                    .slots
+                    .iter()
+                    .filter(|slot| slot.role == crate::awbc::schema::AwbcFrameSlotRole::Parameter)
+                    .collect::<Vec<_>>();
+                if parameters.len() != binding.captures.len()
+                    || parameters
+                        .iter()
+                        .zip(&declared.capture_types)
+                        .any(|(parameter, expected)| parameter.ty != *expected)
+                {
+                    return Err(ProductStepError::Input(
+                        "dialogue effect callback frame ABI disagrees with its manifest".to_owned(),
+                    ));
+                }
+                let captures = parameters
+                    .iter()
+                    .zip(&binding.captures)
+                    .zip(&declared.capture_types)
+                    .map(|((parameter, register), expected)| {
+                        let value = frame
+                            .register(*register)
+                            .map_err(|error| ProductStepError::Internal(error.to_string()))?
+                            .clone();
+                        if !runtime_value_matches_type(&self.program, &value, *expected, 0) {
+                            return Err(ProductStepError::Type(
+                                "dialogue effect capture register has the wrong runtime type"
+                                    .to_owned(),
+                            ));
+                        }
+                        let name = parameter
+                            .name
+                            .and_then(|name| self.program.strings.get(name.index()))
+                            .ok_or(ProductStepError::Internal(
+                                "dialogue effect callback parameter has no binding name".to_owned(),
+                            ))?
+                            .clone();
+                        Ok(crate::value::RuntimeBinding { name, value })
+                    })
+                    .collect::<Result<Vec<_>, ProductStepError>>()?;
+                let callback =
+                    RuntimeFunctionValue::new_awbc(Vec::new(), binding.function, captures);
+                Ok(RuntimeDialogueContentEffectBinding::new(
+                    binding.site,
+                    callback,
+                ))
+            })
+            .collect::<Result<Vec<_>, ProductStepError>>()?;
+        Ok(callbacks.into_boxed_slice())
+    }
+
     fn present_dialogue(
         &mut self,
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+        effects: Box<[crate::awbc::schema::AwbcDialogueContentEffectBinding]>,
         captures: Box<[RuntimeValue]>,
         result: crate::awbc::schema::AwbcDialogueResultTarget,
         output: &mut RuntimeStepOutput,
@@ -1716,6 +1919,13 @@ impl AwbcProductStepExecutor {
         {
             return;
         }
+        let effect_callbacks = match self.materialize_dialogue_effect_callbacks(content, &effects) {
+            Ok(callbacks) => callbacks,
+            Err(error) => {
+                self.record_error(error, output);
+                return;
+            }
+        };
         let line = self.content_public_id(content);
         let line_id = match line_id_from_awbc_public_id(&line) {
             Ok(line_id) => line_id,
@@ -1808,6 +2018,7 @@ impl AwbcProductStepExecutor {
             line: line_id,
             captures,
             values,
+            effect_callbacks,
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result,
             phase: ProductDialoguePhase::Activating {
@@ -1836,6 +2047,7 @@ impl AwbcProductStepExecutor {
         &mut self,
         content: AwbcContentUnitId,
         values: Box<[crate::plan::RuntimeDialogueValueBinding]>,
+        effects: Box<[crate::awbc::schema::AwbcDialogueContentEffectBinding]>,
         captures: Box<[RuntimeValue]>,
         result: crate::awbc::schema::AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
@@ -1843,7 +2055,7 @@ impl AwbcProductStepExecutor {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> bool {
         if self.dialogues.active_frame().is_none() {
-            self.present_dialogue(content, values, captures.clone(), result, output);
+            self.present_dialogue(content, values, effects.clone(), captures, result, output);
         }
         let Ok(mut transaction) = self.dialogues.begin_active_transaction() else {
             return false;
@@ -1861,7 +2073,7 @@ impl AwbcProductStepExecutor {
                     return self.begin_product_dialogue_failure(transaction, error, output);
                 }
             };
-            let candidate_pure_stats = progress.pure_stats.clone();
+            let candidate_pure_stats = progress.pure_stats;
             let command_batch =
                 match self.prepare_line_task_commands(&mut transaction, progress.reducer) {
                     Ok(batch) => batch,
@@ -1906,15 +2118,16 @@ impl AwbcProductStepExecutor {
                 return self.begin_product_dialogue_failure(transaction, error.into(), output);
             }
         };
-        let active = transaction.frame_mut();
-        let content_events = std::mem::take(&mut active.pending_content_events);
-        let advance = std::mem::take(&mut active.pending_advance);
-        let Some(content_unit) = self
-            .program
-            .content_units
-            .get(active.content.index())
-            .cloned()
-        else {
+        let (content, content_events, advance, effect_callbacks) = {
+            let active = transaction.frame_mut();
+            (
+                active.content,
+                std::mem::take(&mut active.pending_content_events),
+                std::mem::take(&mut active.pending_advance),
+                active.effect_callbacks.clone(),
+            )
+        };
+        let Some(content_unit) = self.program.content_units.get(content.index()).cloned() else {
             return self.begin_product_dialogue_failure(
                 transaction,
                 ProductStepError::Internal(
@@ -1923,7 +2136,7 @@ impl AwbcProductStepExecutor {
                 output,
             );
         };
-        let accepted_content = match active.line_task_mut() {
+        let accepted_content = match transaction.frame_mut().line_task_mut() {
             Some(line_task) => {
                 for token in due {
                     if let Err(error) = line_task.mark_scheduled_ready(token) {
@@ -1961,14 +2174,39 @@ impl AwbcProductStepExecutor {
                 );
             }
         };
-        let mut reducer_activation = match self.progress_line_task(active, &accepted_content) {
-            Ok(activation) => activation,
+        let callbacks = content_events
+            .iter()
+            .filter_map(|event| match event {
+                crate::step::RuntimeDialogueContentEventKind::Mark(_) => None,
+                crate::step::RuntimeDialogueContentEventKind::Effect(site) => Some(
+                    effect_callbacks
+                        .iter()
+                        .find(|callback| callback.site() == *site)
+                        .map(|callback| callback.callback().clone())
+                        .map(|callback| (*site, callback))
+                        .ok_or_else(|| {
+                            ProductStepError::Input(format!(
+                                "dialogue effect site {site} has no stored callback"
+                            ))
+                        }),
+                ),
+            })
+            .collect::<Result<Vec<_>, _>>();
+        let callbacks = match callbacks {
+            Ok(callbacks) => callbacks,
             Err(error) => {
                 return self.begin_product_dialogue_failure(transaction, error, output);
             }
         };
+        let mut reducer_activation =
+            match self.progress_line_task(transaction.frame_mut(), &accepted_content) {
+                Ok(activation) => activation,
+                Err(error) => {
+                    return self.begin_product_dialogue_failure(transaction, error, output);
+                }
+            };
         let (cancel_trigger, cancel_activation) =
-            match self.cancel_line_task(active, accepted_content.marks()) {
+            match self.cancel_line_task(transaction.frame_mut(), accepted_content.marks()) {
                 Ok(result) => result,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(transaction, error, output);
@@ -1976,7 +2214,7 @@ impl AwbcProductStepExecutor {
             };
         reducer_activation.append(cancel_activation);
         if advance {
-            let finish_activation = match self.finish_line_task(active) {
+            let finish_activation = match self.finish_line_task(transaction.frame_mut()) {
                 Ok(activation) => activation,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(transaction, error, output);
@@ -1984,13 +2222,19 @@ impl AwbcProductStepExecutor {
             };
             reducer_activation.append(finish_activation);
         }
-        let command_batch =
+        let mut command_batch =
             match self.prepare_line_task_commands(&mut transaction, reducer_activation) {
                 Ok(batch) => batch,
                 Err(error) => {
                     return self.begin_product_dialogue_failure(transaction, error, output);
                 }
             };
+        let activation = transaction.activation().clone();
+        if let Err(error) =
+            self.stage_dialogue_effect_callbacks(&mut command_batch, &activation, &callbacks)
+        {
+            return self.begin_product_dialogue_failure(transaction, error, output);
+        }
         if transaction
             .frame()
             .line_task()
@@ -2075,6 +2319,7 @@ impl AwbcProductStepExecutor {
         self.record_error(error, output);
         let batch = ProductLineTaskExecutionBatch {
             child_fibers: self.child_fibers.clone(),
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
             observations: Vec::new(),
@@ -2208,6 +2453,7 @@ impl AwbcProductStepExecutor {
         }
         let batch = ProductLineTaskExecutionBatch {
             child_fibers: self.child_fibers.clone(),
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             next_generation: self.next_generation,
             next_fiber_instance: self.next_fiber_instance,
             observations: Vec::new(),

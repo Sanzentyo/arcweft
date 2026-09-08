@@ -1,8 +1,8 @@
 use crate::geometry::AgentBBox;
 use crate::serde_helpers::is_zero;
 use arcweft_text_model::{
-    RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRange,
-    RichTextTextProxyField, RichTextTextProxySchema, RichTextTextSource,
+    RichTextNodeIndex, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
+    RichTextRange, RichTextTextProxyField, RichTextTextProxySchema, RichTextTextSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -15,7 +15,7 @@ pub struct AgentRichTextElementRef {
     #[serde(default, skip_serializing_if = "is_zero")]
     pub page: usize,
     pub range: RichTextRange,
-    pub node_index: usize,
+    pub node_index: RichTextNodeIndex,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<RichTextTextSource>,
     #[serde(skip_serializing_if = "Option::is_none")]

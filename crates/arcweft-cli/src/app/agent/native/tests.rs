@@ -7,7 +7,8 @@ use super::mcp_protocol::{
 use super::mcp_rag::{AgentMcpRagCandidate, agent_mcp_rag_context_pack_from_candidates};
 use super::mcp_resources::agent_mcp_capture_time_seconds;
 use super::observe::{
-    NativeAgentScriptSessionError, native_agent_invoke_input_events, native_runtime_input_event,
+    NativeAgentScriptSessionError, native_agent_invoke_input_events,
+    native_agent_observation_payload, native_runtime_input_event,
     validate_agent_observe_output_extension,
 };
 use super::repl::{
@@ -23,6 +24,7 @@ use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentScrollAction, Age
 use arcweft_agent_protocol::{
     presentation::AgentPresentationTree, session::AgentAudioState, view::AgentViewTree,
 };
+use arcweft_agent_runner::error::AgentHostResponseKind;
 use arcweft_debug_model::{
     diagnostic::DebugDiagnostic,
     graph::{DebugGraphEdge, DebugGraphSymbol},
@@ -30,6 +32,7 @@ use arcweft_debug_model::{
     script::DebugScriptRunOutcome,
     test_result::DebugTestResult,
 };
+use arcweft_text_model::LineDisplayFrame;
 use serde::Serialize;
 
 fn test_agent_resource_uri(value: impl Into<String>) -> AgentResourceUri {
@@ -91,7 +94,7 @@ fn agent_mcp_script_run_options_accept_native_runtime_arguments() {
             .any(|binding| binding.name == "route"
                 && matches!(
                     &binding.value,
-                    arcweft_core::value::RuntimeValue::EntityRef(value) if value == "flow.opening"
+                    arcweft_core::value::RuntimeValue::String(value) if value == "flow.opening"
                 ))
     );
     assert!(
@@ -168,6 +171,29 @@ fn test_agent_observation_report(capture_time_millis: Option<u32>) -> AgentObser
         final_status: "done".to_owned(),
         overlay_svg: None,
     }
+}
+
+struct ObservationSerializationFailure;
+
+impl Serialize for ObservationSerializationFailure {
+    fn serialize<S>(&self, _serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        Err(serde::ser::Error::custom(
+            "test observation serialization failure",
+        ))
+    }
+}
+
+#[test]
+fn native_observation_payload_rejects_serialization_failure() {
+    let error = native_agent_observation_payload(&ObservationSerializationFailure)
+        .expect_err("invalid observation JSON is rejected");
+    let NativeAgentScriptSessionError::ObservationSerialization(error) = error else {
+        panic!("serialization failure keeps its typed session error");
+    };
+    assert_eq!(error.kind(), AgentHostResponseKind::Observation);
 }
 
 #[test]
@@ -271,6 +297,15 @@ fn test_line_display_frame() -> LineDisplayFrame {
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
+        content: arcweft_core::value::RuntimeDialogueContentValue::try_new(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+                .expect("fixture artifact"),
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("fixture template"),
+            arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x72; 32]),
+            [],
+        )
+        .expect("fixture Content envelope"),
     }
 }
 
@@ -843,7 +878,6 @@ fn test_agent_mcp_project_context() -> AgentMcpProjectContext {
             "symbol_count": 3,
             "edge_count": 2,
             "summary_symbol_id": "project:summary",
-            "has_project_summary": true,
             "project_summary": {
                 "entity_count": 2,
                 "agent_action_count": 1,
@@ -2925,7 +2959,7 @@ fn test_observed_object(id: &str, x: u32, y: u32, width: u32, height: u32) -> Ag
         text: None,
         rich_text_ref: None,
         content: AgentObservedObjectContent::RichText {
-            frame: Box::new(test_line_display_frame()),
+            frame: Box::new(test_line_display_frame().into()),
         },
     }
 }

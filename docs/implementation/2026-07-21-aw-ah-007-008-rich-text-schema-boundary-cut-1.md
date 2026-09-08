@@ -1,5 +1,9 @@
 # AW-AH-007/008 rich-text schema boundary — cut 1
 
+> Superseded implementation evidence. The unified provisional markup schema
+> described by this cut was later split into the point-action schema and typed
+> presentation content-call catalog.
+
 ## Scope and repository basis
 
 This cut implements the independently useful M3a substrate from the
@@ -22,7 +26,7 @@ identity code.
 The new Sans I/O `arcweft-rich-text-schema` crate owns exactly the generic M3a
 descriptor vocabulary:
 
-- tag schemas and owner-typed property schemas;
+- provisional markup schemas and owner-typed property schemas;
 - source-form and selector contracts;
 - checked value-kind descriptions;
 - integer/fixed numeric, unit, enum, encoded-byte, and decoded-byte limits;
@@ -76,7 +80,7 @@ reports are in
 
 The following stay open:
 
-1. M2: ordered/ranged `HirRichTextTag` ownership after the Proof syntax/HIR
+1. M2: ordered/ranged provisional RichText HIR ownership after the Proof syntax/HIR
    ownership switch provides the final source identity boundary.
 2. M3b: dialogue and presentation owner enums/inherent schemas, including the
    bounded `CC-001` removal, checked sema IR, typed proxy catalog, and structured

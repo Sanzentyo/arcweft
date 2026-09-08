@@ -292,7 +292,7 @@ impl AcceptedRustTypeMetadataCatalog {
                 return Err(AcceptedRustTypeMetadataCatalogError::DuplicateNominal { id });
             }
         }
-        let digest = metadata_catalog_digest(&by_id);
+        let digest = metadata_catalog_digest(&by_id)?;
         Ok(Self { by_id, digest })
     }
 
@@ -477,6 +477,8 @@ pub enum RustMetadataInstantiationError {
 /// Invalid composition of one immutable accepted Rust metadata catalog.
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
 pub enum AcceptedRustTypeMetadataCatalogError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
     #[error("accepted Rust metadata contains duplicate nominal `{id:?}`")]
     DuplicateNominal { id: AcceptedNominalId },
     #[error("accepted Rust metadata `{id:?}` contains duplicate variant `{variant}`")]
@@ -529,29 +531,32 @@ fn substitute_variant(
 
 fn metadata_catalog_digest(
     records: &BTreeMap<AcceptedNominalId, AcceptedRustTypeMetadata>,
-) -> AcceptedRustTypeMetadataDigest {
+) -> Result<AcceptedRustTypeMetadataDigest, crate::types::GenericScopeError> {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.accepted-rust-metadata.v1\0");
     hash_len(&mut hasher, records.len());
     for record in records.values() {
-        hasher.update(
-            crate::types::accepted_nominal_semantic_identity_digest(&record.id, &[]).as_bytes(),
-        );
+        hasher.update(record.id.semantic_digest().as_bytes());
         hash_str(&mut hasher, record.package.as_str());
         hash_str(&mut hasher, record.package_provenance.version());
         hash_optional_str(&mut hasher, record.package_provenance.metadata_hash());
         hash_str(&mut hasher, record.rust_item.as_str());
         hash_len(&mut hasher, record.parameters.len());
         for parameter in &record.parameters {
-            hash_type(&mut hasher, &TypeKind::GenericParam(parameter.clone()));
+            hash_type(&mut hasher, &TypeKind::generic_parameter(parameter.clone()))?;
         }
-        hash_metadata_kind(&mut hasher, &record.kind);
+        hash_metadata_kind(&mut hasher, &record.kind)?;
         hash_source(&mut hasher, &record.source);
     }
-    AcceptedRustTypeMetadataDigest(*hasher.finalize().as_bytes())
+    Ok(AcceptedRustTypeMetadataDigest(
+        *hasher.finalize().as_bytes(),
+    ))
 }
 
-fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetadataKind) {
+fn hash_metadata_kind(
+    hasher: &mut blake3::Hasher,
+    kind: &AcceptedRustTypeMetadataKind,
+) -> Result<(), crate::types::GenericScopeError> {
     match kind {
         AcceptedRustTypeMetadataKind::Struct { shape } => {
             hasher.update(&[0]);
@@ -563,7 +568,7 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
                     hasher.update(&[1]);
                     hash_len(hasher, items.len());
                     for item in items {
-                        hash_type(hasher, item);
+                        hash_type(hasher, item)?;
                     }
                 }
                 AcceptedRustStructShape::Record(fields) => {
@@ -571,7 +576,7 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
                     hash_len(hasher, fields.len());
                     for (name, ty) in fields {
                         hash_str(hasher, name);
-                        hash_type(hasher, ty);
+                        hash_type(hasher, ty)?;
                     }
                 }
             }
@@ -589,7 +594,7 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
                         hasher.update(&[1]);
                         hash_len(hasher, items.len());
                         for item in items {
-                            hash_type(hasher, item);
+                            hash_type(hasher, item)?;
                         }
                     }
                     EnumVariantPayload::Record(fields) => {
@@ -597,7 +602,7 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
                         hash_len(hasher, fields.len());
                         for field in fields {
                             hash_str(hasher, field.name());
-                            hash_type(hasher, field.ty());
+                            hash_type(hasher, field.ty())?;
                         }
                     }
                 }
@@ -605,13 +610,18 @@ fn hash_metadata_kind(hasher: &mut blake3::Hasher, kind: &AcceptedRustTypeMetada
         }
         AcceptedRustTypeMetadataKind::Newtype { inner } => {
             hasher.update(&[2]);
-            hash_type(hasher, inner);
+            hash_type(hasher, inner)?;
         }
     }
+    Ok(())
 }
 
-fn hash_type(hasher: &mut blake3::Hasher, ty: &TypeKind) {
-    hasher.update(ty.semantic_identity_digest().as_bytes());
+fn hash_type(
+    hasher: &mut blake3::Hasher,
+    ty: &TypeKind,
+) -> Result<(), crate::types::GenericScopeError> {
+    hasher.update(ty.semantic_identity_digest()?.as_bytes());
+    Ok(())
 }
 
 fn hash_source(hasher: &mut blake3::Hasher, source: &SourceSpan) {
@@ -744,7 +754,7 @@ mod tests {
             [parameter.clone()],
             AcceptedRustTypeMetadataKind::Struct {
                 shape: AcceptedRustStructShape::Record(
-                    [("value".to_owned(), TypeKind::GenericParam(parameter))]
+                    [("value".to_owned(), TypeKind::generic_parameter(parameter))]
                         .into_iter()
                         .collect(),
                 ),

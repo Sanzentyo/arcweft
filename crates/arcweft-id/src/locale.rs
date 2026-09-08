@@ -71,6 +71,15 @@ impl LocaleTag {
         &self.0
     }
 
+    /// Returns the owner-issued bytes of this already canonical locale
+    /// identity.  The semantic digest remains available when a digest-domain
+    /// boundary is required; this projection is for canonical byte grammars
+    /// that frame the locale directly.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
     /// Consumes the nominal value and returns its canonical text.
     #[must_use]
     pub fn into_boxed_str(self) -> Box<str> {

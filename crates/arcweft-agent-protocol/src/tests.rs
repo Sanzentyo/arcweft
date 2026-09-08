@@ -44,8 +44,8 @@ use arcweft_layout::{
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
     ResolvedRichTextNode, RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap,
-    RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRange,
-    RichTextSettingSource, RichTextStyleContribution, RichTextTextProxyField,
+    RichTextNodeIndex, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
+    RichTextRange, RichTextSettingSource, RichTextStyleContribution, RichTextTextProxyField,
     RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema, RichTextTextProxyScalar,
     RichTextTextProxySchema, RichTextTextRun, RichTextTextSource,
 };
@@ -154,7 +154,7 @@ fn test_line_display_frame() -> LineDisplayFrame {
             text_runs: vec![RichTextTextRun {
                 range: RichTextRange::new(0, 5),
                 source: RichTextTextSource::Text,
-                node_index: 0,
+                node_index: RichTextNodeIndex::new(0),
                 styles: Vec::new(),
                 presentation: RichTextPresentation::default(),
             }],
@@ -163,13 +163,22 @@ fn test_line_display_frame() -> LineDisplayFrame {
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
+        content: arcweft_core::value::RuntimeDialogueContentValue::try_new(
+            arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+                .expect("fixture artifact"),
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("fixture template"),
+            arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x72; 32]),
+            [],
+        )
+        .expect("fixture Content envelope"),
     }
 }
 
 #[test]
 fn observed_rich_text_round_trips_only_the_final_typed_frame_wire() {
     let content = AgentObservedObjectContent::RichText {
-        frame: Box::new(test_line_display_frame()),
+        frame: Box::new(test_line_display_frame().into()),
     };
     let encoded = serde_json::to_value(&content).expect("typed rich-text content serializes");
     let decoded = serde_json::from_value::<AgentObservedObjectContent>(encoded.clone())
@@ -328,7 +337,7 @@ fn test_serialization_observation_report() -> AgentObservationReport {
         text: Some("Hello".to_owned()),
         rich_text_ref: Some(test_rich_text_ref(&bbox)),
         content: AgentObservedObjectContent::RichText {
-            frame: Box::new(test_line_display_frame()),
+            frame: Box::new(test_line_display_frame().into()),
         },
     }];
     let views = vec![AgentObservedView {
@@ -481,7 +490,7 @@ fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
         index: 0,
         page: 0,
         range: RichTextRange::new(0, 5),
-        node_index: 0,
+        node_index: RichTextNodeIndex::new(0),
         source: Some(RichTextTextSource::Text),
         ruby: None,
         presentation: Some(presentation),

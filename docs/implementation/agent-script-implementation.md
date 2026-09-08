@@ -46,8 +46,10 @@ It is implementation state, not the stable language specification.
   `entity_meta(ref) -> Result<AgentEntityMetadata, AgentError>` Prelude
   intrinsic under the `debug.read` effect. The runner services this request from
   `AgentSessionInfo.project_entities`, returning `id`, exact `kind`,
-  `semantic_hash`, and a typed `source` record with `has_source`, path, byte
-  range, and optional line/column fields. The same `debug.read` boundary now
+  `semantic_hash`, and a typed optional `source` record with path, byte range,
+  and optional typed start/end positions. Absence is represented only by
+  `Option::None`; no `has_source` plus empty/zero sentinel record is emitted.
+  The same `debug.read` boundary now
   exposes `project_neighbors(ref, depth = N)` as
   `Result<ProjectGraphNeighborhood, AgentError>` backed by
   `AgentSessionInfo.project_graph`, returning typed graph symbols and edges
@@ -60,8 +62,9 @@ It is implementation state, not the stable language specification.
   dialogue arguments, and choice option conditions/values/actions are indexed
   as `references_entity` data-dependency relations. Dynamic goto expressions
   are intentionally not projected as graph edges; instead, flow graph symbols
-  expose typed `has_flow_control`, `has_dynamic_control`, and static/dynamic
-  control counter fields through `project_neighbors(...)`. Those relations and
+  expose an optional typed `flow_control` summary whose required fields include
+  `has_dynamic_control` and the static/dynamic control counters through
+  `project_neighbors(...)`. Those relations and
   counters are projected into both Agent Script
   `project_neighbors(...)` readback and CLI/RAG debug graph inventory. Project
   summary graph symbols and RAG summaries now expose domain-specific aggregate
@@ -71,8 +74,8 @@ It is implementation state, not the stable language specification.
   re-scanning every individual graph symbol and edge. The Agent runtime
   project-graph protocol also carries typed project-summary counters on the
   `project_summary` symbol, and `project_neighbors(...)` exposes them through
-  ordinary Agent Script fields such as `entity_count`, `relation_count`, and
-  `dynamic_control_flow_count`.
+  the optional typed `project_summary` record and its fields such as
+  `entity_count`, `relation_count`, and `dynamic_control_flow_count`.
   This keeps project-only metadata out of `RuntimeValue::EntityRef` and avoids
   deriving source, semantic hashes, or graph neighborhoods from entity-id
   strings.

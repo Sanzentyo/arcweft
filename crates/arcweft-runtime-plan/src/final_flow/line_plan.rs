@@ -8,10 +8,9 @@ use std::collections::BTreeSet;
 
 use crate::assertion_identity::RuntimeAssertionSite;
 use crate::errors::RuntimePlanLowerError;
-use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimeDialogueEffectTrigger, RuntimeLineCallable, RuntimeNormalizedType, RuntimeResolvedCall,
-    RuntimeResolvedCallDispatch, RuntimeResolvedStaticCallTarget, RuntimeTypeShape,
+    RuntimeLineCallable, RuntimeNormalizedType, RuntimeResolvedCall, RuntimeResolvedCallDispatch,
+    RuntimeResolvedStaticCallTarget, RuntimeScopedExecutableSemanticFactView, RuntimeTypeShape,
 };
 use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineCleanupPolicy, ParallelPolicy, RuntimeLineHandleScope,
@@ -84,7 +83,6 @@ enum FlowDraft {
 enum TriggerDraft {
     Immediate,
     Mark(arcweft_core::plan::RuntimeDialogueMarkSeedId),
-    ContentEffect(arcweft_core::plan::RuntimeDialogueEffectSiteSeedId),
     Scheduled(SiteDraftId),
 }
 
@@ -110,11 +108,11 @@ struct CancelRuleDraft {
     action: Vec<FlowDraft>,
 }
 
-struct LinePlanLowerer<'a, 'project, 'data> {
-    context: &'a FinalLoweringContext<'project, 'data>,
+struct LinePlanLowerer<'a, 'project> {
     module: &'project arcweft_lang_hir::module::HirModule,
     flow: FinalFlowLowerer<'a>,
     content_plan: &'a RuntimeDialogueContentPlanSeedId,
+    template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
     owner: ExprId,
     sites: Vec<SiteDraft>,
     activation_ops: Vec<FlowDraft>,
@@ -136,8 +134,10 @@ enum LinePlanStatementProjection {
 
 pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
     context: &'a FinalLoweringContext<'project, 'data>,
+    scope: RuntimeScopedExecutableSemanticFactView<'data>,
     owner: ExprId,
     content_plan: &'a RuntimeDialogueContentPlanSeedId,
+    template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
 ) -> Result<(RuntimeLineTaskGroupSeed, Vec<RuntimeAssertionSite>), RuntimePlanLowerError> {
     let module = module_by_id(context.project, owner.module()).ok_or_else(|| {
         RuntimePlanLowerError::new(format!("dialogue application {owner:?} module is absent"))
@@ -147,25 +147,38 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
             "cannot resolve dialogue application {owner:?}: {error}"
         ))
     })?;
-    let HirExprKind::DialogueContentApplication(dialogue) = expression.kind() else {
+    let HirExprKind::AttachedContentApplication(dialogue) = expression.kind() else {
         return Err(RuntimePlanLowerError::new(format!(
             "dialogue fact owner {owner:?} is not a final-HIR dialogue application"
         )));
     };
-    let application = context.facts.dialogue_application(owner).ok_or_else(|| {
+    let arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        plan,
+        ..
+    } = dialogue.family()
+    else {
+        return Err(RuntimePlanLowerError::new(format!(
+            "attached content call {owner:?} cannot lower as a DialogueLine plan"
+        )));
+    };
+    let application = scope.dialogue_application(owner).ok_or_else(|| {
         RuntimePlanLowerError::new(format!(
             "dialogue application {owner:?} has no checked runtime projection"
         ))
     })?;
+    let locals = context.dialogue_locals(scope.scope())?;
+    let control = context.dialogue_control_locals(scope.scope())?;
+    let specialized_operand_locals = context.dialogue_specialized_operand_locals(scope.scope())?;
     let mut lowerer = LinePlanLowerer {
-        context,
         module,
         flow: FinalFlowLowerer::new(
             module,
             context,
             RuntimeAssertionOwner::Line(application.content().line().clone()),
-        ),
+        )
+        .with_dialogue_scope(scope, control, locals, specialized_operand_locals),
         content_plan,
+        template,
         owner,
         sites: Vec::new(),
         activation_ops: Vec::new(),
@@ -177,8 +190,7 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
         next_child: 0,
         committed_result: false,
     };
-    lowerer.lower_dialogue_effects(application.effects())?;
-    if let Some(plan) = dialogue.plan() {
+    if let Some(plan) = plan {
         lowerer.lower_items(plan.items())?;
     }
     if !lowerer.committed_result {
@@ -199,63 +211,7 @@ pub(super) fn lower_dialogue_line_plan<'a, 'project, 'data>(
     lowerer.finish(application.line_result())
 }
 
-impl LinePlanLowerer<'_, '_, '_> {
-    fn lower_dialogue_effects(
-        &mut self,
-        effects: &[crate::semantic_facts::RuntimeDialogueEffectExpression],
-    ) -> Result<(), RuntimePlanLowerError> {
-        for effect in effects {
-            let operation = FlowDraft::Flow(RuntimeFlowOpSeed::EvaluatedEffect(
-                super::lower_evaluated_effect(
-                    &self.context.expr_lowerer(self.module),
-                    effect.operation().effect(),
-                )?,
-            ));
-            match effect.trigger() {
-                RuntimeDialogueEffectTrigger::Content => {
-                    let trigger = self
-                        .content_plan
-                        .effect_site(effect.site().index())
-                        .ok_or_else(|| {
-                            RuntimePlanLowerError::new(
-                                "dialogue effect-site ordinal exceeds the runtime identity domain",
-                            )
-                        })?;
-                    let child = self.allocate_child()?;
-                    self.root_children.push(NodeDraft::Child {
-                        id: child,
-                        trigger: TriggerDraft::ContentEffect(trigger),
-                        join_policy: ChildJoinPolicy::Join,
-                        cancel_policy: ChildCancelPolicy::CancelAndJoin,
-                        scope: Box::new(NodeDraft::Action(vec![operation])),
-                    });
-                }
-                RuntimeDialogueEffectTrigger::Delay {
-                    duration,
-                    duration_type,
-                    schedule_handle_type,
-                } => {
-                    let actions = vec![operation];
-                    let captures = self.flow_captures(&actions)?;
-                    let operation = self.schedule_operation(
-                        schedule_handle_type,
-                        RuntimeExprSeed::new(
-                            duration_type.identity(),
-                            RuntimeExprSeedKind::Value(RuntimeValue::Duration(*duration)),
-                        ),
-                        actions,
-                        captures,
-                    )?;
-                    self.activation_ops.push(FlowDraft::LineOperation {
-                        binding: None,
-                        operation,
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
+impl LinePlanLowerer<'_, '_> {
     fn lower_items(&mut self, items: &[HirLinePlanItem]) -> Result<(), RuntimePlanLowerError> {
         for item in items {
             match item {
@@ -294,10 +250,11 @@ impl LinePlanLowerer<'_, '_, '_> {
         let kind = self.resolve_statement(statement)?.kind().clone();
         match self.statement_projection(statement)? {
             LinePlanStatementProjection::Let { pattern, input } => {
-                let binding =
-                    FinalPatternLowerer::new(self.module, self.context.facts, self.context.locals)
-                        .lower(pattern)
-                        .map_err(RuntimePlanLowerError::new)?;
+                let binding = self
+                    .flow
+                    .pattern_lowerer()
+                    .lower(pattern)
+                    .map_err(RuntimePlanLowerError::new)?;
                 if self.line_call(input)?.is_some() {
                     let operation = self.lower_line_call(input, Some(binding))?;
                     self.activation_ops.push(operation);
@@ -306,8 +263,8 @@ impl LinePlanLowerer<'_, '_, '_> {
                         .push(FlowDraft::Flow(RuntimeFlowOpSeed::Let {
                             pattern: binding,
                             expr: self
-                                .context
-                                .expr_lowerer(self.module)
+                                .flow
+                                .expr_lowerer()
                                 .lower(input)
                                 .map_err(RuntimePlanLowerError::new)?,
                         }));
@@ -323,8 +280,8 @@ impl LinePlanLowerer<'_, '_, '_> {
                 self.activation_ops.push(FlowDraft::Flow(
                     RuntimeFlowOpSeed::CommitDialogueResult {
                         value: self
-                            .context
-                            .expr_lowerer(self.module)
+                            .flow
+                            .expr_lowerer()
                             .lower(value)
                             .map_err(RuntimePlanLowerError::new)?,
                     },
@@ -418,18 +375,19 @@ impl LinePlanLowerer<'_, '_, '_> {
         let kind = self.resolve_statement(statement)?.kind().clone();
         match self.statement_projection(statement)? {
             LinePlanStatementProjection::Let { pattern, input } => {
-                let binding =
-                    FinalPatternLowerer::new(self.module, self.context.facts, self.context.locals)
-                        .lower(pattern)
-                        .map_err(RuntimePlanLowerError::new)?;
+                let binding = self
+                    .flow
+                    .pattern_lowerer()
+                    .lower(pattern)
+                    .map_err(RuntimePlanLowerError::new)?;
                 let action = if self.line_call(input)?.is_some() {
                     self.lower_line_call(input, Some(binding))?
                 } else {
                     FlowDraft::Flow(RuntimeFlowOpSeed::Let {
                         pattern: binding,
                         expr: self
-                            .context
-                            .expr_lowerer(self.module)
+                            .flow
+                            .expr_lowerer()
                             .lower(input)
                             .map_err(RuntimePlanLowerError::new)?,
                     })
@@ -548,10 +506,11 @@ impl LinePlanLowerer<'_, '_, '_> {
                 initializer,
                 ..
             } if self.line_call(*initializer)?.is_some() => {
-                let binding =
-                    FinalPatternLowerer::new(self.module, self.context.facts, self.context.locals)
-                        .lower(*pattern)
-                        .map_err(RuntimePlanLowerError::new)?;
+                let binding = self
+                    .flow
+                    .pattern_lowerer()
+                    .lower(*pattern)
+                    .map_err(RuntimePlanLowerError::new)?;
                 Ok(vec![self.lower_line_call(*initializer, Some(binding))?])
             }
             HirStmtKind::Expression { expression } if self.line_call(*expression)?.is_some() => {
@@ -616,8 +575,8 @@ impl LinePlanLowerer<'_, '_, '_> {
         statement: StmtId,
     ) -> Result<arcweft_core::plan::RuntimeDialogueMarkSeedId, RuntimePlanLowerError> {
         let Some(mark) = self
-            .context
-            .facts
+            .flow
+            .semantic_facts
             .trigger(statement)
             .and_then(crate::semantic_facts::RuntimeTriggerAdmission::dialogue_mark)
         else {
@@ -625,9 +584,18 @@ impl LinePlanLowerer<'_, '_, '_> {
                 "line-task event handler {statement:?} is not admitted by a checked dialogue mark Trigger"
             )));
         };
-        self.content_plan.mark(mark.index()).ok_or_else(|| {
-            RuntimePlanLowerError::new("dialogue mark count exceeds the runtime identity domain")
-        })
+        if mark.key().template() != self.template {
+            return Err(RuntimePlanLowerError::new(
+                "line-task mark trigger belongs to a different dialogue content template",
+            ));
+        }
+        self.content_plan
+            .mark(mark.key().mark().index())
+            .ok_or_else(|| {
+                RuntimePlanLowerError::new(
+                    "dialogue mark count exceeds the runtime identity domain",
+                )
+            })
     }
 
     fn allocate_child(&mut self) -> Result<ChildDraftId, RuntimePlanLowerError> {
@@ -643,7 +611,7 @@ impl LinePlanLowerer<'_, '_, '_> {
         &self,
         expression: ExprId,
     ) -> Result<Option<(&RuntimeResolvedCall, &RuntimeLineCallable)>, RuntimePlanLowerError> {
-        let Some(call) = self.context.facts.call(expression) else {
+        let Some(call) = self.flow.semantic_facts.call(expression) else {
             return Ok(None);
         };
         match call.dispatch() {
@@ -665,27 +633,19 @@ impl LinePlanLowerer<'_, '_, '_> {
             ))
         })?;
         let line = line.clone();
-        let result = self
-            .context
-            .facts
-            .expression_type(expression)
-            .ok_or_else(|| {
-                RuntimePlanLowerError::new(format!(
-                    "line operation {expression:?} has no accepted result type"
-                ))
-            })?;
+        let result = self.flow.expression_type(expression)?.clone();
         let operation = match line {
             RuntimeLineCallable::AcquireActor { character } => {
                 let site = self.push_site(
                     RuntimeLineHandleSiteKind::StageActor,
-                    result,
+                    &result,
                     Some(character.clone()),
                     None,
                 );
                 LineOperationDraft::AcquireActor { site, character }
             }
             RuntimeLineCallable::VoiceHandle => {
-                let site = self.push_site(RuntimeLineHandleSiteKind::Voice, result, None, None);
+                let site = self.push_site(RuntimeLineHandleSiteKind::Voice, &result, None, None);
                 LineOperationDraft::VoiceHandle { site }
             }
             RuntimeLineCallable::ActorLook {
@@ -695,23 +655,23 @@ impl LinePlanLowerer<'_, '_, '_> {
                 crossfade,
             } => {
                 let actor = self
-                    .context
-                    .expr_lowerer(self.module)
+                    .flow
+                    .expr_lowerer()
                     .lower(actor)
                     .map_err(RuntimePlanLowerError::new)?;
                 let look = self
-                    .context
-                    .expr_lowerer(self.module)
+                    .flow
+                    .expr_lowerer()
                     .lower(look)
                     .map_err(RuntimePlanLowerError::new)?;
                 let crossfade = self
-                    .context
-                    .expr_lowerer(self.module)
+                    .flow
+                    .expr_lowerer()
                     .lower(crossfade)
                     .map_err(RuntimePlanLowerError::new)?;
                 let site = self.push_site(
                     RuntimeLineHandleSiteKind::StageLookCue,
-                    result,
+                    &result,
                     Some(character.clone()),
                     None,
                 );
@@ -725,12 +685,15 @@ impl LinePlanLowerer<'_, '_, '_> {
             }
             RuntimeLineCallable::Schedule { anchor, callback } => {
                 let delay = self
-                    .context
-                    .expr_lowerer(self.module)
+                    .flow
+                    .expr_lowerer()
                     .lower(anchor)
                     .map_err(RuntimePlanLowerError::new)?;
-                let accepted_anchor =
-                    self.context.facts.expression_type(anchor).ok_or_else(|| {
+                let accepted_anchor = self
+                    .flow
+                    .semantic_facts
+                    .expression_type(anchor)
+                    .ok_or_else(|| {
                         RuntimePlanLowerError::new(format!(
                             "schedule anchor {anchor:?} has no accepted runtime type"
                         ))
@@ -742,15 +705,7 @@ impl LinePlanLowerer<'_, '_, '_> {
                         "schedule anchor {anchor:?} lost its accepted Duration type"
                     )));
                 }
-                let accepted_callback =
-                    self.context
-                        .facts
-                        .expression_type(callback)
-                        .ok_or_else(|| {
-                            RuntimePlanLowerError::new(format!(
-                                "schedule callback {callback:?} has no accepted runtime type"
-                            ))
-                        })?;
+                let accepted_callback = self.flow.expression_type(callback)?;
                 if !matches!(accepted_callback.shape(), RuntimeTypeShape::Function { .. }) {
                     return Err(RuntimePlanLowerError::new(format!(
                         "schedule callback {callback:?} lost its accepted function type"
@@ -758,7 +713,7 @@ impl LinePlanLowerer<'_, '_, '_> {
                 }
                 let actions = self.lower_callback(callback)?;
                 let captures = self.callback_captures(callback, &actions)?;
-                self.schedule_operation(result, delay, actions, captures)?
+                self.schedule_operation(&result, delay, actions, captures)?
             }
         };
         Ok(FlowDraft::LineOperation { binding, operation })
@@ -825,7 +780,7 @@ impl LinePlanLowerer<'_, '_, '_> {
         actions: &[FlowDraft],
     ) -> Result<Box<[RuntimeScheduledCaptureSeed]>, RuntimePlanLowerError> {
         let mut locals = Vec::new();
-        if let Some(callable) = self.context.facts.implicit_callable(callback) {
+        if let Some(callable) = self.flow.semantic_facts.implicit_callable(callback) {
             locals.extend_from_slice(callable.captures());
         } else {
             return self.flow_captures(actions);
@@ -851,7 +806,7 @@ impl LinePlanLowerer<'_, '_, '_> {
         seeds
             .into_iter()
             .map(|seed| {
-                self.context
+                self.flow
                     .locals
                     .iter()
                     .find_map(|(local, candidate)| (candidate == &seed).then_some(*local))
@@ -873,12 +828,12 @@ impl LinePlanLowerer<'_, '_, '_> {
         &self,
         local: LocalId,
     ) -> Result<RuntimeScheduledCaptureSeed, RuntimePlanLowerError> {
-        let seed = self.context.locals.get(&local).cloned().ok_or_else(|| {
+        let seed = self.flow.locals.get(&local).cloned().ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "scheduled callback capture {local:?} has no admitted runtime local"
             ))
         })?;
-        let ty = self.context.facts.local_type(local).ok_or_else(|| {
+        let ty = self.flow.semantic_facts.local_type(local).ok_or_else(|| {
             RuntimePlanLowerError::new(format!(
                 "scheduled callback capture {local:?} has no accepted type"
             ))
@@ -1145,9 +1100,6 @@ fn resolve_node_draft(
             trigger: match trigger {
                 TriggerDraft::Immediate => RuntimeLineTaskTriggerSeed::Immediate,
                 TriggerDraft::Mark(mark) => RuntimeLineTaskTriggerSeed::Mark(mark),
-                TriggerDraft::ContentEffect(effect) => {
-                    RuntimeLineTaskTriggerSeed::ContentEffect(effect)
-                }
                 TriggerDraft::Scheduled(site) => {
                     RuntimeLineTaskTriggerSeed::Scheduled(resolve_site(site)?)
                 }

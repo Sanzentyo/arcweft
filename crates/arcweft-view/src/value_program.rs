@@ -466,8 +466,8 @@ fn dependencies(instructions: &[ValueInstruction]) -> (Vec<u16>, Vec<u16>, bool)
     let mut context_dependent = false;
     for instruction in instructions {
         match instruction {
-            ValueInstruction::LoadParameter { slot, .. } => {
-                parameters.insert(*slot);
+            ValueInstruction::LoadParameter { parameter } => {
+                parameters.insert(parameter.slot().get());
             }
             ValueInstruction::LoadState { slot, .. } => {
                 state.insert(*slot);
@@ -592,14 +592,15 @@ mod tests {
                 FxRuntimeType::I32,
             )
         };
+        let first_schema = schema();
+        let first_parameter = first_schema.parameter_ref(1).unwrap();
         ViewValueProgramInventory::from_programs([
             ViewValueProgram::validate(
                 ViewValueProgramId(0),
-                schema(),
+                first_schema,
                 vec![
                     ValueInstruction::LoadParameter {
-                        slot: 1,
-                        ty: FxRuntimeType::I32,
+                        parameter: first_parameter,
                     },
                     ValueInstruction::Return,
                 ],
@@ -845,5 +846,50 @@ mod tests {
         }"#;
 
         assert!(serde_json::from_str::<ViewValueProgram>(invalid).is_err());
+    }
+
+    #[test]
+    fn u32_value_inputs_round_trip_and_evaluate() {
+        let schema =
+            ValueProgramSchema::new(vec![FxRuntimeType::U32], Vec::new(), FxRuntimeType::U32);
+        let parameter = schema.parameter_ref(0).unwrap();
+        let program = ViewValueProgram::validate(
+            ViewValueProgramId(3),
+            schema,
+            vec![
+                ValueInstruction::LoadParameter { parameter },
+                ValueInstruction::Return,
+            ],
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&program).unwrap();
+        let decoded = serde_json::from_slice::<ViewValueProgram>(&bytes).unwrap();
+        assert_eq!(decoded, program);
+
+        let inventory = ViewValueProgramInventory::from_programs([program]).unwrap();
+        let mut mount = ViewMountState::new(
+            ViewMountAllocator::default().allocate().unwrap(),
+            program_id("view-program.u32"),
+            1,
+            vec![FxRuntimeValue::U32(u32::MAX)],
+            Vec::new(),
+            &inventory,
+        )
+        .unwrap();
+        let value = mount
+            .evaluate(
+                ViewValueProgramId(3),
+                &inventory,
+                context(),
+                &mut FxEvaluationBudget::default(),
+            )
+            .unwrap();
+        assert_eq!(value.value(), FxRuntimeValue::U32(u32::MAX));
+        let snapshot = mount.snapshot();
+        let snapshot_bytes = serde_json::to_vec(&snapshot).unwrap();
+        assert_eq!(
+            serde_json::from_slice::<super::ViewMountSnapshot>(&snapshot_bytes).unwrap(),
+            snapshot
+        );
     }
 }

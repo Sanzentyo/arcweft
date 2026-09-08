@@ -26,7 +26,7 @@ pub(crate) use trait_method::AwbcTraitMethodLowerer;
 
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcSourceMapEntry};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
-use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
+use arcweft_core::plan::{EntryRuntimeId, RuntimeDialogueContentApplicationKey, RuntimePlan};
 use arcweft_text_model::DialogueContentCatalog;
 use thiserror::Error;
 
@@ -137,7 +137,11 @@ impl<'a> AwbcLowerer<'a> {
         let mut inventory = AwbcInventory::new(source_label, options);
         inventory.intern_runtime_primitives();
         pattern::preflight_plan_types(&mut inventory, plan).map_err(AwbcLowerError::Lowering)?;
-        inventory.intern_dialogue_content_catalog(dialogue_content);
+        let join_diagnostics = validate_dialogue_content_join(plan, dialogue_content);
+        if join_diagnostics.iter().any(AwbcLowerDiagnostic::is_error) {
+            return Err(AwbcLowerError::Lowering(join_diagnostics));
+        }
+        inventory.intern_dialogue_content_catalog(dialogue_content, plan);
 
         let mut diagnostics = {
             let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory, plan);
@@ -187,6 +191,119 @@ impl<'a> AwbcLowerer<'a> {
             diagnostics,
         })
     }
+}
+
+fn validate_dialogue_content_join(
+    plan: &RuntimePlan,
+    catalog: &DialogueContentCatalog,
+) -> Vec<AwbcLowerDiagnostic> {
+    let mut diagnostics = Vec::new();
+    for content in plan.dialogue_content().rows() {
+        let path = format!("dialogue.line.{}", content.line().public_label());
+        let key =
+            RuntimeDialogueContentApplicationKey::new(content.line().clone(), content.template());
+        let Some(spec) = catalog.find(&key) else {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "RuntimePlan dialogue content line is absent from the text-model catalog",
+            ));
+            continue;
+        };
+        let Some(manifest) = plan.dialogue_content().template(content.template()) else {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path.clone(),
+                "RuntimePlan dialogue content row references a missing plan-owned template manifest",
+            ));
+            continue;
+        };
+        if spec.template_id() != manifest.id() || spec.template_digest() != manifest.digest() {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path.clone(),
+                "RuntimePlan dialogue content template identity or digest disagrees with the text-model catalog record",
+            ));
+        }
+        let Some(template) = catalog.find_template(content.template()) else {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "RuntimePlan dialogue content template is absent from the text-model catalog",
+            ));
+            continue;
+        };
+        if template.digest() != manifest.digest()
+            || template.slots().len() != manifest.slots().len()
+            || template
+                .slots()
+                .iter()
+                .zip(manifest.slots())
+                .any(|(expected, actual)| {
+                    expected.slot() != actual.slot()
+                        || expected.role() != actual.role()
+                        || expected.semantic_type() != actual.semantic_type()
+                })
+            || template.marks().len() != content.marks().len()
+            || template
+                .marks()
+                .iter()
+                .zip(content.marks())
+                .any(|(expected, actual)| {
+                    expected.id() != actual.id() || expected.diagnostic_name() != actual.label()
+                })
+            || template.effects().len() != content.effect_site_count().get() as usize
+        {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                format!("dialogue.template.{}", content.template()),
+                "RuntimePlan dialogue content manifest disagrees with the text-model template authority",
+            ));
+        }
+    }
+    for manifest in plan.dialogue_content_templates().rows() {
+        let path = format!("dialogue.template.{}", manifest.id());
+        let Some(template) = catalog.find_template(manifest.id()) else {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "RuntimePlan template manifest has no text-model catalog authority",
+            ));
+            continue;
+        };
+        if template.digest() != manifest.digest()
+            || template.slots().len() != manifest.slots().len()
+            || template
+                .slots()
+                .iter()
+                .zip(manifest.slots())
+                .any(|(expected, actual)| {
+                    expected.slot() != actual.slot()
+                        || expected.role() != actual.role()
+                        || expected.semantic_type() != actual.semantic_type()
+                })
+        {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                path,
+                "RuntimePlan template manifest disagrees with the text-model catalog authority",
+            ));
+        }
+    }
+    for template in catalog.templates() {
+        if plan
+            .dialogue_content_templates()
+            .get(template.id())
+            .is_none()
+        {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                format!("dialogue.template.{}", template.id()),
+                "text-model template has no bijective RuntimePlan manifest row",
+            ));
+        }
+    }
+    for spec in catalog.records() {
+        if plan.dialogue_content().find(&spec.key()).is_none() {
+            diagnostics.push(AwbcLowerDiagnostic::error(
+                format!("dialogue.line.{}", spec.line().public_label()),
+                "text-model catalog record has no bijective RuntimePlan dialogue content row",
+            ));
+        }
+    }
+    diagnostics
 }
 
 pub(crate) fn table_index(value: usize) -> u32 {

@@ -12,11 +12,11 @@ use arcweft_view::{
     AcceptedViewProgramRevision, BindEvent, BindHandler, CustomElementId, HandlerId, ImageId,
     SemanticSpecId, TextSourceId, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
     ViewCallArgument, ViewCustomSpec, ViewElementSpec, ViewEvaluationSiteId,
-    ViewFxApplicationInstruction, ViewFxCallArgument, ViewHandlerCapture, ViewHandlerProgramId,
-    ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction, ViewInstructionRange,
-    ViewLocalBinding, ViewPartId, ViewPartStaticReachability, ViewProgram, ViewProgramBuildError,
-    ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
-    ViewValueInventoryError, ViewValueProgramInventory,
+    ViewFxApplicationInstruction, ViewFxArgumentSource, ViewFxCallArgument, ViewHandlerCapture,
+    ViewHandlerProgramId, ViewHandlerResult, ViewId, ViewImageSpec, ViewInstruction,
+    ViewInstructionRange, ViewLocalBinding, ViewPartId, ViewPartStaticReachability, ViewProgram,
+    ViewProgramBuildError, ViewProgramBuilder, ViewProgramId, ViewRepeat, ViewSemanticSpec,
+    ViewStableKey, ViewTextSpec, ViewValueInventoryError, ViewValueProgramInventory,
 };
 use thiserror::Error;
 
@@ -591,17 +591,26 @@ fn map_instruction(
         }),
         ViewProgramInstruction::ApplyFx {
             fx,
+            parameter_layout,
             arguments,
             key_program,
             application_ordinal,
             ..
         } => ViewInstruction::ApplyFx(ViewFxApplicationInstruction {
             fx: fx.clone(),
+            parameter_layout: *parameter_layout,
             arguments: arguments
                 .iter()
                 .map(|argument| ViewFxCallArgument {
-                    parameter: argument.parameter.clone(),
-                    value: argument.value_program,
+                    parameter: argument.parameter,
+                    source: match &argument.source {
+                        arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Reactive(
+                            program,
+                        ) => ViewFxArgumentSource::Reactive(*program),
+                        arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Closed(
+                            value,
+                        ) => ViewFxArgumentSource::Closed(value.clone()),
+                    },
                 })
                 .collect(),
             key: *key_program,

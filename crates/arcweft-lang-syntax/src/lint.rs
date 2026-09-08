@@ -1,9 +1,9 @@
 use crate::ast::common::TextRange;
 use crate::attachment::{
-    AttachedAttributeArgument, AttachedAttributeValue, AttachedCharacterSurfaceAlias,
-    AttachedDeclarationPublicId, AttachedFlowIdSyntax, AttachedFlowIdentity,
-    AttachedInnerAttribute, AttachedItemPrefix, AttachedOuterAttribute, AttachedRequiredFlowBody,
-    AttachedRetainedName, AttachedStyleId, SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
+    AttachedAttributeArgument, AttachedAttributeValue, AttachedDeclarationPublicId,
+    AttachedFlowIdSyntax, AttachedFlowIdentity, AttachedInnerAttribute, AttachedItemPrefix,
+    AttachedOuterAttribute, AttachedRequiredFlowBody, AttachedRetainedName, AttachedStyleId,
+    SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
 };
 use crate::expressions::{ExpressionComponentRole, ExpressionProjection};
 use crate::grammar::kinds::SyntaxKind;
@@ -169,16 +169,10 @@ fn lint_character(
     lints: &mut Vec<SyntaxLint>,
 ) -> Result<(), SyntaxAccessError> {
     let declaration = character.semantics()?;
-    let alias = match declaration.surface_alias() {
-        AttachedCharacterSurfaceAlias::Resolved { value, .. } => Some(value.as_str()),
-        AttachedCharacterSurfaceAlias::Absent | AttachedCharacterSurfaceAlias::Missing { .. } => {
-            None
-        }
-    };
     lint_retained_identity(
         "character",
         declaration.header(),
-        alias,
+        None,
         declaration.prefix(),
         source_attrs,
         lints,
@@ -313,7 +307,8 @@ fn lint_retained_identity(
         return;
     };
     let name = preferred_name.or_else(|| match header.name() {
-        AttachedRetainedName::Resolved { value, .. } => Some(value.as_str()),
+        AttachedRetainedName::Resolved { value, .. }
+        | AttachedRetainedName::Derived { value, .. } => Some(value.as_str()),
         AttachedRetainedName::Missing { .. } | AttachedRetainedName::Invalid { .. } => None,
     });
     let Some(name) = name else {
@@ -1041,10 +1036,10 @@ proof @proof.http_requests local_requests {
     }
 
     #[test]
-    fn surface_alias_is_decl_identity_name() {
+    fn explicit_character_id_derives_binding_for_identity_lint() {
         let codes = lint_codes(
             r"
-pub character @character.alice Alice as alice {
+pub character @character.alice {
 }
 ",
         );

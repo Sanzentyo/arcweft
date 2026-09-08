@@ -37,12 +37,12 @@ fn has_kind(built: &GrammarBuild, kind: SyntaxKind) -> bool {
 }
 
 #[test]
-fn canonical_character_owns_typed_header_alias_body_and_expression() {
+fn canonical_character_owns_typed_header_body_and_expression() {
     let source = concat!(
         "/// Alice\n",
         "#[verify.fixture]\n",
-        "pub character @character.alice Alice as alice {\n",
-        "    display_name = \"Alice\"\n",
+        "pub character @character.alice {\n",
+        "    display = \"Alice\"\n",
         "}\n",
     );
     let built = parse(source);
@@ -50,9 +50,8 @@ fn canonical_character_owns_typed_header_alias_body_and_expression() {
         SyntaxKind::CharacterDeclarationItem,
         SyntaxKind::DeclarationHeader,
         SyntaxKind::DeclarationPublicId,
-        SyntaxKind::SurfaceAlias,
         SyntaxKind::CharacterBody,
-        SyntaxKind::CharacterDisplayNameMember,
+        SyntaxKind::CharacterDisplayMember,
         SyntaxKind::LiteralExpression,
     ] {
         assert!(has_kind(&built, kind), "missing {kind:?}");
@@ -66,7 +65,7 @@ fn empty_character_body_is_typed_and_clean() {
     let source = "character Alice {}\n";
     let built = parse(source);
     assert!(has_kind(&built, SyntaxKind::CharacterBody));
-    assert!(!has_kind(&built, SyntaxKind::CharacterDisplayNameMember));
+    assert!(!has_kind(&built, SyntaxKind::CharacterDisplayMember));
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
@@ -115,8 +114,8 @@ fn character_identity_errors_are_typed_and_do_not_consume_the_next_item() {
 fn character_member_failures_keep_typed_members_and_related_evidence() {
     let source = concat!(
         "character Alice {\n",
-        "    display_name = \"Alice\"\n",
-        "    display_name = \"Other\"\n",
+        "    display = \"Alice\"\n",
+        "    display = \"Other\"\n",
         "    voice = @res.voice\n",
         "}\n",
     );
@@ -126,7 +125,7 @@ fn character_member_failures_keep_typed_members_and_related_evidence() {
             .index()
             .entries()
             .iter()
-            .filter(|entry| entry.kind() == SyntaxKind::CharacterDisplayNameMember)
+            .filter(|entry| entry.kind() == SyntaxKind::CharacterDisplayMember)
             .count(),
         2
     );
@@ -136,13 +135,10 @@ fn character_member_failures_keep_typed_members_and_related_evidence() {
         .iter()
         .find(|diagnostic| diagnostic.code() == "syntax.character.duplicate_member")
         .expect("duplicate diagnostic");
-    assert_eq!(
-        duplicate.range(),
-        nth_source_range(source, "display_name", 1)
-    );
+    assert_eq!(duplicate.range(), nth_source_range(source, "display", 1));
     assert_eq!(
         duplicate.related_range(),
-        Some(nth_source_range(source, "display_name", 0))
+        Some(nth_source_range(source, "display", 0))
     );
     assert!(
         built
@@ -154,16 +150,16 @@ fn character_member_failures_keep_typed_members_and_related_evidence() {
 }
 
 #[test]
-fn character_missing_name_and_alias_are_zero_width() {
-    let source = "character Alice as {}\n";
+fn removed_character_header_components_use_ordinary_recovery() {
+    let source = "character @character.alice Alice as alice {}\n";
     let built = parse(source);
-    assert!(has_kind(&built, SyntaxKind::MissingName));
+    assert!(has_kind(&built, SyntaxKind::ErrorNode));
     let diagnostic = built
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.code() == "syntax.character.missing_alias")
-        .expect("missing Character alias diagnostic");
-    assert_eq!(diagnostic.range().start(), diagnostic.range().end());
+        .find(|diagnostic| diagnostic.code() == "syntax.declaration.unexpected_header")
+        .expect("ordinary unexpected-header diagnostic");
+    assert!(!diagnostic.range().is_empty());
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -171,7 +167,7 @@ fn character_missing_name_and_alias_are_zero_width() {
 fn unclosed_character_body_stops_before_the_following_view() {
     let source = concat!(
         "character Alice {\n",
-        "    display_name = \"Alice\"\n",
+        "    display = \"Alice\"\n",
         "view Next() { Panel {} }\n",
     );
     let built = parse(source);

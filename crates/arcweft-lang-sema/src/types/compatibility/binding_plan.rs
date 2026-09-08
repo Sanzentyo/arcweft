@@ -410,6 +410,8 @@ where
             TypeConstraintRejection::UnresolvedType,
         ));
     }
+    context.validate_type_header(pattern_shape)?;
+    context.validate_type_header(actual_shape)?;
 
     // Bottom contributes no binding, but unresolved descendants in the
     // expected shape still cannot reach a selected seal.
@@ -588,58 +590,76 @@ where
         ),
         (
             TypeConstraintShape::Function {
+                binder: expected_binder,
                 params: expected_params,
                 result: expected_result,
                 effects: expected_effects,
             },
             TypeConstraintShape::Function {
+                binder: found_binder,
                 params: found_params,
                 result: found_result,
                 effects: found_effects,
             },
-        ) if expected_params.len() == found_params.len() => {
-            let parameter_acceptance = match acceptance {
-                ConstraintAcceptance::PatternAcceptsActual => {
-                    ConstraintAcceptance::ActualAcceptsPattern
-                }
-                ConstraintAcceptance::ActualAcceptsPattern => {
-                    ConstraintAcceptance::PatternAcceptsActual
-                }
-            };
-            let paths = relate_slices(
-                expected_params,
-                found_params,
-                path,
-                context,
-                parameter_acceptance,
-            )?;
-            let mut effect_paths = Vec::with_capacity(paths.len());
-            for mut path in paths {
-                let (actual_effects, permitted_effects) = match acceptance {
-                    ConstraintAcceptance::PatternAcceptsActual => (found_effects, expected_effects),
-                    ConstraintAcceptance::ActualAcceptsPattern => (expected_effects, found_effects),
+        ) if expected_binder == found_binder && expected_params.len() == found_params.len() => {
+            context.with_binder(*expected_binder, |context| {
+                let parameter_acceptance = match acceptance {
+                    ConstraintAcceptance::PatternAcceptsActual => {
+                        ConstraintAcceptance::ActualAcceptsPattern
+                    }
+                    ConstraintAcceptance::ActualAcceptsPattern => {
+                        ConstraintAcceptance::PatternAcceptsActual
+                    }
                 };
-                match path
-                    .effects
-                    .constrain_subset(actual_effects, permitted_effects)
-                {
-                    Ok(()) => effect_paths.push(path),
-                    Err(EffectConstraintEnvironmentError::MissingEffects { .. }) => {}
-                    Err(error) => return Err(map_effect_environment_error(error)),
+                let paths = relate_slices(
+                    expected_params,
+                    found_params,
+                    path,
+                    context,
+                    parameter_acceptance,
+                )?;
+                let mut effect_paths = Vec::with_capacity(paths.len());
+                for mut path in paths {
+                    let (actual_effects, permitted_effects) = match acceptance {
+                        ConstraintAcceptance::PatternAcceptsActual => {
+                            (found_effects, expected_effects)
+                        }
+                        ConstraintAcceptance::ActualAcceptsPattern => {
+                            (expected_effects, found_effects)
+                        }
+                    };
+                    match path
+                        .effects
+                        .constrain_subset(actual_effects, permitted_effects)
+                    {
+                        Ok(()) => effect_paths.push(path),
+                        Err(EffectConstraintEnvironmentError::MissingEffects { .. }) => {}
+                        Err(error) => return Err(map_effect_environment_error(error)),
+                    }
                 }
-            }
-            relate_many(
-                expected_result,
-                found_result,
-                effect_paths,
-                context,
-                acceptance,
-            )
+                relate_many(
+                    expected_result,
+                    found_result,
+                    effect_paths,
+                    context,
+                    acceptance,
+                )
+            })
         }
         (TypeConstraintShape::Tuple(expected), TypeConstraintShape::Tuple(found))
             if expected.len() == found.len() =>
         {
             relate_slices(expected, found, path, context, acceptance)
+        }
+        (TypeConstraintShape::Payload(expected), TypeConstraintShape::Payload(found))
+            if expected.has_same_header(found) =>
+        {
+            expected
+                .children()
+                .zip(found.children())
+                .try_fold(vec![path], |paths, (expected, found)| {
+                    relate_many(expected, found, paths, context, acceptance)
+                })
         }
         (TypeConstraintShape::Leaf(_), _) => Ok(vec![path]),
         (TypeConstraintShape::Never, TypeConstraintShape::Never) => Ok(vec![path]),

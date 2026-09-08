@@ -1,28 +1,5 @@
 pub character lumi {
     display = "Lumi"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#eaf6ff")
-                size = 32px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-            }
-
-            ruby {
-                size = 12px
-                gap = 0px
-                overhang = 3px
-                collision_gap = 2px
-            }
-        }
-    }
 }
 
 pub style migration_effects_panel {
@@ -89,11 +66,11 @@ entry cli @entry.unified_text_effects_migration_baseline {
 }
 
 flow unified_text_effects_migration_baseline {
-    lumi.say(id=@say.migration.matrix, voice=auto, look=.focus)[
-        FX: [effect .shader id=soft_glow amount=0.65 dir=1,0 phase=run_offscreen_pass][color #b9dcff]glow[/color][/effect] [effect .shader id=warm_glow amount=0.7 dir=-1,0 phase=run_offscreen_pass][color #ffd8b0]warm[/color][/effect] [effect .shader id=soft_glow amount=1 phase=glyph_color]color[/effect] [effect .shader id=screen_tint amount=0.55 color="#ff4050" phase=post_process]post[/effect] [.host id=sparkle amp=1.5px seed=shader-demo]sparkle[/]。[r]
-        Motion: [.wave amp=4px dir=0,1 period=8 speed=1.6 target=glyph phase=glyph_transform]wave[/] [.shake amp=2px seed=voice-shake target=glyph phase=glyph_transform]shake[/] [effect .jitter amp=1.5px seed=jitters target=glyph phase=glyph_transform]jitter[/effect] [fx breath_orbit(amplitude=5px, speed=0.75)]source-y[/fx] [fx source_drift(amplitude=5px, speed=0.8)]source-x[/fx]。[r]
-        Reveal: [.typewriter cps=4 delay=500ms cursor=true cursor_alpha=0.4 phase=glyph_mask][.wave amp=3px dir=0,1 speed=1.2 target=glyph phase=glyph_transform][.shake amp=1px seed=combo target=glyph phase=glyph_transform][.sparkle amp=1.5px seed=combo]typewriter-wave-shake[/][/][/][/] [.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.16 speed=1.15 origin=glyph_center target=glyph]spin-pulse[/][/]。[r]
-        Vertical: [.vertical_rl jlreq=strict][font "Yu Mincho"][.spin angle=8deg speed=0.8 origin=glyph_center target=glyph][.pulse amp=0.12 speed=1.1 origin=glyph_center target=glyph]縦回転[/][/]ABC2026[/font][/]。[p]
+    lumi(id=@say.migration.matrix, voice=auto, look=.focus)[
+        FX: #fx(shader(resource=@.soft_glow, amount=0.65, direction=vec2(1.0, 0.0), phase=.offscreen_pass))[#color(rgb("#b9dcff"))[glow]] #fx(shader(resource=@.warm_glow, amount=0.7, direction=vec2(-1.0, 0.0), phase=.offscreen_pass))[#color(rgb("#ffd8b0"))[warm]] #fx(shader(resource=@.soft_glow, amount=1, phase=.glyph_color))[color] #fx(shader(resource=@.screen_tint, amount=0.55, color=rgb("#ff4050"), phase=.post_process))[post] sparkle。[r]
+        Motion: #fx(wave(amplitude=4px, direction=vec2(0.0, 1.0), period=8, speed=1.6, target=.glyph, phase=.glyph_transform))[wave] #fx(shake(amplitude=2px, target=.glyph, phase=.glyph_transform))[shake] #fx(jitter(amplitude=1.5px, target=.glyph, phase=.glyph_transform))[jitter] #fx(breath_orbit(amplitude=5px, speed=0.75))[source-y] #fx(source_drift(amplitude=5px, speed=0.8))[source-x]。[r]
+        Reveal: #fx(typewriter(characters_per_second=4, delay=500ms, cursor=true, cursor_alpha=0.4, phase=.glyph_mask))[#fx(wave(amplitude=3px, direction=vec2(0.0, 1.0), speed=1.2, target=.glyph, phase=.glyph_transform))[#fx(shake(amplitude=1px, target=.glyph, phase=.glyph_transform))[#fx(sparkle(amplitude=1.5px))[typewriter-wave-shake]]]] #fx(spin(rotation_amplitude=8deg, speed=0.8, target=.glyph))[#fx(pulse(scale_amplitude=0.16, speed=1.15, target=.glyph))[spin-pulse]]。[r]
+        Vertical: #layout(.vertical_rl, jlreq=.strict)[#font("Yu Mincho")[#fx(spin(rotation_amplitude=8deg, speed=0.8, target=.glyph))[#fx(pulse(scale_amplitude=0.12, speed=1.1, target=.glyph))[縦回転]]ABC2026]]。[p]
     ]
 
     return "unified_text_effects_migration_baseline"

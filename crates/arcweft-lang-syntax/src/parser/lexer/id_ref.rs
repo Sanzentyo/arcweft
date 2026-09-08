@@ -95,16 +95,19 @@ pub(in crate::parser) fn typed_entity_reference(
     token: LexToken,
     spelling: &str,
 ) -> EntityReferenceLexemeProjection {
-    let spelling = (token.kind() == SyntaxKind::EntityReferenceToken
+    let spelling = if token.kind() == SyntaxKind::EntityReferenceToken
         && spelling.len() == token.range().end().saturating_sub(token.range().start())
-        && spelling.starts_with('@'))
-    .then_some(spelling)
-    .unwrap_or("");
+        && spelling.starts_with('@')
+    {
+        spelling
+    } else {
+        ""
+    };
     typed_entity_reference_source(token.range(), spelling)
 }
 
 /// Projects an entity-reference spelling selected by a non-token grammar
-/// owner, such as a RichText marker argument. The lexical shape and authored
+/// owner, such as a `RichText` marker argument. The lexical shape and authored
 /// value remain owned by this module; callers provide only the exact source
 /// range selected by their surrounding grammar.
 pub(in crate::parser) fn typed_entity_reference_source(

@@ -179,7 +179,8 @@ Dialogue surface model:
 - `SpeakerRef`
 - `TextBox` marker plus `Ref<TextBox>` window targets
 - `DialogueContent`
-- `DialogueTag`
+- structural text, Ruby, raw-literal, interpolation, point-action, and typed
+  content-application nodes
 - `LinePlan`
 - `TimelineAnchor`
 - `CancelScope`
@@ -187,16 +188,9 @@ Dialogue surface model:
 
 Supporting dialogue model types include speaker presets, voice references, content parts, line-plan steps, plan calls, and plan expressions. These are enough to represent the initial `alice2[...] with { ... }` example as typed Rust data without implementing a parser.
 
-Builder API:
-
-- `SpeakerPreset`
-- `SayOptions`
-- `DialogueLineBuilder`
-- `LinePlanBuilder`
-- `TimelineCue`
-- `CancelRule`
-- `OutPayload`
-- `CancelOnDrop`
+Character dialogue is represented by the typed `CharacterDialogue` value and
+its attached content/line-plan application. The former speaker/builder facade
+is not a compatibility layer.
 
 The builder API supports fluent construction of a dialogue line with speaker defaults, line id, lossy dialogue content parsing, timeline cues, and input cancellation rules.
 
@@ -300,9 +294,9 @@ Syntax parser:
   `arcweft-lang-syntax`; future parser work should move it onto CST/event
   parsing rather than growing the private line-splitting helpers.
 - The parser records module/use headers, attributes, wiki links, flows, fragments, flow items, scenario commands, speaker lines, content calls, choice blocks, hooks, memo functions, parser items, line plans, and dialogue tokens.
-- Bracket ruby spans such as `[ruby rt="..."]base[/ruby]` and function/content ruby such as `#[ruby("base", "ruby")]` normalize to the same `DialogueToken::Ruby` shape as natural Japanese ruby.
-- Dialogue raw spans and blocks such as `[raw]...[/raw]` tokenize as literal raw content, so inner `[p]` markers and `#[expr]` interpolations are not parsed until the raw span ends.
-- Dialogue markers such as `[mark .release_focus]` tokenize as structured
+- Typed Ruby calls such as `#ruby("reading")[base]` and the natural/ASCII Ruby delimiters normalize to the same structural Ruby node.
+- `#raw()[literal content]` retains its attached body as opaque literal content, so inner point actions and interpolations are not parsed.
+- Dialogue markers such as `[mark @.release_focus]` tokenize as structured
   `DialogueToken::Mark` values. The checker rejects duplicate line marks,
   removed local hook tags, and `with: on mark(.name):` handlers that do not match a
   mark in the same line.
@@ -407,14 +401,15 @@ Syntax parser:
   longer materialize or suggest these speaker-derived identities.
 - Line plans preserve `init`, generic `thread name` blocks, scoped
   `defer { ... }`, `defer on completed|cancelled|failed`, local `on mark(.name)` handlers,
-  `wait(mark(.name))`, duration waits, and `'line.* <- expr` lifetime registry
-  writes as structured statements/items. The parser accepts `with { ... }`,
+  duration waits, and `'line.* <- expr` lifetime registry writes as structured
+  statements/items. `wait(mark(.name))` remains parser-visible but is rejected
+  before executable publication until the typed suspension cut. The parser accepts `with { ... }`,
   indentation sugar `with:`, and flat `=== with ===` fences over the same model.
   `spawn` is rejected in favor of `thread`. The current
   checker validates guaranteed and optional lifetime reads at a minimal level
   and reports double-drop/use-after-drop cases for line registry keys.
-- Dialogue callee checking preserves the documented callee kind: `alice.say()[...]` resolves through `alice: Ref<Character>`, delimited character refs such as `@<character.alice>.say()[...]` generate the same speaker slug, and speaker presets such as `alice2(voice=auto):` / `alice2(voice=auto)[...]` resolve as callable `SpeakerPreset` values rather than being forced through `.say(...)`. Content-call line plans can attach on a following `with { ... }` / `with:` block or on the same line as `with { ... }` / `with: out ...`; line-result bindings such as `let handles = alice.say()[...] with: out (...)` and multiline `let handles = alice.say(...)[ ... ]` followed by `with:` preserve the plan on `Expr::DialogueCall` for symbol collection, HIR lowering, and type checking.
-- Bare scopes parse as `scope { ... }`, the name-omitted sugar for `scope name { ... }`. Bare `{ ... }` blocks in flow bodies normalize one step further to that unnamed `scope { ... }` form. A trailing bare block after a dialogue content call, such as `alice.say()[...] { ... }`, is not attached as a line plan; line plans still require `with { ... }` or `with:`.
+- Dialogue callee checking uses the Character value itself: `alice[...]` resolves through `alice: Ref<Character>`, and speaker presets such as `alice2(voice=auto)[...]` remain callable `SpeakerPreset` values. Content-call line plans attach through a following `with { ... }` / `with:` block or the same-line `with: out ...` form; line-result bindings such as `let handles = alice[...] with: out (...)` preserve the plan for symbol collection, HIR lowering, and type checking.
+- Bare scopes parse as `scope { ... }`, the name-omitted sugar for `scope name { ... }`. Bare `{ ... }` blocks in flow bodies normalize one step further to that unnamed `scope { ... }` form. A trailing bare block after a dialogue content call, such as `alice[...] { ... }`, is not attached as a line plan; line plans still require `with { ... }` or `with:`.
 - Type checking treats both bare `scope { ... }` blocks and named `scope name { ... }` blocks as local scopes, so temporary locals created inside them cannot be read after the block exits. Named scopes still contribute to generated relative IDs while the lowerer is inside that scope; unnamed scopes do not add an ID path segment.
 - `let name = choice ... { ... }` parses as a choice expression binding, lowers to HIR with normalized relative choice/option IDs, and the minimal checker can infer `Ref<Flow>` when every option uses `=> @flow...`.
 - Dynamic choice options now type-check their scoped fields in place: `option route in opening_routes(state) { id = route.choice_id; label = route.label; enabled = route.enabled; select { out route.target } }` binds `route` for the option body, validates boolean option state, checks label text keys, and keeps `select`/`out` expressions in the correct local scope. Compact choice arms require static option IDs; dynamic leading expressions such as `route.choice_id "..." -> ...` are preserved as raw recovery items and rejected before type checking.
@@ -423,7 +418,7 @@ Syntax parser:
 - `await ... with` keeps `pending`/`ready`/`error`/`denied` branches as structured AST/HIR, and branch bodies participate in symbol collection and type checking.
 - Bound wait-view expressions such as `let assets = try await load_opening_assets() with { ... }` and `let result = await load_opening_assets() with:` lower to explicit await-binding HIR. The minimal checker validates the awaited expression as `Need<T, E>`, scopes wait-view branch patterns, and binds the outer pattern as `T` for `try await` / `await?` or `Result<T, E>` for plain `await`.
 - Bound wait-view parsing accepts documented multi-line context chains before `with:`, such as `let bg = try await asset.image(...)\n    .context(...)\nwith:`, while plain `let bg = try await load_bg()` without a wait-view remains a normal await expression binding.
-- Try-line syntax now type-checks the documented `try alice.say(...)[ ... ] with:` shape when line-plan branches return `Ok(...)` / `Err(...)` through `out`. The minimal checker treats those constructors as `Result` values, merges placeholder `Ok`/`Err` result sides, unwraps the `try` expression to the success type, and treats `()` as `Unit`.
+- Try-line syntax type-checks the canonical `try alice(...)[...] with:` shape when line-plan branches return `Ok(...)` / `Err(...)` through `out`. The checker treats those constructors as `Result` values, merges the result sides, unwraps the `try` expression to the success type, and treats `()` as `Unit`.
 - Parenthesized await-with forms documented for generated or composed code, including `let bg = (await asset.image(...) with: ...)?` and `let bg = (await asset.image(...) with: ...).context(...)?`, lower to explicit await-binding HIR with `applies_try`.
 - Wait-view branch patterns include structured variant payloads, so documented activity forms such as `pending .Realizing(p) => ... p.ratio` bind the payload inside only that branch.
 - The minimal checker accepts dotted member access on scoped locals in wait-view bodies, so documented forms such as `pending p => ... progress.set(p.ratio)` validate without requiring `p.ratio` to be registered as a global symbol.

@@ -1,5 +1,6 @@
 //! Atomic source-backed registration of one complete semantic world.
 
+mod closed_enum;
 mod descriptor;
 mod diagnostic;
 mod environment_digest;
@@ -8,6 +9,10 @@ mod limits;
 mod model;
 mod registrar;
 mod source_index;
+pub use closed_enum::{
+    ClosedEnumCatalogError, RegisteredClosedEnumDomain, RegisteredClosedEnumDomainCatalog,
+    RegisteredClosedEnumMember,
+};
 pub use diagnostic::{
     CharacterRegistrationCode, CharacterRegistrationDiagnostic,
     CharacterRegistrationDiagnosticKind, CharacterRegistrationReport, RequiredCharacterToken,
@@ -29,12 +34,16 @@ pub use model::{
     AcceptedNominalSource, AcceptedNominalVisibilityIndex, AcceptedNominalWorld,
     AcceptedNominalWorldLookupError, AcceptedNominalWorldStamp, CharacterInventoryDescriptorV1,
     CharacterInventoryDigest, CharacterInventoryIntegrityError, CharacterInventoryRevision,
-    CharacterRegistrar, CharacterRegistrationRequest, ExternalOwnerLookupError,
-    ExternalRegistrationFact, ProjectRegistrationFacts, ProofReturnRegistrationPrelude,
-    ProofReturnRegistrationRequest, RegisteredCharacterResolutionError,
-    RegisteredEnvironmentDigest, RegisteredEnvironmentExternalOwner, RegisteredExternalOwner,
-    RegisteredExternalOwnerKind, RegisteredSemanticWorld, RegisteredStatementIngressTypes,
-    RegisteredTypeCheckEnv, StandardStatementIngressTypeId, StatementIngressRegistrationError,
+    CharacterRegistrar, CharacterRegistrationRequest, CompileTimeScalarBuiltinAtom,
+    CompileTimeScalarBuiltinIdentity, CompileTimeScalarTypeIdentity,
+    CompileTimeScalarTypeRegistrationError, CompileTimeScalarTypeResolutionError,
+    CompileTimeScalarTypeRoleId, ExternalOwnerLookupError, ExternalRegistrationFact,
+    ProjectRegistrationFacts, ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest,
+    RegisteredCharacterResolutionError, RegisteredCompileTimeScalarType,
+    RegisteredCompileTimeScalarTypes, RegisteredEnvironmentDigest,
+    RegisteredEnvironmentExternalOwner, RegisteredExternalOwner, RegisteredExternalOwnerKind,
+    RegisteredSemanticWorld, RegisteredStatementIngressTypes, RegisteredTypeCheckEnv,
+    StandardStatementIngressTypeId, StatementIngressRegistrationError,
     StatementIngressTypePublicationInput, StatementIngressTypeRoleId,
 };
 pub use source_index::{

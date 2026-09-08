@@ -16,11 +16,39 @@ impl<'a> AwbcLineLowerer<'a> {
         &mut self,
         content: &RuntimeDialogueContentPlan,
         line_task_group: Option<AwbcLineTaskGroupId>,
-    ) -> AwbcContentUnitId {
+    ) -> Result<AwbcContentUnitId, crate::awbc_lower::inventory::AwbcLowerDiagnostic> {
         let line = content.line().public_label().into_string();
-        let id = self
+        let Some(_template) = self
             .inventory
-            .intern_content_unit(line.as_str(), line_task_group);
+            .dialogue_template_manifest(content.template())
+            .cloned()
+        else {
+            return Err(crate::awbc_lower::inventory::AwbcLowerDiagnostic::error(
+                format!("dialogue.line.{line}"),
+                format!(
+                    "dialogue plan references template {} absent from the text-model catalog",
+                    content.template()
+                ),
+            ));
+        };
+        if let Some(group) = line_task_group
+            && self
+                .inventory
+                .program
+                .line_task_groups
+                .get(group.index())
+                .is_none()
+        {
+            return Err(crate::awbc_lower::inventory::AwbcLowerDiagnostic::error(
+                format!("dialogue.line.{line}"),
+                "dialogue content references a missing line-task group",
+            ));
+        }
+        let id = self.inventory.intern_content_unit(
+            line.as_str(),
+            content.template(),
+            line_task_group,
+        )?;
         let marks = content
             .marks()
             .iter()
@@ -34,6 +62,6 @@ impl<'a> AwbcLineLowerer<'a> {
             unit.marks = marks;
             unit.effect_site_count = content.effect_site_count().get();
         }
-        id
+        Ok(id)
     }
 }

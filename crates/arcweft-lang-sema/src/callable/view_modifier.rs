@@ -15,15 +15,18 @@ use super::{CallableName, CallableValidator, CheckedCallApplication};
 pub enum ViewModifierId {
     /// Binds platform-independent activation to a pure dialogue-action producer.
     OnActivate,
+    /// Applies one checked Fx value to the retained receiver node.
+    Fx,
 }
 
 impl ViewModifierId {
-    pub const ALL: [Self; 1] = [Self::OnActivate];
+    pub const ALL: [Self; 2] = [Self::OnActivate, Self::Fx];
 
     /// Collision-free tag used by the callable-schema semantic transcript.
     pub const fn semantic_tag(self) -> u8 {
         match self {
             Self::OnActivate => 0,
+            Self::Fx => 1,
         }
     }
 
@@ -32,12 +35,15 @@ impl ViewModifierId {
         match self {
             Self::OnActivate => CallableName::try_new("on_click")
                 .expect("the standard View modifier member is canonical"),
+            Self::Fx => {
+                CallableName::try_new("fx").expect("the standard View modifier member is canonical")
+            }
         }
     }
 
     pub const fn receiver(self) -> TypeKind {
         match self {
-            Self::OnActivate => TypeKind::ViewValue,
+            Self::OnActivate | Self::Fx => TypeKind::ViewValue,
         }
     }
 
@@ -60,24 +66,34 @@ impl ViewModifierId {
                     ),
                 )],
             ),
+            Self::Fx => FunctionSignature::new(
+                TypeKind::ViewValue,
+                [FunctionParam::required(
+                    "value",
+                    TypeKind::CompileTimeFx(crate::types::CompileTimeFxType::Abstract),
+                )],
+            ),
         }
     }
 
-    pub const fn event(self) -> arcweft_view::EventKind {
+    pub const fn event(self) -> Option<arcweft_view::EventKind> {
         match self {
-            Self::OnActivate => arcweft_view::EventKind::Activate,
+            Self::OnActivate => Some(arcweft_view::EventKind::Activate),
+            Self::Fx => None,
         }
     }
 
-    pub const fn handler_result_role(self) -> arcweft_view::ViewHandlerResultRole {
+    pub const fn handler_result_role(self) -> Option<arcweft_view::ViewHandlerResultRole> {
         match self {
-            Self::OnActivate => arcweft_view::ViewHandlerResultRole::DialogueAction,
+            Self::OnActivate => Some(arcweft_view::ViewHandlerResultRole::DialogueAction),
+            Self::Fx => None,
         }
     }
 
-    pub fn handler_result_type(self) -> TypeKind {
+    pub fn handler_result_type(self) -> Option<TypeKind> {
         match self {
-            Self::OnActivate => TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
+            Self::OnActivate => Some(TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned())),
+            Self::Fx => None,
         }
     }
 
@@ -87,6 +103,9 @@ impl ViewModifierId {
         self,
         application: &CheckedCallApplication,
     ) -> Option<arcweft_view::ViewHandlerProgramId> {
+        if self != Self::OnActivate {
+            return None;
+        }
         matches!(
             application
                 .core()

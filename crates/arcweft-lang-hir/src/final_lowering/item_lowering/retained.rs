@@ -1,20 +1,20 @@
 //! Final retained-identity item lowering.
 
-use arcweft_id::{CharacterSurfaceAlias, DeclarationIdentityFamily, DeclarationName};
+use arcweft_id::{DeclarationIdentityFamily, DeclarationName};
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedCharacterBody, AttachedCharacterDeclaration, AttachedCharacterInitializer,
-    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
-    AttachedDeclarationPublicIdIssue, AttachedRetainedName,
+    AttachedCharacterMember, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
+    AttachedRetainedName,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::identity::{HirLimit, ItemId, ScopeId};
 use crate::item::{
     HirActionDeclaration, HirCharacterAssignmentState, HirCharacterDeclaration,
-    HirCharacterDisplayNameMember, HirCharacterMemberRecovery, HirCharacterSurfaceAlias,
-    HirDeclarationMember, HirDeclarationMemberArena, HirDeclarationMemberId,
-    HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState, HirItem,
-    HirItemFamily, HirItemIssue, HirItemKind, HirParameter, HirParameterKind, HirPublicIdOrigin,
+    HirCharacterDisplayMember, HirCharacterMemberRecovery, HirDeclarationMember,
+    HirDeclarationMemberArena, HirDeclarationMemberId, HirDeclarationMemberIssue,
+    HirDeclarationMemberKind, HirDeclarationMemberPoisonState, HirItem, HirItemFamily,
+    HirItemIssue, HirItemKind, HirParameter, HirParameterKind, HirPublicIdOrigin,
     HirRetainedHeader, HirRetainedName, HirRetainedPublicId, HirRetainedPublicIdIssue,
     HirSignalDeclaration,
 };
@@ -50,10 +50,9 @@ impl StagedHirModuleTransaction<'_> {
         preflight_character_members(attached.body().members().len())?;
         let header =
             project_retained_header(attached.header(), DeclarationIdentityFamily::Character)?;
-        let alias = project_character_alias(attached.surface_alias())?;
         let mut retained_members = Vec::with_capacity(attached.body().members().len());
         let mut member_ids = Vec::with_capacity(attached.body().members().len());
-        let mut display_name = None;
+        let mut display = None;
 
         for (position, member) in attached.body().members().iter().enumerate() {
             let ordinal =
@@ -63,8 +62,8 @@ impl StagedHirModuleTransaction<'_> {
             }
             let id = HirDeclarationMemberId::new(owner, ordinal);
             let (kind, state) = match member {
-                AttachedCharacterMember::DisplayName(member) => {
-                    display_name.get_or_insert(id);
+                AttachedCharacterMember::Display(member) => {
+                    display.get_or_insert(id);
                     let assignment = if member.assignment().is_missing() {
                         HirCharacterAssignmentState::Missing
                     } else {
@@ -102,13 +101,11 @@ impl StagedHirModuleTransaction<'_> {
                         HirDeclarationMemberPoisonState::Clean
                     };
                     (
-                        HirDeclarationMemberKind::CharacterDisplayName(
-                            HirCharacterDisplayNameMember::new(
-                                assignment,
-                                initializer,
-                                member.is_duplicate(),
-                            ),
-                        ),
+                        HirDeclarationMemberKind::CharacterDisplay(HirCharacterDisplayMember::new(
+                            assignment,
+                            initializer,
+                            member.is_duplicate(),
+                        )),
                         state,
                     )
                 }
@@ -149,7 +146,7 @@ impl StagedHirModuleTransaction<'_> {
             owner,
             scope,
             prefix.value,
-            HirItemKind::Character(HirCharacterDeclaration::new(header, alias, display_name)),
+            HirItemKind::Character(HirCharacterDeclaration::new(header, display)),
             member_ids.into_boxed_slice(),
             state,
         )
@@ -315,6 +312,10 @@ fn project_retained_header(
             DeclarationName::try_new(value.as_str())
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
         ),
+        AttachedRetainedName::Derived { value, .. } => HirRetainedName::Resolved(
+            DeclarationName::try_new(value.as_str())
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+        ),
         AttachedRetainedName::Missing { .. } => HirRetainedName::Missing,
         AttachedRetainedName::Invalid { .. } => HirRetainedName::Invalid,
     };
@@ -352,7 +353,7 @@ fn retained_header_issue(
     attached: &arcweft_lang_syntax::attachment::AttachedRetainedHeader,
 ) -> Option<HirItemIssue> {
     match attached.name() {
-        AttachedRetainedName::Resolved { .. } => None,
+        AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. } => None,
         AttachedRetainedName::Missing { .. } => Some(HirItemIssue::MissingName),
         AttachedRetainedName::Invalid { .. } => Some(HirItemIssue::MalformedHeader),
     }
@@ -365,21 +366,6 @@ fn retained_header_issue(
     })
 }
 
-fn project_character_alias(
-    attached: &AttachedCharacterSurfaceAlias,
-) -> Result<HirCharacterSurfaceAlias, HirLowerFailure> {
-    match attached {
-        AttachedCharacterSurfaceAlias::Absent => Ok(HirCharacterSurfaceAlias::Absent),
-        AttachedCharacterSurfaceAlias::Resolved { value, .. } => {
-            Ok(HirCharacterSurfaceAlias::Resolved(
-                CharacterSurfaceAlias::try_new(value.as_str())
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-            ))
-        }
-        AttachedCharacterSurfaceAlias::Missing { .. } => Ok(HirCharacterSurfaceAlias::Missing),
-    }
-}
-
 fn character_issue(
     attached: &AttachedCharacterDeclaration,
     members: Option<&HirDeclarationMemberArena>,
@@ -389,13 +375,6 @@ fn character_issue(
             attached
                 .has_unexpected_header()
                 .then_some(HirItemIssue::MalformedHeader)
-        })
-        .or_else(|| {
-            matches!(
-                attached.surface_alias(),
-                AttachedCharacterSurfaceAlias::Missing { .. }
-            )
-            .then_some(HirItemIssue::MissingName)
         })
         .or_else(|| {
             matches!(attached.body(), AttachedCharacterBody::Missing(_))

@@ -8,6 +8,7 @@ use super::identity::{
 use super::schema::{RuntimeSchemaLimits, RuntimeTypeSchema};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::plan::{EntryRuntimeId, FlowRuntimeId, RuntimePureHelperId};
+use crate::runtime_id::RuntimeFunctionSiteId;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 /// Effective hard limits included in an Agent entry binding.
@@ -71,7 +72,7 @@ pub struct RuntimeFlowRole {
 }
 
 /// Executable pure-helper mapping for one checked callable contract.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeCallableExecutable {
     pub callable: RuntimeCallableId,
     pub contract: CallableContractHash,
@@ -79,9 +80,14 @@ pub struct RuntimeCallableExecutable {
 }
 
 /// Existing executable substrate that owns one role callable body.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeCallableExecutableCode {
     PureHelper(RuntimePureHelperId),
+    /// Capture-free structured function-site code used by project Entry
+    /// initializer/reducer roles. The site owns the exact input patterns and
+    /// typed expression body; callers must not reconstruct it from a helper
+    /// table or source declaration.
+    FunctionSite(RuntimeFunctionSiteId),
     ControllerFlow(FlowRuntimeId),
 }
 

@@ -2,8 +2,8 @@
 
 use arcweft_lang_hir::{
     expr::{
-        HirCallArgument, HirCallCallee, HirCallExpr, HirCallValue, HirExprKind, HirNamedBlockExpr,
-        HirNamedBlockName, HirSelectedMember, HirThreadFlowItem,
+        HirCallArgument, HirCallCallee, HirCallInvocation, HirCallValue, HirExprKind,
+        HirNamedBlockExpr, HirNamedBlockName, HirSelectedMember, HirThreadFlowItem,
     },
     identity::{ExprId, ItemId, StmtId},
     item::{HirBenchItem, HirItemKind, HirTestItem, HirTestKind},
@@ -359,7 +359,7 @@ fn named_block_commands(module: &HirModule, block: &HirNamedBlockExpr) -> Vec<Sc
     commands
 }
 
-fn script_expectation(module: &HirModule, call: &HirCallExpr) -> ScriptExpectation {
+fn script_expectation(module: &HirModule, call: &HirCallInvocation) -> ScriptExpectation {
     let Some(method) = is_selected_call(module, call, "expect") else {
         return ScriptExpectation::Unsupported { method: None };
     };
@@ -386,7 +386,7 @@ fn script_expectation(module: &HirModule, call: &HirCallExpr) -> ScriptExpectati
     }
 }
 
-fn expectation_signal(module: &HirModule, call: &HirCallExpr) -> Option<ScriptExpectation> {
+fn expectation_signal(module: &HirModule, call: &HirCallInvocation) -> Option<ScriptExpectation> {
     let [target, expected] = call.arguments() else {
         return None;
     };
@@ -396,7 +396,7 @@ fn expectation_signal(module: &HirModule, call: &HirCallExpr) -> Option<ScriptEx
     })
 }
 
-fn expectation_log(module: &HirModule, call: &HirCallExpr) -> Option<ScriptExpectation> {
+fn expectation_log(module: &HirModule, call: &HirCallInvocation) -> Option<ScriptExpectation> {
     let [level, contains] = call.arguments() else {
         return None;
     };
@@ -421,7 +421,7 @@ fn expectation_log(module: &HirModule, call: &HirCallExpr) -> Option<ScriptExpec
     })
 }
 
-fn expectation_file(module: &HirModule, call: &HirCallExpr) -> Option<ScriptExpectation> {
+fn expectation_file(module: &HirModule, call: &HirCallInvocation) -> Option<ScriptExpectation> {
     let [path, equals] = call.arguments() else {
         return None;
     };
@@ -453,7 +453,7 @@ fn virtual_path(module: &HirModule, owner: ExprId) -> Option<ScriptVirtualPath> 
     })
 }
 
-fn pure_helper(module: &HirModule, call: &HirCallExpr) -> Option<String> {
+fn pure_helper(module: &HirModule, call: &HirCallInvocation) -> Option<String> {
     if call_label(module, call.callee()).as_deref() != Some("pure") {
         return None;
     }
@@ -502,14 +502,14 @@ fn present_argument(argument: &HirCallArgument) -> Option<ExprId> {
     }
 }
 
-fn expression_call(module: &HirModule, owner: ExprId) -> Option<&HirCallExpr> {
+fn expression_call(module: &HirModule, owner: ExprId) -> Option<&HirCallInvocation> {
     match module.resolve_expr(owner).ok()?.kind() {
         HirExprKind::Call(call) => Some(call),
         _ => None,
     }
 }
 
-fn is_selected_call(module: &HirModule, call: &HirCallExpr, target: &str) -> Option<String> {
+fn is_selected_call(module: &HirModule, call: &HirCallInvocation, target: &str) -> Option<String> {
     match call.callee() {
         HirCallCallee::Value { value } => {
             let HirExprKind::Select(select) = module.resolve_expr(*value).ok()?.kind() else {
@@ -636,18 +636,14 @@ fn statement_name(module: &HirModule, statement: &HirStmtKind) -> String {
                 HirAssertionMode::Recovered => "assert".to_owned(),
             };
         }
-        HirStmtKind::Let { .. }
-        | HirStmtKind::LetElse { .. }
-        | HirStmtKind::LetChoice { .. }
-        | HirStmtKind::LetScope { .. }
-        | HirStmtKind::LetActionReceive { .. } => "let",
+        HirStmtKind::Let { .. } | HirStmtKind::LetElse { .. } => "let",
         HirStmtKind::Assign { target, .. } => {
             return expression_label(module, *target).unwrap_or_else(|| "assign".to_owned());
         }
         HirStmtKind::Return { .. } => "return",
         HirStmtKind::Out { .. } => "out",
         HirStmtKind::Goto { .. } => "goto",
-        HirStmtKind::DeferBlock { .. } | HirStmtKind::Defer { .. } => "defer",
+        HirStmtKind::Defer { .. } => "defer",
         HirStmtKind::Yield { .. } => "yield",
         HirStmtKind::Signal { .. } => "signal",
         HirStmtKind::LifetimeSet { .. } => "lifetime",

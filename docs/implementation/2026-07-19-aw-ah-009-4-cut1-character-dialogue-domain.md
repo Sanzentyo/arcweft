@@ -104,8 +104,9 @@ owner.
 The package states that `arcweft-dialogue` may depend on `arcweft-core` because
 none of the listed lower-layer crates depends on `arcweft-dialogue`. The current
 checkout contained one contrary production edge:
-`arcweft-lang-syntax -> arcweft-dialogue`, used only to share renderer-neutral
-rich-text tag and built-in effect vocabulary. Adding the package-required
+`arcweft-lang-syntax -> arcweft-dialogue`, used only to share the then-current
+renderer-neutral rich-text vocabulary and built-in effect vocabulary. Adding
+the package-required
 `dialogue -> core` edge therefore made
 `arcweft-lang-sema -> syntax -> dialogue -> core` reachable and failed the
 workspace dependency-direction test.
@@ -129,9 +130,9 @@ The Rust dialogue crate no longer defines or re-exports:
 - `SayOptions`;
 - `VoicePolicy`;
 - `DialogueLineBuilder`;
-- the `.say()` builder API.
+- the former dialogue builder method.
 
-The compile-fail API examples prove the removed public names and `.say()` method
+The compile-fail API examples proved the removed public names and former builder method
 do not resolve.
 There is no alias, deprecated wrapper, dual representation, removed-spelling
 diagnostic, or source gate.
@@ -144,10 +145,10 @@ observation.
 
 In particular:
 
-- syntax `.say` fixtures remain until the source/HIR/sema switch in Cuts 2 and
+- syntax fixtures for the former builder remained until the source/HIR/sema switch in Cuts 2 and
   3;
 - `arcweft-runtime-plan::DialogueSpeakerPreset`,
-  `speaker_preset_from_let`, `speaker_preset_chain`, and their `.say` fixtures
+  `speaker_preset_from_let`, `speaker_preset_chain`, and their former-builder fixtures
   remain until their explicitly assigned atomic deletion in Cut 4;
 - AWBC remains on the current ABI/codec and rejects nominal constants instead
   of erasing their identity;

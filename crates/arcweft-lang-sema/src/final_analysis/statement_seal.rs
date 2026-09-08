@@ -183,6 +183,8 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         if self.locals.get(&local).map(CheckedBinding::ty) != Some(&nominal.ty()) {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
+        let target_id = target;
+        let value_id = value;
         let target = expressions
             .get(&target)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
@@ -191,16 +193,22 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
+        let target_type = target
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target_id })?;
         let value = expressions
-            .get(&value)
-            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
-        if target.ty() != &field_type || value.ty() != &field_type {
+            .get(&value_id)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value_id })?;
+        let value_type = value
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value_id })?;
+        if target_type != &field_type || value_type != &field_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let place = CheckedAssignmentPlace::try_new(local, nominal, selection.clone(), field_type)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         Ok(CheckedStatementPayload::Assignment(Box::new(
-            CheckedAssignment::new(place, value.ty().clone()),
+            CheckedAssignment::new(place, value_type.clone()),
         )))
     }
 
@@ -367,7 +375,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
             let reason = expressions
                 .get(&reason)
                 .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: reason })?;
-            if reason.ty() != &TypeKind::String || !reason.effects().is_empty() {
+            if reason.value_type() != Some(&TypeKind::String) || !reason.effects().is_empty() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
         }

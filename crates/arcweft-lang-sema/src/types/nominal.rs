@@ -409,8 +409,8 @@ mod tests {
         assert_ne!(first, second);
         assert_ne!(first, other_owner);
         assert_eq!(first.ordinal(), 0);
-        let first = TypeKind::GenericParam(first);
-        let second = TypeKind::GenericParam(second);
+        let first = TypeKind::generic_parameter(first);
+        let second = TypeKind::generic_parameter(second);
         assert_eq!(
             first
                 .first_mismatch(&second)

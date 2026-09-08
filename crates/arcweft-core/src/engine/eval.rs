@@ -28,6 +28,7 @@ use crate::value::{
     RuntimeReductionValue, evaluate_core_iter_collect_intrinsic, evaluate_core_range_intrinsic,
     evaluate_index_intrinsic, evaluate_std_float_intrinsic, evaluate_string_intrinsic,
 };
+use std::sync::Arc;
 
 mod calls;
 mod function;
@@ -143,10 +144,17 @@ impl Engine {
             | RuntimeExprKind::AssignNominalField { .. } => {
                 self.evaluate_data_expr(expr, pure_backend)
             }
+            RuntimeExprKind::DialogueContent {
+                template,
+                values,
+                effects,
+            } => self.evaluate_dialogue_content_expr(*template, values, effects, pure_backend),
             RuntimeExprKind::Call { callee, args } => {
                 self.evaluate_call_expr(callee, args, pure_backend)
             }
-            RuntimeExprKind::Function(site) => self.evaluate_function_expr(*site),
+            RuntimeExprKind::Function { site, captures } => {
+                self.evaluate_function_expr(*site, captures, pure_backend)
+            }
             RuntimeExprKind::Apply { callee, args } => {
                 self.evaluate_apply_expr(callee, args, pure_backend)
             }
@@ -293,6 +301,94 @@ impl Engine {
             } => self.evaluate_assign_field_expr(*base, *field, expr, body, pure_backend),
             _ => unreachable!("data expression helper received non-data expression"),
         }
+    }
+
+    fn evaluate_dialogue_content_expr(
+        &mut self,
+        template: crate::runtime_id::RuntimeDialogueContentTemplateId,
+        values: &[RuntimeExpr],
+        effects: &[crate::value::RuntimeDialogueContentEffectBindingExpr],
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        let manifest = self
+            .plan
+            .dialogue_content_templates()
+            .get(template)
+            .cloned()
+            .ok_or(RuntimeEvalError::MissingDialogueTemplateManifest { template })?;
+        let evaluated = values
+            .iter()
+            .map(|expression| self.evaluate_expr_with_backend(expression, pure_backend))
+            .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
+        if evaluated.len() != manifest.slots().len() {
+            return Err(RuntimeEvalError::DialogueContentBindingCount {
+                expected: manifest.slots().len(),
+                actual: evaluated.len(),
+            });
+        }
+        let evaluated = manifest
+            .slots()
+            .iter()
+            .zip(evaluated)
+            .map(|(slot, value)| crate::plan::RuntimeDialogueValueBinding {
+                slot: slot.slot(),
+                role: slot.role(),
+                value,
+            })
+            .collect::<Vec<_>>();
+        if effects.len() != manifest.effects().len() {
+            return Err(RuntimeEvalError::DialogueContentConstruction(format!(
+                "evaluated effect count {} does not match template count {}",
+                effects.len(),
+                manifest.effects().len()
+            )));
+        }
+        let mut effect_bindings = Vec::with_capacity(effects.len());
+        for (index, effect) in effects.iter().enumerate() {
+            let expected = manifest.effects().get(index).ok_or_else(|| {
+                RuntimeEvalError::DialogueContentConstruction(
+                    "dialogue content effect site is absent".to_owned(),
+                )
+            })?;
+            if effect.site != expected.site() {
+                return Err(RuntimeEvalError::DialogueContentConstruction(
+                    "dialogue content effect sites are not canonical".to_owned(),
+                ));
+            }
+            let captures = effect
+                .captures
+                .iter()
+                .map(|capture| self.evaluate_expr_with_backend(capture, pure_backend))
+                .collect::<Result<Vec<_>, RuntimeEvalError>>()?;
+            let callback = crate::value::RuntimeFunctionValue::capture_site(
+                Arc::clone(&self.plan),
+                effect.function,
+                captures,
+            )?;
+            let remaining = callback.remaining_arity()?;
+            if remaining != 0 {
+                return Err(RuntimeEvalError::FunctionArgumentCount {
+                    expected: 0,
+                    found: remaining,
+                });
+            }
+            effect_bindings.push(crate::value::RuntimeDialogueContentEffectBinding::new(
+                effect.site,
+                callback,
+            ));
+        }
+        let artifact = self
+            .plan
+            .artifact()
+            .ok_or(RuntimeEvalError::DialogueContentUnboundArtifact)?;
+        crate::value::RuntimeDialogueContentValue::try_from_evaluated_bindings_with_effects(
+            artifact,
+            &manifest,
+            &evaluated,
+            &effect_bindings,
+        )
+        .map(crate::value::RuntimeDialogueContentValue::into_runtime_value)
+        .map_err(|error| RuntimeEvalError::DialogueContentConstruction(error.to_string()))
     }
 
     fn evaluate_bracket_seq_expr(

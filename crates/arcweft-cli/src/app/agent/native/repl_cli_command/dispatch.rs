@@ -344,11 +344,21 @@ fn result_from_report(
     report: AgentReplCellReport,
 ) -> CliReplCommandResult {
     match report.status.as_str() {
-        "ok" | "parsed" => CliReplCommandResult::ok(
-            command_id,
-            command_name,
-            evidence(report.value.unwrap_or(Value::Null)),
-        ),
+        "ok" | "parsed" => match report.value {
+            Some(value) => CliReplCommandResult::ok(command_id, command_name, evidence(value)),
+            None => CliReplCommandResult::error(
+                command_id,
+                command_name,
+                CliReplCommandEvidence::Empty,
+                ReplCommandDiagnostic::error(
+                    ReplCommandDiagnosticCode::HostError,
+                    format!(
+                        "CLI command `{command_name}` reported success without result evidence"
+                    ),
+                )
+                .with_field(command_name),
+            ),
+        },
         _ => CliReplCommandResult::error(
             command_id,
             command_name,
@@ -407,9 +417,13 @@ impl CliConnectTarget {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_agent_repl::command::{ReplCommandEffect, ReplTracePolicy};
+    use arcweft_agent_repl::command::{
+        ReplCommandDiagnosticCode, ReplCommandEffect, ReplCommandId, ReplCommandStatus,
+        ReplTracePolicy,
+    };
 
     use super::super::parse::parse_cli_repl_input;
+    use super::{AgentReplCellReport, CliReplCommandEvidence, result_from_report};
 
     #[test]
     fn repl_cli_inspection_read_only_trace_rejects_mutating_cli_commands() {
@@ -443,5 +457,35 @@ mod tests {
                 "{source}"
             );
         }
+    }
+
+    #[test]
+    fn successful_cli_report_without_result_evidence_is_a_typed_error() {
+        let result = result_from_report(
+            ReplCommandId::new(7),
+            "trace",
+            |value| CliReplCommandEvidence::Trace { value },
+            AgentReplCellReport {
+                index: 0,
+                input: ":trace".to_owned(),
+                kind: "trace".to_owned(),
+                status: "ok".to_owned(),
+                message: None,
+                value: None,
+                quit: false,
+            },
+        );
+
+        assert_eq!(result.status, ReplCommandStatus::Error);
+        assert_eq!(result.evidence, CliReplCommandEvidence::Empty);
+        assert_eq!(
+            result.diagnostics[0].code,
+            ReplCommandDiagnosticCode::HostError
+        );
+        assert!(
+            result.diagnostics[0]
+                .message
+                .contains("without result evidence")
+        );
     }
 }

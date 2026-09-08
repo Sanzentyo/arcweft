@@ -31,6 +31,7 @@ use crate::value::{
 use super::super::{
     ChoiceRuntimeOption, FlowOp, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
     RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget,
+    RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
     RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence,
     RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm,
     RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
@@ -50,7 +51,7 @@ use super::{
 };
 
 impl RuntimePlanBuilder {
-    fn lower_pattern_seed(
+    pub(super) fn lower_pattern_seed(
         &self,
         seed: RuntimePatternSeed,
     ) -> Result<RuntimePattern, RuntimePlanBuildError> {
@@ -125,6 +126,136 @@ impl RuntimePlanBuilder {
                     lowered.push(item);
                 }
                 RuntimeExprKind::Tuple(lowered)
+            }
+            RuntimeExprSeedKind::DialogueContent {
+                template,
+                values,
+                effects,
+            } => {
+                if !self.is_exact_dialogue_content_type(ty) {
+                    return Err(RuntimePlanBuildError::InvalidDialogueContentType {
+                        slot: crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(0)
+                            .expect("dialogue content type diagnostics use slot zero"),
+                        ty,
+                    });
+                }
+                let manifest = self
+                    .dialogue_content
+                    .template(template)
+                    .ok_or(RuntimePlanBuildError::MissingDialogueTemplateManifest { template })?;
+                if manifest.slots().len() != values.len() {
+                    return Err(RuntimePlanBuildError::DialogueValueCountMismatch {
+                        expected: manifest.slots().len(),
+                        actual: values.len(),
+                    });
+                }
+                let expected_slots = manifest.slots().to_vec();
+                let expected_effects = manifest.effects().to_vec();
+                let mut lowered = Vec::with_capacity(values.len());
+                for (value, expected) in values.into_vec().into_iter().zip(&expected_slots) {
+                    let value = self.lower_expression(value)?;
+                    let expected_ty = self
+                        .resolve_seed_type("dialogue content binding", expected.semantic_type())?;
+                    require_same("dialogue content binding", expected_ty, value.ty())?;
+                    lowered.push(value);
+                }
+                if effects.len() != expected_effects.len() {
+                    return Err(RuntimePlanBuildError::DialogueEffectCountMismatch {
+                        expected: expected_effects.len(),
+                        actual: effects.len(),
+                    });
+                }
+                let mut lowered_effects = Vec::with_capacity(effects.len());
+                for (index, effect) in effects.into_vec().into_iter().enumerate() {
+                    let expected = expected_effects.get(index).ok_or(
+                        RuntimePlanBuildError::DialogueEffectCountMismatch {
+                            expected: expected_effects.len(),
+                            actual: index,
+                        },
+                    )?;
+                    if effect.site != expected.site() {
+                        return Err(RuntimePlanBuildError::NonCanonicalDialogueEffectSite {
+                            expected: expected.site(),
+                            actual: effect.site,
+                        });
+                    }
+                    let (function, input_sources, input_types, result, body_kind, _) = effect
+                        .function
+                        .resolve(&self.issuer)
+                        .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                    if body_kind != RuntimeFunctionSiteBodyKind::Executable {
+                        return Err(RuntimePlanBuildError::FunctionSiteBodyKindMismatch {
+                            site: function,
+                            expected: RuntimeFunctionSiteBodyKind::Executable,
+                            actual: body_kind,
+                        });
+                    }
+                    if !matches!(self.projection(result)?, RuntimePlanTypeProjection::Unit) {
+                        return invalid_projection(
+                            "dialogue content effect callback result",
+                            result,
+                        );
+                    }
+                    let parameter_count = input_sources
+                        .iter()
+                        .filter(|source| {
+                            matches!(source, RuntimeFunctionInputSource::Parameter { .. })
+                        })
+                        .count();
+                    if parameter_count != 0 {
+                        return Err(RuntimePlanBuildError::CallableAbiArity {
+                            context: "dialogue content effect callback",
+                            expected: 0,
+                            actual: parameter_count,
+                        });
+                    }
+                    let capture_types = input_sources
+                        .iter()
+                        .zip(input_types)
+                        .filter_map(|(source, ty)| {
+                            matches!(source, RuntimeFunctionInputSource::Capture { .. })
+                                .then_some(*ty)
+                        })
+                        .collect::<Vec<_>>();
+                    if capture_types != expected.capture_types() {
+                        return Err(RuntimePlanBuildError::DialogueEffectCaptureTypeMismatch {
+                            site: effect.site,
+                        });
+                    }
+                    if effect.captures.len() != capture_types.len() {
+                        return Err(RuntimePlanBuildError::DialogueEffectCaptureCountMismatch {
+                            site: effect.site,
+                            expected: capture_types.len(),
+                            actual: effect.captures.len(),
+                        });
+                    }
+                    let captures = effect
+                        .captures
+                        .into_vec()
+                        .into_iter()
+                        .zip(&capture_types)
+                        .map(|(capture, expected)| {
+                            let capture = self.lower_expression(capture)?;
+                            require_same(
+                                "dialogue content effect capture",
+                                *expected,
+                                capture.ty(),
+                            )?;
+                            Ok(capture)
+                        })
+                        .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+                    lowered_effects.push(crate::value::RuntimeDialogueContentEffectBindingExpr {
+                        site: effect.site,
+                        function,
+                        captures,
+                    });
+                }
+                return Ok(RuntimeExpr::dialogue_content_with_effects(
+                    ty,
+                    template,
+                    lowered,
+                    lowered_effects,
+                ));
             }
             RuntimeExprSeedKind::BracketSeq(items) => {
                 let (item_ty, fixed_len) = self.sequence_projection(ty, "sequence expression")?;
@@ -256,33 +387,55 @@ impl RuntimePlanBuilder {
                 callee,
                 args: self.lower_call_arguments(args)?,
             },
-            RuntimeExprSeedKind::Function(site) => {
-                let (site, parameters, result) = site
-                    .resolve(&self.issuer)
-                    .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+            RuntimeExprSeedKind::Function { site, captures } => {
+                let (site, input_sources, input_types, result, _, _) =
+                    site.resolve(&self.issuer)
+                        .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                let capture_types = input_sources
+                    .iter()
+                    .zip(input_types)
+                    .filter_map(|(source, ty)| {
+                        matches!(source, RuntimeFunctionInputSource::Capture { .. }).then_some(*ty)
+                    })
+                    .collect::<Vec<_>>();
+                if captures.len() != capture_types.len() {
+                    return Err(RuntimePlanBuildError::CallableAbiArity {
+                        context: "function capture expressions",
+                        expected: capture_types.len(),
+                        actual: captures.len(),
+                    });
+                }
+                let captures = captures
+                    .into_vec()
+                    .into_iter()
+                    .zip(capture_types)
+                    .map(|(capture, expected)| {
+                        let capture = self.lower_expression(capture)?;
+                        require_same("function capture expression", expected, capture.ty())?;
+                        Ok(capture)
+                    })
+                    .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
                 match self.projection(ty)? {
                     RuntimePlanTypeProjection::Function {
                         parameters: expected,
                         result: expected_result,
-                    } if expected.as_ref() == parameters && *expected_result == result => {}
+                    } if expected.as_ref()
+                        == input_sources
+                            .iter()
+                            .zip(input_types)
+                            .filter_map(|(source, ty)| {
+                                matches!(source, RuntimeFunctionInputSource::Parameter { .. })
+                                    .then_some(*ty)
+                            })
+                            .collect::<Vec<_>>()
+                            .as_slice()
+                        && *expected_result == result => {}
                     _ => return invalid_projection("function expression", ty),
                 }
-                RuntimeExprKind::Function(site)
+                RuntimeExprKind::Function { site, captures }
             }
             RuntimeExprSeedKind::Apply { callee, args } => {
-                let callee = self.lower_expression(*callee)?;
-                let (parameters, result) = match self.projection(callee.ty())? {
-                    RuntimePlanTypeProjection::Function { parameters, result } => {
-                        (parameters.clone(), *result)
-                    }
-                    _ => return invalid_projection("function application callee", callee.ty()),
-                };
-                let args = self.lower_call_arguments(args)?;
-                let actual = self.expanded_argument_types(&args)?;
-                if parameters.as_ref() != actual.as_slice() {
-                    return invalid_projection("function application arguments", callee.ty());
-                }
-                require_same("function application result", result, ty)?;
+                let (callee, args) = self.lower_function_application(*callee, args, ty)?;
                 RuntimeExprKind::Apply {
                     callee: Box::new(callee),
                     args,
@@ -513,7 +666,7 @@ struct PatternAdmission {
     bindings: BTreeSet<RuntimeLocalDeclarationId>,
 }
 
-fn require_same(
+pub(super) fn require_same(
     context: &'static str,
     expected: RuntimePlanTypeId,
     actual: RuntimePlanTypeId,
@@ -903,29 +1056,126 @@ impl RuntimePlanBuilder {
         }
     }
 
+    fn lower_function_application(
+        &self,
+        callee: RuntimeExprSeed,
+        args: Box<[RuntimeCallArgumentSeed]>,
+        result_type: RuntimePlanTypeId,
+    ) -> Result<(RuntimeExpr, Vec<RuntimeCallArgument>), RuntimePlanBuildError> {
+        let callee = self.lower_expression(callee)?;
+        let (parameters, result) = match self.projection(callee.ty())? {
+            RuntimePlanTypeProjection::Function { parameters, result } => {
+                (parameters.clone(), *result)
+            }
+            _ => return invalid_projection("function application callee", callee.ty()),
+        };
+        let args = self.lower_call_arguments(args)?;
+        let actual = self.expanded_argument_types(&args)?;
+        if parameters.as_ref() != actual.as_slice() {
+            return invalid_projection("function application arguments", callee.ty());
+        }
+        require_same("function application result", result, result_type)?;
+        Ok((callee, args))
+    }
+
     fn lower_call_arguments(
         &self,
         args: Box<[RuntimeCallArgumentSeed]>,
     ) -> Result<Vec<RuntimeCallArgument>, RuntimePlanBuildError> {
-        args.into_vec()
+        let lowered = args
+            .into_vec()
             .into_iter()
-            .map(|argument| {
-                let (value, mode) = argument.into_parts();
+            .enumerate()
+            .map(|(_index, argument)| {
+                let (value, mode, abi_position) = argument.into_parts();
                 let value = self.lower_expression(value)?;
                 if mode == RuntimeCallArgumentMode::Spread {
                     self.require_spreadable(value.ty())?;
                 }
-                Ok(RuntimeCallArgument::from_admitted_parts(value, mode))
+                Ok(RuntimeCallArgument::from_admitted_parts(
+                    value,
+                    mode,
+                    abi_position,
+                ))
             })
-            .collect()
+            .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+        self.validate_call_argument_positions(&lowered)?;
+        Ok(lowered)
+    }
+
+    fn validate_call_argument_positions(
+        &self,
+        args: &[RuntimeCallArgument],
+    ) -> Result<(), RuntimePlanBuildError> {
+        let mut saw_spread = false;
+        let mut ranges = args
+            .iter()
+            .enumerate()
+            .map(|(index, argument)| {
+                if saw_spread {
+                    return Err(RuntimePlanBuildError::InvalidCallArgumentPosition {
+                        index,
+                        position: argument.abi_position(),
+                    });
+                }
+                if argument.mode() == RuntimeCallArgumentMode::Spread {
+                    saw_spread = true;
+                }
+                let width = match argument.mode() {
+                    RuntimeCallArgumentMode::Value => 1_u32,
+                    RuntimeCallArgumentMode::Spread => match self
+                        .projection(argument.value().ty())?
+                    {
+                        RuntimePlanTypeProjection::Tuple(items) => u32::try_from(items.len())
+                            .map_err(|_| RuntimePlanBuildError::InvalidCallArgumentPosition {
+                                index,
+                                position: argument.abi_position(),
+                            })?,
+                        RuntimePlanTypeProjection::Array { length, .. } => u32::try_from(*length)
+                            .map_err(|_| {
+                            RuntimePlanBuildError::InvalidCallArgumentPosition {
+                                index,
+                                position: argument.abi_position(),
+                            }
+                        })?,
+                        _ => {
+                            return Err(RuntimePlanBuildError::IndeterminateSpreadArgument {
+                                ty: argument.value().ty(),
+                            });
+                        }
+                    },
+                };
+                let end = argument.abi_position().checked_add(width).ok_or(
+                    RuntimePlanBuildError::InvalidCallArgumentPosition {
+                        index,
+                        position: argument.abi_position(),
+                    },
+                )?;
+                Ok((index, argument.abi_position(), end))
+            })
+            .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
+        ranges.sort_by_key(|(_, start, _)| *start);
+        let mut expected = 0_u32;
+        for (index, start, end) in ranges {
+            if start != expected {
+                return Err(if start < expected {
+                    RuntimePlanBuildError::InvalidCallArgumentPosition {
+                        index,
+                        position: start,
+                    }
+                } else {
+                    RuntimePlanBuildError::NonContiguousCallArgumentPosition { position: expected }
+                });
+            }
+            expected = end;
+        }
+        Ok(())
     }
 
     fn require_spreadable(&self, ty: RuntimePlanTypeId) -> Result<(), RuntimePlanBuildError> {
         if matches!(
             self.projection(ty)?,
-            RuntimePlanTypeProjection::Tuple(_)
-                | RuntimePlanTypeProjection::Sequence { .. }
-                | RuntimePlanTypeProjection::Array { .. }
+            RuntimePlanTypeProjection::Tuple(_) | RuntimePlanTypeProjection::Array { .. }
         ) {
             Ok(())
         } else {
@@ -937,24 +1187,27 @@ impl RuntimePlanBuilder {
         &self,
         args: &[RuntimeCallArgument],
     ) -> Result<Vec<RuntimePlanTypeId>, RuntimePlanBuildError> {
-        let mut result = Vec::new();
+        let mut groups = Vec::new();
         for argument in args {
+            let mut types = Vec::new();
             match argument.mode() {
-                RuntimeCallArgumentMode::Value => result.push(argument.value().ty()),
+                RuntimeCallArgumentMode::Value => types.push(argument.value().ty()),
                 RuntimeCallArgumentMode::Spread => match self.projection(argument.value().ty())? {
-                    RuntimePlanTypeProjection::Tuple(items) => result.extend(items.iter().copied()),
+                    RuntimePlanTypeProjection::Tuple(items) => {
+                        types.extend(items.iter().copied());
+                    }
                     RuntimePlanTypeProjection::Array { item, length } => {
                         let count = usize::try_from(*length).map_err(|_| {
                             RuntimePlanBuildError::IndeterminateSpreadArgument {
                                 ty: argument.value().ty(),
                             }
                         })?;
-                        result.try_reserve(count).map_err(|_| {
+                        types.try_reserve(count).map_err(|_| {
                             RuntimePlanBuildError::IndeterminateSpreadArgument {
                                 ty: argument.value().ty(),
                             }
                         })?;
-                        result.extend(std::iter::repeat_n(*item, count));
+                        types.extend(std::iter::repeat_n(*item, count));
                     }
                     _ => {
                         return Err(RuntimePlanBuildError::IndeterminateSpreadArgument {
@@ -963,6 +1216,12 @@ impl RuntimePlanBuilder {
                     }
                 },
             }
+            groups.push((argument.abi_position(), types));
+        }
+        groups.sort_by_key(|(position, _)| *position);
+        let mut result = Vec::new();
+        for (_, types) in groups {
+            result.extend(types);
         }
         Ok(result)
     }
@@ -1882,7 +2141,7 @@ impl RuntimePlanBuilder {
 }
 
 impl RuntimePlanBuilder {
-    pub(super) fn validate_function_body_locals(
+    pub(super) fn validate_callable_body_locals(
         &self,
         body: &RuntimeExpr,
         params: &[RuntimeLocalDeclarationId],
@@ -1901,6 +2160,16 @@ impl RuntimePlanBuilder {
             }
         }
         Ok(())
+    }
+
+    pub(super) fn validate_function_body_locals(
+        &self,
+        body: &RuntimeExpr,
+        inputs: &[RuntimeFunctionInputBinding],
+    ) -> Result<(), RuntimePlanBuildError> {
+        let scope = function_input_scope(inputs);
+        let mut used = BTreeSet::new();
+        self.validate_expression_locals(body, &scope, &mut used)
     }
 
     #[allow(
@@ -1934,6 +2203,15 @@ impl RuntimePlanBuilder {
                 self.validate_expression_locals(expr, scope, used)?;
                 let nested = extend_scope(scope, [*binding])?;
                 self.validate_expression_locals(body, &nested, used)
+            }
+            RuntimeExprKind::DialogueContent {
+                values, effects, ..
+            } => {
+                self.validate_expression_slice_locals(values, scope, used)?;
+                for effect in effects {
+                    self.validate_expression_slice_locals(&effect.captures, scope, used)?;
+                }
+                Ok(())
             }
             RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {
                 self.validate_expression_slice_locals(items, scope, used)
@@ -1976,16 +2254,36 @@ impl RuntimePlanBuilder {
             RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
                 self.validate_argument_locals(args, scope, used)
             }
-            RuntimeExprKind::Function(site) => {
+            RuntimeExprKind::Function { site, captures } => {
                 let index = usize::try_from(site.get().get() - 1)
                     .map_err(|_| RuntimePlanBuildError::UnknownFunctionSite { site: *site })?;
                 let site = self
                     .function_sites
                     .get(index)
                     .ok_or(RuntimePlanBuildError::UnknownFunctionSite { site: *site })?;
-                for capture in &site.captures {
-                    require_local_in_scope(*capture, scope)?;
-                    used.insert(*capture);
+                if captures.len()
+                    != site
+                        .inputs
+                        .iter()
+                        .filter(|input| {
+                            matches!(input.source(), RuntimeFunctionInputSource::Capture { .. })
+                        })
+                        .count()
+                {
+                    return Err(RuntimePlanBuildError::CallableAbiArity {
+                        context: "function capture expressions",
+                        expected: site
+                            .inputs
+                            .iter()
+                            .filter(|input| {
+                                matches!(input.source(), RuntimeFunctionInputSource::Capture { .. })
+                            })
+                            .count(),
+                        actual: captures.len(),
+                    });
+                }
+                for capture in captures {
+                    self.validate_expression_locals(capture, scope, used)?;
                 }
                 Ok(())
             }
@@ -2413,6 +2711,44 @@ impl RuntimePlanBuilder {
                     .transpose()?,
                 target: self.lower_host_call_target(target)?,
             },
+            RuntimeFlowOpSeed::ApplyFunction {
+                callee,
+                args,
+                result,
+            } => {
+                let result = self.lower_pattern_seed(result)?;
+                let (callee, args) = self.lower_function_application(callee, args, result.ty())?;
+                FlowOp::ApplyFunction {
+                    callee,
+                    args,
+                    result,
+                }
+            }
+            RuntimeFlowOpSeed::ProjectCall { plan, result } => {
+                let plan = self.lower_project_call_plan(plan)?;
+                let result = self.lower_pattern_seed(result)?;
+                let expected = match plan.outcome() {
+                    super::super::RuntimeProjectCallOutcome::Continue { result_abi, .. } => self
+                        .resolve_seed_type("project-call result ABI", result_abi.function_type())?,
+                    super::super::RuntimeProjectCallOutcome::Invoke { function_site } => {
+                        self.function_sites
+                            .get(usize::try_from(function_site.get().get() - 1).map_err(|_| {
+                                RuntimePlanBuildError::UnknownFunctionSite {
+                                    site: *function_site,
+                                }
+                            })?)
+                            .ok_or(RuntimePlanBuildError::UnknownFunctionSite {
+                                site: *function_site,
+                            })?
+                            .result
+                    }
+                };
+                require_same("project-call result pattern", expected, result.ty())?;
+                let site = self.project_call_sites.borrow_mut().push(
+                    super::super::RuntimeProjectCallSite::from_admitted_parts(plan, result),
+                )?;
+                FlowOp::ProjectCall { site }
+            }
             RuntimeFlowOpSeed::If {
                 condition,
                 then_ops,
@@ -2541,6 +2877,624 @@ impl RuntimePlanBuilder {
             RuntimeFlowOpSeed::ExitScope => FlowOp::ExitScope,
             RuntimeFlowOpSeed::Noop => FlowOp::Noop,
         })
+    }
+
+    fn lower_project_call_plan(
+        &self,
+        seed: super::super::RuntimeProjectCallPlanSeed,
+    ) -> Result<super::super::RuntimeProjectCallPlan, RuntimePlanBuildError> {
+        use super::super::{
+            RuntimeProjectCallAttachedMaterialization, RuntimeProjectCallAttachedPresence,
+            RuntimeProjectCallDefaultFunction, RuntimeProjectCallFixedMaterialization,
+            RuntimeProjectCallInput, RuntimeProjectCallOperand,
+            RuntimeProjectCallOrdinaryMaterialization, RuntimeProjectCallOutcome,
+            RuntimeProjectCallRestMaterialization,
+        };
+
+        self.validate_project_call_operand_positions(&seed.operands)?;
+
+        let input = match seed.input {
+            super::super::RuntimeProjectCallInputSeed::Direct => RuntimeProjectCallInput::Direct,
+            super::super::RuntimeProjectCallInputSeed::Continuation {
+                callee,
+                expected_abi,
+            } => RuntimeProjectCallInput::Continuation {
+                callee: self.lower_expression(callee)?,
+                expected_abi: self
+                    .lower_project_call_abi(expected_abi, "project-call continuation ABI")?,
+            },
+        };
+        let operands = seed
+            .operands
+            .into_vec()
+            .into_iter()
+            .map(|operand| {
+                Ok(RuntimeProjectCallOperand::from_admitted_parts(
+                    self.lower_expression(operand.value)?,
+                    operand.mode,
+                ))
+            })
+            .collect::<Result<Box<[_]>, RuntimePlanBuildError>>()?;
+        let ordinary = seed
+            .ordinary
+            .into_vec()
+            .into_iter()
+            .map(|row| -> Result<_, RuntimePlanBuildError> {
+                Ok(match row {
+                    super::super::RuntimeProjectCallOrdinaryMaterializationSeed::Fixed(row) => {
+                        RuntimeProjectCallOrdinaryMaterialization::Fixed(
+                            RuntimeProjectCallFixedMaterialization::from_admitted_parts(
+                                row.parameter,
+                                self.resolve_seed_type("project-call fixed ABI type", row.abi_ty)?,
+                                self.resolve_seed_type(
+                                    "project-call fixed binding type",
+                                    row.binding_ty,
+                                )?,
+                                row.source_index,
+                            ),
+                        )
+                    }
+                    super::super::RuntimeProjectCallOrdinaryMaterializationSeed::Rest(row) => {
+                        RuntimeProjectCallOrdinaryMaterialization::Rest(
+                            RuntimeProjectCallRestMaterialization::from_admitted_parts(
+                                row.parameter,
+                                self.resolve_seed_type("project-call rest ABI type", row.abi_ty)?,
+                                self.resolve_seed_type(
+                                    "project-call rest binding type",
+                                    row.binding_ty,
+                                )?,
+                                row.source_indices,
+                            ),
+                        )
+                    }
+                })
+            })
+            .collect::<Result<Box<[_]>, RuntimePlanBuildError>>()?;
+        let attached = seed
+            .attached
+            .map(|row| -> Result<_, RuntimePlanBuildError> {
+                let presence = match row.presence {
+                    super::super::RuntimeProjectCallAttachedPresenceSeed::RequiredPresent => {
+                        RuntimeProjectCallAttachedPresence::RequiredPresent
+                    }
+                    super::super::RuntimeProjectCallAttachedPresenceSeed::OptionalPresent => {
+                        RuntimeProjectCallAttachedPresence::OptionalPresent
+                    }
+                    super::super::RuntimeProjectCallAttachedPresenceSeed::OptionalOmitted => {
+                        RuntimeProjectCallAttachedPresence::OptionalOmitted
+                    }
+                    super::super::RuntimeProjectCallAttachedPresenceSeed::DefaultedPresent => {
+                        RuntimeProjectCallAttachedPresence::DefaultedPresent
+                    }
+                    super::super::RuntimeProjectCallAttachedPresenceSeed::DefaultedOmitted(
+                        default,
+                    ) => {
+                        let (site, ..) = default
+                            .site
+                            .resolve(&self.issuer)
+                            .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                        RuntimeProjectCallAttachedPresence::DefaultedOmitted(
+                            RuntimeProjectCallDefaultFunction::from_admitted_parts(
+                                site,
+                                default.captures,
+                            ),
+                        )
+                    }
+                };
+                Ok(
+                    RuntimeProjectCallAttachedMaterialization::from_admitted_parts(
+                        self.resolve_seed_type("project-call attached ABI type", row.abi_ty)?,
+                        self.resolve_seed_type(
+                            "project-call attached binding type",
+                            row.binding_ty,
+                        )?,
+                        row.source_index,
+                        presence,
+                    ),
+                )
+            })
+            .transpose()?;
+        let outcome = match seed.outcome {
+            super::super::RuntimeProjectCallOutcomeSeed::Continue {
+                result_abi,
+                next_group,
+            } => RuntimeProjectCallOutcome::Continue {
+                result_abi: self.lower_project_call_abi(result_abi, "project-call result ABI")?,
+                next_group,
+            },
+            super::super::RuntimeProjectCallOutcomeSeed::Invoke { function_site } => {
+                let (site, ..) = function_site
+                    .resolve(&self.issuer)
+                    .ok_or(RuntimePlanBuildError::ForeignFunctionSiteSeed)?;
+                RuntimeProjectCallOutcome::Invoke {
+                    function_site: site,
+                }
+            }
+        };
+        self.validate_project_call_parts(
+            &input,
+            seed.completed_group,
+            &operands,
+            &ordinary,
+            attached.as_ref(),
+            &outcome,
+        )?;
+        super::super::RuntimeProjectCallPlan::try_from_admitted_parts(
+            input,
+            seed.completed_group,
+            operands,
+            ordinary,
+            attached,
+            outcome,
+        )
+        .map_err(RuntimePlanBuildError::from)
+    }
+
+    fn validate_project_call_operand_positions(
+        &self,
+        operands: &[super::super::RuntimeProjectCallOperandSeed],
+    ) -> Result<(), RuntimePlanBuildError> {
+        let mut positions = BTreeSet::new();
+        for operand in operands {
+            if !positions.insert(operand.abi_position) {
+                return Err(RuntimePlanBuildError::ProjectCall(
+                    super::super::RuntimeProjectCallPlanError::DuplicateAbiPosition {
+                        position: operand.abi_position,
+                    },
+                ));
+            }
+        }
+        for (expected, actual) in positions.iter().enumerate() {
+            let expected = u32::try_from(expected).unwrap_or(u32::MAX);
+            if expected != *actual {
+                return Err(RuntimePlanBuildError::ProjectCall(
+                    super::super::RuntimeProjectCallPlanError::NonContiguousAbiPosition {
+                        position: expected,
+                    },
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn lower_project_call_abi(
+        &self,
+        seed: super::super::RuntimeProjectCallAbiSeed,
+        context: &'static str,
+    ) -> Result<crate::value::RuntimeProjectContinuationAbi, RuntimePlanBuildError> {
+        let function_type = self.resolve_seed_type(context, seed.function_type)?;
+        for ty in seed.prefix_types.iter().copied() {
+            self.resolve_seed_type(context, ty)?;
+        }
+        self.require_projection(context, function_type, |projection| {
+            matches!(projection, RuntimePlanTypeProjection::Function { .. })
+        })?;
+        Ok(
+            crate::value::RuntimeProjectContinuationAbi::from_admitted_parts(
+                seed.lineage,
+                seed.function_type,
+                seed.prefix_types,
+            ),
+        )
+    }
+
+    fn validate_project_call_parts(
+        &self,
+        input: &super::super::RuntimeProjectCallInput,
+        completed_group: u32,
+        operands: &[super::super::RuntimeProjectCallOperand],
+        ordinary: &[super::super::RuntimeProjectCallOrdinaryMaterialization],
+        attached: Option<&super::super::RuntimeProjectCallAttachedMaterialization>,
+        outcome: &super::super::RuntimeProjectCallOutcome,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let prefix_types = match input {
+            super::super::RuntimeProjectCallInput::Direct => Vec::new(),
+            super::super::RuntimeProjectCallInput::Continuation {
+                callee,
+                expected_abi,
+            } => {
+                let callee_semantic = self
+                    .types
+                    .get(callee.ty())
+                    .map(|declaration| declaration.semantic_identity());
+                if callee_semantic != Some(expected_abi.function_type()) {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "project-call continuation callee",
+                    });
+                }
+                expected_abi
+                    .prefix_types()
+                    .iter()
+                    .copied()
+                    .map(|ty| self.resolve_seed_type("project-call continuation prefix ABI", ty))
+                    .collect::<Result<Vec<_>, _>>()?
+            }
+        };
+        for row in ordinary {
+            match row {
+                super::super::RuntimeProjectCallOrdinaryMaterialization::Fixed(row) => {
+                    require_same(
+                        "project-call fixed ABI/binding type",
+                        row.abi_ty(),
+                        row.binding_ty(),
+                    )?;
+                    let operand = self.project_call_operand(operands, row.source_index())?;
+                    if operand.mode() != RuntimeCallArgumentMode::Value {
+                        return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "fixed operand mode",
+                        });
+                    }
+                    require_same(
+                        "project-call fixed source type",
+                        row.abi_ty(),
+                        operand.value().ty(),
+                    )?;
+                }
+                super::super::RuntimeProjectCallOrdinaryMaterialization::Rest(row) => {
+                    let item = match self.projection(row.binding_ty())? {
+                        RuntimePlanTypeProjection::Sequence {
+                            kind: RuntimePlanSequenceKind::Vec,
+                            item,
+                        } if *item == row.abi_ty() => *item,
+                        _ => {
+                            return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                                context: "rest binding sequence",
+                            });
+                        }
+                    };
+                    for &source_index in row.source_indices() {
+                        let operand = self.project_call_operand(operands, source_index)?;
+                        match operand.mode() {
+                            RuntimeCallArgumentMode::Value => {
+                                require_same(
+                                    "project-call rest scalar source type",
+                                    item,
+                                    operand.value().ty(),
+                                )?;
+                            }
+                            RuntimeCallArgumentMode::Spread => {
+                                self.validate_project_call_spread_source(
+                                    operand.value().ty(),
+                                    item,
+                                )?;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(attached) = attached {
+            self.validate_project_call_attached(operands, attached)?;
+        }
+        if let super::super::RuntimeProjectCallOutcome::Continue { result_abi, .. } = outcome {
+            if let super::super::RuntimeProjectCallInput::Continuation { expected_abi, .. } = input
+            {
+                if result_abi.lineage() != expected_abi.lineage()
+                    || result_abi.function_type() != expected_abi.function_type()
+                {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "continuation result identity",
+                    });
+                }
+            }
+        }
+        if let super::super::RuntimeProjectCallOutcome::Invoke { function_site } = outcome {
+            self.validate_project_call_invoke_site(
+                *function_site,
+                &prefix_types,
+                ordinary,
+                attached,
+            )?;
+        }
+        if let Some(attached) = attached
+            && let super::super::RuntimeProjectCallAttachedPresence::DefaultedOmitted(default) =
+                attached.presence()
+        {
+            self.validate_project_call_default_site(
+                default,
+                &prefix_types,
+                ordinary,
+                attached.binding_ty(),
+            )?;
+        }
+        let _ = completed_group;
+        Ok(())
+    }
+
+    fn project_call_operand<'a>(
+        &self,
+        operands: &'a [super::super::RuntimeProjectCallOperand],
+        index: u32,
+    ) -> Result<&'a super::super::RuntimeProjectCallOperand, RuntimePlanBuildError> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|index| operands.get(index))
+            .ok_or(RuntimePlanBuildError::ProjectCall(
+                super::super::RuntimeProjectCallPlanError::SourceOutOfRange { index },
+            ))
+    }
+
+    fn validate_project_call_spread_source(
+        &self,
+        source_ty: RuntimePlanTypeId,
+        item: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let homogeneous = match self.projection(source_ty)? {
+            RuntimePlanTypeProjection::Sequence {
+                item: source_item, ..
+            }
+            | RuntimePlanTypeProjection::Array {
+                item: source_item, ..
+            } => *source_item == item,
+            RuntimePlanTypeProjection::Tuple(items) => {
+                items.iter().all(|source_item| *source_item == item)
+            }
+            _ => false,
+        };
+        if homogeneous {
+            Ok(())
+        } else {
+            Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "rest spread source",
+            })
+        }
+    }
+
+    fn validate_project_call_attached(
+        &self,
+        operands: &[super::super::RuntimeProjectCallOperand],
+        attached: &super::super::RuntimeProjectCallAttachedMaterialization,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let option_item = |ty| match self.projection(ty)? {
+            RuntimePlanTypeProjection::Option { item, some_payload } => {
+                let payload = self.projection(*some_payload)?;
+                match payload {
+                    RuntimePlanTypeProjection::Tuple(fields)
+                        if fields.len() == 1 && fields[0] == *item =>
+                    {
+                        Ok(*item)
+                    }
+                    _ => Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "attached option payload",
+                    }),
+                }
+            }
+            _ => Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "attached option type",
+            }),
+        };
+        match attached.presence() {
+            super::super::RuntimeProjectCallAttachedPresence::RequiredPresent => {
+                require_same(
+                    "required attached ABI/binding type",
+                    attached.abi_ty(),
+                    attached.binding_ty(),
+                )?;
+                let operand = self.project_call_operand(
+                    operands,
+                    attached.source_index().ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "required attached source",
+                        },
+                    )?,
+                )?;
+                if operand.mode() != RuntimeCallArgumentMode::Value {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "required attached operand mode",
+                    });
+                }
+                require_same(
+                    "required attached source type",
+                    attached.binding_ty(),
+                    operand.value().ty(),
+                )?;
+            }
+            super::super::RuntimeProjectCallAttachedPresence::OptionalPresent => {
+                require_same(
+                    "optional attached ABI/binding type",
+                    attached.abi_ty(),
+                    attached.binding_ty(),
+                )?;
+                let item = option_item(attached.abi_ty())?;
+                let operand = self.project_call_operand(
+                    operands,
+                    attached.source_index().ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "optional attached source",
+                        },
+                    )?,
+                )?;
+                if operand.mode() != RuntimeCallArgumentMode::Value {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "optional attached operand mode",
+                    });
+                }
+                require_same("optional attached source type", item, operand.value().ty())?;
+            }
+            super::super::RuntimeProjectCallAttachedPresence::OptionalOmitted => {
+                require_same(
+                    "omitted optional attached ABI/binding type",
+                    attached.abi_ty(),
+                    attached.binding_ty(),
+                )?;
+                let _ = option_item(attached.abi_ty())?;
+            }
+            super::super::RuntimeProjectCallAttachedPresence::DefaultedPresent => {
+                let item = option_item(attached.abi_ty())?;
+                require_same(
+                    "defaulted attached binding type",
+                    item,
+                    attached.binding_ty(),
+                )?;
+                let operand = self.project_call_operand(
+                    operands,
+                    attached.source_index().ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "defaulted attached source",
+                        },
+                    )?,
+                )?;
+                if operand.mode() != RuntimeCallArgumentMode::Value {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "defaulted attached operand mode",
+                    });
+                }
+                require_same(
+                    "defaulted attached source type",
+                    attached.binding_ty(),
+                    operand.value().ty(),
+                )?;
+            }
+            super::super::RuntimeProjectCallAttachedPresence::DefaultedOmitted(_default) => {
+                let item = option_item(attached.abi_ty())?;
+                require_same(
+                    "omitted default attached binding type",
+                    item,
+                    attached.binding_ty(),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_project_call_default_site(
+        &self,
+        default: &super::super::RuntimeProjectCallDefaultFunction,
+        prefix_types: &[RuntimePlanTypeId],
+        ordinary: &[super::super::RuntimeProjectCallOrdinaryMaterialization],
+        result_ty: RuntimePlanTypeId,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let site_index = usize::try_from(default.site().get().get() - 1).map_err(|_| {
+            RuntimePlanBuildError::UnknownFunctionSite {
+                site: default.site(),
+            }
+        })?;
+        let site = self.function_sites.get(site_index).ok_or(
+            RuntimePlanBuildError::UnknownFunctionSite {
+                site: default.site(),
+            },
+        )?;
+        require_same("attached default function result", result_ty, site.result)?;
+        let mut capture_types = Vec::new();
+        let mut expected_capture = 0_u32;
+        for input in &site.inputs {
+            match input.source() {
+                RuntimeFunctionInputSource::Capture { position }
+                    if position == expected_capture =>
+                {
+                    capture_types.push(input.pattern().ty());
+                    expected_capture = expected_capture.checked_add(1).ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "attached default capture position",
+                        },
+                    )?;
+                }
+                RuntimeFunctionInputSource::Parameter { .. }
+                | RuntimeFunctionInputSource::Capture { .. } => {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "attached default function inputs",
+                    });
+                }
+            }
+        }
+        if capture_types.len() != default.captures().len() {
+            return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "attached default capture count",
+            });
+        }
+        for (expected, source) in capture_types.iter().zip(default.captures()) {
+            let actual = match source {
+                super::super::RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix {
+                    position,
+                } => prefix_types
+                    .get(usize::try_from(*position).map_err(|_| {
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "attached default prefix capture",
+                        }
+                    })?)
+                    .copied()
+                    .ok_or(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "attached default prefix capture",
+                    })?,
+                super::super::RuntimeProjectCallDefaultCaptureSource::CurrentLogical {
+                    position,
+                } => ordinary
+                    .get(usize::try_from(*position).map_err(|_| {
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "attached default current capture",
+                        }
+                    })?)
+                    .map(super::super::RuntimeProjectCallOrdinaryMaterialization::binding_ty)
+                    .ok_or(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "attached default current capture",
+                    })?,
+            };
+            require_same("attached default capture type", *expected, actual)?;
+        }
+        Ok(())
+    }
+
+    fn validate_project_call_invoke_site(
+        &self,
+        site_id: crate::runtime_id::RuntimeFunctionSiteId,
+        prefix_types: &[RuntimePlanTypeId],
+        ordinary: &[super::super::RuntimeProjectCallOrdinaryMaterialization],
+        attached: Option<&super::super::RuntimeProjectCallAttachedMaterialization>,
+    ) -> Result<(), RuntimePlanBuildError> {
+        let site_index = usize::try_from(site_id.get().get() - 1)
+            .map_err(|_| RuntimePlanBuildError::UnknownFunctionSite { site: site_id })?;
+        let site = self
+            .function_sites
+            .get(site_index)
+            .ok_or(RuntimePlanBuildError::UnknownFunctionSite { site: site_id })?;
+        let expected_parameters = ordinary
+            .iter()
+            .map(super::super::RuntimeProjectCallOrdinaryMaterialization::binding_ty)
+            .chain(attached.into_iter().map(|row| row.binding_ty()))
+            .collect::<Vec<_>>();
+        let mut captures = Vec::new();
+        let mut parameters = Vec::new();
+        let mut next_capture = 0_u32;
+        let mut next_parameter = 0_u32;
+        for input in &site.inputs {
+            match input.source() {
+                RuntimeFunctionInputSource::Capture { position } if position == next_capture => {
+                    captures.push(input.pattern().ty());
+                    next_capture = next_capture.checked_add(1).ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "project-call capture position",
+                        },
+                    )?;
+                }
+                RuntimeFunctionInputSource::Parameter { position }
+                    if position == next_parameter =>
+                {
+                    parameters.push(input.pattern().ty());
+                    next_parameter = next_parameter.checked_add(1).ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "project-call parameter position",
+                        },
+                    )?;
+                }
+                RuntimeFunctionInputSource::Capture { .. }
+                | RuntimeFunctionInputSource::Parameter { .. } => {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "project-call function input order",
+                    });
+                }
+            }
+        }
+        if captures != prefix_types {
+            return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "project-call capture ABI",
+            });
+        }
+        if parameters != expected_parameters {
+            return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                context: "project-call parameter ABI",
+            });
+        }
+        Ok(())
     }
 
     fn lower_line_operation(
@@ -3183,6 +4137,16 @@ impl RuntimePlanBuilder {
         self.validate_flow_operation_locals_inner(ops, scope, &mut used)
     }
 
+    pub(super) fn validate_flow_operation_locals_with_usage(
+        &self,
+        ops: &[FlowOp],
+        scope: &mut BTreeSet<RuntimeLocalDeclarationId>,
+    ) -> Result<BTreeSet<RuntimeLocalDeclarationId>, RuntimePlanBuildError> {
+        let mut used = BTreeSet::new();
+        self.validate_flow_operation_locals_inner(ops, scope, &mut used)?;
+        Ok(used)
+    }
+
     pub(super) fn validate_line_task_actions_locals(
         &self,
         actions: &[&[FlowOp]],
@@ -3280,6 +4244,34 @@ impl RuntimePlanBuilder {
                     if let Some(binding) = binding {
                         *scope = extend_scope(scope, pattern_binding_locals(binding))?;
                     }
+                }
+                FlowOp::ApplyFunction {
+                    callee,
+                    args,
+                    result,
+                } => {
+                    self.validate_expression_locals(callee, scope, used)?;
+                    for argument in args {
+                        self.validate_expression_locals(argument.value(), scope, used)?;
+                    }
+                    *scope = extend_scope(scope, pattern_binding_locals(result))?;
+                }
+                FlowOp::ProjectCall { site } => {
+                    let row = self.project_call_sites.borrow().get(*site).cloned().ok_or(
+                        RuntimePlanBuildError::InvalidProjectCallAbi {
+                            context: "project-call catalog site",
+                        },
+                    )?;
+                    let plan = row.plan();
+                    if let super::super::RuntimeProjectCallInput::Continuation { callee, .. } =
+                        plan.input()
+                    {
+                        self.validate_expression_locals(&callee, scope, used)?;
+                    }
+                    for operand in plan.operands() {
+                        self.validate_expression_locals(operand.value(), scope, used)?;
+                    }
+                    *scope = extend_scope(scope, pattern_binding_locals(row.result()))?;
                 }
                 FlowOp::If {
                     condition,
@@ -3596,6 +4588,17 @@ fn pattern_binding_locals(pattern: &RuntimePattern) -> Vec<RuntimeLocalDeclarati
     let mut locals = Vec::new();
     collect_pattern_binding_locals(pattern, &mut locals);
     locals
+}
+
+pub(super) fn function_input_scope(
+    inputs: &[RuntimeFunctionInputBinding],
+) -> BTreeSet<RuntimeLocalDeclarationId> {
+    let mut scope = BTreeSet::new();
+    for input in inputs {
+        scope.insert(input.input_local());
+        scope.extend(pattern_binding_locals(input.pattern()));
+    }
+    scope
 }
 
 fn collect_pattern_binding_locals(

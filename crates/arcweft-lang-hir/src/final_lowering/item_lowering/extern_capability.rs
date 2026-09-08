@@ -130,6 +130,9 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         attached: &AttachedCapabilityFunction,
     ) -> Result<(HirCapabilityMember, Option<HirItemIssue>), HirLowerFailure> {
+        if attached.attached_content().is_some() && attached.prefix().has_fx_attribute() {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        }
         let callable_scope = self.allocate_item_callable_scope(attached.syntax(), owner, scope)?;
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
@@ -140,6 +143,14 @@ impl StagedHirModuleTransaction<'_> {
             callable_scope,
             attached.has_parameter_shape_recovery(),
         )?;
+        let (attached_content, attached_local, attached_recovery) = self
+            .lower_attached_content_parameter(attached.attached_content(), callable_scope, false)?;
+        let mut callable_locals = parameter_groups.locals.to_vec();
+        if let Some(local) = attached_local {
+            callable_locals.push(local);
+        }
+        require_limit(HirLimit::LocalsPerScope, callable_locals.len())?;
+        self.close_scope_members(callable_scope, callable_locals.into_boxed_slice())?;
         let (return_type, return_missing_type, return_recovery) = match attached.authored_return() {
             Some(authored) => {
                 let ty = self.lower_attached_type(authored.ty(), callable_scope)?;
@@ -179,6 +190,7 @@ impl StagedHirModuleTransaction<'_> {
                     .recovery
                     .then_some(HirItemIssue::MalformedHeader)
             })
+            .or_else(|| attached_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| return_missing_type.then_some(HirItemIssue::MissingType))
             .or_else(|| return_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| effects_recovery.then_some(HirItemIssue::Recovery))
@@ -191,6 +203,7 @@ impl StagedHirModuleTransaction<'_> {
             generic_parameters,
             parameter_groups.groups,
             return_type,
+            attached_content,
             callable_scope,
             effects.into_boxed_slice(),
         )

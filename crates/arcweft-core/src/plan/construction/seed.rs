@@ -9,12 +9,13 @@ use std::{fmt, sync::Arc};
 use thiserror::Error;
 
 use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
+use crate::entry::RuntimeDialogueContentTemplateDigest;
 use crate::entry::{CallableContractHash, RuntimeCallableId, RuntimeCommandTargetId};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::{
-    RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteCount, RuntimeDialogueEffectSiteId,
-    RuntimeDialogueMarkId, RuntimeDialogueValueSlotId, RuntimeFunctionSiteId,
-    RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
+    RuntimeDialogueContentPlanId, RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteCount,
+    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
+    RuntimeFunctionSiteId, RuntimeLineHandleSiteId, RuntimeLineTaskGroupId, RuntimeLineTaskNodeId,
     RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::step::RuntimeHostCallMode;
@@ -26,6 +27,10 @@ use crate::value::{
     RuntimeValue,
 };
 use arcweft_id::runtime_program::RuntimePureProgramId;
+
+use super::super::function_sites::{
+    RuntimeFunctionEffectSet, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
+};
 
 use super::super::{
     FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
@@ -117,15 +122,56 @@ pub struct RuntimeDialogueValueSiteSeed {
     pub slot: RuntimeDialogueValueSlotId,
     pub role: RuntimeDialogueValueRole,
     pub function: RuntimeFunctionSiteSeedId,
+    pub captures: Box<[RuntimeExprSeed]>,
+}
+
+/// Construction-only mapping from one content-local effect site to its
+/// executable zero-argument callback function site.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueEffectSiteSeed {
+    pub site: RuntimeDialogueEffectSiteId,
+    pub function: RuntimeFunctionSiteSeedId,
+    pub captures: Box<[RuntimeExprSeed]>,
 }
 
 /// Construction-only dialogue content execution mapping.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeDialogueContentPlanSeed {
     pub line: RuntimeLineId,
+    pub template: RuntimeDialogueContentTemplateManifestSeed,
     pub values: Box<[RuntimeDialogueValueSiteSeed]>,
+    pub effect_sites: Box<[RuntimeDialogueEffectSiteSeed]>,
     pub marks: Box<[String]>,
     pub effect_site_count: RuntimeDialogueEffectSiteCount,
+}
+
+/// Construction-only immutable template manifest issued by the text-model
+/// authority. The plan builder interns this row exactly once and each plan
+/// keeps only its dedicated template identity.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentTemplateManifestSeed {
+    pub id: RuntimeDialogueContentTemplateId,
+    pub digest: RuntimeDialogueContentTemplateDigest,
+    pub slots: Box<[RuntimeDialogueContentSlotSeed]>,
+    pub effects: Box<[RuntimeDialogueContentEffectSlotSeed]>,
+}
+
+/// Construction-only exact slot schema emitted by the text-model authority.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RuntimeDialogueContentSlotSeed {
+    pub slot: RuntimeDialogueValueSlotId,
+    pub role: RuntimeDialogueValueRole,
+    pub semantic_type: RuntimeSemanticTypeId,
+}
+
+/// Construction-only static ABI schema for one dialogue-content effect site.
+/// Semantic capture identities are resolved to plan-local type IDs when the
+/// aggregate builder commits the manifest.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentEffectSlotSeed {
+    pub site: RuntimeDialogueEffectSiteId,
+    pub trigger: crate::plan::RuntimeDialogueContentEffectTrigger,
+    pub capture_types: Box<[RuntimeSemanticTypeId]>,
 }
 
 /// Construction-only typed identity of a mark owned by one dialogue content
@@ -136,55 +182,6 @@ pub struct RuntimeDialogueMarkSeedId {
     content: RuntimeDialogueContentPlanId,
     mark: RuntimeDialogueMarkId,
 }
-
-/// Construction-only typed identity of an inline effect site owned by one
-/// dialogue content seed.
-#[derive(Clone)]
-pub struct RuntimeDialogueEffectSiteSeedId {
-    issuer: Arc<RuntimePlanConstructionIssuer>,
-    content: RuntimeDialogueContentPlanId,
-    site: RuntimeDialogueEffectSiteId,
-}
-
-impl RuntimeDialogueEffectSiteSeedId {
-    fn issued(
-        issuer: &Arc<RuntimePlanConstructionIssuer>,
-        content: RuntimeDialogueContentPlanId,
-        site: RuntimeDialogueEffectSiteId,
-    ) -> Self {
-        Self {
-            issuer: Arc::clone(issuer),
-            content,
-            site,
-        }
-    }
-
-    pub(super) fn resolve(
-        &self,
-        issuer: &Arc<RuntimePlanConstructionIssuer>,
-    ) -> Option<(RuntimeDialogueContentPlanId, RuntimeDialogueEffectSiteId)> {
-        Arc::ptr_eq(&self.issuer, issuer).then_some((self.content, self.site))
-    }
-}
-
-impl fmt::Debug for RuntimeDialogueEffectSiteSeedId {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_tuple("RuntimeDialogueEffectSiteSeedId")
-            .field(&self.site)
-            .finish()
-    }
-}
-
-impl PartialEq for RuntimeDialogueEffectSiteSeedId {
-    fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.issuer, &other.issuer)
-            && self.content == other.content
-            && self.site == other.site
-    }
-}
-
-impl Eq for RuntimeDialogueEffectSiteSeedId {}
 
 impl RuntimeDialogueMarkSeedId {
     pub(super) fn issued(
@@ -271,7 +268,6 @@ pub enum RuntimeLineTaskNodeSeed {
 pub enum RuntimeLineTaskTriggerSeed {
     Immediate,
     Mark(RuntimeDialogueMarkSeedId),
-    ContentEffect(RuntimeDialogueEffectSiteSeedId),
     Scheduled(RuntimeLineHandleSiteId),
 }
 
@@ -358,6 +354,9 @@ pub struct RuntimeCallableExecutableSeed {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeCallableExecutableSeedCode {
     PureHelper(RuntimePureHelperSeedId),
+    /// A capture-free structured function-site body. The site handle carries
+    /// the final typed input-pattern prologue and body authority.
+    FunctionSite(RuntimeFunctionSiteSeedId),
     ControllerFlow(FlowRuntimeId),
 }
 
@@ -439,6 +438,18 @@ pub enum RuntimeFlowOpSeed {
     HostCall {
         binding: Option<RuntimePatternSeed>,
         target: RuntimeHostCallTargetSeed,
+    },
+    /// ANF/control-transfer project call. Its typed plan and result pattern
+    /// are atomically sealed into the plan's site catalog during admission.
+    ProjectCall {
+        plan: super::super::RuntimeProjectCallPlanSeed,
+        result: RuntimePatternSeed,
+    },
+    /// Typed application of a function value in the current fiber.
+    ApplyFunction {
+        callee: RuntimeExprSeed,
+        args: Box<[RuntimeCallArgumentSeed]>,
+        result: RuntimePatternSeed,
     },
     If {
         condition: RuntimeExprSeed,
@@ -726,6 +737,21 @@ fn collect_binding_or_host_free_locals(
                 binding.collect_binding_locals(bound);
             }
         }
+        RuntimeFlowOpSeed::ProjectCall { plan, result } => {
+            plan.collect_free_locals(bound, locals);
+            result.collect_binding_locals(bound);
+        }
+        RuntimeFlowOpSeed::ApplyFunction {
+            callee,
+            args,
+            result,
+        } => {
+            callee.collect_free_locals(bound, locals);
+            for argument in args {
+                argument.value.collect_free_locals(bound, locals);
+            }
+            result.collect_binding_locals(bound);
+        }
         _ => return false,
     }
     true
@@ -841,10 +867,9 @@ fn collect_terminal_or_effect_free_locals(
                 value.collect_free_locals(bound, locals);
             }
         }
-        RuntimeFlowOpSeed::GotoExpr(value) | RuntimeFlowOpSeed::ReturnExpr(value) => {
-            value.collect_free_locals(bound, locals);
-        }
-        RuntimeFlowOpSeed::CommitDialogueResult { value } => {
+        RuntimeFlowOpSeed::GotoExpr(value)
+        | RuntimeFlowOpSeed::ReturnExpr(value)
+        | RuntimeFlowOpSeed::CommitDialogueResult { value } => {
             value.collect_free_locals(bound, locals);
         }
         RuntimeFlowOpSeed::Effect(effect) | RuntimeFlowOpSeed::RegisterCleanup { effect, .. } => {
@@ -861,6 +886,8 @@ fn collect_terminal_or_effect_free_locals(
         | RuntimeFlowOpSeed::Await { .. }
         | RuntimeFlowOpSeed::AwaitMany { .. }
         | RuntimeFlowOpSeed::HostCall { .. }
+        | RuntimeFlowOpSeed::ProjectCall { .. }
+        | RuntimeFlowOpSeed::ApplyFunction { .. }
         | RuntimeFlowOpSeed::If { .. }
         | RuntimeFlowOpSeed::IfLet { .. }
         | RuntimeFlowOpSeed::Match { .. }
@@ -925,19 +952,16 @@ fn collect_host_argument_free_locals(
 pub struct RuntimeDialogueContentPlanSeedId {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     content: RuntimeDialogueContentPlanId,
-    effect_site_count: RuntimeDialogueEffectSiteCount,
 }
 
 impl RuntimeDialogueContentPlanSeedId {
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         content: RuntimeDialogueContentPlanId,
-        effect_site_count: RuntimeDialogueEffectSiteCount,
     ) -> Self {
         Self {
             issuer: Arc::clone(issuer),
             content,
-            effect_site_count,
         }
     }
 
@@ -952,13 +976,6 @@ impl RuntimeDialogueContentPlanSeedId {
     pub fn mark(&self, index: usize) -> Option<RuntimeDialogueMarkSeedId> {
         RuntimeDialogueMarkId::from_zero_based(index)
             .map(|mark| RuntimeDialogueMarkSeedId::issued(&self.issuer, self.content, mark))
-    }
-
-    #[must_use]
-    pub fn effect_site(&self, index: usize) -> Option<RuntimeDialogueEffectSiteSeedId> {
-        self.effect_site_count
-            .site(index)
-            .map(|site| RuntimeDialogueEffectSiteSeedId::issued(&self.issuer, self.content, site))
     }
 }
 
@@ -1426,22 +1443,31 @@ impl Eq for RuntimeLocalSeedId {}
 pub struct RuntimeFunctionSiteSeedId {
     issuer: Arc<RuntimePlanConstructionIssuer>,
     site: RuntimeFunctionSiteId,
-    parameters: Box<[RuntimePlanTypeId]>,
+    input_sources: Box<[RuntimeFunctionInputSource]>,
+    inputs: Box<[RuntimePlanTypeId]>,
     result: RuntimePlanTypeId,
+    body_kind: RuntimeFunctionSiteBodyKind,
+    effects: RuntimeFunctionEffectSet,
 }
 
 impl RuntimeFunctionSiteSeedId {
     pub(super) fn issued(
         issuer: &Arc<RuntimePlanConstructionIssuer>,
         site: RuntimeFunctionSiteId,
-        parameters: Box<[RuntimePlanTypeId]>,
+        input_sources: Box<[RuntimeFunctionInputSource]>,
+        inputs: Box<[RuntimePlanTypeId]>,
         result: RuntimePlanTypeId,
+        body_kind: RuntimeFunctionSiteBodyKind,
+        effects: RuntimeFunctionEffectSet,
     ) -> Self {
         Self {
             issuer: Arc::clone(issuer),
             site,
-            parameters,
+            input_sources,
+            inputs,
             result,
+            body_kind,
+            effects,
         }
     }
 
@@ -1450,13 +1476,19 @@ impl RuntimeFunctionSiteSeedId {
         issuer: &Arc<RuntimePlanConstructionIssuer>,
     ) -> Option<(
         RuntimeFunctionSiteId,
+        &[RuntimeFunctionInputSource],
         &[RuntimePlanTypeId],
         RuntimePlanTypeId,
+        RuntimeFunctionSiteBodyKind,
+        &RuntimeFunctionEffectSet,
     )> {
         Arc::ptr_eq(&self.issuer, issuer).then_some((
             self.site,
-            self.parameters.as_ref(),
+            self.input_sources.as_ref(),
+            self.inputs.as_ref(),
             self.result,
+            self.body_kind,
+            &self.effects,
         ))
     }
 }
@@ -1474,8 +1506,11 @@ impl PartialEq for RuntimeFunctionSiteSeedId {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.issuer, &other.issuer)
             && self.site == other.site
-            && self.parameters == other.parameters
+            && self.input_sources == other.input_sources
+            && self.inputs == other.inputs
             && self.result == other.result
+            && self.body_kind == other.body_kind
+            && self.effects == other.effects
     }
 }
 
@@ -1660,12 +1695,43 @@ pub struct RuntimeTraitMethodDeclarationSeed {
     pub output_abi: RuntimePureOutputType,
 }
 
+/// Construction-only structured function-site body family.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeFunctionSiteBodySeed {
+    Expression(RuntimeExprSeed),
+    Executable(RuntimeFunctionExecutableBodySeed),
+}
+
+/// Construction-only executable function-site body.  The operation sequence
+/// is lowered by the aggregate builder through its ordinary flow-op lowerer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFunctionExecutableBodySeed {
+    pub effects: RuntimeFunctionEffectSet,
+    pub ops: Box<[RuntimeFlowOpSeed]>,
+}
+
+impl From<RuntimeExprSeed> for RuntimeFunctionSiteBodySeed {
+    fn from(body: RuntimeExprSeed) -> Self {
+        Self::Expression(body)
+    }
+}
+
+/// One construction-time function input row. The input local is synthetic;
+/// the checked pattern owns all body-local bindings.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeFunctionInputBindingSeed {
+    pub source: RuntimeFunctionInputSource,
+    pub input_local: RuntimeLocalSeedId,
+    pub pattern: RuntimePatternSeed,
+}
+
 /// Signature-only reservation for one plan-owned structured function site.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeFunctionSiteDeclarationSeed {
-    pub params: Box<[RuntimeLocalSeedId]>,
-    pub captures: Box<[RuntimeLocalSeedId]>,
+    pub inputs: Box<[RuntimeFunctionInputBindingSeed]>,
     pub result: RuntimeSemanticTypeId,
+    pub body_kind: RuntimeFunctionSiteBodyKind,
+    pub effects: RuntimeFunctionEffectSet,
 }
 
 /// Zero-based field coordinate in one accepted record domain.
@@ -1715,6 +1781,25 @@ impl RuntimeExprSeed {
         Self { ty, kind }
     }
 
+    /// Constructs a content expression seed with value bindings and
+    /// zero-argument callback bindings for every static effect site.
+    #[must_use]
+    pub fn dialogue_content_with_effects(
+        ty: RuntimeSemanticTypeId,
+        template: RuntimeDialogueContentTemplateId,
+        bindings: impl IntoIterator<Item = RuntimeExprSeed>,
+        effects: impl IntoIterator<Item = RuntimeDialogueContentEffectBindingSeed>,
+    ) -> Self {
+        Self::new(
+            ty,
+            RuntimeExprSeedKind::DialogueContent {
+                template,
+                values: bindings.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+                effects: effects.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+            },
+        )
+    }
+
     #[must_use]
     pub const fn ty(&self) -> RuntimeSemanticTypeId {
         self.ty
@@ -1745,6 +1830,13 @@ pub enum RuntimeExprSeedKind {
         body: Box<RuntimeExprSeed>,
     },
     Tuple(Box<[RuntimeExprSeed]>),
+    /// Constructs an exact `DialogueContent` envelope from evaluated bindings
+    /// against one plan-owned template manifest row.
+    DialogueContent {
+        template: RuntimeDialogueContentTemplateId,
+        values: Box<[RuntimeExprSeed]>,
+        effects: Box<[RuntimeDialogueContentEffectBindingSeed]>,
+    },
     BracketSeq(Box<[RuntimeExprSeed]>),
     RepeatSeq {
         value: Box<RuntimeExprSeed>,
@@ -1783,7 +1875,13 @@ pub enum RuntimeExprSeedKind {
         callee: RuntimeCallTarget,
         args: Box<[RuntimeCallArgumentSeed]>,
     },
-    Function(RuntimeFunctionSiteSeedId),
+    /// Constructs a structured function value from explicit outer-scope
+    /// capture expressions. The reserved site's capture input locals are
+    /// synthetic callee destinations and are not outer-scope references.
+    Function {
+        site: RuntimeFunctionSiteSeedId,
+        captures: Box<[RuntimeExprSeed]>,
+    },
     Apply {
         callee: Box<RuntimeExprSeed>,
         args: Box<[RuntimeCallArgumentSeed]>,
@@ -1839,6 +1937,14 @@ pub enum RuntimeExprSeedKind {
     ReductionUnchanged {
         state: Box<RuntimeExprSeed>,
     },
+}
+
+/// Construction-only callback binding for one content effect site.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentEffectBindingSeed {
+    pub site: RuntimeDialogueEffectSiteId,
+    pub function: RuntimeFunctionSiteSeedId,
+    pub captures: Box<[RuntimeExprSeed]>,
 }
 
 /// Dedicated Agent seed algebra; generic records are not an alternate input.
@@ -1907,16 +2013,25 @@ pub enum RuntimeAgentExprSeed {
 pub struct RuntimeCallArgumentSeed {
     value: RuntimeExprSeed,
     mode: RuntimeCallArgumentMode,
+    abi_position: u32,
 }
 
 impl RuntimeCallArgumentSeed {
     #[must_use]
-    pub const fn new(value: RuntimeExprSeed, mode: RuntimeCallArgumentMode) -> Self {
-        Self { value, mode }
+    pub const fn new(
+        value: RuntimeExprSeed,
+        mode: RuntimeCallArgumentMode,
+        abi_position: u32,
+    ) -> Self {
+        Self {
+            value,
+            mode,
+            abi_position,
+        }
     }
 
-    pub(super) fn into_parts(self) -> (RuntimeExprSeed, RuntimeCallArgumentMode) {
-        (self.value, self.mode)
+    pub(super) fn into_parts(self) -> (RuntimeExprSeed, RuntimeCallArgumentMode, u32) {
+        (self.value, self.mode, self.abi_position)
     }
 }
 
@@ -2066,15 +2181,24 @@ impl RuntimeExprSeed {
         locals.into_boxed_slice()
     }
 
+    pub(crate) fn collect_free_locals_for_flow(
+        &self,
+        bound: &[RuntimeLocalSeedId],
+        locals: &mut Vec<RuntimeLocalSeedId>,
+    ) {
+        self.collect_free_locals(bound, locals);
+    }
+
     fn collect_free_locals(
         &self,
         bound: &[RuntimeLocalSeedId],
         locals: &mut Vec<RuntimeLocalSeedId>,
     ) {
         match self.kind() {
-            RuntimeExprSeedKind::Value(_)
-            | RuntimeExprSeedKind::EntityRef(_)
-            | RuntimeExprSeedKind::Function(_) => {}
+            RuntimeExprSeedKind::Value(_) | RuntimeExprSeedKind::EntityRef(_) => {}
+            RuntimeExprSeedKind::Function { captures, .. } => {
+                collect_expr_free_locals(captures, bound, locals);
+            }
             RuntimeExprSeedKind::Agent(agent) => agent.collect_free_locals(bound, locals),
             RuntimeExprSeedKind::Local(local) => push_free_local(local, bound, locals),
             RuntimeExprSeedKind::Let {
@@ -2086,6 +2210,14 @@ impl RuntimeExprSeed {
             }
             RuntimeExprSeedKind::Tuple(items) | RuntimeExprSeedKind::BracketSeq(items) => {
                 collect_expr_free_locals(items, bound, locals);
+            }
+            RuntimeExprSeedKind::DialogueContent {
+                values, effects, ..
+            } => {
+                collect_expr_free_locals(values, bound, locals);
+                for effect in effects {
+                    collect_expr_free_locals(&effect.captures, bound, locals);
+                }
             }
             RuntimeExprSeedKind::RepeatSeq { value, .. }
             | RuntimeExprSeedKind::Sum { source: value }

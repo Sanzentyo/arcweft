@@ -241,10 +241,11 @@ fn dialogue_fx_instances(
         .iter()
         .flat_map(|dialogue| {
             dialogue.entries().iter().flat_map(move |entry| {
-                entry
-                    .frame()
-                    .fx_applications()
-                    .map(move |application| entry.fx_instance_id(dialogue.id(), application))
+                entry.frame().fx_applications().map(move |application| {
+                    entry
+                        .fx_instance_identity(dialogue.id(), application)
+                        .instance()
+                })
             })
         })
         .collect()
@@ -942,7 +943,7 @@ impl BundleSession {
                         .cloned()
                         .map(move |application| {
                             (
-                                entry.fx_instance_id(dialogue.id(), &application),
+                                entry.fx_instance_identity(dialogue.id(), &application),
                                 application,
                             )
                         })
@@ -951,19 +952,19 @@ impl BundleSession {
             .collect::<Vec<_>>();
         let current = applications
             .iter()
-            .map(|(instance, _)| *instance)
+            .map(|(identity, _)| identity.instance())
             .collect::<std::collections::BTreeSet<_>>();
         let before = self.presentation.fx.clone();
         for instance in previous.difference(&current) {
             self.presentation.fx.remove_instance(*instance);
         }
         let mut failures = self.presentation.fx_diagnostics.clone();
-        for (instance, application) in applications {
+        for (identity, application) in applications {
             if let Err(error) = self.presentation.fx.retain_instance(
                 &self.fx_definitions,
-                application.definition(),
-                instance,
-                application.parameters().to_vec(),
+                identity,
+                application.template().clone(),
+                application.template().initial_runtime().to_vec(),
                 arcweft_presentation::fx::FxGraphChildPath::default(),
                 None,
             ) {
@@ -995,7 +996,12 @@ impl BundleSession {
             .view
             .mounts
             .iter()
-            .flat_map(|mount| mount.fx.iter().map(|application| application.instance))
+            .flat_map(|mount| {
+                mount
+                    .fx
+                    .iter()
+                    .map(|application| application.identity.instance())
+            })
             .collect::<std::collections::BTreeSet<_>>();
         let mut frame = self.view_runtime.evaluate_with_dialogue_and_backend(
             &self.presentation.presentation_handles,
@@ -1050,7 +1056,7 @@ impl BundleSession {
             .collect::<Vec<_>>();
         let current = applications
             .iter()
-            .map(|application| application.instance)
+            .map(|application| application.identity.instance())
             .collect::<std::collections::BTreeSet<_>>();
         let before = self.presentation.fx.clone();
         for instance in previous.difference(&current) {
@@ -1058,28 +1064,105 @@ impl BundleSession {
         }
         let mut failures = self.presentation.fx_diagnostics.clone();
         for application in applications {
-            let parameters = self
-                .fx_definitions
-                .get(&application.definition)
-                .map(|definition| {
-                    definition
-                        .parameters()
-                        .iter()
-                        .filter_map(|parameter| {
-                            application
-                                .arguments
-                                .iter()
-                                .find(|argument| argument.parameter == parameter.name())
-                                .map(|argument| argument.value)
-                                .or_else(|| parameter.default().copied())
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
+            let definition = self.fx_definitions.get(application.identity.definition());
+            let Some(definition) = definition else {
+                let error = BundleFxRuntimeError::MissingDefinition {
+                    definition: Box::new(application.identity.definition().clone()),
+                    instance: application.identity.instance(),
+                };
+                let diagnostic = error.diagnostic();
+                if !failures.contains(&diagnostic) {
+                    failures.push(diagnostic);
+                }
+                continue;
+            };
+            if application.parameter_layout != definition.parameter_layout().digest() {
+                let error = BundleFxRuntimeError::ApplicationBinding {
+                    definition: Box::new(definition.id().clone()),
+                    reason: "View Fx parameter layout digest does not match the definition"
+                        .to_owned(),
+                };
+                let diagnostic = error.diagnostic();
+                if !failures.contains(&diagnostic) {
+                    failures.push(diagnostic);
+                }
+                continue;
+            }
+            let mut arguments = vec![None; definition.parameters().len()];
+            let mut binding_error = None;
+            for binding in application.arguments {
+                let index = usize::from(binding.parameter.get());
+                let Some(slot) = arguments.get_mut(index) else {
+                    binding_error =
+                        Some(format!("View Fx parameter index {index} is out of range"));
+                    break;
+                };
+                if slot.is_some() {
+                    binding_error = Some(format!(
+                        "View Fx parameter index {index} is bound more than once"
+                    ));
+                    break;
+                }
+                let expected = definition.parameters()[index].parameter_type();
+                if binding.value.parameter_type() != expected {
+                    binding_error = Some(format!(
+                        "View Fx parameter index {index} has type {:?}, expected {expected:?}",
+                        binding.value.parameter_type()
+                    ));
+                    break;
+                }
+                *slot = Some(binding.value);
+            }
+            if let Some(reason) = binding_error {
+                let error = BundleFxRuntimeError::ApplicationBinding {
+                    definition: Box::new(definition.id().clone()),
+                    reason,
+                };
+                let diagnostic = error.diagnostic();
+                if !failures.contains(&diagnostic) {
+                    failures.push(diagnostic);
+                }
+                continue;
+            }
+            let draft = match arcweft_presentation::fx::FxApplicationDraft::try_new(
+                definition.id().clone(),
+                arguments,
+                0,
+                None,
+            ) {
+                Ok(draft) => draft,
+                Err(error) => {
+                    let error = BundleFxRuntimeError::ApplicationBinding {
+                        definition: Box::new(definition.id().clone()),
+                        reason: error.to_string(),
+                    };
+                    let diagnostic = error.diagnostic();
+                    if !failures.contains(&diagnostic) {
+                        failures.push(diagnostic);
+                    }
+                    continue;
+                }
+            };
+            let bound = match arcweft_presentation::fx::FxApplication::bind(definition, draft) {
+                Ok(bound) => bound,
+                Err(error) => {
+                    let error = BundleFxRuntimeError::ApplicationBinding {
+                        definition: Box::new(definition.id().clone()),
+                        reason: error.to_string(),
+                    };
+                    let diagnostic = error.diagnostic();
+                    if !failures.contains(&diagnostic) {
+                        failures.push(diagnostic);
+                    }
+                    continue;
+                }
+            };
+            let template = bound.template().clone();
+            let parameters = template.initial_runtime().to_vec();
             if let Err(error) = self.presentation.fx.retain_instance(
                 &self.fx_definitions,
-                &application.definition,
-                application.instance,
+                application.identity,
+                template,
                 parameters,
                 application.child_path,
                 None,
@@ -1484,6 +1567,15 @@ mod view_handler_queue_tests {
             host_events: Vec::new(),
             inline_failures: Vec::new(),
             unresolved: Vec::new(),
+            content: arcweft_core::value::RuntimeDialogueContentValue::try_new(
+                arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+                    .expect("fixture artifact"),
+                arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                    .expect("fixture template"),
+                arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x72; 32]),
+                [],
+            )
+            .expect("fixture Content envelope"),
         }
     }
 }

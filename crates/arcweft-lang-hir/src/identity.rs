@@ -650,6 +650,7 @@ pub enum SyntheticRole {
     PredicateBoolReturn,
     ProofUnitReturn,
     ElidedRegion,
+    ContentCallNominalType,
     RecoveryOperand,
     PostconditionResult,
     DesugaredTemporary,
@@ -666,6 +667,9 @@ pub enum SyntheticRole {
     PatternRest,
     PostfixIndexCandidateExpression,
     DialogueContentCandidateExpression,
+    DialogueRubyTarget,
+    DialogueRubyReading,
+    DialogueRubyApplication,
 }
 
 pub(crate) const MAX_SOURCE_ORDERED_SYNTHETIC_ORDINAL: u32 = 1_023;
@@ -678,6 +682,7 @@ impl SyntheticRole {
             Self::PredicateBoolReturn => "predicate_bool_return",
             Self::ProofUnitReturn => "proof_unit_return",
             Self::ElidedRegion => "elided_region",
+            Self::ContentCallNominalType => "content_call_nominal_type",
             Self::RecoveryOperand => "recovery_operand",
             Self::PostconditionResult => "postcondition_result",
             Self::DesugaredTemporary => "desugared_temporary",
@@ -694,6 +699,9 @@ impl SyntheticRole {
             Self::PatternRest => "pattern_rest",
             Self::PostfixIndexCandidateExpression => "postfix_index_candidate_expression",
             Self::DialogueContentCandidateExpression => "dialogue_content_candidate_expression",
+            Self::DialogueRubyTarget => "dialogue_ruby_target",
+            Self::DialogueRubyReading => "dialogue_ruby_reading",
+            Self::DialogueRubyApplication => "dialogue_ruby_application",
         }
     }
 
@@ -706,12 +714,16 @@ impl SyntheticRole {
             }
             Self::ClosureCapture
             | Self::PostfixIndexCandidateExpression
-            | Self::DialogueContentCandidateExpression => matches!(owner_kind, Expr),
+            | Self::DialogueContentCandidateExpression
+            | Self::DialogueRubyTarget
+            | Self::DialogueRubyReading
+            | Self::DialogueRubyApplication => matches!(owner_kind, Expr),
             Self::PredicateBoolReturn
             | Self::ProofUnitReturn
             | Self::ContractRequiresScope
             | Self::ContractEnsuresScope => matches!(owner_kind, Item),
             Self::ElidedRegion => matches!(owner_kind, Type),
+            Self::ContentCallNominalType => matches!(owner_kind, Expr),
             Self::RecoveryOperand
             | Self::DesugaredTemporary
             | Self::IfLetScrutinee
@@ -733,13 +745,15 @@ impl SyntheticRole {
             | Self::DestructuredBinding
             | Self::ClosureCapture
             | Self::PostfixIndexCandidateExpression
-            | Self::DialogueContentCandidateExpression => {
-                ordinal <= MAX_SOURCE_ORDERED_SYNTHETIC_ORDINAL
-            }
+            | Self::DialogueContentCandidateExpression
+            | Self::DialogueRubyTarget
+            | Self::DialogueRubyReading
+            | Self::DialogueRubyApplication => ordinal <= MAX_SOURCE_ORDERED_SYNTHETIC_ORDINAL,
             Self::ImplicitUnitTail
             | Self::PredicateBoolReturn
             | Self::ProofUnitReturn
             | Self::ElidedRegion
+            | Self::ContentCallNominalType
             | Self::PostconditionResult
             | Self::MissingRequiredTail
             | Self::ContractRequiresScope
@@ -779,6 +793,10 @@ impl SyntheticRole {
             Self::PatternRest => 0x13,
             Self::PostfixIndexCandidateExpression => 0x14,
             Self::DialogueContentCandidateExpression => 0x15,
+            Self::DialogueRubyTarget => 0x16,
+            Self::DialogueRubyReading => 0x17,
+            Self::DialogueRubyApplication => 0x18,
+            Self::ContentCallNominalType => 0x0a,
         }
     }
 }

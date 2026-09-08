@@ -1,6 +1,5 @@
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
 }
 
 #[fx]
@@ -49,11 +48,11 @@ entry cli @entry.rich_text_fx {
 }
 
 flow rich_text_fx {
-    narrator.say()[
-        [fx notice(accent=rgb("#ff6b8a"), speed=2.0)]必須値、既定値、合成を一つのFx関数にまとめた警告[/fx][p]
+    narrator()[
+        #fx(notice(accent=rgb("#ff6b8a"), speed=2.0))[必須値、既定値、合成を一つのFx関数にまとめた警告][p]
     ]
 
-    narrator.say()[
-        [fx notice(accent=rgb("#78dce8"), amplitude=4px)]既定値を上書きした警告[/fx][p]
+    narrator()[
+        #fx(notice(accent=rgb("#78dce8"), amplitude=4px))[既定値を上書きした警告][p]
     ]
 }

@@ -1,4 +1,5 @@
 use super::*;
+use arcweft_agent_runner::error::{AgentHostResponseKind, AgentHostResponseSerializationError};
 use arcweft_runtime_driver::dialogue::BundlePresentationInput;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::session::BundleStepInput;
@@ -111,7 +112,7 @@ pub(in crate::app::agent) fn agent_script_run_native_bundle(
     let mut runner = AgentRunner::new(
         session,
         CollectingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         agent_script_runtime_policy(input),
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
@@ -159,6 +160,8 @@ pub(super) enum NativeAgentScriptSessionError {
     InvalidScrollDelta,
     #[error("native Agent Script action kind is not supported by the native semantic dispatcher")]
     UnsupportedAction,
+    #[error("native Agent Script observation could not be serialized")]
+    ObservationSerialization(#[source] AgentHostResponseSerializationError),
 }
 
 pub(super) struct NativeAgentScriptSession<'a> {
@@ -509,10 +512,12 @@ impl AgentSession for NativeAgentScriptSession<'_> {
                 .as_ref()
                 .is_some_and(|runtime| runtime.session.is_finished())
         {
-            return self.observe_report().map(native_agent_observation_envelope);
+            return self
+                .observe_report()
+                .and_then(native_agent_observation_envelope);
         }
         let report = self.refresh_observation(BundleStepInput::default())?;
-        Ok(native_agent_observation_envelope(report))
+        native_agent_observation_envelope(report)
     }
 
     fn act(&mut self, action: AgentAction) -> Result<ActionResult, Self::Error> {
@@ -554,14 +559,15 @@ impl AgentSession for NativeAgentScriptSession<'_> {
         let additional = usize::try_from(count.max(1)).unwrap_or(usize::MAX);
         self.options.steps = self.options.steps.saturating_add(additional);
         let report = self.refresh_observation(BundleStepInput::default())?;
-        Ok(native_agent_observation_envelope(report))
+        native_agent_observation_envelope(report)
     }
 }
 
 pub(super) fn native_agent_observation_envelope(
     report: &AgentObservationReport,
-) -> ObservationEnvelope {
-    ObservationEnvelope {
+) -> Result<ObservationEnvelope, NativeAgentScriptSessionError> {
+    let payload = native_agent_observation_payload(report)?;
+    Ok(ObservationEnvelope {
         tick: u64::try_from(report.tick).unwrap_or(u64::MAX),
         frame_id: report.frame_id.clone(),
         state_hash: report.state_hash.clone(),
@@ -577,8 +583,16 @@ pub(super) fn native_agent_observation_envelope(
                 )
             })
             .collect(),
-        payload: serde_json::to_value(report).unwrap_or(serde_json::Value::Null),
-    }
+        payload,
+    })
+}
+
+pub(super) fn native_agent_observation_payload<T: serde::Serialize>(
+    report: &T,
+) -> Result<serde_json::Value, NativeAgentScriptSessionError> {
+    AgentHostResponseKind::Observation
+        .serialize(report)
+        .map_err(NativeAgentScriptSessionError::ObservationSerialization)
 }
 
 pub(super) fn native_agent_capture_uri(

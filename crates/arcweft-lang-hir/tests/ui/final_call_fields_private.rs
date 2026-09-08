@@ -1,5 +1,5 @@
 use arcweft_lang_hir::expr::{
-    HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallExpr,
+    HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallInvocation,
     HirCallTypeApplication,
 };
 
@@ -8,8 +8,8 @@ fn raw_construct(
     explicit_type_application: HirCallTypeApplication,
     arguments: Box<[HirCallArgument]>,
     terminator: HirCallArgumentListTerminator,
-) -> HirCallExpr {
-    HirCallExpr {
+) -> HirCallInvocation {
+    HirCallInvocation {
         callee,
         explicit_type_application,
         arguments,

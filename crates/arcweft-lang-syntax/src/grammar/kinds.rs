@@ -41,7 +41,7 @@ define_syntax_kinds! {
     AttributeList,
     FieldList,
     ArgumentList,
-    RichTextArgumentList,
+    DialogueActionArgumentList,
     MatchArmList,
     LogicalLine,
     IndentedSuite,
@@ -78,7 +78,6 @@ define_syntax_kinds! {
     Visibility,
     DeclarationHeader,
     DeclarationPublicId,
-    SurfaceAlias,
     NameDefinition,
     NameReference,
     Path,
@@ -89,6 +88,8 @@ define_syntax_kinds! {
     TypeParameter,
     FixedParameterGroup,
     Parameter,
+    AttachedContentParameter,
+    AttachedContentRole,
     ExtensionReceiverMarker,
     RestParameterMarker,
     WhereClause,
@@ -111,7 +112,7 @@ define_syntax_kinds! {
     ResourceBody,
     ResourceFieldInitializer,
     CharacterBody,
-    CharacterDisplayNameMember,
+    CharacterDisplayMember,
     ViewDeclarationBody,
     ViewExportBlock,
     ViewExportDeclaration,
@@ -169,6 +170,7 @@ define_syntax_kinds! {
     CloseParenNode,
     OpenBracketNode,
     CloseBracketNode,
+    QuestionMarkNode,
     OpenAngleNode,
     CloseAngleNode,
     EqualsNode,
@@ -258,11 +260,10 @@ define_syntax_kinds! {
     CallExpression,
     SelectExpression,
     PostfixBracketExpression,
-    DialogueContentApplicationExpression,
+    AttachedContentApplicationExpression,
     PostfixBracketPayload,
     DialogueContent,
     DialogueText,
-    DialogueRaw,
     DialogueEscape,
     DialogueRuby,
     DialogueInterpolation,
@@ -270,25 +271,24 @@ define_syntax_kinds! {
     DialogueMark,
     DialogueLineBreak,
     DialogueError,
-    RichTextTag,
-    RichTextEndTag,
-    RichTextTagName,
-    RichTextArgumentPayload,
-    RichTextTimedCuePayload,
-    RichTextFxCallPayload,
-    RichTextDialogueCallPayload,
-    RichTextConditionPayload,
-    RichTextPositionalArgument,
-    RichTextNamedArgument,
-    RichTextInvalidArgument,
-    RichTextArgumentKey,
-    RichTextArgumentEquals,
-    RichTextArgumentValue,
-    RichTextArgumentToken,
-    RichTextArgumentContent,
-    RichTextArgumentQuote,
-    RichTextMissingArgumentValue,
-    RichTextInvalidArgumentIssue,
+    DialoguePointAction,
+    DialoguePointActionName,
+    DialogueActionArgumentPayload,
+    DialogueActionTimedCuePayload,
+    DialogueActionFxCallPayload,
+    DialogueActionDialogueCallPayload,
+    DialogueActionConditionPayload,
+    DialogueActionPositionalArgument,
+    DialogueActionNamedArgument,
+    DialogueActionInvalidArgument,
+    DialogueActionArgumentKey,
+    DialogueActionArgumentEquals,
+    DialogueActionArgumentValue,
+    DialogueActionArgumentToken,
+    DialogueActionArgumentContent,
+    DialogueActionArgumentQuote,
+    DialogueActionMissingArgumentValue,
+    DialogueActionInvalidArgumentIssue,
     PipeExpression,
     TryExpression,
     AwaitExpression,
@@ -444,7 +444,7 @@ impl SyntaxKind {
             | Self::AttributeList
             | Self::FieldList
             | Self::ArgumentList
-            | Self::RichTextArgumentList
+            | Self::DialogueActionArgumentList
             | Self::MatchArmList
             | Self::LogicalLine
             | Self::IndentedSuite
@@ -501,7 +501,6 @@ impl SyntaxKind {
             | Self::Visibility
             | Self::DeclarationHeader
             | Self::DeclarationPublicId
-            | Self::SurfaceAlias
             | Self::NameDefinition
             | Self::NameReference
             | Self::Path
@@ -511,6 +510,8 @@ impl SyntaxKind {
             | Self::TypeParameter
             | Self::FixedParameterGroup
             | Self::Parameter
+            | Self::AttachedContentParameter
+            | Self::AttachedContentRole
             | Self::ExtensionReceiverMarker
             | Self::RestParameterMarker
             | Self::WhereClause
@@ -533,7 +534,7 @@ impl SyntaxKind {
             | Self::ResourceBody
             | Self::ResourceFieldInitializer
             | Self::CharacterBody
-            | Self::CharacterDisplayNameMember
+            | Self::CharacterDisplayMember
             | Self::ViewDeclarationBody
             | Self::ViewExportBlock
             | Self::ViewExportDeclaration
@@ -591,6 +592,7 @@ impl SyntaxKind {
             | Self::CloseParenNode
             | Self::OpenBracketNode
             | Self::CloseBracketNode
+            | Self::QuestionMarkNode
             | Self::OpenAngleNode
             | Self::CloseAngleNode
             | Self::EqualsNode
@@ -679,11 +681,10 @@ impl SyntaxKind {
             | Self::CallExpression
             | Self::SelectExpression
             | Self::PostfixBracketExpression
-            | Self::DialogueContentApplicationExpression
+            | Self::AttachedContentApplicationExpression
             | Self::PostfixBracketPayload
             | Self::DialogueContent
             | Self::DialogueText
-            | Self::DialogueRaw
             | Self::DialogueEscape
             | Self::DialogueRuby
             | Self::DialogueInterpolation
@@ -691,25 +692,24 @@ impl SyntaxKind {
             | Self::DialogueMark
             | Self::DialogueLineBreak
             | Self::DialogueError
-            | Self::RichTextTag
-            | Self::RichTextEndTag
-            | Self::RichTextTagName
-            | Self::RichTextArgumentPayload
-            | Self::RichTextTimedCuePayload
-            | Self::RichTextFxCallPayload
-            | Self::RichTextDialogueCallPayload
-            | Self::RichTextConditionPayload
-            | Self::RichTextPositionalArgument
-            | Self::RichTextNamedArgument
-            | Self::RichTextInvalidArgument
-            | Self::RichTextArgumentKey
-            | Self::RichTextArgumentEquals
-            | Self::RichTextArgumentValue
-            | Self::RichTextArgumentToken
-            | Self::RichTextArgumentContent
-            | Self::RichTextArgumentQuote
-            | Self::RichTextMissingArgumentValue
-            | Self::RichTextInvalidArgumentIssue
+            | Self::DialoguePointAction
+            | Self::DialoguePointActionName
+            | Self::DialogueActionArgumentPayload
+            | Self::DialogueActionTimedCuePayload
+            | Self::DialogueActionFxCallPayload
+            | Self::DialogueActionDialogueCallPayload
+            | Self::DialogueActionConditionPayload
+            | Self::DialogueActionPositionalArgument
+            | Self::DialogueActionNamedArgument
+            | Self::DialogueActionInvalidArgument
+            | Self::DialogueActionArgumentKey
+            | Self::DialogueActionArgumentEquals
+            | Self::DialogueActionArgumentValue
+            | Self::DialogueActionArgumentToken
+            | Self::DialogueActionArgumentContent
+            | Self::DialogueActionArgumentQuote
+            | Self::DialogueActionMissingArgumentValue
+            | Self::DialogueActionInvalidArgumentIssue
             | Self::PipeExpression
             | Self::TryExpression
             | Self::AwaitExpression
@@ -876,13 +876,14 @@ impl SyntaxKind {
             | Self::Visibility
             | Self::DeclarationHeader
             | Self::DeclarationPublicId
-            | Self::SurfaceAlias
             | Self::GenericParameterGroup
             | Self::GenericParameter
             | Self::LifetimeParameter
             | Self::TypeParameter
             | Self::FixedParameterGroup
             | Self::Parameter
+            | Self::AttachedContentParameter
+            | Self::AttachedContentRole
             | Self::WhereClause
             | Self::WherePredicate
             | Self::ReturnType
@@ -896,7 +897,7 @@ impl SyntaxKind {
             | Self::ModifiesClause
             | Self::DecreasesClause
             | Self::ResourceFieldInitializer
-            | Self::CharacterDisplayNameMember
+            | Self::CharacterDisplayMember
             | Self::ViewExportBlock
             | Self::ViewExportDeclaration
             | Self::ViewFragment
@@ -933,7 +934,6 @@ impl SyntaxKind {
             | Self::PostfixBracketPayload
             | Self::DialogueContent
             | Self::DialogueText
-            | Self::DialogueRaw
             | Self::DialogueEscape
             | Self::DialogueRuby
             | Self::DialogueInterpolation
@@ -954,7 +954,7 @@ impl SyntaxKind {
             | Self::CallExpression
             | Self::SelectExpression
             | Self::PostfixBracketExpression
-            | Self::DialogueContentApplicationExpression
+            | Self::AttachedContentApplicationExpression
             | Self::PipeExpression
             | Self::TryExpression
             | Self::AwaitExpression
@@ -982,25 +982,24 @@ impl SyntaxKind {
             | Self::OmittedBlockTail
             | Self::MissingExpression
             | Self::ErrorExpression => Some(AstTag::Expression),
-            Self::RichTextTag
-            | Self::RichTextEndTag
-            | Self::RichTextTagName
-            | Self::RichTextArgumentPayload
-            | Self::RichTextTimedCuePayload
-            | Self::RichTextFxCallPayload
-            | Self::RichTextDialogueCallPayload
-            | Self::RichTextConditionPayload
-            | Self::RichTextPositionalArgument
-            | Self::RichTextNamedArgument
-            | Self::RichTextInvalidArgument
-            | Self::RichTextArgumentKey
-            | Self::RichTextArgumentEquals
-            | Self::RichTextArgumentValue
-            | Self::RichTextArgumentToken
-            | Self::RichTextArgumentContent
-            | Self::RichTextArgumentQuote
-            | Self::RichTextMissingArgumentValue
-            | Self::RichTextInvalidArgumentIssue => Some(AstTag::RichText),
+            Self::DialoguePointAction
+            | Self::DialoguePointActionName
+            | Self::DialogueActionArgumentPayload
+            | Self::DialogueActionTimedCuePayload
+            | Self::DialogueActionFxCallPayload
+            | Self::DialogueActionDialogueCallPayload
+            | Self::DialogueActionConditionPayload
+            | Self::DialogueActionPositionalArgument
+            | Self::DialogueActionNamedArgument
+            | Self::DialogueActionInvalidArgument
+            | Self::DialogueActionArgumentKey
+            | Self::DialogueActionArgumentEquals
+            | Self::DialogueActionArgumentValue
+            | Self::DialogueActionArgumentToken
+            | Self::DialogueActionArgumentContent
+            | Self::DialogueActionArgumentQuote
+            | Self::DialogueActionMissingArgumentValue
+            | Self::DialogueActionInvalidArgumentIssue => Some(AstTag::RichText),
             Self::WildcardPattern
             | Self::BindingPattern
             | Self::MutableBindingPattern
@@ -1058,6 +1057,7 @@ impl SyntaxKind {
             | Self::CloseParenNode
             | Self::OpenBracketNode
             | Self::CloseBracketNode
+            | Self::QuestionMarkNode
             | Self::OpenAngleNode
             | Self::CloseAngleNode
             | Self::EqualsNode
@@ -1082,7 +1082,7 @@ impl SyntaxKind {
             | Self::AttributeList
             | Self::FieldList
             | Self::ArgumentList
-            | Self::RichTextArgumentList
+            | Self::DialogueActionArgumentList
             | Self::MatchArmList
             | Self::LogicalLine
             | Self::IndentedSuite
@@ -1201,7 +1201,7 @@ impl SyntaxKind {
     /// Whether this node may be one direct child of a statement-only Flow or
     /// Thread body. Attachment applies the stricter sixteen-family split.
     pub(crate) const fn is_thread_flow_item(self) -> bool {
-        self.is_statement() || matches!(self, Self::DialogueContentApplicationExpression)
+        self.is_statement() || matches!(self, Self::AttachedContentApplicationExpression)
     }
 
     pub(crate) const fn is_expression(self) -> bool {
@@ -1220,7 +1220,7 @@ impl SyntaxKind {
                 | Self::CallExpression
                 | Self::SelectExpression
                 | Self::PostfixBracketExpression
-                | Self::DialogueContentApplicationExpression
+                | Self::AttachedContentApplicationExpression
                 | Self::PipeExpression
                 | Self::TryExpression
                 | Self::AwaitExpression
@@ -1287,7 +1287,7 @@ impl SyntaxKind {
     pub(crate) const fn is_retained_declaration_member(self) -> bool {
         matches!(
             self,
-            Self::CharacterDisplayNameMember
+            Self::CharacterDisplayMember
                 | Self::ActivityModeMember
                 | Self::ActivityLifecycleMember
                 | Self::ActivityInputBlock
@@ -1310,7 +1310,7 @@ impl SyntaxKind {
                 | Self::MissingExpression
                 | Self::MissingPattern
                 | Self::MissingType
-                | Self::RichTextMissingArgumentValue
+                | Self::DialogueActionMissingArgumentValue
         )
     }
 
@@ -1324,8 +1324,8 @@ impl SyntaxKind {
                 | Self::ErrorExpression
                 | Self::ErrorPattern
                 | Self::ErrorType
-                | Self::RichTextInvalidArgument
-                | Self::RichTextInvalidArgumentIssue
+                | Self::DialogueActionInvalidArgument
+                | Self::DialogueActionInvalidArgumentIssue
                 | Self::ErrorNode
         )
     }
@@ -1364,7 +1364,7 @@ mod tests {
         assert_eq!(SyntaxKind::SourceFile.ast_tag(), Some(AstTag::SourceFile));
         assert_eq!(SyntaxKind::ProofItem.ast_tag(), Some(AstTag::Item));
         assert_eq!(
-            SyntaxKind::DialogueContentApplicationExpression.ast_tag(),
+            SyntaxKind::AttachedContentApplicationExpression.ast_tag(),
             Some(AstTag::Expression)
         );
         assert_eq!(

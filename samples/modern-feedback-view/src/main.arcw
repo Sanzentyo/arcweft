@@ -1,6 +1,5 @@
 pub character concierge {
   display = "Arcweft Concierge"
-  default_voice = auto
 }
 
 pub image glass_bg {
@@ -260,7 +259,7 @@ flow modern_feedback_view(state: GameState) {
     if visitor_name == "" {
         concierge: We will keep the greeting anonymous for now.
     } else {
-        concierge: Nice to meet you, [effect .wave amp=6px freq=8 speed=1.7 period=1 target=content phase=glyph_transform][color #ff4050][strong][em][size 42]#[visitor_name][/size][/em][/strong][/color][/effect].
+        concierge: Nice to meet you, #fx(wave(amplitude=6px, speed=1.7, period=1, target=.content, phase=.glyph_transform))[#color(rgb("#ff4050"))[#strong()[#em()[#size(42pt)[#[visitor_name]]]]]].
     }
 
     concierge:
@@ -277,7 +276,7 @@ flow modern_feedback_view(state: GameState) {
     if brief == "" {
         concierge: No brief was submitted. The View stays ready for another pass.
     } else {
-        concierge: Captured the view-backed brief.[r][effect .wave amp=5px freq=7 speed=1.45 period=1 target=content phase=glyph_transform][color #ff4050][strong][em][size 38]#[brief][/size][/em][/strong][/color][/effect]
+        concierge: Captured the view-backed brief.[r]#fx(wave(amplitude=5px, speed=1.45, period=1, target=.content, phase=.glyph_transform))[#color(rgb("#ff4050"))[#strong()[#em()[#size(38pt)[#[brief]]]]]]
     }
 
     concierge: This is the end of the modern_feedback flow. Returning to the beginning.

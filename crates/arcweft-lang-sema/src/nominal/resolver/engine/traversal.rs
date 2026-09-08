@@ -170,11 +170,7 @@ impl Resolver<'_, '_> {
             context,
             owner,
             NodeValue::typed(
-                TypeKind::Function {
-                    params: recovered,
-                    return_type: Box::new(return_type),
-                    effects,
-                },
+                TypeKind::function_with_effects(recovered, return_type, effects),
                 causes,
             ),
             TypeNameResolution::Structural(StructuralTypeNodeKind::Function),

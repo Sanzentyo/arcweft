@@ -1,7 +1,7 @@
 //! Canonical semantic identity encoding for checked types.
 
 use arcweft_core::{
-    pattern::{RuntimeCheckedType, RuntimeSemanticTypeIdentityEncoder},
+    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder},
     value::{RuntimeSignedIntWidth, RuntimeUnsignedIntWidth},
 };
 use arcweft_lang_hir::{
@@ -18,21 +18,41 @@ use arcweft_lang_syntax::{
 };
 use arcweft_source::SourceSpan;
 
+mod traversal;
+use traversal::EncodingTask;
+
 use crate::{
     effect_row::{EffectRow, EffectRowTail},
     env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId, OpenNominalRuleId},
 };
 
 use super::{
-    AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericConstParameterId,
-    GenericParameterOwnerId, GenericTypeParameterId, HandleState, IteratorStateKind,
-    LifetimeScopeKind, MapKind, OpenNominalType, ProjectNominalType, StageActorHandleType,
-    TypeKind,
+    ArrayLength, CharacterNominalType, CompileTimeCallableType, CompileTimeEnumType,
+    CompileTimeFxType, CompileTimeScalarType, EntityKind, GenericConstParameterId,
+    GenericConstReference, GenericParameterKind, GenericParameterOwnerId, GenericScope,
+    GenericScopeError, GenericTypeReference, HandleState, IteratorStateKind, LifetimeScopeKind,
+    MapKind, StageActorHandleType, TypeKind, ViewCallableId,
 };
 
 /// Stable semantic identity of one complete checked type.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SemanticTypeDigest([u8; 32]);
+
+impl super::AcceptedVariantCaseSemanticId {
+    pub(in crate::types) fn write_payload_type_identity(
+        self,
+        encoder: &mut RuntimeSemanticTypeIdentityEncoder,
+    ) {
+        encoder.write_tag(87);
+        encoder.write_bytes(self.as_bytes());
+    }
+
+    pub(in crate::types) fn payload_type_identity(self) -> SemanticTypeDigest {
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        self.write_payload_type_identity(&mut encoder);
+        SemanticTypeDigest::from_bytes(*encoder.finish().as_bytes())
+    }
+}
 
 impl SemanticTypeDigest {
     pub const fn from_bytes(bytes: [u8; 32]) -> Self {
@@ -44,25 +64,111 @@ impl SemanticTypeDigest {
     }
 }
 
+impl From<SemanticTypeDigest> for RuntimeSemanticTypeId {
+    fn from(identity: SemanticTypeDigest) -> Self {
+        Self::from_bytes(*identity.as_bytes())
+    }
+}
+
 impl ArrayLength {
     /// Canonical checked bytes for an array-length child embedded by another
     /// semantic owner. Recovery/inference-only lengths have no checked form.
     /// This owner method is the sole raw ArrayLength encoder; callable and
     /// runtime identities must not reconstruct a generic-constant owner.
-    pub(crate) fn canonical_checked_bytes(&self) -> Option<Vec<u8>> {
+    pub(crate) fn canonical_checked_bytes(&self) -> Result<Vec<u8>, super::TypeInstantiationError> {
+        self.canonical_checked_bytes_in_scope(&GenericScope::default())
+    }
+
+    pub(in crate::types) fn canonical_checked_bytes_in_scope(
+        &self,
+        scope: &GenericScope,
+    ) -> Result<Vec<u8>, super::TypeInstantiationError> {
+        self.encode_checked_bytes(scope, &mut (), &|()| Ok(()), &|()| Ok(()))
+    }
+
+    pub(in crate::types) fn canonical_checked_bytes_in_scope_with_control<
+        C: super::TypeProjectionControl,
+    >(
+        &self,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<Vec<u8>, super::TypeProjectionError<C::Error>> {
+        self.encode_checked_bytes(
+            scope,
+            control,
+            &|control| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_node(super::TypeProjectionNodeKind::Const, 1)
+                    .map_err(super::TypeProjectionError::Control)
+            },
+            &|control| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_binding()
+                    .map_err(super::TypeProjectionError::Control)
+            },
+        )
+    }
+
+    fn encode_checked_bytes<C, E: From<super::TypeInstantiationError>>(
+        &self,
+        scope: &GenericScope,
+        control: &mut C,
+        scalar: &impl Fn(&mut C) -> Result<(), E>,
+        binding: &impl Fn(&mut C) -> Result<(), E>,
+    ) -> Result<Vec<u8>, E> {
         let mut encoder = ArrayLengthCanonicalEncoder::default();
+        if !scope.binders().is_empty() {
+            encoder.tag(3);
+            encoder.len(scope.binders().len())?;
+            for binder in scope.binders() {
+                binding(control)?;
+                encoder.u16(binder.types());
+                encoder.u16(binder.const_lengths());
+                encoder.u32(binder.effects());
+            }
+        }
+        scalar(control)?;
         match self {
             Self::Const(value) => {
                 encoder.tag(0);
-                encoder.u64(u64::try_from(*value).ok()?);
+                encoder.u64(
+                    u64::try_from(*value)
+                        .map_err(|_| super::TypeInstantiationError::EncodingLengthOverflow)?,
+                );
             }
-            Self::Generic(parameter) => {
+            Self::Generic(GenericConstReference::Free(parameter)) => {
                 encoder.tag(1);
+                encoder.tag(0);
                 encoder.generic_const(parameter)?;
             }
-            Self::Error(_) | Self::Inferred => return None,
+            Self::Generic(GenericConstReference::Bound(parameter)) => {
+                scope
+                    .bound_const(parameter.depth(), parameter.slot())
+                    .map_err(super::TypeInstantiationError::from)?;
+                encoder.tag(1);
+                encoder.tag(1);
+                encoder.u32(parameter.depth());
+                encoder.u16(parameter.slot());
+            }
+            Self::Generic(GenericConstReference::Inference(_)) => {
+                return Err(super::TypeInstantiationError::from(
+                    GenericScopeError::EscapedInference {
+                        kind: GenericParameterKind::Const,
+                    },
+                )
+                .into());
+            }
+            Self::Error(_) | Self::Inferred => {
+                return Err(super::TypeInstantiationError::UnresolvedType.into());
+            }
         }
-        Some(encoder.finish())
+        Ok(encoder.finish())
     }
 }
 
@@ -79,31 +185,43 @@ impl ArrayLengthCanonicalEncoder {
     fn u16(&mut self, value: u16) {
         self.0.extend_from_slice(&value.to_le_bytes());
     }
+    fn u32(&mut self, value: u32) {
+        self.0.extend_from_slice(&value.to_le_bytes());
+    }
     fn u64(&mut self, value: u64) {
         self.0.extend_from_slice(&value.to_le_bytes());
     }
     fn digest(&mut self, value: &[u8; 32]) {
         self.0.extend_from_slice(value);
     }
-    fn len(&mut self, value: usize) -> Option<()> {
-        self.u64(u64::try_from(value).ok()?);
-        Some(())
+    fn len(&mut self, value: usize) -> Result<(), super::TypeInstantiationError> {
+        self.u64(
+            u64::try_from(value)
+                .map_err(|_| super::TypeInstantiationError::EncodingLengthOverflow)?,
+        );
+        Ok(())
     }
-    fn string(&mut self, value: &str) -> Option<()> {
+    fn string(&mut self, value: &str) -> Result<(), super::TypeInstantiationError> {
         self.len(value.len())?;
         self.0.extend_from_slice(value.as_bytes());
-        Some(())
+        Ok(())
     }
 
-    fn generic_const(&mut self, parameter: &GenericConstParameterId) -> Option<()> {
+    fn generic_const(
+        &mut self,
+        parameter: &GenericConstParameterId,
+    ) -> Result<(), super::TypeInstantiationError> {
         // This marker keeps the type- and const-parameter namespaces disjoint.
         self.tag(0xC0);
         self.generic_owner(parameter.owner())?;
         self.u16(parameter.ordinal());
-        Some(())
+        Ok(())
     }
 
-    fn generic_owner(&mut self, owner: &GenericParameterOwnerId) -> Option<()> {
+    fn generic_owner(
+        &mut self,
+        owner: &GenericParameterOwnerId,
+    ) -> Result<(), super::TypeInstantiationError> {
         match owner {
             GenericParameterOwnerId::Callable(id) => {
                 self.tag(0);
@@ -130,10 +248,13 @@ impl ArrayLengthCanonicalEncoder {
                 self.tag(owner.semantic_tag());
             }
         }
-        Some(())
+        Ok(())
     }
 
-    fn project_nominal(&mut self, id: &ProjectNominalDeclarationId) -> Option<()> {
+    fn project_nominal(
+        &mut self,
+        id: &ProjectNominalDeclarationId,
+    ) -> Result<(), super::TypeInstantiationError> {
         self.string(id.world().package().as_str())?;
         self.string(id.world().root_document().as_str())?;
         self.string(id.world().profile())?;
@@ -149,10 +270,13 @@ impl ArrayLengthCanonicalEncoder {
             self.string(segment.as_str())?;
         }
         self.string(id.name().as_str())?;
-        Some(())
+        Ok(())
     }
 
-    fn accepted_nominal(&mut self, id: &AcceptedNominalId) -> Option<()> {
+    fn accepted_nominal(
+        &mut self,
+        id: &AcceptedNominalId,
+    ) -> Result<(), super::TypeInstantiationError> {
         match id.owner() {
             AcceptedNominalOwnerId::Standard => self.tag(0),
             AcceptedNominalOwnerId::Environment(owner) => {
@@ -173,79 +297,202 @@ impl ArrayLengthCanonicalEncoder {
         for segment in id.canonical_path().segments() {
             self.string(segment.as_str())?;
         }
-        Some(())
+        Ok(())
     }
 
-    fn module_path(&mut self, path: &CanonicalModulePath) -> Option<()> {
+    fn module_path(
+        &mut self,
+        path: &CanonicalModulePath,
+    ) -> Result<(), super::TypeInstantiationError> {
         self.len(path.segments().len())?;
         for segment in path.segments() {
             self.string(segment.as_str())?;
         }
-        Some(())
+        Ok(())
     }
 
-    fn module_root(&mut self, root: ModulePathRoot) -> Option<()> {
+    fn module_root(&mut self, root: ModulePathRoot) -> Result<(), super::TypeInstantiationError> {
         match root {
             ModulePathRoot::ImplicitCrate => self.tag(0),
             ModulePathRoot::Crate => self.tag(1),
             ModulePathRoot::SelfModule => self.tag(2),
             ModulePathRoot::Super(levels) => {
                 self.tag(3);
-                self.u64(u64::try_from(levels).ok()?);
+                self.u64(
+                    u64::try_from(levels)
+                        .map_err(|_| super::TypeInstantiationError::EncodingLengthOverflow)?,
+                );
             }
         }
-        Some(())
+        Ok(())
     }
 
-    fn source_span(&mut self, source: &SourceSpan) -> Option<()> {
+    fn source_span(&mut self, source: &SourceSpan) -> Result<(), super::TypeInstantiationError> {
         self.string(source.source().id().as_str())?;
         self.digest(source.source().revision().as_bytes());
         self.u64(source.source().source_len());
         let range = source.range();
-        self.u64(u64::try_from(range.start()).ok()?);
-        self.u64(u64::try_from(range.end()).ok()?);
-        Some(())
+        self.u64(
+            u64::try_from(range.start())
+                .map_err(|_| super::TypeInstantiationError::EncodingLengthOverflow)?,
+        );
+        self.u64(
+            u64::try_from(range.end())
+                .map_err(|_| super::TypeInstantiationError::EncodingLengthOverflow)?,
+        );
+        Ok(())
     }
 }
 
 impl TypeKind {
     /// Returns the canonical typed identity digest used by semantic caches.
     #[must_use]
-    pub fn semantic_identity_digest(&self) -> SemanticTypeDigest {
-        let mut encoder = Encoder::new();
-        encoder.ty(self);
-        SemanticTypeDigest(*encoder.finish().as_bytes())
+    pub fn semantic_identity_digest(&self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        self.semantic_identity_digest_in_scope(&GenericScope::default())
+    }
+
+    /// A scoped term's identity includes its incoming lexical binders. Active
+    /// inference references cannot produce stable bytes or a digest.
+    pub fn semantic_identity_digest_in_scope(
+        &self,
+        scope: &GenericScope,
+    ) -> Result<SemanticTypeDigest, GenericScopeError> {
+        Encoder::encode(self, scope, &mut (), &|(), _, _| Ok(()), &|()| Ok(()))
+    }
+
+    /// Encodes the same scoped version-1 identity while admitting each type,
+    /// constant, effect and binder to the consumer's transaction.
+    pub fn semantic_identity_digest_in_scope_with_control<C: super::TypeProjectionControl>(
+        &self,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
+        Encoder::encode(
+            self,
+            scope,
+            control,
+            &|control, kind, depth| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_node(kind, depth)
+                    .map_err(super::TypeProjectionError::Control)
+            },
+            &|control| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_binding()
+                    .map_err(super::TypeProjectionError::Control)
+            },
+        )
     }
 }
 
-pub(crate) fn accepted_nominal_semantic_identity_digest(
-    declaration: &AcceptedNominalId,
-    arguments: &[TypeKind],
-) -> SemanticTypeDigest {
-    let mut encoder = Encoder::new();
-    encoder.tag(65);
-    encoder.accepted_nominal_id(declaration);
-    encoder.types(arguments);
-    SemanticTypeDigest(*encoder.finish().as_bytes())
+impl super::GenericTypeParameterId {
+    /// A declaration reference has no lexical or application-local children.
+    /// Its free-reference identity uses the same canonical encoder as TypeKind.
+    pub fn semantic_identity_digest(&self) -> SemanticTypeDigest {
+        let mut encoder = Encoder::new(GenericScope::default());
+        encoder.tag(63);
+        encoder.free_generic_parameter(self);
+        SemanticTypeDigest(*encoder.bytes.finish().as_bytes())
+    }
 }
 
-struct Encoder(RuntimeSemanticTypeIdentityEncoder);
+impl EffectRow {
+    /// Version-1 row identity is the canonical nullary Unit function carrying
+    /// this row. Encode that borrowed row without constructing a copied type.
+    pub(crate) fn semantic_identity_digest(&self) -> SemanticTypeDigest {
+        Encoder::effect_identity(self, &mut (), &|(), _, _| {
+            Ok::<(), std::convert::Infallible>(())
+        })
+        .unwrap_or_else(|never| match never {})
+    }
+
+    pub(crate) fn semantic_identity_digest_with_control<C: super::TypeProjectionControl>(
+        &self,
+        control: &mut C,
+    ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
+        Encoder::effect_identity(self, control, &|control, kind, depth| {
+            control
+                .check()
+                .map_err(super::TypeProjectionError::Control)?;
+            control
+                .visit_node(kind, depth)
+                .map_err(super::TypeProjectionError::Control)
+        })
+    }
+}
+
+impl AcceptedNominalId {
+    /// Canonical declaration identity using the nominal encoding without type
+    /// arguments. Instantiated type identities are owned by `TypeKind`.
+    pub(crate) fn semantic_digest(&self) -> SemanticTypeDigest {
+        let mut encoder = Encoder::new(GenericScope::default());
+        encoder.tag(65);
+        encoder.accepted_nominal_id(self);
+        encoder.len(0);
+        SemanticTypeDigest(*encoder.bytes.finish().as_bytes())
+    }
+}
+
+struct Encoder {
+    bytes: RuntimeSemanticTypeIdentityEncoder,
+    scope: GenericScope,
+    error: Option<GenericScopeError>,
+}
 
 impl Encoder {
-    fn new() -> Self {
-        Self(RuntimeSemanticTypeIdentityEncoder::new())
+    fn effect_identity<C, E>(
+        row: &EffectRow,
+        control: &mut C,
+        node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+    ) -> Result<SemanticTypeDigest, E> {
+        let mut encoder = Self::new(GenericScope::default());
+        node(control, super::TypeProjectionNodeKind::Type, 1)?;
+        encoder.function_header(super::GenericBinder::EMPTY, 0);
+        node(control, super::TypeProjectionNodeKind::Type, 2)?;
+        encoder.checked(&RuntimeCheckedType::Unit);
+        encoder.effect_row(row, 2, control, node)?;
+        Ok(SemanticTypeDigest(*encoder.bytes.finish().as_bytes()))
     }
 
-    fn finish(self) -> arcweft_core::pattern::RuntimeSemanticTypeId {
-        self.0.finish()
+    fn function_header(&mut self, binder: super::GenericBinder, parameters: usize) {
+        if binder.is_empty() {
+            self.tag(62);
+        } else {
+            self.tag(95);
+            self.u16(binder.types());
+            self.u16(binder.const_lengths());
+            self.u32(binder.effects());
+        }
+        self.len(parameters);
+    }
+
+    fn new(scope: GenericScope) -> Self {
+        Self {
+            bytes: RuntimeSemanticTypeIdentityEncoder::new(),
+            scope,
+            error: None,
+        }
+    }
+
+    fn finish(self) -> Result<arcweft_core::pattern::RuntimeSemanticTypeId, GenericScopeError> {
+        if let Some(error) = self.error {
+            return Err(error);
+        }
+        Ok(self.bytes.finish())
     }
 
     fn tag(&mut self, value: u16) {
-        self.0.write_tag(value);
+        self.bytes.write_tag(value);
     }
 
     fn byte(&mut self, value: u8) {
-        self.0.write_u8(value);
+        self.bytes.write_u8(value);
     }
 
     fn bool(&mut self, value: bool) {
@@ -253,27 +500,27 @@ impl Encoder {
     }
 
     fn u16(&mut self, value: u16) {
-        self.0.write_u16(value);
+        self.bytes.write_u16(value);
     }
 
     fn u32(&mut self, value: u32) {
-        self.0.write_u32(value);
+        self.bytes.write_u32(value);
     }
 
     fn u64(&mut self, value: u64) {
-        self.0.write_u64(value);
+        self.bytes.write_u64(value);
     }
 
     fn bytes(&mut self, value: &[u8]) {
-        self.0.write_bytes(value);
+        self.bytes.write_bytes(value);
     }
 
     fn len(&mut self, value: usize) {
-        self.0.write_len(value);
+        self.bytes.write_len(value);
     }
 
     fn string(&mut self, value: &str) {
-        self.0.write_str(value);
+        self.bytes.write_str(value);
     }
 
     fn option<T>(&mut self, value: Option<&T>, encode: impl FnOnce(&mut Self, &T)) {
@@ -290,7 +537,17 @@ impl Encoder {
         clippy::too_many_lines,
         reason = "the stable semantic digest intentionally keeps one exhaustive fixed-tag match so a new TypeKind variant cannot bypass identity encoding"
     )]
-    fn ty(&mut self, ty: &TypeKind) {
+    fn ty<'ty, C, E>(
+        &mut self,
+        ty: &'ty TypeKind,
+        depth: usize,
+        tasks: &mut Vec<EncodingTask<'ty>>,
+        control: &mut C,
+        binding: &impl Fn(&mut C) -> Result<(), E>,
+    ) -> Result<Option<&'ty super::VariantPayloadType>, E> {
+        // Every deeper term requires another owned node in the input. Its
+        // nesting therefore fits the host's addressable node count.
+        let child_depth = depth.checked_add(1).expect("owned type nesting fits usize");
         match ty {
             TypeKind::Bool => self.checked(&RuntimeCheckedType::Bool),
             TypeKind::I8 => self.checked(&RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I8)),
@@ -338,12 +595,12 @@ impl Encoder {
             TypeKind::Duration => self.checked(&RuntimeCheckedType::Duration),
             TypeKind::Range(inner) => {
                 self.tag(21);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::IteratorState { family, item } => {
                 self.tag(22);
                 self.iterator_family(*family);
-                self.ty(item);
+                tasks.push(EncodingTask::Type(item, child_depth));
             }
             TypeKind::DisplayText => self.tag(23),
             TypeKind::DebugStatePath => self.tag(24),
@@ -351,11 +608,17 @@ impl Encoder {
             TypeKind::Ref(entity) => {
                 self.tag(26);
                 self.entity_kind(entity.kind());
-                self.option(entity.value(), Self::ty);
+                match entity.value() {
+                    Some(value) => {
+                        self.byte(1);
+                        tasks.push(EncodingTask::Type(value, child_depth));
+                    }
+                    None => self.byte(0),
+                }
             }
             TypeKind::Probe(inner) => {
                 self.tag(27);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Predicate => self.tag(28),
             TypeKind::Observation => self.tag(29),
@@ -379,26 +642,26 @@ impl Encoder {
             TypeKind::RagContextPack => self.tag(47),
             TypeKind::Vec(inner) => {
                 self.tag(48);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Array { item, len } => {
                 self.tag(49);
-                self.ty(item);
-                self.array_length(len);
+                tasks.push(EncodingTask::Length(len, child_depth));
+                tasks.push(EncodingTask::Type(item, child_depth));
             }
             TypeKind::Slice(inner) => {
                 self.tag(50);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Seq(inner) => {
                 self.tag(51);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Map { kind, key, value } => {
                 self.tag(52);
                 self.map_kind(*kind);
-                self.ty(key);
-                self.ty(value);
+                tasks.push(EncodingTask::Type(value, child_depth));
+                tasks.push(EncodingTask::Type(key, child_depth));
             }
             TypeKind::BorrowRef {
                 kind,
@@ -408,30 +671,30 @@ impl Encoder {
                 self.tag(53);
                 self.borrow_kind(*kind);
                 self.option(lifetime.as_ref(), Self::lifetime);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Need(value) => {
                 self.tag(54);
-                self.ty(value);
+                tasks.push(EncodingTask::Type(value, child_depth));
             }
             TypeKind::Stream { item, error } => {
                 self.tag(55);
-                self.ty(item);
-                self.ty(error);
+                tasks.push(EncodingTask::Type(error, child_depth));
+                tasks.push(EncodingTask::Type(item, child_depth));
             }
             TypeKind::Parser { item, error } => {
                 self.tag(56);
-                self.ty(item);
-                self.ty(error);
+                tasks.push(EncodingTask::Type(error, child_depth));
+                tasks.push(EncodingTask::Type(item, child_depth));
             }
             TypeKind::Result { ok, error } => {
                 self.tag(57);
-                self.ty(ok);
-                self.ty(error);
+                tasks.push(EncodingTask::Type(error, child_depth));
+                tasks.push(EncodingTask::Type(ok, child_depth));
             }
             TypeKind::Option(inner) => {
                 self.tag(58);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Handle {
                 name,
@@ -447,21 +710,31 @@ impl Encoder {
             }
             TypeKind::ThreadHandle(inner) => {
                 self.tag(60);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Shared(inner) => {
                 self.tag(61);
-                self.ty(inner);
+                tasks.push(EncodingTask::Type(inner, child_depth));
             }
             TypeKind::Function {
+                binder,
                 params,
                 return_type,
                 effects,
             } => {
-                self.tag(62);
-                self.types(params);
-                self.ty(return_type);
-                self.effect_row(effects);
+                if !binder.is_empty() {
+                    binding(control)?;
+                }
+                self.function_header(*binder, params.len());
+                let nested = self.scope.with_binder(*binder);
+                let enclosing = std::mem::replace(&mut self.scope, nested);
+                tasks.push(EncodingTask::FunctionEnd {
+                    effects,
+                    enclosing,
+                    depth: child_depth,
+                });
+                tasks.push(EncodingTask::Type(return_type, child_depth));
+                tasks.push(EncodingTask::Types(params.iter(), child_depth));
             }
             TypeKind::GenericParam(parameter) => {
                 self.tag(63);
@@ -469,15 +742,22 @@ impl Encoder {
             }
             TypeKind::ProjectNominal(nominal) => {
                 self.tag(64);
-                self.project_nominal(nominal);
+                self.project_nominal_declaration(nominal.declaration());
+                self.len(nominal.arguments().len());
+                tasks.push(EncodingTask::Types(nominal.arguments().iter(), child_depth));
             }
             TypeKind::AcceptedNominal(nominal) => {
                 self.tag(65);
-                self.accepted_nominal(nominal);
+                self.accepted_nominal_id(nominal.declaration());
+                self.len(nominal.arguments().len());
+                tasks.push(EncodingTask::Types(nominal.arguments().iter(), child_depth));
             }
             TypeKind::OpenNominal(nominal) => {
                 self.tag(66);
-                self.open_nominal(nominal);
+                self.open_rule(nominal.rule());
+                self.hir_path(nominal.path());
+                self.len(nominal.arguments().len());
+                tasks.push(EncodingTask::Types(nominal.arguments().iter(), child_depth));
             }
             TypeKind::Error(poison) => {
                 self.tag(67);
@@ -489,16 +769,15 @@ impl Encoder {
                 assoc,
             } => {
                 self.tag(68);
-                self.ty(subject);
-                self.option(trait_name.as_ref(), |encoder, value| encoder.string(value));
-                self.string(assoc);
+                tasks.push(EncodingTask::ProjectionTail { trait_name, assoc });
+                tasks.push(EncodingTask::Type(subject, child_depth));
             }
             TypeKind::CharacterDialogue(dialogue) => {
-                dialogue.encode_runtime_semantic_identity(&mut self.0);
+                dialogue.encode_runtime_semantic_identity(&mut self.bytes);
             }
             TypeKind::DialogueLine(result) => {
                 self.tag(70);
-                self.ty(result);
+                tasks.push(EncodingTask::Type(result, child_depth));
             }
             TypeKind::CharacterPatch(kind) => {
                 self.tag(71);
@@ -515,15 +794,16 @@ impl Encoder {
             }
             TypeKind::Tuple(items) => {
                 self.tag(75);
-                self.types(items);
+                self.len(items.len());
+                tasks.push(EncodingTask::Types(items.iter(), child_depth));
             }
             TypeKind::Choice(items) => {
                 self.tag(76);
-                self.types(items);
+                self.len(items.len());
+                tasks.push(EncodingTask::Types(items.iter(), child_depth));
             }
             TypeKind::VariantPayload(payload) => {
-                self.tag(87);
-                self.bytes(payload.case().as_bytes());
+                return Ok(Some(payload));
             }
             TypeKind::Unit => self.checked(&RuntimeCheckedType::Unit),
             TypeKind::Never => self.checked(&RuntimeCheckedType::Never),
@@ -554,11 +834,41 @@ impl Encoder {
                 self.tag(88);
                 self.byte(ingress.semantic_tag());
             }
+            TypeKind::CompileTimeCallable(callable) => {
+                self.tag(89);
+                self.compile_time_callable(callable);
+            }
+            TypeKind::MetaType(inner) => {
+                self.tag(90);
+                tasks.push(EncodingTask::Type(inner, child_depth));
+            }
+            TypeKind::CompileTimeScalar(scalar) => {
+                self.tag(91);
+                self.compile_time_scalar(scalar);
+            }
+            TypeKind::CompileTimeEnum(enum_type) => {
+                self.tag(92);
+                self.compile_time_enum(enum_type);
+            }
+            TypeKind::CompileTimeFx(fx) => {
+                self.tag(93);
+                self.compile_time_fx(fx);
+            }
+            TypeKind::FixedVector(vector) => {
+                self.tag(94);
+                self.byte(match vector.dimensions() {
+                    crate::callable::VectorDimensions::Two => 2,
+                    crate::callable::VectorDimensions::Three => 3,
+                    crate::callable::VectorDimensions::Four => 4,
+                });
+                tasks.push(EncodingTask::Type(vector.component(), child_depth));
+            }
         }
+        Ok(None)
     }
 
     fn checked(&mut self, ty: &RuntimeCheckedType) {
-        ty.encode_semantic_identity(&mut self.0);
+        ty.encode_semantic_identity(&mut self.bytes);
     }
 
     fn agent_builtin(&mut self, builtin: super::AgentBuiltinType) {
@@ -580,10 +890,65 @@ impl Encoder {
         });
     }
 
-    fn types(&mut self, types: &[TypeKind]) {
-        self.len(types.len());
-        for ty in types {
-            self.ty(ty);
+    fn compile_time_callable(&mut self, callable: &CompileTimeCallableType) {
+        match callable {
+            CompileTimeCallableType::View(id) => {
+                self.byte(0);
+                match id {
+                    ViewCallableId::Element(element) => {
+                        self.byte(0);
+                        self.byte(element.semantic_tag());
+                    }
+                    ViewCallableId::Text => self.byte(1),
+                    ViewCallableId::RichText => self.byte(2),
+                }
+            }
+            CompileTimeCallableType::Style(id) => {
+                self.byte(1);
+                self.byte(id.semantic_tag());
+            }
+        }
+    }
+
+    fn compile_time_scalar(&mut self, scalar: &CompileTimeScalarType) {
+        self.accepted_nominal_id(scalar.declaration());
+        self.byte(scalar.kind().semantic_tag());
+    }
+
+    fn compile_time_enum(&mut self, enum_type: &CompileTimeEnumType) {
+        self.bytes(&enum_type.domain().canonical_bytes());
+        match (enum_type.exact_variant(), enum_type.allowed_variants()) {
+            (Some(variant), _) => {
+                self.byte(1);
+                self.u16(variant);
+            }
+            (None, Some(allowed)) => {
+                self.byte(2);
+                self.len(allowed.len());
+                for variant in allowed {
+                    self.u16(*variant);
+                }
+            }
+            (None, None) => self.byte(0),
+        }
+    }
+
+    fn compile_time_fx(&mut self, fx: &CompileTimeFxType) {
+        match fx {
+            CompileTimeFxType::Abstract => self.byte(0),
+            CompileTimeFxType::Constructor(id) => {
+                self.byte(1);
+                self.byte(id.semantic_tag());
+            }
+            CompileTimeFxType::Builtin(id) => {
+                self.byte(2);
+                self.byte(id.semantic_tag());
+            }
+            CompileTimeFxType::Registered(id) => {
+                self.byte(3);
+                self.string(id.package());
+                self.string(id.function());
+            }
         }
     }
 
@@ -605,17 +970,61 @@ impl Encoder {
         }
     }
 
-    fn generic_parameter(&mut self, parameter: &GenericTypeParameterId) {
+    fn generic_parameter(&mut self, reference: &GenericTypeReference) {
+        match reference {
+            GenericTypeReference::Free(parameter) => {
+                self.free_generic_parameter(parameter);
+            }
+            GenericTypeReference::Bound(parameter) => {
+                if let Err(error) = self.scope.bound_type(parameter.depth(), parameter.slot()) {
+                    self.error.get_or_insert(error);
+                    return;
+                }
+                self.byte(1);
+                self.u32(parameter.depth());
+                self.u16(parameter.slot());
+            }
+            GenericTypeReference::Inference(_) => {
+                self.error
+                    .get_or_insert(GenericScopeError::EscapedInference {
+                        kind: GenericParameterKind::Type,
+                    });
+            }
+        }
+    }
+
+    fn free_generic_parameter(&mut self, parameter: &super::GenericTypeParameterId) {
+        self.byte(0);
         self.generic_owner(parameter.owner());
         self.u16(parameter.ordinal());
     }
 
-    fn generic_const_parameter(&mut self, parameter: &GenericConstParameterId) {
+    fn generic_const_parameter(&mut self, reference: &GenericConstReference) {
         // The tag separates the type and constant parameter namespaces even
         // when a declaration happens to use the same ordinal in both.
         self.byte(0xC0);
-        self.generic_owner(parameter.owner());
-        self.u16(parameter.ordinal());
+        match reference {
+            GenericConstReference::Free(parameter) => {
+                self.byte(0);
+                self.generic_owner(parameter.owner());
+                self.u16(parameter.ordinal());
+            }
+            GenericConstReference::Bound(parameter) => {
+                if let Err(error) = self.scope.bound_const(parameter.depth(), parameter.slot()) {
+                    self.error.get_or_insert(error);
+                    return;
+                }
+                self.byte(1);
+                self.u32(parameter.depth());
+                self.u16(parameter.slot());
+            }
+            GenericConstReference::Inference(_) => {
+                self.error
+                    .get_or_insert(GenericScopeError::EscapedInference {
+                        kind: GenericParameterKind::Const,
+                    });
+            }
+        }
     }
 
     fn generic_owner(&mut self, owner: &GenericParameterOwnerId) {
@@ -647,29 +1056,14 @@ impl Encoder {
         }
     }
 
-    fn project_nominal(&mut self, nominal: &ProjectNominalType) {
-        self.project_nominal_declaration(nominal.declaration());
-        self.types(nominal.arguments());
-    }
-
-    fn accepted_nominal(&mut self, nominal: &AcceptedNominalType) {
-        self.accepted_nominal_id(nominal.declaration());
-        self.types(nominal.arguments());
-    }
-
-    fn open_nominal(&mut self, nominal: &OpenNominalType) {
-        self.open_rule(nominal.rule());
-        self.hir_path(nominal.path());
-        self.types(nominal.arguments());
-    }
-
     fn callable_declaration(&mut self, id: &CallableDeclarationKey) {
-        self.0.write_bytes(id.semantic_digest().as_bytes());
+        self.bytes.write_bytes(id.semantic_digest().as_bytes());
     }
 
     fn project_nominal_declaration(&mut self, id: &ProjectNominalDeclarationId) {
         self.project_world(id.world());
-        self.0.write_bytes(id.revision().as_source_set().as_bytes());
+        self.bytes
+            .write_bytes(id.revision().as_source_set().as_bytes());
         self.module_path(id.module());
         self.byte(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,
@@ -755,27 +1149,58 @@ impl Encoder {
 
     fn source_span(&mut self, source: &SourceSpan) {
         self.string(source.source().id().as_str());
-        self.0.write_bytes(source.source().revision().as_bytes());
+        self.bytes
+            .write_bytes(source.source().revision().as_bytes());
         self.u64(source.source().source_len());
         let range = source.range();
         self.u64(u64::try_from(range.start()).expect("source offsets fit u64"));
         self.u64(u64::try_from(range.end()).expect("source offsets fit u64"));
     }
 
-    fn effect_row(&mut self, row: &EffectRow) {
+    fn effect_row<C, E>(
+        &mut self,
+        row: &EffectRow,
+        depth: usize,
+        control: &mut C,
+        node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+    ) -> Result<(), E> {
+        use super::TypeProjectionNodeKind;
+        node(
+            control,
+            TypeProjectionNodeKind::Effect,
+            traversal::depth_u64(depth),
+        )?;
         self.len(row.concrete().iter().len());
         for effect in row.concrete().iter() {
+            node(
+                control,
+                TypeProjectionNodeKind::Effect,
+                traversal::depth_u64(depth + 1),
+            )?;
             self.string(effect.as_str());
         }
         match row.tail() {
             EffectRowTail::Closed => self.byte(0),
             EffectRowTail::Variable(variable) => {
+                node(
+                    control,
+                    TypeProjectionNodeKind::Effect,
+                    traversal::depth_u64(depth + 1),
+                )?;
                 self.byte(1);
                 self.bytes(variable.issuer().as_bytes());
                 self.u32(variable.index());
             }
-            EffectRowTail::Unknown => self.byte(2),
+            EffectRowTail::Unknown => {
+                node(
+                    control,
+                    TypeProjectionNodeKind::Effect,
+                    traversal::depth_u64(depth + 1),
+                )?;
+                self.byte(2);
+            }
         }
+        Ok(())
     }
 
     fn character_nominal(&mut self, nominal: &CharacterNominalType) {
@@ -914,115 +1339,4 @@ impl Encoder {
 }
 
 #[cfg(test)]
-mod tests {
-    use arcweft_character::id::CharacterId;
-    use arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder;
-    use arcweft_lang_syntax::{
-        ast::{
-            module_path::ModulePathRoot,
-            symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
-        },
-        types::TypePath,
-    };
-
-    use crate::{
-        env::{
-            identity::EnvironmentBindingId,
-            nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
-        },
-        registration::StandardStatementIngressTypeId,
-        types::{AcceptedNominalType, CharacterDialogueType, TypeKind},
-    };
-
-    fn path(name: &str) -> TypePath {
-        ProjectSymbolPath::new(
-            ModulePathRoot::ImplicitCrate,
-            [ProjectSymbolSegment::try_new(name).expect("segment")],
-        )
-        .expect("path")
-        .into()
-    }
-
-    #[test]
-    fn accepted_owner_and_nested_arguments_participate_in_identity() {
-        let first = TypeKind::AcceptedNominal(AcceptedNominalType::new(
-            AcceptedNominalId::new(
-                AcceptedNominalOwnerId::Environment(
-                    EnvironmentBindingId::try_new("adapter:first").expect("owner"),
-                ),
-                path("Value"),
-            ),
-            [TypeKind::Vec(Box::new(TypeKind::I32))],
-        ));
-        let owner_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
-            AcceptedNominalId::new(
-                AcceptedNominalOwnerId::Environment(
-                    EnvironmentBindingId::try_new("adapter:second").expect("owner"),
-                ),
-                path("Value"),
-            ),
-            [TypeKind::Vec(Box::new(TypeKind::I32))],
-        ));
-        let argument_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
-            AcceptedNominalId::new(
-                AcceptedNominalOwnerId::Environment(
-                    EnvironmentBindingId::try_new("adapter:first").expect("owner"),
-                ),
-                path("Value"),
-            ),
-            [TypeKind::Vec(Box::new(TypeKind::I64))],
-        ));
-
-        assert_eq!(
-            first.semantic_identity_digest(),
-            first.clone().semantic_identity_digest()
-        );
-        assert_ne!(
-            first.semantic_identity_digest(),
-            owner_changed.semantic_identity_digest()
-        );
-        assert_ne!(
-            first.semantic_identity_digest(),
-            argument_changed.semantic_identity_digest()
-        );
-    }
-
-    #[test]
-    fn character_dialogue_producer_and_type_kind_share_one_identity_authority() {
-        let exact = CharacterDialogueType::exact(
-            CharacterId::try_new("character.alice").expect("character ID"),
-        );
-        let any = CharacterDialogueType::any();
-        assert_eq!(
-            TypeKind::CharacterDialogue(exact.clone())
-                .semantic_identity_digest()
-                .as_bytes(),
-            exact.runtime_semantic_identity().as_bytes()
-        );
-        assert_eq!(
-            TypeKind::CharacterDialogue(any.clone())
-                .semantic_identity_digest()
-                .as_bytes(),
-            any.runtime_semantic_identity().as_bytes()
-        );
-    }
-
-    #[test]
-    fn statement_ingress_uses_the_reserved_outer_and_exact_inner_tags() {
-        for (ingress, inner_tag) in [
-            (StandardStatementIngressTypeId::TaskEvent, 0),
-            (StandardStatementIngressTypeId::ScopeExit, 1),
-            (StandardStatementIngressTypeId::FrameBoundary, 2),
-        ] {
-            let mut expected = RuntimeSemanticTypeIdentityEncoder::new();
-            expected.write_tag(88);
-            expected.write_u8(inner_tag);
-            assert_eq!(
-                TypeKind::StatementIngress(ingress)
-                    .semantic_identity_digest()
-                    .as_bytes(),
-                expected.finish().as_bytes()
-            );
-        }
-    }
-}
+mod tests;

@@ -1,71 +1,21 @@
 pub character akira {
     display = "Akira"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#d9f2ff")
-                size = 30px
-            }
-        }
-    }
 }
 
 pub character mio {
     display = "Mio"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Meiryo"
-                color = rgb("#ffd9f0")
-                size = 29px
-            }
-        }
-    }
 }
 
 pub character sen {
     display = "Sen"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "MS Mincho"
-                color = rgb("#fff0c8")
-                size = 30px
-            }
-        }
-    }
 }
 
 pub character terminal {
     display = "Terminal"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Consolas"
-                color = rgb("#d8ffd8")
-                size = 27px
-            }
-        }
-    }
 }
 
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Segoe UI"
-                color = rgb("#e8e8e8")
-                size = 28px
-            }
-        }
-    }
 }
 
 entry cli @entry.windows_font_showcase {
@@ -73,28 +23,28 @@ entry cli @entry.windows_font_showcase {
 }
 
 flow windows_font_showcase {
-    sen.say(id=@say.windows_fonts.001, voice=auto)[
-        [.vertical_rl jlreq=normal][font "MS Mincho"]縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。[/font][/] [font "Yu Gothic"]横書き比較[/font]。[p]
+    sen(id=@say.windows_fonts.001, voice=auto)[
+        #layout(.vertical_rl, jlreq=.normal)[#font("MS Mincho")[縦書きの見本。吾輩は猫である。ABC 123 2026。春夏秋冬、朝昼夕夜、天地左右。]] #font("Yu Gothic")[横書き比較]。[p]
     ]
 
-    akira.say(id=@say.windows_fonts.002, voice=auto, look=.smile)[
-        [font "Yu Gothic"][color #8fd7ff]Yu Gothic[/color] は本文寄り。[strong]太字[/strong]、[em]強調[/em]、[size 36]大きな語[/size]を混ぜる。[p]
+    akira(id=@say.windows_fonts.002, voice=auto, look=.smile)[
+        #font("Yu Gothic")[#color(rgb("#8fd7ff"))[Yu Gothic] は本文寄り。#strong()[太字]、#em()[強調]、#size(36pt)[大きな語]を混ぜる。][p]
     ]
 
-    mio.say(id=@say.windows_fonts.003, voice=auto, look=.bright)[
-        [font "Meiryo"]Meiryo[/font] で、[italic]italic[/italic]、[oblique 10deg]oblique[/oblique]、[color #ff9ac8]色指定[/color]を見る。[p]
+    mio(id=@say.windows_fonts.003, voice=auto, look=.bright)[
+        #font("Meiryo")[Meiryo] で、#style(.italic)[italic]、#style(.oblique, angle=10deg)[oblique]、#color(rgb("#ff9ac8"))[色指定]を見る。[p]
     ]
 
-    terminal.say(id=@say.windows_fonts.004, voice=auto)[
-        [font "Consolas"]Consolas: let score = 42; 0123456789[/font] と [font "MS Gothic"]MS Gothic 等幅かな交じり[/font]。[p]
+    terminal(id=@say.windows_fonts.004, voice=auto)[
+        #font("Consolas")[Consolas: let score = 42; 0123456789] と #font("MS Gothic")[MS Gothic 等幅かな交じり]。[p]
     ]
 
-    narrator.say(id=@say.windows_fonts.005, voice=auto)[
-        [font "Segoe UI"]Segoe UI[/font]、[font "Yu Gothic UI"]Yu Gothic UI[/font]、[font "MS Gothic"]MS Gothic[/font]、[font "MS Mincho"]MS Mincho[/font] を同じ rich text に並べる。[p]
+    narrator(id=@say.windows_fonts.005, voice=auto)[
+        #font("Segoe UI")[Segoe UI]、#font("Yu Gothic UI")[Yu Gothic UI]、#font("MS Gothic")[MS Gothic]、#font("MS Mincho")[MS Mincho] を同じ rich text に並べる。[p]
     ]
 
-    akira.say(id=@say.windows_fonts.006, voice=auto)[
-        [.wave amp=2px dir=0,1 period=7 speed=1]波[/]、[.shake amp=1px seed=windows-fonts]揺れ[/]、[.offset x=8px y=-3px]|[星影](ほしかげ)[/]、[.typewriter cps=20]typewriter[/]。[p]
+    akira(id=@say.windows_fonts.006, voice=auto)[
+        #fx(wave(amplitude=2px, direction=vec2(0.0, 1.0), period=7, speed=1))[波]、#fx(shake(amplitude=1px))[揺れ]、#transform(.offset, x=8px, y=-3px)[|[星影](ほしかげ)]、#fx(typewriter(characters_per_second=20))[typewriter]。[p]
     ]
 
     return "windows_font_showcase"

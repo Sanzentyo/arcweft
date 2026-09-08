@@ -27,16 +27,6 @@ pub image sample.pulse_sprite {
 
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic UI"
-                color = rgb("#f4f8ff")
-                size = 30px
-            }
-        }
-    }
 }
 
 entry cli @entry.image_static_png {
@@ -78,7 +68,7 @@ entry cli @entry.image_alignment_object {
 flow image_static_png() -> String {
     bg(@asset:.bg.room)
 
-    narrator.say(id=@say.image.static_png, voice=auto)[
+    narrator(id=@say.image.static_png, voice=auto)[
         Static PNG background image as a first-class presentation object.[p]
     ]
 
@@ -88,7 +78,7 @@ flow image_static_png() -> String {
 flow image_static_jpeg() -> String {
     bg(@asset:.bg.garden)
 
-    narrator.say(id=@say.image.static_jpeg, voice=auto)[
+    narrator(id=@say.image.static_jpeg, voice=auto)[
         Static JPEG background image follows the same Agent capture path.[p]
     ]
 
@@ -98,7 +88,7 @@ flow image_static_jpeg() -> String {
 flow image_static_webp() -> String {
     bg(@asset:.bg.poster, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 0.75)
 
-    narrator.say(id=@say.image.static_webp, voice=auto)[
+    narrator(id=@say.image.static_webp, voice=auto)[
         Static WebP background image is decoded into the same image frame model.[p]
     ]
 
@@ -108,7 +98,7 @@ flow image_static_webp() -> String {
 flow image_animated_gif() -> String {
     bg(@asset:.bg.pulse)
 
-    narrator.say(id=@say.image.animated_gif, voice=auto)[
+    narrator(id=@say.image.animated_gif, voice=auto)[
         Animated GIF background image is selected from deterministic capture time.[p]
     ]
 
@@ -118,7 +108,7 @@ flow image_animated_gif() -> String {
 flow image_animated_webp() -> String {
     bg(@asset:.bg.loop)
 
-    narrator.say(id=@say.image.animated_webp, voice=auto)[
+    narrator(id=@say.image.animated_webp, voice=auto)[
         Animated WebP background image uses the same deterministic frame selection contract.[p]
     ]
 
@@ -129,7 +119,7 @@ flow image_sprite_overlay() -> String {
     bg(@asset:.bg.room)
     image(@image.sample.pulse_sprite)
 
-    narrator.say(id=@say.image.sprite_overlay, voice=auto)[
+    narrator(id=@say.image.sprite_overlay, voice=auto)[
         Foreground image object uses authored bounds, layer, object capture, and animation timing.[p]
     ]
 
@@ -141,7 +131,7 @@ flow image_sprite_released() -> String {
     let sprite = image(@image.sample.pulse_sprite)
     sprite.release()
 
-    narrator.say(id=@say.image.sprite_released, voice=auto)[
+    narrator(id=@say.image.sprite_released, voice=auto)[
         Released image handles are absent from Agent observe objects and capture scopes.[p]
     ]
 
@@ -152,7 +142,7 @@ flow image_clipped_object() -> String {
     bg(@asset:.bg.room)
     image(asset = @asset:.bg.pulse, id = "image.sample.clipped_pulse", target = "target.sample.clipped_pulse", layer = "layer.clipped", x = 1184px, y = 48px, width = 192px, height = 96px, fit = "stretch", opacity = 0.5, depth = 2700, enabled = true, visible = true, action = "action.inspect.clipped_pulse", param.role = "clipped-animated-hotspot")
 
-    narrator.say(id=@say.image.clipped_object, voice=auto)[
+    narrator(id=@say.image.clipped_object, voice=auto)[
         Clipped animated image object proves object capture uses viewport-visible geometry.[p]
     ]
 
@@ -163,7 +153,7 @@ flow image_alignment_object() -> String {
     bg(@asset:.bg.room)
     image(asset = @asset:.bg.poster, id = "image.sample.aligned_poster", target = "target.sample.aligned_poster", layer = "layer.aligned", x = 96px, y = 72px, width = 360px, height = 180px, fit = "intrinsic", alignment.x = "right", alignment.y = "bottom", opacity = 1, depth = 2400, enabled = true, visible = true, action = "action.inspect.aligned_poster", param.role = "aligned-static-hotspot")
 
-    narrator.say(id=@say.image.alignment_object, voice=auto)[
+    narrator(id=@say.image.alignment_object, voice=auto)[
         Static image object alignment places intrinsic pixels inside authored bounds.[p]
     ]
 

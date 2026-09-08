@@ -74,7 +74,7 @@ pre-existing `arcweft-tooling` tests:
 - `agent_format_preserves_comments_trivia_and_item_golden`.
 
 Both failures were reproduced on the unmodified `main` baseline before this
-cut. The first retains an obsolete `.say()` fixture and the second retains a
+cut. The first retained an obsolete dialogue-builder fixture and the second retained a
 stale formatter fixture. They are corrected by the independently isolated
 regular-project root-statement removal cut; this View parser cut does not alter
 tooling.

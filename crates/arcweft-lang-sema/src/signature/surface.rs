@@ -3,9 +3,10 @@
 use std::cmp::Ordering;
 
 use arcweft_lang_hir::{
+    dialogue_application::HirAttachedContentApplicationFamily,
     expr::{
-        HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallExpr, HirCallValue,
-        HirExprKind, HirRequiredTokenState,
+        HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallCallee,
+        HirCallInvocation, HirCallInvocationForm, HirCallValue, HirExprKind, HirRequiredTokenState,
     },
     identity::ExprId,
     module::HirModule,
@@ -173,8 +174,8 @@ impl SurfaceScanner<'_> {
             self.visit_node()?;
             match expression.kind() {
                 HirExprKind::Call(call) => self.scan_call(expression_id, call)?,
-                HirExprKind::DialogueContentApplication(application) => {
-                    self.scan_dialogue_application(expression_id, application)?;
+                HirExprKind::AttachedContentApplication(application) => {
+                    self.scan_attached_content_application(expression_id, application)?;
                 }
                 HirExprKind::PostfixBracket(_) => self.mark_unsupported(expression_id)?,
                 _ => {}
@@ -186,7 +187,7 @@ impl SurfaceScanner<'_> {
     fn scan_call(
         &mut self,
         expression_id: ExprId,
-        call: &HirCallExpr,
+        call: &HirCallInvocation,
     ) -> Result<(), SignatureQueryError> {
         self.work
             .charge(SignatureWorkKind::CandidateCalls, 1)
@@ -238,11 +239,25 @@ impl SurfaceScanner<'_> {
         Ok(())
     }
 
-    fn scan_dialogue_application(
+    fn scan_attached_content_application(
         &mut self,
         expression_id: ExprId,
-        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
+        application: &arcweft_lang_hir::dialogue_application::HirAttachedContentApplication,
     ) -> Result<(), SignatureQueryError> {
+        if let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+            application.family()
+        {
+            return self.scan_content_call(expression_id, invocation);
+        }
+        let HirAttachedContentApplicationFamily::DialogueLine {
+            target,
+            plan,
+            coordinates,
+        } = application.family()
+        else {
+            return Ok(());
+        };
+        let _ = (target, coordinates);
         self.work
             .charge(SignatureWorkKind::CandidateCalls, 1)
             .map_err(map_signature_accounting_error)?;
@@ -250,7 +265,7 @@ impl SurfaceScanner<'_> {
         self.work
             .charge(SignatureWorkKind::Arguments, 1)
             .map_err(map_signature_accounting_error)?;
-        if application.plan().is_some() {
+        if plan.is_some() {
             self.poll_operation()?;
             self.work
                 .charge(SignatureWorkKind::Arguments, 1)
@@ -343,10 +358,165 @@ impl SurfaceScanner<'_> {
         Ok(())
     }
 
+    fn scan_content_call(
+        &mut self,
+        expression_id: ExprId,
+        invocation: &HirCallInvocation,
+    ) -> Result<(), SignatureQueryError> {
+        if invocation.form() != HirCallInvocationForm::Parenthesized {
+            self.mark_unsupported(expression_id)?;
+            return Ok(());
+        }
+        self.work
+            .charge(SignatureWorkKind::CandidateCalls, 1)
+            .map_err(map_signature_accounting_error)?;
+        for _ in invocation.arguments() {
+            self.poll_operation()?;
+            self.work
+                .charge(SignatureWorkKind::Arguments, 1)
+                .map_err(map_signature_accounting_error)?;
+        }
+        let recovery_nodes = invocation
+            .arguments()
+            .iter()
+            .filter(|argument| argument_is_recovered(argument))
+            .count()
+            + usize::from(
+                invocation.terminator() == HirCallArgumentListTerminator::RecoveredMissing,
+            );
+        for _ in 0..recovery_nodes {
+            self.poll_operation()?;
+            self.work
+                .charge(SignatureWorkKind::RecoveryNodes, 1)
+                .map_err(map_signature_accounting_error)?;
+        }
+
+        let Some(candidate) = self.focused_content_call_site(expression_id, invocation)? else {
+            return Ok(());
+        };
+        self.poll_operation()?;
+        self.work
+            .charge(SignatureWorkKind::NestedCalls, 1)
+            .map_err(map_signature_accounting_error)?;
+        match self.selected.as_ref() {
+            None => self.selected = Some(candidate),
+            Some(current) => match candidate.compare_focus(current) {
+                Ordering::Greater => self.selected = Some(candidate),
+                Ordering::Less => {}
+                Ordering::Equal
+                    if candidate.expression() == current.expression()
+                        && candidate.arguments() == current.arguments() => {}
+                Ordering::Equal => {
+                    return Err(super::SignatureSemanticUnavailable::AmbiguousCallRange {
+                        document: Box::new(self.document.identity().clone()),
+                        byte_offset: self.byte_offset,
+                    }
+                    .into());
+                }
+            },
+        }
+        Ok(())
+    }
+
+    fn focused_content_call_site(
+        &self,
+        expression_id: ExprId,
+        invocation: &HirCallInvocation,
+    ) -> Result<Option<FocusedCallSite>, SignatureQueryError> {
+        let open = self.required_span(expression_id, HirExprSourceRole::CallArgumentListOpen)?;
+        let callee = self.callee_span(expression_id, invocation.callee())?;
+        let (argument_content_end, argument_list_end) = match invocation.terminator() {
+            HirCallArgumentListTerminator::Closed => {
+                let close =
+                    self.required_span(expression_id, HirExprSourceRole::CallArgumentListClose)?;
+                (close.range().start(), close.range().end())
+            }
+            HirCallArgumentListTerminator::RecoveredMissing => {
+                let insertion = self.required_offset(
+                    expression_id,
+                    HirExprSourceRole::CallArgumentListRecoveryEnd,
+                )?;
+                (insertion, insertion)
+            }
+        };
+        if self.byte_offset < callee.range().start() || self.byte_offset > argument_list_end {
+            return Ok(None);
+        }
+        let active_argument = if self.byte_offset <= argument_content_end {
+            self.content_call_active_argument(
+                expression_id,
+                invocation,
+                &open,
+                argument_content_end,
+            )?
+        } else {
+            None
+        };
+        let whole = self.required_span(expression_id, HirExprSourceRole::Whole)?;
+        let arguments = self
+            .document
+            .span(SourceRange::new(open.range().start(), argument_list_end))
+            .map_err(map_span_error)?;
+        let argument_content = SourceRange::new(callee.range().start(), argument_list_end);
+        let missing_close_delimiter =
+            invocation.terminator() == HirCallArgumentListTerminator::RecoveredMissing;
+        Ok(Some(FocusedCallSite {
+            expression: expression_id,
+            call: whole,
+            callee,
+            arguments,
+            active_argument,
+            active_parameter: None,
+            surface: SemanticSignatureSurface::Parenthesized,
+            recovery_nodes: usize::from(missing_close_delimiter),
+            missing_close_delimiter,
+            argument_content,
+            open_paren_start: open.range().start(),
+            byte_offset: Some(self.byte_offset),
+        }))
+    }
+
+    fn content_call_active_argument(
+        &self,
+        expression_id: ExprId,
+        invocation: &HirCallInvocation,
+        open: &SourceSpan,
+        content_end: usize,
+    ) -> Result<Option<usize>, SignatureQueryError> {
+        if self.byte_offset < open.range().end() || self.byte_offset > content_end {
+            return Ok(None);
+        }
+        let mut active = 0usize;
+        for following in 1..invocation.arguments().len() {
+            let following = HirCallArgumentOrdinal::try_from_usize(following)
+                .expect("published attached-call argument count fits its HIR ordinal");
+            if self
+                .optional_site(
+                    expression_id,
+                    HirExprSourceRole::CallArgumentSeparator { following },
+                )?
+                .is_some_and(|separator| site_start(&separator) <= self.byte_offset)
+            {
+                active = usize::from(following.get());
+            }
+        }
+        if !invocation.arguments().is_empty()
+            && self
+                .optional_site(
+                    expression_id,
+                    HirExprSourceRole::CallArgumentTrailingSeparator,
+                )?
+                .is_some_and(|separator| site_start(&separator) <= self.byte_offset)
+        {
+            active = invocation.arguments().len();
+        }
+        Ok(Some(active))
+    }
+
     fn focused_call_site(
         &self,
         expression_id: ExprId,
-        call: &HirCallExpr,
+        call: &HirCallInvocation,
     ) -> Result<Option<FocusedCallSite>, SignatureQueryError> {
         let Some(active_argument) = self
             .module

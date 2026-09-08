@@ -2,16 +2,18 @@
 
 use super::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
-    HirClosureParameterSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
-    HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart,
-    HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceQueryError,
+    HirClosureParameterSourcePart, HirDialogueNodeSourcePart,
+    HirDialoguePointActionArgumentSourcePart, HirDialoguePointActionSourcePart, HirExprSourceRole,
+    HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart, HirSourceQueryError,
 };
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueNodeKind, HirRichTextArgument, HirRichTextTagPayload,
+    HirAttachedContentApplication, HirDialogueNodeKind, HirDialoguePointActionArgument,
+    HirDialoguePointActionIdentity,
 };
 use crate::expr::{
-    HirCallArgument, HirCallCallee, HirCallTypeApplication, HirCallTypeApplicationSpelling,
-    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirExprKind, HirRecordField,
+    HirCallArgument, HirCallCallee, HirCallInvocation, HirCallTypeApplication,
+    HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
+    HirExprKind, HirRecordField,
 };
 use crate::identity::ExprId;
 use crate::leaf::{
@@ -280,7 +282,7 @@ impl HirExprKind {
                 _ => not_applicable(owner, role),
             },
             Self::ForSynthetic(_) => not_applicable(owner, role),
-            Self::DialogueContentApplication(expression) => {
+            Self::AttachedContentApplication(expression) => {
                 validate_dialogue_application_role(owner, role, expression)
             }
             Self::PostfixBracket(_) => admit(
@@ -313,9 +315,10 @@ impl HirExprKind {
         target_call_argument_count: Option<usize>,
     ) -> Result<(), HirSourceQueryError> {
         if let (
-            Self::DialogueContentApplication(_),
+            Self::AttachedContentApplication(application),
             HirExprSourceRole::ConfigurationArgument { argument, .. },
         ) = (self, role)
+            && application.is_dialogue_line()
         {
             let length = target_call_argument_count.unwrap_or(0);
             if usize::from(argument.get()) >= length {
@@ -678,19 +681,41 @@ fn validate_match_arm_part(
 fn validate_dialogue_application_role(
     owner: ExprId,
     role: HirExprSourceRole,
-    expression: &HirDialogueContentApplication,
+    expression: &HirAttachedContentApplication,
 ) -> Result<(), HirSourceQueryError> {
+    if let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+        invocation,
+        ..
+    } = expression.family()
+        && is_call_source_role(&role)
+    {
+        return validate_call_source_role(owner, role, invocation);
+    }
     match role {
+        HirExprSourceRole::Hash if expression.is_content_call() => Ok(()),
+        HirExprSourceRole::Hash => not_applicable(owner, role),
         HirExprSourceRole::Target
         | HirExprSourceRole::OpenBracket
         | HirExprSourceRole::CloseBracket
         | HirExprSourceRole::Colon
         | HirExprSourceRole::Content
-        | HirExprSourceRole::ContentBody
-        | HirExprSourceRole::Plan => Ok(()),
+        | HirExprSourceRole::ContentBody => Ok(()),
+        HirExprSourceRole::Plan if expression.is_dialogue_line() => Ok(()),
+        HirExprSourceRole::Plan => not_applicable(owner, role),
         HirExprSourceRole::ConfigurationArgument { argument, part } => {
-            if expression
-                .coordinates()
+            if !expression.is_dialogue_line() {
+                return not_applicable(owner, role);
+            }
+            let coordinates = match expression.family() {
+                crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                    coordinates,
+                    ..
+                } => coordinates,
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    ..
+                } => return not_applicable(owner, role),
+            };
+            if coordinates
                 .iter()
                 .any(|coordinate| coordinate.argument() == argument)
             {
@@ -720,29 +745,23 @@ fn validate_dialogue_application_role(
                     part,
                     HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Text
                 ),
-                HirDialogueNodeKind::Raw(_) => matches!(
-                    part,
-                    HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Raw
-                ),
                 HirDialogueNodeKind::Escape(_) => matches!(
                     part,
                     HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Escape
                 ),
-                HirDialogueNodeKind::Ruby(_) => matches!(
-                    part,
-                    HirDialogueNodeSourcePart::Whole
-                        | HirDialogueNodeSourcePart::RubyBase
-                        | HirDialogueNodeSourcePart::RubyText
-                ),
-                HirDialogueNodeKind::AuthoredStartTag(_)
-                | HirDialogueNodeKind::InferredStartTag(_)
-                | HirDialogueNodeKind::AuthoredEndTag(_)
-                | HirDialogueNodeKind::InferredEndTag(_) => {
-                    part == HirDialogueNodeSourcePart::Whole
-                }
                 HirDialogueNodeKind::Interpolation(_) => matches!(
                     part,
                     HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Interpolation
+                ),
+                HirDialogueNodeKind::ContentApplication(_) => matches!(
+                    part,
+                    HirDialogueNodeSourcePart::Whole
+                        | HirDialogueNodeSourcePart::Hash
+                        | HirDialogueNodeSourcePart::Expression
+                ),
+                HirDialogueNodeKind::PointAction(_) => matches!(
+                    part,
+                    HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::PointAction
                 ),
                 HirDialogueNodeKind::LineBreak(_) => matches!(
                     part,
@@ -755,58 +774,142 @@ fn validate_dialogue_application_role(
             };
             admit(owner, role, applicable)
         }
-        HirExprSourceRole::RichTextTag { tag, part } => {
-            let Some(tag_payload) = expression.content().tags().get(tag as usize) else {
-                return ordinal_out_of_bounds(owner, role, expression.content().tags().len());
+        HirExprSourceRole::DialoguePointAction { ordinal, part } => {
+            let Some(node) = expression.content().nodes().get(ordinal as usize) else {
+                return ordinal_out_of_bounds(owner, role, expression.content().nodes().len());
             };
-            let inferred = expression.content().nodes().iter().any(|node| {
-                matches!(
-                    node.kind(),
-                    HirDialogueNodeKind::InferredStartTag(id) if *id == tag_payload.id()
-                )
-            });
+            let HirDialogueNodeKind::PointAction(action) = node.kind() else {
+                return admit(owner, role, false);
+            };
             let applicable = matches!(
                 part,
-                HirRichTextTagSourcePart::Whole
-                    | HirRichTextTagSourcePart::OpenDelimiter
-                    | HirRichTextTagSourcePart::Name
-                    | HirRichTextTagSourcePart::Payload
-                    | HirRichTextTagSourcePart::CloseDelimiter
-                    | HirRichTextTagSourcePart::EndTag
-            ) || inferred && part == HirRichTextTagSourcePart::InferenceInsertion;
-            let applicable = applicable
-                || matches!(
-                    (tag_payload.payload(), part),
-                    (
-                        HirRichTextTagPayload::Marker(_),
-                        HirRichTextTagSourcePart::Marker(
-                            HirIdRefSourcePart::Whole
-                                | HirIdRefSourcePart::SuffixSegment { ordinal: 0 }
-                        )
+                HirDialoguePointActionSourcePart::Whole
+                    | HirDialoguePointActionSourcePart::OpenDelimiter
+                    | HirDialoguePointActionSourcePart::Name
+                    | HirDialoguePointActionSourcePart::Payload
+                    | HirDialoguePointActionSourcePart::CloseDelimiter
+            ) || matches!(
+                (action.identity(), part),
+                (
+                    HirDialoguePointActionIdentity::Mark(_),
+                    HirDialoguePointActionSourcePart::Marker(
+                        HirIdRefSourcePart::Whole
+                            | HirIdRefSourcePart::SuffixSegment { ordinal: 0 }
                     )
-                );
+                )
+            );
             admit(owner, role, applicable)
         }
-        HirExprSourceRole::RichTextArgument {
-            tag,
+        HirExprSourceRole::DialoguePointActionArgument {
+            action,
             argument,
             part,
         } => {
-            let Some(tag_payload) = expression.content().tags().get(tag as usize) else {
-                return ordinal_out_of_bounds(owner, role, expression.content().tags().len());
+            let Some(node) = expression.content().nodes().get(action as usize) else {
+                return ordinal_out_of_bounds(owner, role, expression.content().nodes().len());
             };
-            let Some(argument_payload) = tag_payload.arguments().get(usize::from(argument)) else {
-                return ordinal_out_of_bounds(owner, role, tag_payload.arguments().len());
+            let HirDialogueNodeKind::PointAction(point) = node.kind() else {
+                return admit(owner, role, false);
+            };
+            let Some(argument_payload) = point.arguments().get(usize::from(argument)) else {
+                return ordinal_out_of_bounds(owner, role, point.arguments().len());
             };
             let applicable = match argument_payload {
-                HirRichTextArgument::Positional { .. } => matches!(
+                HirDialoguePointActionArgument::Positional { .. } => matches!(
                     part,
-                    HirRichTextArgumentSourcePart::Whole | HirRichTextArgumentSourcePart::Value
+                    HirDialoguePointActionArgumentSourcePart::Whole
+                        | HirDialoguePointActionArgumentSourcePart::Value
                 ),
-                HirRichTextArgument::Named { .. } | HirRichTextArgument::Invalid { .. } => true,
+                HirDialoguePointActionArgument::Named { .. }
+                | HirDialoguePointActionArgument::Invalid { .. } => true,
             };
             admit(owner, role, applicable)
         }
+        _ => not_applicable(owner, role),
+    }
+}
+
+const fn is_call_source_role(role: &HirExprSourceRole) -> bool {
+    matches!(
+        role,
+        HirExprSourceRole::CallCallee
+            | HirExprSourceRole::CallAssociatedReceiver
+            | HirExprSourceRole::CallAssociatedSeparator
+            | HirExprSourceRole::CallAssociatedMember
+            | HirExprSourceRole::CallArgumentListOpen
+            | HirExprSourceRole::CallArgumentListClose
+            | HirExprSourceRole::CallArgumentListRecoveryEnd
+            | HirExprSourceRole::CallArgumentListEmptyInsertion
+            | HirExprSourceRole::CallArgumentSeparator { .. }
+            | HirExprSourceRole::CallArgumentTrailingSeparator
+            | HirExprSourceRole::CallArgument { .. }
+            | HirExprSourceRole::CallTypeApplication(_)
+    )
+}
+
+fn validate_call_source_role(
+    owner: ExprId,
+    role: HirExprSourceRole,
+    expression: &HirCallInvocation,
+) -> Result<(), HirSourceQueryError> {
+    match role {
+        HirExprSourceRole::CallCallee => admit(
+            owner,
+            role,
+            matches!(expression.callee(), HirCallCallee::Value { .. }),
+        ),
+        HirExprSourceRole::CallAssociatedReceiver
+        | HirExprSourceRole::CallAssociatedSeparator
+        | HirExprSourceRole::CallAssociatedMember => admit(
+            owner,
+            role,
+            matches!(
+                expression.callee(),
+                HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. }
+            ),
+        ),
+        HirExprSourceRole::CallArgumentListOpen => Ok(()),
+        HirExprSourceRole::CallArgumentListClose => admit(
+            owner,
+            role,
+            matches!(
+                expression.terminator(),
+                crate::expr::HirCallArgumentListTerminator::Closed
+            ),
+        ),
+        HirExprSourceRole::CallArgumentListRecoveryEnd => admit(
+            owner,
+            role,
+            matches!(
+                expression.terminator(),
+                crate::expr::HirCallArgumentListTerminator::RecoveredMissing
+            ),
+        ),
+        HirExprSourceRole::CallArgumentListEmptyInsertion => {
+            admit(owner, role, expression.arguments().is_empty())
+        }
+        HirExprSourceRole::CallArgumentSeparator { following }
+            if usize::from(following.get()) > 0
+                && usize::from(following.get()) < expression.arguments().len() =>
+        {
+            Ok(())
+        }
+        HirExprSourceRole::CallArgumentTrailingSeparator => {
+            admit(owner, role, !expression.arguments().is_empty())
+        }
+        HirExprSourceRole::CallArgument { argument, part } => validate_call_argument(
+            owner,
+            role,
+            usize::from(argument.get()),
+            part,
+            expression.arguments(),
+        ),
+        HirExprSourceRole::CallTypeApplication(type_role) => validate_call_type_application(
+            owner,
+            role,
+            type_role,
+            expression.explicit_type_application(),
+        ),
         _ => not_applicable(owner, role),
     }
 }

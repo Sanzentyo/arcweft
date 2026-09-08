@@ -128,6 +128,105 @@ fn function_retains_receiver_first_and_data_last_extension_coordinates() {
     );
 }
 
+#[test]
+fn function_retains_attached_content_role_presence_and_callable_local() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-attached-content",
+        "fn content(value: String)[body: InlineContent] -> Unit { () }\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, item, function) = function(&module, 0);
+    let attached = function
+        .attached_content()
+        .expect("attached-content declaration");
+    assert_eq!(attached.role(), crate::item::HirAttachedContentRole::Inline);
+    assert_eq!(
+        attached.presence(),
+        crate::item::HirAttachedContentPresence::Required
+    );
+    let callable = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), function.callable_scope())
+        .expect("callable scope");
+    assert_eq!(callable.locals().len(), 2);
+    assert_eq!(callable.locals()[1], attached.binding());
+    let local = module
+        .arenas()
+        .locals()
+        .resolve(module.slots(), attached.binding())
+        .expect("attached-content local");
+    assert_eq!(local.scope(), function.callable_scope());
+    assert_eq!(local.name().as_str(), "body");
+    let interface = item
+        .kind()
+        .callable_attached_content_interface(crate::source_index::HirCallableSourceOwner::Item)
+        .expect("exact attached-content interface");
+    assert_eq!(interface.parameter(), attached);
+    assert_eq!(interface.group(), 0);
+    assert_eq!(interface.abi_position(), 1);
+}
+
+#[test]
+fn function_attached_content_default_owns_one_expression_in_callable_scope() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-attached-content-default",
+        "fn content(value: String)[body: DialogueContent = value] -> Unit { () }\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, _, function) = function(&module, 0);
+    let attached = function
+        .attached_content()
+        .expect("attached-content declaration");
+    let crate::item::HirAttachedContentPresence::Defaulted { value } = attached.presence() else {
+        panic!("defaulted attached-content declaration")
+    };
+    let expression = module
+        .arenas()
+        .expressions()
+        .resolve(module.slots(), value)
+        .expect("default expression");
+    assert_eq!(expression.scope(), function.callable_scope());
+}
+
+#[test]
+fn attached_content_rejects_compile_time_fx_owners() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-attached-content-fx",
+        "#[fx]\nfn content(value: String)[body: InlineContent] -> Unit { () }\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let database = HirDatabase::try_new().expect("HIR database");
+    let mut transaction = stage(&database, &parsed, &key);
+    assert!(matches!(
+        transaction.lower_parsed_source_items(&parsed),
+        Err(crate::lowering::HirLowerFailure::Invariant(
+            crate::lowering::HirInvariantFailure::InvalidArenaCommit
+        ))
+    ));
+}
+
 fn assert_function_body_scope(
     module: &HirModule,
     parsed: &ParsedSource,
@@ -288,6 +387,7 @@ fn replace_function_parameter_groups(
         signature.3,
         signature.4,
         signature.5,
+        None,
     )
     .unwrap();
     let scopes = HirContractScopes::try_new(scopes.0, scopes.1, scopes.2).unwrap();

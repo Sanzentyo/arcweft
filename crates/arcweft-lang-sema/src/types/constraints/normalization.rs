@@ -6,15 +6,16 @@ use std::{
     sync::Arc,
 };
 
-use super::super::{ArrayLength, GenericConstParameterId, GenericTypeParameterId, TypeKind};
+use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::{
     CheckedConstraintSourceProjection, ClosedConstraintProbe, ConstraintAcceptance,
-    ConstraintDomain, ConstraintPath, SourceError, TypeConstraintAbort,
-    TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
-    TypeConstraintParameterEligibility, TypeConstraintRejection, TypeConstraintShape,
-    TypeConstraintSolution,
+    ConstraintDomain, ConstraintPath, SourceError, TypeConstraintAbort, TypeConstraintError,
+    TypeConstraintInvariant, TypeConstraintRejection, TypeConstraintShape, TypeConstraintSolution,
 };
+
+#[cfg(test)]
+mod tests;
 
 /// Closure phase used by the one typed projected-type visitor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,311 +49,33 @@ pub(crate) struct ProjectedConstraintType {
 /// visitor. This trait is confined to the private constraint owner, so the
 /// active path map and the opaque completed solution are its only producers.
 pub(super) trait ConstraintBindingLookup {
-    fn binding(&self, parameter: &GenericTypeParameterId) -> Option<&TypeKind>;
+    fn binding(&self, parameter: &GenericTypeReference) -> Option<&TypeKind>;
 }
 
 pub(super) trait ConstraintConstBindingLookup {
-    fn const_binding(&self, parameter: &GenericConstParameterId) -> Option<&ArrayLength>;
+    fn const_binding(&self, parameter: &GenericConstReference) -> Option<&ArrayLength>;
 }
 
-impl ConstraintBindingLookup for BTreeMap<GenericTypeParameterId, TypeKind> {
-    fn binding(&self, parameter: &GenericTypeParameterId) -> Option<&TypeKind> {
+impl ConstraintBindingLookup for BTreeMap<GenericTypeReference, TypeKind> {
+    fn binding(&self, parameter: &GenericTypeReference) -> Option<&TypeKind> {
         self.get(parameter)
     }
 }
 
-impl ConstraintConstBindingLookup for BTreeMap<GenericConstParameterId, ArrayLength> {
-    fn const_binding(&self, parameter: &GenericConstParameterId) -> Option<&ArrayLength> {
+impl ConstraintConstBindingLookup for BTreeMap<GenericConstReference, ArrayLength> {
+    fn const_binding(&self, parameter: &GenericConstReference) -> Option<&ArrayLength> {
         self.get(parameter)
     }
 }
 
-/// Project one semantic type through substitutions and closure policy.
-///
-/// Every node enters the same cancellation and node meter, validates its
-/// namespace against the candidate scope, substitutes through the extended
-/// binding map, and then projects children.  Array-length headers are visited
-/// as their own typed nodes as well.
-pub(super) fn project_type<A, D, B, C>(
-    ty: &TypeKind,
-    bindings: &B,
-    const_bindings: &C,
-    policy: ConstraintClosurePolicy,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ProjectedConstraintType, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    B: ConstraintBindingLookup + ?Sized,
-    C: ConstraintConstBindingLookup + ?Sized,
-{
-    let mut visiting = BTreeSet::new();
-    let mut visiting_consts = BTreeSet::new();
-    let mut remaining = BTreeSet::new();
-    let value = project_type_inner(
-        ty,
-        bindings,
-        const_bindings,
-        policy,
-        context,
-        &mut visiting,
-        &mut visiting_consts,
-        &mut remaining,
-    )?;
-    Ok(ProjectedConstraintType {
-        value,
-        remaining: remaining.into_iter().collect(),
-    })
-}
-
-fn project_type_inner<A, D, B, C>(
-    ty: &TypeKind,
-    bindings: &B,
-    const_bindings: &C,
-    policy: ConstraintClosurePolicy,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    visiting: &mut BTreeSet<GenericTypeParameterId>,
-    visiting_consts: &mut BTreeSet<GenericConstParameterId>,
-    remaining: &mut BTreeSet<RemainingConstraintParameter>,
-) -> Result<TypeKind, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    B: ConstraintBindingLookup + ?Sized,
-    C: ConstraintConstBindingLookup + ?Sized,
-{
-    context.check_cancelled()?;
-    context.enter_node()?;
-    let shape = ty.constraint_shape();
-    if matches!(shape, TypeConstraintShape::Unresolved) {
-        return Err(TypeConstraintRejection::UnresolvedType.into());
-    }
-    if let TypeConstraintShape::Generic(parameter) = shape {
-        let eligibility = context.parameter_eligibility(parameter).ok_or_else(|| {
-            TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
-                    parameter: parameter.clone(),
-                },
-            ))
-        })?;
-        if let Some(bound) = bindings.binding(parameter) {
-            if !visiting.insert(parameter.clone()) {
-                return match policy {
-                    ConstraintClosurePolicy::Hint => {
-                        remaining.insert(RemainingConstraintParameter(parameter.clone().into()));
-                        Ok(TypeKind::GenericParam(parameter.clone()))
-                    }
-                    ConstraintClosurePolicy::ProjectionClosed
-                    | ConstraintClosurePolicy::ProjectionFuture
-                    | ConstraintClosurePolicy::SolutionCompletion => {
-                        Err(TypeConstraintRejection::CyclicInstantiation {
-                            parameter: parameter.clone().into(),
-                        }
-                        .into())
-                    }
-                };
-            }
-            let projected = project_type_inner(
-                bound,
-                bindings,
-                const_bindings,
-                policy,
-                context,
-                visiting,
-                visiting_consts,
-                remaining,
-            );
-            visiting.remove(parameter);
-            return projected;
-        }
-        if allows_unbound_type(policy, eligibility) {
-            if !matches!(eligibility, TypeConstraintParameterEligibility::Rigid) {
-                remaining.insert(RemainingConstraintParameter(parameter.clone().into()));
-            }
-            return Ok(TypeKind::GenericParam(parameter.clone()));
-        }
-        return Err(TypeConstraintRejection::IncompleteInstantiation {
-            parameter: parameter.clone().into(),
-        }
-        .into());
-    }
-
-    let projected_array_length = if let TypeConstraintShape::Array { len, .. } = shape {
-        Some(project_array_length(
-            len,
-            const_bindings,
-            policy,
-            context,
-            visiting_consts,
-            remaining,
-        )?)
-    } else {
-        None
-    };
-    if let TypeConstraintShape::Function { effects, .. } = shape {
-        context.validate_effect_row(effects)?;
-    }
-    let mut children = Vec::new();
-    for child in shape.children() {
-        children.push(project_type_inner(
-            child,
-            bindings,
-            const_bindings,
-            policy,
-            context,
-            visiting,
-            visiting_consts,
-            remaining,
-        )?);
-    }
-    let rebuilt = shape.rebuild(children)?;
-    match (rebuilt, projected_array_length) {
-        (TypeKind::Array { item, .. }, Some(len)) => Ok(TypeKind::Array { item, len }),
-        (rebuilt, None) => Ok(rebuilt),
-        _ => Err(TypeConstraintRejection::UnresolvedType.into()),
-    }
-}
-
-fn allows_unbound_type(
-    policy: ConstraintClosurePolicy,
-    eligibility: TypeConstraintParameterEligibility,
-) -> bool {
-    match policy {
-        ConstraintClosurePolicy::Hint => true,
-        ConstraintClosurePolicy::ProjectionClosed => {
-            matches!(eligibility, TypeConstraintParameterEligibility::Rigid)
-        }
-        ConstraintClosurePolicy::ProjectionFuture => matches!(
-            eligibility,
-            TypeConstraintParameterEligibility::Rigid
-                | TypeConstraintParameterEligibility::FutureEligible
-        ),
-        // Completion is relative to this exact constraint-group scope. A
-        // future-eligible atom is deliberately retained for a later callable
-        // group; the final group is closed because its owner issues no
-        // FutureEligible entries.
-        ConstraintClosurePolicy::SolutionCompletion => matches!(
-            eligibility,
-            TypeConstraintParameterEligibility::Rigid
-                | TypeConstraintParameterEligibility::FutureEligible
-        ),
-    }
-}
-
-pub(super) fn project_const_argument<A, D, C>(
-    value: &ArrayLength,
-    bindings: &C,
-    policy: ConstraintClosurePolicy,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<ArrayLength, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    C: ConstraintConstBindingLookup + ?Sized,
-{
-    let mut visiting = BTreeSet::new();
-    let mut remaining = BTreeSet::new();
-    project_array_length(
-        value,
-        bindings,
-        policy,
-        context,
-        &mut visiting,
-        &mut remaining,
-    )
-}
-
-fn project_array_length<A, D, C>(
-    length: &ArrayLength,
-    bindings: &C,
-    policy: ConstraintClosurePolicy,
-    context: &mut TypeConstraintContext<'_, A, D>,
-    visiting: &mut BTreeSet<GenericConstParameterId>,
-    remaining: &mut BTreeSet<RemainingConstraintParameter>,
-) -> Result<ArrayLength, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-    C: ConstraintConstBindingLookup + ?Sized,
-{
-    context.check_cancelled()?;
-    context.enter_node()?;
-    match length {
-        ArrayLength::Const(_) => Ok(length.clone()),
-        ArrayLength::Generic(parameter) => {
-            let eligibility = context
-                .const_parameter_eligibility(parameter)
-                .ok_or_else(|| {
-                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                        super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                            parameter: parameter.clone(),
-                        },
-                    ))
-                })?;
-            if let Some(bound) = bindings.const_binding(parameter) {
-                if !visiting.insert(parameter.clone()) {
-                    return match policy {
-                        ConstraintClosurePolicy::Hint => {
-                            remaining
-                                .insert(RemainingConstraintParameter(parameter.clone().into()));
-                            Ok(ArrayLength::Generic(parameter.clone()))
-                        }
-                        ConstraintClosurePolicy::ProjectionClosed
-                        | ConstraintClosurePolicy::ProjectionFuture
-                        | ConstraintClosurePolicy::SolutionCompletion => {
-                            Err(TypeConstraintRejection::CyclicInstantiation {
-                                parameter: parameter.clone().into(),
-                            }
-                            .into())
-                        }
-                    };
-                }
-                let projected =
-                    project_array_length(bound, bindings, policy, context, visiting, remaining);
-                visiting.remove(parameter);
-                return projected;
-            }
-            if allows_unbound_const(policy, eligibility) {
-                if !matches!(eligibility, TypeConstraintConstEligibility::Rigid) {
-                    remaining.insert(RemainingConstraintParameter(parameter.clone().into()));
-                }
-                Ok(ArrayLength::Generic(parameter.clone()))
-            } else {
-                Err(TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone().into(),
-                }
-                .into())
-            }
-        }
-        ArrayLength::Error(_) | ArrayLength::Inferred => {
-            Err(TypeConstraintRejection::UnresolvedType.into())
-        }
-    }
-}
-
-fn allows_unbound_const(
-    policy: ConstraintClosurePolicy,
-    eligibility: TypeConstraintConstEligibility,
-) -> bool {
-    match policy {
-        ConstraintClosurePolicy::Hint => true,
-        ConstraintClosurePolicy::ProjectionClosed => {
-            matches!(eligibility, TypeConstraintConstEligibility::Rigid)
-        }
-        ConstraintClosurePolicy::ProjectionFuture | ConstraintClosurePolicy::SolutionCompletion => {
-            matches!(
-                eligibility,
-                TypeConstraintConstEligibility::Rigid
-                    | TypeConstraintConstEligibility::FutureEligible
-            )
-        }
-    }
-}
+mod projection;
+use projection::{project_array_length, project_type_inner};
+pub(super) use projection::{project_const_argument, project_type};
 
 pub(crate) fn const_occurs_in<A, D>(
     value: &ArrayLength,
-    parameter: &GenericConstParameterId,
-    bindings: &BTreeMap<GenericConstParameterId, ArrayLength>,
+    parameter: &GenericConstReference,
+    bindings: &BTreeMap<GenericConstReference, ArrayLength>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
@@ -381,20 +104,23 @@ where
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct KeyedConstraintProjection<P> {
     key: P,
-    value: TypeKind,
+    value: super::super::ScopedType,
 }
 
 impl<P> KeyedConstraintProjection<P> {
-    pub(crate) fn new(key: P, value: TypeKind) -> Self {
-        Self { key, value }
+    pub(super) fn new(key: P, value: TypeKind, scope: super::super::GenericScope) -> Self {
+        Self {
+            key,
+            value: super::super::ScopedType::new(value, scope),
+        }
     }
 
     pub(crate) const fn key(&self) -> &P {
         &self.key
     }
 
-    pub(crate) const fn value(&self) -> &TypeKind {
-        &self.value
+    pub(crate) const fn value(&self) -> super::super::ScopedTypeView<'_> {
+        self.value.view()
     }
 }
 
@@ -656,8 +382,8 @@ where
 {
     project_type(
         ty,
-        &BTreeMap::<GenericTypeParameterId, TypeKind>::new(),
-        &BTreeMap::<GenericConstParameterId, ArrayLength>::new(),
+        &BTreeMap::<GenericTypeReference, TypeKind>::new(),
+        &BTreeMap::<GenericConstReference, ArrayLength>::new(),
         ConstraintClosurePolicy::Hint,
         context,
     )
@@ -666,14 +392,15 @@ where
 
 pub(crate) fn occurs_in_shape<A, D>(
     shape: TypeConstraintShape<'_>,
-    parameter: &GenericTypeParameterId,
-    bindings: &BTreeMap<GenericTypeParameterId, TypeKind>,
+    parameter: &GenericTypeReference,
+    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    context.validate_type_header(shape)?;
     match shape {
         TypeConstraintShape::Unresolved => Err(TypeConstraintRejection::UnresolvedType.into()),
         TypeConstraintShape::Generic(candidate) => {
@@ -685,21 +412,21 @@ where
             };
             occurs_in_type(bound, parameter, bindings, context)
         }
-        shape => {
+        shape => context.with_binder(shape.binder(), |context| {
             for child in shape.children() {
                 if occurs_in_type(child, parameter, bindings, context)? {
                     return Ok(true);
                 }
             }
             Ok(false)
-        }
+        }),
     }
 }
 
 pub(crate) fn occurs_in_type<A, D>(
     ty: &TypeKind,
-    parameter: &GenericTypeParameterId,
-    bindings: &BTreeMap<GenericTypeParameterId, TypeKind>,
+    parameter: &GenericTypeReference,
+    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
@@ -754,9 +481,9 @@ where
 
 pub(crate) fn seal_type<A, D>(
     ty: &TypeKind,
-    bindings: &BTreeMap<GenericTypeParameterId, TypeKind>,
-    const_bindings: &BTreeMap<GenericConstParameterId, ArrayLength>,
-    visiting: &mut BTreeSet<GenericTypeParameterId>,
+    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
+    const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    visiting: &mut BTreeSet<GenericTypeReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind, TypeConstraintError>
 where
@@ -764,7 +491,6 @@ where
     D: ConstraintDomain,
 {
     let mut remaining = BTreeSet::new();
-    let mut visiting_consts = BTreeSet::new();
     project_type_inner(
         ty,
         bindings,
@@ -772,15 +498,14 @@ where
         ConstraintClosurePolicy::Hint,
         context,
         visiting,
-        &mut visiting_consts,
         &mut remaining,
     )
 }
 
 fn seal_const<A, D>(
     value: &ArrayLength,
-    bindings: &BTreeMap<GenericConstParameterId, ArrayLength>,
-    visiting: &mut BTreeSet<GenericConstParameterId>,
+    bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    visiting: &mut BTreeSet<GenericConstReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ArrayLength, TypeConstraintError>
 where
@@ -850,6 +575,8 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    context.validate_type_header(left_shape)?;
+    context.validate_type_header(right_shape)?;
     if matches!(left_shape, TypeConstraintShape::Unresolved)
         || matches!(right_shape, TypeConstraintShape::Unresolved)
     {
@@ -872,13 +599,15 @@ where
     if !left_shape.same_header(right_shape) {
         return Ok(false);
     }
-    let mut left_children = left_shape.children();
-    let mut right_children = right_shape.children();
-    loop {
-        match (left_children.next(), right_children.next()) {
-            (Some(left), Some(right)) if types_equal(left, right, context)? => {}
-            (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) => return Ok(false),
-            (None, None) => return Ok(true),
+    context.with_binder(left_shape.binder(), |context| {
+        let mut left_children = left_shape.children();
+        let mut right_children = right_shape.children();
+        loop {
+            match (left_children.next(), right_children.next()) {
+                (Some(left), Some(right)) if types_equal(left, right, context)? => {}
+                (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) => return Ok(false),
+                (None, None) => return Ok(true),
+            }
         }
-    }
+    })
 }

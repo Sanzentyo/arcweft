@@ -66,6 +66,10 @@ fn validate_value(
                 .iter()
                 .try_for_each(|capture| validate_value(&capture.value, depth + 1, maximum)),
         },
+        RuntimeValue::ProjectContinuation(continuation) => continuation
+            .prefix_values()
+            .iter()
+            .try_for_each(|value| validate_value(value, depth + 1, maximum)),
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => {
             validate_values(items, depth + 1, maximum)
         }

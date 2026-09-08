@@ -1,7 +1,7 @@
 use arcweft_id::PublicId;
+use arcweft_id::closed_enum::{ClosedEnumDomainId, ClosedEnumValueId};
 use arcweft_rich_text_schema::{
-    RichTextDefaultValue, RichTextEnumSchemaId, RichTextPropertySpec, RichTextUnit,
-    RichTextValueKind,
+    RichTextDefaultValue, RichTextPropertySpec, RichTextUnit, RichTextValueKind,
 };
 
 use super::RichTextDiagnosticCode;
@@ -53,13 +53,6 @@ pub struct CheckedVec2 {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Seed32(pub u32);
 
-/// One value of a schema-owned closed enum.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedEnumValue {
-    pub enum_id: RichTextEnumSchemaId,
-    pub variant: u16,
-}
-
 /// Checked color representation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedColor {
@@ -77,12 +70,28 @@ pub enum CheckedRichTextValue {
     Length(CheckedLength),
     Angle(CheckedAngle),
     Duration(CheckedDuration),
-    Enum(CheckedEnumValue),
+    Enum(ClosedEnumValueId),
     PublicId(PublicId),
     Text(String),
     Color(CheckedColor),
     Vec2(CheckedVec2),
     Seed(Seed32),
+}
+
+impl arcweft_rich_text_schema::RichTextPredicateValueView for CheckedRichTextValue {
+    fn predicate_bool(&self) -> Option<bool> {
+        match self {
+            Self::Bool(value) => Some(*value),
+            _ => None,
+        }
+    }
+
+    fn predicate_enum_variant(&self) -> Option<u16> {
+        match self {
+            Self::Enum(value) => Some(value.variant()),
+            _ => None,
+        }
+    }
 }
 
 pub(crate) fn parse_checked_value<P: Copy + Eq + 'static>(
@@ -157,10 +166,9 @@ pub(crate) fn parse_checked_value<P: Copy + Eq + 'static>(
                 .position(|candidate| *candidate == source)
                 .ok_or(RichTextDiagnosticCode::InvalidEnum)?;
             let variant = u16::try_from(variant).map_err(|_| RichTextDiagnosticCode::Overflow)?;
-            Ok(CheckedRichTextValue::Enum(CheckedEnumValue {
-                enum_id,
-                variant,
-            }))
+            Ok(CheckedRichTextValue::Enum(ClosedEnumValueId::new(
+                enum_id, variant,
+            )))
         }
         RichTextValueKind::Selector(_) | RichTextValueKind::PublicId => {
             parse_public_id(source).map(CheckedRichTextValue::PublicId)
@@ -169,13 +177,15 @@ pub(crate) fn parse_checked_value<P: Copy + Eq + 'static>(
         RichTextValueKind::Color => parse_color(source).map(CheckedRichTextValue::Color),
         RichTextValueKind::Vec2 => parse_vec2(source, spec),
         RichTextValueKind::Seed32 => parse_seed(source).map(CheckedRichTextValue::Seed),
-        RichTextValueKind::TextProxyField => Err(RichTextDiagnosticCode::SchemaUnavailable),
+        // Fx applications are checked by the callable resolver and are not
+        // representable as a scalar text attribute value.
+        RichTextValueKind::Fx => Err(RichTextDiagnosticCode::InvalidKind),
     }
 }
 
 pub(crate) fn checked_default(
     value: RichTextDefaultValue,
-    enum_id: Option<RichTextEnumSchemaId>,
+    enum_id: Option<ClosedEnumDomainId>,
 ) -> Result<CheckedRichTextValue, RichTextDiagnosticCode> {
     Ok(match value {
         RichTextDefaultValue::Bool(value) => CheckedRichTextValue::Bool(value),
@@ -202,12 +212,9 @@ pub(crate) fn checked_default(
         RichTextDefaultValue::DurationMillis(millis) => {
             CheckedRichTextValue::Duration(CheckedDuration { millis })
         }
-        RichTextDefaultValue::EnumVariant(variant) => {
-            CheckedRichTextValue::Enum(CheckedEnumValue {
-                enum_id: enum_id.ok_or(RichTextDiagnosticCode::InvalidEnum)?,
-                variant,
-            })
-        }
+        RichTextDefaultValue::EnumVariant(variant) => CheckedRichTextValue::Enum(
+            ClosedEnumValueId::new(enum_id.ok_or(RichTextDiagnosticCode::InvalidEnum)?, variant),
+        ),
         RichTextDefaultValue::PublicId(value) => {
             CheckedRichTextValue::PublicId(parse_public_id(value)?)
         }

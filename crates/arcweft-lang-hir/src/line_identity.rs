@@ -1,5 +1,6 @@
 //! Typed source and durable-identity facts for dialogue lines.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use arcweft_id::dialogue::{DialogueLineId, DialogueTextKey};
@@ -9,12 +10,13 @@ use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
 
 use crate::identity::{ExprId, IdResolveError, ScopeId};
+use crate::leaf::HirIdRef;
 use crate::lowering::HirModuleKey;
 use crate::symbol::CallableDeclarationId;
 
-mod builder;
+pub(crate) mod builder;
 mod diagnostic;
-pub(crate) mod module_candidates;
+pub(crate) mod sites;
 
 pub use self::diagnostic::{
     DialogueIdentityCoordinateKind, DialogueIdentityErrorKind, DialogueLineCollisionSite,
@@ -143,10 +145,35 @@ impl DialogueTextKeyOrigin {
     }
 }
 
-/// Complete revision-bound source site retained by a module candidate.
+/// Exact relation between the authored source application and the semantic
+/// expression that can produce a dialogue line.
+///
+/// An ambiguous postfix retains its authored outer expression as the source
+/// application while its synthetic dialogue candidate is the semantic
+/// application. The index candidate is topology evidence only and is never a
+/// line identity candidate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirDialogueLineSiteTopology {
+    Direct,
+    OuterPostfixBracket { index_candidate: ExprId },
+}
+
+impl HirDialogueLineSiteTopology {
+    pub const fn index_candidate(self) -> Option<ExprId> {
+        match self {
+            Self::Direct => None,
+            Self::OuterPostfixBracket { index_candidate } => Some(index_candidate),
+        }
+    }
+}
+
+/// Complete revision-bound dialogue source site retained before semantic
+/// selection. This is source/topology evidence, not an accepted line ID.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct HirDialogueLineSourceSite {
-    application: ExprId,
+pub struct HirDialogueLineSite {
+    source_application: ExprId,
+    semantic_application: ExprId,
+    topology: HirDialogueLineSiteTopology,
     owner: HirDialogueLineSourceOwner,
     named_scopes: Arc<[HirDialogueNamedScope]>,
     source_order: DialogueLineSourceOrder,
@@ -155,14 +182,16 @@ pub(crate) struct HirDialogueLineSourceSite {
     text_key_coordinate_span: Option<SourceSpan>,
 }
 
-impl HirDialogueLineSourceSite {
+impl HirDialogueLineSite {
     #[allow(
         clippy::too_many_arguments,
-        reason = "the source site atomically retains the complete selected line-identity evidence"
+        reason = "the source site atomically retains source, semantic, topology, and range evidence"
     )]
     pub(crate) fn try_new(
         source: &SourceDocumentIdentity,
-        application: ExprId,
+        source_application: ExprId,
+        semantic_application: ExprId,
+        topology: HirDialogueLineSiteTopology,
         owner: HirDialogueLineSourceOwner,
         named_scopes: Arc<[HirDialogueNamedScope]>,
         source_order: DialogueLineSourceOrder,
@@ -170,9 +199,16 @@ impl HirDialogueLineSourceSite {
         id_coordinate_span: Option<SourceSpan>,
         text_key_coordinate_span: Option<SourceSpan>,
     ) -> Result<Self, DialogueLineBuildFatal> {
-        if named_scopes
-            .iter()
-            .any(|scope| scope.scope().module() != application.module())
+        if source_application.module() != semantic_application.module()
+            || named_scopes
+                .iter()
+                .any(|scope| scope.scope().module() != source_application.module())
+        {
+            return Err(DialogueLineBuildFatal::InvalidSourceComponent);
+        }
+        if topology
+            .index_candidate()
+            .is_some_and(|candidate| candidate.module() != source_application.module())
         {
             return Err(DialogueLineBuildFatal::InvalidSourceComponent);
         }
@@ -188,7 +224,9 @@ impl HirDialogueLineSourceSite {
             });
         }
         Ok(Self {
-            application,
+            source_application,
+            semantic_application,
+            topology,
             owner,
             named_scopes,
             source_order,
@@ -198,43 +236,173 @@ impl HirDialogueLineSourceSite {
         })
     }
 
-    pub(crate) const fn application(&self) -> ExprId {
-        self.application
+    pub const fn source_application(&self) -> ExprId {
+        self.source_application
     }
 
-    pub(crate) const fn owner(&self) -> &HirDialogueLineSourceOwner {
+    pub const fn semantic_application(&self) -> ExprId {
+        self.semantic_application
+    }
+
+    pub const fn topology(&self) -> HirDialogueLineSiteTopology {
+        self.topology
+    }
+
+    pub const fn owner(&self) -> &HirDialogueLineSourceOwner {
         &self.owner
     }
 
-    pub(crate) const fn named_scopes(&self) -> &Arc<[HirDialogueNamedScope]> {
+    pub fn named_scopes(&self) -> &[HirDialogueNamedScope] {
         &self.named_scopes
     }
 
-    pub(crate) const fn source_order(&self) -> DialogueLineSourceOrder {
+    pub const fn source_order(&self) -> DialogueLineSourceOrder {
         self.source_order
     }
 
-    pub(crate) const fn application_span(&self) -> &SourceSpan {
+    pub const fn application_span(&self) -> &SourceSpan {
         &self.application_span
     }
 
-    pub(crate) const fn id_coordinate_span(&self) -> Option<&SourceSpan> {
+    pub const fn id_coordinate_span(&self) -> Option<&SourceSpan> {
         self.id_coordinate_span.as_ref()
     }
 
-    pub(crate) const fn text_key_coordinate_span(&self) -> Option<&SourceSpan> {
+    pub const fn text_key_coordinate_span(&self) -> Option<&SourceSpan> {
         self.text_key_coordinate_span.as_ref()
+    }
+
+    /// Resolves an authored line-ID coordinate as typed evidence only. This
+    /// never allocates a generated ordinal and never performs project
+    /// collision acceptance.
+    pub fn resolve_explicit_line_id(
+        &self,
+        module: &HirModuleKey,
+        reference: &HirIdRef,
+    ) -> Option<(DialogueLineId, DialogueLineIdOrigin)> {
+        builder::resolve_explicit_line_id(module, self, reference)
+    }
+
+    /// Resolves an authored absolute text-key coordinate as typed evidence.
+    pub fn resolve_explicit_text_key(&self, reference: &HirIdRef) -> Option<DialogueTextKey> {
+        let HirIdRef::Absolute(reference) = reference else {
+            return None;
+        };
+        (reference.segments().next() == Some(DialogueTextKey::family_prefix()))
+            .then(|| DialogueTextKey::try_new(reference.as_str().to_owned()).ok())
+            .flatten()
     }
 }
 
-/// One bounded, unaccepted module-local dialogue line candidate.
+/// Immutable module-local source-site inventory for one exact HIR revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirDialogueLineSiteInventory {
+    module: HirModuleKey,
+    records: Arc<[HirDialogueLineSite]>,
+    by_source_expr: BTreeMap<ExprId, usize>,
+    by_semantic_expr: BTreeMap<ExprId, usize>,
+    source_order: Arc<[usize]>,
+}
+
+impl HirDialogueLineSiteInventory {
+    pub(crate) fn empty(module: HirModuleKey) -> Self {
+        Self {
+            module,
+            records: Arc::from([]),
+            by_source_expr: BTreeMap::new(),
+            by_semantic_expr: BTreeMap::new(),
+            source_order: Arc::from([]),
+        }
+    }
+
+    pub(crate) fn new(
+        module: HirModuleKey,
+        mut records: Vec<HirDialogueLineSite>,
+    ) -> Result<Self, DialogueLineBuildFatal> {
+        records.sort_by(|left, right| {
+            left.application_span
+                .range()
+                .start()
+                .cmp(&right.application_span.range().start())
+                .then_with(|| {
+                    left.application_span
+                        .range()
+                        .end()
+                        .cmp(&right.application_span.range().end())
+                })
+                .then_with(|| left.source_application.cmp(&right.source_application))
+        });
+        let mut by_source_expr = BTreeMap::new();
+        let mut by_semantic_expr = BTreeMap::new();
+        for (offset, site) in records.iter_mut().enumerate() {
+            let value = u32::try_from(offset)
+                .ok()
+                .and_then(|value| value.checked_add(1))
+                .ok_or(DialogueLineBuildFatal::ArithmeticOverflow {
+                    operation: DialogueLineBuildOperation::SourceOrder,
+                })?;
+            site.source_order = DialogueLineSourceOrder::try_new(value)?;
+            if by_source_expr
+                .insert(site.source_application, offset)
+                .is_some()
+                || by_semantic_expr
+                    .insert(site.semantic_application, offset)
+                    .is_some()
+            {
+                return Err(DialogueLineBuildFatal::DuplicateSite);
+            }
+            if site.application_span.source() != module.source() {
+                return Err(DialogueLineBuildFatal::SourceIdentityMismatch {
+                    expected: module.source().clone(),
+                    actual: site.application_span.source().clone(),
+                });
+            }
+        }
+        let source_order = (0..records.len()).collect::<Vec<_>>();
+        Ok(Self {
+            module,
+            records: Arc::from(records),
+            by_source_expr,
+            by_semantic_expr,
+            source_order: Arc::from(source_order),
+        })
+    }
+
+    pub const fn module(&self) -> &HirModuleKey {
+        &self.module
+    }
+
+    pub fn records(&self) -> &[HirDialogueLineSite] {
+        &self.records
+    }
+
+    pub fn for_source_expr(&self, expression: ExprId) -> Option<&HirDialogueLineSite> {
+        self.by_source_expr
+            .get(&expression)
+            .map(|offset| &self.records[*offset])
+    }
+
+    pub fn for_semantic_expr(&self, expression: ExprId) -> Option<&HirDialogueLineSite> {
+        self.by_semantic_expr
+            .get(&expression)
+            .map(|offset| &self.records[*offset])
+    }
+
+    pub fn source_ordered(&self) -> impl ExactSizeIterator<Item = &HirDialogueLineSite> {
+        self.source_order
+            .iter()
+            .map(|offset| &self.records[*offset])
+    }
+}
+
+/// Internal materialization row used only after the selected-expression seal.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct HirDialogueLineCandidate {
     id: DialogueLineId,
     id_origin: DialogueLineIdOrigin,
     text_key: DialogueTextKey,
     text_key_origin: DialogueTextKeyOrigin,
-    site: HirDialogueLineSourceSite,
+    site: HirDialogueLineSite,
 }
 
 impl HirDialogueLineCandidate {
@@ -254,32 +422,8 @@ impl HirDialogueLineCandidate {
         self.text_key_origin
     }
 
-    pub(crate) const fn site(&self) -> &HirDialogueLineSourceSite {
+    pub(crate) const fn site(&self) -> &HirDialogueLineSite {
         &self.site
-    }
-}
-
-/// Immutable candidate inventory owned by exactly one HIR module revision.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct HirDialogueLineCandidates {
-    module: HirModuleKey,
-    records: Arc<[HirDialogueLineCandidate]>,
-}
-
-impl HirDialogueLineCandidates {
-    pub(crate) fn empty(module: HirModuleKey) -> Self {
-        Self {
-            module,
-            records: Arc::from([]),
-        }
-    }
-
-    pub(crate) const fn module(&self) -> &HirModuleKey {
-        &self.module
-    }
-
-    pub(crate) fn records(&self) -> &[HirDialogueLineCandidate] {
-        &self.records
     }
 }
 
@@ -316,4 +460,6 @@ pub enum DialogueLineBuildFatal {
     InvalidInternalPrefix,
     #[error("dialogue line candidate contains an invalid source component")]
     InvalidSourceComponent,
+    #[error("dialogue line source-site inventory contains a duplicate expression")]
+    DuplicateSite,
 }

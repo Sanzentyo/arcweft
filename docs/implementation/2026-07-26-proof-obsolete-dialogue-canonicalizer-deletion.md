@@ -1,5 +1,9 @@
 # Proof convergence: obsolete Dialogue canonicalizer deletion
 
+> Historical implementation evidence. The RichText formatter/source-action
+> path that still existed at this cut was later deleted; current authoring uses
+> the accepted structural content surface directly.
+
 Date: 2026-07-26
 
 Status: implementation and cut-specific validation complete
@@ -16,7 +20,7 @@ missing contract.
 The accepted AW-AH-009.4.2/.3 direction independently supersedes the AW-AH-003
 Speaker canonicalizer. Parenthesized ordinary calls construct or reconfigure a
 typed `CharacterDialogue`; bracket and colon content application produce the
-line. `.say`, `Speaker`, `SpeakerPreset`, string callee reconstruction, and a
+line. The former dialogue builder, `Speaker`, `SpeakerPreset`, string callee reconstruction, and a
 second Dialogue call AST are not final owners.
 
 ## Deleted authority
@@ -42,9 +46,10 @@ gate replaces these paths.
 - ordinary-call lexical identity now lives directly in `LocalCallableId` with
   `SemanticScopeId` and `LexicalBindingIndex`; it no longer depends on a module
   named after canonicalization;
-- `fmt --canonical-rich-text` and the edit-bearing
-  `arcweft.canonicalRichText` action retain only inferred RichText family and
-  typed proxy-object expansion;
+- at this historical cut, `fmt --canonical-rich-text` and the edit-bearing
+  `arcweft.canonicalRichText` action still retained inferred RichText and typed
+  proxy-object expansion; both paths were later deleted rather than kept as a
+  migration layer;
 - verifier actions, effect upper-bound quick fixes, formatter View/style edits,
   and revision-bound `WorkspaceEdit` projection remain;
 - the current executable Speaker/ContentCall/HIR/runtime carriers are frozen,
@@ -55,7 +60,7 @@ gate replaces these paths.
   from the checked project instead of depending on the deleted canonicalizer
   inventory.
 
-The freeze includes the current `.say` parser fixtures and the string callee
+The freeze included the then-current builder parser fixtures and the string callee
 normalization still used by `arcweft-lang-hir` and `arcweft-lang-sema`. Those
 readers receive no new identity, argument, diagnostic, or compatibility
 behavior in this cut. They are deletion inventory for the direct

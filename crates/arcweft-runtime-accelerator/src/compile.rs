@@ -61,6 +61,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "reduction",
         RuntimeValue::Function(_) => "function",
+        RuntimeValue::ProjectContinuation(_) => "project_continuation",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",
     }
@@ -826,6 +827,16 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
         RuntimeExprKind::Let { expr, body, .. } => {
             2 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
+        RuntimeExprKind::DialogueContent {
+            values, effects, ..
+        } => {
+            4 + values.iter().map(runtime_expr_work_units).sum::<usize>()
+                + effects
+                    .iter()
+                    .flat_map(|effect| effect.captures.iter())
+                    .map(runtime_expr_work_units)
+                    .sum::<usize>()
+        }
         RuntimeExprKind::AssignNominalField { expr, body, .. } => {
             8 + runtime_expr_work_units(expr) + runtime_expr_work_units(body)
         }
@@ -856,7 +867,7 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 .map(|arg| runtime_expr_work_units(arg.value()))
                 .sum::<usize>()
         }
-        RuntimeExprKind::Function(_) => 2,
+        RuntimeExprKind::Function { .. } => 2,
         RuntimeExprKind::Apply { callee, args } => {
             8 + runtime_expr_work_units(callee)
                 + args

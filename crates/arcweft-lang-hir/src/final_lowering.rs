@@ -21,8 +21,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use arcweft_lang_syntax::text::{
-    MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS,
-    MAX_RICH_TEXT_TAG_KEY_BYTES, MAX_RICH_TEXT_TAG_VALUE_BYTES,
+    MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL, MAX_DIALOGUE_ACTION_KEY_BYTES,
+    MAX_DIALOGUE_ACTION_VALUE_BYTES, MAX_DIALOGUE_POINT_ACTIONS,
 };
 
 use crate::arena::{HirArenaError, StagedArena};
@@ -1336,7 +1336,8 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                 let expression = self.arenas.expressions.resolve_staged(&self.slots, id)?;
                 let scope_is_live = HirTypeResolver::scope_is_live(self, expression.scope());
                 let kind_matches = match expected {
-                    HirDialogueExpressionExpectation::Unrestricted => true,
+                    HirDialogueExpressionExpectation::Unrestricted
+                    | HirDialogueExpressionExpectation::ContentApplication => true,
                     HirDialogueExpressionExpectation::Call => {
                         matches!(expression.kind(), HirExprKind::Call(_))
                     }
@@ -1360,15 +1361,26 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
                         role,
                         target,
                     } => {
-                        matches!(
-                            (metadata.origin(), expression.kind()),
+                        match (metadata.origin(), expression.kind()) {
                             (
                                 HirOrigin::Synthetic(key),
-                                HirExprKind::DialogueContentApplication(application)
-                            ) if key.owner() == SyntheticOwner::Expr(owner)
-                                && key.role() == role
-                                && application.target() == target
-                        )
+                                HirExprKind::AttachedContentApplication(application),
+                            ) => {
+                                key.owner() == SyntheticOwner::Expr(owner)
+                                    && key.role() == role
+                                    && match application.family() {
+                                        crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                                            target: actual,
+                                            ..
+                                        } => *actual == target,
+                                        crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                                            invocation,
+                                            ..
+                                        } => invocation.callee().value_expression() == Some(target),
+                                    }
+                            }
+                            _ => false,
+                        }
                     }
                 };
                 scope_is_live && kind_matches
@@ -1381,26 +1393,23 @@ impl HirDialogueTransactionContext for StagedHirModuleTransaction<'_> {
             HirDialogueTransactionRequirement::Scope(id) => {
                 HirTypeResolver::scope_is_live(self, id)
             }
-            HirDialogueTransactionRequirement::Item(id) => self
+            HirDialogueTransactionRequirement::Type(id) => self
                 .arenas
-                .items
+                .types
                 .resolve_staged(&self.slots, id)
-                .is_ok_and(|item| HirTypeResolver::scope_is_live(self, item.scope())),
+                .is_ok_and(|ty| HirTypeResolver::scope_is_live(self, ty.scope())),
             HirDialogueTransactionRequirement::RichTextCharge(charge) => match charge {
-                HirRichTextCharge::ContentTags { observed } => {
-                    observed <= MAX_RICH_TEXT_CONTENT_TAGS
+                HirRichTextCharge::PointActions { observed } => {
+                    observed <= MAX_DIALOGUE_POINT_ACTIONS
                 }
                 HirRichTextCharge::ContentArguments { observed } => {
-                    observed <= MAX_RICH_TEXT_CONTENT_ARGUMENTS
-                }
-                HirRichTextCharge::TagArguments { observed } => {
-                    observed <= MAX_RICH_TEXT_TAG_ARGUMENTS
+                    observed <= MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL
                 }
                 HirRichTextCharge::ArgumentKeyBytes { observed } => {
-                    observed <= MAX_RICH_TEXT_TAG_KEY_BYTES
+                    observed <= MAX_DIALOGUE_ACTION_KEY_BYTES
                 }
                 HirRichTextCharge::ArgumentValueDecodedBytes { observed } => {
-                    observed <= MAX_RICH_TEXT_TAG_VALUE_BYTES
+                    observed <= MAX_DIALOGUE_ACTION_VALUE_BYTES
                 }
             },
         };

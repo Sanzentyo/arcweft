@@ -40,6 +40,7 @@ use crate::{
 };
 
 use super::{
+    closed_enum::{RegisteredClosedEnumDomainCatalog, production_owner_descriptors},
     descriptor::{build_descriptor, descriptor_digest},
     diagnostic::{
         CharacterRegistrationDiagnostic, CharacterRegistrationDiagnosticKind,
@@ -48,9 +49,10 @@ use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
         AcceptedNominalVisibilityIndex, AcceptedNominalWorld, CharacterInventoryRevision,
-        CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
-        ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest, RegisteredExternalOwner,
-        RegisteredSemanticWorld, RegisteredStatementIngressTypes, RegisteredTypeCheckEnv,
+        CharacterRegistrar, CharacterRegistrationRequest, CompileTimeScalarTypeRegistrationError,
+        ProjectRegistrationFacts, ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest,
+        RegisteredCompileTimeScalarTypes, RegisteredExternalOwner, RegisteredSemanticWorld,
+        RegisteredStatementIngressTypes, RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
 };
@@ -262,6 +264,23 @@ impl CharacterRegistrar {
                     ])
                 })?,
         );
+        let compile_time_scalars = RegisteredCompileTimeScalarTypes::try_from_world(&nominal_world)
+            .map_err(|error| compile_time_scalar_registration_report(error, fallback.clone()))?;
+
+        let closed_enum_domains = RegisteredClosedEnumDomainCatalog::try_from_owner_descriptors(
+            production_owner_descriptors(),
+        )
+        .map_err(|_| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog {
+                        code: crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                    },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
         let rust_metadata_inputs = request
             .facts
             .environment_inputs()
@@ -283,6 +302,8 @@ impl CharacterRegistrar {
             nominal_world,
             rust_metadata,
             statement_ingress,
+            compile_time_scalars,
+            closed_enum_domains,
             characters,
             character_variants,
             character_descriptor: descriptor,
@@ -344,6 +365,8 @@ impl CharacterRegistrar {
             nominal_world,
             rust_metadata,
             statement_ingress,
+            compile_time_scalars,
+            closed_enum_domains,
             characters,
             character_variants,
             character_descriptor,
@@ -355,10 +378,14 @@ impl CharacterRegistrar {
             PRODUCTION_CALLABLE_LIMITS,
         );
         if let Err(error) = callable_builder.add_project(project, &symbols, &nominal_world) {
+            let primary = error
+                .primary_span()
+                .cloned()
+                .unwrap_or_else(|| fallback.clone());
             return Err(CharacterRegistrationReport::from_diagnostics(vec![
                 CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
-                    fallback,
+                    primary,
                     [],
                 ),
             ]));
@@ -463,16 +490,29 @@ impl CharacterRegistrar {
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
             &statement_ingress,
+            &compile_time_scalars,
+            &closed_enum_domains,
             facts,
             character_digest,
             character_revision,
-        );
+        )
+        .map_err(|error| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::GenericScope { error },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
             character_dialogue_fields,
             rust_metadata,
             callables,
             statement_ingress,
+            compile_time_scalars,
+            closed_enum_domains,
             characters,
             character_variants,
             character_descriptor,
@@ -720,6 +760,24 @@ impl CharacterRegistrar {
                 })?,
         );
 
+        let compile_time_scalars = RegisteredCompileTimeScalarTypes::try_from_world(&nominal_world)
+            .map_err(|error| compile_time_scalar_registration_report(error, fallback.clone()))?;
+
+        let closed_enum_domains = RegisteredClosedEnumDomainCatalog::try_from_owner_descriptors(
+            production_owner_descriptors(),
+        )
+        .map_err(|_| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog {
+                        code: crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                    },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
+
         let rust_metadata_inputs = request
             .facts
             .environment_inputs()
@@ -742,10 +800,14 @@ impl CharacterRegistrar {
         if let Err(error) =
             callable_builder.add_project(request.project, link.table(), &nominal_world)
         {
+            let primary = error
+                .primary_span()
+                .cloned()
+                .unwrap_or_else(|| fallback.clone());
             return Err(CharacterRegistrationReport::from_diagnostics(vec![
                 CharacterRegistrationDiagnostic::new(
                     CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
-                    fallback,
+                    primary,
                     [],
                 ),
             ]));
@@ -854,10 +916,21 @@ impl CharacterRegistrar {
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
             &statement_ingress,
+            &compile_time_scalars,
+            &closed_enum_domains,
             request.facts,
             digest,
             revision,
-        );
+        )
+        .map_err(|error| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::GenericScope { error },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
 
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
@@ -866,6 +939,8 @@ impl CharacterRegistrar {
             rust_metadata,
             callables,
             statement_ingress,
+            compile_time_scalars,
+            closed_enum_domains,
             characters,
             character_variants,
             character_descriptor: descriptor,
@@ -951,6 +1026,17 @@ fn statement_ingress_registration_report(
 ) -> CharacterRegistrationReport {
     CharacterRegistrationReport::from_diagnostics(vec![CharacterRegistrationDiagnostic::new(
         CharacterRegistrationDiagnosticKind::StatementIngress { error },
+        fallback,
+        [],
+    )])
+}
+
+fn compile_time_scalar_registration_report(
+    error: CompileTimeScalarTypeRegistrationError,
+    fallback: SourceSpan,
+) -> CharacterRegistrationReport {
+    CharacterRegistrationReport::from_diagnostics(vec![CharacterRegistrationDiagnostic::new(
+        CharacterRegistrationDiagnosticKind::CompileTimeScalarTypes { error },
         fallback,
         [],
     )])

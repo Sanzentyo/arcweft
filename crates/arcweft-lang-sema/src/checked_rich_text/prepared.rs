@@ -1,30 +1,21 @@
-//! Private pre-coordinate RichText evidence.
+//! Private pre-coordinate evidence for checked dialogue content.
 //!
-//! The attribute checker runs before accepted-root coordinates can be issued.
-//! Marker rows therefore remain HIR-qualified only in this private carrier;
-//! the post-call seal consumes every row into the public checked model before
-//! a `FinalSemanticAnalysis` can be published.
+//! Preparation retains typed point-action output and exact attached-content
+//! node edges. Marker rows are kept in one affine catalog until accepted-root
+//! coordinates can be issued; no source delimiter or close/open pairing is
+//! represented here.
 
 use std::collections::BTreeMap;
 
 use arcweft_dialogue::rich_text::DialogueHostEventKind;
-use arcweft_lang_hir::{
-    dialogue_application::{
-        HirDialogueContentId, HirDialogueMarkId, HirDialogueMarkName, HirLineBreakKind,
-        HirRichTextTagId,
-    },
-    identity::ExprId,
-    source_index::HirSourceSite,
+use arcweft_lang_hir::dialogue_application::{
+    HirDialogueContentId, HirDialogueMarkId, HirDialogueMarkName, HirDialogueNodeId,
+    HirLineBreakKind,
 };
-use arcweft_presentation::rich_text::{
-    BuiltinRichTextFx, BuiltinRichTextFxPhase, RichTextDirectStyle, RichTextLayoutSelector,
-    RichTextStyleSelector, RichTextTransformSelector,
-};
+use arcweft_lang_hir::identity::ExprId;
 
 use super::{
-    CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDirectStyleSpan, CheckedLayoutSpan,
-    CheckedObjectSpan, CheckedOwnerFields, CheckedRichTextClose, CheckedRichTextOwner,
-    CheckedStyleSpan, CheckedTransformSpan, RichTextAttributeDiagnostic,
+    CheckedDialogueControl, CheckedDialogueHostEvent, CheckedOwnerFields, RichTextDiagnostic,
 };
 
 /// Exact content-qualified marker retained until accepted-root coordinates
@@ -35,20 +26,17 @@ pub(crate) struct PreparedCheckedDialogueMark {
     diagnostic_name: HirDialogueMarkName,
 }
 
-/// Single affine inventory of the validated marker rows for one dialogue
-/// content application. Cloneable expression shells retain only structural
-/// marker positions; this catalog is moved through candidate transactions and
-/// consumed exactly once by the post-call coordinate seal.
+/// Single affine inventory of validated marker rows for one content value.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedCheckedDialogueMarkCatalog {
     content: HirDialogueContentId,
-    rows: BTreeMap<HirRichTextTagId, PreparedCheckedDialogueMark>,
+    rows: BTreeMap<HirDialogueMarkId, PreparedCheckedDialogueMark>,
 }
 
 impl PreparedCheckedDialogueMarkCatalog {
     pub(crate) fn new(
         content: HirDialogueContentId,
-        rows: BTreeMap<HirRichTextTagId, PreparedCheckedDialogueMark>,
+        rows: BTreeMap<HirDialogueMarkId, PreparedCheckedDialogueMark>,
     ) -> Self {
         Self { content, rows }
     }
@@ -57,8 +45,8 @@ impl PreparedCheckedDialogueMarkCatalog {
         self.content
     }
 
-    pub(crate) fn take(&mut self, tag: HirRichTextTagId) -> Option<PreparedCheckedDialogueMark> {
-        self.rows.remove(&tag)
+    pub(crate) fn take(&mut self, mark: HirDialogueMarkId) -> Option<PreparedCheckedDialogueMark> {
+        self.rows.remove(&mark)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
@@ -66,12 +54,73 @@ impl PreparedCheckedDialogueMarkCatalog {
     }
 }
 
-/// Affine checker result separating cloneable structural RichText preparation
-/// from the sole marker-identity catalog.
+/// Affine checker result separating cloneable structure from marker identity.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct PreparedCheckedRichTextCheck {
     report: PreparedCheckedRichTextReport,
     markers: PreparedCheckedDialogueMarkCatalog,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) enum PreparedCheckedContentCatalogError {
+    KeyMismatch {
+        expected: HirDialogueContentId,
+        actual: HirDialogueContentId,
+        value: Box<PreparedCheckedRichTextCheck>,
+    },
+}
+
+/// Sole affine inventory of prepared checked content rows awaiting late seal.
+#[derive(Debug, Default, Eq, PartialEq)]
+pub(crate) struct PreparedCheckedContentCatalog {
+    rows: BTreeMap<HirDialogueContentId, PreparedCheckedRichTextCheck>,
+}
+
+impl PreparedCheckedContentCatalog {
+    pub(crate) fn insert(
+        &mut self,
+        value: PreparedCheckedRichTextCheck,
+    ) -> Result<(), PreparedCheckedRichTextCheck> {
+        let content = value.content_id();
+        if value.markers.content != content || self.rows.contains_key(&content) {
+            return Err(value);
+        }
+        self.rows.insert(content, value);
+        Ok(())
+    }
+
+    pub(crate) fn take(
+        &mut self,
+        content: HirDialogueContentId,
+    ) -> Option<PreparedCheckedRichTextCheck> {
+        self.rows.remove(&content)
+    }
+
+    pub(crate) fn contains(&self, content: HirDialogueContentId) -> bool {
+        self.rows.contains_key(&content)
+    }
+
+    pub(crate) fn replace(
+        &mut self,
+        content: HirDialogueContentId,
+        value: Option<PreparedCheckedRichTextCheck>,
+    ) -> Result<Option<PreparedCheckedRichTextCheck>, PreparedCheckedContentCatalogError> {
+        match value {
+            Some(value) if value.content_id() == content && value.markers.content() == content => {
+                Ok(self.rows.insert(content, value))
+            }
+            Some(value) => Err(PreparedCheckedContentCatalogError::KeyMismatch {
+                expected: content,
+                actual: value.content_id(),
+                value: Box::new(value),
+            }),
+            None => Ok(self.rows.remove(&content)),
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.rows.is_empty()
+    }
 }
 
 impl PreparedCheckedRichTextCheck {
@@ -86,6 +135,18 @@ impl PreparedCheckedRichTextCheck {
         &self.report
     }
 
+    pub(crate) fn with_effect_plan(
+        mut self,
+        effect_plan: crate::final_analysis::PreparedDialogueEffectPlan,
+    ) -> Self {
+        self.report = self.report.with_effect_plan(effect_plan);
+        self
+    }
+
+    pub(crate) const fn content_id(&self) -> HirDialogueContentId {
+        self.report.content.id
+    }
+
     pub(crate) fn into_parts(
         self,
     ) -> (
@@ -93,14 +154,6 @@ impl PreparedCheckedRichTextCheck {
         PreparedCheckedDialogueMarkCatalog,
     ) {
         (self.report, self.markers)
-    }
-}
-
-impl std::ops::Deref for PreparedCheckedRichTextCheck {
-    type Target = PreparedCheckedRichTextReport;
-
-    fn deref(&self) -> &Self::Target {
-        &self.report
     }
 }
 
@@ -112,49 +165,17 @@ impl PreparedCheckedDialogueMark {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) const fn id(&self) -> HirDialogueMarkId {
-        self.id
-    }
-
     pub(crate) fn into_parts(self) -> (HirDialogueMarkId, HirDialogueMarkName) {
         (self.id, self.diagnostic_name)
     }
 }
 
+/// Prepared zero-width dialogue point action. Presentation modifiers are
+/// intentionally absent; they are attached-content emissions.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCheckedRichTextAction {
     Control {
         action: CheckedDialogueControl,
-        fields: CheckedOwnerFields,
-    },
-    DirectStyle {
-        owner: RichTextDirectStyle,
-        action: CheckedDirectStyleSpan,
-        fields: CheckedOwnerFields,
-    },
-    Style {
-        owner: RichTextStyleSelector,
-        action: CheckedStyleSpan,
-        fields: CheckedOwnerFields,
-    },
-    Layout {
-        owner: RichTextLayoutSelector,
-        action: CheckedLayoutSpan,
-        fields: CheckedOwnerFields,
-    },
-    Transform {
-        owner: RichTextTransformSelector,
-        action: CheckedTransformSpan,
-        fields: CheckedOwnerFields,
-    },
-    Object {
-        action: CheckedObjectSpan,
-        fields: CheckedOwnerFields,
-    },
-    BuiltinFx {
-        effect: BuiltinRichTextFx,
-        phase: BuiltinRichTextFxPhase,
         fields: CheckedOwnerFields,
     },
     Host {
@@ -162,76 +183,42 @@ pub(crate) enum PreparedCheckedRichTextAction {
         action: CheckedDialogueHostEvent,
         fields: CheckedOwnerFields,
     },
-    /// Structural position only. The affine marker catalog owns the validated
-    /// HIR identity and diagnostic name until the late coordinate seal.
-    Marker,
+    Marker {
+        mark: HirDialogueMarkId,
+    },
 }
 
+/// Structural reference to one checked attached-content child.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedCheckedRichTextTag {
-    id: HirRichTextTagId,
-    owner: CheckedRichTextOwner,
-    action: PreparedCheckedRichTextAction,
-    source: HirSourceSite,
+pub(crate) struct PreparedContentApplicationRef {
+    node: HirDialogueNodeId,
+    expression: ExprId,
 }
 
-impl PreparedCheckedRichTextTag {
-    pub(crate) const fn new(
-        id: HirRichTextTagId,
-        owner: CheckedRichTextOwner,
-        action: PreparedCheckedRichTextAction,
-        source: HirSourceSite,
-    ) -> Self {
-        Self {
-            id,
-            owner,
-            action,
-            source,
-        }
+impl PreparedContentApplicationRef {
+    pub(crate) const fn new(node: HirDialogueNodeId, expression: ExprId) -> Self {
+        Self { node, expression }
     }
 
-    pub(crate) const fn id(&self) -> HirRichTextTagId {
-        self.id
+    pub(crate) const fn node(&self) -> HirDialogueNodeId {
+        self.node
     }
 
-    #[cfg(test)]
-    pub(crate) const fn owner(&self) -> &CheckedRichTextOwner {
-        &self.owner
-    }
-
-    pub(crate) const fn action(&self) -> &PreparedCheckedRichTextAction {
-        &self.action
-    }
-
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        HirRichTextTagId,
-        CheckedRichTextOwner,
-        PreparedCheckedRichTextAction,
-        HirSourceSite,
-    ) {
-        (self.id, self.owner, self.action, self.source)
+    pub(crate) const fn expression(&self) -> ExprId {
+        self.expression
     }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCheckedDialogueToken {
     Text(Box<str>),
-    RawText(Box<str>),
     Escape(char),
-    Ruby {
-        base: Box<str>,
-        ruby: Box<str>,
-    },
-    Open(PreparedCheckedRichTextTag),
-    Close(CheckedRichTextClose),
-    InvalidTag {
-        tag: HirRichTextTagId,
-        source: HirSourceSite,
-    },
     Interpolation(ExprId),
+    PointAction(PreparedCheckedRichTextAction),
+    ContentApplication(PreparedContentApplicationRef),
     LineBreak(HirLineBreakKind),
+    /// Typed raw literal. It has no child nodes and is never reparsed.
+    RawLiteral(Box<str>),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -272,25 +259,35 @@ impl PreparedCheckedDialogueContent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PreparedCheckedRichTextReport {
     content: PreparedCheckedDialogueContent,
-    diagnostics: Box<[RichTextAttributeDiagnostic]>,
+    diagnostics: Box<[RichTextDiagnostic]>,
+    effect_plan: crate::final_analysis::PreparedDialogueEffectPlan,
 }
 
 impl PreparedCheckedRichTextReport {
     pub(crate) fn new(
         content: PreparedCheckedDialogueContent,
-        diagnostics: Vec<RichTextAttributeDiagnostic>,
+        diagnostics: Vec<RichTextDiagnostic>,
     ) -> Self {
         Self {
             content,
             diagnostics: diagnostics.into_boxed_slice(),
+            effect_plan: crate::final_analysis::PreparedDialogueEffectPlan::new([]),
         }
+    }
+
+    pub(crate) fn with_effect_plan(
+        mut self,
+        effect_plan: crate::final_analysis::PreparedDialogueEffectPlan,
+    ) -> Self {
+        self.effect_plan = effect_plan;
+        self
     }
 
     pub(crate) const fn content(&self) -> &PreparedCheckedDialogueContent {
         &self.content
     }
 
-    pub(crate) const fn diagnostics(&self) -> &[RichTextAttributeDiagnostic] {
+    pub(crate) const fn diagnostics(&self) -> &[RichTextDiagnostic] {
         &self.diagnostics
     }
 
@@ -302,8 +299,9 @@ impl PreparedCheckedRichTextReport {
         self,
     ) -> (
         PreparedCheckedDialogueContent,
-        Box<[RichTextAttributeDiagnostic]>,
+        Box<[RichTextDiagnostic]>,
+        crate::final_analysis::PreparedDialogueEffectPlan,
     ) {
-        (self.content, self.diagnostics)
+        (self.content, self.diagnostics, self.effect_plan)
     }
 }

@@ -255,7 +255,10 @@ fn assert_capacity_native_signature(
     };
     assert_eq!(native_signature.candidate(), expected_candidate);
     assert_eq!(native_signature.authored_callee(), "String.with_capacity");
-    assert_eq!(native_signature.result(), &TypeKind::String);
+    assert_eq!(
+        native_signature.result().value_type(),
+        Some(&TypeKind::String)
+    );
     let CallableCandidateId::CapacityMethod(capacity) = native_signature.candidate() else {
         panic!("semantic signature must retain CapacityMethod identity")
     };
@@ -456,7 +459,7 @@ fn associated_capacity_native_lsp_projection_parity() {
 #[test]
 fn character_nominal_show_native_lsp_projection_parity() {
     const SOURCE: &str = concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "fn caller() { show(@character.akane, look = .normal); }\n",
     );
     const MANIFEST: &str = r#"{

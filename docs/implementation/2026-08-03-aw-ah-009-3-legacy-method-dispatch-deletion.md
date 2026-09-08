@@ -31,7 +31,7 @@ shared resolver. The acceptance evidence checks exact selected
 `collect`, `push`, `reserve`, `shrink`, `shrink_to`, and
 `with_capacity`. It also checks exact resolver and authored-argument accounting.
 The line-plan fixture uses current `CharacterDialogue` content application and
-registered semantic authority instead of extending the removed `.say` test
+registered semantic authority instead of extending the removed builder test
 surface.
 
 Deleting the helper exposed eight detached compiler tests that had depended on

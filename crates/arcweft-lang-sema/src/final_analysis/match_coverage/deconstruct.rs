@@ -127,7 +127,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
             }
         })?;
         if hir.is_poisoned()
-            || checked.ty().semantic_identity_digest() != expected.semantic_identity_digest()
+            || checked.ty().semantic_identity_digest()? != expected.semantic_identity_digest()?
         {
             return Err(CheckedMatchBuildError::InvalidCheckedRow {
                 coordinate: semantic_coordinate,
@@ -249,7 +249,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         };
         Ok(DeconstructedPatternKind::Constructor {
             constructor: CoverageConstructorId::Entity {
-                owner: expected.semantic_identity_digest(),
+                owner: expected.semantic_identity_digest()?,
                 item: item.semantic_id(),
             },
             fields: Box::new([]),
@@ -284,9 +284,9 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     semantic_coordinate: site.semantic_coordinate(),
                     kind: DeconstructedPatternKind::Constructor {
                         constructor: CoverageConstructorId::Choice {
-                            owner: expected.semantic_identity_digest(),
+                            owner: expected.semantic_identity_digest()?,
                             ordinal: *ordinal,
-                            alternative: alternative.semantic_identity_digest(),
+                            alternative: alternative.semantic_identity_digest()?,
                         },
                         fields: vec![DeconstructedPattern::wildcard(
                             site.coordinate.clone(),
@@ -340,7 +340,6 @@ impl MatchCoverageAnalyzer<'_, '_> {
                     .shape()
                     .tuple_fields()
                     .and_then(|field_types| field_types.get(ordinal as usize))
-                    .map(crate::types::VariantPayloadTupleField::ty)
                     .ok_or_else(|| CheckedMatchBuildError::InvalidCheckedRow {
                         coordinate: site.semantic_coordinate(),
                     })?,
@@ -354,7 +353,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         }
         Ok(DeconstructedPatternKind::Constructor {
             constructor: CoverageConstructorId::Tuple {
-                owner: expected.semantic_identity_digest(),
+                owner: expected.semantic_identity_digest()?,
             },
             fields: fields.into_boxed_slice(),
         })
@@ -373,7 +372,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 coordinate: site.semantic_coordinate(),
             });
         };
-        if resolution.owner().semantic_type() != expected.semantic_identity_digest() {
+        if resolution.owner().semantic_type() != expected.semantic_identity_digest()? {
             return Err(CheckedMatchBuildError::InvalidCheckedRow {
                 coordinate: site.semantic_coordinate(),
             });
@@ -409,11 +408,16 @@ impl MatchCoverageAnalyzer<'_, '_> {
                         coordinate: site.semantic_coordinate(),
                     });
                 };
-                if payload_type.owner_family() != resolution.owner().payload_owner_family()
-                    || payload_type.owner_type() != resolution.owner().semantic_type()
-                    || payload_type.case_ordinal() != resolution.ordinal()
-                    || payload_type.case() != resolution.selected().semantic_id()
-                    || payload_type.shape() != payload_shape
+                let payload_evidence = payload_type.try_seal().map_err(|_| {
+                    CheckedMatchBuildError::InvalidCheckedRow {
+                        coordinate: site.semantic_coordinate(),
+                    }
+                })?;
+                if payload_evidence.owner_family() != resolution.owner().payload_owner_family()
+                    || payload_evidence.owner_semantic_type() != resolution.owner().semantic_type()
+                    || payload_evidence.case_ordinal() != resolution.ordinal()
+                    || payload_evidence.case() != resolution.selected().semantic_id()
+                    || payload_evidence.shape() != payload_shape
                 {
                     return Err(CheckedMatchBuildError::InvalidCheckedRow {
                         coordinate: site.semantic_coordinate(),
@@ -423,7 +427,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 self.lift_variant_payload_pattern(
                     constructor,
                     payload_shape,
-                    child_ty.semantic_identity_digest(),
+                    child_ty.semantic_identity_digest()?,
                     child,
                 )
             }
@@ -459,12 +463,13 @@ impl MatchCoverageAnalyzer<'_, '_> {
                 coordinate: site.semantic_coordinate(),
             });
         };
+        let expected_owner = expected.semantic_identity_digest()?;
         let constructor = constructors
             .iter()
             .find(|constructor| {
                 constructor.identity
                     == (CoverageConstructorId::Record {
-                        owner: expected.semantic_identity_digest(),
+                        owner: expected_owner,
                     })
             })
             .ok_or_else(|| CheckedMatchBuildError::InvalidCheckedRow {
@@ -503,7 +508,7 @@ impl MatchCoverageAnalyzer<'_, '_> {
         }
         Ok(DeconstructedPatternKind::Constructor {
             constructor: CoverageConstructorId::Record {
-                owner: expected.semantic_identity_digest(),
+                owner: expected.semantic_identity_digest()?,
             },
             fields: fields.into_boxed_slice(),
         })

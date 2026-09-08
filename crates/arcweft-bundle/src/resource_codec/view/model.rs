@@ -4,7 +4,10 @@ use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor, SystemPalette,
     SystemPaletteSet,
 };
-use arcweft_presentation::fx::{FxId, FxRuntimeType};
+use arcweft_presentation::fx::{
+    FxDefinitionArgumentValue, FxDefinitionParameterIndex, FxDefinitionParameterLayoutDigest, FxId,
+    FxRuntimeType,
+};
 use arcweft_source::ProductSourceRef;
 use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::ViewProgramId;
@@ -12,7 +15,7 @@ pub use arcweft_view::program::{EventKind, ViewElementKind};
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
 use arcweft_view::{
     ViewHandlerCapture, ViewHandlerProgramId, ViewHandlerResult, ViewHandlerValueTypeId,
-    ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
+    ViewParameterCoordinate, ViewPartLocalName, ViewValueProgram, ViewValueProgramId,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -135,6 +138,7 @@ pub enum ViewProgramInstruction {
     ApplyFx {
         /// Package-qualified identity of the original Fx declaration.
         fx: FxId,
+        parameter_layout: FxDefinitionParameterLayoutDigest,
         arguments: Vec<ViewFxArgumentBindingRef>,
         key_program: Option<ViewValueProgramId>,
         application_ordinal: u32,
@@ -249,8 +253,15 @@ impl ViewProgramInstruction {
 /// Typed reactive argument retained for one View-side Fx application.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ViewFxArgumentBindingRef {
-    pub parameter: String,
-    pub value_program: ViewValueProgramId,
+    pub parameter: FxDefinitionParameterIndex,
+    pub source: ViewFxArgumentSourceRef,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum ViewFxArgumentSourceRef {
+    Reactive(ViewValueProgramId),
+    Closed(FxDefinitionArgumentValue),
 }
 
 /// Typed positional or named argument retained for a nested View call.
@@ -357,11 +368,25 @@ pub enum ViewValueInputNamespace {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ViewValueInputSource {
-    DefinitionParameter { view: String, name: String },
-    Projection { path: Vec<String> },
-    LifetimeProjection { scope: String, path: Vec<String> },
-    Local { view: String, name: String },
-    RepeatOrdinal { view: String, binding: String },
+    DefinitionParameter {
+        view: ViewDefinitionRef,
+        parameter: ViewParameterCoordinate,
+    },
+    Projection {
+        path: Vec<String>,
+    },
+    LifetimeProjection {
+        scope: String,
+        path: Vec<String>,
+    },
+    Local {
+        view: String,
+        name: String,
+    },
+    RepeatOrdinal {
+        view: String,
+        binding: String,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]

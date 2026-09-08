@@ -2,23 +2,30 @@ use crate::awbc_lower::AwbcAudioLowerer;
 use crate::awbc_lower::AwbcTraitMethodLowerer;
 use crate::awbc_lower::expr::AwbcExprLowerer;
 use crate::awbc_lower::frame::FrameBuilder;
-use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, line_cleanup};
+use crate::awbc_lower::inventory::{
+    AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure, line_cleanup,
+};
 use crate::awbc_lower::line::AwbcLineLowerer;
 use crate::awbc_lower::pattern::{admitted_local_type, admitted_plan_type, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcAwaitObserverResume, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcChoiceId, AwbcChoiceOption,
-    AwbcDialogueResultTarget, AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcDropPolicy,
-    AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlag,
-    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic,
-    AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineHandleSite, AwbcLineHandleSiteId,
-    AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcParallelPolicy, AwbcPatternId,
+    AwbcDialogueContentEffectBinding, AwbcDialogueResultTarget, AwbcDialogueValueBinding,
+    AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectPlanId, AwbcEffectSetId, AwbcFrameLayoutId,
+    AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId, AwbcLineCancelHandler, AwbcLineHandleSite,
+    AwbcLineHandleSiteId, AwbcLineOperation, AwbcLineOperationId, AwbcLineTaskGroup,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcParallelPolicy, AwbcPatternId, AwbcProjectCall, AwbcProjectCallAttachedMaterialization,
+    AwbcProjectCallAttachedPresence, AwbcProjectCallCaptureSource, AwbcProjectCallDefaultFunction,
+    AwbcProjectCallInput, AwbcProjectCallOperand, AwbcProjectCallOperandMode,
+    AwbcProjectCallOrdinaryMaterialization, AwbcProjectCallOutcome, AwbcProjectContinuationAbi,
     AwbcPureHelper, AwbcPureHelperOrigin, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
     AwbcTraitMethodId, AwbcTrapCode,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeDropPolicyExpr, RuntimeEffectExpr};
+use arcweft_core::entry::RuntimeEntryRoles;
 use arcweft_core::line_task::{
     ChildCancelPolicy, ChildJoinPolicy, LineTaskGroup, LineTaskNode, LineTaskTrigger,
     ParallelPolicy,
@@ -26,11 +33,17 @@ use arcweft_core::line_task::{
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDialogueValueRole,
-    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeIteratorEvidence,
+    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeFunctionEffectSet,
+    RuntimeFunctionExecutableBody, RuntimeFunctionInputBinding, RuntimeIteratorEvidence,
     RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
+    RuntimeProjectCallAttachedPresence as RuntimeProjectCallAttachedPresenceCore,
+    RuntimeProjectCallOrdinaryMaterialization as RuntimeProjectCallOrdinaryMaterializationCore,
+    RuntimeProjectCallOutcome as RuntimeProjectCallOutcomeCore, RuntimeProjectCallPlan,
     RuntimePureHelper, RuntimePureHelperOrigin, RuntimeTraitMethodId,
 };
-use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue};
+use arcweft_core::value::{
+    RuntimeCallTarget, RuntimeExpr, RuntimeProjectContinuationAbi, RuntimeValue,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Builds one contiguous flow body while allowing host-visible suspension
@@ -241,6 +254,7 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     diagnostics: Vec<AwbcLowerDiagnostic>,
     loop_targets: Vec<LoopLoweringTarget>,
     line_group: Option<LineGroupLoweringContext>,
+    active_effect_set: Option<RuntimeFunctionEffectSet>,
 }
 
 impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
@@ -251,6 +265,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             diagnostics: Vec::new(),
             loop_targets: Vec::new(),
             line_group: None,
+            active_effect_set: None,
         }
     }
 
@@ -316,6 +331,32 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .filter(|flow| selected_flows.contains(&flow.id))
         {
             self.lower_flow(flow);
+        }
+        for executable in self.plan.callable_executables() {
+            let selected = entries.iter().any(|entry| match &entry.roles {
+                RuntimeEntryRoles::Stateful(roles) => {
+                    (roles.initializer.callable == executable.callable
+                        && roles.initializer.contract == executable.contract)
+                        || (roles.reducer.callable == executable.callable
+                            && roles.reducer.contract == executable.contract)
+                }
+                RuntimeEntryRoles::Agent(roles) => {
+                    roles.controller.callable == executable.callable
+                        && roles.controller.contract == executable.contract
+                }
+                RuntimeEntryRoles::None => false,
+            });
+            if !selected {
+                continue;
+            }
+            if let arcweft_core::entry::RuntimeCallableExecutableCode::FunctionSite(site) =
+                &executable.code
+            {
+                let _ = self.prepare_function_site(
+                    *site,
+                    &format!("callable.{}", executable.callable.as_str()),
+                );
+            }
         }
         self.inventory.lower_selected_entries(self.plan, entries);
     }
@@ -537,9 +578,6 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                     trigger: match trigger {
                         LineTaskTrigger::Immediate => AwbcLineTaskTrigger::Immediate,
                         LineTaskTrigger::Mark(mark) => AwbcLineTaskTrigger::Mark(*mark),
-                        LineTaskTrigger::ContentEffect(site) => {
-                            AwbcLineTaskTrigger::ContentEffect(*site)
-                        }
                         LineTaskTrigger::Scheduled(site) => AwbcLineTaskTrigger::Scheduled(
                             arcweft_core::awbc::schema::AwbcLineHandleSiteId(site.get()),
                         ),
@@ -625,6 +663,98 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             AwbcFunction {
                 public_id,
                 kind,
+                signature,
+                frame_layout: layout,
+                blocks: body.blocks,
+                entry_block: body.entry_block,
+                flags: AwbcFunctionFlags::empty()
+                    .with(AwbcFunctionFlag::Deterministic)
+                    .with(AwbcFunctionFlag::MaySuspend),
+            },
+        )
+    }
+
+    /// Lowers an executable structured function-site body through the normal
+    /// flow lowerer.  Content callbacks use an ordinary AWBC function so an
+    /// `EvaluatedEffect` becomes the same `EmitEffect` instruction used by
+    /// every other flow body; no content-specific interpreter is introduced.
+    pub(crate) fn lower_executable_function_site(
+        &mut self,
+        owner: AwbcFunctionId,
+        inputs: &[RuntimeFunctionInputBinding],
+        result: arcweft_core::runtime_id::RuntimePlanTypeId,
+        executable: &RuntimeFunctionExecutableBody,
+        path: &str,
+    ) -> AwbcFunctionId {
+        let mut frame = FrameBuilder::new();
+        for input in inputs {
+            let input_local = input.input_local();
+            let ty = self.local_type(input_local);
+            let name = self.inventory.local_name(input_local);
+            frame.named_parameter(input_local, ty, name);
+        }
+        let mut body =
+            FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::CallableBoundary);
+        for input in inputs {
+            let input_local = input.input_local();
+            let Some(value) = frame.register_for_local(input_local) else {
+                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                    path,
+                    format!("function-site input `{input_local}` is not present in its AWBC frame"),
+                ));
+                continue;
+            };
+            let pattern = lower_pattern(self.inventory, self.plan, &mut frame, input.pattern());
+            self.inventory
+                .push_instruction(AwbcInstruction::BindPattern {
+                    pattern,
+                    value,
+                    mode: AwbcBindMode::Declare,
+                });
+        }
+        let previous_effect_set = self.active_effect_set.replace(executable.effects().clone());
+        self.lower_ops(&mut frame, &mut body, executable.ops(), path);
+        self.active_effect_set = previous_effect_set;
+        let declared_returns_value = !matches!(
+            self.plan.checked_type(result),
+            Ok(Some(arcweft_core::pattern::RuntimeCheckedType::Unit))
+        );
+        if body.needs_value_fallthrough() {
+            self.terminate_value_fallthrough(&mut frame, &mut body);
+        }
+        let body = body.finish(self.inventory);
+        if body.returns_value != declared_returns_value {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                format!(
+                    "executable function body return shape does not match declared result {result}"
+                ),
+            ));
+        }
+        let layout = self
+            .inventory
+            .intern_frame_layout(format!("{path}:frame"), frame.finish());
+        for resume in &body.resume_points {
+            if let Some(point) = self.inventory.program.resume_points.get_mut(resume.index()) {
+                point.frame_layout = layout;
+            }
+        }
+        let params = inputs
+            .iter()
+            .map(|input| self.local_type(input.input_local()))
+            .collect();
+        let result_type = admitted_plan_type(self.inventory, self.plan, result);
+        let effects = self.inventory.intern_effect_set(executable.effects());
+        let signature = self.inventory.intern_signature(
+            params,
+            declared_returns_value.then_some(result_type),
+            effects,
+        );
+        self.inventory.replace_function(
+            owner,
+            AwbcFunction {
+                public_id: None,
+                kind: AwbcFunctionKind::Ordinary,
                 signature,
                 frame_layout: layout,
                 blocks: body.blocks,
@@ -814,8 +944,43 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 let group = content_plan
                     .line_task_group()
                     .map(|group| AwbcLineTaskGroupId(table_index(group.index())));
-                let content =
-                    AwbcLineLowerer::new(self.inventory).content_for_line(content_plan, group);
+                if let Some(missing) = content_plan
+                    .values()
+                    .iter()
+                    .map(|site| site.function())
+                    .find(|function| self.plan.function_sites().get(*function).is_none())
+                {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!(
+                            "dialogue value function site {missing} is absent from the RuntimePlan"
+                        ),
+                    ));
+                    return;
+                }
+                if let Some(missing) = content_plan
+                    .effect_sites()
+                    .iter()
+                    .map(|site| site.function())
+                    .find(|function| self.plan.function_sites().get(*function).is_none())
+                {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!(
+                            "dialogue effect callback function site {missing} is absent from the RuntimePlan"
+                        ),
+                    ));
+                    return;
+                }
+                let content = match AwbcLineLowerer::new(self.inventory)
+                    .content_for_line(content_plan, group)
+                {
+                    Ok(content) => content,
+                    Err(error) => {
+                        self.inventory.diagnostic(error);
+                        return;
+                    }
+                };
                 let group_captures = group
                     .and_then(|group| self.inventory.program.line_task_groups.get(group.index()))
                     .map(|group| group.captures.clone())
@@ -846,15 +1011,20 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                             format!("{path}.dialogue.{function}"),
                             self.plan,
                         )
-                        .lower(function_site.body());
+                        .lower(match function_site.body() {
+                            arcweft_core::plan::RuntimeFunctionSiteBody::Expression(body) => body,
+                            arcweft_core::plan::RuntimeFunctionSiteBody::Executable(_) => {
+                                self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                                    format!("{path}.dialogue.{function}"),
+                                    "dialogue value site must use an expression function body",
+                                ));
+                                return;
+                            }
+                        });
                         values_by_function.insert(function, value);
                         value
                     } else {
-                        self.inventory.diagnostic(AwbcLowerDiagnostic::error(
-                            path,
-                            format!("dialogue value function site {function} is absent from the RuntimePlan"),
-                        ));
-                        continue;
+                        unreachable!("dialogue value sites were preflighted above");
                     };
                     values.push(AwbcDialogueValueBinding {
                         slot: site.slot(),
@@ -862,10 +1032,31 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         value,
                     });
                 }
+                let mut effects = Vec::with_capacity(content_plan.effect_sites().len());
+                for site in content_plan.effect_sites() {
+                    let mut lowerer = AwbcExprLowerer::new(
+                        self.inventory,
+                        frame,
+                        format!("{path}.dialogue.effect.{}", site.site()),
+                        self.plan,
+                    );
+                    let function = lowerer.prepare_function_site(site.function());
+                    let captures = site
+                        .captures()
+                        .iter()
+                        .map(|capture| lowerer.lower(capture))
+                        .collect();
+                    effects.push(AwbcDialogueContentEffectBinding {
+                        site: site.site(),
+                        function,
+                        captures,
+                    });
+                }
                 body.suspend(self.inventory, AwbcSafePointKind::Dialogue, |resume| {
                     AwbcTerminator::Dialogue {
                         content,
                         values,
+                        effects,
                         line_task_captures,
                         result: result_target,
                         resume,
@@ -997,6 +1188,33 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                             mode: AwbcBindMode::Declare,
                         });
                 }
+            }
+            FlowOp::ApplyFunction {
+                callee,
+                args,
+                result,
+            } => {
+                let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                    .lower_function_application(callee, args, result.ty());
+                let pattern = lower_pattern(self.inventory, self.plan, frame, result);
+                self.inventory
+                    .push_instruction(AwbcInstruction::BindPattern {
+                        pattern,
+                        value,
+                        mode: AwbcBindMode::Declare,
+                    });
+            }
+            FlowOp::ProjectCall { site } => {
+                let Some(site) = self.plan.project_call_sites().get(*site) else {
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!(
+                            "runtime ProjectCall site {site} is absent from the RuntimePlan catalog"
+                        ),
+                    ));
+                    return;
+                };
+                self.lower_project_call(frame, body, site.plan(), site.result(), path);
             }
             FlowOp::If {
                 condition,
@@ -1229,7 +1447,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr)
                     })
                     .collect();
-                let Some(effect) = self.inventory.intern_evaluated_effect(effect) else {
+                let empty_effects = RuntimeFunctionEffectSet::empty();
+                let declared_effects = self.active_effect_set.as_ref().unwrap_or(&empty_effects);
+                let Some(effect) = self
+                    .inventory
+                    .intern_evaluated_effect(effect, declared_effects)
+                else {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::error(
                         path,
                         "evaluated effect has no host descriptor",
@@ -1271,6 +1494,225 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 ));
             }
         }
+    }
+
+    fn lower_project_call(
+        &mut self,
+        frame: &mut FrameBuilder,
+        body: &mut FlowBodyBuilder,
+        plan: &RuntimeProjectCallPlan,
+        result: &RuntimePattern,
+        path: &str,
+    ) {
+        // The callee, when present, and every physical operand are lowered in
+        // source order.  The core ProjectCall state machine performs only the
+        // logical ABI materialization after these values have been evaluated;
+        // no operand is rediscovered from a type or callable label.
+        let input = match plan.input() {
+            arcweft_core::plan::RuntimeProjectCallInput::Direct => AwbcProjectCallInput::Direct,
+            arcweft_core::plan::RuntimeProjectCallInput::Continuation {
+                callee,
+                expected_abi,
+            } => {
+                let callee =
+                    AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(callee);
+                let Some(expected_abi) = self.lower_project_call_abi(expected_abi, path) else {
+                    return;
+                };
+                AwbcProjectCallInput::Continuation {
+                    callee,
+                    expected_abi,
+                }
+            }
+        };
+        let operands = plan
+            .operands()
+            .iter()
+            .map(|operand| {
+                let value = AwbcExprLowerer::new(self.inventory, frame, path, self.plan)
+                    .lower(operand.value());
+                let mode = match operand.mode() {
+                    arcweft_core::value::RuntimeCallArgumentMode::Value => {
+                        AwbcProjectCallOperandMode::Value
+                    }
+                    arcweft_core::value::RuntimeCallArgumentMode::Spread => {
+                        AwbcProjectCallOperandMode::Spread
+                    }
+                };
+                AwbcProjectCallOperand { value, mode }
+            })
+            .collect();
+        let ordinary = plan
+            .ordinary()
+            .iter()
+            .map(|row| match row {
+                RuntimeProjectCallOrdinaryMaterializationCore::Fixed(row) => {
+                    AwbcProjectCallOrdinaryMaterialization::Fixed {
+                        parameter: row.parameter(),
+                        abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
+                        binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
+                        source_index: row.source_index(),
+                    }
+                }
+                RuntimeProjectCallOrdinaryMaterializationCore::Rest(row) => {
+                    AwbcProjectCallOrdinaryMaterialization::Rest {
+                        parameter: row.parameter(),
+                        abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
+                        binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
+                        source_indices: row.source_indices().to_vec(),
+                    }
+                }
+            })
+            .collect();
+        let attached = match plan.attached() {
+            None => None,
+            Some(row) => {
+                let presence = match row.presence() {
+                    RuntimeProjectCallAttachedPresenceCore::RequiredPresent => {
+                        AwbcProjectCallAttachedPresence::RequiredPresent
+                    }
+                    RuntimeProjectCallAttachedPresenceCore::OptionalPresent => {
+                        AwbcProjectCallAttachedPresence::OptionalPresent
+                    }
+                    RuntimeProjectCallAttachedPresenceCore::OptionalOmitted => {
+                        AwbcProjectCallAttachedPresence::OptionalOmitted
+                    }
+                    RuntimeProjectCallAttachedPresenceCore::DefaultedPresent => {
+                        AwbcProjectCallAttachedPresence::DefaultedPresent
+                    }
+                    RuntimeProjectCallAttachedPresenceCore::DefaultedOmitted(default) => {
+                        let Some(function) = self.prepare_function_site(default.site(), path)
+                        else {
+                            return;
+                        };
+                        AwbcProjectCallAttachedPresence::DefaultedOmitted {
+                            default: AwbcProjectCallDefaultFunction {
+                                site: function,
+                                captures: default
+                                    .captures()
+                                    .iter()
+                                    .map(|capture| match capture {
+                                        arcweft_core::plan::RuntimeProjectCallDefaultCaptureSource::ContinuationPrefix {
+                                            position,
+                                        } => AwbcProjectCallCaptureSource::ContinuationPrefix {
+                                            position: *position,
+                                        },
+                                        arcweft_core::plan::RuntimeProjectCallDefaultCaptureSource::CurrentLogical {
+                                            position,
+                                        } => AwbcProjectCallCaptureSource::CurrentLogical {
+                                            position: *position,
+                                        },
+                                    })
+                                    .collect(),
+                            },
+                        }
+                    }
+                };
+                Some(AwbcProjectCallAttachedMaterialization {
+                    abi_ty: admitted_plan_type(self.inventory, self.plan, row.abi_ty()),
+                    binding_ty: admitted_plan_type(self.inventory, self.plan, row.binding_ty()),
+                    source_index: row.source_index(),
+                    presence,
+                })
+            }
+        };
+        let outcome = match plan.outcome() {
+            RuntimeProjectCallOutcomeCore::Continue {
+                result_abi,
+                next_group,
+            } => {
+                let Some(result_abi) = self.lower_project_call_abi(result_abi, path) else {
+                    return;
+                };
+                AwbcProjectCallOutcome::Continue {
+                    result_abi,
+                    next_group: *next_group,
+                }
+            }
+            RuntimeProjectCallOutcomeCore::Invoke { function_site } => {
+                let Some(function) = self.prepare_function_site(*function_site, path) else {
+                    return;
+                };
+                AwbcProjectCallOutcome::Invoke { function }
+            }
+        };
+        let result_ty = admitted_plan_type(self.inventory, self.plan, result.ty());
+        let result_pattern = lower_pattern(self.inventory, self.plan, frame, result);
+        body.suspend(
+            self.inventory,
+            AwbcSafePointKind::CallableBoundary,
+            |resume| AwbcTerminator::ProjectCall {
+                call: AwbcProjectCall {
+                    input,
+                    completed_group: plan.completed_group(),
+                    operands,
+                    ordinary,
+                    attached,
+                    outcome,
+                    result_ty,
+                    result_pattern,
+                    resume,
+                },
+            },
+        );
+    }
+
+    fn lower_project_call_abi(
+        &mut self,
+        abi: &RuntimeProjectContinuationAbi,
+        path: &str,
+    ) -> Option<AwbcProjectContinuationAbi> {
+        let Some(function_type) = self.inventory.semantic_type(abi.function_type()) else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "project continuation ABI function type is absent from the AWBC inventory",
+            ));
+            return None;
+        };
+        let Some(prefix_types) = abi
+            .prefix_types()
+            .iter()
+            .map(|ty| self.inventory.semantic_type(*ty))
+            .collect::<Option<Vec<_>>>()
+        else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                "project continuation ABI prefix type is absent from the AWBC inventory",
+            ));
+            return None;
+        };
+        Some(AwbcProjectContinuationAbi {
+            lineage: abi.lineage(),
+            function_type,
+            prefix_types,
+        })
+    }
+
+    fn prepare_function_site(
+        &mut self,
+        site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
+        path: &str,
+    ) -> Option<AwbcFunctionId> {
+        let Some(declaration) = self.plan.function_sites().get(site) else {
+            self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                path,
+                format!("runtime function site {site} is absent from the RuntimePlan"),
+            ));
+            return None;
+        };
+        let already_reserved = self.inventory.function_site_function(site).is_some();
+        let function = self.inventory.reserve_function_site_slot(site);
+        if !already_reserved {
+            self.inventory
+                .push_pending_closure(PendingAwbcClosure::FunctionSite {
+                    function,
+                    inputs: declaration.inputs().to_vec().into_boxed_slice(),
+                    result: declaration.result(),
+                    body: declaration.body().clone(),
+                    path: format!("{path}.function.{site}"),
+                });
+        }
+        Some(function)
     }
 
     fn lower_line_operation(
@@ -2571,7 +3013,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
 fn awbc_dialogue_value_role(role: RuntimeDialogueValueRole) -> AwbcDialogueValueRole {
     match role {
         RuntimeDialogueValueRole::Interpolation => AwbcDialogueValueRole::Interpolation,
-        RuntimeDialogueValueRole::Condition => AwbcDialogueValueRole::Condition,
+        RuntimeDialogueValueRole::Content => AwbcDialogueValueRole::Content,
     }
 }
 
@@ -2780,6 +3222,8 @@ fn collect_flow_dependencies(
             | FlowOp::Dialogue { .. }
             | FlowOp::AwaitMany { .. }
             | FlowOp::HostCall { .. }
+            | FlowOp::ProjectCall { .. }
+            | FlowOp::ApplyFunction { .. }
             | FlowOp::Break(_)
             | FlowOp::Continue
             | FlowOp::Effect(_)

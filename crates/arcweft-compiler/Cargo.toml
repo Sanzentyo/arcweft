@@ -23,6 +23,7 @@ arcweft-manifest-model.workspace = true
 arcweft-project = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-resource-model.workspace = true
+arcweft-rich-text-schema.workspace = true
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }

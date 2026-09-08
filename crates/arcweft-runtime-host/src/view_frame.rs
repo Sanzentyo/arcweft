@@ -313,7 +313,10 @@ mod tests {
     use super::*;
     use crate::{PresentationActionDestination, dispatch_presentation_action};
     use arcweft_id::PublicId;
-    use arcweft_presentation::fx::FxId;
+    use arcweft_presentation::fx::{
+        FxDefinition, FxDefinitionParameter, FxDefinitionParameterLayoutDigest,
+        FxDefinitionParameterType, FxGraph, FxId, FxRuntimeType,
+    };
     use arcweft_presentation::hit::HitRect;
     use arcweft_presentation::input::{ActionTarget, InteractionTarget};
     use arcweft_presentation::layer::{LayerKind, LayerNode, LayerOrder, RenderPhase};
@@ -327,6 +330,30 @@ mod tests {
 
     fn public_id(name: &str) -> PublicId {
         PublicId::try_new(name).unwrap()
+    }
+
+    fn fx_binding_authority() -> (
+        arcweft_presentation::fx::FxDefinitionParameterIndex,
+        FxDefinitionParameterLayoutDigest,
+    ) {
+        let definition = FxDefinition::new(
+            FxId::try_new("game", "ui.effects.wave").unwrap(),
+            vec![
+                FxDefinitionParameter::try_new(
+                    0,
+                    "amplitude",
+                    FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                    None,
+                )
+                .unwrap(),
+            ],
+            FxGraph::default(),
+        )
+        .unwrap();
+        (
+            definition.parameters()[0].index(),
+            definition.parameter_layout().digest(),
+        )
     }
 
     fn layer_id(name: &str) -> LayerId {
@@ -411,13 +438,15 @@ mod tests {
 
     #[test]
     fn frame_commit_retains_fx_instance_identity_and_bindings() {
+        let (parameter, layout) = fx_binding_authority();
         let mut fx = RetainedViewFxTable::default();
         fx.insert(
             RetainedViewFxApplication::new(
-                FxId::try_new("game", "ui.effects.wave").unwrap(),
+                &FxId::try_new("game", "ui.effects.wave").unwrap(),
+                layout,
                 ViewFxIdentity::new(public_id("view.hud"), NodeKey(7), ViewFxOrdinal::new(1))
                     .with_local_key("damage"),
-                vec![ViewFxArgumentBinding::new("amplitude", ValueSourceId(3))],
+                vec![ViewFxArgumentBinding::reactive(parameter, ValueSourceId(3))],
             )
             .unwrap(),
         )
@@ -431,7 +460,7 @@ mod tests {
         let retained = frame.fx().for_node(NodeKey(7)).next().unwrap();
         assert_eq!(retained.ordinal(), ViewFxOrdinal::new(1));
         assert_eq!(retained.local_key(), Some("damage"));
-        assert_eq!(retained.arguments()[0].parameter(), "amplitude");
+        assert_eq!(retained.arguments()[0].parameter(), parameter);
     }
 
     #[test]

@@ -5,10 +5,7 @@ use std::sync::Arc;
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::{
-    AttachedCandidateDialogueExpression, AttachedCandidateDialogueOwner,
-    AttachedCandidateExpressionChild, AttachedExpressionChild, AttachedExpressionNode,
-};
+use super::{AttachedCandidateExpressionChild, AttachedExpressionChild, AttachedExpressionNode};
 use crate::attachment::source_file::{AttachedPathRoot, AttachedPathSegmentKind};
 use crate::attachment::{
     AttachmentFailure, GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId,
@@ -17,10 +14,11 @@ use crate::attachment::{
 use crate::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     ExpressionRecordFieldPart, PendingExpressionComponent, PendingExpressionProjection,
-    SyntaxAssociatedCallSyntax, SyntaxAssociatedSeparator, SyntaxCallArgumentPart,
-    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeArgumentProjection,
-    SyntaxCallTypeChildRole, SyntaxClosureSyntax, SyntaxComputationBlockKind, SyntaxExpressionSlot,
-    SyntaxNumericSequenceRecovery, SyntaxPlaceholderKind, SyntaxRecordField, SyntaxSelectedMember,
+    SyntaxAssociatedCallSyntax, SyntaxAssociatedSeparator, SyntaxAttachedContentApplicationForm,
+    SyntaxCallArgumentPart, SyntaxCallCalleeProjection, SyntaxCallProjection,
+    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxClosureSyntax,
+    SyntaxComputationBlockKind, SyntaxExpressionSlot, SyntaxNumericSequenceRecovery,
+    SyntaxPlaceholderKind, SyntaxRecordField, SyntaxSelectedMember,
 };
 use crate::grammar::build::{GrammarBuild, build_grammar};
 use crate::grammar::event::SyntaxEvent;
@@ -908,10 +906,10 @@ fn attached_e14_through_e17_keep_exact_semantic_children_and_recovery_slots() {
         index.children()[1].source_span()
     );
 
-    let missing_content = expression("items[]", SyntaxKind::DialogueContentApplicationExpression);
+    let missing_content = expression("items[]", SyntaxKind::AttachedContentApplicationExpression);
     assert!(matches!(
         missing_content.projection(),
-        ExpressionProjection::DialogueContentApplication(application)
+        ExpressionProjection::AttachedContentApplication(application)
             if matches!(
                 application.content(),
                 crate::expressions::SyntaxDialogueContentProjection::Missing { .. }
@@ -1028,7 +1026,7 @@ fn ambiguous_postfix_candidates_expose_borrowed_revision_bound_graphs_only() {
     }
     let dialogue = expression(
         "alice[こんにちは。]",
-        SyntaxKind::DialogueContentApplicationExpression,
+        SyntaxKind::AttachedContentApplicationExpression,
     );
     assert!(dialogue.ambiguous_index_candidate().is_none());
     assert!(dialogue.ambiguous_dialogue_candidate().is_none());
@@ -1169,206 +1167,98 @@ fn candidate_associated_call_exposes_direct_typed_receiver_children() {
 }
 
 #[test]
-fn ambiguous_dialogue_candidate_retains_interpolation_and_tag_payload_expressions() {
-    fn assert_candidate_attachment(slot: &AttachedCandidateDialogueExpression<'_>) {
-        let root = slot.node();
-        root.children()
-            .find(|node| node.path_projection().is_some())
-            .expect("Dialogue expression root retains its typed Path child");
-
-        assert_eq!(root.source_span(), slot.source_span().clone());
-    }
-
-    let interpolation = expression("x[#[y]]", SyntaxKind::PostfixBracketExpression);
-    assert!(interpolation.ambiguous_index_candidate().is_some());
-    let dialogue = interpolation
-        .ambiguous_dialogue_candidate()
-        .expect("interpolation is also viable Dialogue content");
-    let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
-        dialogue.dialogue_content().expect("dialogue content")
+fn attached_hash_content_application_owns_head_and_body_without_postfix_child() {
+    let outer = expression(
+        "alice[#strong()[text[p]]]",
+        SyntaxKind::AttachedContentApplicationExpression,
+    );
+    let hash = outer.children()[1]
+        .authored()
+        .expect("hash child expression");
+    let application = AttachedExpressionNode::from_syntax(hash.syntax()).unwrap();
+    assert_eq!(
+        application.syntax().kind(),
+        SyntaxKind::AttachedContentApplicationExpression
+    );
+    let ExpressionProjection::AttachedContentApplication(projection) = application.projection()
     else {
-        panic!("interpolation retains present content");
+        panic!("hash expression projection");
     };
-    assert!(content.nodes().iter().any(|node| matches!(
-        node,
-        crate::expressions::SyntaxDialogueNodeProjection::Interpolation(
-            SyntaxExpressionSlot::Authored
+    assert!(matches!(
+        projection.form(),
+        SyntaxAttachedContentApplicationForm::Hash
+    ));
+    assert_eq!(application.children().len(), 1);
+    let target = application.children()[0]
+        .authored()
+        .expect("hash head target");
+    assert_eq!(target.kind(), SyntaxKind::CallExpression);
+    assert_eq!(target.source_text(), "strong()");
+    assert_eq!(
+        application
+            .component(ExpressionComponentRole::Hash)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start(),
+            application.syntax().range().start() + 1,
         )
-    )));
-    let slots = dialogue
-        .dialogue_expression_slots()
-        .expect("Dialogue expression slots")
-        .collect::<Vec<_>>();
-    let [slot] = slots.as_slice() else {
-        panic!("interpolation owns exactly one expression slot");
-    };
-    assert_eq!(
-        slot.owner(),
-        AttachedCandidateDialogueOwner::Node { ordinal: 0 }
     );
-    assert_eq!(slot.slot(), SyntaxExpressionSlot::Authored);
-    assert_candidate_attachment(slot);
-
-    let conditional = expression("x[[if y]]", SyntaxKind::PostfixBracketExpression);
-    assert!(conditional.ambiguous_index_candidate().is_some());
-    let dialogue = conditional
-        .ambiguous_dialogue_candidate()
-        .expect("conditional tag is also viable Dialogue content");
-    let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
-        dialogue.dialogue_content().expect("dialogue content")
-    else {
-        panic!("conditional retains present content");
-    };
-    assert!(content.tags().iter().any(|tag| matches!(
-        tag.payload(),
-        crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(
-            SyntaxExpressionSlot::Authored
+    assert_eq!(
+        application
+            .component(ExpressionComponentRole::Target)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start() + 1,
+            application.syntax().range().start() + 9,
         )
-    )));
-    let slots = dialogue
-        .dialogue_expression_slots()
-        .expect("Dialogue expression slots")
-        .collect::<Vec<_>>();
-    let [slot] = slots.as_slice() else {
-        panic!("conditional tag owns exactly one expression slot");
-    };
-    assert_eq!(
-        slot.owner(),
-        AttachedCandidateDialogueOwner::Tag { ordinal: 0 }
-    );
-    assert_eq!(slot.slot(), SyntaxExpressionSlot::Authored);
-    assert_candidate_attachment(slot);
-}
-
-#[test]
-#[allow(
-    clippy::too_many_lines,
-    reason = "one closed Dialogue content attachment matrix is easier to audit together"
-)]
-fn attached_dialogue_content_keeps_typed_nodes_and_nested_expression_identity() {
-    let text = expression(
-        "alice[こんにちは。]",
-        SyntaxKind::DialogueContentApplicationExpression,
-    );
-    let ExpressionProjection::DialogueContentApplication(application) = text.projection() else {
-        panic!("dialogue application projection");
-    };
-    let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
-        application.content()
-    else {
-        panic!("present dialogue content");
-    };
-    assert!(matches!(
-        content.nodes(),
-        [crate::expressions::SyntaxDialogueNodeProjection::Text(value)]
-            if value.as_ref() == "こんにちは。"
-    ));
-    assert_eq!(text.children().len(), 1);
-    assert!(
-        text.component(ExpressionComponentRole::DialogueNode {
-            ordinal: 0,
-            part: crate::expressions::SyntaxDialogueNodeSourcePart::Text,
-        })
-        .is_some()
-    );
-
-    let interpolation = expression(
-        "alice[こんにちは #[actor.name]]",
-        SyntaxKind::DialogueContentApplicationExpression,
-    );
-    assert_eq!(interpolation.children().len(), 2);
-    assert_eq!(
-        interpolation.children()[1].component_role(),
-        ExpressionComponentRole::DialogueNode {
-            ordinal: 1,
-            part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
-        }
     );
     assert_eq!(
-        interpolation
-            .component(interpolation.children()[1].component_role())
-            .expect("interpolation source component"),
-        interpolation.children()[1].source_span()
+        application
+            .component(ExpressionComponentRole::Content)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start() + 10,
+            application.syntax().range().start() + 17,
+        )
     );
     assert_eq!(
-        interpolation.children()[1]
+        application
+            .component(ExpressionComponentRole::OpenBracket)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start() + 9,
+            application.syntax().range().start() + 10,
+        )
+    );
+    assert_eq!(
+        application
+            .component(ExpressionComponentRole::CloseBracket)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start() + 17,
+            application.syntax().range().start() + 18,
+        )
+    );
+    assert_eq!(
+        application
+            .component(ExpressionComponentRole::ContentBody)
+            .unwrap()
+            .range(),
+        SourceRange::new(
+            application.syntax().range().start() + 10,
+            application.syntax().range().start() + 17,
+        )
+    );
+    assert!(!application.children().iter().any(|child| {
+        child
             .authored()
-            .expect("attached interpolation expression")
-            .source_text(),
-        "actor.name"
-    );
-
-    let rich_text = expression(
-        "alice[前[strong]強調[/strong]後]",
-        SyntaxKind::DialogueContentApplicationExpression,
-    );
-    let ExpressionProjection::DialogueContentApplication(application) = rich_text.projection()
-    else {
-        panic!("RichText dialogue application");
-    };
-    let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
-        application.content()
-    else {
-        panic!("present RichText content");
-    };
-    assert_eq!(content.tags().len(), 1);
-    assert!(content.tags()[0].paired_end_node().is_some());
-    assert!(
-        rich_text
-            .component(ExpressionComponentRole::RichTextTag {
-                tag: 0,
-                part: crate::expressions::SyntaxRichTextTagSourcePart::EndTag,
-            })
-            .is_some()
-    );
-
-    let call = expression(
-        "alice[本文。[call notify()]]",
-        SyntaxKind::DialogueContentApplicationExpression,
-    );
-    assert_eq!(call.children().len(), 2);
-    assert_eq!(
-        call.children()[1].component_role(),
-        ExpressionComponentRole::RichTextTag {
-            tag: 0,
-            part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
-        }
-    );
-    assert_eq!(
-        call.children()[1]
-            .authored()
-            .expect("dialogue-safe Call payload expression")
-            .source_text(),
-        "notify()"
-    );
-
-    let interleaved = expression(
-        "alice[#[first][if condition]yes[endif]#[last]]",
-        SyntaxKind::DialogueContentApplicationExpression,
-    );
-    let nested = &interleaved.children()[1..];
-    assert_eq!(
-        nested
-            .iter()
-            .map(|child| child
-                .authored()
-                .expect("authored Dialogue child")
-                .source_text())
-            .collect::<Vec<_>>(),
-        ["first", "condition", "last"]
-    );
-    assert!(matches!(
-        nested[0].component_role(),
-        ExpressionComponentRole::DialogueNode { .. }
-    ));
-    assert!(matches!(
-        nested[1].component_role(),
-        ExpressionComponentRole::RichTextTag { .. }
-    ));
-    assert!(matches!(
-        nested[2].component_role(),
-        ExpressionComponentRole::DialogueNode { .. }
-    ));
+            .is_some_and(|child| child.kind() == SyntaxKind::PostfixBracketExpression)
+    }));
 }
 
 #[test]

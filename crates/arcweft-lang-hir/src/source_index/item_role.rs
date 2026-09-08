@@ -94,6 +94,21 @@ pub enum HirCallableEffectSourcePart {
     Keyword,
 }
 
+/// Exact source component owned by a callable's dedicated trailing
+/// attached-content parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirCallableAttachedContentSourcePart {
+    Whole,
+    Open,
+    Binding,
+    Question,
+    Colon,
+    Role,
+    Equals,
+    Default,
+    Close,
+}
+
 /// Typed callable component retained by the sole final-HIR source index.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirCallableSourceRole {
@@ -118,6 +133,10 @@ pub enum HirCallableSourceRole {
         clause: u16,
         part: HirCallableEffectSourcePart,
     },
+    AttachedContent {
+        owner: HirCallableSourceOwner,
+        part: HirCallableAttachedContentSourcePart,
+    },
 }
 
 impl HirCallableSourceRole {
@@ -127,7 +146,8 @@ impl HirCallableSourceRole {
             | Self::Signature { owner }
             | Self::Result { owner }
             | Self::Parameter { owner, .. }
-            | Self::EffectClause { owner, .. } => owner,
+            | Self::EffectClause { owner, .. }
+            | Self::AttachedContent { owner, .. } => owner,
         }
     }
 }

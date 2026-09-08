@@ -231,10 +231,7 @@ fn dialogue_view_runtime_value(
             RuntimeValue::String(input.frame.character.display_name.clone()),
         ]),
     )?;
-    let content = wrap(
-        RuntimeDialogueOpaqueRole::Content,
-        RuntimeValue::Tuple(Vec::new()),
-    )?;
+    let content = input.frame.content.clone().into_runtime_value();
     let occurrence = wrap(
         RuntimeDialogueOpaqueRole::Occurrence,
         RuntimeValue::Tuple(vec![
@@ -1415,6 +1412,7 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 }
                 ViewProgramInstruction::ApplyFx {
                     fx,
+                    parameter_layout,
                     arguments,
                     key_program,
                     application_ordinal,
@@ -1422,17 +1420,23 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                 } => {
                     let mut evaluated_arguments = Vec::with_capacity(arguments.len());
                     for argument in arguments {
-                        let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
+                        let value = match &argument.source {
+                            arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Reactive(program) => {
+                                let context = self.sample_context(mounted, instruction_ordinal(cursor)?)?;
+                                arcweft_presentation::fx::FxDefinitionArgumentValue::Runtime(evaluate_value(
+                                    mounted,
+                                    *program,
+                                    self.inventory,
+                                    context,
+                                    &mut self.value_budget,
+                                    Some(cursor),
+                                )?)
+                            }
+                            arcweft_bundle::resource_codec::view::ViewFxArgumentSourceRef::Closed(value) => value.clone(),
+                        };
                         evaluated_arguments.push(BundleViewFxArgument {
-                            parameter: argument.parameter.clone(),
-                            value: evaluate_value(
-                                mounted,
-                                argument.value_program,
-                                self.inventory,
-                                context,
-                                &mut self.value_budget,
-                                Some(cursor),
-                            )?,
+                            parameter: argument.parameter,
+                            value,
                         });
                     }
                     let reactive_key = match key_program {
@@ -1460,11 +1464,11 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                         None => None,
                     };
                     let target = builder.fx_target(definition.public_id.as_str());
-                    let instance = derive_fx_instance(
+                    let identity = derive_fx_instance(
                         fx,
                         key,
                         structural_path,
-                        &target,
+                        instruction_ordinal(cursor)?,
                         *application_ordinal,
                         reactive_key,
                     );
@@ -1477,10 +1481,9 @@ impl<B: RuntimeCallBackend> ViewEvaluator<'_, B> {
                             )
                         })?;
                     builder.fx.push(BundleViewFxApplication {
-                        instance,
-                        definition: fx.clone(),
+                        identity,
+                        parameter_layout: *parameter_layout,
                         target,
-                        application_ordinal: *application_ordinal,
                         arguments: evaluated_arguments,
                         child_path,
                     });

@@ -11,9 +11,7 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::SourceSpan;
 
-use crate::item::{
-    HirCharacterSurfaceAlias, HirItem, HirItemKind, HirRetainedHeader, HirRetainedName,
-};
+use crate::item::{HirItem, HirItemKind, HirRetainedHeader, HirRetainedName};
 use crate::leaf::HirIdRef;
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
@@ -116,13 +114,7 @@ impl ProjectSymbolTable {
             return;
         }
 
-        let mut binding_names = vec![name.as_str()];
-        if let HirItemKind::Character(character) = item.kind()
-            && let HirCharacterSurfaceAlias::Resolved(alias) = character.surface_alias()
-            && alias.as_str() != name.as_str()
-        {
-            binding_names.push(alias.as_str());
-        }
+        let binding_names = vec![name.as_str()];
         let paths = binding_names
             .iter()
             .map(|binding| {

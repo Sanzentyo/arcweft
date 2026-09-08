@@ -16,7 +16,8 @@ use crate::line_task::{
 };
 use crate::observation::RuntimeObservationState;
 use crate::runtime_id::{
-    DialogueActivationId, RuntimeDialogueMarkId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
+    DialogueActivationId, RuntimeDialogueEffectCallbackActivationId, RuntimeDialogueMarkId,
+    RuntimeLineHandleToken, RuntimeLineTaskNodeId,
 };
 use crate::step::{RuntimeDialogueContentEventKind, RuntimeHostCallId};
 use crate::stream::StreamRuntimeState;
@@ -122,7 +123,7 @@ fn restore_work(work: AwbcProductLineTaskWorkSnapshot) -> Option<LineTaskWork> {
     }
 }
 
-fn snapshot_work_tag(tag: LineTaskWorkTag) -> AwbcProductLineTaskWorkTagSnapshot {
+fn snapshot_work_tag(tag: &LineTaskWorkTag) -> AwbcProductLineTaskWorkTagSnapshot {
     AwbcProductLineTaskWorkTagSnapshot {
         instance: match tag.instance() {
             LineTaskWorkInstance::Activation(activation) => {
@@ -362,7 +363,7 @@ impl ProductChildFiberOwner {
                 phase,
             } => AwbcProductChildFiberOwnerSnapshot::LineTask {
                 content: *content,
-                tag: snapshot_work_tag(tag.clone()),
+                tag: snapshot_work_tag(tag),
                 policy: snapshot_exit_policy(*policy),
                 phase: match phase {
                     ProductLineTaskFiberPhase::Active => {
@@ -406,6 +407,7 @@ impl ProductChildFiberOwner {
 pub struct AwbcProductExecutorSnapshot {
     pub fiber: FiberState,
     pub child_fibers: Vec<AwbcProductChildFiberSnapshot>,
+    pub dialogue_effect_callback_activations: BTreeSet<RuntimeDialogueEffectCallbackActivationId>,
     /// Exact semantic identities for every live Flow function and retained
     /// choice target. Dense function indices alone are not restore authority.
     pub live_flow_bindings: Vec<AwbcFlowBinding>,
@@ -437,6 +439,7 @@ pub struct AwbcProductExecutorSnapshot {
 pub struct AwbcProductExecutorSaveSnapshot {
     pub fiber: AwbcFiberStateSnapshot,
     pub child_fibers: Vec<AwbcProductChildFiberSaveSnapshot>,
+    pub dialogue_effect_callback_activations: BTreeSet<RuntimeDialogueEffectCallbackActivationId>,
     pub live_flow_bindings: Vec<AwbcFlowBinding>,
     pub entry_bound: bool,
     dialogues: crate::line_task::RuntimeDialogueRegistrySaveSnapshot<
@@ -469,6 +472,7 @@ pub struct AwbcProductActiveDialogueSaveSnapshot {
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<crate::value::AwbcRuntimeValueSnapshot>,
     pub values: Vec<AwbcProductDialogueValueSaveSnapshot>,
+    pub effects: Vec<AwbcProductDialogueEffectSaveSnapshot>,
     pub voice: crate::presentation::RuntimeDialogueVoiceState,
     pub phase: AwbcProductDialoguePhaseSaveSnapshot,
     pub elapsed_nanos: u64,
@@ -479,8 +483,16 @@ pub struct AwbcProductActiveDialogueSaveSnapshot {
 
 #[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
 #[serde(deny_unknown_fields)]
+pub struct AwbcProductDialogueEffectSaveSnapshot {
+    pub site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    pub callback: crate::value::AwbcRuntimeValueSnapshot,
+}
+
+#[derive(Clone, Debug, serde::Deserialize, PartialEq, serde::Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct AwbcProductDialogueValueSaveSnapshot {
     pub slot: crate::runtime_id::RuntimeDialogueValueSlotId,
+    pub role: crate::plan::RuntimeDialogueValueRole,
     pub value: crate::value::AwbcRuntimeValueSnapshot,
 }
 
@@ -882,7 +894,7 @@ fn snapshot_active_dialogue(
         captures: active
             .captures
             .iter()
-            .map(|capture| crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(capture))
+            .map(crate::value::AwbcRuntimeValueSnapshot::from_runtime_value)
             .collect::<Result<_, _>>()?,
         values: active
             .values
@@ -890,8 +902,21 @@ fn snapshot_active_dialogue(
             .map(|binding| {
                 Ok(AwbcProductDialogueValueSaveSnapshot {
                     slot: binding.slot,
+                    role: binding.role,
                     value: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
                         &binding.value,
+                    )?,
+                })
+            })
+            .collect::<Result<_, crate::value::AwbcRuntimeValueSnapshotError>>()?,
+        effects: active
+            .effect_callbacks
+            .iter()
+            .map(|binding| {
+                Ok(AwbcProductDialogueEffectSaveSnapshot {
+                    site: binding.site(),
+                    callback: crate::value::AwbcRuntimeValueSnapshot::from_runtime_value(
+                        &crate::value::RuntimeValue::Function(binding.callback().clone()),
                     )?,
                 })
             })
@@ -927,6 +952,9 @@ impl AwbcProductExecutorSaveSnapshot {
                     })
                 })
                 .collect::<Result<_, String>>()?,
+            dialogue_effect_callback_activations: snapshot
+                .dialogue_effect_callback_activations
+                .clone(),
             live_flow_bindings: snapshot.live_flow_bindings.clone(),
             entry_bound: snapshot.entry_bound,
             dialogues,
@@ -965,6 +993,7 @@ impl AwbcProductExecutorSaveSnapshot {
                     })
                 })
                 .collect::<Result<_, String>>()?,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations,
             live_flow_bindings: self.live_flow_bindings,
             entry_bound: self.entry_bound,
             dialogues: AwbcProductDialogueSnapshotState::Saved(self.dialogues),
@@ -999,6 +1028,7 @@ pub struct AwbcProductActiveDialogueSnapshot {
     pub result: AwbcDialogueResultTarget,
     pub captures: Vec<RuntimePayload>,
     pub values: Vec<crate::plan::RuntimeDialogueValueBinding>,
+    pub effects: Vec<crate::value::RuntimeDialogueContentEffectBinding>,
     pub voice: crate::presentation::RuntimeDialogueVoiceState,
     pub phase: AwbcProductDialoguePhaseSnapshot,
     pub elapsed_nanos: u64,
@@ -1258,6 +1288,7 @@ impl AwbcProductStepExecutor {
                     fiber: child.fiber.clone(),
                 })
                 .collect(),
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
             live_flow_bindings: self.live_flow_bindings(),
             entry_bound: self.entry_bound,
             dialogues: AwbcProductDialogueSnapshotState::Live(self.dialogues.clone()),
@@ -1314,6 +1345,7 @@ impl AwbcProductStepExecutor {
                 fiber: child.fiber,
             })
             .collect();
+        self.dialogue_effect_callback_activations = snapshot.dialogue_effect_callback_activations;
         self.entry_bound = snapshot.entry_bound;
         self.dialogues = self.restore_dialogue_store(snapshot.dialogues)?;
         self.active_choice = snapshot
@@ -1443,6 +1475,7 @@ impl AwbcProductStepExecutor {
                 .map(RuntimePayload::into_value)
                 .collect(),
             values: active.values.into_boxed_slice(),
+            effect_callbacks: active.effects.into_boxed_slice(),
             voice: active.voice,
             phase,
             elapsed_nanos: active.elapsed_nanos,
@@ -1488,12 +1521,37 @@ impl AwbcProductStepExecutor {
                                     crate::line_task::RuntimeDialogueRegistrySnapshotError,
                                 >(crate::plan::RuntimeDialogueValueBinding {
                                     slot: binding.slot,
+                                    role: binding.role,
                                     value: binding.value.into_runtime_value().map_err(|error| {
                                         crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
                                             message: error.to_string(),
                                         }
                                     })?,
                                 })
+                            })
+                            .collect::<Result<_, _>>()?,
+                        effects: active
+                            .effects
+                            .into_iter()
+                            .map(|binding| {
+                                let value = binding.callback.into_runtime_value().map_err(
+                                    |error| {
+                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                            message: error.to_string(),
+                                        }
+                                    },
+                                )?;
+                                let crate::value::RuntimeValue::Function(callback) = value else {
+                                    return Err(
+                                        crate::line_task::RuntimeDialogueRegistrySnapshotError::Frame {
+                                            message: "dialogue effect snapshot is not a function".to_owned(),
+                                        },
+                                    );
+                                };
+                                Ok(crate::value::RuntimeDialogueContentEffectBinding::new(
+                                    binding.site,
+                                    callback,
+                                ))
                             })
                             .collect::<Result<_, _>>()?,
                         voice: active.voice,
@@ -1614,6 +1672,7 @@ impl AwbcProductStepExecutor {
                     .map(RuntimePayload::from)
                     .collect(),
                 values: active.values.to_vec(),
+                effects: active.effect_callbacks.to_vec(),
                 voice: active.voice.clone(),
                 phase: snapshot_dialogue_phase(&active.phase),
                 elapsed_nanos: active.elapsed_nanos,
@@ -1647,8 +1706,8 @@ impl AwbcProductStepExecutor {
                 .into_iter()
                 .collect::<BTreeSet<_>>();
             let pending = match &active.phase {
-                super::ProductDialoguePhase::Activating { pending, .. } => pending.as_ref(),
-                super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
+                super::ProductDialoguePhase::Activating { pending, .. }
+                | super::ProductDialoguePhase::Closing(super::ProductDialogueClosing {
                     state: super::ProductDialogueClosingState::Activation { pending, .. },
                     ..
                 }) => pending.as_ref(),
@@ -2192,6 +2251,7 @@ mod tests {
                 .expect("line"),
             captures: Box::new([]),
             values: Box::new([]),
+            effect_callbacks: Box::new([]),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             result: crate::awbc::schema::AwbcDialogueResultTarget {
                 ty: AwbcTypeId(0),

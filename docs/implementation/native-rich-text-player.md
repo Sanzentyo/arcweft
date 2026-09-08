@@ -37,7 +37,7 @@ metadata on their parent run. `NativeFrameElement::TextObjectProxy` uses the
 source text-run index plus proxy index, resolves to the same post-transform
 glyph geometry as the visible span, and drives proxy object color/mask/object-id
 captures through the normal native element path. This keeps custom
-`#[text_proxy]` / `[object ...]` spans aligned with image/model-like debug
+`#[text_proxy]` / `#object(id = @.id, type = Type, ...)[...]` applications aligned with image/model-like debug
 objects that have their own object id, hit region, layer/depth metadata, and
 capture refs.
 Rich-text page and line child objects now aggregate the proxy metadata in their
@@ -157,7 +157,7 @@ The display sidecar carries these value families:
 
 - text nodes and ruby nodes for renderable text
 - control nodes for page, wait, hard break, clear, reset, mark, and raw text
-- typed style start/end nodes for inline styling, including font family requests
+- structural style-scope nodes for inline styling, including font family requests
 - effective base styles lowered from global dialogue defaults, character `dialogue_style`, line
   `style=font(...)` / `style=text_style(...)`, and direct line color/font/size options
 - effective interpolation failure policy lowered from global dialogue defaults, character
@@ -178,17 +178,15 @@ this map to correlate captured pixels, object crops, and rich-text semantics.
 The resolver now treats `[reset]` as a style/reveal reset for following runs by
 clearing active inline styles after recording the reset control marker, so
 Agent JSON and native display no longer leak prior inline styles across a reset.
-Rich-text presentation spans also carry renderer-facing layout, transform,
-effect, and shader descriptors. Runtime-plan lowering accepts inferred dot
-selectors such as `[.shake]...[/]`, canonical tooling can expand them to
-`[effect .shake]...[/effect]`, and the display map stores the resulting
-presentation on text runs and ruby annotations. Effect parameters keep
-non-trivial authoring values as raw tokens; native builtins interpret only
-known parameters at the renderer boundary, such as `dir=0,1` for wave direction
-or raw string seeds for deterministic shake jitter.
+Rich-text content scopes also carry renderer-facing layout, transform, effect,
+and shader descriptors. Runtime-plan lowering consumes explicit typed calls
+such as `#fx(shake(amplitude=1px))[...]`, and the display map stores the
+resulting presentation on text runs and ruby annotations. Effect parameters
+are checked and materialized by the presentation-owned callable schema before
+renderer lowering.
 Transform lowering preserves authored `target` and `origin` fields. Rotation
-spans accept named `angle=...` / `deg=...` values and positional angle tokens,
-and `origin=baseline_start|baseline_center|center|glyph_center` is carried into
+calls accept the schema-owned named angle operand, and
+`origin=baseline_start|baseline_center|center|glyph_center` is carried into
 the native placement pivot calculation instead of being collapsed to the
 selector default.
 The native crate exposes a deterministic `NativeVisualPlan` that applies
@@ -258,19 +256,17 @@ deterministic `sparkle` glyph effect for samples and smoke captures. The same
 registry entry also supports `phase=glyph_color`, where it tints glyphs instead
 of moving them, and `phase=post_process`, where it tints the native framebuffer
 after glyph submission. Unknown custom IDs still report through diagnostics.
-Surface `.host` selectors use their `id`, `effect`, or `name` metadata as the
-registry id before native dispatch, so `[.host id=sparkle]...[/]` reaches the
-same default registry entry as an explicit custom effect descriptor with id
-`sparkle`.
+Registered effects reach native dispatch through typed `#fx(expr)[content]`
+applications and presentation-owned `FxDefinition` identities. There is no
+selector-to-registry fallback.
 Runtime-plan lowering now uses the same visible `#[text_proxy]` /
-`#[rich_text_proxy]` struct registry as canonical tooling for inferred inline
-selectors. `[.id type=KeywordHit]...[/]`, `[.id struct=KeywordHit]...[/]`,
-`[.id proxy=KeywordHit]...[/]`, and `[.KeywordHit]...[/]` lower directly to
-typed `RichTextStyle::Object` proxies when `KeywordHit` is a declared text proxy
-type, while ordinary custom selectors such as `[.sparkle]` remain effect spans.
-Those inferred proxies therefore produce the same run/page/line metadata,
+`#[rich_text_proxy]` struct registry for explicit typed
+`#object(id = @.id, type = KeywordHit, ...)[content]` applications. These
+applications lower to typed `RichTextStyle::Object` proxies when `KeywordHit`
+is a declared text proxy type; no inferred selector or unknown-effect fallback
+participates. The proxies produce run/page/line metadata,
 `rich_text_proxy` observed objects, object-id/mask/color captures, and hit-test
-regions as explicit `[object ...]` syntax.
+regions from that one explicit call form.
 Resolved object proxies now preserve typed declaration provenance from the
 Arcweft struct that supplied defaults. The selected `object_proxies[]` entry and
 each `text_object_proxy` hit region expose the struct name plus the attribute
@@ -278,10 +274,10 @@ family (`text_proxy` or `rich_text_proxy`), so Agent observe, image metadata,
 and hit-test results remain self-describing even when the proxy type name is
 registry-facing or inline metadata overrides defaults.
 Ordinary text objects also expose presentation scalar metadata without becoming
-proxies. Style-family selectors such as `[style .layer hud]...[/style]`,
-`[style .z_index 3]...[/style]`, and `[style .opacity 0.8]...[/style]`,
-including inferred forms like `[.layer hud]...[/]` and `[.z_index 3]...[/]`,
-lower into `RichTextPresentation`. Agent observe reports the resolved
+proxies. Typed calls such as `#style(.layer, layer=@.hud)[...]`,
+`#style(.z_index, z_index=3)[...]`, and
+`#style(.opacity, opacity=0.8)[...]` lower into `RichTextPresentation`. Agent
+observe reports the resolved
 `presentation.layer`, `presentation.z_index`, and `presentation.opacity` on
 runs, lines, and pages, maps presentation layer to `rich_text_ref.object_layer`,
 and derives `rich_text_ref.object_depth = z_index * 1000` so ordinary text
@@ -289,11 +285,10 @@ participates in the same layer/depth-aware object ordering as images, models,
 and custom proxy spans. Proxy objects still keep their own layer/depth metadata;
 when a proxy layer is omitted it inherits the parent presentation layer for
 Agent hit-test reporting.
-Style-family `[style .meta ...]` and inferred `[.meta ...]` spans also lower to
-ordinary `RichTextPresentation.params`. Agent observe serializes those typed
-params inside `rich_text_ref.presentation.params` on runs, glyphs, clusters,
-lines, pages, and ruby objects. This is separate from proxy `params`, which stay
-inside the selected `object_proxies[]` entry and hit-test `proxy_params`.
+Arbitrary presentation-metadata selectors are not an authoring fallback.
+Proxy-specific custom parameters remain scoped to the selected typed
+`#object(...)` application and are reported through `object_proxies[]` and
+hit-test `proxy_params`.
 Page and line objects build their `rich_text_ref.presentation` by merging the
 overlapping text-run presentations in source order. They therefore preserve the
 same metadata surface as run/glyph/cluster objects for object-scoped capture and
@@ -305,12 +300,11 @@ layer stored on `AgentObservedObject.layer` and a rich-text child's semantic
 render layer while still being capturable as the `hud` or `ui` semantic object
 layer used by input/debug tooling.
 Typewriter `glyph_mask` effects use the same capture-time clock as other native
-rich-text effects and honor `delay` before revealing glyphs. `delay` is
-interpreted as seconds, with renderer-local raw token support for `s` and `ms`
-suffixes such as `0.5s` or `500ms`, and it affects visual-plan glyph opacity,
+rich-text effects and honor the checked `delay` duration before revealing
+glyphs. It affects visual-plan glyph opacity,
 framebuffer alpha, mask capture, and object-id visibility without changing text
 layout geometry. `cursor=true` exposes the next unrevealed glyph as a low-alpha
-ghost preview. The preview uses `cursor_alpha` / `cursor_opacity` when present,
+ghost preview. The preview uses the typed `cursor_alpha` value when active,
 is visible in framebuffer/mask/object-id captures, and still preserves the same
 layout geometry as the fully revealed line.
 For `before_layout` and `layout_transform` builtin placement effects,
@@ -319,7 +313,8 @@ horizontal advances, vertical column planning, glyph bounds, and ruby base
 allocation before native glyph submission. The native renderer still applies the
 time-specific placement offset when drawing, while layout/ruby planning now
 accounts for the space those layout-phase effects can occupy.
-The native renderer maps registered `[effect .shader id=... phase=run_offscreen_pass]`
+The native renderer maps typed
+`#fx(shader(resource=@.id, phase=.offscreen_pass))[...]`
 references to deterministic glyph-area passes submitted before the main glyph
 pass, maps registered `phase=glyph_color` shader refs to main-glyph tint
 overrides, and maps registered `phase=post_process` shader refs to deterministic

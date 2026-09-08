@@ -6,11 +6,14 @@ use thiserror::Error;
 use crate::identity::{ExprId, HirModuleId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirIdRefValue, HirName};
 
-use super::callable::{HirFunctionParameterGroup, HirGenericParameter};
+use super::callable::{
+    HirCallableAttachedContentParameter, HirFunctionParameterGroup, HirGenericParameter,
+};
 use super::{
     HirItemInvariantError, HirItemPrefix, HirRequiredName, validate_expr, validate_exprs,
-    validate_function_parameter_groups, validate_generic_parameters, validate_optional_type,
-    validate_scope, validate_statements,
+    validate_function_parameter_groups, validate_generic_parameters,
+    validate_optional_attached_content, validate_optional_type, validate_scope,
+    validate_statements,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -140,6 +143,7 @@ pub struct HirCapabilityFunction {
     generic_parameters: Box<[HirGenericParameter]>,
     parameter_groups: Box<[HirFunctionParameterGroup]>,
     return_type: Option<TypeId>,
+    attached_content: Option<HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     effects: Box<[ExprId]>,
 }
@@ -151,6 +155,7 @@ impl HirCapabilityFunction {
         generic_parameters: Box<[HirGenericParameter]>,
         parameter_groups: Box<[HirFunctionParameterGroup]>,
         return_type: Option<TypeId>,
+        attached_content: Option<HirCallableAttachedContentParameter>,
         callable_scope: ScopeId,
         effects: Box<[ExprId]>,
     ) -> Result<Self, HirItemInvariantError> {
@@ -160,6 +165,7 @@ impl HirCapabilityFunction {
             generic_parameters,
             parameter_groups,
             return_type,
+            attached_content,
             callable_scope,
             effects,
         };
@@ -187,6 +193,10 @@ impl HirCapabilityFunction {
         self.return_type
     }
 
+    pub const fn attached_content(&self) -> Option<HirCallableAttachedContentParameter> {
+        self.attached_content
+    }
+
     pub const fn callable_scope(&self) -> ScopeId {
         self.callable_scope
     }
@@ -200,6 +210,7 @@ impl HirCapabilityFunction {
         validate_generic_parameters(expected, &self.generic_parameters)?;
         validate_function_parameter_groups(expected, &self.parameter_groups)?;
         validate_optional_type(expected, self.return_type)?;
+        validate_optional_attached_content(expected, self.attached_content, false)?;
         validate_scope(expected, self.callable_scope)?;
         validate_exprs(expected, &self.effects)
     }

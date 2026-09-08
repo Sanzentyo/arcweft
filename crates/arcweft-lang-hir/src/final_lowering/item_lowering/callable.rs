@@ -2,7 +2,8 @@
 
 use arcweft_lang_syntax::attachment::node::{FunctionItemKind, PredicateItemKind, ProofItemKind};
 use arcweft_lang_syntax::attachment::{
-    AstKind, AstNode, AttachedCallableContractClause, AttachedCallableParameterKind,
+    AstKind, AstNode, AttachedCallableContentParameter, AttachedCallableContractClause,
+    AttachedCallableParameterKind, AttachedContentPresenceSyntax, AttachedContentRoleSyntax,
     AttachedFixedParameterGroup, AttachedFunctionBody, AttachedPredicateBody, AttachedProofBody,
     ProofTrustSyntax, SyntaxNodeHandle,
 };
@@ -35,6 +36,7 @@ use super::{LoweredItemProjection, item_state, project_required_name};
 
 pub(super) struct LoweredFunctionParameterGroups {
     pub(super) groups: Box<[HirFunctionParameterGroup]>,
+    pub(super) locals: Box<[LocalId]>,
     pub(super) missing_type: bool,
     pub(super) recovery: bool,
 }
@@ -208,13 +210,119 @@ impl StagedHirModuleTransaction<'_> {
             );
         }
         require_limit(HirLimit::LocalsPerScope, callable_locals.len())?;
-        self.close_scope_members(callable_scope, callable_locals.into_boxed_slice())?;
 
         Ok(LoweredFunctionParameterGroups {
             groups: lowered_groups.into_boxed_slice(),
+            locals: callable_locals.into_boxed_slice(),
             missing_type,
             recovery,
         })
+    }
+
+    /// Lowers the one dedicated trailing attached-content parameter into its
+    /// callable local and optional default expression. The returned recovery
+    /// bit belongs to the declaration owner; callers retain the exact typed
+    /// attachment only when a binding local can be established.
+    pub(super) fn lower_attached_content_parameter(
+        &mut self,
+        attached: Option<&AttachedCallableContentParameter>,
+        callable_scope: ScopeId,
+        allow_default: bool,
+    ) -> Result<
+        (
+            Option<crate::item::HirCallableAttachedContentParameter>,
+            Option<LocalId>,
+            bool,
+        ),
+        HirLowerFailure,
+    > {
+        let Some(attached) = attached else {
+            return Ok((None, None, false));
+        };
+        if !allow_default
+            && matches!(
+                attached.presence(),
+                AttachedContentPresenceSyntax::Defaulted { .. }
+            )
+        {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        }
+
+        let projected_name = project_required_name(attached.binding())?;
+        let projected_issue = projected_name.issue;
+        let crate::item::HirRequiredName::Resolved(name) = projected_name.value else {
+            return Ok((None, None, true));
+        };
+        let role = match attached.role() {
+            AttachedContentRoleSyntax::InlineContent => crate::item::HirAttachedContentRole::Inline,
+            AttachedContentRoleSyntax::RichContent => crate::item::HirAttachedContentRole::Rich,
+            AttachedContentRoleSyntax::DialogueContent => {
+                crate::item::HirAttachedContentRole::Dialogue
+            }
+        };
+        let source = attached.binding().syntax();
+        let source_site = HirSourceSite::Span(source.source_span());
+        let binding_name_start = source.range().start();
+        let generation =
+            self.next_sequential_local_generation(callable_scope, &name, binding_name_start)?;
+        let reservation = self.arenas.locals().reserve_source(
+            &mut self.slots,
+            source.id(),
+            source_site.clone(),
+        )?;
+        let poisoned = attached.has_recovery();
+        let payload = HirLocal::try_new(
+            callable_scope,
+            HirLocalKind::Parameter,
+            name.clone(),
+            generation,
+            None,
+            None,
+            false,
+            poisoned,
+        )
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let local = self
+            .arenas
+            .locals()
+            .finalize(&mut self.slots, reservation, payload)?;
+        self.local_timelines
+            .entry((callable_scope, name))
+            .or_default()
+            .publish(LocalGenerationLedgerEntry::new(
+                local,
+                generation,
+                binding_name_start,
+            ))?;
+
+        let (presence, default_recovery) = match attached.presence() {
+            AttachedContentPresenceSyntax::Required => {
+                (crate::item::HirAttachedContentPresence::Required, false)
+            }
+            AttachedContentPresenceSyntax::Optional { .. } => {
+                (crate::item::HirAttachedContentPresence::Optional, false)
+            }
+            AttachedContentPresenceSyntax::Defaulted { value, .. } => {
+                let value = self.lower_attached_expression(value, callable_scope)?;
+                let poisoned = self.staged_expression_is_poisoned(value)?;
+                (
+                    crate::item::HirAttachedContentPresence::Defaulted { value },
+                    poisoned,
+                )
+            }
+        };
+        let attached_content = crate::item::HirCallableAttachedContentParameter::try_new(
+            callable_scope.module(),
+            local,
+            role,
+            presence,
+        )
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        Ok((
+            Some(attached_content),
+            Some(local),
+            poisoned || default_recovery || projected_issue.is_some(),
+        ))
     }
 
     pub(super) fn allocate_item_callable_scope<K: AstKind>(
@@ -373,6 +481,9 @@ impl StagedHirModuleTransaction<'_> {
         let attached = node
             .semantics()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        if attached.attached_content().is_some() && attached.prefix().has_fx_attribute() {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        }
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
@@ -392,11 +503,20 @@ impl StagedHirModuleTransaction<'_> {
 
         let (generic_parameters, generic_recovery) =
             self.lower_generic_parameters(attached.generics(), callable_scope)?;
-        let parameter_groups = self.lower_function_parameter_groups(
+        let mut parameter_groups = self.lower_function_parameter_groups(
             attached.parameter_groups(),
             callable_scope,
             attached.has_parameter_shape_recovery(),
         )?;
+        let (attached_content, attached_local, attached_recovery) = self
+            .lower_attached_content_parameter(attached.attached_content(), callable_scope, true)?;
+        parameter_groups.recovery |= attached_recovery;
+        let mut callable_locals = parameter_groups.locals.to_vec();
+        if let Some(local) = attached_local {
+            callable_locals.push(local);
+        }
+        require_limit(HirLimit::LocalsPerScope, callable_locals.len())?;
+        self.close_scope_members(callable_scope, callable_locals.into_boxed_slice())?;
 
         let (return_type, return_missing_type, return_recovery) = match attached.authored_return() {
             Some(authored) => {
@@ -514,6 +634,7 @@ impl StagedHirModuleTransaction<'_> {
             ensures.into_boxed_slice(),
             effects.into_boxed_slice(),
             return_type,
+            attached_content,
         )
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let declaration = HirFunctionItem::try_new(name.value, signature, body, contract_scopes)
@@ -536,6 +657,7 @@ impl StagedHirModuleTransaction<'_> {
             .or_else(|| return_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| where_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| contract_recovery.then_some(HirItemIssue::Recovery))
+            .or_else(|| attached_recovery.then_some(HirItemIssue::MalformedHeader))
             .or(body_issue)
             .or_else(|| {
                 (!attached.trailing_recovery().is_empty()).then_some(HirItemIssue::Recovery)

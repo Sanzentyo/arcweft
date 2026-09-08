@@ -1,16 +1,18 @@
 //! Foreground runtime activation and atomic session snapshot persistence.
 
+use arcweft_core::plan::RuntimeDialogueContentApplicationKey;
+
 use super::{
     Arc, ArcweftRuntimeExecutorSnapshot, BUNDLE_SESSION_SAVE_SCHEMA_ID,
     BUNDLE_SESSION_SAVE_SCHEMA_VERSION, BundleEntryStart, BundleEntryStartError,
     BundlePresentationSnapshot, BundleSession, BundleSessionCharacterPresentationSnapshot,
     BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
     BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSavePayload,
-    BundleSessionSnapshot, BundleViewRuntime, RuntimeExecutor, RuntimeTaskListOptions,
-    RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry, ViewVirtualizationRuntime,
-    digest_label, reconciled_root_handles_for_restore, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_product_awbc_snapshot,
-    validate_virtual_list_scroll_owner,
+    BundleSessionSnapshot, BundleViewRuntime, DialogueContentCatalog, RuntimeExecutor,
+    RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry,
+    ViewVirtualizationRuntime, digest_label, reconciled_root_handles_for_restore,
+    validate_presentation_runtime_status, validate_presentation_snapshot,
+    validate_product_awbc_snapshot, validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -46,6 +48,7 @@ impl BundleSession {
             return Err(BundleSessionSaveError::NonQuiescent { blockers });
         }
         validate_presentation_snapshot(&self.presentation, &self.fx_definitions)?;
+        validate_dialogue_content_frames(&self.dialogue_content, &self.presentation)?;
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
@@ -240,6 +243,7 @@ impl BundleSession {
             &snapshot.presentation,
         )?;
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
+        validate_dialogue_content_frames(&self.dialogue_content, &snapshot.presentation)?;
         let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;
         let BundleSessionExecutorSnapshot { generation, state } = snapshot.executor;
@@ -521,4 +525,55 @@ fn validate_dialogue_view_save_point(
         .map_err(|error| BundleSessionSaveError::ViewRuntime {
             message: error.to_string(),
         })
+}
+
+fn validate_dialogue_content_frames(
+    catalog: &DialogueContentCatalog,
+    presentation: &BundlePresentationSnapshot,
+) -> Result<(), BundleSessionSaveError> {
+    for dialogue in presentation.dialogue.iter() {
+        for entry in dialogue.entries() {
+            let frame = entry.frame();
+            let content = &frame.content;
+            if content.artifact() != entry.activation().artifact() {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "dialogue line `{}` Content envelope artifact does not match activation",
+                        frame.line
+                    ),
+                });
+            }
+            let key =
+                RuntimeDialogueContentApplicationKey::new(frame.line.clone(), content.template());
+            let Some(spec) = catalog.find(&key) else {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "dialogue line `{}` Content envelope has no catalog record",
+                        frame.line
+                    ),
+                });
+            };
+            let Some(template) = catalog.find_template(content.template()) else {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "dialogue line `{}` Content envelope references missing template {}",
+                        frame.line,
+                        content.template()
+                    ),
+                });
+            };
+            if spec.template_id() != content.template()
+                || spec.template_digest() != content.template_digest()
+                || template.digest() != content.template_digest()
+            {
+                return Err(BundleSessionSaveError::Presentation {
+                    message: format!(
+                        "dialogue line `{}` Content envelope template identity or digest does not match the catalog",
+                        frame.line
+                    ),
+                });
+            }
+        }
+    }
+    Ok(())
 }

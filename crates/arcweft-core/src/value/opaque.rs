@@ -1,8 +1,15 @@
 //! Producer-validated opaque runtime values.
 
+use crate::effect::RuntimeArtifactFingerprint;
+use crate::entry::{RuntimeDialogueContentTemplateDigest, RuntimeSchemaLimits};
 use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId};
-use crate::value::{RuntimeUInt, RuntimeValue};
-use serde::{Deserialize, Serialize};
+use crate::plan::{RuntimeDialogueValueBinding, RuntimeDialogueValueRole};
+use crate::runtime_id::{RuntimeDialogueContentTemplateId, RuntimeDialogueValueSlotId};
+use crate::value::{
+    DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFunctionValue, RuntimeSeq, RuntimeUInt,
+    RuntimeValue,
+};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 /// Closed producer authority for runtime-supplied dialogue values.
@@ -74,6 +81,1305 @@ pub enum RuntimeDialogueValueError {
     InvalidViewPayload,
     #[error("DialogueAction payload violates its closed token schema")]
     InvalidActionPayload,
+}
+
+/// Fixed payload contract for one runtime dialogue content value.
+///
+/// The value is carried by the exact `std.dialogue.content` opaque owner. Its
+/// payload is deliberately a non-empty tuple with a fixed field order:
+/// contract version, artifact fingerprint, template identity, template
+/// digest, canonical role-tagged value bindings, and canonical site-keyed
+/// effect callbacks. The tuple is an internal runtime envelope; text-model
+/// consumers receive the typed value rather than decoding this representation
+/// themselves.
+pub const RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION: u8 = 1;
+
+/// Failure to decode or construct a typed runtime dialogue content value.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeDialogueContentValueError {
+    #[error("runtime dialogue content value is not owned by the exact Content opaque owner")]
+    InvalidOwner,
+    #[error("runtime dialogue content payload must be the canonical non-empty envelope tuple")]
+    InvalidPayload,
+    #[error("runtime dialogue content payload version is {actual}, expected {expected}")]
+    UnsupportedVersion { actual: u8, expected: u8 },
+    #[error("runtime dialogue content payload has an invalid artifact fingerprint")]
+    InvalidArtifact,
+    #[error("runtime dialogue content payload has an invalid template identity")]
+    InvalidTemplate,
+    #[error("runtime dialogue content payload has an invalid template digest")]
+    InvalidTemplateDigest,
+    #[error("runtime dialogue content template manifest is invalid: {message}")]
+    InvalidTemplateManifest { message: String },
+    #[error("runtime dialogue content payload has too many bindings: {actual} > {maximum}")]
+    BindingLimit { actual: usize, maximum: usize },
+    #[error(
+        "runtime dialogue content evaluated binding count {actual} does not match template count {expected}"
+    )]
+    BindingCountMismatch { expected: usize, actual: usize },
+    #[error(
+        "runtime dialogue content effect binding count {actual} does not match template count {expected}"
+    )]
+    EffectCountMismatch { expected: usize, actual: usize },
+    #[error("runtime dialogue content binding {index} is not the canonical slot {expected}")]
+    NonCanonicalSlot {
+        index: usize,
+        expected: RuntimeDialogueValueSlotId,
+        actual: RuntimeDialogueValueSlotId,
+    },
+    #[error("runtime dialogue content effect binding {index} is not canonical site {expected}")]
+    NonCanonicalEffectSite {
+        index: usize,
+        expected: crate::runtime_id::RuntimeDialogueEffectSiteId,
+        actual: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    },
+    #[error("runtime dialogue content binding {index} has an invalid shape")]
+    InvalidBindingShape { index: usize },
+    #[error("runtime dialogue content effect binding {index} has an invalid shape")]
+    InvalidEffectShape { index: usize },
+    #[error("runtime dialogue content binding {index} has an unknown role tag {tag}")]
+    UnknownBindingRole { index: usize, tag: u8 },
+    #[error("runtime dialogue content binding {index} has a value incompatible with role {role:?}")]
+    InvalidBindingValue {
+        index: usize,
+        role: RuntimeDialogueValueRole,
+    },
+    #[error(
+        "runtime dialogue content effect binding {index} is not a zero-argument callback: {message}"
+    )]
+    InvalidEffectCallback { index: usize, message: String },
+    #[error(
+        "runtime dialogue content binding {index} has an invalid inline text capture: {source}"
+    )]
+    InvalidInlineTextValue {
+        index: usize,
+        #[source]
+        source: RuntimeInlineTextValueError,
+    },
+    #[error("nested runtime dialogue content value at binding {index} belongs to another artifact")]
+    NestedArtifactMismatch { index: usize },
+    #[error("runtime dialogue content value exceeds the shared nesting limit of {maximum}")]
+    NestingLimit { maximum: usize },
+    #[error("runtime dialogue content value exceeds the shared node limit of {maximum}")]
+    NodeLimit { maximum: usize },
+    #[error("runtime dialogue content value exceeds the shared string limit of {maximum} bytes")]
+    StringLimit { maximum: usize },
+}
+
+/// Closed, deterministic textual capture used by a dialogue interpolation.
+///
+/// The semantic type identity is retained alongside the formatted text. The
+/// runtime envelope therefore cannot silently reinterpret an arbitrary
+/// `RuntimeValue` as display text; callers must first pass through the closed
+/// formatting operation owned by this type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeInlineTextValue {
+    semantic_type: RuntimeSemanticTypeId,
+    text: String,
+}
+
+/// Failure to construct or decode one closed inline-text capture.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeInlineTextValueError {
+    #[error("inline text capture is not the canonical semantic-type/text tuple")]
+    InvalidPayload,
+    #[error("inline text capture cannot format this runtime value")]
+    UnsupportedRuntimeValue,
+    #[error("inline text capture cannot format a non-finite {kind}")]
+    NonFinite { kind: &'static str },
+    #[error("inline text capture exceeds the shared string limit of {maximum} bytes")]
+    StringLimit { maximum: usize },
+}
+
+impl RuntimeInlineTextValue {
+    /// Constructs a typed capture from already deterministic text.
+    pub fn try_new(
+        semantic_type: RuntimeSemanticTypeId,
+        text: impl Into<String>,
+    ) -> Result<Self, RuntimeInlineTextValueError> {
+        Self::try_new_with_limits(semantic_type, text, RuntimeSchemaLimits::engine_default())
+    }
+
+    /// Constructs a typed capture under explicit shared runtime limits.
+    pub fn try_new_with_limits(
+        semantic_type: RuntimeSemanticTypeId,
+        text: impl Into<String>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeInlineTextValueError> {
+        let text = text.into();
+        if !limits.permits_string_bytes(text.len()) {
+            return Err(RuntimeInlineTextValueError::StringLimit {
+                maximum: usize::try_from(limits.max_string_bytes).unwrap_or(usize::MAX),
+            });
+        }
+        Ok(Self {
+            semantic_type,
+            text,
+        })
+    }
+
+    /// Formats one closed set of deterministic runtime scalar values.
+    pub fn try_format_runtime_value(
+        semantic_type: RuntimeSemanticTypeId,
+        value: &RuntimeValue,
+    ) -> Result<Self, RuntimeInlineTextValueError> {
+        let text = match value {
+            RuntimeValue::Unit => "()".to_owned(),
+            RuntimeValue::Bool(value) => value.to_string(),
+            RuntimeValue::Int(value) => value.to_string(),
+            RuntimeValue::UInt(value) => value.to_string(),
+            RuntimeValue::F32(value) if value.is_finite() => value.to_string(),
+            RuntimeValue::F64(value) if value.is_finite() => value.to_string(),
+            RuntimeValue::F32(_) => {
+                return Err(RuntimeInlineTextValueError::NonFinite { kind: "f32" });
+            }
+            RuntimeValue::F64(_) => {
+                return Err(RuntimeInlineTextValueError::NonFinite { kind: "f64" });
+            }
+            RuntimeValue::String(value) => value.clone(),
+            RuntimeValue::Char(value) => value.to_string(),
+            RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
+            RuntimeValue::EntityRef(value) => format!("@{}", value.runtime_label()),
+            RuntimeValue::Progress(value) => value
+                .label()
+                .map_or_else(|| value.ratio().to_string(), ToOwned::to_owned),
+            _ => return Err(RuntimeInlineTextValueError::UnsupportedRuntimeValue),
+        };
+        Self::try_new(semantic_type, text)
+    }
+
+    /// Alias emphasizing that formatting is the only raw-value admission.
+    pub fn try_from_runtime_value(
+        semantic_type: RuntimeSemanticTypeId,
+        value: &RuntimeValue,
+    ) -> Result<Self, RuntimeInlineTextValueError> {
+        Self::try_format_runtime_value(semantic_type, value)
+    }
+
+    /// Decodes the canonical semantic-type/text tuple carried in a content
+    /// binding. A direct runtime String is intentionally not accepted.
+    pub fn try_decode_runtime_value(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeInlineTextValueError> {
+        let RuntimeValue::Tuple(fields) = value else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        let [semantic_type, text] = fields.as_slice() else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        let RuntimeValue::Seq(sequence) = semantic_type else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        if sequence.dense_kind() != Some(DenseSeqKind::Bytes) {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        }
+        let Some(bytes) = sequence.as_bytes() else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        let Ok(bytes) = <[u8; 32]>::try_from(bytes) else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        let RuntimeValue::String(text) = text else {
+            return Err(RuntimeInlineTextValueError::InvalidPayload);
+        };
+        Self::try_new_with_limits(
+            RuntimeSemanticTypeId::from_bytes(bytes),
+            text.clone(),
+            limits,
+        )
+    }
+
+    #[must_use]
+    pub const fn semantic_type(&self) -> RuntimeSemanticTypeId {
+        self.semantic_type
+    }
+
+    #[must_use]
+    pub fn text(&self) -> &str {
+        &self.text
+    }
+
+    #[must_use]
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        RuntimeValue::Tuple(vec![
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(
+                self.semantic_type.as_bytes().to_vec(),
+            )),
+            RuntimeValue::String(self.text),
+        ])
+    }
+}
+
+/// Closed typed binding admitted into a Content envelope.
+#[derive(Clone, Debug, PartialEq)]
+pub enum RuntimeDialogueContentBinding {
+    Interpolation {
+        slot: RuntimeDialogueValueSlotId,
+        semantic_type: RuntimeSemanticTypeId,
+        value: RuntimeInlineTextValue,
+    },
+    Content {
+        slot: RuntimeDialogueValueSlotId,
+        semantic_type: RuntimeSemanticTypeId,
+        value: RuntimeDialogueContentValue,
+    },
+}
+
+/// Runtime callback captured by one content-local effect site.
+///
+/// The callback is deliberately the existing runtime function authority.  It
+/// carries no effect-expression bytecode or copied capture side table; the
+/// function value owns its structured/AWBC closure representation.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentEffectBinding {
+    site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    callback: RuntimeFunctionValue,
+}
+
+impl RuntimeDialogueContentEffectBinding {
+    #[must_use]
+    pub const fn new(
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+        callback: RuntimeFunctionValue,
+    ) -> Self {
+        Self { site, callback }
+    }
+
+    #[must_use]
+    pub const fn site(&self) -> crate::runtime_id::RuntimeDialogueEffectSiteId {
+        self.site
+    }
+
+    #[must_use]
+    pub const fn callback(&self) -> &RuntimeFunctionValue {
+        &self.callback
+    }
+}
+
+impl RuntimeDialogueContentBinding {
+    #[must_use]
+    pub const fn slot(&self) -> RuntimeDialogueValueSlotId {
+        match self {
+            Self::Interpolation { slot, .. } | Self::Content { slot, .. } => *slot,
+        }
+    }
+
+    #[must_use]
+    pub const fn role(&self) -> RuntimeDialogueValueRole {
+        match self {
+            Self::Interpolation { .. } => RuntimeDialogueValueRole::Interpolation,
+            Self::Content { .. } => RuntimeDialogueValueRole::Content,
+        }
+    }
+
+    #[must_use]
+    pub const fn semantic_type(&self) -> RuntimeSemanticTypeId {
+        match self {
+            Self::Interpolation { semantic_type, .. } | Self::Content { semantic_type, .. } => {
+                *semantic_type
+            }
+        }
+    }
+
+    #[must_use]
+    pub const fn inline_text(&self) -> Option<&RuntimeInlineTextValue> {
+        match self {
+            Self::Interpolation { value, .. } => Some(value),
+            Self::Content { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub const fn content(&self) -> Option<&RuntimeDialogueContentValue> {
+        match self {
+            Self::Content { value, .. } => Some(value),
+            Self::Interpolation { .. } => None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_slot(self, slot: RuntimeDialogueValueSlotId) -> Self {
+        match self {
+            Self::Interpolation {
+                semantic_type,
+                value,
+                ..
+            } => Self::Interpolation {
+                slot,
+                semantic_type,
+                value,
+            },
+            Self::Content {
+                semantic_type,
+                value,
+                ..
+            } => Self::Content {
+                slot,
+                semantic_type,
+                value,
+            },
+        }
+    }
+
+    fn into_runtime_value(self) -> RuntimeValue {
+        match self {
+            Self::Interpolation { value, .. } => value.into_runtime_value(),
+            Self::Content { value, .. } => value.into_runtime_value(),
+        }
+    }
+}
+
+/// Typed runtime envelope for one dialogue content fragment.
+///
+/// `RuntimeDialogueContentValue` is the sole authority for the payload behind
+/// the exact `std.dialogue.content` opaque owner.  The envelope deliberately
+/// retains the artifact identity, plan-local template identity, and the
+/// canonical role-tagged value bindings needed by text-model materialization.
+/// Consumers must use this type instead of decoding the opaque payload shape.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueContentValue {
+    artifact: RuntimeArtifactFingerprint,
+    template: RuntimeDialogueContentTemplateId,
+    template_digest: RuntimeDialogueContentTemplateDigest,
+    bindings: Box<[RuntimeDialogueContentBinding]>,
+    effects: Box<[RuntimeDialogueContentEffectBinding]>,
+}
+
+impl Serialize for RuntimeDialogueContentValue {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        self.clone().into_runtime_value().serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeDialogueContentValue {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        RuntimeValue::deserialize(deserializer).and_then(|value| {
+            Self::try_from_runtime_value(&value).map_err(serde::de::Error::custom)
+        })
+    }
+}
+
+impl RuntimeDialogueContentValue {
+    /// Constructs a content envelope using the named engine schema policy.
+    pub fn try_new(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        bindings: impl IntoIterator<Item = RuntimeDialogueContentBinding>,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_new_with_effects(artifact, template, template_digest, bindings, [])
+    }
+
+    /// Constructs a content envelope with its complete callback binding list.
+    pub fn try_new_with_effects(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        bindings: impl IntoIterator<Item = RuntimeDialogueContentBinding>,
+        effects: impl IntoIterator<Item = RuntimeDialogueContentEffectBinding>,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_new_with_limits(
+            artifact,
+            template,
+            template_digest,
+            bindings,
+            effects,
+            RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Constructs a content envelope after applying the caller-selected
+    /// shared runtime schema limits.
+    pub fn try_new_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        bindings: impl IntoIterator<Item = RuntimeDialogueContentBinding>,
+        effects: impl IntoIterator<Item = RuntimeDialogueContentEffectBinding>,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let value = Self {
+            artifact,
+            template,
+            template_digest,
+            bindings: bindings.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+            effects: effects.into_iter().collect::<Vec<_>>().into_boxed_slice(),
+        };
+        value.validate_structure(limits)?;
+        value.validate_runtime_graph(limits)?;
+        Ok(value)
+    }
+
+    /// Packages evaluated dialogue bindings through the single Content
+    /// envelope admission algorithm. The immutable plan manifest supplies
+    /// each slot's exact semantic role/type; callers cannot reinterpret a raw
+    /// runtime value or omit a slot.
+    pub fn try_from_evaluated_bindings(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        evaluated: &[RuntimeDialogueValueBinding],
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_from_evaluated_bindings_with_effects(artifact, template, evaluated, &[])
+    }
+
+    /// Packages evaluated value slots and their site-keyed effect callbacks
+    /// against one immutable template manifest.
+    pub fn try_from_evaluated_bindings_with_effects(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        evaluated: &[RuntimeDialogueValueBinding],
+        effects: &[RuntimeDialogueContentEffectBinding],
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_from_evaluated_bindings_with_effects_with_limits(
+            artifact,
+            template,
+            evaluated,
+            effects,
+            RuntimeSchemaLimits::engine_default(),
+        )
+    }
+
+    /// Limits-aware form of [`Self::try_from_evaluated_bindings`].
+    pub fn try_from_evaluated_bindings_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        evaluated: &[RuntimeDialogueValueBinding],
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_from_evaluated_bindings_with_effects_with_limits(
+            artifact,
+            template,
+            evaluated,
+            &[],
+            limits,
+        )
+    }
+
+    /// Limits-aware form of [`Self::try_from_evaluated_bindings_with_effects`].
+    pub fn try_from_evaluated_bindings_with_effects_with_limits(
+        artifact: RuntimeArtifactFingerprint,
+        template: &crate::plan::RuntimeDialogueContentTemplateManifest,
+        evaluated: &[RuntimeDialogueValueBinding],
+        effects: &[RuntimeDialogueContentEffectBinding],
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        if evaluated.len() != template.slots().len() {
+            return Err(RuntimeDialogueContentValueError::BindingCountMismatch {
+                expected: template.slots().len(),
+                actual: evaluated.len(),
+            });
+        }
+        if !limits.permits_sequence_items(evaluated.len()) {
+            return Err(RuntimeDialogueContentValueError::BindingLimit {
+                actual: evaluated.len(),
+                maximum: usize::try_from(limits.max_sequence_items).unwrap_or(usize::MAX),
+            });
+        }
+        let mut bindings = Vec::with_capacity(evaluated.len());
+        for (index, (slot, evaluated)) in template.slots().iter().zip(evaluated).enumerate() {
+            let expected_slot = RuntimeDialogueValueSlotId::from_zero_based(index).ok_or(
+                RuntimeDialogueContentValueError::NodeLimit {
+                    maximum: usize::try_from(limits.max_nodes).unwrap_or(usize::MAX),
+                },
+            )?;
+            if slot.slot() != expected_slot || evaluated.slot != expected_slot {
+                return Err(RuntimeDialogueContentValueError::NonCanonicalSlot {
+                    index,
+                    expected: expected_slot,
+                    actual: evaluated.slot,
+                });
+            }
+            if evaluated.role != slot.role() {
+                return Err(RuntimeDialogueContentValueError::InvalidBindingValue {
+                    index,
+                    role: evaluated.role,
+                });
+            }
+            let binding = match slot.role() {
+                RuntimeDialogueValueRole::Interpolation => {
+                    let value = RuntimeInlineTextValue::try_from_runtime_value(
+                        slot.semantic_type(),
+                        &evaluated.value,
+                    )
+                    .map_err(|source| {
+                        RuntimeDialogueContentValueError::InvalidInlineTextValue { index, source }
+                    })?;
+                    RuntimeDialogueContentBinding::Interpolation {
+                        slot: expected_slot,
+                        semantic_type: slot.semantic_type(),
+                        value,
+                    }
+                }
+                RuntimeDialogueValueRole::Content => {
+                    let value = Self::try_from_runtime_value_with_limits(&evaluated.value, limits)?;
+                    RuntimeDialogueContentBinding::Content {
+                        slot: expected_slot,
+                        semantic_type: slot.semantic_type(),
+                        value,
+                    }
+                }
+            };
+            bindings.push(binding);
+        }
+        if effects.len() != template.effects().len() {
+            return Err(RuntimeDialogueContentValueError::EffectCountMismatch {
+                expected: template.effects().len(),
+                actual: effects.len(),
+            });
+        }
+        for (index, (declared, binding)) in template.effects().iter().zip(effects).enumerate() {
+            let expected = declared.site();
+            if binding.site() != expected {
+                return Err(RuntimeDialogueContentValueError::NonCanonicalEffectSite {
+                    index,
+                    expected,
+                    actual: binding.site(),
+                });
+            }
+            let callback = binding.callback();
+            let remaining = callback.remaining_arity().map_err(|error| {
+                RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: error.to_string(),
+                }
+            })?;
+            if callback.as_structured().is_some() && !callback.is_structured_executable_callback() {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: "structured callback site is not an executable Unit body".to_owned(),
+                });
+            }
+            if remaining != 0 || callback.capture_count() != declared.capture_types().len() {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: format!(
+                        "callback has {remaining} remaining parameters and {} captures, expected zero parameters and {} captures",
+                        callback.capture_count(),
+                        declared.capture_types().len()
+                    ),
+                });
+            }
+        }
+        Self::try_new_with_limits(
+            artifact,
+            template.id(),
+            template.digest(),
+            bindings,
+            effects.to_owned(),
+            limits,
+        )
+    }
+
+    /// Packages bindings against an already verified manifest projection. This
+    /// is the bridge used by AWBC and other executors whose immutable template
+    /// catalog is not the in-memory `RuntimePlan` table.
+    pub fn try_from_evaluated_bindings_parts(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        slots: &[crate::plan::RuntimeDialogueContentSlot],
+        evaluated: &[RuntimeDialogueValueBinding],
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_from_evaluated_bindings_parts_with_effects(
+            artifact,
+            template,
+            template_digest,
+            slots,
+            evaluated,
+            &[],
+            &[],
+        )
+    }
+
+    /// AWBC/adapter bridge that admits a complete slot and callback manifest
+    /// without requiring an in-memory [`RuntimePlan`] template table.
+    pub(crate) fn try_from_evaluated_bindings_parts_with_effects(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        slots: &[crate::plan::RuntimeDialogueContentSlot],
+        evaluated: &[RuntimeDialogueValueBinding],
+        effect_slots: &[crate::plan::RuntimeDialogueContentEffectSlot],
+        effects: &[RuntimeDialogueContentEffectBinding],
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let manifest = crate::plan::RuntimeDialogueContentTemplateManifest::new_with_effects(
+            template,
+            template_digest,
+            slots.to_vec().into_boxed_slice(),
+            effect_slots.to_vec().into_boxed_slice(),
+        );
+        manifest.validate_slot_schema().map_err(|error| {
+            RuntimeDialogueContentValueError::InvalidTemplateManifest {
+                message: error.to_string(),
+            }
+        })?;
+        Self::try_from_evaluated_bindings_with_effects(artifact, &manifest, evaluated, effects)
+    }
+
+    /// AWBC bridge for a verifier-admitted callback list.  AWBC owns its
+    /// runtime type table, so this path deliberately consumes only the
+    /// canonical callback sites after AWBC has checked each callback's
+    /// capture ABI.  It does not fabricate plan-local type IDs in the core
+    /// manifest domain.
+    pub(crate) fn try_from_evaluated_bindings_parts_with_effect_bindings(
+        artifact: RuntimeArtifactFingerprint,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
+        slots: &[crate::plan::RuntimeDialogueContentSlot],
+        evaluated: &[RuntimeDialogueValueBinding],
+        effects: &[RuntimeDialogueContentEffectBinding],
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let mut value = Self::try_from_evaluated_bindings_parts(
+            artifact,
+            template,
+            template_digest,
+            slots,
+            evaluated,
+        )?;
+        if !RuntimeSchemaLimits::engine_default().permits_sequence_items(effects.len()) {
+            return Err(RuntimeDialogueContentValueError::BindingLimit {
+                actual: effects.len(),
+                maximum: usize::try_from(RuntimeSchemaLimits::engine_default().max_sequence_items)
+                    .unwrap_or(usize::MAX),
+            });
+        }
+        for (index, effect) in effects.iter().enumerate() {
+            let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                .ok_or(RuntimeDialogueContentValueError::NodeLimit {
+                maximum: usize::try_from(RuntimeSchemaLimits::engine_default().max_nodes)
+                    .unwrap_or(usize::MAX),
+            })?;
+            if effect.site() != expected {
+                return Err(RuntimeDialogueContentValueError::NonCanonicalEffectSite {
+                    index,
+                    expected,
+                    actual: effect.site(),
+                });
+            }
+            let remaining = effect.callback().remaining_arity().map_err(|error| {
+                RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: error.to_string(),
+                }
+            })?;
+            if effect.callback().as_structured().is_some()
+                && !effect.callback().is_structured_executable_callback()
+            {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: "structured callback site is not an executable Unit body".to_owned(),
+                });
+            }
+            if remaining != 0 {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: format!("callback has {remaining} remaining parameters"),
+                });
+            }
+        }
+        value.effects = effects.to_owned().into_boxed_slice();
+        value.validate_structure(RuntimeSchemaLimits::engine_default())?;
+        value.validate_runtime_graph(RuntimeSchemaLimits::engine_default())?;
+        Ok(value)
+    }
+
+    /// Decodes the exact Content-owned runtime envelope using the engine
+    /// schema policy.
+    pub fn try_from_runtime_value(
+        value: &RuntimeValue,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        Self::try_from_runtime_value_with_limits(value, RuntimeSchemaLimits::engine_default())
+    }
+
+    /// Decodes the exact Content-owned runtime envelope with explicit shared
+    /// runtime limits.
+    pub fn try_from_runtime_value_with_limits(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let payload = exact_dialogue_payload(value, RuntimeDialogueOpaqueRole::Content)
+            .map_err(|_| RuntimeDialogueContentValueError::InvalidOwner)?;
+        let value = Self::decode_payload(payload, limits, 0)?;
+        value.validate_structure(limits)?;
+        value.validate_runtime_graph(limits)?;
+        Ok(value)
+    }
+
+    fn try_decode_unvalidated_at(
+        value: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+        depth: usize,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let payload = exact_dialogue_payload(value, RuntimeDialogueOpaqueRole::Content)
+            .map_err(|_| RuntimeDialogueContentValueError::InvalidOwner)?;
+        Self::decode_payload(payload, limits, depth)
+    }
+
+    /// Exact runtime-plan artifact fingerprint carried by this envelope.
+    #[must_use]
+    pub const fn artifact(&self) -> RuntimeArtifactFingerprint {
+        self.artifact
+    }
+
+    /// Plan-local content template identity carried by this envelope.
+    #[must_use]
+    pub const fn template(&self) -> RuntimeDialogueContentTemplateId {
+        self.template
+    }
+
+    /// Digest of the immutable fragment template expected by this envelope.
+    #[must_use]
+    pub const fn template_digest(&self) -> RuntimeDialogueContentTemplateDigest {
+        self.template_digest
+    }
+
+    /// Canonical source-order role-tagged bindings.
+    #[must_use]
+    pub fn bindings(&self) -> &[RuntimeDialogueContentBinding] {
+        &self.bindings
+    }
+
+    /// Canonical source-order effect callback bindings.
+    #[must_use]
+    pub fn effects(&self) -> &[RuntimeDialogueContentEffectBinding] {
+        &self.effects
+    }
+
+    /// Finds a callback by its exact document-local effect site identity.
+    #[must_use]
+    pub fn effect(
+        &self,
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    ) -> Option<&RuntimeDialogueContentEffectBinding> {
+        self.effects
+            .get(site.index())
+            .filter(|binding| binding.site() == site)
+    }
+
+    /// Finds a canonical binding by its document-local slot identity.
+    #[must_use]
+    pub fn binding(
+        &self,
+        slot: RuntimeDialogueValueSlotId,
+    ) -> Option<&RuntimeDialogueContentBinding> {
+        self.bindings
+            .get(slot.index())
+            .filter(|binding| binding.slot() == slot)
+    }
+
+    /// Encodes this typed envelope through the exact Content owner.
+    #[must_use]
+    pub fn into_runtime_value(self) -> RuntimeValue {
+        let bindings = self
+            .bindings
+            .into_vec()
+            .into_iter()
+            .map(encode_content_binding)
+            .collect();
+        let effects = self
+            .effects
+            .into_vec()
+            .into_iter()
+            .map(encode_content_effect_binding)
+            .collect();
+        let payload = RuntimeValue::Tuple(vec![
+            RuntimeValue::u8(RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION),
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(self.artifact.as_bytes().to_vec())),
+            RuntimeValue::u32(self.template.get().get()),
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(
+                self.template_digest.as_bytes().to_vec(),
+            )),
+            RuntimeValue::Seq(RuntimeSeq::Values(bindings)),
+            RuntimeValue::Seq(RuntimeSeq::Values(effects)),
+        ]);
+        wrap_dialogue_payload(RuntimeDialogueOpaqueRole::Content, payload)
+    }
+
+    fn decode_payload(
+        payload: &RuntimeValue,
+        limits: RuntimeSchemaLimits,
+        depth: usize,
+    ) -> Result<Self, RuntimeDialogueContentValueError> {
+        let maximum_depth = usize::try_from(limits.max_depth)
+            .unwrap_or(usize::MAX)
+            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH);
+        if depth > maximum_depth {
+            return Err(RuntimeDialogueContentValueError::NestingLimit {
+                maximum: maximum_depth,
+            });
+        }
+        let RuntimeValue::Tuple(fields) = payload else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let [
+            version,
+            artifact,
+            template,
+            template_digest,
+            bindings,
+            effects,
+        ] = fields.as_slice()
+        else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let RuntimeValue::UInt(RuntimeUInt::U8(version)) = version else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        if *version != RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION {
+            return Err(RuntimeDialogueContentValueError::UnsupportedVersion {
+                actual: *version,
+                expected: RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION,
+            });
+        }
+        let artifact = decode_content_bytes(artifact, true)
+            .ok_or(RuntimeDialogueContentValueError::InvalidArtifact)?;
+        let artifact = <[u8; 32]>::try_from(artifact.as_slice())
+            .ok()
+            .and_then(|bytes| RuntimeArtifactFingerprint::try_from_bytes(bytes).ok())
+            .ok_or(RuntimeDialogueContentValueError::InvalidArtifact)?;
+        let RuntimeValue::UInt(RuntimeUInt::U32(template)) = template else {
+            return Err(RuntimeDialogueContentValueError::InvalidTemplate);
+        };
+        let template = std::num::NonZeroU32::new(*template)
+            .map(RuntimeDialogueContentTemplateId::from_nonzero)
+            .ok_or(RuntimeDialogueContentValueError::InvalidTemplate)?;
+        let template_digest = decode_content_bytes(template_digest, true)
+            .and_then(|bytes| <[u8; 32]>::try_from(bytes.as_slice()).ok())
+            .map(RuntimeDialogueContentTemplateDigest::from_bytes)
+            .ok_or(RuntimeDialogueContentValueError::InvalidTemplateDigest)?;
+        let RuntimeValue::Seq(sequence) = bindings else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let Some(bindings) = sequence.as_values() else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let bindings = bindings
+            .iter()
+            .enumerate()
+            .map(|binding| decode_content_binding(binding, limits, depth))
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        let RuntimeValue::Seq(sequence) = effects else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let Some(effects) = sequence.as_values() else {
+            return Err(RuntimeDialogueContentValueError::InvalidPayload);
+        };
+        let effects = effects
+            .iter()
+            .enumerate()
+            .map(decode_content_effect_binding)
+            .collect::<Result<Vec<_>, _>>()?
+            .into_boxed_slice();
+        Ok(Self {
+            artifact,
+            template,
+            template_digest,
+            bindings,
+            effects,
+        })
+    }
+
+    fn validate_structure(
+        &self,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        self.validate_structure_at(limits, 0)
+    }
+
+    fn validate_structure_at(
+        &self,
+        limits: RuntimeSchemaLimits,
+        depth: usize,
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        let maximum_depth = usize::try_from(limits.max_depth)
+            .unwrap_or(usize::MAX)
+            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH);
+        if depth > maximum_depth {
+            return Err(RuntimeDialogueContentValueError::NestingLimit {
+                maximum: maximum_depth,
+            });
+        }
+        if !limits.permits_sequence_items(self.bindings.len()) {
+            return Err(RuntimeDialogueContentValueError::BindingLimit {
+                actual: self.bindings.len(),
+                maximum: usize::try_from(limits.max_sequence_items).unwrap_or(usize::MAX),
+            });
+        }
+        for (index, binding) in self.bindings.iter().enumerate() {
+            let expected = RuntimeDialogueValueSlotId::from_zero_based(index).ok_or(
+                RuntimeDialogueContentValueError::NodeLimit {
+                    maximum: usize::try_from(limits.max_nodes).unwrap_or(usize::MAX),
+                },
+            )?;
+            if binding.slot() != expected {
+                return Err(RuntimeDialogueContentValueError::NonCanonicalSlot {
+                    index,
+                    expected,
+                    actual: binding.slot(),
+                });
+            }
+            match binding {
+                RuntimeDialogueContentBinding::Interpolation {
+                    semantic_type,
+                    value,
+                    ..
+                } => {
+                    if *semantic_type != value.semantic_type() {
+                        return Err(RuntimeDialogueContentValueError::InvalidBindingValue {
+                            index,
+                            role: binding.role(),
+                        });
+                    }
+                }
+                RuntimeDialogueContentBinding::Content {
+                    semantic_type,
+                    value: nested,
+                    ..
+                } => {
+                    if *semantic_type != RuntimeDialogueOpaqueRole::Content.semantic_identity()
+                        || nested.artifact != self.artifact
+                    {
+                        return if nested.artifact == self.artifact {
+                            Err(RuntimeDialogueContentValueError::InvalidBindingValue {
+                                index,
+                                role: binding.role(),
+                            })
+                        } else {
+                            Err(RuntimeDialogueContentValueError::NestedArtifactMismatch { index })
+                        };
+                    }
+                    let nested_depth = depth.checked_add(1).ok_or(
+                        RuntimeDialogueContentValueError::NestingLimit {
+                            maximum: maximum_depth,
+                        },
+                    )?;
+                    nested.validate_structure_at(limits, nested_depth)?;
+                }
+            }
+        }
+        if !limits.permits_sequence_items(self.effects.len()) {
+            return Err(RuntimeDialogueContentValueError::BindingLimit {
+                actual: self.effects.len(),
+                maximum: usize::try_from(limits.max_sequence_items).unwrap_or(usize::MAX),
+            });
+        }
+        for (index, effect) in self.effects.iter().enumerate() {
+            let expected = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
+                .ok_or(RuntimeDialogueContentValueError::NodeLimit {
+                maximum: usize::try_from(limits.max_nodes).unwrap_or(usize::MAX),
+            })?;
+            if effect.site() != expected {
+                return Err(RuntimeDialogueContentValueError::NonCanonicalEffectSite {
+                    index,
+                    expected,
+                    actual: effect.site(),
+                });
+            }
+            let remaining = effect.callback().remaining_arity().map_err(|error| {
+                RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: error.to_string(),
+                }
+            })?;
+            if effect.callback().as_structured().is_some()
+                && !effect.callback().is_structured_executable_callback()
+            {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: "structured callback site is not an executable Unit body".to_owned(),
+                });
+            }
+            if remaining != 0 {
+                return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+                    index,
+                    message: format!("callback has {remaining} remaining parameters"),
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_runtime_graph(
+        &self,
+        limits: RuntimeSchemaLimits,
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        let runtime = self.clone().into_runtime_value();
+        let maximum_depth = usize::try_from(limits.max_depth)
+            .unwrap_or(usize::MAX)
+            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH);
+        runtime.validate_nesting_depth(maximum_depth).map_err(|_| {
+            RuntimeDialogueContentValueError::NestingLimit {
+                maximum: maximum_depth,
+            }
+        })?;
+        let mut budget = RuntimeContentValueBudget { limits, nodes: 0 };
+        budget.visit(&runtime)
+    }
+}
+
+fn encode_content_binding(binding: RuntimeDialogueContentBinding) -> RuntimeValue {
+    RuntimeValue::Tuple(vec![
+        RuntimeValue::u32(binding.slot().get().get()),
+        RuntimeValue::u8(binding.role().encoded()),
+        RuntimeValue::Seq(RuntimeSeq::dense_bytes(
+            binding.semantic_type().as_bytes().to_vec(),
+        )),
+        binding.into_runtime_value(),
+    ])
+}
+
+fn encode_content_effect_binding(binding: RuntimeDialogueContentEffectBinding) -> RuntimeValue {
+    RuntimeValue::Tuple(vec![
+        RuntimeValue::u32(binding.site().get().get()),
+        RuntimeValue::Function(binding.callback),
+    ])
+}
+
+fn decode_content_effect_binding(
+    (index, value): (usize, &RuntimeValue),
+) -> Result<RuntimeDialogueContentEffectBinding, RuntimeDialogueContentValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
+    };
+    let [site, callback] = fields.as_slice() else {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
+    };
+    let RuntimeValue::UInt(RuntimeUInt::U32(site)) = site else {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
+    };
+    let Some(site) = std::num::NonZeroU32::new(*site)
+        .map(crate::runtime_id::RuntimeDialogueEffectSiteId::from_accepted_ordinal)
+    else {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
+    };
+    let RuntimeValue::Function(callback) = callback else {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectShape { index });
+    };
+    let remaining = callback.remaining_arity().map_err(|error| {
+        RuntimeDialogueContentValueError::InvalidEffectCallback {
+            index,
+            message: error.to_string(),
+        }
+    })?;
+    if remaining != 0 {
+        return Err(RuntimeDialogueContentValueError::InvalidEffectCallback {
+            index,
+            message: format!("callback has {remaining} remaining parameters"),
+        });
+    }
+    Ok(RuntimeDialogueContentEffectBinding::new(
+        site,
+        callback.clone(),
+    ))
+}
+
+fn decode_content_binding(
+    (index, value): (usize, &RuntimeValue),
+    limits: RuntimeSchemaLimits,
+    depth: usize,
+) -> Result<RuntimeDialogueContentBinding, RuntimeDialogueContentValueError> {
+    let RuntimeValue::Tuple(fields) = value else {
+        return Err(RuntimeDialogueContentValueError::InvalidBindingShape { index });
+    };
+    let [slot, role, semantic_type, value] = fields.as_slice() else {
+        return Err(RuntimeDialogueContentValueError::InvalidBindingShape { index });
+    };
+    let RuntimeValue::UInt(RuntimeUInt::U32(slot)) = slot else {
+        return Err(RuntimeDialogueContentValueError::InvalidBindingShape { index });
+    };
+    let Some(slot) =
+        std::num::NonZeroU32::new(*slot).map(RuntimeDialogueValueSlotId::from_accepted_ordinal)
+    else {
+        return Err(RuntimeDialogueContentValueError::InvalidBindingShape { index });
+    };
+    let RuntimeValue::UInt(RuntimeUInt::U8(role)) = role else {
+        return Err(RuntimeDialogueContentValueError::InvalidBindingShape { index });
+    };
+    let role = RuntimeDialogueValueRole::from_encoded(*role)
+        .ok_or(RuntimeDialogueContentValueError::UnknownBindingRole { index, tag: *role })?;
+    let semantic_type = decode_content_semantic_type(semantic_type)
+        .ok_or(RuntimeDialogueContentValueError::InvalidBindingShape { index })?;
+    match role {
+        RuntimeDialogueValueRole::Interpolation => {
+            let value = RuntimeInlineTextValue::try_decode_runtime_value(value, limits).map_err(
+                |source| RuntimeDialogueContentValueError::InvalidInlineTextValue { index, source },
+            )?;
+            if value.semantic_type() != semantic_type {
+                return Err(RuntimeDialogueContentValueError::InvalidBindingValue { index, role });
+            }
+            Ok(RuntimeDialogueContentBinding::Interpolation {
+                slot,
+                semantic_type,
+                value,
+            })
+        }
+        RuntimeDialogueValueRole::Content => {
+            let next_depth =
+                depth
+                    .checked_add(1)
+                    .ok_or(RuntimeDialogueContentValueError::NestingLimit {
+                        maximum: usize::try_from(limits.max_depth)
+                            .unwrap_or(usize::MAX)
+                            .min(MAX_RUNTIME_VALUE_NESTING_DEPTH),
+                    })?;
+            let value =
+                RuntimeDialogueContentValue::try_decode_unvalidated_at(value, limits, next_depth)?;
+            Ok(RuntimeDialogueContentBinding::Content {
+                slot,
+                semantic_type,
+                value,
+            })
+        }
+    }
+}
+
+fn decode_content_semantic_type(value: &RuntimeValue) -> Option<RuntimeSemanticTypeId> {
+    let RuntimeValue::Seq(sequence) = value else {
+        return None;
+    };
+    if sequence.dense_kind() != Some(DenseSeqKind::Bytes) {
+        return None;
+    }
+    let bytes = sequence.as_bytes()?;
+    <[u8; 32]>::try_from(bytes)
+        .ok()
+        .map(RuntimeSemanticTypeId::from_bytes)
+}
+
+fn decode_content_bytes(value: &RuntimeValue, exact_bytes_kind: bool) -> Option<Vec<u8>> {
+    let RuntimeValue::Seq(sequence) = value else {
+        return None;
+    };
+    if exact_bytes_kind && sequence.dense_kind() != Some(DenseSeqKind::Bytes) {
+        return None;
+    }
+    sequence.as_bytes().map(ToOwned::to_owned)
+}
+
+struct RuntimeContentValueBudget {
+    limits: RuntimeSchemaLimits,
+    nodes: usize,
+}
+
+impl RuntimeContentValueBudget {
+    fn visit(&mut self, value: &RuntimeValue) -> Result<(), RuntimeDialogueContentValueError> {
+        self.nodes = self.nodes.saturating_add(1);
+        if !self.limits.permits_nodes(self.nodes) {
+            return Err(RuntimeDialogueContentValueError::NodeLimit {
+                maximum: usize::try_from(self.limits.max_nodes).unwrap_or(usize::MAX),
+            });
+        }
+        match value {
+            RuntimeValue::String(value) => {
+                if !self.limits.permits_string_bytes(value.len()) {
+                    return Err(RuntimeDialogueContentValueError::StringLimit {
+                        maximum: usize::try_from(self.limits.max_string_bytes)
+                            .unwrap_or(usize::MAX),
+                    });
+                }
+            }
+            RuntimeValue::Tuple(values) => {
+                self.visit_values(values)?;
+            }
+            RuntimeValue::Seq(sequence) => {
+                if !self.limits.permits_sequence_items(sequence.len()) {
+                    return Err(RuntimeDialogueContentValueError::BindingLimit {
+                        actual: sequence.len(),
+                        maximum: usize::try_from(self.limits.max_sequence_items)
+                            .unwrap_or(usize::MAX),
+                    });
+                }
+                for value in sequence.clone().into_values() {
+                    self.visit(&value)?;
+                }
+            }
+            RuntimeValue::Record(fields) => {
+                for field in fields {
+                    self.visit(field.value())?;
+                }
+            }
+            RuntimeValue::NominalRecord(record) => self.visit_values(record.fields())?,
+            RuntimeValue::Opaque(opaque) => self.visit(opaque.payload())?,
+            RuntimeValue::Reduction(reduction) => {
+                self.visit(reduction.state())?;
+                for command in reduction.commands() {
+                    self.visit(&command.payload().0)?;
+                }
+            }
+            RuntimeValue::Agent(agent) => {
+                for (_, nested) in agent.nested_runtime_values_with_depth() {
+                    self.visit(nested)?;
+                }
+            }
+            RuntimeValue::Iterator(iterator) => match iterator {
+                crate::value::RuntimeIterator::Values { items, .. } => {
+                    if !self.limits.permits_sequence_items(items.len()) {
+                        return Err(RuntimeDialogueContentValueError::BindingLimit {
+                            actual: items.len(),
+                            maximum: usize::try_from(self.limits.max_sequence_items)
+                                .unwrap_or(usize::MAX),
+                        });
+                    }
+                    self.visit_values(items)?;
+                }
+                crate::value::RuntimeIterator::Witness { state, .. } => self.visit(state)?,
+                crate::value::RuntimeIterator::Range(_) => {}
+            },
+            RuntimeValue::Variant { name, payload, .. } => {
+                if !self.limits.permits_string_bytes(name.len()) {
+                    return Err(RuntimeDialogueContentValueError::StringLimit {
+                        maximum: usize::try_from(self.limits.max_string_bytes)
+                            .unwrap_or(usize::MAX),
+                    });
+                }
+                if let Some(payload) = payload {
+                    self.visit(payload)?;
+                }
+            }
+            RuntimeValue::Function(_)
+            | RuntimeValue::ProjectContinuation(_)
+            | RuntimeValue::Unit
+            | RuntimeValue::Bool(_)
+            | RuntimeValue::Int(_)
+            | RuntimeValue::UInt(_)
+            | RuntimeValue::F32(_)
+            | RuntimeValue::F64(_)
+            | RuntimeValue::MatrixF32(_)
+            | RuntimeValue::MatrixF64(_)
+            | RuntimeValue::TensorF32(_)
+            | RuntimeValue::TensorF64(_)
+            | RuntimeValue::Char(_)
+            | RuntimeValue::Duration(_)
+            | RuntimeValue::Progress(_)
+            | RuntimeValue::Range(_)
+            | RuntimeValue::EntityRef(_) => {}
+        }
+        Ok(())
+    }
+
+    fn visit_values(
+        &mut self,
+        values: &[RuntimeValue],
+    ) -> Result<(), RuntimeDialogueContentValueError> {
+        if !self.limits.permits_sequence_items(values.len()) {
+            return Err(RuntimeDialogueContentValueError::BindingLimit {
+                actual: values.len(),
+                maximum: usize::try_from(self.limits.max_sequence_items).unwrap_or(usize::MAX),
+            });
+        }
+        for value in values {
+            self.visit(value)?;
+        }
+        Ok(())
+    }
 }
 
 impl RuntimeDialogueOpaqueRole {
@@ -259,6 +1565,11 @@ impl RuntimeDialogueViewValue {
         field: RuntimeDialogueViewField,
     ) -> Result<(), RuntimeDialogueValueError> {
         let expected = field.role();
+        if field == RuntimeDialogueViewField::Content {
+            return RuntimeDialogueContentValue::try_from_runtime_value(self.field(field))
+                .map(|_| ())
+                .map_err(|_| RuntimeDialogueValueError::InvalidViewFieldOwner { field, expected });
+        }
         exact_dialogue_payload(self.field(field), expected)
             .map(|_| ())
             .map_err(|_| RuntimeDialogueValueError::InvalidViewFieldOwner { field, expected })
@@ -491,7 +1802,8 @@ mod tests {
     use crate::entry::RuntimeSchemaError;
     use crate::pattern::{RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
     use crate::value::{
-        AwbcRuntimeValueSnapshot, RuntimeFunctionValue, RuntimeSeq, RuntimeValueNestingError,
+        AwbcRuntimeValueSnapshot, RuntimeBinding, RuntimeFunctionValue, RuntimeSeq,
+        RuntimeValueNestingError,
     };
 
     fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
@@ -880,6 +2192,16 @@ mod tests {
     #[test]
     fn dialogue_view_field_owner_is_canonical_and_tamper_checked() {
         let wrap = |role: RuntimeDialogueOpaqueRole| {
+            if role == RuntimeDialogueOpaqueRole::Content {
+                return RuntimeDialogueContentValue::try_new(
+                    RuntimeArtifactFingerprint::try_from_bytes([0xe1; 32]).expect("artifact"),
+                    RuntimeDialogueContentTemplateId::from_zero_based(0).expect("template"),
+                    RuntimeDialogueContentTemplateDigest::from_bytes([0xe2; 32]),
+                    [],
+                )
+                .expect("content")
+                .into_runtime_value();
+            }
             role.exact_owner()
                 .try_wrap(RuntimeValue::Unit)
                 .expect("standard dialogue role is exact")
@@ -923,5 +2245,198 @@ mod tests {
                 expected: RuntimeDialogueOpaqueRole::Action,
             })
         );
+    }
+
+    fn content_template() -> RuntimeDialogueContentTemplateId {
+        RuntimeDialogueContentTemplateId::from_zero_based(0).expect("template")
+    }
+
+    fn content_digest() -> RuntimeDialogueContentTemplateDigest {
+        RuntimeDialogueContentTemplateDigest::from_bytes([0x42; 32])
+    }
+
+    fn content_artifact(marker: u8) -> RuntimeArtifactFingerprint {
+        RuntimeArtifactFingerprint::try_from_bytes([marker; 32]).expect("artifact")
+    }
+
+    fn inline_binding(index: usize, text: &str) -> RuntimeDialogueContentBinding {
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(index).expect("slot");
+        let semantic_type = RuntimeSemanticTypeId::from_bytes([0xa1; 32]);
+        RuntimeDialogueContentBinding::Interpolation {
+            slot,
+            semantic_type,
+            value: RuntimeInlineTextValue::try_new(semantic_type, text).expect("inline text"),
+        }
+    }
+
+    #[test]
+    fn content_envelope_round_trips_typed_bindings_and_canonical_wire() {
+        let artifact = content_artifact(0x31);
+        let value = RuntimeDialogueContentValue::try_new(
+            artifact,
+            content_template(),
+            content_digest(),
+            [inline_binding(0, "hello")],
+        )
+        .expect("typed content envelope");
+        let runtime = value.clone().into_runtime_value();
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&runtime),
+            Ok(value.clone())
+        );
+        assert_eq!(
+            serde_json::from_str::<RuntimeValue>(
+                &serde_json::to_string(&runtime).expect("serialize content envelope")
+            )
+            .expect("deserialize content envelope"),
+            runtime
+        );
+        assert_eq!(value.bindings().len(), 1);
+        assert_eq!(
+            value
+                .binding(RuntimeDialogueValueSlotId::from_zero_based(0).unwrap())
+                .and_then(RuntimeDialogueContentBinding::inline_text)
+                .map(RuntimeInlineTextValue::text),
+            Some("hello")
+        );
+    }
+
+    #[test]
+    fn content_envelope_round_trips_site_keyed_effect_callbacks_through_awbc_save() {
+        let callback = RuntimeFunctionValue::new_awbc(
+            Vec::new(),
+            AwbcFunctionId(7),
+            vec![RuntimeBinding {
+                name: "captured".to_owned(),
+                value: RuntimeValue::u32(9),
+            }],
+        );
+        let site = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0)
+            .expect("effect site");
+        let value = RuntimeDialogueContentValue::try_new_with_effects(
+            content_artifact(0x33),
+            content_template(),
+            content_digest(),
+            [inline_binding(0, "hello")],
+            [RuntimeDialogueContentEffectBinding::new(site, callback)],
+        )
+        .expect("effectful typed content envelope");
+        let runtime = value.clone().into_runtime_value();
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&runtime),
+            Ok(value.clone())
+        );
+        assert!(serde_json::to_string(&value).is_err());
+        let snapshot = AwbcRuntimeValueSnapshot::from_runtime_value(&runtime)
+            .expect("AWBC snapshot preserves callback authority");
+        assert_eq!(
+            snapshot
+                .into_runtime_value()
+                .expect("AWBC snapshot restores callback"),
+            runtime
+        );
+        assert_eq!(value.effects().len(), 1);
+        assert_eq!(
+            value
+                .effect(site)
+                .map(RuntimeDialogueContentEffectBinding::site),
+            Some(site)
+        );
+    }
+
+    #[test]
+    fn content_envelope_rejects_empty_or_untyped_payloads() {
+        let owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
+        for payload in [RuntimeValue::Unit, RuntimeValue::Tuple(Vec::new())] {
+            let value = owner.try_wrap(payload).expect("exact owner wraps payload");
+            assert!(matches!(
+                RuntimeDialogueContentValue::try_from_runtime_value(&value),
+                Err(RuntimeDialogueContentValueError::InvalidPayload)
+            ));
+        }
+        let direct_string = owner
+            .try_wrap(RuntimeValue::String("not a typed capture".to_owned()))
+            .expect("exact owner wraps payload");
+        assert!(RuntimeDialogueContentValue::try_from_runtime_value(&direct_string).is_err());
+    }
+
+    #[test]
+    fn evaluated_content_bindings_report_schema_count_mismatch_separately() {
+        let slot = RuntimeDialogueValueSlotId::from_zero_based(0).expect("slot");
+        let semantic_type = RuntimeSemanticTypeId::from_bytes([0xa1; 32]);
+        let manifest = crate::plan::RuntimeDialogueContentTemplateManifest::new_with_effects(
+            content_template(),
+            content_digest(),
+            vec![crate::plan::RuntimeDialogueContentSlot::new(
+                slot,
+                RuntimeDialogueValueRole::Interpolation,
+                semantic_type,
+            )]
+            .into_boxed_slice(),
+            Box::new([]),
+        );
+        assert_eq!(
+            RuntimeDialogueContentValue::try_from_evaluated_bindings(
+                content_artifact(0x61),
+                &manifest,
+                &[],
+            ),
+            Err(RuntimeDialogueContentValueError::BindingCountMismatch {
+                expected: 1,
+                actual: 0,
+            })
+        );
+    }
+
+    #[test]
+    fn content_envelope_rejects_wrong_roles_slots_and_nested_artifacts() {
+        let artifact = content_artifact(0x51);
+        let nested = RuntimeDialogueContentValue::try_new(
+            content_artifact(0x52),
+            content_template(),
+            content_digest(),
+            [],
+        )
+        .expect("nested value");
+        let nested_binding = RuntimeDialogueContentBinding::Content {
+            slot: RuntimeDialogueValueSlotId::from_zero_based(0).unwrap(),
+            semantic_type: RuntimeDialogueOpaqueRole::Content.semantic_identity(),
+            value: nested,
+        };
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_new(
+                artifact,
+                content_template(),
+                content_digest(),
+                [nested_binding],
+            ),
+            Err(RuntimeDialogueContentValueError::NestedArtifactMismatch { index: 0 })
+        ));
+
+        let owner = RuntimeDialogueOpaqueRole::Content.exact_owner();
+        let malformed_binding = RuntimeValue::Tuple(vec![
+            RuntimeValue::u32(2),
+            RuntimeValue::u8(RuntimeDialogueValueRole::Interpolation.encoded()),
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes([0xa1; 32].to_vec())),
+            RuntimeValue::String("raw string is not a typed capture".to_owned()),
+        ]);
+        let payload = RuntimeValue::Tuple(vec![
+            RuntimeValue::u8(RUNTIME_DIALOGUE_CONTENT_VALUE_VERSION),
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(artifact.as_bytes().to_vec())),
+            RuntimeValue::u32(content_template().get().get()),
+            RuntimeValue::Seq(RuntimeSeq::dense_bytes(
+                content_digest().as_bytes().to_vec(),
+            )),
+            RuntimeValue::Seq(RuntimeSeq::Values(vec![malformed_binding])),
+            RuntimeValue::Seq(RuntimeSeq::Values(Vec::new())),
+        ]);
+        let value = owner.try_wrap(payload).expect("exact owner wraps payload");
+        assert!(matches!(
+            RuntimeDialogueContentValue::try_from_runtime_value(&value),
+            Err(
+                RuntimeDialogueContentValueError::InvalidInlineTextValue { .. }
+                    | RuntimeDialogueContentValueError::NonCanonicalSlot { .. },
+            )
+        ));
     }
 }

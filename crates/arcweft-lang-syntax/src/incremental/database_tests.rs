@@ -1861,12 +1861,12 @@ fn private_bound_diagnostic_spans_share_the_exact_committed_source_revision() {
     let name = SourceName::path("bound-related-diagnostic.arcw");
     let source = concat!(
         "character Alice {\n",
-        "    display_name = \"Alice\"\n",
-        "    display_name = \"Other\"\n",
+        "    display = \"Alice\"\n",
+        "    display = \"Other\"\n",
         "}\n",
     );
-    let display_name_offsets = source
-        .match_indices("display_name")
+    let display_offsets = source
+        .match_indices("display")
         .map(|(offset, _)| offset)
         .collect::<Vec<_>>();
     let mut database = syntax_database();
@@ -1896,17 +1896,11 @@ fn private_bound_diagnostic_spans_share_the_exact_committed_source_revision() {
     assert_eq!(related.source(), parsed.document().identity());
     assert_eq!(
         duplicate.primary().range(),
-        SourceRange::new(
-            display_name_offsets[1],
-            display_name_offsets[1] + "display_name".len()
-        )
+        SourceRange::new(display_offsets[1], display_offsets[1] + "display".len())
     );
     assert_eq!(
         related.range(),
-        SourceRange::new(
-            display_name_offsets[0],
-            display_name_offsets[0] + "display_name".len()
-        )
+        SourceRange::new(display_offsets[0], display_offsets[0] + "display".len())
     );
 }
 
@@ -3628,7 +3622,7 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
     let name = SourceName::path("rich-text-attachment-failure.arcw");
     let source = concat!(
         "flow opening {\n",
-        "    let line = alice[本文。[effect .wave amp=2 label=\"強い\"]]\n",
+        "    let line = alice[本文。[signal .wave amp=2 label=\"強い\"]]\n",
         "}\n",
     );
     let mut database = syntax_database();
@@ -3666,11 +3660,11 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
             .filter(|node| {
                 matches!(
                     node.kind(),
-                    GrammarKind::RichTextTag
-                        | GrammarKind::RichTextArgumentPayload
-                        | GrammarKind::RichTextPositionalArgument
-                        | GrammarKind::RichTextNamedArgument
-                        | GrammarKind::RichTextArgumentValue
+                    GrammarKind::DialoguePointAction
+                        | GrammarKind::DialogueActionArgumentPayload
+                        | GrammarKind::DialogueActionPositionalArgument
+                        | GrammarKind::DialogueActionNamedArgument
+                        | GrammarKind::DialogueActionArgumentValue
                 )
             })
             .map(|node| node.id().slot())

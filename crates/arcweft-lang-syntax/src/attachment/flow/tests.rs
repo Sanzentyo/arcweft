@@ -69,6 +69,35 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     .unwrap()
 }
 
+#[test]
+fn flow_expression_statement_owns_its_semicolon_outside_the_call() {
+    let source = "flow main() { work(1); work(2); }\n";
+    let snapshot = attach(source);
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+        panic!("Flow body must be present");
+    };
+    assert_eq!(body.items().len(), 2);
+    for (item, expected) in body.items().iter().zip(["work(1)", "work(2)"]) {
+        let AttachedThreadFlowItem::Statement(statement) = item else {
+            panic!("ordinary call must be an expression statement");
+        };
+        let children = statement
+            .syntax()
+            .children_with_role(SyntaxRole::Initializer);
+        let [expression] = children.as_slice() else {
+            panic!("statement must own one initializer");
+        };
+        let attached = AttachedExpressionNode::from_syntax(expression.clone()).unwrap();
+        assert!(matches!(
+            attached.projection(),
+            crate::expressions::ExpressionProjection::Call(_)
+        ));
+        let range = expression.range();
+        assert_eq!(&source[range.start()..range.end()], expected);
+    }
+}
+
 fn flow(snapshot: &Arc<SyntaxSnapshotData>) -> AstNode<FlowItemKind> {
     snapshot
         .nodes()

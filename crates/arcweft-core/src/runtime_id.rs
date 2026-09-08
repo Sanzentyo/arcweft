@@ -122,10 +122,33 @@ runtime_u32_identity!(RuntimeChildPacketId);
 runtime_u32_identity!(RuntimeTransferPacketId);
 runtime_u32_identity!(RuntimeCleanupSlotId);
 runtime_u32_identity!(RuntimeDialogueValueSlotId);
+runtime_u32_identity!(RuntimeDialogueContentTemplateId);
 runtime_u32_identity!(RuntimeDialogueEffectSiteId);
 runtime_u32_identity!(RuntimeLineTaskGroupId);
 runtime_u32_identity!(RuntimeLineTaskNodeId);
 runtime_u32_identity!(RuntimeDialogueMarkId);
+
+impl RuntimeDialogueContentTemplateId {
+    /// Creates the canonical one-based template identity for a zero-based
+    /// catalog ordinal.
+    #[must_use]
+    pub fn from_zero_based(index: usize) -> Option<Self> {
+        let ordinal = u32::try_from(index).ok()?.checked_add(1)?;
+        NonZeroU32::new(ordinal).map(Self::from_accepted_ordinal)
+    }
+
+    /// Admits an already validated nonzero template identity.
+    #[must_use]
+    pub const fn from_nonzero(raw: NonZeroU32) -> Self {
+        Self::from_accepted_ordinal(raw)
+    }
+
+    /// Returns the zero-based catalog ordinal.
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
 
 /// Admitted number of source-ordered inline effect sites owned by one
 /// dialogue content plan.
@@ -261,6 +284,32 @@ impl DialogueActivationId {
     #[must_use]
     pub const fn occurrence(&self) -> u64 {
         self.occurrence
+    }
+}
+
+/// Replay identity for one content-effect callback within one dialogue
+/// activation.  The materialized (rebased) effect-site identity is paired
+/// with the activation so nested fragments cannot alias one another.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RuntimeDialogueEffectCallbackActivationId {
+    dialogue: DialogueActivationId,
+    site: RuntimeDialogueEffectSiteId,
+}
+
+impl RuntimeDialogueEffectCallbackActivationId {
+    #[must_use]
+    pub const fn new(dialogue: DialogueActivationId, site: RuntimeDialogueEffectSiteId) -> Self {
+        Self { dialogue, site }
+    }
+
+    #[must_use]
+    pub const fn dialogue(&self) -> &DialogueActivationId {
+        &self.dialogue
+    }
+
+    #[must_use]
+    pub const fn site(&self) -> RuntimeDialogueEffectSiteId {
+        self.site
     }
 }
 
@@ -407,6 +456,37 @@ impl RuntimeFunctionSiteId {
 }
 
 impl fmt::Display for RuntimeFunctionSiteId {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+/// Contiguous plan-local identity of one lowered project-call descriptor.
+///
+/// The descriptor table is the sole authority for the call ABI.  This ID is
+/// intentionally not a generic serialized value; durable AWBC return points
+/// use their own verified caller coordinate.
+#[repr(transparent)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeProjectCallSiteId(NonZeroU32);
+
+impl RuntimeProjectCallSiteId {
+    #[must_use]
+    pub const fn get(self) -> NonZeroU32 {
+        self.0
+    }
+
+    pub(crate) const fn from_accepted_ordinal(raw: NonZeroU32) -> Self {
+        Self(raw)
+    }
+
+    #[must_use]
+    pub const fn index(self) -> usize {
+        (self.0.get() - 1) as usize
+    }
+}
+
+impl fmt::Display for RuntimeProjectCallSiteId {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.0.fmt(formatter)
     }

@@ -1227,7 +1227,8 @@ The dialogue interpolation source-range cut extends the expression source-range
 substrate into dialogue text tokens. `DialogueToken::Expr` now stores a
 `DialogueExpr` wrapper carrying the parsed expression, the trimmed authored
 expression source, and the absolute document byte range. Full-document dialogue
-parsing uses a base-aware tokenizer so `#[...]` and `$()` interpolation ranges
+parsing used a base-aware tokenizer so checked interpolation and the
+then-current dollar-parenthesis interpolation ranges
 line up with the original `.arcw` source instead of the isolated dialogue
 string. Sema registers those ranges before type checking line-plan dialogue
 content, which lets interpolation expression judgments participate in the same

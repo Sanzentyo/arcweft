@@ -54,7 +54,7 @@ fn finish_waits_for_joined_action_before_running_cleanup() {
     let action = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress")
@@ -101,7 +101,7 @@ fn stale_activation_completion_is_rejected_without_reducer_mutation() {
     let action = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress")
@@ -132,7 +132,7 @@ fn duplicate_completion_is_rejected_without_reducer_mutation() {
     let action = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress")
@@ -173,7 +173,7 @@ fn start_keeps_nested_sequence_active_after_parent_completes() {
     let first = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress")
@@ -217,7 +217,7 @@ fn sequence_failure_immediately_cancels_later_siblings() {
     let first = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress")
@@ -244,7 +244,7 @@ fn reducer_snapshot_round_trips_through_owner_validation() {
     let _ = progress_live_line_task_group(
         &group,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("progress");
@@ -413,7 +413,7 @@ fn same_scheduled_site_uses_distinct_runtime_lanes_and_round_trips() {
     let activation = progress_live_line_task_group(
         &plan,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("both runtime instances progress");
@@ -451,7 +451,7 @@ fn empty_scheduled_callback_completes_without_a_synthetic_child() {
     let activation = progress_live_line_task_group(
         &plan,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("empty callback is a completed reducer instance");
@@ -473,7 +473,7 @@ fn scheduled_lane_restore_rejects_state_outside_its_static_subtree() {
     progress_live_line_task_group(
         &plan,
         LogicalDuration::default(),
-        LineTaskReadyEvents::new(&BTreeSet::new(), &BTreeSet::new()),
+        LineTaskReadyEvents::new(&BTreeSet::new()),
         &mut state,
     )
     .expect("runtime instance starts");

@@ -18,9 +18,9 @@ use crate::resource_codec::table::PublicIdTable;
 
 use super::compat::ViewResourceCompatibility;
 use super::model::{
-    ViewInputOptions, ViewInputResource, ViewProgramInstruction, ViewProgramResource,
-    ViewStyleApplicationTarget, ViewStyleResource, ViewTextResource, ViewTextSourceKind,
-    ViewThemeResource, ViewValueInputNamespace, ViewValueInputSource,
+    ViewFxArgumentSourceRef, ViewInputOptions, ViewInputResource, ViewProgramInstruction,
+    ViewProgramResource, ViewStyleApplicationTarget, ViewStyleResource, ViewTextResource,
+    ViewTextSourceKind, ViewThemeResource, ViewValueInputNamespace, ViewValueInputSource,
 };
 
 mod part;
@@ -344,7 +344,7 @@ impl ViewProgramResource {
                     arguments.sort_by_key(|argument| argument.ordinal);
                 }
                 ViewProgramInstruction::ApplyFx { arguments, .. } => {
-                    arguments.sort_by(|left, right| left.parameter.cmp(&right.parameter));
+                    arguments.sort_by_key(|argument| argument.parameter);
                 }
                 _ => {}
             }
@@ -592,7 +592,9 @@ impl ViewProgramResource {
                 } => {
                     validate_optional_program(&inventory, *key_program, Some(FxRuntimeType::I32))?;
                     for argument in arguments {
-                        validate_program(&inventory, argument.value_program, None)?;
+                        if let ViewFxArgumentSourceRef::Reactive(value_program) = argument.source {
+                            validate_program(&inventory, value_program, None)?;
+                        }
                     }
                 }
                 ViewProgramInstruction::OpenElement { .. }
@@ -633,10 +635,26 @@ impl ViewProgramResource {
                         | ViewValueInputSource::RepeatOrdinal { .. }
                 )
             );
+            let source_matches_definition = match &input.source {
+                ViewValueInputSource::DefinitionParameter { view, parameter } => self
+                    .definitions
+                    .iter()
+                    .find(|definition| &definition.public_id == view)
+                    .and_then(|definition| definition.parameters.get(parameter.index()))
+                    .is_some_and(|parameter| {
+                        parameter.value_type == Some(input.value_type)
+                            && parameter.value_slot == Some(input.slot)
+                    }),
+                ViewValueInputSource::Projection { .. }
+                | ViewValueInputSource::LifetimeProjection { .. }
+                | ViewValueInputSource::Local { .. }
+                | ViewValueInputSource::RepeatOrdinal { .. } => true,
+            };
             if !slots.insert(input.slot)
                 || types.get(usize::from(input.slot)).copied() != Some(input.value_type)
                 || !valid_value_input_source(&input.source)
                 || !source_matches_namespace
+                || !source_matches_definition
             {
                 return Err(SectionCodecError::NonCanonicalTable("view_value_inputs"));
             }
@@ -711,8 +729,15 @@ impl ViewProgramResource {
                 match (parameter.value_type, parameter.value_slot) {
                     (Some(value_type), Some(value_slot)) => {
                         let expected_source = ViewValueInputSource::DefinitionParameter {
-                            view: definition.public_id.as_str().to_owned(),
-                            name: parameter.name.clone(),
+                            view: definition.public_id.clone(),
+                            parameter: arcweft_view::ViewParameterCoordinate::try_from_index(
+                                ordinal,
+                            )
+                            .ok_or(
+                                SectionCodecError::NonCanonicalTable(
+                                    "view_definition_parameter_slots",
+                                ),
+                            )?,
                         };
                         if !self.value_inputs.iter().any(|input| {
                             input.namespace == ViewValueInputNamespace::Parameter
@@ -1129,12 +1154,7 @@ impl ViewProgramResource {
             };
             let mut parameters = BTreeSet::new();
             for argument in arguments {
-                if !valid_identifier(&argument.parameter) {
-                    return Err(SectionCodecError::NonCanonicalTable(
-                        "view_fx_argument_names",
-                    ));
-                }
-                if !parameters.insert(argument.parameter.as_str()) {
+                if !parameters.insert(argument.parameter) {
                     return Err(SectionCodecError::NonCanonicalTable(
                         "view_fx_argument_bindings",
                     ));
@@ -1534,9 +1554,7 @@ fn valid_resource_identity(value: &str) -> bool {
 
 fn valid_value_input_source(source: &ViewValueInputSource) -> bool {
     match source {
-        ViewValueInputSource::DefinitionParameter { view, name } => {
-            !view.is_empty() && valid_identifier(name)
-        }
+        ViewValueInputSource::DefinitionParameter { .. } => true,
         ViewValueInputSource::Projection { path } => {
             !path.is_empty() && path.iter().all(|segment| valid_identifier(segment))
         }

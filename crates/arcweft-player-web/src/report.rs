@@ -245,7 +245,7 @@ pub struct WebFrameTextStyle {
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WebFrameChoice {
-    pub option_id: String,
+    pub option_id: Option<String>,
     pub label: String,
     pub target: String,
     pub bounds: WebFrameBounds,

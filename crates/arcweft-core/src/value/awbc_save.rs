@@ -10,11 +10,13 @@ use super::{
     RuntimeAgentPath, RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeBinding,
     RuntimeCommand, RuntimeEntityReference, RuntimeFunctionBody, RuntimeFunctionValue,
     RuntimeIterator, RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimePayload,
-    RuntimeReductionValue, RuntimeSeq, RuntimeValue, TupleSeq,
+    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeReductionValue, RuntimeSeq,
+    RuntimeValue, TupleSeq,
 };
 use crate::awbc::schema::AwbcFunctionId;
 use crate::entry::{RuntimeCommandConstructorId, RuntimeCommandTargetId};
-use crate::pattern::RuntimeOpaqueTypeOwner;
+use crate::pattern::{RuntimeOpaqueTypeOwner, RuntimeSemanticTypeId};
+use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -69,6 +71,7 @@ pub enum AwbcRuntimeValueSnapshot {
     Reduction(AwbcRuntimeReductionSnapshot),
     Agent(AwbcRuntimeAgentSnapshot),
     Function(AwbcRuntimeFunctionSnapshot),
+    ProjectContinuation(AwbcRuntimeProjectContinuationSnapshot),
     Variant {
         owner: super::RuntimeVariantIdentity,
         ordinal: u32,
@@ -204,6 +207,20 @@ pub struct AwbcRuntimeFunctionSnapshot {
     pub captures: Vec<AwbcRuntimeBindingSnapshot>,
 }
 
+/// AWBC session-save projection of one typed project continuation.
+///
+/// Continuation ABI identities are stable semantic type identities. They are
+/// intentionally independent of the generation-local AWBC type-table rows;
+/// admission resolves them against the current verified program exactly.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcRuntimeProjectContinuationSnapshot {
+    pub lineage: RuntimeProjectContinuationLineageId,
+    pub function_type: RuntimeSemanticTypeId,
+    pub prefix_types: Vec<RuntimeSemanticTypeId>,
+    pub prefix_values: Vec<AwbcRuntimeValueSnapshot>,
+}
+
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct AwbcRuntimeBindingSnapshot {
@@ -260,6 +277,9 @@ impl AwbcRuntimeValueSnapshot {
             RuntimeValue::Reduction(value) => Self::Reduction(Self::reduction_from_live(value)?),
             RuntimeValue::Agent(value) => Self::Agent(Self::agent_from_live(value)?),
             RuntimeValue::Function(value) => Self::Function(Self::function_from_live(value)?),
+            RuntimeValue::ProjectContinuation(value) => {
+                Self::ProjectContinuation(Self::project_continuation_from_live(value)?)
+            }
             RuntimeValue::Variant {
                 owner,
                 ordinal,
@@ -341,6 +361,9 @@ impl AwbcRuntimeValueSnapshot {
             Self::Reduction(value) => RuntimeValue::Reduction(Self::reduction_into_live(value)?),
             Self::Agent(value) => RuntimeValue::Agent(Self::agent_into_live(value)?),
             Self::Function(value) => RuntimeValue::Function(Self::function_into_live(value)?),
+            Self::ProjectContinuation(value) => {
+                RuntimeValue::ProjectContinuation(Self::project_continuation_into_live(value)?)
+            }
             Self::Variant {
                 owner,
                 ordinal,
@@ -741,6 +764,41 @@ impl AwbcRuntimeValueSnapshot {
                 predicate: Box::new(Self::predicate_into_live(*predicate)?),
             },
         })
+    }
+
+    fn project_continuation_from_live(
+        value: &RuntimeProjectContinuation,
+    ) -> Result<AwbcRuntimeProjectContinuationSnapshot, AwbcRuntimeValueSnapshotError> {
+        Ok(AwbcRuntimeProjectContinuationSnapshot {
+            lineage: value.lineage(),
+            function_type: value.function_type(),
+            prefix_types: value.prefix_types().iter().copied().collect(),
+            prefix_values: value
+                .prefix_values()
+                .iter()
+                .map(Self::from_runtime_value)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+
+    fn project_continuation_into_live(
+        value: AwbcRuntimeProjectContinuationSnapshot,
+    ) -> Result<RuntimeProjectContinuation, AwbcRuntimeValueSnapshotError> {
+        let function_type = value.function_type;
+        let prefix_types = value.prefix_types.into_boxed_slice();
+        let prefix_values = value
+            .prefix_values
+            .into_iter()
+            .map(Self::into_runtime_value)
+            .collect::<Result<Box<[_]>, _>>()?;
+        let abi = RuntimeProjectContinuationAbi::from_snapshot_parts(
+            value.lineage,
+            function_type,
+            prefix_types,
+        )
+        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?;
+        RuntimeProjectContinuation::from_snapshot_parts(abi, prefix_values)
+            .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))
     }
 
     fn function_from_live(

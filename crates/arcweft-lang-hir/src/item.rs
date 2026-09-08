@@ -12,6 +12,7 @@ use thiserror::Error;
 use crate::expr::HirCallArgument;
 use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirName, HirPath, HirPathValue};
+use crate::source_index::HirCallableSourceOwner;
 
 mod callable;
 mod entry;
@@ -31,17 +32,17 @@ pub use self::member_index::{HirDeclarationMemberIndex, HirDeclarationMemberInde
 pub use self::retained::{
     HirAccessibilityPolicy, HirActionDeclaration, HirActivityDeclaration, HirActivityLifecycle,
     HirActivityMode, HirActivityPortMember, HirCapturePolicy, HirCharacterAssignmentState,
-    HirCharacterDeclaration, HirCharacterDisplayNameMember, HirCharacterMemberRecovery,
-    HirCharacterSurfaceAlias, HirDeclarationMember, HirDeclarationMemberArena,
-    HirDeclarationMemberId, HirDeclarationMemberIssue, HirDeclarationMemberKind,
-    HirDeclarationMemberPoisonState, HirDeclarationMemberResolveError, HirHitTestPolicy,
-    HirInputPolicy, HirLayerAssignmentState, HirLayerDeclaration, HirLayerExpressionMember,
-    HirLayerKind, HirLayerKindIssue, HirLayerMemberPayload, HirLayerMemberValue,
-    HirLayerPolicyMember, HirLayerReferenceMember, HirMetricAssignmentState,
-    HirMetricBucketsMember, HirMetricBucketsValue, HirMetricDeclaration, HirMetricKind,
-    HirMetricKindIssue, HirMetricLabelMember, HirMetricUnitMember, HirMetricUnitValue,
-    HirPublicIdOrigin, HirRenderPhase, HirRetainedHeader, HirRetainedName, HirRetainedPublicId,
-    HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewDeclaration, HirViewExportMember,
+    HirCharacterDeclaration, HirCharacterDisplayMember, HirCharacterMemberRecovery,
+    HirDeclarationMember, HirDeclarationMemberArena, HirDeclarationMemberId,
+    HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState,
+    HirDeclarationMemberResolveError, HirHitTestPolicy, HirInputPolicy, HirLayerAssignmentState,
+    HirLayerDeclaration, HirLayerExpressionMember, HirLayerKind, HirLayerKindIssue,
+    HirLayerMemberPayload, HirLayerMemberValue, HirLayerPolicyMember, HirLayerReferenceMember,
+    HirMetricAssignmentState, HirMetricBucketsMember, HirMetricBucketsValue, HirMetricDeclaration,
+    HirMetricKind, HirMetricKindIssue, HirMetricLabelMember, HirMetricUnitMember,
+    HirMetricUnitValue, HirPublicIdOrigin, HirRenderPhase, HirRetainedHeader, HirRetainedName,
+    HirRetainedPublicId, HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewDeclaration,
+    HirViewExportMember,
 };
 pub use self::trait_impl::{
     HirImplAssociatedType, HirImplFunction, HirImplItem, HirImplMember, HirMethodParameter,
@@ -50,10 +51,11 @@ pub use self::trait_impl::{
 };
 
 pub use self::callable::{
-    HirCallableSignature, HirContractScopes, HirFunctionBody, HirFunctionItem,
-    HirFunctionParameterGroup, HirFunctionSignature, HirGenericParameter, HirParameter,
-    HirParameterKind, HirPredicate, HirPredicateBody, HirProof, HirProofBody, HirWherePredicate,
-    ProofTrust, TrustReason, TrustReasonError,
+    HirAttachedContentPresence, HirAttachedContentRole, HirCallableAttachedContentInterface,
+    HirCallableAttachedContentParameter, HirCallableSignature, HirContractScopes, HirFunctionBody,
+    HirFunctionItem, HirFunctionParameterGroup, HirFunctionSignature, HirGenericParameter,
+    HirParameter, HirParameterKind, HirPredicate, HirPredicateBody, HirProof, HirProofBody,
+    HirWherePredicate, ProofTrust, TrustReason, TrustReasonError,
 };
 pub use self::entry::{
     HirEntryBody, HirEntryDeclaration, HirEntryGoto, HirEntryId, HirEntryKind, HirEntryKindIssue,
@@ -461,6 +463,152 @@ impl HirItemKind {
         }
     }
 
+    /// Returns every admitted callable-owned attached-content declaration in
+    /// source/member order.  The source owner and attached row are projected
+    /// together by HIR so consumers do not maintain a parallel item/member
+    /// inventory or re-enumerate callable families themselves.
+    pub fn attached_content_callable_parameters(
+        &self,
+    ) -> impl Iterator<Item = (HirCallableSourceOwner, HirCallableAttachedContentParameter)> {
+        let mut rows = Vec::new();
+        match self {
+            Self::Function(function) => {
+                if let Some(attached) = function.attached_content() {
+                    rows.push((HirCallableSourceOwner::Item, attached));
+                }
+            }
+            Self::Trait(trait_item) => {
+                for (member, member_value) in trait_item.members().iter().enumerate() {
+                    let HirTraitMember::Function(function) = member_value else {
+                        continue;
+                    };
+                    let member = u16::try_from(member)
+                        .expect("accepted Trait member count fits callable source owner");
+                    if let Some(attached) = function.attached_content() {
+                        rows.push((HirCallableSourceOwner::TraitFunction { member }, attached));
+                    }
+                }
+            }
+            Self::Impl(impl_item) => {
+                for (member, member_value) in impl_item.members().iter().enumerate() {
+                    let HirImplMember::Function(function) = member_value else {
+                        continue;
+                    };
+                    let member = u16::try_from(member)
+                        .expect("accepted Impl member count fits callable source owner");
+                    if let Some(attached) = function.attached_content() {
+                        rows.push((HirCallableSourceOwner::ImplFunction { member }, attached));
+                    }
+                }
+            }
+            Self::ExternCapability(capability) => {
+                for (member, member_value) in capability.members().iter().enumerate() {
+                    let HirCapabilityMember::Function(function) = member_value else {
+                        continue;
+                    };
+                    let member = u16::try_from(member)
+                        .expect("accepted capability member count fits callable source owner");
+                    if let Some(attached) = function.attached_content() {
+                        rows.push((
+                            HirCallableSourceOwner::ExternCapabilityFunction { member },
+                            attached,
+                        ));
+                    }
+                }
+            }
+            Self::Module(_)
+            | Self::Use(_)
+            | Self::Flow(_)
+            | Self::Predicate(_)
+            | Self::Proof(_)
+            | Self::Enum(_)
+            | Self::Struct(_)
+            | Self::TypeAlias(_)
+            | Self::Resource(_)
+            | Self::Character(_)
+            | Self::View(_)
+            | Self::Action(_)
+            | Self::Activity(_)
+            | Self::Signal(_)
+            | Self::Metric(_)
+            | Self::Layer(_)
+            | Self::Entry(_)
+            | Self::Test(_)
+            | Self::Bench(_)
+            | Self::Style(_)
+            | Self::Error(_) => {}
+        }
+        rows.into_iter()
+    }
+
+    /// Resolves the exact attached-content interface owned by one callable
+    /// source coordinate. Group and ABI placement are derived by HIR from the
+    /// selected member rather than reconstructed from a checked call site.
+    pub fn callable_attached_content_interface(
+        &self,
+        owner: HirCallableSourceOwner,
+    ) -> Option<HirCallableAttachedContentInterface> {
+        let (attached, groups, terminal_parameters) = match (self, owner) {
+            (Self::Function(function), HirCallableSourceOwner::Item) => {
+                let groups = function.parameter_groups();
+                (
+                    function.attached_content()?,
+                    groups.len(),
+                    groups.last()?.parameters().len(),
+                )
+            }
+            (Self::Trait(trait_item), HirCallableSourceOwner::TraitFunction { member }) => {
+                let HirTraitMember::Function(function) =
+                    trait_item.members().get(usize::from(member))?
+                else {
+                    return None;
+                };
+                let groups = function.parameter_groups();
+                (
+                    function.attached_content()?,
+                    groups.len(),
+                    groups.last()?.parameters().len(),
+                )
+            }
+            (Self::Impl(impl_item), HirCallableSourceOwner::ImplFunction { member }) => {
+                let HirImplMember::Function(function) =
+                    impl_item.members().get(usize::from(member))?
+                else {
+                    return None;
+                };
+                let groups = function.parameter_groups();
+                (
+                    function.attached_content()?,
+                    groups.len(),
+                    groups.last()?.parameters().len(),
+                )
+            }
+            (
+                Self::ExternCapability(capability),
+                HirCallableSourceOwner::ExternCapabilityFunction { member },
+            ) => {
+                let HirCapabilityMember::Function(function) =
+                    capability.members().get(usize::from(member))?
+                else {
+                    return None;
+                };
+                let groups = function.parameter_groups();
+                (
+                    function.attached_content()?,
+                    groups.len(),
+                    groups.last()?.parameters().len(),
+                )
+            }
+            _ => return None,
+        };
+        let group = groups.checked_sub(1)?;
+        Some(HirCallableAttachedContentInterface::new(
+            attached,
+            u32::try_from(group).expect("accepted callable group count fits u32"),
+            u32::try_from(terminal_parameters).expect("accepted callable parameter count fits u32"),
+        ))
+    }
+
     /// Returns every authored effect-identity expression owned by this item in
     /// source order.
     ///
@@ -680,6 +828,8 @@ pub(crate) enum HirItemInvariantError {
     EmptyMethodParameterGroups,
     #[error("a method receiver must bind exactly one local, got {actual}")]
     MethodReceiverBindingCount { actual: usize },
+    #[error("attached-content defaults are not admitted on Trait/Impl or extern callables")]
+    AttachedContentDefaultNotAllowed,
     #[error("method body scope {body:?} does not match callable scope {callable:?}")]
     MethodBodyScopeMismatch { callable: ScopeId, body: ScopeId },
     #[error("item payload and typed poison state disagree")]
@@ -761,6 +911,22 @@ fn validate_optional_expr(
 ) -> Result<(), HirItemInvariantError> {
     if let Some(expression) = expression {
         validate_expr(expected, expression)?;
+    }
+    Ok(())
+}
+
+fn validate_optional_attached_content(
+    expected: HirModuleId,
+    attached: Option<crate::item::HirCallableAttachedContentParameter>,
+    allow_default: bool,
+) -> Result<(), HirItemInvariantError> {
+    let Some(attached) = attached else {
+        return Ok(());
+    };
+    validate_module(expected, attached.binding().module())?;
+    validate_optional_expr(expected, attached.presence().default_value())?;
+    if !allow_default && attached.presence().is_defaulted() {
+        return Err(HirItemInvariantError::AttachedContentDefaultNotAllowed);
     }
     Ok(())
 }

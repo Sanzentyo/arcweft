@@ -3,7 +3,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_id::PublicId;
-use arcweft_presentation::fx::{FxId, FxInstanceId};
+use arcweft_presentation::fx::{
+    FxDefinitionArgumentValue, FxDefinitionParameterIndex, FxDefinitionParameterLayoutDigest, FxId,
+    FxInstanceId, FxInstanceIdentity, FxInstanceOwnerKey,
+};
 use thiserror::Error;
 
 use crate::{NodeKey, ValueSourceId};
@@ -15,8 +18,14 @@ pub struct ViewFxOrdinal(u32);
 /// Reactive View expression bound to one named Fx parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ViewFxArgumentBinding {
-    parameter: String,
-    source: ValueSourceId,
+    parameter: FxDefinitionParameterIndex,
+    source: ViewFxBindingSource,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ViewFxBindingSource {
+    Reactive(ValueSourceId),
+    Closed(FxDefinitionArgumentValue),
 }
 
 /// Stable retained owner path used to derive one View Fx instance.
@@ -32,8 +41,8 @@ pub struct ViewFxIdentity {
 /// One resolved Fx application retained for a View node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RetainedViewFxApplication {
-    definition: FxId,
-    instance: FxInstanceId,
+    instance_identity: FxInstanceIdentity,
+    parameter_layout: FxDefinitionParameterLayoutDigest,
     identity: ViewFxIdentity,
     arguments: Vec<ViewFxArgumentBinding>,
 }
@@ -48,8 +57,8 @@ pub struct RetainedViewFxTable {
 /// Invalid retained View Fx application data.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ViewFxError {
-    #[error("Fx parameter `{0}` is bound more than once")]
-    DuplicateParameter(String),
+    #[error("Fx parameter index {0:?} is bound more than once")]
+    DuplicateParameter(FxDefinitionParameterIndex),
     #[error("duplicate retained View Fx instance {0:?}")]
     DuplicateInstance(FxInstanceId),
     #[error("retained View node {node:?} has more than one Fx at authored ordinal {ordinal:?}")]
@@ -60,19 +69,26 @@ pub enum ViewFxError {
 }
 
 impl ViewFxArgumentBinding {
-    pub fn new(parameter: impl Into<String>, source: ValueSourceId) -> Self {
+    pub const fn reactive(parameter: FxDefinitionParameterIndex, source: ValueSourceId) -> Self {
         Self {
-            parameter: parameter.into(),
-            source,
+            parameter,
+            source: ViewFxBindingSource::Reactive(source),
         }
     }
 
-    pub fn parameter(&self) -> &str {
-        &self.parameter
+    pub fn closed(parameter: FxDefinitionParameterIndex, value: FxDefinitionArgumentValue) -> Self {
+        Self {
+            parameter,
+            source: ViewFxBindingSource::Closed(value),
+        }
     }
 
-    pub const fn source(&self) -> ValueSourceId {
-        self.source
+    pub const fn parameter(&self) -> FxDefinitionParameterIndex {
+        self.parameter
+    }
+
+    pub const fn source(&self) -> &ViewFxBindingSource {
+        &self.source
     }
 }
 
@@ -129,26 +145,43 @@ impl ViewFxIdentity {
         self.local_key.as_deref()
     }
 
-    fn derive_instance(&self, definition: &FxId) -> FxInstanceId {
-        let node_key = self.node.0.to_string();
-        let ordinal_key = self.ordinal.get().to_string();
-        FxInstanceId::derive(
+    fn derive_instance(&self, definition: &FxId) -> FxInstanceIdentity {
+        let mut canonical = Vec::new();
+        canonical.push(1);
+        append_bytes(&mut canonical, self.view.as_str().as_bytes());
+        canonical.extend_from_slice(&self.node.0.to_le_bytes());
+        append_optional_bytes(&mut canonical, self.repeat_item_key.as_deref());
+        append_optional_bytes(&mut canonical, self.local_key.as_deref());
+        FxInstanceIdentity::new(
             definition,
-            [
-                self.view.as_str(),
-                node_key.as_str(),
-                self.repeat_item_key.as_deref().unwrap_or(""),
-                ordinal_key.as_str(),
-                self.local_key.as_deref().unwrap_or(""),
-            ],
+            FxInstanceOwnerKey::from_view_canonical_bytes(&canonical),
+            self.ordinal.get(),
         )
+    }
+}
+
+fn append_bytes(target: &mut Vec<u8>, value: &[u8]) {
+    let length = u64::try_from(value.len())
+        .expect("a View identity component length fits the canonical owner key");
+    target.extend_from_slice(&length.to_le_bytes());
+    target.extend_from_slice(value);
+}
+
+fn append_optional_bytes(target: &mut Vec<u8>, value: Option<&str>) {
+    match value {
+        Some(value) => {
+            target.push(1);
+            append_bytes(target, value.as_bytes());
+        }
+        None => target.push(0),
     }
 }
 
 impl RetainedViewFxApplication {
     /// Resolves stable instance identity using the canonical View component order.
     pub fn new(
-        definition: FxId,
+        definition: &FxId,
+        parameter_layout: FxDefinitionParameterLayoutDigest,
         identity: ViewFxIdentity,
         arguments: Vec<ViewFxArgumentBinding>,
     ) -> Result<Self, ViewFxError> {
@@ -156,26 +189,34 @@ impl RetainedViewFxApplication {
         if let Some(duplicate) = arguments
             .iter()
             .map(ViewFxArgumentBinding::parameter)
-            .find(|parameter| !parameters.insert((*parameter).to_owned()))
+            .find(|parameter| !parameters.insert(*parameter))
         {
-            return Err(ViewFxError::DuplicateParameter(duplicate.to_owned()));
+            return Err(ViewFxError::DuplicateParameter(duplicate));
         }
 
-        let instance = identity.derive_instance(&definition);
+        let instance_identity = identity.derive_instance(definition);
         Ok(Self {
-            definition,
-            instance,
+            instance_identity,
+            parameter_layout,
             identity,
             arguments,
         })
     }
 
     pub const fn definition(&self) -> &FxId {
-        &self.definition
+        self.instance_identity.definition()
     }
 
     pub const fn instance(&self) -> FxInstanceId {
-        self.instance
+        self.instance_identity.instance()
+    }
+
+    pub const fn instance_identity(&self) -> &FxInstanceIdentity {
+        &self.instance_identity
+    }
+
+    pub const fn parameter_layout(&self) -> FxDefinitionParameterLayoutDigest {
+        self.parameter_layout
     }
 
     pub const fn identity(&self) -> &ViewFxIdentity {
@@ -248,6 +289,9 @@ impl RetainedViewFxTable {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use arcweft_presentation::fx::{
+        FxDefinition, FxDefinitionParameter, FxDefinitionParameterType, FxGraph, FxRuntimeType,
+    };
 
     fn fx() -> FxId {
         FxId::try_new("game", "ui.effects.wave").unwrap()
@@ -255,6 +299,30 @@ mod tests {
 
     fn view() -> PublicId {
         PublicId::try_new("view.battle_hud").unwrap()
+    }
+
+    fn binding_authority() -> (
+        FxDefinitionParameterIndex,
+        FxDefinitionParameterLayoutDigest,
+    ) {
+        let definition = FxDefinition::new(
+            fx(),
+            vec![
+                FxDefinitionParameter::try_new(
+                    0,
+                    "amplitude",
+                    FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                    None,
+                )
+                .unwrap(),
+            ],
+            FxGraph::default(),
+        )
+        .unwrap();
+        (
+            definition.parameters()[0].index(),
+            definition.parameter_layout().digest(),
+        )
     }
 
     fn application(
@@ -270,10 +338,12 @@ mod tests {
         if let Some(key) = local_key {
             identity = identity.with_local_key(key);
         }
+        let (parameter, layout) = binding_authority();
         RetainedViewFxApplication::new(
-            fx(),
+            &fx(),
+            layout,
             identity,
-            vec![ViewFxArgumentBinding::new("amplitude", ValueSourceId(7))],
+            vec![ViewFxArgumentBinding::reactive(parameter, ValueSourceId(7))],
         )
         .unwrap()
     }
@@ -282,7 +352,8 @@ mod tests {
     fn instance_identity_distinguishes_each_stable_view_component() {
         let baseline = application(4, 0, Some("enemy-2"), Some("damage"));
         let other_definition = RetainedViewFxApplication::new(
-            FxId::try_new("game", "ui.effects.pulse").unwrap(),
+            &FxId::try_new("game", "ui.effects.pulse").unwrap(),
+            binding_authority().1,
             ViewFxIdentity::new(view(), NodeKey(4), ViewFxOrdinal::new(0))
                 .with_repeat_item_key("enemy-2")
                 .with_local_key("damage"),
@@ -290,7 +361,8 @@ mod tests {
         )
         .unwrap();
         let other_view = RetainedViewFxApplication::new(
-            fx(),
+            &fx(),
+            binding_authority().1,
             ViewFxIdentity::new(
                 PublicId::try_new("view.other_hud").unwrap(),
                 NodeKey(4),
@@ -316,6 +388,16 @@ mod tests {
             baseline.instance(),
             application(4, 0, Some("enemy-2"), Some("damage")).instance()
         );
+    }
+
+    #[test]
+    fn authored_ordinal_is_sealed_separately_from_view_owner_components() {
+        let first = application(4, 0, None, None);
+        let second = application(4, 1, None, None);
+        let first_again = application(4, 0, None, None);
+
+        assert_ne!(first.instance(), second.instance());
+        assert_eq!(first.instance(), first_again.instance());
     }
 
     #[test]
@@ -351,17 +433,18 @@ mod tests {
     #[test]
     fn application_rejects_duplicate_parameter_bindings() {
         let result = RetainedViewFxApplication::new(
-            fx(),
+            &fx(),
+            binding_authority().1,
             ViewFxIdentity::new(view(), NodeKey(1), ViewFxOrdinal::new(0)),
             vec![
-                ViewFxArgumentBinding::new("speed", ValueSourceId(1)),
-                ViewFxArgumentBinding::new("speed", ValueSourceId(2)),
+                ViewFxArgumentBinding::reactive(binding_authority().0, ValueSourceId(1)),
+                ViewFxArgumentBinding::reactive(binding_authority().0, ValueSourceId(2)),
             ],
         );
 
         assert_eq!(
             result,
-            Err(ViewFxError::DuplicateParameter("speed".to_owned()))
+            Err(ViewFxError::DuplicateParameter(binding_authority().0))
         );
     }
 }

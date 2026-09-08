@@ -83,6 +83,59 @@ fn format_accepts_controller_function_source_without_extension_dispatch() {
 }
 
 #[test]
+fn formatter_canonicalizes_typed_attached_content_parameter_presence() {
+    let source = concat!(
+        "fn required(value: String)[body : InlineContent] -> Unit { body }\n",
+        "fn optional(value: String)[body? : RichContent] -> Unit { body }\n",
+        "fn defaulted(value: String)[body : DialogueContent = fallback] -> Unit { body }\n",
+    );
+    let report = format_fixture(source, FormatOptions::default()).expect("format report");
+    let expected = concat!(
+        "fn required(value: String)[body: InlineContent] -> Unit { body }\n",
+        "fn optional(value: String)[body?: RichContent] -> Unit { body }\n",
+        "fn defaulted(value: String)[body: DialogueContent = fallback] -> Unit { body }\n",
+    );
+    assert!(report.changed);
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    assert_eq!(report.output, expected);
+
+    let second = format_fixture(&report.output, FormatOptions::default()).expect("second format");
+    assert!(!second.changed);
+    assert_eq!(second.output, expected);
+    assert!(second.diagnostics.is_empty(), "{:?}", second.diagnostics);
+}
+
+#[test]
+fn formatter_projects_attached_content_from_all_admitted_callable_owners() {
+    let source = concat!(
+        "trait Renderable {\n",
+        "    fn render(&self)[body? : RichContent] -> Unit\n",
+        "}\n",
+        "impl Renderable for Widget {\n",
+        "    fn render(&self)[body : RichContent] -> Unit { () }\n",
+        "}\n",
+        "extern capability host {\n",
+        "    fn emit(value: String)[body : DialogueContent]\n",
+        "}\n",
+    );
+    let report = format_fixture(source, FormatOptions::default()).expect("format report");
+    let expected = concat!(
+        "trait Renderable {\n",
+        "    fn render(&self)[body?: RichContent] -> Unit\n",
+        "}\n",
+        "impl Renderable for Widget {\n",
+        "    fn render(&self)[body: RichContent] -> Unit { () }\n",
+        "}\n",
+        "extern capability host {\n",
+        "    fn emit(value: String)[body: DialogueContent]\n",
+        "}\n",
+    );
+    assert!(report.changed);
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    assert_eq!(report.output, expected);
+}
+
+#[test]
 fn agent_format_is_idempotent_for_action_resource_and_rag_samples() {
     let samples = [
         include_str!("../../../samples/agent-script/cli-pointer-click-smoke.awfagent"),

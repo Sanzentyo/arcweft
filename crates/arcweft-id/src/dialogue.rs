@@ -97,6 +97,13 @@ impl DialogueLineId {
         self.0.as_str()
     }
 
+    /// Returns the owner-issued bytes of this validated dialogue-line
+    /// identity.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.canonical_identity_bytes()
+    }
+
     /// Extracts the validated public identity.
     pub fn into_public_id(self) -> PublicId {
         self.0
@@ -128,6 +135,13 @@ impl DialogueTextKey {
     /// Returns the exact localization-key spelling.
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+
+    /// Returns the owner-issued bytes of this validated dialogue text-key
+    /// identity.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.canonical_identity_bytes()
     }
 
     /// Extracts the validated text key.

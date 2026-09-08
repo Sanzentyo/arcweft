@@ -1,4 +1,5 @@
-pub character @character.alice Alice as alice {
+pub character alice {
+    display = "Alice"
 }
 
 flow @.root root {

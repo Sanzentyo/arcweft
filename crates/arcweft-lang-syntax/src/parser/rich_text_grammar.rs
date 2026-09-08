@@ -1,7 +1,7 @@
 //! Private `RichText` descendants emitted inside the shared dialogue grammar.
 //!
 //! This module consumes the document lexer's existing cursor and the neutral
-//! argument scan owned by `text::rich_text_tag`. It never invokes the public
+//! argument scan owned by `text::dialogue_action`. It never invokes the public
 //! dialogue parser, reparses a source substring, or wraps detached AST nodes.
 
 use arcweft_source::SourceRange;
@@ -12,25 +12,27 @@ use super::lexer::typed_entity_reference_source;
 use super::shadow_recovery::{emit_close_delimiter, emit_open_delimiter};
 use crate::ast::common::TextRange;
 use crate::expressions::{
-    ExpressionComponentRole, PendingExpressionComponent, SyntaxBuiltinRichTextTag,
-    SyntaxDialogueContent, SyntaxDialogueContentIssue, SyntaxDialogueContentProjection,
-    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueMarkName, SyntaxDialogueMarkNameIssue,
-    SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart, SyntaxExpressionSlot,
-    SyntaxLineBreakKind, SyntaxRichTextArgumentParts, SyntaxRichTextArgumentProjection,
-    SyntaxRichTextArgumentSourcePart, SyntaxRichTextDirectStyle, SyntaxRichTextEndTagProjection,
-    SyntaxRichTextIssue, SyntaxRichTextTagIdentity, SyntaxRichTextTagPayloadProjection,
-    SyntaxRichTextTagProjection, SyntaxRichTextTagSourcePart, SyntaxRichTextValue,
+    ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
+    SyntaxDialogueActionArgumentParts, SyntaxDialogueActionArgumentProjection,
+    SyntaxDialogueActionArgumentSourcePart, SyntaxDialogueActionValue, SyntaxDialogueContent,
+    SyntaxDialogueContentIssue, SyntaxDialogueContentProjection,
+    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueControl, SyntaxDialogueMarkName,
+    SyntaxDialogueMarkNameIssue, SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart,
+    SyntaxDialoguePointActionIdentity, SyntaxDialoguePointActionPayload,
+    SyntaxDialoguePointActionProjection, SyntaxDialoguePointActionSourcePart, SyntaxExpressionSlot,
+    SyntaxLineBreakKind, SyntaxRawLiteralBody, SyntaxRichTextHostEvent, SyntaxRichTextIssue,
 };
-use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::SyntaxName;
 use crate::text::{
-    DialogueTextDiagnosticCode, MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS,
-    MAX_RICH_TEXT_TAG_BODY_BYTES, ScannedDialogueSurface, ScannedDialogueSurfaceKind,
-    ScannedInlineStyle, ScannedInlineStyleKind, ScannedTagArgValue, ScannedTagArgument,
-    ScannedTagArgumentParts, ScannedTagArguments, find_dialogue_tag_boundary_before,
-    is_rich_text_whitespace, scan_dialogue_surface, scan_tag_arg_value_if_valid,
-    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
+    DialogueTextDiagnosticCode, MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL,
+    MAX_DIALOGUE_ACTION_HEAD_BYTES, MAX_DIALOGUE_POINT_ACTIONS, ScannedContentApplicationCallee,
+    ScannedDialogueActionArgument, ScannedDialogueActionArgumentParts,
+    ScannedDialogueActionArgumentValue, ScannedDialogueActionArguments, ScannedDialogueSurface,
+    ScannedDialogueSurfaceKind, find_dialogue_bracket_boundary, is_dialogue_action_whitespace,
+    scan_dialogue_action_argument_value_if_valid, scan_dialogue_action_arguments,
+    scan_dialogue_surface, trim_dialogue_action_whitespace, utf8_boundary_at_or_before,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -52,12 +54,6 @@ impl EmittedDialogueContent {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct OpenRichTextSpan {
-    tag: u32,
-    identity: SyntaxRichTextTagIdentity,
-}
-
 pub(super) fn emit_dialogue_content(
     parser: &mut DocumentParser<'_, '_>,
     end: usize,
@@ -70,20 +66,10 @@ pub(super) fn emit_dialogue_content(
     let mut state = DialogueContentState::default();
     emit_dialogue_content_nodes(parser, end, content_end, &mut state);
 
-    emit_unclosed_rich_text_spans(
-        parser,
-        content_end,
-        state.open_spans,
-        &mut state.nodes,
-        &mut state.components,
-    );
     parser.finish();
 
     let projection = if state.saw_nontrivia {
-        SyntaxDialogueContentProjection::Present(SyntaxDialogueContent::new(
-            state.nodes,
-            state.tags,
-        ))
+        SyntaxDialogueContentProjection::Present(SyntaxDialogueContent::new(state.nodes))
     } else {
         SyntaxDialogueContentProjection::Missing {
             boundary: missing_boundary,
@@ -103,12 +89,10 @@ pub(super) fn emit_dialogue_content(
 #[derive(Default)]
 struct DialogueContentState {
     nodes: Vec<SyntaxDialogueNodeProjection>,
-    tags: Vec<SyntaxRichTextTagProjection>,
     components: Vec<PendingExpressionComponent>,
-    open_spans: Vec<OpenRichTextSpan>,
-    content_tag_count: usize,
+    point_action_count: usize,
     argument_count: usize,
-    tag_limit_exhausted: bool,
+    action_limit_exhausted: bool,
     argument_limit_exhausted: bool,
     has_real_atom: bool,
     saw_nontrivia: bool,
@@ -136,12 +120,12 @@ fn emit_dialogue_content_node(
     }
     let start = parser.current_offset();
     state.saw_nontrivia = true;
-    if emit_tag_after_content_limit(
+    if emit_action_after_content_limit(
         parser,
         start,
         content_end,
-        state.content_tag_count,
-        &mut state.tag_limit_exhausted,
+        state.point_action_count,
+        &mut state.action_limit_exhausted,
         &mut state.nodes,
         &mut state.components,
     ) {
@@ -152,16 +136,15 @@ fn emit_dialogue_content_node(
         parser,
         start,
         content_end,
-        RichTextContentProjectionState {
-            content_tag_count: &mut state.content_tag_count,
+        DialogueContentProjectionState {
+            point_action_count: &mut state.point_action_count,
             argument_count: &mut state.argument_count,
-            tag_limit_exhausted: &mut state.tag_limit_exhausted,
+            action_limit_exhausted: &mut state.action_limit_exhausted,
             argument_limit_exhausted: &mut state.argument_limit_exhausted,
             nodes: &mut state.nodes,
-            tags: &mut state.tags,
             components: &mut state.components,
         },
-    ) || emit_overlong_tag(
+    ) || emit_overlong_action(
         parser,
         start,
         content_end,
@@ -213,7 +196,7 @@ fn emit_authored_or_plain_dialogue_content(
     start: usize,
     state: &mut DialogueContentState,
 ) {
-    let Some(surface) = RichTextTagSurface::scan(parser, content_end) else {
+    let Some(surface) = DialogueActionSurface::scan(parser, content_end) else {
         state.has_real_atom |= emit_plain_dialogue_content(
             parser,
             start,
@@ -237,23 +220,19 @@ fn emit_authored_or_plain_dialogue_content(
         );
         return;
     }
-    emit_authored_rich_text_surface(
+    emit_point_action_or_error(
         parser,
         start,
-        surface,
-        RichTextAuthoredSurfaceState {
-            argument_count: &mut state.argument_count,
-            argument_limit_exhausted: &mut state.argument_limit_exhausted,
-            nodes: &mut state.nodes,
-            tags: &mut state.tags,
-            components: &mut state.components,
-            open_spans: &mut state.open_spans,
-        },
+        &surface,
+        &mut state.argument_count,
+        &mut state.argument_limit_exhausted,
+        &mut state.nodes,
+        &mut state.components,
     );
-    state.content_tag_count = state
-        .content_tag_count
+    state.point_action_count = state
+        .point_action_count
         .checked_add(1)
-        .expect("RichText tag count remains grammar-bounded");
+        .expect("dialogue point-action count remains grammar-bounded");
     state.has_real_atom = true;
 }
 
@@ -285,280 +264,403 @@ fn emit_plain_dialogue_content(
     }
 }
 
-struct RichTextAuthoredSurfaceState<'a> {
-    argument_count: &'a mut usize,
-    argument_limit_exhausted: &'a mut bool,
-    nodes: &'a mut Vec<SyntaxDialogueNodeProjection>,
-    tags: &'a mut Vec<SyntaxRichTextTagProjection>,
-    components: &'a mut Vec<PendingExpressionComponent>,
-    open_spans: &'a mut Vec<OpenRichTextSpan>,
-}
-
-fn emit_authored_rich_text_surface(
+fn emit_point_action_or_error(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
-    surface: RichTextTagSurface<'_>,
-    mut state: RichTextAuthoredSurfaceState<'_>,
-) {
-    let tag = u32::try_from(state.tags.len()).expect("RichText tag limit fits u32");
-    match surface.body.clone() {
-        RichTextTagBody::Open(open) => {
-            emit_authored_open_rich_text(parser, start, &surface, &open, tag, state);
-        }
-        RichTextTagBody::End { name_range } => {
-            emit_authored_end_rich_text(parser, start, &surface, name_range, tag, &mut state);
-        }
-    }
-}
-
-fn emit_authored_open_rich_text(
-    parser: &mut DocumentParser<'_, '_>,
-    start: usize,
-    surface: &RichTextTagSurface<'_>,
-    open: &OpenTagSurface<'_>,
-    tag: u32,
-    state: RichTextAuthoredSurfaceState<'_>,
-) {
-    let RichTextAuthoredSurfaceState {
-        argument_count,
-        argument_limit_exhausted,
-        nodes,
-        tags,
-        components,
-        open_spans,
-    } = state;
-    let scanned_arguments = (!open.attrs.is_empty()
-        && !matches!(open.source_name, "fx" | "call" | "!" | "if" | "at"))
-    .then(|| {
-        let remaining = MAX_RICH_TEXT_CONTENT_ARGUMENTS
-            .checked_sub(*argument_count)
-            .expect("retained RichText argument count stays inside its limit");
-        scan_tag_arguments(open.attrs, open.attrs_range.start(), remaining)
-    });
-    if emit_argument_limit_recovery(
-        parser,
-        start,
-        surface,
-        scanned_arguments.as_ref(),
-        argument_limit_exhausted,
-        nodes,
-        components,
-    ) {
-        return;
-    }
-    let emitted = emit_open_tag(
-        parser,
-        surface,
-        open,
-        tag,
-        scanned_arguments,
-        argument_count,
-        argument_limit_exhausted,
-    );
-    let node = u32::try_from(nodes.len()).expect("dialogue node limit fits u32");
-    let identity = emitted.identity.clone();
-    components.push(PendingExpressionComponent::new(
-        ExpressionComponentRole::DialogueNode {
-            ordinal: node,
-            part: SyntaxDialogueNodeSourcePart::Whole,
-        },
-        SourceRange::new(start, surface.end),
-    ));
-    if let Some(part) = dialogue_node_source_part(&emitted.node) {
-        components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal: node,
-                part,
-            },
-            SourceRange::new(start, surface.end),
-        ));
-    }
-    components.extend(emitted.components);
-    nodes.push(emitted.node);
-    tags.push(SyntaxRichTextTagProjection::new(
-        identity.clone(),
-        emitted.arguments,
-        emitted.payload,
-        None,
-    ));
-    if identity.opens_span() {
-        open_spans.push(OpenRichTextSpan { tag, identity });
-    }
-}
-
-fn emit_argument_limit_recovery(
-    parser: &mut DocumentParser<'_, '_>,
-    start: usize,
-    surface: &RichTextTagSurface<'_>,
-    scanned: Option<&ScannedTagArguments>,
+    surface: &DialogueActionSurface<'_>,
+    argument_count: &mut usize,
     argument_limit_exhausted: &mut bool,
     nodes: &mut Vec<SyntaxDialogueNodeProjection>,
     components: &mut Vec<PendingExpressionComponent>,
-) -> bool {
-    let Some(diagnostic) = scanned.and_then(|scanned| {
-        scanned.diagnostics().iter().find(|diagnostic| {
+) {
+    let ordinal = u32::try_from(nodes.len()).expect("dialogue node limit fits u32");
+    let whole = SourceRange::new(start, surface.end);
+    let open = &surface.open;
+
+    let scanned =
+        (!open.attrs.is_empty() && !matches!(open.source_name, "call" | "at")).then(|| {
+            let remaining = MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL
+                .checked_sub(*argument_count)
+                .expect("dialogue point-action argument count remains bounded");
+            scan_dialogue_action_arguments(open.attrs, open.attrs_range.start(), remaining)
+        });
+    if let Some(scanned) = scanned.as_ref()
+        && let Some(diagnostic) = scanned.diagnostics().iter().find(|diagnostic| {
             matches!(
                 diagnostic.code(),
-                DialogueTextDiagnosticCode::RichTextAttributeTooMany
-                    | DialogueTextDiagnosticCode::RichTextAttributeKeyTooLong
-                    | DialogueTextDiagnosticCode::RichTextAttributeValueTooLong
-                    | DialogueTextDiagnosticCode::RichTextContentArgumentLimit
+                DialogueTextDiagnosticCode::DialogueActionArgumentTooMany
+                    | DialogueTextDiagnosticCode::DialogueActionArgumentKeyTooLong
+                    | DialogueTextDiagnosticCode::DialogueActionArgumentValueTooLong
+                    | DialogueTextDiagnosticCode::DialogueActionArgumentLimit
             )
         })
-    }) else {
-        return false;
-    };
-    let publish = diagnostic.code() != DialogueTextDiagnosticCode::RichTextContentArgumentLimit
-        || !core::mem::replace(argument_limit_exhausted, true);
-    if publish {
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            diagnostic.code().as_str(),
-            source_range(*diagnostic.range()),
-            diagnostic.message(),
-        )));
+    {
+        if diagnostic.code() != DialogueTextDiagnosticCode::DialogueActionArgumentLimit
+            || !core::mem::replace(argument_limit_exhausted, true)
+        {
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                diagnostic.code().as_str(),
+                source_range(*diagnostic.range()),
+                diagnostic.message(),
+            )));
+        }
+        emit_error_node(
+            parser,
+            whole,
+            SyntaxDialogueContentIssue::InvalidPointAction,
+            nodes,
+            components,
+        );
+        return;
     }
-    let range = SourceRange::new(start, surface.end);
-    let text = parser.source()[range.as_range()].into();
-    emit_text_node(parser, range, text, nodes, components);
-    true
-}
 
-fn emit_authored_end_rich_text(
-    parser: &mut DocumentParser<'_, '_>,
-    start: usize,
-    surface: &RichTextTagSurface<'_>,
-    name_range: TextRange,
-    tag: u32,
-    state: &mut RichTextAuthoredSurfaceState<'_>,
-) {
-    let node = u32::try_from(state.nodes.len()).expect("dialogue node limit fits u32");
-    let inferred = name_range.start() == name_range.end();
-    let (identity, matched) = match_rich_text_end(parser, name_range, state.open_spans);
-    emit_end_tag(
-        parser,
-        surface,
-        name_range,
-        matched.as_ref().map_or(tag, |span| span.tag),
-    );
-    let issue = matched
-        .is_none()
-        .then_some(SyntaxRichTextIssue::InvalidNesting);
-    let end = SyntaxRichTextEndTagProjection::new(identity, inferred, issue);
-    state.nodes.push(if inferred {
-        SyntaxDialogueNodeProjection::InferredEndTag(end)
-    } else {
-        SyntaxDialogueNodeProjection::AuthoredEndTag(end)
-    });
-    state.components.push(PendingExpressionComponent::new(
-        ExpressionComponentRole::DialogueNode {
-            ordinal: node,
-            part: SyntaxDialogueNodeSourcePart::Whole,
-        },
-        SourceRange::new(start, surface.end),
+    let (identity, arguments, payload, extra_components) =
+        point_action_identity_and_payload(parser, open, ordinal, scanned.as_ref());
+    let is_marker = matches!(&identity, SyntaxDialoguePointActionIdentity::Mark(_));
+    if matches!(identity, SyntaxDialoguePointActionIdentity::Invalid(_)) {
+        emit_error_node(
+            parser,
+            whole,
+            SyntaxDialogueContentIssue::InvalidPointAction,
+            nodes,
+            components,
+        );
+        return;
+    }
+    *argument_count = argument_count
+        .checked_add(arguments.len())
+        .expect("dialogue point-action argument count remains bounded");
+    emit_point_action_syntax(parser, surface, open, ordinal, scanned.as_ref(), payload);
+    nodes.push(SyntaxDialogueNodeProjection::PointAction(
+        SyntaxDialoguePointActionProjection::new(identity, arguments, payload),
     ));
-    if let Some(span) = matched {
-        let paired = state
-            .tags
-            .get_mut(span.tag as usize)
-            .expect("open span tag ordinal remains live")
-            .pair_with_end_node(node);
-        assert!(paired, "one RichText start tag pairs with one end node");
-        state.components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: span.tag,
-                part: SyntaxRichTextTagSourcePart::EndTag,
+    components.extend([
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: SyntaxDialogueNodeSourcePart::Whole,
             },
-            SourceRange::new(start, surface.end),
-        ));
+            whole,
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: SyntaxDialogueNodeSourcePart::PointAction,
+            },
+            whole,
+        ),
+    ]);
+    components.extend(extra_components);
+    components.extend(point_action_components(
+        ordinal, whole, surface, open, payload,
+    ));
+    if let Some(scanned) = scanned.as_ref()
+        && !is_marker
+    {
+        components.extend(point_action_argument_components(ordinal, scanned.entries()));
     }
 }
 
-fn match_rich_text_end(
-    parser: &DocumentParser<'_, '_>,
-    name_range: TextRange,
-    open_spans: &mut Vec<OpenRichTextSpan>,
-) -> (Option<SyntaxRichTextTagIdentity>, Option<OpenRichTextSpan>) {
-    if name_range.start() == name_range.end() {
-        let matched = open_spans.pop();
-        return (matched.as_ref().map(|span| span.identity.clone()), matched);
-    }
-    let authored_name = parser
-        .source()
-        .get(name_range.as_range())
-        .expect("RichText end tag name remains in source");
-    let identity = tag_identity(authored_name);
-    let matched = open_spans
-        .iter()
-        .rposition(|span| rich_text_end_matches(authored_name, &span.identity))
-        .map(|position| open_spans.remove(position));
-    (Some(identity), matched)
-}
-
-fn emit_unclosed_rich_text_spans(
-    parser: &mut DocumentParser<'_, '_>,
-    content_end: usize,
-    open_spans: Vec<OpenRichTextSpan>,
-    nodes: &mut Vec<SyntaxDialogueNodeProjection>,
-    components: &mut Vec<PendingExpressionComponent>,
-) {
-    for span in open_spans {
-        let node = u32::try_from(nodes.len()).expect("dialogue node limit fits u32");
-        parser.start(SyntaxKind::DialogueError, SyntaxRole::DialogueNode(node));
-        parser.finish();
-        nodes.push(SyntaxDialogueNodeProjection::Error(
-            SyntaxDialogueContentIssue::UnclosedTag,
+fn point_action_components(
+    ordinal: u32,
+    whole: SourceRange,
+    surface: &DialogueActionSurface<'_>,
+    open: &OpenActionSurface<'_>,
+    payload: SyntaxDialoguePointActionPayload,
+) -> Vec<PendingExpressionComponent> {
+    let close_start = surface
+        .end
+        .checked_sub(']'.len_utf8())
+        .expect("point action close remains inside its surface");
+    let mut components = vec![
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: SyntaxDialoguePointActionSourcePart::Whole,
+            },
+            whole,
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: SyntaxDialoguePointActionSourcePart::OpenDelimiter,
+            },
+            SourceRange::new(surface.start, surface.start + '['.len_utf8()),
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: SyntaxDialoguePointActionSourcePart::Name,
+            },
+            source_range(open.name_range),
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: SyntaxDialoguePointActionSourcePart::CloseDelimiter,
+            },
+            SourceRange::new(close_start, surface.end),
+        ),
+    ];
+    if !matches!(payload, SyntaxDialoguePointActionPayload::None) {
+        components.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: SyntaxDialoguePointActionSourcePart::Payload,
+            },
+            source_range(open.attrs_range),
         ));
-        let at = SourceRange::new(content_end, content_end);
+    }
+    if matches!(payload, SyntaxDialoguePointActionPayload::TimedCue(_))
+        && let Some(duration) = open
+            .timed_cue
+            .as_ref()
+            .and_then(|timed| timed.duration.as_ref())
+    {
         components.extend([
             PendingExpressionComponent::new(
-                ExpressionComponentRole::DialogueNode {
-                    ordinal: node,
-                    part: SyntaxDialogueNodeSourcePart::Whole,
+                ExpressionComponentRole::DialoguePointActionArgument {
+                    action: ordinal,
+                    argument: 0,
+                    part: SyntaxDialogueActionArgumentSourcePart::Whole,
                 },
-                at,
+                source_range(duration.token_range()),
             ),
             PendingExpressionComponent::new(
-                ExpressionComponentRole::DialogueNode {
-                    ordinal: node,
-                    part: SyntaxDialogueNodeSourcePart::Error,
+                ExpressionComponentRole::DialoguePointActionArgument {
+                    action: ordinal,
+                    argument: 0,
+                    part: SyntaxDialogueActionArgumentSourcePart::Value,
                 },
-                at,
+                source_range(duration.content_range()),
             ),
         ]);
-        let tag_range = components
-            .iter()
-            .find(|component| {
-                component.role()
-                    == ExpressionComponentRole::RichTextTag {
-                        tag: span.tag,
-                        part: SyntaxRichTextTagSourcePart::Whole,
-                    }
-            })
-            .map_or(at, |component| component.range());
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.rich_text.tag.unclosed",
-            tag_range,
-            "RichText start tag has no matching end tag",
-        )));
     }
+    components
 }
 
-const fn dialogue_node_source_part(
-    node: &SyntaxDialogueNodeProjection,
-) -> Option<SyntaxDialogueNodeSourcePart> {
-    match node {
-        SyntaxDialogueNodeProjection::LineBreak(_) => Some(SyntaxDialogueNodeSourcePart::LineBreak),
-        SyntaxDialogueNodeProjection::Text(_)
-        | SyntaxDialogueNodeProjection::Raw(_)
-        | SyntaxDialogueNodeProjection::Escape(_)
-        | SyntaxDialogueNodeProjection::Ruby { .. }
-        | SyntaxDialogueNodeProjection::AuthoredStartTag { .. }
-        | SyntaxDialogueNodeProjection::InferredStartTag { .. }
-        | SyntaxDialogueNodeProjection::AuthoredEndTag(_)
-        | SyntaxDialogueNodeProjection::InferredEndTag(_)
-        | SyntaxDialogueNodeProjection::Interpolation(_)
-        | SyntaxDialogueNodeProjection::Error(_) => None,
+fn point_action_identity_and_payload(
+    parser: &DocumentParser<'_, '_>,
+    open: &OpenActionSurface<'_>,
+    ordinal: u32,
+    scanned: Option<&ScannedDialogueActionArguments>,
+) -> (
+    SyntaxDialoguePointActionIdentity,
+    Vec<SyntaxDialogueActionArgumentProjection>,
+    SyntaxDialoguePointActionPayload,
+    Vec<PendingExpressionComponent>,
+) {
+    if open.source_name == "mark" {
+        let (identity, components) =
+            marker_identity(parser, scanned, source_range(open.name_range), ordinal);
+        return (
+            identity,
+            Vec::new(),
+            SyntaxDialoguePointActionPayload::None,
+            components,
+        );
     }
+    if open.source_name == "call" {
+        return (
+            SyntaxDialoguePointActionIdentity::Host(SyntaxRichTextHostEvent::Call),
+            Vec::new(),
+            SyntaxDialoguePointActionPayload::Call(SyntaxExpressionSlot::Authored),
+            Vec::new(),
+        );
+    }
+    if open.source_name == "at" {
+        let arguments = open
+            .timed_cue
+            .as_ref()
+            .and_then(|timed| timed.duration.as_ref())
+            .map(|duration| {
+                vec![SyntaxDialogueActionArgumentProjection::Positional {
+                    value: SyntaxDialogueActionValue::new(duration.decoded()),
+                }]
+            })
+            .unwrap_or_default();
+        return (
+            SyntaxDialoguePointActionIdentity::Host(SyntaxRichTextHostEvent::TimedCue),
+            arguments,
+            SyntaxDialoguePointActionPayload::TimedCue(SyntaxExpressionSlot::Authored),
+            Vec::new(),
+        );
+    }
+    if let Some(control) = SyntaxDialogueControl::from_source_name(open.source_name) {
+        let arguments = scanned
+            .map(|scanned| {
+                scanned
+                    .entries()
+                    .iter()
+                    .map(|argument| syntax_argument(parser.source(), argument))
+                    .collect()
+            })
+            .unwrap_or_default();
+        return (
+            SyntaxDialoguePointActionIdentity::Control(control),
+            arguments,
+            SyntaxDialoguePointActionPayload::None,
+            Vec::new(),
+        );
+    }
+    let Some(host) = host_event(open.source_name) else {
+        return (
+            SyntaxDialoguePointActionIdentity::Invalid(SyntaxRichTextIssue::InvalidPayload),
+            Vec::new(),
+            SyntaxDialoguePointActionPayload::None,
+            Vec::new(),
+        );
+    };
+    let arguments = scanned
+        .map(|scanned| {
+            scanned
+                .entries()
+                .iter()
+                .map(|argument| syntax_argument(parser.source(), argument))
+                .collect()
+        })
+        .unwrap_or_default();
+    (
+        SyntaxDialoguePointActionIdentity::Host(host),
+        arguments,
+        SyntaxDialoguePointActionPayload::None,
+        Vec::new(),
+    )
+}
+
+fn host_event(source: &str) -> Option<SyntaxRichTextHostEvent> {
+    Some(match source {
+        "voice" => SyntaxRichTextHostEvent::Voice,
+        "face" => SyntaxRichTextHostEvent::Face,
+        "pose" => SyntaxRichTextHostEvent::Pose,
+        "show" => SyntaxRichTextHostEvent::Show,
+        "hide" => SyntaxRichTextHostEvent::Hide,
+        "move" => SyntaxRichTextHostEvent::Move,
+        "scale" => SyntaxRichTextHostEvent::Scale,
+        "rotate" => SyntaxRichTextHostEvent::Rotate,
+        "anim" => SyntaxRichTextHostEvent::Animation,
+        "shake" => SyntaxRichTextHostEvent::StageShake,
+        "signal" => SyntaxRichTextHostEvent::Signal,
+        _ => return None,
+    })
+}
+
+fn emit_point_action_syntax(
+    parser: &mut DocumentParser<'_, '_>,
+    surface: &DialogueActionSurface<'_>,
+    open: &OpenActionSurface<'_>,
+    ordinal: u32,
+    scanned: Option<&ScannedDialogueActionArguments>,
+    payload: SyntaxDialoguePointActionPayload,
+) {
+    let kind = match payload {
+        SyntaxDialoguePointActionPayload::None if open.source_name == "mark" => {
+            SyntaxKind::DialogueMark
+        }
+        SyntaxDialoguePointActionPayload::Call(_)
+        | SyntaxDialoguePointActionPayload::TimedCue(_)
+        | SyntaxDialoguePointActionPayload::None => SyntaxKind::DialogueControl,
+    };
+    parser.start(kind, SyntaxRole::DialogueNode(ordinal));
+    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
+    bump_to_range_start(parser, open.name_range);
+    emit_range_node(
+        parser,
+        SyntaxKind::DialoguePointActionName,
+        SyntaxRole::Name,
+        open.name_range,
+    );
+    match payload {
+        SyntaxDialoguePointActionPayload::Call(_) => {
+            let range = open.attrs_range;
+            let _ = emit_expression_payload(
+                parser,
+                range,
+                SyntaxKind::DialogueActionDialogueCallPayload,
+                SyntaxRole::Operand,
+            );
+        }
+        SyntaxDialoguePointActionPayload::TimedCue(_) => {
+            let timed = open
+                .timed_cue
+                .as_ref()
+                .expect("timed-cue actions retain their scanned payload");
+            emit_timed_point_payload(parser, open, timed, ordinal);
+        }
+        SyntaxDialoguePointActionPayload::None => {
+            if let Some(scanned) = scanned {
+                let mut point_argument_limit_exhausted = false;
+                emit_argument_payload(
+                    parser,
+                    open.attrs_range,
+                    scanned,
+                    surface.unterminated_quote.is_some(),
+                    &mut point_argument_limit_exhausted,
+                );
+            }
+        }
+    }
+    emit_point_action_close(parser, surface);
+}
+
+fn emit_timed_point_payload(
+    parser: &mut DocumentParser<'_, '_>,
+    open: &OpenActionSurface<'_>,
+    timed: &ScannedTimedCuePayload,
+    ordinal: u32,
+) {
+    parser.start(
+        SyntaxKind::DialogueActionTimedCuePayload,
+        SyntaxRole::Payload,
+    );
+    if let Some(duration) = timed.duration.as_ref() {
+        bump_to_range_start(parser, duration.token_range());
+        parser.start(
+            SyntaxKind::DialogueActionPositionalArgument,
+            SyntaxRole::Argument(0),
+        );
+        let mut cursor = PartitionedEventCursor::new(parser, duration.token_range().start());
+        emit_present_value(&mut cursor, duration);
+        cursor.finish_at(duration.token_range().end());
+        parser.finish();
+    }
+    let call_range = timed.call.filter(|_| !timed.malformed);
+    let call = match call_range {
+        Some(range) => emit_expression_payload(
+            parser,
+            range,
+            SyntaxKind::DialogueActionDialogueCallPayload,
+            SyntaxRole::Operand,
+        ),
+        None => emit_expression_payload(
+            parser,
+            TextRange::new(open.attrs_range.end(), open.attrs_range.end()),
+            SyntaxKind::DialogueActionDialogueCallPayload,
+            SyntaxRole::Operand,
+        ),
+    };
+    let _ = (ordinal, call);
+    bump_until_offset(parser, open.attrs_range.end());
+    parser.finish();
+}
+
+fn emit_point_action_close(
+    parser: &mut DocumentParser<'_, '_>,
+    surface: &DialogueActionSurface<'_>,
+) {
+    let close = surface
+        .end
+        .checked_sub(']'.len_utf8())
+        .expect("point action closing delimiter follows its opening delimiter");
+    bump_until_offset(parser, close);
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBracketNode,
+        "]",
+        "syntax.dialogue.point_action.missing_close",
+    );
+    emit_unterminated_quote_diagnostic(parser, surface.unterminated_quote);
+    parser.finish();
 }
 
 fn next_dialogue_surface_start(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
@@ -690,7 +792,6 @@ fn emit_scanned_surface(
     parser: &mut DocumentParser<'_, '_>,
     surface: &ScannedDialogueSurface,
     nodes: &mut Vec<SyntaxDialogueNodeProjection>,
-    tags: &mut Vec<SyntaxRichTextTagProjection>,
     components: &mut Vec<PendingExpressionComponent>,
 ) {
     let whole = SourceRange::new(surface.range().start(), surface.range().end());
@@ -701,9 +802,6 @@ fn emit_scanned_surface(
         }
         ScannedDialogueSurfaceKind::Ruby(ruby) => {
             emit_scanned_ruby(parser, ruby, ordinal, whole, nodes, components);
-        }
-        ScannedDialogueSurfaceKind::Raw { body, .. } => {
-            emit_scanned_raw(parser, body, ordinal, whole, nodes, components);
         }
         ScannedDialogueSurfaceKind::Interpolation {
             open,
@@ -724,8 +822,20 @@ fn emit_scanned_surface(
                 components,
             );
         }
-        ScannedDialogueSurfaceKind::InlineStyle(style) => {
-            emit_inline_style(parser, surface, style, nodes, tags, components);
+        ScannedDialogueSurfaceKind::ContentApplication {
+            hash,
+            head,
+            callee,
+            body,
+        } => {
+            let source = ScannedContentApplicationSource {
+                hash: *hash,
+                head: *head,
+                callee: callee.clone(),
+                body: *body,
+                whole,
+            };
+            emit_scanned_content_application(parser, &source, ordinal, nodes, components);
         }
     }
 }
@@ -783,41 +893,11 @@ fn emit_scanned_ruby(
         PendingExpressionComponent::new(
             ExpressionComponentRole::DialogueNode {
                 ordinal,
-                part: SyntaxDialogueNodeSourcePart::RubyBase,
+                part: SyntaxDialogueNodeSourcePart::Ruby,
             },
-            SourceRange::new(ruby.base().range().start(), ruby.base().range().end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal,
-                part: SyntaxDialogueNodeSourcePart::RubyText,
-            },
-            SourceRange::new(ruby.ruby().range().start(), ruby.ruby().range().end()),
+            whole,
         ),
     ]);
-}
-
-fn emit_scanned_raw(
-    parser: &mut DocumentParser<'_, '_>,
-    body: &crate::text::ScannedDialogueText,
-    ordinal: u32,
-    whole: SourceRange,
-    nodes: &mut Vec<SyntaxDialogueNodeProjection>,
-    components: &mut Vec<PendingExpressionComponent>,
-) {
-    emit_dialogue_range_owner(
-        parser,
-        SyntaxKind::DialogueRaw,
-        SyntaxRole::DialogueNode(ordinal),
-        whole,
-    );
-    nodes.push(SyntaxDialogueNodeProjection::Raw(body.value().into()));
-    components.extend(dialogue_node_components(
-        ordinal,
-        whole,
-        SyntaxDialogueNodeSourcePart::Raw,
-        SourceRange::new(body.range().start(), body.range().end()),
-    ));
 }
 
 #[derive(Clone, Copy)]
@@ -826,6 +906,217 @@ struct ScannedInterpolationSource {
     payload: TextRange,
     close: TextRange,
     whole: SourceRange,
+}
+
+#[derive(Clone)]
+struct ScannedContentApplicationSource {
+    hash: TextRange,
+    head: TextRange,
+    callee: ScannedContentApplicationCallee,
+    body: Option<crate::text::ScannedContentApplicationBody>,
+    whole: SourceRange,
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the content-application owner emits one complete hash target/body projection and its exact component inventory"
+)]
+fn emit_scanned_content_application(
+    parser: &mut DocumentParser<'_, '_>,
+    source: &ScannedContentApplicationSource,
+    ordinal: u32,
+    nodes: &mut Vec<SyntaxDialogueNodeProjection>,
+    components: &mut Vec<PendingExpressionComponent>,
+) {
+    let owner = parser.start_projected_owner(
+        SyntaxKind::AttachedContentApplicationExpression,
+        SyntaxRole::DialogueNode(ordinal),
+    );
+    debug_assert!(parser.at("#"));
+    parser.bump();
+
+    let head_end = parser
+        .token_boundary_index(source.head.end())
+        .expect("content escape head ends at a lexer boundary");
+    let target = emit_expression_node(parser, head_end, SyntaxRole::Target);
+
+    let (content, mut body_components) = if let Some(body) = source.body {
+        let open = body.open();
+        debug_assert_eq!(parser.current_offset(), open.start());
+        emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
+        parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
+        let is_raw_literal = is_raw_content_target(parser, target, &source.callee);
+        let (content, nested_components) = if is_raw_literal {
+            let range = source_range(body.content());
+            parser.start(SyntaxKind::DialogueContent, SyntaxRole::Content);
+            let mut cursor = PartitionedEventCursor::new(parser, range.start());
+            cursor.emit_to(range.end());
+            cursor.finish_at(range.end());
+            parser.finish();
+            (
+                SyntaxDialogueContentProjection::RawLiteral(SyntaxRawLiteralBody::new(
+                    parser
+                        .source()
+                        .get(range.as_range())
+                        .expect("raw literal body remains inside source"),
+                    range,
+                )),
+                Vec::new(),
+            )
+        } else {
+            let content_end = parser
+                .token_boundary_index(body.content().end())
+                .expect("content escape body ends at a lexer boundary");
+            let missing_boundary = match body.close() {
+                Some(close) => SyntaxDialogueContentRecoveryBoundary::CloseBracket {
+                    range: source_range(close),
+                },
+                None => SyntaxDialogueContentRecoveryBoundary::MissingBracketClose {
+                    insertion: body.content().end(),
+                },
+            };
+            let emitted = emit_dialogue_content(parser, content_end, missing_boundary);
+            let (content, nested_components, _) = emitted.into_parts();
+            (content, nested_components)
+        };
+        parser.finish();
+        let close = body.close().map_or_else(
+            || {
+                let at = SourceRange::new(body.content().end(), body.content().end());
+                emit_missing_content_application_close(parser, at.start());
+                at
+            },
+            source_range,
+        );
+        if body.close().is_some() {
+            emit_close_delimiter(
+                parser,
+                SyntaxKind::CloseBracketNode,
+                "]",
+                "syntax.expression.missing_postfix_bracket_close",
+            );
+        }
+        let mut components = vec![
+            PendingExpressionComponent::new(
+                ExpressionComponentRole::OpenBracket,
+                source_range(open),
+            ),
+            PendingExpressionComponent::new(ExpressionComponentRole::CloseBracket, close),
+            PendingExpressionComponent::new(
+                ExpressionComponentRole::Content,
+                source_range(body.content()),
+            ),
+            PendingExpressionComponent::new(
+                ExpressionComponentRole::ContentBody,
+                source_range(body.content()),
+            ),
+        ];
+        components.extend(nested_components);
+        (content, components)
+    } else {
+        (
+            SyntaxDialogueContentProjection::Missing {
+                boundary: SyntaxDialogueContentRecoveryBoundary::Inline {
+                    insertion: source.head.end(),
+                },
+            },
+            Vec::new(),
+        )
+    };
+
+    // This slot belongs to the already-started hash wrapper.  The target's
+    // own slot is intentionally not published as the dialogue node slot:
+    // attachment must select the wrapper expression, not its inner call.
+    nodes.push(SyntaxDialogueNodeProjection::ContentApplication(
+        SyntaxExpressionSlot::Authored,
+    ));
+    let mut outer = vec![
+        PendingExpressionComponent::new(ExpressionComponentRole::Hash, source_range(source.hash)),
+        PendingExpressionComponent::new(ExpressionComponentRole::Target, source_range(source.head)),
+    ];
+    outer.append(&mut body_components);
+    parser.set_expression_projection(
+        owner,
+        crate::expressions::PendingExpressionProjection::new(
+            ExpressionProjection::AttachedContentApplication(
+                crate::expressions::SyntaxAttachedContentApplicationProjection::new(
+                    crate::expressions::SyntaxAttachedContentApplicationForm::Hash,
+                    content,
+                    false,
+                ),
+            ),
+            outer,
+        ),
+    );
+    components.extend([
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: SyntaxDialogueNodeSourcePart::Whole,
+            },
+            source.whole,
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: SyntaxDialogueNodeSourcePart::Hash,
+            },
+            source_range(source.hash),
+        ),
+        PendingExpressionComponent::new(
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: SyntaxDialogueNodeSourcePart::Expression,
+            },
+            source_range(source.head),
+        ),
+    ]);
+    parser.finish();
+}
+
+fn is_raw_content_target(
+    parser: &DocumentParser<'_, '_>,
+    target: super::expression::CompletedNode,
+    callee: &ScannedContentApplicationCallee,
+) -> bool {
+    let ScannedContentApplicationCallee::ImplicitRoot(name) = callee else {
+        return false;
+    };
+    let raw = crate::name::SyntaxName::try_new("raw")
+        .expect("the built-in raw content callable has a valid syntax name");
+    if name != &raw {
+        return false;
+    }
+    let Some(range) = parser.completed_range(target.start_event) else {
+        return false;
+    };
+    let Some(projection) = parser.expression_projection_for_range(range) else {
+        return false;
+    };
+    let crate::expressions::ExpressionProjection::Call(
+        crate::expressions::SyntaxCallProjection::Parenthesized(call),
+    ) = projection.projection()
+    else {
+        return false;
+    };
+    !projection.has_recovery()
+        && call.arguments().is_empty()
+        && call.terminator() == crate::expressions::SyntaxCallArgumentListTerminator::Closed
+}
+
+fn emit_missing_content_application_close(parser: &mut DocumentParser<'_, '_>, at: usize) {
+    parser.start(SyntaxKind::CloseBracketNode, SyntaxRole::CloseDelimiter);
+    parser.push(SyntaxEvent::MissingToken {
+        expected: ExpectedToken::try_with_spelling(SyntaxKind::PunctuationToken, "]")
+            .expect("real grammar punctuation token"),
+        at,
+    });
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.expression.missing_postfix_bracket_close",
+        SourceRange::new(at, at),
+        "missing closing `]`",
+    )));
+    parser.finish();
 }
 
 fn emit_scanned_interpolation(
@@ -901,280 +1192,31 @@ fn dialogue_node_components(
     ]
 }
 
-fn emit_inline_style(
-    parser: &mut DocumentParser<'_, '_>,
-    surface: &ScannedDialogueSurface,
-    style: &ScannedInlineStyle,
-    nodes: &mut Vec<SyntaxDialogueNodeProjection>,
-    tags: &mut Vec<SyntaxRichTextTagProjection>,
-    components: &mut Vec<PendingExpressionComponent>,
-) {
-    let ordinals = InlineStyleOrdinals::new(nodes.len(), tags.len());
-    let emitted = emit_inline_style_surface(parser, surface, style, ordinals);
-
-    tags.push(SyntaxRichTextTagProjection::new(
-        emitted.identity.clone(),
-        emitted.arguments,
-        SyntaxRichTextTagPayloadProjection::Arguments,
-        Some(ordinals.end_node),
-    ));
-    nodes.extend([
-        SyntaxDialogueNodeProjection::InferredStartTag { tag: ordinals.tag },
-        SyntaxDialogueNodeProjection::Text(style.body().value().into()),
-        SyntaxDialogueNodeProjection::InferredEndTag(SyntaxRichTextEndTagProjection::new(
-            Some(emitted.identity),
-            true,
-            None,
-        )),
-    ]);
-    components.extend(inline_style_components(surface, style, ordinals));
-    components.extend(emitted.argument_components);
-}
-
 #[derive(Clone, Copy)]
-struct InlineStyleOrdinals {
-    tag: u32,
-    start_node: u32,
-    text_node: u32,
-    end_node: u32,
-}
-
-impl InlineStyleOrdinals {
-    fn new(node_count: usize, tag_count: usize) -> Self {
-        let start_node = u32::try_from(node_count).expect("dialogue node limit fits u32");
-        let text_node = start_node
-            .checked_add(1)
-            .expect("dialogue node ordinal fits u32");
-        Self {
-            tag: u32::try_from(tag_count).expect("RichText tag limit fits u32"),
-            start_node,
-            text_node,
-            end_node: text_node
-                .checked_add(1)
-                .expect("dialogue node ordinal fits u32"),
-        }
-    }
-}
-
-struct EmittedInlineStyleSurface {
-    identity: SyntaxRichTextTagIdentity,
-    arguments: Vec<SyntaxRichTextArgumentProjection>,
-    argument_components: Vec<PendingExpressionComponent>,
-}
-
-fn emit_inline_style_surface(
-    parser: &mut DocumentParser<'_, '_>,
-    surface: &ScannedDialogueSurface,
-    style: &ScannedInlineStyle,
-    ordinals: InlineStyleOrdinals,
-) -> EmittedInlineStyleSurface {
-    let whole = surface.range();
-    let prefix = TextRange::new(whole.start(), style.body().range().start());
-    let suffix = TextRange::new(style.body().range().end(), whole.end());
-    let identity = inline_style_identity(style.style());
-    let mut cursor = PartitionedEventCursor::new(parser, whole.start());
-    cursor.start(
-        SyntaxKind::RichTextTag,
-        SyntaxRole::RichTextTag(ordinals.tag),
-    );
-    cursor.emit_to(style.name().start());
-    cursor.start(SyntaxKind::RichTextTagName, SyntaxRole::Name);
-    cursor.emit_to(style.name().end());
-    cursor.finish();
-    let (arguments, argument_components) =
-        emit_inline_style_value(&mut cursor, style, ordinals.tag);
-    cursor.emit_to(prefix.end());
-    cursor.finish();
-    cursor.start(
-        SyntaxKind::DialogueText,
-        SyntaxRole::DialogueNode(ordinals.text_node),
-    );
-    cursor.emit_to(style.body().range().end());
-    cursor.finish();
-    cursor.start(
-        SyntaxKind::RichTextEndTag,
-        SyntaxRole::RichTextTag(ordinals.tag),
-    );
-    cursor.emit_to(suffix.end());
-    cursor.finish();
-    cursor.finish_at(whole.end());
-    EmittedInlineStyleSurface {
-        identity,
-        arguments,
-        argument_components,
-    }
-}
-
-const fn inline_style_identity(style: ScannedInlineStyleKind) -> SyntaxRichTextTagIdentity {
-    SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::DirectStyle(match style {
-        ScannedInlineStyleKind::Emphasis => SyntaxRichTextDirectStyle::Emphasis,
-        ScannedInlineStyleKind::Strong => SyntaxRichTextDirectStyle::Strong,
-        ScannedInlineStyleKind::Color => SyntaxRichTextDirectStyle::Color,
-    }))
-}
-
-fn emit_inline_style_value(
-    cursor: &mut PartitionedEventCursor<'_, '_, '_>,
-    style: &ScannedInlineStyle,
-    tag: u32,
-) -> (
-    Vec<SyntaxRichTextArgumentProjection>,
-    Vec<PendingExpressionComponent>,
-) {
-    let Some(value) = style.value() else {
-        return (Vec::new(), Vec::new());
-    };
-    cursor.emit_to(value.token_range().start());
-    cursor.start(
-        SyntaxKind::RichTextPositionalArgument,
-        SyntaxRole::Argument(0),
-    );
-    emit_present_value(cursor, value);
-    cursor.finish();
-    (
-        vec![SyntaxRichTextArgumentProjection::Positional {
-            value: SyntaxRichTextValue::new(value.decoded()),
-        }],
-        vec![
-            PendingExpressionComponent::new(
-                ExpressionComponentRole::RichTextArgument {
-                    tag,
-                    argument: 0,
-                    part: SyntaxRichTextArgumentSourcePart::Whole,
-                },
-                SourceRange::new(value.token_range().start(), value.token_range().end()),
-            ),
-            PendingExpressionComponent::new(
-                ExpressionComponentRole::RichTextArgument {
-                    tag,
-                    argument: 0,
-                    part: SyntaxRichTextArgumentSourcePart::Value,
-                },
-                SourceRange::new(value.content_range().start(), value.content_range().end()),
-            ),
-        ],
-    )
-}
-
-fn inline_style_components(
-    surface: &ScannedDialogueSurface,
-    style: &ScannedInlineStyle,
-    ordinals: InlineStyleOrdinals,
-) -> Vec<PendingExpressionComponent> {
-    let whole = surface.range();
-    let prefix = TextRange::new(whole.start(), style.body().range().start());
-    let suffix = TextRange::new(style.body().range().end(), whole.end());
-    vec![
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal: ordinals.start_node,
-                part: SyntaxDialogueNodeSourcePart::Whole,
-            },
-            SourceRange::new(prefix.start(), prefix.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal: ordinals.text_node,
-                part: SyntaxDialogueNodeSourcePart::Whole,
-            },
-            SourceRange::new(style.body().range().start(), style.body().range().end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal: ordinals.text_node,
-                part: SyntaxDialogueNodeSourcePart::Text,
-            },
-            SourceRange::new(style.body().range().start(), style.body().range().end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::DialogueNode {
-                ordinal: ordinals.end_node,
-                part: SyntaxDialogueNodeSourcePart::Whole,
-            },
-            SourceRange::new(suffix.start(), suffix.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::Whole,
-            },
-            SourceRange::new(prefix.start(), prefix.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::OpenDelimiter,
-            },
-            SourceRange::new(
-                prefix.start(),
-                prefix
-                    .start()
-                    .checked_add('['.len_utf8())
-                    .expect("inline RichText opening delimiter remains representable"),
-            ),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::Name,
-            },
-            SourceRange::new(style.name().start(), style.name().end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::Payload,
-            },
-            SourceRange::new(style.name().end(), prefix.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::CloseDelimiter,
-            },
-            SourceRange::new(style.separator().start(), style.separator().end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::InferenceInsertion,
-            },
-            SourceRange::new(style.inferred_end(), style.inferred_end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinals.tag,
-                part: SyntaxRichTextTagSourcePart::EndTag,
-            },
-            SourceRange::new(suffix.start(), suffix.end()),
-        ),
-    ]
-}
-
-#[derive(Clone, Copy)]
-enum RichTextContentLimit {
-    Tags,
+enum DialogueContentLimit {
+    PointActions,
     Arguments,
 }
 
-fn emit_tag_after_content_limit(
+fn emit_action_after_content_limit(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
     content_end: usize,
-    content_tag_count: usize,
-    tag_limit_exhausted: &mut bool,
+    content_action_count: usize,
+    action_limit_exhausted: &mut bool,
     nodes: &mut Vec<SyntaxDialogueNodeProjection>,
     components: &mut Vec<PendingExpressionComponent>,
 ) -> bool {
-    if !parser.at("[") || (!*tag_limit_exhausted && content_tag_count < MAX_RICH_TEXT_CONTENT_TAGS)
+    if !parser.at("[")
+        || (!*action_limit_exhausted && content_action_count < MAX_DIALOGUE_POINT_ACTIONS)
     {
         return false;
     }
-    if let Some(boundary) = find_dialogue_tag_boundary_before(parser.source(), start, content_end) {
-        if !core::mem::replace(tag_limit_exhausted, true) {
+    if let Some(boundary) = find_dialogue_bracket_boundary(parser.source(), start, content_end) {
+        if !core::mem::replace(action_limit_exhausted, true) {
             emit_content_limit_diagnostic(
                 parser,
-                RichTextContentLimit::Tags,
+                DialogueContentLimit::PointActions,
                 SourceRange::new(start, boundary.end()),
             );
         }
@@ -1187,13 +1229,12 @@ fn emit_tag_after_content_limit(
     true
 }
 
-struct RichTextContentProjectionState<'a> {
-    content_tag_count: &'a mut usize,
+struct DialogueContentProjectionState<'a> {
+    point_action_count: &'a mut usize,
     argument_count: &'a mut usize,
-    tag_limit_exhausted: &'a mut bool,
+    action_limit_exhausted: &'a mut bool,
     argument_limit_exhausted: &'a mut bool,
     nodes: &'a mut Vec<SyntaxDialogueNodeProjection>,
-    tags: &'a mut Vec<SyntaxRichTextTagProjection>,
     components: &'a mut Vec<PendingExpressionComponent>,
 }
 
@@ -1201,29 +1242,28 @@ fn emit_typed_dialogue_surface(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
     content_end: usize,
-    state: RichTextContentProjectionState<'_>,
+    state: DialogueContentProjectionState<'_>,
 ) -> bool {
-    let RichTextContentProjectionState {
-        content_tag_count,
+    let DialogueContentProjectionState {
+        point_action_count,
         argument_count,
-        tag_limit_exhausted,
+        action_limit_exhausted,
         argument_limit_exhausted,
         nodes,
-        tags,
         components,
     } = state;
     let Some(surface) = scan_dialogue_surface(parser.source(), start, content_end) else {
         return false;
     };
-    let tag_overflow =
-        surface.rich_text_tags() > MAX_RICH_TEXT_CONTENT_TAGS.saturating_sub(*content_tag_count);
-    let argument_overflow = surface.rich_text_arguments()
-        > MAX_RICH_TEXT_CONTENT_ARGUMENTS.saturating_sub(*argument_count);
-    if tag_overflow {
-        if !core::mem::replace(tag_limit_exhausted, true) {
+    let action_overflow =
+        surface.point_actions() > MAX_DIALOGUE_POINT_ACTIONS.saturating_sub(*point_action_count);
+    let argument_overflow = surface.action_arguments()
+        > MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL.saturating_sub(*argument_count);
+    if action_overflow {
+        if !core::mem::replace(action_limit_exhausted, true) {
             emit_content_limit_diagnostic(
                 parser,
-                RichTextContentLimit::Tags,
+                DialogueContentLimit::PointActions,
                 SourceRange::new(start, surface.end()),
             );
         }
@@ -1234,7 +1274,7 @@ fn emit_typed_dialogue_surface(
         if !core::mem::replace(argument_limit_exhausted, true) {
             emit_content_limit_diagnostic(
                 parser,
-                RichTextContentLimit::Arguments,
+                DialogueContentLimit::Arguments,
                 SourceRange::new(start, surface.end()),
             );
         }
@@ -1242,14 +1282,14 @@ fn emit_typed_dialogue_surface(
         let text = parser.source()[range.as_range()].into();
         emit_text_node(parser, range, text, nodes, components);
     } else {
-        *content_tag_count += surface.rich_text_tags();
-        *argument_count += surface.rich_text_arguments();
-        emit_scanned_surface(parser, &surface, nodes, tags, components);
+        *point_action_count += surface.point_actions();
+        *argument_count += surface.action_arguments();
+        emit_scanned_surface(parser, &surface, nodes, components);
     }
     true
 }
 
-fn emit_overlong_tag(
+fn emit_overlong_action(
     parser: &mut DocumentParser<'_, '_>,
     start: usize,
     content_end: usize,
@@ -1259,27 +1299,26 @@ fn emit_overlong_tag(
     if !parser.at("[") {
         return false;
     }
-    let Some(boundary) = find_dialogue_tag_boundary_before(parser.source(), start, content_end)
-    else {
+    let Some(boundary) = find_dialogue_bracket_boundary(parser.source(), start, content_end) else {
         return false;
     };
     let body_start = start
         .checked_add('['.len_utf8())
-        .expect("RichText tag body starts after its opening delimiter");
+        .expect("point-action body starts after its opening delimiter");
     let inside = &parser.source()[body_start..boundary.close()];
-    if inside.len() <= MAX_RICH_TEXT_TAG_BODY_BYTES {
+    if inside.len() <= MAX_DIALOGUE_ACTION_HEAD_BYTES {
         return false;
     }
-    let limit = utf8_boundary_at_or_before(inside, MAX_RICH_TEXT_TAG_BODY_BYTES);
+    let limit = utf8_boundary_at_or_before(inside, MAX_DIALOGUE_ACTION_HEAD_BYTES);
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        DialogueTextDiagnosticCode::RichTextTagBodyTooLong.as_str(),
+        DialogueTextDiagnosticCode::DialogueActionHeadTooLong.as_str(),
         SourceRange::new(
             body_start
                 .checked_add(limit)
-                .expect("RichText tag limit offset remains representable"),
+                .expect("point-action limit offset remains representable"),
             boundary.close(),
         ),
-        format!("dialogue RichText tag body exceeds {MAX_RICH_TEXT_TAG_BODY_BYTES} bytes"),
+        format!("dialogue point-action head exceeds {MAX_DIALOGUE_ACTION_HEAD_BYTES} bytes"),
     )));
     let range = SourceRange::new(start, boundary.end());
     let text = parser.source()[range.as_range()].into();
@@ -1289,18 +1328,18 @@ fn emit_overlong_tag(
 
 fn emit_content_limit_diagnostic(
     parser: &mut DocumentParser<'_, '_>,
-    limit: RichTextContentLimit,
+    limit: DialogueContentLimit,
     range: SourceRange,
 ) {
     let (code, message) = match limit {
-        RichTextContentLimit::Tags => (
-            DialogueTextDiagnosticCode::RichTextContentTagLimit.as_str(),
-            format!("dialogue content has more than {MAX_RICH_TEXT_CONTENT_TAGS} RichText tags"),
+        DialogueContentLimit::PointActions => (
+            DialogueTextDiagnosticCode::DialoguePointActionLimit.as_str(),
+            format!("dialogue content has more than {MAX_DIALOGUE_POINT_ACTIONS} point actions"),
         ),
-        RichTextContentLimit::Arguments => (
-            DialogueTextDiagnosticCode::RichTextContentArgumentLimit.as_str(),
+        DialogueContentLimit::Arguments => (
+            DialogueTextDiagnosticCode::DialogueActionArgumentLimit.as_str(),
             format!(
-                "dialogue content has more than {MAX_RICH_TEXT_CONTENT_ARGUMENTS} RichText arguments"
+                "dialogue content has more than {MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL} RichText arguments"
             ),
         ),
     };
@@ -1310,21 +1349,15 @@ fn emit_content_limit_diagnostic(
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-struct RichTextTagSurface<'source> {
+struct DialogueActionSurface<'source> {
     start: usize,
     end: usize,
     unterminated_quote: Option<TextRange>,
-    body: RichTextTagBody<'source>,
+    open: OpenActionSurface<'source>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-enum RichTextTagBody<'source> {
-    Open(OpenTagSurface<'source>),
-    End { name_range: TextRange },
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct OpenTagSurface<'source> {
+struct OpenActionSurface<'source> {
     source_name: &'source str,
     name_range: TextRange,
     attrs: &'source str,
@@ -1332,11 +1365,11 @@ struct OpenTagSurface<'source> {
     timed_cue: Option<ScannedTimedCuePayload>,
 }
 
-impl<'source> RichTextTagSurface<'source> {
+impl<'source> DialogueActionSurface<'source> {
     fn scan(parser: &DocumentParser<'source, '_>, content_end: usize) -> Option<Self> {
         parser.at("[").then_some(())?;
         let open = parser.current_offset();
-        let boundary = find_dialogue_tag_boundary_before(parser.source(), open, content_end)?;
+        let boundary = find_dialogue_bracket_boundary(parser.source(), open, content_end)?;
         let close = boundary.close();
         let end = boundary.end();
         let unterminated_quote = boundary
@@ -1344,36 +1377,14 @@ impl<'source> RichTextTagSurface<'source> {
             .map(|start| TextRange::new(start, end));
         let body_start = open.checked_add('['.len_utf8())?;
         let inside_source = parser.source().get(body_start..close)?;
-        let inside = trim_rich_text_whitespace(inside_source);
+        let inside = trim_dialogue_action_whitespace(inside_source);
         if inside.is_empty() {
             return None;
         }
         let inside_start = body_start.checked_add(subslice_offset(inside_source, inside))?;
 
-        if let Some(name) = inside.strip_prefix('/') {
-            let name = trim_rich_text_whitespace(name);
-            let after_marker = inside_start.checked_add('/'.len_utf8())?;
-            let name_start = after_marker.checked_add(subslice_offset(&inside[1..], name))?;
-            return Some(Self {
-                start: open,
-                end,
-                unterminated_quote,
-                body: RichTextTagBody::End {
-                    name_range: TextRange::new(name_start, name_start.checked_add(name.len())?),
-                },
-            });
-        }
-
-        let (source_name, attrs, name_start) = if let Some(attrs) = inside.strip_prefix('!') {
-            ("!", trim_rich_text_whitespace(attrs), inside_start)
-        } else {
-            let (source_name, attrs) = split_tag_head(inside);
-            (
-                source_name,
-                attrs,
-                inside_start.checked_add(subslice_offset(inside, source_name))?,
-            )
-        };
+        let (source_name, attrs) = split_action_head(inside);
+        let name_start = inside_start.checked_add(subslice_offset(inside, source_name))?;
         if source_name.is_empty() {
             return None;
         }
@@ -1382,7 +1393,7 @@ impl<'source> RichTextTagSurface<'source> {
             start: open,
             end,
             unterminated_quote,
-            body: RichTextTagBody::Open(OpenTagSurface {
+            open: OpenActionSurface {
                 source_name,
                 name_range: TextRange::new(name_start, name_start.checked_add(source_name.len())?),
                 attrs,
@@ -1394,11 +1405,11 @@ impl<'source> RichTextTagSurface<'source> {
                             attrs_start,
                             attrs_start
                                 .checked_add(attrs.len())
-                                .expect("RichText attribute range remains representable"),
+                                .expect("RichText argument range remains representable"),
                         ),
                     )
                 }),
-            }),
+            },
         })
     }
 }
@@ -1412,7 +1423,7 @@ impl<'source> RichTextTagSurface<'source> {
 /// parse.
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ScannedTimedCuePayload {
-    duration: Option<ScannedTagArgValue>,
+    duration: Option<ScannedDialogueActionArgumentValue>,
     call: Option<TextRange>,
     malformed: bool,
 }
@@ -1510,11 +1521,14 @@ fn scan_timed_cue_payload(
     }
 }
 
-fn timed_cue_duration(parser: &DocumentParser<'_, '_>, index: usize) -> Option<ScannedTagArgValue> {
+fn timed_cue_duration(
+    parser: &DocumentParser<'_, '_>,
+    index: usize,
+) -> Option<ScannedDialogueActionArgumentValue> {
     let token = parser
         .token_at(index)
         .expect("timed-cue duration remains a lexer token");
-    scan_tag_arg_value_if_valid(parser.text_of(token), token.range().start())
+    scan_dialogue_action_argument_value_if_valid(parser.text_of(token), token.range().start())
 }
 
 fn token_start(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
@@ -1543,384 +1557,18 @@ fn is_timed_cue_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-struct EmittedOpenTag {
-    identity: SyntaxRichTextTagIdentity,
-    arguments: Vec<SyntaxRichTextArgumentProjection>,
-    payload: SyntaxRichTextTagPayloadProjection,
-    node: SyntaxDialogueNodeProjection,
-    components: Vec<PendingExpressionComponent>,
-}
-
-fn emit_open_tag(
-    parser: &mut DocumentParser<'_, '_>,
-    surface: &RichTextTagSurface<'_>,
-    open: &OpenTagSurface<'_>,
-    ordinal: u32,
-    scanned_arguments: Option<ScannedTagArguments>,
-    content_argument_count: &mut usize,
-    argument_limit_exhausted: &mut bool,
-) -> EmittedOpenTag {
-    let (identity, marker_components) = tag_identity_with_arguments(
-        parser,
-        open.source_name,
-        source_range(open.name_range),
-        scanned_arguments.as_ref(),
-        ordinal,
-    );
-    let inferred = open.source_name.starts_with('.');
-    let mut components = open_tag_components(surface, open, ordinal, inferred);
-    components.extend(marker_components);
-    parser.start(SyntaxKind::RichTextTag, SyntaxRole::RichTextTag(ordinal));
-    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
-    bump_to_range_start(parser, open.name_range);
-    emit_range_node(
-        parser,
-        SyntaxKind::RichTextTagName,
-        SyntaxRole::Name,
-        open.name_range,
-    );
-    let mut state = OpenTagPayloadState {
-        ordinal,
-        content_argument_count,
-        argument_limit_exhausted,
-        components: &mut components,
-    };
-    let (arguments, payload) = emit_open_tag_payload(
-        parser,
-        surface,
-        open,
-        &identity,
-        scanned_arguments,
-        &mut state,
-    );
-    emit_open_tag_close(parser, surface);
-    let node = if inferred {
-        SyntaxDialogueNodeProjection::InferredStartTag { tag: ordinal }
-    } else {
-        SyntaxDialogueNodeProjection::AuthoredStartTag { tag: ordinal }
-    };
-    EmittedOpenTag {
-        identity,
-        arguments,
-        payload,
-        node,
-        components,
-    }
-}
-
-fn open_tag_components(
-    surface: &RichTextTagSurface<'_>,
-    open: &OpenTagSurface<'_>,
-    ordinal: u32,
-    inferred: bool,
-) -> Vec<PendingExpressionComponent> {
-    let whole = SourceRange::new(surface.start, surface.end);
-    let mut components = vec![
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::Whole,
-            },
-            whole,
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::OpenDelimiter,
-            },
-            SourceRange::new(
-                whole.start(),
-                whole
-                    .start()
-                    .checked_add('['.len_utf8())
-                    .expect("RichText opening delimiter remains representable"),
-            ),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::Name,
-            },
-            SourceRange::new(open.name_range.start(), open.name_range.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::Payload,
-            },
-            SourceRange::new(open.attrs_range.start(), open.attrs_range.end()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::CloseDelimiter,
-            },
-            SourceRange::new(
-                surface
-                    .end
-                    .checked_sub(']'.len_utf8())
-                    .expect("RichText closing delimiter follows its opening delimiter"),
-                surface.end,
-            ),
-        ),
-    ];
-    if inferred {
-        components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: SyntaxRichTextTagSourcePart::InferenceInsertion,
-            },
-            SourceRange::new(open.name_range.start(), open.name_range.start()),
-        ));
-    }
-    components
-}
-
-struct OpenTagPayloadState<'a> {
-    ordinal: u32,
-    content_argument_count: &'a mut usize,
-    argument_limit_exhausted: &'a mut bool,
-    components: &'a mut Vec<PendingExpressionComponent>,
-}
-
-fn emit_open_tag_payload(
-    parser: &mut DocumentParser<'_, '_>,
-    surface: &RichTextTagSurface<'_>,
-    open: &OpenTagSurface<'_>,
-    identity: &SyntaxRichTextTagIdentity,
-    scanned_arguments: Option<ScannedTagArguments>,
-    state: &mut OpenTagPayloadState<'_>,
-) -> (
-    Vec<SyntaxRichTextArgumentProjection>,
-    SyntaxRichTextTagPayloadProjection,
-) {
-    let mut arguments = Vec::new();
-    let mut payload = SyntaxRichTextTagPayloadProjection::None;
-    if let Some(timed_cue) = open.timed_cue.as_ref() {
-        return emit_timed_cue_payload(parser, open, timed_cue, state);
-    }
-    if matches!(identity, SyntaxRichTextTagIdentity::Marker(_)) {
-        // Marker selectors are a typed identity, not generic RichText
-        // arguments. The source is still consumed by the enclosing tag close
-        // so malformed attributes remain lossless without becoming a String
-        // success payload.
-        return (arguments, payload);
-    }
-    if !open.attrs.is_empty() {
-        bump_to_range_start(parser, open.attrs_range);
-        match open.source_name {
-            "fx" => {
-                payload = SyntaxRichTextTagPayloadProjection::FxCall(emit_expression_payload(
-                    parser,
-                    open.attrs_range,
-                    SyntaxKind::RichTextFxCallPayload,
-                    SyntaxRole::Operand,
-                ));
-            }
-            "call" | "!" => {
-                payload =
-                    SyntaxRichTextTagPayloadProjection::DialogueCall(emit_expression_payload(
-                        parser,
-                        open.attrs_range,
-                        SyntaxKind::RichTextDialogueCallPayload,
-                        SyntaxRole::Operand,
-                    ));
-            }
-            "if" => {
-                payload = SyntaxRichTextTagPayloadProjection::Condition(emit_expression_payload(
-                    parser,
-                    open.attrs_range,
-                    SyntaxKind::RichTextConditionPayload,
-                    SyntaxRole::Condition,
-                ));
-            }
-            _ => {
-                let scanned = scanned_arguments
-                    .expect("ordinary RichText attributes are scanned once before emission");
-                *state.content_argument_count = state
-                    .content_argument_count
-                    .checked_add(scanned.entries().len())
-                    .expect("retained RichText argument count remains grammar-bounded");
-                arguments = scanned
-                    .entries()
-                    .iter()
-                    .map(|argument| syntax_argument(parser.source(), argument))
-                    .collect();
-                state
-                    .components
-                    .extend(argument_components(state.ordinal, scanned.entries()));
-                emit_argument_payload(
-                    parser,
-                    open.attrs_range,
-                    &scanned,
-                    surface.unterminated_quote.is_some(),
-                    state.argument_limit_exhausted,
-                );
-                payload = SyntaxRichTextTagPayloadProjection::Arguments;
-            }
-        }
-    } else if !matches!(
-        identity,
-        SyntaxRichTextTagIdentity::Builtin(
-            SyntaxBuiltinRichTextTag::Page
-                | SyntaxBuiltinRichTextTag::LineWait
-                | SyntaxBuiltinRichTextTag::HardBreak
-                | SyntaxBuiltinRichTextTag::Clear
-                | SyntaxBuiltinRichTextTag::Reset
-        )
-    ) {
-        payload = SyntaxRichTextTagPayloadProjection::Arguments;
-    }
-    (arguments, payload)
-}
-
-fn emit_timed_cue_payload(
-    parser: &mut DocumentParser<'_, '_>,
-    open: &OpenTagSurface<'_>,
-    timed_cue: &ScannedTimedCuePayload,
-    state: &mut OpenTagPayloadState<'_>,
-) -> (
-    Vec<SyntaxRichTextArgumentProjection>,
-    SyntaxRichTextTagPayloadProjection,
-) {
-    parser.start(SyntaxKind::RichTextTimedCuePayload, SyntaxRole::Payload);
-    let mut arguments = Vec::new();
-    if let Some(duration) = timed_cue.duration.as_ref() {
-        bump_to_range_start(parser, duration.token_range());
-        parser.start(
-            SyntaxKind::RichTextPositionalArgument,
-            SyntaxRole::Argument(0),
-        );
-        let mut cursor = PartitionedEventCursor::new(parser, duration.token_range().start());
-        emit_present_value(&mut cursor, duration);
-        cursor.finish_at(duration.token_range().end());
-        parser.finish();
-        arguments.push(SyntaxRichTextArgumentProjection::Positional {
-            value: SyntaxRichTextValue::new(duration.decoded()),
-        });
-        state
-            .components
-            .extend(timed_cue_argument_components(state.ordinal, duration));
-        *state.content_argument_count = state
-            .content_argument_count
-            .checked_add(1)
-            .expect("retained RichText argument count remains grammar-bounded");
-    }
-
-    let call_range = timed_cue.call.filter(|_| !timed_cue.malformed);
-    let call_insertion = call_range.map_or(open.attrs_range.end(), |range| range.start());
-    bump_until_offset(parser, call_insertion);
-    let slot = match call_range {
-        Some(range) => emit_expression_payload(
-            parser,
-            range,
-            SyntaxKind::RichTextDialogueCallPayload,
-            SyntaxRole::Operand,
-        ),
-        None => emit_expression_payload(
-            parser,
-            TextRange::new(open.attrs_range.end(), open.attrs_range.end()),
-            SyntaxKind::RichTextDialogueCallPayload,
-            SyntaxRole::Operand,
-        ),
-    };
-    bump_until_offset(parser, open.attrs_range.end());
-    parser.finish();
-    (
-        arguments,
-        SyntaxRichTextTagPayloadProjection::DialogueCall(slot),
-    )
-}
-
-fn timed_cue_argument_components(
-    tag: u32,
-    duration: &ScannedTagArgValue,
-) -> [PendingExpressionComponent; 2] {
-    [
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextArgument {
-                tag,
-                argument: 0,
-                part: SyntaxRichTextArgumentSourcePart::Whole,
-            },
-            source_range(duration.token_range()),
-        ),
-        PendingExpressionComponent::new(
-            ExpressionComponentRole::RichTextArgument {
-                tag,
-                argument: 0,
-                part: SyntaxRichTextArgumentSourcePart::Value,
-            },
-            source_range(duration.content_range()),
-        ),
-    ]
-}
-
-fn emit_open_tag_close(parser: &mut DocumentParser<'_, '_>, surface: &RichTextTagSurface<'_>) {
-    let close = surface
-        .end
-        .checked_sub(']'.len_utf8())
-        .expect("RichText closing delimiter follows its opening delimiter");
-    bump_until_offset(parser, close);
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseBracketNode,
-        "]",
-        "syntax.rich_text.tag.missing_close",
-    );
-    emit_unterminated_quote_diagnostic(parser, surface.unterminated_quote);
-    parser.finish();
-}
-
-fn tag_identity(source: &str) -> SyntaxRichTextTagIdentity {
-    SyntaxRichTextTagIdentity::from_source_name(source)
-}
-
-fn tag_identity_with_arguments(
-    parser: &DocumentParser<'_, '_>,
-    source: &str,
-    source_range: SourceRange,
-    arguments: Option<&ScannedTagArguments>,
-    tag: u32,
-) -> (SyntaxRichTextTagIdentity, Vec<PendingExpressionComponent>) {
-    if source == "mark" {
-        return marker_identity(parser, arguments, source_range, tag);
-    }
-    let Some(selector) = arguments
-        .and_then(|arguments| arguments.entries().first())
-        .and_then(|argument| match argument {
-            ScannedTagArgument::Positional { value, .. } => Some(value.decoded()),
-            ScannedTagArgument::Named { .. } | ScannedTagArgument::Invalid { .. } => None,
-        })
-    else {
-        return (tag_identity(source), Vec::new());
-    };
-    let Some(builtin) = SyntaxBuiltinRichTextTag::from_source_name(selector) else {
-        return (tag_identity(source), Vec::new());
-    };
-    let belongs_to_family = matches!(
-        (source, builtin),
-        ("style", SyntaxBuiltinRichTextTag::Style(_))
-            | ("layout", SyntaxBuiltinRichTextTag::Layout(_))
-            | ("transform", SyntaxBuiltinRichTextTag::Transform(_))
-            | ("effect", SyntaxBuiltinRichTextTag::Fx(_))
-    );
-    if belongs_to_family {
-        (SyntaxRichTextTagIdentity::Builtin(builtin), Vec::new())
-    } else {
-        (tag_identity(source), Vec::new())
-    }
-}
-
 fn marker_identity(
     parser: &DocumentParser<'_, '_>,
-    arguments: Option<&ScannedTagArguments>,
+    arguments: Option<&ScannedDialogueActionArguments>,
     fallback_range: SourceRange,
-    tag: u32,
-) -> (SyntaxRichTextTagIdentity, Vec<PendingExpressionComponent>) {
+    action: u32,
+) -> (
+    SyntaxDialoguePointActionIdentity,
+    Vec<PendingExpressionComponent>,
+) {
     let Some(arguments) = arguments else {
         return (
-            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+            SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                 SyntaxDialogueMarkNameIssue::MissingSuffix,
                 fallback_range,
             )),
@@ -1934,7 +1582,7 @@ fn marker_identity(
             SyntaxDialogueMarkNameIssue::MultipleArguments
         };
         return (
-            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+            SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                 issue,
                 arguments
                     .entries()
@@ -1946,11 +1594,11 @@ fn marker_identity(
     }
     let argument = &arguments.entries()[0];
     match argument {
-        ScannedTagArgument::Positional { value, .. } => {
+        ScannedDialogueActionArgument::Positional { value, .. } => {
             let range = source_range(value.token_range());
             if value.opening_quote_range().is_some() {
                 return (
-                    SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                    SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                         SyntaxDialogueMarkNameIssue::Quoted,
                         range,
                     )),
@@ -1960,7 +1608,7 @@ fn marker_identity(
             let spelling = parser.source().get(range.as_range()).unwrap_or("");
             if !spelling.starts_with('@') {
                 return (
-                    SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+                    SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                         SyntaxDialogueMarkNameIssue::MissingReference,
                         range,
                     )),
@@ -1969,7 +1617,7 @@ fn marker_identity(
             }
             let projection = typed_entity_reference_source(range, spelling);
             let identity =
-                SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::from_reference(
+                SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::from_reference(
                     projection.syntax().clone(),
                     range,
                     projection.components().to_vec(),
@@ -1979,9 +1627,9 @@ fn marker_identity(
                 .iter()
                 .map(|component| {
                     PendingExpressionComponent::new(
-                        ExpressionComponentRole::RichTextTag {
-                            tag,
-                            part: SyntaxRichTextTagSourcePart::Marker(component.part()),
+                        ExpressionComponentRole::DialoguePointAction {
+                            ordinal: action,
+                            part: SyntaxDialoguePointActionSourcePart::Marker(component.part()),
                         },
                         component.range(),
                     )
@@ -1989,15 +1637,15 @@ fn marker_identity(
                 .collect();
             (identity, components)
         }
-        ScannedTagArgument::Named { range, .. } => (
-            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+        ScannedDialogueActionArgument::Named { range, .. } => (
+            SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                 SyntaxDialogueMarkNameIssue::Attributed,
                 source_range(*range),
             )),
             Vec::new(),
         ),
-        ScannedTagArgument::Invalid { range, .. } => (
-            SyntaxRichTextTagIdentity::Marker(SyntaxDialogueMarkName::recovered(
+        ScannedDialogueActionArgument::Invalid { range, .. } => (
+            SyntaxDialoguePointActionIdentity::Mark(SyntaxDialogueMarkName::recovered(
                 SyntaxDialogueMarkNameIssue::Malformed,
                 source_range(*range),
             )),
@@ -2006,44 +1654,31 @@ fn marker_identity(
     }
 }
 
-fn rich_text_end_matches(authored_name: &str, open: &SyntaxRichTextTagIdentity) -> bool {
-    match (authored_name, open) {
-        ("style", SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Style(_)))
-        | ("layout", SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Layout(_)))
-        | (
-            "transform",
-            SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Transform(_)),
-        )
-        | ("effect", SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Fx(_)))
-        | ("object", SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Object(_))) => {
-            true
-        }
-        _ => &tag_identity(authored_name) == open,
-    }
-}
-
 fn syntax_argument(
     source: &str,
-    argument: &ScannedTagArgument,
-) -> SyntaxRichTextArgumentProjection {
+    argument: &ScannedDialogueActionArgument,
+) -> SyntaxDialogueActionArgumentProjection {
     match argument {
-        ScannedTagArgument::Positional { value, .. } => {
-            SyntaxRichTextArgumentProjection::Positional {
-                value: SyntaxRichTextValue::new(value.decoded()),
+        ScannedDialogueActionArgument::Positional { value, .. } => {
+            SyntaxDialogueActionArgumentProjection::Positional {
+                value: SyntaxDialogueActionValue::new(value.decoded()),
             }
         }
-        ScannedTagArgument::Named {
+        ScannedDialogueActionArgument::Named {
             name_range, value, ..
-        } => SyntaxRichTextArgumentProjection::Named {
-            name: SyntaxName::try_new(
+        } => {
+            let name = SyntaxName::try_new(
                 source
                     .get(name_range.as_range())
                     .expect("RichText argument name remains inside source"),
-            ),
-            value: SyntaxRichTextValue::new(value.decoded()),
-        },
-        ScannedTagArgument::Invalid { issue, parts, .. } => {
-            SyntaxRichTextArgumentProjection::Invalid {
+            );
+            SyntaxDialogueActionArgumentProjection::Named {
+                name,
+                value: SyntaxDialogueActionValue::new(value.decoded()),
+            }
+        }
+        ScannedDialogueActionArgument::Invalid { issue, parts, .. } => {
+            SyntaxDialogueActionArgumentProjection::Invalid {
                 issue: *issue,
                 authored_parts: syntax_argument_parts(*parts),
             }
@@ -2051,43 +1686,45 @@ fn syntax_argument(
     }
 }
 
-const fn syntax_argument_parts(parts: ScannedTagArgumentParts) -> SyntaxRichTextArgumentParts {
-    SyntaxRichTextArgumentParts::new(
+const fn syntax_argument_parts(
+    parts: ScannedDialogueActionArgumentParts,
+) -> SyntaxDialogueActionArgumentParts {
+    SyntaxDialogueActionArgumentParts::new(
         parts.name().is_some(),
         parts.equals().is_some(),
         parts.value().is_some(),
     )
 }
 
-fn argument_components(
-    tag: u32,
-    arguments: &[ScannedTagArgument],
+fn point_action_argument_components(
+    action: u32,
+    arguments: &[ScannedDialogueActionArgument],
 ) -> Vec<PendingExpressionComponent> {
     arguments
         .iter()
         .enumerate()
         .flat_map(|(ordinal, _)| {
-            let argument = u16::try_from(ordinal).expect("RichText tag argument limit fits u16");
+            let argument = u16::try_from(ordinal).expect("dialogue action argument limit fits u16");
             let mut parts = vec![PendingExpressionComponent::new(
-                ExpressionComponentRole::RichTextArgument {
-                    tag,
+                ExpressionComponentRole::DialoguePointActionArgument {
+                    action,
                     argument,
-                    part: SyntaxRichTextArgumentSourcePart::Whole,
+                    part: SyntaxDialogueActionArgumentSourcePart::Whole,
                 },
                 source_range(arguments[ordinal].range()),
             )];
             match &arguments[ordinal] {
-                ScannedTagArgument::Positional { value, .. } => {
+                ScannedDialogueActionArgument::Positional { value, .. } => {
                     parts.push(PendingExpressionComponent::new(
-                        ExpressionComponentRole::RichTextArgument {
-                            tag,
+                        ExpressionComponentRole::DialoguePointActionArgument {
+                            action,
                             argument,
-                            part: SyntaxRichTextArgumentSourcePart::Value,
+                            part: SyntaxDialogueActionArgumentSourcePart::Value,
                         },
                         source_range(value.content_range()),
                     ));
                 }
-                ScannedTagArgument::Named {
+                ScannedDialogueActionArgument::Named {
                     name_range,
                     equals_range,
                     value,
@@ -2095,43 +1732,52 @@ fn argument_components(
                 } => {
                     parts.extend([
                         PendingExpressionComponent::new(
-                            ExpressionComponentRole::RichTextArgument {
-                                tag,
+                            ExpressionComponentRole::DialoguePointActionArgument {
+                                action,
                                 argument,
-                                part: SyntaxRichTextArgumentSourcePart::Name,
+                                part: SyntaxDialogueActionArgumentSourcePart::Name,
                             },
                             source_range(*name_range),
                         ),
                         PendingExpressionComponent::new(
-                            ExpressionComponentRole::RichTextArgument {
-                                tag,
+                            ExpressionComponentRole::DialoguePointActionArgument {
+                                action,
                                 argument,
-                                part: SyntaxRichTextArgumentSourcePart::Equals,
+                                part: SyntaxDialogueActionArgumentSourcePart::Equals,
                             },
                             source_range(*equals_range),
                         ),
                         PendingExpressionComponent::new(
-                            ExpressionComponentRole::RichTextArgument {
-                                tag,
+                            ExpressionComponentRole::DialoguePointActionArgument {
+                                action,
                                 argument,
-                                part: SyntaxRichTextArgumentSourcePart::Value,
+                                part: SyntaxDialogueActionArgumentSourcePart::Value,
                             },
                             source_range(value.content_range()),
                         ),
                     ]);
                 }
-                ScannedTagArgument::Invalid {
+                ScannedDialogueActionArgument::Invalid {
                     parts: authored, ..
                 } => {
                     for (part, range) in [
-                        (SyntaxRichTextArgumentSourcePart::Name, authored.name()),
-                        (SyntaxRichTextArgumentSourcePart::Equals, authored.equals()),
-                        (SyntaxRichTextArgumentSourcePart::Value, authored.value()),
+                        (
+                            SyntaxDialogueActionArgumentSourcePart::Name,
+                            authored.name(),
+                        ),
+                        (
+                            SyntaxDialogueActionArgumentSourcePart::Equals,
+                            authored.equals(),
+                        ),
+                        (
+                            SyntaxDialogueActionArgumentSourcePart::Value,
+                            authored.value(),
+                        ),
                     ] {
                         if let Some(range) = range {
                             parts.push(PendingExpressionComponent::new(
-                                ExpressionComponentRole::RichTextArgument {
-                                    tag,
+                                ExpressionComponentRole::DialoguePointActionArgument {
+                                    action,
                                     argument,
                                     part,
                                 },
@@ -2150,47 +1796,13 @@ const fn source_range(range: TextRange) -> SourceRange {
     SourceRange::new(range.start(), range.end())
 }
 
-fn emit_end_tag(
-    parser: &mut DocumentParser<'_, '_>,
-    surface: &RichTextTagSurface<'_>,
-    name_range: TextRange,
-    ordinal: u32,
-) {
-    parser.start(SyntaxKind::RichTextEndTag, SyntaxRole::RichTextTag(ordinal));
-    emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
-    if parser.at("/") {
-        let _ = parser.bump();
-    }
-    bump_to_range_start(parser, name_range);
-    if name_range.start() != name_range.end() {
-        emit_range_node(
-            parser,
-            SyntaxKind::RichTextTagName,
-            SyntaxRole::Name,
-            name_range,
-        );
-    }
-    let close = surface
-        .end
-        .checked_sub(']'.len_utf8())
-        .expect("RichText end tag closing delimiter follows its opening delimiter");
-    bump_until_offset(parser, close);
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseBracketNode,
-        "]",
-        "syntax.rich_text.tag.missing_close",
-    );
-    emit_unterminated_quote_diagnostic(parser, surface.unterminated_quote);
-    parser.finish();
-}
-
 fn emit_expression_payload(
     parser: &mut DocumentParser<'_, '_>,
     range: TextRange,
     kind: SyntaxKind,
     expression_role: SyntaxRole,
 ) -> SyntaxExpressionSlot {
+    bump_to_range_start(parser, range);
     parser.start(kind, SyntaxRole::Payload);
     let end = parser
         .token_boundary_index(range.end())
@@ -2204,29 +1816,36 @@ fn emit_expression_payload(
 fn emit_argument_payload(
     parser: &mut DocumentParser<'_, '_>,
     range: TextRange,
-    scanned: &ScannedTagArguments,
-    tag_reports_unterminated_quote: bool,
+    scanned: &ScannedDialogueActionArguments,
+    action_reports_unterminated_quote: bool,
     argument_limit_exhausted: &mut bool,
 ) {
-    parser.start(SyntaxKind::RichTextArgumentPayload, SyntaxRole::Payload);
-    parser.start(SyntaxKind::RichTextArgumentList, SyntaxRole::Element(0));
+    parser.start(
+        SyntaxKind::DialogueActionArgumentPayload,
+        SyntaxRole::Payload,
+    );
+    parser.start(
+        SyntaxKind::DialogueActionArgumentList,
+        SyntaxRole::Element(0),
+    );
     for (ordinal, argument) in scanned.entries().iter().enumerate() {
         bump_to_range_start(parser, argument.range());
         emit_argument(
             parser,
             argument,
-            u16::try_from(ordinal).expect("RichText tag argument limit fits u16"),
+            u16::try_from(ordinal).expect("dialogue action argument limit fits u16"),
         );
     }
     bump_until_offset(parser, range.end());
     parser.finish();
     for diagnostic in scanned.diagnostics() {
-        if tag_reports_unterminated_quote
-            && diagnostic.code() == DialogueTextDiagnosticCode::RichTextAttributeUnterminatedQuote
+        if action_reports_unterminated_quote
+            && diagnostic.code()
+                == DialogueTextDiagnosticCode::DialogueActionArgumentUnterminatedQuote
         {
             continue;
         }
-        if diagnostic.code() == DialogueTextDiagnosticCode::RichTextContentArgumentLimit
+        if diagnostic.code() == DialogueTextDiagnosticCode::DialogueActionArgumentLimit
             && core::mem::replace(argument_limit_exhausted, true)
         {
             continue;
@@ -2241,11 +1860,15 @@ fn emit_argument_payload(
     parser.finish();
 }
 
-fn emit_argument(parser: &mut DocumentParser<'_, '_>, argument: &ScannedTagArgument, ordinal: u16) {
+fn emit_argument(
+    parser: &mut DocumentParser<'_, '_>,
+    argument: &ScannedDialogueActionArgument,
+    ordinal: u16,
+) {
     match argument {
-        ScannedTagArgument::Positional { value, range } => {
+        ScannedDialogueActionArgument::Positional { value, range } => {
             parser.start(
-                SyntaxKind::RichTextPositionalArgument,
+                SyntaxKind::DialogueActionPositionalArgument,
                 SyntaxRole::Argument(ordinal),
             );
             let mut cursor = PartitionedEventCursor::new(parser, range.start());
@@ -2253,37 +1876,40 @@ fn emit_argument(parser: &mut DocumentParser<'_, '_>, argument: &ScannedTagArgum
             cursor.finish_at(range.end());
             parser.finish();
         }
-        ScannedTagArgument::Named {
+        ScannedDialogueActionArgument::Named {
             name_range,
             equals_range,
             value,
             range,
         } => {
             parser.start(
-                SyntaxKind::RichTextNamedArgument,
+                SyntaxKind::DialogueActionNamedArgument,
                 SyntaxRole::Argument(ordinal),
             );
             let mut cursor = PartitionedEventCursor::new(parser, range.start());
-            cursor.start(SyntaxKind::RichTextArgumentKey, SyntaxRole::Key);
+            cursor.start(SyntaxKind::DialogueActionArgumentKey, SyntaxRole::Key);
             cursor.emit_to(name_range.end());
             cursor.finish();
-            cursor.start(SyntaxKind::RichTextArgumentEquals, SyntaxRole::Equals);
+            cursor.start(SyntaxKind::DialogueActionArgumentEquals, SyntaxRole::Equals);
             cursor.emit_to_as(equals_range.end(), SyntaxKind::PunctuationToken);
             cursor.finish();
             emit_present_value(&mut cursor, value);
             cursor.finish_at(range.end());
             parser.finish();
         }
-        ScannedTagArgument::Invalid {
+        ScannedDialogueActionArgument::Invalid {
             range, issue_range, ..
         } => {
             parser.start(
-                SyntaxKind::RichTextInvalidArgument,
+                SyntaxKind::DialogueActionInvalidArgument,
                 SyntaxRole::Argument(ordinal),
             );
             let mut cursor = PartitionedEventCursor::new(parser, range.start());
             cursor.emit_to(issue_range.start());
-            cursor.start(SyntaxKind::RichTextInvalidArgumentIssue, SyntaxRole::Issue);
+            cursor.start(
+                SyntaxKind::DialogueActionInvalidArgumentIssue,
+                SyntaxRole::Issue,
+            );
             cursor.emit_to(issue_range.end());
             cursor.finish();
             cursor.emit_to(range.end());
@@ -2293,19 +1919,31 @@ fn emit_argument(parser: &mut DocumentParser<'_, '_>, argument: &ScannedTagArgum
     }
 }
 
-fn emit_present_value(cursor: &mut PartitionedEventCursor<'_, '_, '_>, value: &ScannedTagArgValue) {
-    cursor.start(SyntaxKind::RichTextArgumentValue, SyntaxRole::Value);
-    cursor.start(SyntaxKind::RichTextArgumentToken, SyntaxRole::Token);
+fn emit_present_value(
+    cursor: &mut PartitionedEventCursor<'_, '_, '_>,
+    value: &ScannedDialogueActionArgumentValue,
+) {
+    cursor.start(SyntaxKind::DialogueActionArgumentValue, SyntaxRole::Value);
+    cursor.start(SyntaxKind::DialogueActionArgumentToken, SyntaxRole::Token);
     if let Some(opening) = value.opening_quote_range() {
-        cursor.start(SyntaxKind::RichTextArgumentQuote, SyntaxRole::OpeningQuote);
+        cursor.start(
+            SyntaxKind::DialogueActionArgumentQuote,
+            SyntaxRole::OpeningQuote,
+        );
         cursor.emit_to_as(opening.end(), SyntaxKind::PunctuationToken);
         cursor.finish();
     }
-    cursor.start(SyntaxKind::RichTextArgumentContent, SyntaxRole::Content);
+    cursor.start(
+        SyntaxKind::DialogueActionArgumentContent,
+        SyntaxRole::Content,
+    );
     cursor.emit_to(value.content_range().end());
     cursor.finish();
     if let Some(closing) = value.closing_quote_range() {
-        cursor.start(SyntaxKind::RichTextArgumentQuote, SyntaxRole::ClosingQuote);
+        cursor.start(
+            SyntaxKind::DialogueActionArgumentQuote,
+            SyntaxRole::ClosingQuote,
+        );
         cursor.emit_to_as(closing.end(), SyntaxKind::PunctuationToken);
         cursor.finish();
     }
@@ -2423,20 +2061,20 @@ fn emit_unterminated_quote_diagnostic(
         return;
     };
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        DialogueTextDiagnosticCode::RichTextAttributeUnterminatedQuote.as_str(),
+        DialogueTextDiagnosticCode::DialogueActionArgumentUnterminatedQuote.as_str(),
         SourceRange::new(range.start(), range.end()),
-        "unterminated quote in dialogue tag arguments",
+        "unterminated quote in dialogue action arguments",
     )));
 }
 
-fn split_tag_head(source: &str) -> (&str, &str) {
+fn split_action_head(source: &str) -> (&str, &str) {
     source
         .char_indices()
-        .find_map(|(index, character)| is_rich_text_whitespace(character).then_some(index))
+        .find_map(|(index, character)| is_dialogue_action_whitespace(character).then_some(index))
         .map_or((source, &source[source.len()..]), |index| {
             (
                 &source[..index],
-                trim_rich_text_whitespace(&source[index..]),
+                trim_dialogue_action_whitespace(&source[index..]),
             )
         })
 }

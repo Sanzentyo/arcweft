@@ -47,6 +47,14 @@ impl CharacterDialogueCustomFieldId {
     pub fn as_str(&self) -> &str {
         self.0.as_str()
     }
+
+    /// Returns the owner-issued bytes of this validated custom-field
+    /// identity.  Semantic consumers must not reconstruct this identity from
+    /// its display spelling.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.canonical_identity_bytes()
+    }
 }
 
 impl fmt::Display for CharacterDialogueCustomFieldId {

@@ -24,10 +24,10 @@ use super::{
     AgentObserveCaptureKind, AgentObserveImageKind, AgentObserveMcpFormat, AgentObserveOptions,
     AgentObserveResourceKind, AgentReplOptions, AgentRunner, AgentRunnerConfig,
     AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
-    CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
-    NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, fs,
-    native_host_policy_for_selection, parse_runtime_binding_arg, parse_runtime_pure_workers,
-    print_json, resolve_source_selection,
+    CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, DisabledRagService,
+    ExitCode, FlowFiberStatus, NativeAdapterRegistrar, NativeTaskBridge, Path, PathBuf,
+    ProfileOptions, fs, native_host_policy_for_selection, parse_runtime_binding_arg,
+    parse_runtime_pure_workers, print_json, resolve_source_selection,
 };
 use crate::app::debug::debug_project_readback_json;
 use crate::app::local_embedding::{
@@ -116,7 +116,7 @@ use arcweft_layout::{
 };
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
 use arcweft_runtime_driver::session::BundleStepInput;
-use arcweft_text_model::{LineDisplayFrame, RichTextRange};
+use arcweft_text_model::RichTextRange;
 use arcweft_tooling::agent_repl::{
     AgentReplCellClassification, AgentReplCellCompletionKind, AgentReplCompletionContext,
     AgentReplCompletionEntity, AgentReplFragmentKind, agent_repl_classify_cell,

@@ -23,7 +23,7 @@ pub use self::basic::{
 pub use self::call::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedReceiverError,
     HirAssociatedSeparator, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
-    HirCallCallee, HirCallExpr, HirCallIssue, HirCallTypeApplication,
+    HirCallCallee, HirCallInvocation, HirCallInvocationForm, HirCallIssue, HirCallTypeApplication,
     HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
     HirCallTypeArgumentOrdinal, HirCallValue, HirRecoveredName, HirRequiredTokenState,
 };
@@ -62,7 +62,7 @@ pub use self::thread::{
 };
 
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueIssue, HirPostfixBracket, HirRichTextIssue,
+    HirAttachedContentApplication, HirDialogueIssue, HirPostfixBracket, HirRichTextIssue,
 };
 use crate::identity::{ExprId, HirModuleId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{
@@ -155,7 +155,7 @@ pub enum HirExprKind {
     BracketSequence(HirBracketSequenceExpr),
     NumericBracketSequence(HirNumericSequence),
     ArrayRepeat(HirArrayRepeatExpr),
-    Call(HirCallExpr),
+    Call(HirCallInvocation),
     Select(HirSelectExpr),
     Index(HirIndexExpr),
     Pipe(HirPipeExpr),
@@ -178,10 +178,61 @@ pub enum HirExprKind {
     If(HirIfExpr),
     IfLet(HirIfLetExpr),
     Match(HirMatchExpr),
-    DialogueContentApplication(HirDialogueContentApplication),
+    AttachedContentApplication(HirAttachedContentApplication),
     PostfixBracket(HirPostfixBracket),
     Error(HirExprError),
     ForSynthetic(HirForSyntheticExpr),
+}
+
+/// Runtime disposition of a type root attached to a semantic expression.
+///
+/// A root can be required for complete semantic/type resolution while not
+/// contributing a runtime-owned type.  Keeping that distinction on the HIR
+/// edge prevents runtime reachability from rediscovering or guessing which
+/// typed syntax is executable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirTypeRootDisposition {
+    RuntimeBearing,
+    SemanticOnly,
+    /// A callee-resolution input may denote an open type constructor rather
+    /// than a value type. The selected callable owns its instantiated meaning.
+    ResolutionInput,
+}
+
+/// One typed edge from an expression to a type-arena root.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirExpressionTypeRoot {
+    type_id: TypeId,
+    disposition: HirTypeRootDisposition,
+}
+
+impl HirExpressionTypeRoot {
+    pub const fn new(type_id: TypeId, disposition: HirTypeRootDisposition) -> Self {
+        Self {
+            type_id,
+            disposition,
+        }
+    }
+
+    pub const fn runtime(type_id: TypeId) -> Self {
+        Self::new(type_id, HirTypeRootDisposition::RuntimeBearing)
+    }
+
+    pub const fn semantic_only(type_id: TypeId) -> Self {
+        Self::new(type_id, HirTypeRootDisposition::SemanticOnly)
+    }
+
+    pub const fn resolution_input(type_id: TypeId) -> Self {
+        Self::new(type_id, HirTypeRootDisposition::ResolutionInput)
+    }
+
+    pub const fn type_id(self) -> TypeId {
+        self.type_id
+    }
+
+    pub const fn disposition(self) -> HirTypeRootDisposition {
+        self.disposition
+    }
 }
 
 impl HirExprKind {
@@ -223,30 +274,33 @@ impl HirExprKind {
             Self::If(_) => 0x011F,
             Self::IfLet(_) => 0x0120,
             Self::Match(_) => 0x0121,
-            Self::DialogueContentApplication(_) => 0x0122,
+            Self::AttachedContentApplication(_) => 0x0122,
             Self::PostfixBracket(_) => 0x0123,
             Self::Error(_) => 0x0124,
             Self::ForSynthetic(_) => 0x0125,
         }
     }
 
-    /// Returns every type-arena root attached directly to this expression.
+    /// Returns every typed type-arena root attached directly to this
+    /// expression, including semantic-only roots.
     ///
     /// Nested type structure remains owned by [`crate::type_ref::HirTypeKind`].
     /// Keeping the expression-to-type edge here lets higher-level domains
     /// follow accepted typed ownership without source reconstruction.
-    pub(crate) fn direct_type_roots(&self) -> Vec<TypeId> {
+    pub fn direct_type_roots(&self) -> Vec<HirExpressionTypeRoot> {
         match self {
             Self::Call(call) => call
                 .callee()
                 .associated_parts()
                 .and_then(|(receiver, _, _)| receiver.type_id())
                 .into_iter()
+                .map(HirExpressionTypeRoot::resolution_input)
                 .chain(
                     call.explicit_type_application()
                         .arguments()
                         .iter()
-                        .filter_map(HirCallTypeArgument::type_id),
+                        .filter_map(HirCallTypeArgument::type_id)
+                        .map(HirExpressionTypeRoot::runtime),
                 )
                 .collect(),
             Self::Closure(closure) => closure
@@ -258,7 +312,9 @@ impl HirExprKind {
                         .iter()
                         .filter_map(HirClosureParameter::ty),
                 )
+                .map(HirExpressionTypeRoot::runtime)
                 .collect(),
+            Self::AttachedContentApplication(application) => application.direct_type_roots(),
             Self::Unit
             | Self::Literal(_)
             | Self::EntityReference(_)
@@ -291,7 +347,6 @@ impl HirExprKind {
             | Self::If(_)
             | Self::IfLet(_)
             | Self::Match(_)
-            | Self::DialogueContentApplication(_)
             | Self::PostfixBracket(_)
             | Self::Error(_)
             | Self::ForSynthetic(_) => Vec::new(),
@@ -325,7 +380,7 @@ impl HirExprKind {
             Self::Select(expression) => {
                 matches!(expression.member(), HirSelectedMember::Missing)
             }
-            Self::DialogueContentApplication(expression) => expression.has_recovery(),
+            Self::AttachedContentApplication(expression) => expression.has_recovery(),
             Self::PostfixBracket(expression) => expression.has_recovery(),
             Self::Choice(expression) => expression.has_recovery(),
             Self::Error(_) => true,
@@ -482,7 +537,7 @@ impl HirExprKind {
             Self::IfLet(expression) => expression.validate_module(expected),
             Self::Match(expression) => expression.validate_module(expected),
             Self::ForSynthetic(expression) => expression.validate_module(expected),
-            Self::DialogueContentApplication(expression) => expression
+            Self::AttachedContentApplication(expression) => expression
                 .validate_module(expected)
                 .map_err(|actual| HirExprInvariantError::ForeignChild { expected, actual }),
             Self::PostfixBracket(expression) => expression

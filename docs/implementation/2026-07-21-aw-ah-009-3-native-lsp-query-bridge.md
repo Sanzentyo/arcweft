@@ -97,7 +97,7 @@ normalization. `arcweft-verify-lsp` only loses its competing legacy resolver.
   diagnostics truncation, and production work/limit reconciliation remain the
   separate semantic-result/resource-accounting cut.
 - This cut does not add or redesign CharacterDialogue callable families. It
-  consumes accepted shared-resolver facts and does not restore removed `.say`
+  consumes accepted shared-resolver facts and does not restore the removed dialogue builder
   or colon dialogue surfaces.
 - No compatibility shim, deprecated re-export, source gate, word resolver,
   label parser, source-text fallback, URI alias, or dual lookup is present.
@@ -252,6 +252,6 @@ tests close that production defect.
 
 Remaining work is limited to the explicitly separate cache and semantic
 resource-accounting cuts. There are no design deviations in this cut. The
-accepted CharacterDialogue surface is unchanged, removed `.say` and colon
+accepted CharacterDialogue surface is unchanged, removed builder and colon
 surfaces remain removed, and no compatibility or source-gate mechanism was
 introduced.

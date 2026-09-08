@@ -154,7 +154,14 @@ impl TypeKind {
     fn match_domain_input(&self) -> MatchDomainInput<'_> {
         match self {
             Self::Error(_) => MatchDomainInput::Invalid(MatchDomainInvalidity::Poison),
-            Self::Projection { .. } | Self::DialogueLine(_) => UNSUPPORTED_MATCH_DOMAIN,
+            Self::Projection { .. }
+            | Self::DialogueLine(_)
+            | Self::CompileTimeCallable(_)
+            | Self::CompileTimeScalar(_)
+            | Self::CompileTimeEnum(_)
+            | Self::CompileTimeFx(_)
+            | Self::FixedVector(_)
+            | Self::MetaType(_) => UNSUPPORTED_MATCH_DOMAIN,
             Self::Never => MatchDomainInput::Immediate(MatchDomainFamily::Empty),
             Self::Unit => MatchDomainInput::Immediate(MatchDomainFamily::Unit),
             Self::Bool => MatchDomainInput::Immediate(MatchDomainFamily::Bool),

@@ -16,11 +16,14 @@ use super::{
     HirTypeRegionSourcePart, HirTypeSourceRole, StagedHirSourceIndex, validate_component_source,
 };
 use crate::arena::ArenaSnapshot;
-use crate::expr::{HirPoisonState, HirRecoveryIssue};
-use crate::identity::{ItemId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
+use crate::dialogue_application::{
+    HirAttachedContentApplicationFamily, HirContentCallSemanticEvidence,
+};
+use crate::expr::{HirExpr, HirExprKind, HirPoisonState, HirRecoveryIssue};
+use crate::identity::{ExprId, ItemId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
 use crate::item::{HirItem, HirItemKind};
 use crate::leaf::{
-    HirName, HirPath, HirPathRoot, HirPathSegment, HirTypeRegion, HirTypeRegionIssue,
+    HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue, HirTypeRegion, HirTypeRegionIssue,
 };
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::type_ref::{HirGenericTypeIssue, HirType, HirTypeKind};
@@ -307,6 +310,13 @@ impl HirSourceIndex {
                     if expected_synthetic_returns.get(&owner) == Some(key) {
                         return !source_index_has_type_owner(self, owner);
                     }
+                    if key.role() == SyntheticRole::ContentCallNominalType {
+                        // Content-call nominal roots are checked against the
+                        // final expression inventory below.  They are
+                        // semantic-only and therefore must not acquire a
+                        // source-index owner of their own.
+                        return !source_index_has_type_owner(self, owner);
+                    }
                     expected_candidate_types
                         .get(&owner)
                         .is_some_and(|expected| {
@@ -321,6 +331,149 @@ impl HirSourceIndex {
             }
         })
     }
+
+    /// Re-derives every semantic-only nominal type root attached to a final
+    /// content call and checks it against the immutable expression/type
+    /// arenas.  These roots deliberately have no independent syntax owner or
+    /// source-index manifest: their source evidence is the typed `type`
+    /// argument expression retained by the call's semantic evidence.
+    pub(crate) fn validates_content_call_types(
+        &self,
+        slots: &SlotSnapshot,
+        expressions: &ArenaSnapshot<HirExpr, ExprId>,
+        types: &ArenaSnapshot<HirType, TypeId>,
+    ) -> bool {
+        let Ok(expression_entries) = expressions.try_iter_prepared(slots) else {
+            return false;
+        };
+        let Ok(type_entries) = types.try_iter_prepared(slots) else {
+            return false;
+        };
+        let expressions = expression_entries.collect::<BTreeMap<_, _>>();
+        let types = type_entries.collect::<BTreeMap<_, _>>();
+        let mut expected = BTreeMap::<TypeId, ContentCallTypeExpectation>::new();
+
+        for (owner, expression) in &expressions {
+            let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+                continue;
+            };
+            let HirAttachedContentApplicationFamily::ContentCall {
+                evidence: HirContentCallSemanticEvidence::TextProxyObject { .. },
+                ..
+            } = application.family()
+            else {
+                continue;
+            };
+            let HirAttachedContentApplicationFamily::ContentCall { evidence, .. } =
+                application.family()
+            else {
+                return false;
+            };
+            let Some(discriminator) = evidence.nominal_discriminator() else {
+                continue;
+            };
+            let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+                application.family()
+            else {
+                return false;
+            };
+            let Some(argument) = invocation
+                .arguments()
+                .get(usize::from(discriminator.argument().get()))
+            else {
+                return false;
+            };
+            if argument.value() != discriminator.source() {
+                return false;
+            }
+            let Some(source_expression) = expressions.get(&discriminator.source()) else {
+                return false;
+            };
+            if source_expression.is_poisoned() || source_expression.scope() != expression.scope() {
+                return false;
+            }
+            let HirExprKind::Path(HirPathValue::Resolved(path)) = source_expression.kind() else {
+                return false;
+            };
+            let Ok(key) = SyntheticKey::try_new(
+                SyntheticOwner::Expr(*owner),
+                SyntheticRole::ContentCallNominalType,
+                0,
+            ) else {
+                return false;
+            };
+            let Ok(source_metadata) = slots.resolve_prepared(discriminator.source()) else {
+                return false;
+            };
+            if expected
+                .insert(
+                    discriminator.semantic_only(),
+                    ContentCallTypeExpectation {
+                        key,
+                        source_site: source_metadata.source_site().clone(),
+                        scope: source_expression.scope(),
+                        path: path.clone(),
+                    },
+                )
+                .is_some()
+            {
+                // A single type root cannot be the semantic operand of two
+                // distinct attached calls.  Reject duplicate synthetic
+                // identities instead of silently accepting one.
+                return false;
+            }
+        }
+
+        for (type_id, payload) in &types {
+            let Ok(metadata) = slots.resolve_prepared(*type_id) else {
+                return false;
+            };
+            let HirOrigin::Synthetic(key) = metadata.origin() else {
+                continue;
+            };
+            if key.role() != SyntheticRole::ContentCallNominalType {
+                continue;
+            }
+            let Some(expected) = expected.get(type_id) else {
+                return false;
+            };
+            if *key != expected.key
+                || metadata.source_site() != &expected.source_site
+                || payload.scope() != expected.scope
+                || !matches!(payload.state(), HirPoisonState::Clean)
+                || !matches!(payload.kind(), HirTypeKind::Path(actual) if actual == &expected.path)
+                || source_index_has_type_owner(self, *type_id)
+            {
+                return false;
+            }
+        }
+
+        expected.into_iter().all(|(type_id, expectation)| {
+            types.get(&type_id).is_some_and(|payload| {
+                slots
+                    .resolve_prepared(type_id)
+                    .ok()
+                    .and_then(|metadata| match metadata.origin() {
+                        HirOrigin::Synthetic(key) if *key == expectation.key => {
+                            Some(metadata.source_site() == &expectation.source_site)
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or(false)
+                    && payload.scope() == expectation.scope
+                    && matches!(payload.state(), HirPoisonState::Clean)
+                    && matches!(payload.kind(), HirTypeKind::Path(actual) if actual == &expectation.path)
+                    && !source_index_has_type_owner(self, type_id)
+            })
+        })
+    }
+}
+
+struct ContentCallTypeExpectation {
+    key: SyntheticKey,
+    source_site: HirSourceSite,
+    scope: crate::identity::ScopeId,
+    path: HirPath,
 }
 
 fn candidate_type_state_matches(payload: &HirType) -> bool {

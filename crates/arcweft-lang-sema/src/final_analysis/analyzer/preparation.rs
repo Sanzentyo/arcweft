@@ -1,7 +1,6 @@
 //! Type resolution and local-binding preparation.
 
 use arcweft_lang_hir::{
-    dialogue_application::HirLinePlanItem,
     expr::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
     identity::LocalId,
     item::{HirCapabilityFunction, HirCapabilityMember},
@@ -28,44 +27,6 @@ use super::{
     resolve_type_ref,
     statements::{enclosing_item, generic_scope},
 };
-
-pub(super) fn simple_binding_source(
-    statement: &HirStmtKind,
-) -> Option<(PatternId, ExprId, Option<TypeId>)> {
-    match statement {
-        HirStmtKind::Let {
-            pattern,
-            annotation,
-            initializer,
-            ..
-        }
-        | HirStmtKind::LetElse {
-            pattern,
-            annotation,
-            initializer,
-            ..
-        } => Some((*pattern, *initializer, *annotation)),
-        _ => None,
-    }
-}
-
-fn dialogue_application_binding_type(
-    module: &HirModule,
-    owner: ExprId,
-    ty: &TypeKind,
-) -> Option<TypeKind> {
-    let expression = module.resolve_expr(owner).ok()?;
-    if !matches!(
-        expression.kind(),
-        HirExprKind::DialogueContentApplication(_)
-    ) {
-        return None;
-    }
-    let TypeKind::DialogueLine(result) = ty else {
-        return None;
-    };
-    Some(result.as_ref().clone())
-}
 
 fn scope_descends_from(module: &HirModule, mut scope: ScopeId, ancestor: ScopeId) -> bool {
     loop {
@@ -358,7 +319,7 @@ impl Analyzer<'_, '_, '_> {
         };
         let arguments = generics
             .bindings()
-            .map(|binding| TypeKind::GenericParam(binding.id().clone()))
+            .map(|binding| TypeKind::generic_parameter(binding.id().clone()))
             .collect::<Vec<_>>();
         Ok(SelfTypeScope::Known(TypeKind::ProjectNominal(
             ProjectNominalType::new(nominal.id().clone(), arguments),
@@ -369,9 +330,14 @@ impl Analyzer<'_, '_, '_> {
         for module in self.modules.values() {
             for (owner, local) in module.locals() {
                 if let Some(annotation) = local.annotation() {
-                    let ty = self.types.get(&annotation).cloned().ok_or(
-                        FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation },
-                    )?;
+                    let ty = self
+                        .catalogs
+                        .world
+                        .environment()
+                        .typecheck_env()
+                        .canonical_accepted_type(self.types.get(&annotation).cloned().ok_or(
+                            FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation },
+                        )?);
                     self.facts
                         .set_local_type(owner, ty)
                         .map_err(FinalSemanticAnalysisError::from)?;
@@ -379,21 +345,33 @@ impl Analyzer<'_, '_, '_> {
             }
             for (_, item) in module.items() {
                 let mut locals = BTreeMap::new();
-                seed_item_parameter_types(item, &self.types, &mut locals)?;
-                for (owner, ty) in locals {
-                    self.facts
-                        .set_local_type(owner, ty)
-                        .map_err(FinalSemanticAnalysisError::from)?;
-                }
+                let mut patterns = BTreeMap::new();
+                seed_item_parameter_types(
+                    item,
+                    PatternSeedContext {
+                        module,
+                        types: &self.types,
+                        symbols: self.symbols,
+                        environment: self.catalogs.world.environment().typecheck_env(),
+                    },
+                    &mut locals,
+                    &mut patterns,
+                )?;
+                Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
             }
             for (_, expression) in module.expressions() {
                 match expression.kind() {
                     HirExprKind::Closure(closure) => {
                         for parameter in closure.parameters() {
                             let Some(ty) = parameter.ty() else { continue };
-                            let semantic = self.types.get(&ty).cloned().ok_or(
-                                FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty },
-                            )?;
+                            let semantic = self
+                                .catalogs
+                                .world
+                                .environment()
+                                .typecheck_env()
+                                .canonical_accepted_type(self.types.get(&ty).cloned().ok_or(
+                                    FinalSemanticAnalysisError::TypeResolutionFailed { owner: ty },
+                                )?);
                             let mut locals = BTreeMap::new();
                             let mut patterns = BTreeMap::new();
                             seed_pattern_locals(
@@ -509,11 +487,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         for (owner, statement) in statements {
             self.control.check()?;
-            if let Some((pattern, initializer, annotation)) = simple_binding_source(&statement) {
-                self.infer_simple_statement_binding(owner, pattern, initializer, annotation)?;
-            } else {
-                self.infer_control_statement_bindings(owner, statement)?;
-            }
+            self.check_statement_bindings_published(owner, &statement)?;
         }
         Ok(())
     }
@@ -535,133 +509,6 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         self.infer_statement_inventory(residual)
-    }
-
-    pub(super) fn infer_simple_statement_binding(
-        &mut self,
-        owner: StmtId,
-        pattern: PatternId,
-        initializer: ExprId,
-        annotation: Option<TypeId>,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        self.infer_nested_expression_bindings(initializer)?;
-        let authored_type = match annotation {
-            Some(annotation) => Some(annotation),
-            None => self
-                .module(owner.module())?
-                .resolve_pattern(pattern)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                .kind()
-                .authored_type(),
-        };
-        let expected = authored_type
-            .map(|annotation| {
-                self.types
-                    .get(&annotation)
-                    .cloned()
-                    .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: annotation })
-            })
-            .transpose()?;
-        let actual = self.check_expression_published(initializer, expected.as_ref())?;
-        let binding = match expected {
-            Some(expected) if expected.accepts(actual.ty()) => expected,
-            Some(_) => {
-                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                    owner: initializer,
-                });
-            }
-            None => dialogue_application_binding_type(
-                self.module(owner.module())?,
-                initializer,
-                actual.ty(),
-            )
-            .unwrap_or_else(|| actual.ty().clone()),
-        };
-        let module = self.module(owner.module())?;
-        self.seed_contextual_pattern_locals(module, pattern, &binding)
-    }
-
-    pub(super) fn infer_nested_expression_bindings(
-        &mut self,
-        owner: ExprId,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        let statements = {
-            let module = self.module(owner.module())?;
-            let expression = module
-                .resolve_expr(owner)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-            match expression.kind() {
-                HirExprKind::Block(block) => block.statements().to_vec(),
-                HirExprKind::ComputationBlock(block) => block.statements().to_vec(),
-                HirExprKind::NamedBlock(block) => block.statements().to_vec(),
-                HirExprKind::Loop(loop_expression) => loop_expression.statements().to_vec(),
-                HirExprKind::DialogueContentApplication(application) => application
-                    .plan()
-                    .map(|plan| {
-                        let mut statements = Vec::new();
-                        append_line_plan_statements(plan.items(), &mut statements);
-                        statements
-                    })
-                    .unwrap_or_default(),
-                _ => return Ok(()),
-            }
-        };
-        for statement in statements {
-            let kind = self
-                .module(statement.module())?
-                .resolve_stmt(statement)
-                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
-                .kind()
-                .clone();
-            if let Some((pattern, initializer, annotation)) = simple_binding_source(&kind) {
-                self.infer_simple_statement_binding(statement, pattern, initializer, annotation)?;
-            } else {
-                self.infer_control_statement_bindings(statement, kind)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub(super) fn infer_control_statement_bindings(
-        &mut self,
-        owner: StmtId,
-        statement: HirStmtKind,
-    ) -> Result<(), FinalSemanticAnalysisError> {
-        match statement {
-            HirStmtKind::IfLet(statement) => {
-                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
-                let module = self.module(owner.module())?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), scrutinee.ty())?;
-            }
-            HirStmtKind::WhileLet(statement) => {
-                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
-                let module = self.module(owner.module())?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), scrutinee.ty())?;
-            }
-            HirStmtKind::Match(statement) => {
-                let scrutinee = self.check_expression_published(statement.scrutinee(), None)?;
-                let module = self.module(owner.module())?;
-                for arm in statement.arms() {
-                    self.seed_contextual_pattern_locals(module, arm.pattern(), scrutinee.ty())?;
-                }
-            }
-            HirStmtKind::For(statement) => {
-                self.check_expression_published(statement.source(), None)?;
-                self.check_expression_published(statement.iterator(), None)?;
-                let iteration = self
-                    .facts
-                    .iteration_facts()
-                    .get(&statement.iterator())
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
-                        owner: statement.iterator(),
-                    })?;
-                let item = super::statements::iteration_item(iteration).clone();
-                let module = self.module(owner.module())?;
-                self.seed_contextual_pattern_locals(module, statement.pattern(), &item)?;
-            }
-            _ => {}
-        }
-        Ok(())
     }
 
     fn expression_inventory(&self) -> BTreeSet<ExprId> {
@@ -740,6 +587,28 @@ impl Analyzer<'_, '_, '_> {
         self.analyze_expression_inventory(residual)
     }
 
+    /// Seals every project `#[fx]` body into the HIR-free symbolic carrier and
+    /// records the transient HIR obligations that the selected-expression
+    /// phase must discharge. Fx body expressions never publish ordinary
+    /// checked-expression facts.
+    pub(super) fn analyze_fx_definition_bodies(
+        &mut self,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let declarations = self
+            .symbols
+            .callable_symbols()
+            .filter(|symbol| symbol.is_fx())
+            .map(|symbol| symbol.declaration().clone())
+            .collect::<Vec<_>>();
+        if self.fx_definitions.is_some() || self.fx_definition_body_obligations.is_some() {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let (catalog, obligations) = self.seal_fx_definition_catalog(&declarations)?;
+        self.fx_definitions = Some(catalog);
+        self.fx_definition_body_obligations = Some(obligations);
+        Ok(())
+    }
+
     #[cfg(test)]
     pub(super) fn validate_callable_body_results(
         &mut self,
@@ -800,7 +669,10 @@ impl Analyzer<'_, '_, '_> {
         }
         for (owner, expected) in expectations {
             let checked = self.check_expression_published(owner, Some(&expected))?;
-            if !expected.accepts(checked.ty()) {
+            let checked_type = checked
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+            if !expected.accepts(checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
         }
@@ -832,7 +704,7 @@ impl Analyzer<'_, '_, '_> {
                 let (yield_count, _) =
                     function_body_roles(module, function.body(), self.facts.expressions())?;
                 let expected = if yield_count == 0 {
-                    resolved_callable_result(function.return_type(), &self.types)?
+                    self.registered_callable_result(declaration)?
                 } else {
                     TypeKind::Unit
                 };
@@ -877,7 +749,7 @@ impl Analyzer<'_, '_, '_> {
                     let (yield_count, _) =
                         function_body_roles(module, body, self.facts.expressions())?;
                     let expected = if yield_count == 0 {
-                        resolved_callable_result(function.return_type(), &self.types)?
+                        self.registered_callable_result(declaration)?
                     } else {
                         TypeKind::Unit
                     };
@@ -901,11 +773,39 @@ impl Analyzer<'_, '_, '_> {
         }
         for (owner, expected) in expectations {
             let checked = self.check_expression_published(owner, Some(&expected))?;
-            if !expected.accepts(checked.ty()) {
+            let checked_type = checked
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+            if !expected.accepts(checked_type) {
                 return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
             }
         }
         Ok(())
+    }
+
+    /// Projects the accepted callable result used by both call resolution and
+    /// body checking. HIR type recovery remains diagnostic evidence; it is not
+    /// a second result authority after project registration has normalized an
+    /// exact accepted nominal or another callable-facing semantic type.
+    fn registered_callable_result(
+        &self,
+        declaration: &arcweft_lang_hir::symbol::CallableDeclarationKey,
+    ) -> Result<TypeKind, FinalSemanticAnalysisError> {
+        let record = self
+            .catalogs
+            .world
+            .environment()
+            .callable_catalog()
+            .project_record(declaration)
+            .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        if record.id() != &crate::callable::CallableCandidateId::Project(declaration.clone()) {
+            return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+        }
+        record
+            .schema()
+            .value_type()
+            .cloned()
+            .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)
     }
 
     pub(super) fn finalize_residual_locals(&mut self) -> Result<(), FinalSemanticAnalysisError> {
@@ -951,22 +851,6 @@ impl Analyzer<'_, '_, '_> {
     }
 }
 
-fn append_line_plan_statements(items: &[HirLinePlanItem], output: &mut Vec<StmtId>) {
-    for item in items {
-        match item {
-            HirLinePlanItem::Init(statements) => output.extend(statements.iter().copied()),
-            HirLinePlanItem::Thread(statement)
-            | HirLinePlanItem::On(statement)
-            | HirLinePlanItem::Statement(statement)
-            | HirLinePlanItem::CancelRule(statement)
-            | HirLinePlanItem::Error(statement) => output.push(*statement),
-            HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
-                append_line_plan_statements(items, output);
-            }
-        }
-    }
-}
-
 fn type_report_root_has_wrong_arity(report: &super::TypeResolutionReport, owner: TypeId) -> bool {
     matches!(report.outcome(), ResolvedTypeRefOutcome::Poisoned(_))
         && report.outcome().product().nodes().iter().any(|node| {
@@ -980,6 +864,7 @@ fn type_report_root_has_wrong_arity(report: &super::TypeResolutionReport, owner:
         })
 }
 
+#[cfg(test)]
 fn resolved_callable_result(
     owner: Option<TypeId>,
     types: &std::collections::BTreeMap<TypeId, TypeKind>,

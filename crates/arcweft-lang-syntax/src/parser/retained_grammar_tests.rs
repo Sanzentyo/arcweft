@@ -333,8 +333,7 @@ fn view_with_exports(count: usize) -> String {
 fn character_with_members(count: usize) -> String {
     let mut members = String::new();
     for index in 0..count {
-        writeln!(members, "    display_name = \"name_{index}\"")
-            .expect("String writes are infallible");
+        writeln!(members, "    display = \"name_{index}\"").expect("String writes are infallible");
     }
     format!("character Many {{\n{members}}}\n")
 }

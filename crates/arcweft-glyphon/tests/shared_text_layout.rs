@@ -12,7 +12,8 @@ use arcweft_text_layout::{
     GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize, TextLayoutRequest, layout_document,
 };
 use arcweft_text_model::{
-    RichTextInlineDirection, RichTextPresentation, RichTextRange, RichTextWritingMode,
+    RichTextInlineDirection, RichTextNodeIndex, RichTextNodeRange, RichTextPresentation,
+    RichTextRange, RichTextTextRunRange, RichTextWritingMode,
 };
 
 const JAPANESE_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
@@ -42,23 +43,30 @@ fn one_run_document(
     ruby: Vec<ResolvedTextRuby>,
     revision: u64,
 ) -> ResolvedTextDocument<'_> {
-    let range = RichTextRange::new(0, text.len());
-    let run = ResolvedTextRun::new(
-        range,
-        range,
-        style,
-        RichTextPresentation::default(),
-        ResolvedTextRunSource::Plain,
-    )
-    .expect("test run is valid");
-    ResolvedTextDocument::new(
-        text,
-        0,
-        vec![run],
-        ruby,
-        TextDocumentRevision::new(revision),
-    )
-    .expect("test document is valid")
+    let mut boundaries = vec![0, text.len()];
+    boundaries.extend(
+        ruby.iter()
+            .flat_map(|annotation| [annotation.base_range().start, annotation.base_range().end]),
+    );
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    let runs = boundaries
+        .windows(2)
+        .filter(|window| window[0] < window[1])
+        .map(|window| {
+            let range = RichTextRange::new(window[0], window[1]);
+            ResolvedTextRun::new(
+                range,
+                range,
+                style.clone(),
+                RichTextPresentation::default(),
+                ResolvedTextRunSource::Plain,
+            )
+            .expect("test run is valid")
+        })
+        .collect();
+    ResolvedTextDocument::new(text, 0, runs, ruby, TextDocumentRevision::new(revision))
+        .expect("test document is valid")
 }
 
 fn request(width: f32, height: f32) -> TextLayoutRequest {
@@ -152,6 +160,9 @@ fn vertical_text_combine_sideways_latin_and_ruby_share_shaped_geometry() {
         );
     let base = RichTextRange::new(0, "日本".len());
     let ruby = ResolvedTextRuby::new(
+        RichTextNodeIndex::new(0),
+        RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(2)),
+        RichTextTextRunRange::new(0, 1),
         base,
         base,
         "にほん",

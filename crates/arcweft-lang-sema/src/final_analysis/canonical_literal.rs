@@ -72,7 +72,7 @@ impl CanonicalCoverageLiteral {
         }
         Ok((
             Self {
-                semantic_type: ty.semantic_identity_digest(),
+                semantic_type: ty.semantic_identity_digest()?,
                 bytes: bytes.into(),
             },
             retained,

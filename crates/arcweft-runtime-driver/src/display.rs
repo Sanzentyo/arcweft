@@ -27,7 +27,11 @@ use arcweft_character::presentation_name::{
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::entry::RuntimeValueDigest;
-use arcweft_core::plan::{FlowEvent, RuntimeDialogueValueBinding};
+use arcweft_core::plan::{
+    FlowEvent, RuntimeDialogueContentApplicationKey, RuntimeDialogueContentSlot,
+    RuntimeDialogueValueBinding,
+};
+use arcweft_core::value::RuntimeDialogueContentValue;
 use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
 use arcweft_id::LocaleTag;
 use arcweft_layout::ScalePolicy;
@@ -35,10 +39,10 @@ use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, St
 use arcweft_presentation::{
     BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
 };
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_materialized_frame};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentCatalog, DialogueContentSpec,
-    DialoguePresentationCharacter,
+    CharacterDialoguePresentationConfig, DialogueContentCatalog, DialogueContentFragmentTemplate,
+    DialogueContentSpec, DialoguePresentationCharacter,
 };
 use core::fmt;
 use serde::{Deserialize, Serialize};
@@ -300,15 +304,39 @@ pub fn resolve_display_frames(
             if let FlowEvent::DialogueLine {
                 activation,
                 line,
+                template,
                 values,
             } = event
-                && let Some(spec) = catalog.find(line)
+                && let Some(spec) = catalog.find(&RuntimeDialogueContentApplicationKey::new(
+                    line.clone(),
+                    *template,
+                ))
             {
                 let Some(provider) = context_provider else {
                     resolution.diagnostics.push(
                         DialogueRuntimeContextError::Unavailable { line: line.clone() }.to_string(),
                     );
                     return resolution;
+                };
+                let Some(template) = catalog.find_template(spec.template_id()) else {
+                    resolution.diagnostics.push(format!(
+                        "dialogue line {} references missing content template {}",
+                        line.public_label(),
+                        spec.template_id()
+                    ));
+                    return resolution;
+                };
+                let content_value = match build_dialogue_content_value(
+                    spec,
+                    template,
+                    activation.artifact(),
+                    values,
+                ) {
+                    Ok(value) => value,
+                    Err(error) => {
+                        resolution.diagnostics.push(error);
+                        return resolution;
+                    }
                 };
                 let context = match provider.context_for(spec, values) {
                     Ok(context) => context,
@@ -317,7 +345,25 @@ pub fn resolve_display_frames(
                         return resolution;
                     }
                 };
-                match resolve_frame(spec, &context) {
+                let fragment_catalog = match catalog.fragment_catalog(activation.artifact()) {
+                    Ok(catalog) => catalog,
+                    Err(error) => {
+                        resolution.diagnostics.push(error.to_string());
+                        return resolution;
+                    }
+                };
+                let materialized =
+                    match arcweft_text_model::DialogueContentMaterializer::new(&fragment_catalog)
+                        .materialize_with_policy(&content_value, context.inline_failure_policy())
+                    {
+                        Ok(materialized) => materialized,
+                        Err(error) => {
+                            resolution.diagnostics.push(error.to_string());
+                            return resolution;
+                        }
+                    };
+                let context = context.with_materialized_bindings(materialized.bindings());
+                match resolve_materialized_frame(spec, &materialized, &content_value, &context) {
                     Ok(frame) => {
                         let view = frame.effective.view.clone();
                         resolution
@@ -333,6 +379,33 @@ pub fn resolve_display_frames(
             }
             resolution
         })
+}
+
+fn build_dialogue_content_value(
+    spec: &DialogueContentSpec,
+    template: &DialogueContentFragmentTemplate,
+    artifact: arcweft_core::effect::RuntimeArtifactFingerprint,
+    values: &[RuntimeDialogueValueBinding],
+) -> Result<RuntimeDialogueContentValue, String> {
+    if spec.template_id() != template.id() || spec.template_digest() != template.digest() {
+        return Err(format!(
+            "dialogue line {} has a stale content template identity",
+            spec.line().public_label()
+        ));
+    }
+    let slots = template
+        .slots()
+        .iter()
+        .map(|slot| RuntimeDialogueContentSlot::new(slot.slot(), slot.role(), slot.semantic_type()))
+        .collect::<Vec<_>>();
+    RuntimeDialogueContentValue::try_from_evaluated_bindings_parts(
+        artifact,
+        spec.template_id(),
+        spec.template_digest(),
+        &slots,
+        values,
+    )
+    .map_err(|error| error.to_string())
 }
 
 impl BundlePresentationSnapshot {

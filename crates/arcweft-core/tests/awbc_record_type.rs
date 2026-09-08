@@ -15,46 +15,47 @@ fn identity(marker: u8) -> RuntimeSemanticTypeId {
 }
 
 fn structural_record_program(first_name: &str, second_name: &str) -> AwbcProgram {
-    let mut program = AwbcProgram::default();
-    program.strings = vec![
-        first_name.to_owned(),
-        second_name.to_owned(),
-        "nested-value".to_owned(),
-    ];
-    program.runtime_types = vec![
-        AwbcRuntimeType::new(identity(1), AwbcRuntimeTypeShape::Bool),
-        AwbcRuntimeType::new(
-            identity(2),
-            AwbcRuntimeTypeShape::Record {
-                public_id: None,
-                fields: vec![AwbcRecordField {
-                    name: AwbcStringId(2),
-                    ty: AwbcTypeId(0),
-                }],
-            },
-        ),
-        AwbcRuntimeType::new(
-            identity(3),
-            AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0), AwbcTypeId(1)]),
-        ),
-        AwbcRuntimeType::new(
-            identity(4),
-            AwbcRuntimeTypeShape::Record {
-                public_id: None,
-                fields: vec![
-                    AwbcRecordField {
-                        name: AwbcStringId(0),
+    AwbcProgram {
+        strings: vec![
+            first_name.to_owned(),
+            second_name.to_owned(),
+            "nested-value".to_owned(),
+        ],
+        runtime_types: vec![
+            AwbcRuntimeType::new(identity(1), AwbcRuntimeTypeShape::Bool),
+            AwbcRuntimeType::new(
+                identity(2),
+                AwbcRuntimeTypeShape::Record {
+                    public_id: None,
+                    fields: vec![AwbcRecordField {
+                        name: AwbcStringId(2),
                         ty: AwbcTypeId(0),
-                    },
-                    AwbcRecordField {
-                        name: AwbcStringId(1),
-                        ty: AwbcTypeId(2),
-                    },
-                ],
-            },
-        ),
-    ];
-    program
+                    }],
+                },
+            ),
+            AwbcRuntimeType::new(
+                identity(3),
+                AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0), AwbcTypeId(1)]),
+            ),
+            AwbcRuntimeType::new(
+                identity(4),
+                AwbcRuntimeTypeShape::Record {
+                    public_id: None,
+                    fields: vec![
+                        AwbcRecordField {
+                            name: AwbcStringId(0),
+                            ty: AwbcTypeId(0),
+                        },
+                        AwbcRecordField {
+                            name: AwbcStringId(1),
+                            ty: AwbcTypeId(2),
+                        },
+                    ],
+                },
+            ),
+        ],
+        ..AwbcProgram::default()
+    }
 }
 
 fn checked_record_after_roundtrip(first_name: &str, second_name: &str) -> RuntimeCheckedType {

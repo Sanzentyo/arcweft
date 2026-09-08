@@ -94,7 +94,7 @@ impl EffectTraceCallAuthority for PreparedEffectTraceCallAuthority<'_> {
                 ..
             } => None,
         });
-        let argument_sources = record.input_projection().expression_sources();
+        let argument_sources = record.inputs().expression_sources();
         Ok(Some(EffectTraceSelectedCall {
             dispatch: if origin.is_some() {
                 EffectTraceCallDispatch::Value
@@ -499,7 +499,7 @@ fn returned_closure_expression(
             | HirExprKind::If(_)
             | HirExprKind::IfLet(_)
             | HirExprKind::Match(_)
-            | HirExprKind::DialogueContentApplication(_)
+            | HirExprKind::AttachedContentApplication(_)
             | HirExprKind::PostfixBracket(_)
             | HirExprKind::Error(_)
             | HirExprKind::ForSynthetic(_) => return Ok(None),
@@ -507,7 +507,10 @@ fn returned_closure_expression(
     }
 }
 
-fn call_label(module: &HirModule, call: &arcweft_lang_hir::expr::HirCallExpr) -> Option<String> {
+fn call_label(
+    module: &HirModule,
+    call: &arcweft_lang_hir::expr::HirCallInvocation,
+) -> Option<String> {
     match call.callee() {
         HirCallCallee::Value { value } => expression_label(module, *value),
         HirCallCallee::UnresolvedDot {
@@ -722,6 +725,11 @@ impl Analyzer<'_, '_, '_> {
         (
             Arc<CheckedCallableCatalog>,
             crate::final_analysis::statement_effects::PreparedExecutionEffectCatalog,
+            BTreeMap<ItemId, CheckedSuspensionRole>,
+            BTreeMap<
+                ExprId,
+                crate::final_analysis::statement_effects::PreparedExecutableSuspensionRow,
+            >,
         ),
         FinalSemanticAnalysisError,
     > {
@@ -776,6 +784,43 @@ impl Analyzer<'_, '_, '_> {
             }
         }
         graph.close_effect_rows(&mut rows, &bounded_call_effect_rows, self.control)?;
+        let mut suspension_rows = staged
+            .bodies
+            .iter()
+            .map(|body| {
+                let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
+                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                };
+                let direct = prepared_effects
+                    .declaration_direct_suspension(declaration)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                Ok((body.id.clone(), direct))
+            })
+            .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
+        graph.close_suspension_roles(&mut suspension_rows, &prepared_effects, self.control)?;
+        let executable_suspensions = graph.close_executable_expression_suspensions(
+            &prepared_effects,
+            &suspension_rows,
+            self.control,
+        )?;
+        let mut item_suspensions = BTreeMap::new();
+        for body in &staged.bodies {
+            if body.owner != arcweft_lang_hir::symbol::CallableDeclarationOwner::Function {
+                continue;
+            }
+            let role = if suspension_rows
+                .get(&body.id)
+                .copied()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+            {
+                CheckedSuspensionRole::MaySuspend
+            } else {
+                CheckedSuspensionRole::NonSuspending
+            };
+            if item_suspensions.insert(body.item, role).is_some() {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
+        }
 
         // Body rows remain the authority for validating each callable's own
         // contract. Calls execute the callable's exposed interface instead:
@@ -832,10 +877,32 @@ impl Analyzer<'_, '_, '_> {
                 .builder
                 .assign_inferred_row(&body.id, EffectRow::closed(row))
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let module = self.module(body.module)?;
+            let suspension = if suspension_rows
+                .get(&body.id)
+                .copied()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+            {
+                CheckedSuspensionRole::MaySuspend
+            } else {
+                CheckedSuspensionRole::NonSuspending
+            };
+            staged
+                .builder
+                .assign_suspension_role(&body.id, suspension)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
+            let control_role = graph.selected_expressions_control_role(
+                prepared_effects
+                    .declaration_expressions(declaration)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?,
+            );
+            staged
+                .builder
+                .assign_control_role(&body.id, control_role)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            let module = self.module(body.module)?;
             for closure in prepared_effects.closures(declaration) {
                 let id = super::CheckedClosureId::from_checked_expression(
                     body.id.clone(),
@@ -848,9 +915,20 @@ impl Analyzer<'_, '_, '_> {
                     &call_effect_rows,
                     self.control,
                 )?);
+                let suspension = if graph.close_selected_expression_suspension(
+                    closure.expressions(),
+                    closure.direct_suspension(),
+                    &suspension_rows,
+                    self.control,
+                )? {
+                    CheckedSuspensionRole::MaySuspend
+                } else {
+                    CheckedSuspensionRole::NonSuspending
+                };
+                let control_role = graph.selected_expressions_control_role(closure.expressions());
                 staged
                     .builder
-                    .insert_closure_row(id, row)
+                    .insert_closure_row(id, row, suspension, control_role)
                     .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             }
         }
@@ -919,7 +997,12 @@ impl Analyzer<'_, '_, '_> {
                 self.topology.generation().as_ref(),
             )
             .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
-        Ok((checked, prepared_effects))
+        Ok((
+            checked,
+            prepared_effects,
+            item_suspensions,
+            executable_suspensions,
+        ))
     }
 
     /// Validates authored Flow effect upper bounds after call facts have been
@@ -1018,7 +1101,7 @@ impl Analyzer<'_, '_, '_> {
         selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
         self.finish_checked_callables(self.stage_checked_callables()?, input, selected)
-            .map(|(catalog, _)| catalog)
+            .map(|(catalog, _, _, _)| catalog)
     }
 }
 

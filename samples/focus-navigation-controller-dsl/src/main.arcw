@@ -1,6 +1,5 @@
 pub character narrator {
   display = "Arcweft Focus Navigation"
-  default_voice = auto
 }
 
 pub action settings.apply(value: String)

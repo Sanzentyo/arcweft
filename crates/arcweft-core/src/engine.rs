@@ -5,7 +5,8 @@ use crate::observation::RuntimeObservationState;
 use crate::pattern::{RuntimePattern, match_runtime_pattern};
 use crate::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowEvent, FlowOp, FlowRuntimeId, RuntimeEntryTarget,
-    RuntimeFlow, RuntimeMatchArm, RuntimeMatchSelection, RuntimePlan,
+    RuntimeFlow, RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimeMatchArm,
+    RuntimeMatchSelection, RuntimePlan,
 };
 use crate::pure::{RuntimeCallBackend, VmPureFunctionScratch, VmRuntimePureCallBackend};
 use crate::root::{
@@ -26,11 +27,12 @@ use crate::task::{
     TaskPolicy, TaskPriority, TaskPublicationCursor, TaskSpec, normalize_task_events,
 };
 use crate::value::{
-    RuntimeEnv, RuntimeEvalError, RuntimeExpr, RuntimeExprMatchArm, RuntimeFlowParameterBinding,
-    RuntimeIterator, RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue,
-    evaluate_binary, evaluate_unary, runtime_sequence_dense_i64,
-    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_sequence_values,
-    runtime_value_into_sequence_values, runtime_value_label, sum_i64_sequence_ref,
+    RuntimeDialogueContentEffectBinding, RuntimeEnv, RuntimeEvalError, RuntimeExpr,
+    RuntimeExprMatchArm, RuntimeFlowParameterBinding, RuntimeFunctionValue, RuntimeIterator,
+    RuntimeLocalBinding, RuntimePayload, RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
+    runtime_sequence_dense_i64, runtime_sequence_from_literal_values,
+    runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
+    runtime_value_label, sum_i64_sequence_ref,
 };
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::Arc;
@@ -63,6 +65,8 @@ pub struct Engine {
         u64,
     >,
     dialogue_activations: dialogue::DialogueActivationStore,
+    dialogue_effect_callback_activations:
+        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
     run_child_next: bool,
     pure_i64_batch_inputs: Vec<i64>,
     pure_i64_batch_outputs: Vec<i64>,
@@ -76,6 +80,8 @@ pub(super) struct NativeLineTaskExecutionBatch {
     child_fibers: VecDeque<FlowFiber>,
     next_fiber_id: u64,
     run_child_next: bool,
+    dialogue_effect_callback_activations:
+        BTreeSet<crate::runtime_id::RuntimeDialogueEffectCallbackActivationId>,
 }
 
 /// Current flow execution cursor.
@@ -84,7 +90,7 @@ pub struct FlowFiber {
     pub line_cursor: usize,
     pub cursor: Option<FlowCursor>,
     pub pending_ops: VecDeque<FlowOp>,
-    pub control_stack: Vec<FlowControlStackEntry>,
+    pub(crate) control_stack: Vec<FlowControlStackEntry>,
     pub await_observer: Option<Box<AwaitState>>,
     pub root_cleanups: Vec<FlowScopeCleanup>,
     pub env: RuntimeEnv,
@@ -189,8 +195,8 @@ fn flow_fiber_line_handle_owners(
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct FlowControlStackEntry {
-    pub kind: FlowControlStackEntryKind,
+pub(crate) struct FlowControlStackEntry {
+    pub(crate) kind: FlowControlStackEntryKind,
 }
 
 /// One deterministic cleanup effect registered against a lexical flow scope.
@@ -211,7 +217,7 @@ impl FlowScopeCleanup {
 
 /// Structured frame kind for the minimal flow executor.
 #[derive(Clone, Debug, PartialEq)]
-pub enum FlowControlStackEntryKind {
+pub(crate) enum FlowControlStackEntryKind {
     Scope {
         cleanups: Vec<FlowScopeCleanup>,
     },
@@ -228,6 +234,51 @@ pub enum FlowControlStackEntryKind {
         expr: RuntimeExpr,
         guard: Option<Box<RuntimeExpr>>,
         body: std::sync::Arc<[FlowOp]>,
+    },
+    /// Typed function-call return boundary. The callee's scope and any nested
+    /// loop/scope frames are unwound before the returned value is admitted to
+    /// the caller's result pattern.
+    FunctionCall(FunctionCallFrame),
+}
+
+/// One invocation frame shared by direct and value-based function calls.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct FunctionCallFrame {
+    site: crate::runtime_id::RuntimeFunctionSiteId,
+    function_scope: bool,
+    resume: Option<FlowCursor>,
+    caller_pending_ops: VecDeque<FlowOp>,
+    continuation: FunctionReturnContinuation,
+}
+
+impl FunctionCallFrame {
+    fn new(
+        site: crate::runtime_id::RuntimeFunctionSiteId,
+        resume: Option<FlowCursor>,
+        continuation: FunctionReturnContinuation,
+    ) -> Self {
+        Self {
+            site,
+            function_scope: false,
+            resume,
+            caller_pending_ops: VecDeque::new(),
+            continuation,
+        }
+    }
+}
+
+/// The caller operation resumed after an invocation returns. A default
+/// resumes its materialization plan without reevaluating source operands.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum FunctionReturnContinuation {
+    ProjectDefault {
+        site: crate::runtime_id::RuntimeProjectCallSiteId,
+        prefix_values: Vec<RuntimeValue>,
+        logical_values: Vec<RuntimeValue>,
+    },
+    Bind {
+        result: RuntimePattern,
+        remaining_args: Vec<RuntimeValue>,
     },
 }
 
@@ -288,15 +339,22 @@ impl RootCallableEvaluator for StructuredRootEvaluator<'_> {
                     callable.callable.as_str()
                 ))
             })?;
-        let RuntimeCallableExecutableCode::PureHelper(helper) = executable.code else {
-            return Err(RootCallableEvaluationError::new(format!(
-                "callable `{}` is not a pure root callable",
-                callable.callable.as_str()
-            )));
-        };
-        self.scratch
-            .evaluate_values(self.plan, helper, args)
-            .map_err(|error| RootCallableEvaluationError::new(error.to_string()))
+        match executable.code {
+            RuntimeCallableExecutableCode::PureHelper(helper) => self
+                .scratch
+                .evaluate_values(self.plan, helper, args)
+                .map_err(|error| RootCallableEvaluationError::new(error.to_string())),
+            RuntimeCallableExecutableCode::FunctionSite(site) => self
+                .scratch
+                .evaluate_function_site(self.plan, site, args)
+                .map_err(|error| RootCallableEvaluationError::new(error.to_string())),
+            RuntimeCallableExecutableCode::ControllerFlow(_) => {
+                Err(RootCallableEvaluationError::new(format!(
+                    "callable `{}` is not a pure root callable",
+                    callable.callable.as_str()
+                )))
+            }
+        }
     }
 }
 
@@ -569,6 +627,7 @@ impl Engine {
             next_fiber_id: 1,
             dialogue_occurrences: BTreeMap::new(),
             dialogue_activations: dialogue::DialogueActivationStore::default(),
+            dialogue_effect_callback_activations: BTreeSet::new(),
             run_child_next: false,
             pure_i64_batch_inputs: Vec::new(),
             pure_i64_batch_outputs: Vec::new(),
@@ -908,7 +967,7 @@ impl Engine {
                 }) {
                     match self.begin_dialogue_activation_transaction(&activation) {
                         Ok(transaction) => {
-                            self.begin_dialogue_failure(transaction, source.into(), &mut output)
+                            self.begin_dialogue_failure(transaction, source.into(), &mut output);
                         }
                         Err(begin_error) => self.fail_eval(begin_error, &mut output),
                     }
@@ -1209,6 +1268,14 @@ impl Engine {
     }
 
     pub(super) fn spawn_child_fiber(&mut self, body: Vec<FlowOp>) -> Result<(), RuntimeEvalError> {
+        self.spawn_child_fiber_with_env(body, self.fiber.env.clone())
+    }
+
+    fn spawn_child_fiber_with_env(
+        &mut self,
+        body: Vec<FlowOp>,
+        env: RuntimeEnv,
+    ) -> Result<(), RuntimeEvalError> {
         let mut pending_ops = VecDeque::with_capacity(body.len().saturating_add(2));
         if !body.is_empty() {
             pending_ops.push_front(FlowOp::ExitScope);
@@ -1225,7 +1292,7 @@ impl Engine {
             control_stack: Vec::new(),
             await_observer: None,
             root_cleanups: Vec::new(),
-            env: self.fiber.env.clone(),
+            env,
             observations: RuntimeObservationState::default(),
             stream_states: BTreeMap::new(),
             id,
@@ -1235,6 +1302,170 @@ impl Engine {
             status: FlowFiberStatus::Running,
         });
         self.run_child_next = true;
+        Ok(())
+    }
+
+    fn prepare_dialogue_effect_callback(
+        &self,
+        callback: &RuntimeFunctionValue,
+        id: FlowFiberId,
+        persistent_id: RuntimePersistentFiberId,
+        execution: crate::runtime_id::ExecutionInstanceId,
+    ) -> Result<FlowFiber, RuntimeEvalError> {
+        let Some(closure) = callback.as_structured() else {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "awbc.function".to_owned(),
+                reason: "native reveal requires a structured runtime function".to_owned(),
+            });
+        };
+        if !Arc::ptr_eq(&self.plan, closure.plan()) {
+            return Err(RuntimeEvalError::ForeignStructuredFunction {
+                site: closure.site(),
+            });
+        }
+        let remaining = callback.remaining_arity()?;
+        if remaining != 0 {
+            return Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: 0,
+                found: remaining,
+            });
+        }
+        let site = self.plan.function_sites().get(closure.site()).ok_or(
+            crate::value::RuntimeFunctionApplyError::UnknownStructuredSite {
+                site: closure.site(),
+            },
+        )?;
+        let parameter_count = site.parameter_inputs().count();
+        if parameter_count != 0 {
+            return Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: 0,
+                found: parameter_count,
+            });
+        }
+        let RuntimeFunctionSiteBody::Executable(executable) = site.body() else {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "structured.function".to_owned(),
+                reason: "dialogue reveal requires an executable function site body".to_owned(),
+            });
+        };
+        if !matches!(
+            self.plan.checked_type(site.result()),
+            Ok(Some(crate::pattern::RuntimeCheckedType::Unit))
+        ) {
+            return Err(RuntimeEvalError::UnsupportedPure {
+                name: "structured.function".to_owned(),
+                reason: "dialogue reveal callback must return Unit".to_owned(),
+            });
+        }
+        let capture_inputs = site.capture_inputs().collect::<Vec<_>>();
+        if closure.capture_values().len() != capture_inputs.len() {
+            return Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: capture_inputs.len(),
+                found: closure.capture_values().len(),
+            });
+        }
+        let mut env = RuntimeEnv::default();
+        for input in site.inputs() {
+            let RuntimeFunctionInputSource::Capture { position } = input.source() else {
+                continue;
+            };
+            let value = closure
+                .capture_values()
+                .get(usize::try_from(position).map_err(|_| {
+                    RuntimeEvalError::FunctionApply(
+                        crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
+                            site: closure.site(),
+                        },
+                    )
+                })?)
+                .ok_or(RuntimeEvalError::FunctionApply(
+                    crate::value::RuntimeFunctionApplyError::InvalidBoundArgumentPrefix {
+                        site: closure.site(),
+                    },
+                ))?;
+            env.set_ref(input.input_local(), value);
+            let bindings = match match_runtime_pattern(&self.plan, input.pattern(), value)? {
+                Some(bindings) => bindings,
+                None => {
+                    return Err(RuntimeEvalError::PatternMismatch(runtime_value_label(
+                        value,
+                    )));
+                }
+            };
+            env.bind_all(bindings);
+        }
+        let mut pending_ops = VecDeque::with_capacity(executable.ops().len().saturating_add(2));
+        pending_ops.push_back(FlowOp::EnterScope);
+        pending_ops.extend(executable.ops().iter().cloned());
+        pending_ops.push_back(FlowOp::ExitScope);
+        Ok(FlowFiber {
+            line_cursor: 0,
+            cursor: None,
+            pending_ops,
+            control_stack: Vec::new(),
+            await_observer: None,
+            root_cleanups: Vec::new(),
+            env,
+            observations: RuntimeObservationState::default(),
+            stream_states: BTreeMap::new(),
+            id,
+            persistent_id,
+            execution,
+            owner: FlowFiberOwner::Executor,
+            status: FlowFiberStatus::Running,
+        })
+    }
+
+    fn dialogue_effect_callback(
+        callbacks: &[RuntimeDialogueContentEffectBinding],
+        site: crate::runtime_id::RuntimeDialogueEffectSiteId,
+    ) -> Option<RuntimeFunctionValue> {
+        callbacks
+            .iter()
+            .find(|callback| callback.site() == site)
+            .map(|callback| callback.callback().clone())
+    }
+
+    pub(super) fn stage_dialogue_effect_callbacks(
+        &self,
+        batch: &mut NativeLineTaskExecutionBatch,
+        activation: &DialogueActivationId,
+        callbacks: &[(
+            crate::runtime_id::RuntimeDialogueEffectSiteId,
+            RuntimeFunctionValue,
+        )],
+    ) -> Result<(), RuntimeEvalError> {
+        for (site, callback) in callbacks {
+            let key = crate::runtime_id::RuntimeDialogueEffectCallbackActivationId::new(
+                activation.clone(),
+                *site,
+            );
+            if !batch
+                .dialogue_effect_callback_activations
+                .insert(key.clone())
+            {
+                return Err(RuntimeEvalError::Effect(format!(
+                    "dialogue effect callback activation was already reserved: {key:?}"
+                )));
+            }
+            let ordinal = batch.next_fiber_id;
+            let allocated = ordinal
+                .checked_add(1)
+                .and_then(std::num::NonZeroU64::new)
+                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+            batch.next_fiber_id = batch
+                .next_fiber_id
+                .checked_add(1)
+                .ok_or(RuntimeEvalError::FiberIdentityOverflow)?;
+            let child = self.prepare_dialogue_effect_callback(
+                callback,
+                FlowFiberId(ordinal),
+                RuntimePersistentFiberId::from_allocated(allocated.get()),
+                crate::runtime_id::ExecutionInstanceId::from_allocated(allocated),
+            )?;
+            batch.child_fibers.push_back(child);
+            batch.run_child_next = true;
+        }
         Ok(())
     }
 
@@ -1274,6 +1505,7 @@ impl Engine {
             child_fibers: self.child_fibers.clone(),
             next_fiber_id: self.next_fiber_id,
             run_child_next: self.run_child_next,
+            dialogue_effect_callback_activations: self.dialogue_effect_callback_activations.clone(),
         };
         if request_cancellation {
             for child in &mut batch.child_fibers {
@@ -1386,6 +1618,7 @@ impl Engine {
         self.child_fibers = batch.child_fibers;
         self.next_fiber_id = batch.next_fiber_id;
         self.run_child_next = batch.run_child_next;
+        self.dialogue_effect_callback_activations = batch.dialogue_effect_callback_activations;
     }
 
     fn step_next_child_fiber(
@@ -1452,7 +1685,7 @@ impl Engine {
                 drop_policy,
             )?;
             let receipt = self.dialogue_activations.commit_transaction(transaction)?;
-            self.publish_dialogue_line_receipt(receipt.into_line(), output);
+            Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         }
         match child.status {
             FlowFiberStatus::Done(_) => {
@@ -1463,9 +1696,9 @@ impl Engine {
                         .into_bindings()
                         .into_boxed_slice();
                     self.complete_line_task_work(
-                        owner.tag,
+                        &owner.tag,
                         returned_bindings,
-                        live_tokens,
+                        &live_tokens,
                         false,
                         owner.closing,
                         owner.join_policy == ChildJoinPolicy::Join,
@@ -1488,9 +1721,9 @@ impl Engine {
                         .into_bindings()
                         .into_boxed_slice();
                     self.complete_line_task_work(
-                        owner.tag,
+                        &owner.tag,
                         returned_bindings,
-                        live_tokens,
+                        &live_tokens,
                         true,
                         false,
                         owner.join_policy == ChildJoinPolicy::Join,
@@ -1512,9 +1745,9 @@ impl Engine {
 
     fn complete_line_task_work(
         &mut self,
-        tag: LineTaskWorkTag,
+        tag: &LineTaskWorkTag,
         returned_bindings: Box<[RuntimeLocalBinding]>,
-        live_tokens: BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
+        live_tokens: &BTreeSet<crate::runtime_id::RuntimeLineHandleToken>,
         failed: bool,
         cancelled: bool,
         joined: bool,
@@ -1575,8 +1808,8 @@ impl Engine {
                 }
             }
             transaction.line_mut().finish_child_scope(
-                &tag,
-                &live_tokens,
+                tag,
+                live_tokens,
                 &returned_tokens,
                 crate::effect::RuntimeDropPolicy::Default,
             )?;

@@ -33,7 +33,7 @@ The following definition-only typed accessors were also deleted:
 
 - `ModulePathRoot::{is_crate_rooted, super_levels}`;
 - `CanonicalModulePath::ancestors_inclusive`;
-- `DialogueTagKind::is_point`;
+- the then-current dialogue-kind point-classification helper;
 - `Expr::as_select`; and
 - `ViewBody::view_calls` together with its sole recursive helper.
 

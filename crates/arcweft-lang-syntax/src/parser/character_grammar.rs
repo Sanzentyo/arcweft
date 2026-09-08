@@ -1,10 +1,9 @@
 //! Private retained Character declaration grammar.
 
-use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
-use super::declaration::emit_retained_declaration_header;
+use super::declaration::emit_character_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
@@ -15,11 +14,10 @@ use crate::grammar::budget::GrammarBudget;
 use crate::grammar::declaration_projection::{
     PendingCharacterAssignment, PendingCharacterBodyProjection,
     PendingCharacterDeclarationProjection, PendingCharacterInitializer,
-    PendingCharacterMemberProjection, PendingCharacterSurfaceAlias,
+    PendingCharacterMemberProjection,
 };
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-use crate::name::SyntaxName;
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -30,11 +28,7 @@ pub(super) fn emit_declaration(
 ) {
     let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::CharacterDeclarationItem, role);
-    let surface_alias = emit_retained_declaration_header(
-        &mut parser,
-        DeclarationIdentityFamily::Character,
-        emit_surface_alias,
-    );
+    emit_character_declaration_header(&mut parser, |_parser| ());
     parser.bump_trivia();
     let unexpected_header = recover_unexpected_header(&mut parser);
     parser.bump_trivia();
@@ -57,55 +51,9 @@ pub(super) fn emit_declaration(
     }
     parser.set_character_projection(
         owner,
-        PendingCharacterDeclarationProjection::new(
-            surface_alias,
-            body,
-            unexpected_header,
-            trailing_syntax,
-        ),
+        PendingCharacterDeclarationProjection::new(body, unexpected_header, trailing_syntax),
     );
     parser.finish();
-}
-
-fn emit_surface_alias(parser: &mut DocumentParser<'_, '_>) -> PendingCharacterSurfaceAlias {
-    if !parser.at("as") {
-        return PendingCharacterSurfaceAlias::Absent;
-    }
-    parser.start(SyntaxKind::SurfaceAlias, SyntaxRole::Alias);
-    parser.bump();
-    parser.bump_trivia();
-    let state = if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
-        let token = parser
-            .current()
-            .expect("checked Character surface-alias token");
-        let alias = SyntaxName::try_new(parser.text_of(token))
-            .expect("identifier token is a validated surface alias");
-        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-        parser.bump();
-        parser.finish();
-        PendingCharacterSurfaceAlias::Resolved {
-            value: alias,
-            source: token.range(),
-        }
-    } else {
-        let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::IdentifierToken),
-            at,
-        });
-        parser.finish();
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.character.missing_alias",
-            SourceRange::new(at, at),
-            "Character `as` requires one surface-alias identifier",
-        )));
-        PendingCharacterSurfaceAlias::Missing {
-            insertion: SourceRange::new(at, at),
-        }
-    };
-    parser.finish();
-    state
 }
 
 fn recover_unexpected_header(parser: &mut DocumentParser<'_, '_>) -> bool {
@@ -126,7 +74,7 @@ fn recover_unexpected_header(parser: &mut DocumentParser<'_, '_>) -> bool {
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.declaration.unexpected_header",
         SourceRange::new(start, parser.current_offset()),
-        "Character declaration accepts only an optional `as` alias after its name",
+        "Character declaration accepts only an identity and braced body",
     )));
     true
 }
@@ -172,7 +120,7 @@ fn emit_character_members(
     body_end: usize,
 ) -> Vec<PendingCharacterMemberProjection> {
     let mut ordinal = 0_u16;
-    let mut display_name = None;
+    let mut display = None;
     let mut members = Vec::new();
     while parser.cursor() < body_end {
         parser.bump_trivia();
@@ -183,8 +131,8 @@ fn emit_character_members(
         let (line_end, has_terminator) = find_statement_terminator(parser, start_index, body_end)
             .map_or((body_end, false), |(end, _)| (end, true));
         let name = parser.current().expect("member start is in the body");
-        let member = if parser.text_of(name) == "display_name" {
-            emit_display_name_member(parser, line_end, ordinal, &mut display_name, name.range())
+        let member = if parser.text_of(name) == "display" {
+            emit_display_member(parser, line_end, ordinal, &mut display, name.range())
         } else {
             emit_unknown_member(parser, line_end, ordinal, name.range())
         };
@@ -198,18 +146,18 @@ fn emit_character_members(
     members
 }
 
-fn emit_display_name_member(
+fn emit_display_member(
     parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
-    first_display_name: &mut Option<SourceRange>,
+    first_display: &mut Option<SourceRange>,
     keyword_range: SourceRange,
 ) -> PendingCharacterMemberProjection {
     parser.start(
-        SyntaxKind::CharacterDisplayNameMember,
+        SyntaxKind::CharacterDisplayMember,
         SyntaxRole::Member(ordinal),
     );
-    let duplicate = if let Some(first) = *first_display_name {
+    let duplicate = if let Some(first) = *first_display {
         parser.start(SyntaxKind::ErrorDeclarationMember, SyntaxRole::Recovery(0));
         parser.bump();
         parser.finish();
@@ -217,13 +165,13 @@ fn emit_display_name_member(
             PendingSyntaxDiagnostic::new(
                 "syntax.character.duplicate_member",
                 keyword_range,
-                "Character `display_name` may appear only once",
+                "Character `display` may appear only once",
             )
             .with_related_range(first),
         ));
         true
     } else {
-        *first_display_name = Some(keyword_range);
+        *first_display = Some(keyword_range);
         parser.bump();
         false
     };
@@ -244,7 +192,7 @@ fn emit_display_name_member(
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.character.missing_assignment",
             SourceRange::new(at, at),
-            "Character `display_name` requires `=`",
+            "Character `display` requires `=`",
         )));
         PendingCharacterAssignment::Missing(SourceRange::new(at, at))
     };
@@ -255,9 +203,9 @@ fn emit_display_name_member(
         parser.start(SyntaxKind::MissingMemberValue, SyntaxRole::Initializer);
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.character.missing_display_name",
+            "syntax.character.missing_display",
             SourceRange::new(at, at),
-            "Character `display_name` requires a constant String expression",
+            "Character `display` requires a constant String expression",
         )));
         PendingCharacterInitializer::Missing
     } else {
@@ -266,7 +214,7 @@ fn emit_display_name_member(
     };
     bump_until(parser, line_end);
     parser.finish();
-    PendingCharacterMemberProjection::DisplayName {
+    PendingCharacterMemberProjection::Display {
         source_ordinal: ordinal,
         name: keyword_range,
         duplicate,
@@ -290,7 +238,7 @@ fn emit_unknown_member(
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.character.unknown_member",
         name_range,
-        "Character body accepts only `display_name`",
+        "Character body accepts only `display`",
     )));
     PendingCharacterMemberProjection::Recovery {
         source_ordinal: ordinal,

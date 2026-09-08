@@ -1,12 +1,12 @@
 entry cli @entry.main { goto @flow.main }
 
-character alice {
-    display_name = "Alice"
+pub character alice {
+    display = "Alice"
 }
 
 flow main() -> String {
-    alice: hello[mark .shown]
+    alice: hello[mark @.shown]
     with:
-        on mark(.shown) => log.info("shown")
+        on mark(@.shown) => log.info("shown")
     return "done"
 }

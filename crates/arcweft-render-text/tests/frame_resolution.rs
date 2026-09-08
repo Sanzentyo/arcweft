@@ -1,19 +1,23 @@
 use arcweft_character::id::CharacterId;
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
-use arcweft_core::value::RuntimeValue;
+use arcweft_core::value::{RuntimeDialogueContentBinding, RuntimeInlineTextValue, RuntimeValue};
 use arcweft_core::{
     entry::RuntimeValueDigest,
-    plan::{RuntimeDialogueValueBinding, RuntimeLineId},
+    pattern::RuntimeCheckedType,
+    plan::{RuntimeDialogueValueBinding, RuntimeDialogueValueRole, RuntimeLineId},
 };
-use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineTextFailure};
+use arcweft_dialogue::{
+    FallbackStylePolicy, InlineFailurePolicy, InlineFailureSelection, InlineTextFailure,
+};
 use arcweft_id::TextKey;
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentSpec, DialogueHostEvent,
-    DialoguePresentationCharacter, DialogueVoiceSource, RichTextColor, RichTextControl,
-    RichTextControlMarker, RichTextDocument, RichTextFontFamily, RichTextNode,
-    RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextStyle, RichTextTextSource,
+    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
+    DialoguePresentationCharacter, ResolvedRichTextNode, RichTextColor, RichTextControl,
+    RichTextControlMarker, RichTextDocument, RichTextFontFamily, RichTextNode, RichTextNodeIndex,
+    RichTextNodeRange, RichTextPresentation, RichTextRange, RichTextRubyAnnotation, RichTextStyle,
+    RichTextTextRunRange, RichTextTextSource,
 };
 use arcweft_view::ViewId;
 use std::collections::BTreeMap;
@@ -41,6 +45,7 @@ fn slot(index: usize) -> RuntimeDialogueValueSlotId {
 fn binding(index: usize, value: RuntimeValue) -> RuntimeDialogueValueBinding {
     RuntimeDialogueValueBinding {
         slot: slot(index),
+        role: RuntimeDialogueValueRole::Interpolation,
         value,
     }
 }
@@ -53,6 +58,27 @@ fn context_with_styles(
     bindings: Vec<RuntimeDialogueValueBinding>,
     base_styles: Vec<RichTextStyle>,
 ) -> RuntimeLineContext {
+    let typed_bindings = bindings
+        .iter()
+        .map(|binding| match binding.role {
+            RuntimeDialogueValueRole::Interpolation => {
+                RuntimeDialogueContentBinding::Interpolation {
+                    slot: binding.slot,
+                    semantic_type: arcweft_core::pattern::RuntimeCheckedType::String
+                        .semantic_identity_digest(),
+                    value: RuntimeInlineTextValue::try_format_runtime_value(
+                        arcweft_core::pattern::RuntimeCheckedType::String
+                            .semantic_identity_digest(),
+                        &binding.value,
+                    )
+                    .expect("test interpolation binding is formatable"),
+                }
+            }
+            RuntimeDialogueValueRole::Content => {
+                panic!("test context does not use nested content bindings")
+            }
+        })
+        .collect::<Vec<_>>();
     RuntimeLineContext::new(
         bindings,
         DialoguePresentationCharacter {
@@ -76,17 +102,57 @@ fn context_with_styles(
         base_styles,
         Vec::new(),
     )
+    .with_materialized_bindings(&typed_bindings)
 }
 
-fn spec(nodes: Vec<RichTextNode>) -> DialogueContentSpec {
+struct TestSpec {
+    spec: DialogueContentSpec,
+    template: DialogueContentFragmentTemplate,
+}
+
+fn resolve_test_frame(
+    spec: &TestSpec,
+    context: &RuntimeLineContext,
+) -> Result<arcweft_text_model::LineDisplayFrame, arcweft_render_text::LineDisplayError> {
+    let content = support::content_value(&spec.template);
+    resolve_frame_with_template(&spec.spec, &spec.template, &content, context)
+}
+
+fn spec(nodes: Vec<RichTextNode>) -> TestSpec {
     spec_with_line("say.test", nodes)
 }
 
-fn spec_with_line(line: &str, nodes: Vec<RichTextNode>) -> DialogueContentSpec {
-    DialogueContentSpec::new(
+fn spec_with_line(line: &str, nodes: Vec<RichTextNode>) -> TestSpec {
+    let mut declared_slots = BTreeMap::new();
+    for node in &nodes {
+        let (slot, role, semantic_type) = match node {
+            RichTextNode::Interpolation { slot, .. } => (
+                *slot,
+                RuntimeDialogueValueRole::Interpolation,
+                RuntimeCheckedType::String.semantic_identity_digest(),
+            ),
+            _ => continue,
+        };
+        declared_slots.insert(slot, (role, semantic_type));
+    }
+    let slots = declared_slots
+        .into_iter()
+        .map(|(slot, (role, semantic_type))| {
+            arcweft_text_model::DialogueContentTemplateSlot::new(slot, role, semantic_type)
+        })
+        .collect();
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        slots,
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(nodes),
+    )
+    .expect("test dialogue template");
+    let spec = DialogueContentSpec::try_new(
         line_id(line),
         TextKey::try_new(line.replacen("say.", "text.", 1)).expect("text key"),
-        RichTextDocument::new(nodes),
+        &template,
         support::character_plan("character.test"),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             support::dialogue_profile(),
@@ -95,6 +161,8 @@ fn spec_with_line(line: &str, nodes: Vec<RichTextNode>) -> DialogueContentSpec {
         Vec::new(),
         source_ref(),
     )
+    .expect("test dialogue spec");
+    TestSpec { spec, template }
 }
 
 #[test]
@@ -106,22 +174,24 @@ fn resolves_text_ruby_controls_and_interpolation() {
         RichTextNode::Interpolation {
             slot: slot(0),
             label: "player".to_owned(),
-            on_error: InlineFailurePolicy::FailLine,
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::FailLine,
+            },
         },
         RichTextNode::Ruby {
-            base: "夢".to_owned(),
+            body: vec![RichTextNode::Text {
+                text: "夢".to_owned(),
+            }],
             ruby: "ゆめ".to_owned(),
         },
         RichTextNode::Control {
             control: RichTextControl::HardBreak,
         },
-        RichTextNode::Control {
-            control: RichTextControl::Raw {
-                text: "[p]".to_owned(),
-            },
+        RichTextNode::Raw {
+            text: "[p]".to_owned(),
         },
     ]);
-    let frame = resolve_frame(
+    let frame = resolve_test_frame(
         &line,
         &context_with_styles(
             vec![binding(0, RuntimeValue::String("Aoi".to_owned()))],
@@ -143,20 +213,25 @@ fn resolves_text_ruby_controls_and_interpolation() {
         vec![
             (RichTextTextSource::Text, RichTextRange::new(0, 3)),
             (RichTextTextSource::Interpolation, RichTextRange::new(3, 6)),
-            (RichTextTextSource::RubyBase, RichTextRange::new(6, 9)),
+            (RichTextTextSource::Text, RichTextRange::new(6, 9)),
             (
                 RichTextTextSource::ControlHardBreak,
                 RichTextRange::new(9, 10)
             ),
-            (RichTextTextSource::ControlRaw, RichTextRange::new(10, 13)),
+            (RichTextTextSource::Raw, RichTextRange::new(10, 13)),
         ]
     );
     assert_eq!(
         frame.display_map.ruby_annotations,
         vec![RichTextRubyAnnotation {
+            owner_node: RichTextNodeIndex::new(2),
+            body_nodes: RichTextNodeRange::new(
+                RichTextNodeIndex::new(3),
+                RichTextNodeIndex::new(4),
+            ),
+            base_runs: RichTextTextRunRange::new(2, 3),
             base_range: RichTextRange::new(6, 9),
             ruby: "ゆめ".to_owned(),
-            node_index: 2,
             styles: vec![RichTextStyle::Font {
                 family: RichTextFontFamily::Monospace
             }],
@@ -165,25 +240,101 @@ fn resolves_text_ruby_controls_and_interpolation() {
     );
     assert_eq!(
         frame.display_map.controls,
-        vec![
-            RichTextControlMarker {
-                node_index: 3,
-                text_offset: 9,
-                control: RichTextControl::HardBreak,
-                range: Some(RichTextRange::new(9, 10)),
-            },
-            RichTextControlMarker {
-                node_index: 4,
-                text_offset: 10,
-                control: RichTextControl::Raw {
-                    text: "[p]".to_owned()
-                },
-                range: Some(RichTextRange::new(10, 13)),
-            },
-        ]
+        vec![RichTextControlMarker {
+            node_index: RichTextNodeIndex::new(4),
+            text_offset: 9,
+            control: RichTextControl::HardBreak,
+            range: Some(RichTextRange::new(9, 10)),
+        },]
     );
     assert!(frame.unresolved.is_empty());
     assert!(frame.inline_failures.is_empty());
+}
+
+#[test]
+fn nested_ruby_owns_preorder_body_nodes_and_exact_run_slices() {
+    let line = spec(vec![RichTextNode::Ruby {
+        body: vec![
+            RichTextNode::Text {
+                text: "A".to_owned(),
+            },
+            RichTextNode::Ruby {
+                body: vec![RichTextNode::Scope {
+                    style: Box::new(RichTextStyle::Strong),
+                    body: vec![RichTextNode::Text {
+                        text: "BC".to_owned(),
+                    }],
+                }],
+                ruby: "びーしー".to_owned(),
+            },
+            RichTextNode::Raw {
+                text: "D".to_owned(),
+            },
+        ],
+        ruby: "えーびーしーでー".to_owned(),
+    }]);
+    let frame = resolve_test_frame(&line, &context(Vec::new())).expect("frame resolves");
+
+    assert_eq!(frame.display_map.source_node_count.get(), 6);
+    assert_eq!(frame.display_map.text_runs.len(), 3);
+    assert_eq!(
+        frame
+            .display_map
+            .ruby_annotations
+            .iter()
+            .map(|ruby| (ruby.owner_node.get(), ruby.body_nodes, ruby.base_runs))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                0,
+                RichTextNodeRange::new(RichTextNodeIndex::new(1), RichTextNodeIndex::new(6)),
+                RichTextTextRunRange::new(0, 3),
+            ),
+            (
+                2,
+                RichTextNodeRange::new(RichTextNodeIndex::new(3), RichTextNodeIndex::new(5)),
+                RichTextTextRunRange::new(1, 2),
+            ),
+        ]
+    );
+    frame.validate().expect("nested display map is coherent");
+}
+
+#[test]
+fn discarded_interpolation_retains_an_omitted_preorder_node() {
+    let line = spec(vec![
+        RichTextNode::Text {
+            text: "A".to_owned(),
+        },
+        RichTextNode::Interpolation {
+            slot: slot(0),
+            label: "missing".to_owned(),
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::Discard,
+            },
+        },
+        RichTextNode::Text {
+            text: "B".to_owned(),
+        },
+    ]);
+    let frame = resolve_test_frame(&line, &context(Vec::new())).expect("frame resolves");
+
+    assert_eq!(
+        frame.nodes,
+        vec![
+            ResolvedRichTextNode::Text {
+                text: "A".to_owned(),
+            },
+            ResolvedRichTextNode::Omitted,
+            ResolvedRichTextNode::Text {
+                text: "B".to_owned(),
+            },
+        ]
+    );
+    assert_eq!(frame.display_map.source_node_count.get(), 3);
+    frame
+        .validate()
+        .expect("omitted node keeps tree cardinality");
 }
 
 #[test]
@@ -195,15 +346,19 @@ fn interpolation_failure_policy_can_discard_or_fallback() {
         RichTextNode::Interpolation {
             slot: slot(0),
             label: "missing_discard".to_owned(),
-            on_error: InlineFailurePolicy::Discard,
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::Discard,
+            },
         },
         RichTextNode::Interpolation {
             slot: slot(1),
             label: "missing_fallback".to_owned(),
-            on_error: InlineFailurePolicy::fallback_text("?"),
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::fallback_text("?"),
+            },
         },
     ]);
-    let frame = resolve_frame(&line, &context(Vec::new()))
+    let frame = resolve_test_frame(&line, &context(Vec::new()))
         .expect("frame resolves with non-failing policies");
 
     assert_eq!(frame.text, "A?");
@@ -235,13 +390,15 @@ fn interpolation_failure_policy_can_fail_line() {
         vec![RichTextNode::Interpolation {
             slot: slot(0),
             label: "missing".to_owned(),
-            on_error: InlineFailurePolicy::FailLine,
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::FailLine,
+            },
         }],
     );
 
-    let error = resolve_frame(&line, &context(Vec::new())).expect_err("line fails");
+    let error = resolve_test_frame(&line, &context(Vec::new())).expect_err("line fails");
 
-    assert_eq!(error.line, line_id("say.opening.003"));
+    assert_eq!(error.line, *line.spec.line());
     assert_eq!(error.expr, "missing");
 }
 
@@ -251,7 +408,9 @@ fn interpolation_fallback_can_render_expr_or_call_source() {
         RichTextNode::Interpolation {
             slot: slot(0),
             label: "score".to_owned(),
-            on_error: InlineFailurePolicy::fallback_expr_source(FallbackStylePolicy::Plain),
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::fallback_expr_source(FallbackStylePolicy::Plain),
+            },
         },
         RichTextNode::Text {
             text: "|".to_owned(),
@@ -259,121 +418,39 @@ fn interpolation_fallback_can_render_expr_or_call_source() {
         RichTextNode::Interpolation {
             slot: slot(1),
             label: "fmt(score, style = \"number\")".to_owned(),
-            on_error: InlineFailurePolicy::fallback_call_source(FallbackStylePolicy::Plain),
+            on_error: InlineFailureSelection::Explicit {
+                policy: InlineFailurePolicy::fallback_call_source(FallbackStylePolicy::Plain),
+            },
         },
     ]);
 
-    let frame = resolve_frame(&line, &context(Vec::new())).expect("fallback source frame resolves");
+    let frame =
+        resolve_test_frame(&line, &context(Vec::new())).expect("fallback source frame resolves");
 
     assert_eq!(frame.text, "score|fmt(score, style = \"number\")");
 }
 
 #[test]
-fn local_text_conditionals_render_selected_branch_and_reject_missing_bindings() {
-    let line = spec(vec![
-        RichTextNode::Text {
-            text: "A".to_owned(),
-        },
-        RichTextNode::ConditionalStart { condition: slot(0) },
-        RichTextNode::Text {
-            text: "yes".to_owned(),
-        },
-        RichTextNode::ConditionalElse,
-        RichTextNode::Text {
-            text: "no".to_owned(),
-        },
-        RichTextNode::ConditionalEnd,
-        RichTextNode::Text {
-            text: "Z".to_owned(),
-        },
-    ]);
-
-    let true_frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(true))]))
-        .expect("true branch resolves");
-    let false_frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(false))]))
-        .expect("false branch resolves");
-    let missing_error = resolve_frame(&line, &context(Vec::new()))
-        .expect_err("missing typed condition binding is rejected");
-
-    assert_eq!(true_frame.text, "AyesZ");
-    assert_eq!(false_frame.text, "AnoZ");
-    assert_eq!(missing_error.expr, "slot 1");
-    assert_eq!(
-        missing_error.reason,
-        "dialogue value slot 1 was not supplied"
-    );
-    assert!(true_frame.host_events.is_empty());
-    assert!(false_frame.host_events.is_empty());
-}
-
-#[test]
-fn inactive_conditional_branch_suppresses_styles_interpolation_and_host_events() {
-    let line = spec(vec![
-        RichTextNode::ConditionalStart { condition: slot(0) },
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Color {
-                value: RichTextColor::Rgba8 {
-                    value: [0xff, 0x00, 0x00, 0xff],
-                },
-            }),
-        },
-        RichTextNode::HostEvent {
-            event: DialogueHostEvent::Voice {
-                source: DialogueVoiceSource::Identity {
-                    id: "hidden".to_owned(),
-                },
+fn structural_scope_preserves_style_across_control_nodes() {
+    let line = spec(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Color {
+            value: RichTextColor::Rgba8 {
+                value: [0x80, 0xc0, 0xff, 0xff],
             },
-        },
-        RichTextNode::Interpolation {
-            slot: slot(1),
-            label: "missing".to_owned(),
-            on_error: InlineFailurePolicy::FailLine,
-        },
-        RichTextNode::ConditionalElse,
-        RichTextNode::Text {
-            text: "shown".to_owned(),
-        },
-        RichTextNode::ConditionalEnd,
-        RichTextNode::Text {
-            text: " plain".to_owned(),
-        },
-    ]);
-
-    let frame = resolve_frame(&line, &context(vec![binding(0, RuntimeValue::Bool(false))]))
-        .expect("inactive interpolation does not fail the line");
-
-    assert_eq!(frame.text, "shown plain");
-    assert!(frame.host_events.is_empty());
-    assert!(frame.inline_failures.is_empty());
-    assert!(frame.unresolved.is_empty());
-    assert!(frame.display_map.text_runs.iter().all(|run| {
-        !run.styles
-            .iter()
-            .any(|style| matches!(style, RichTextStyle::Color { .. }))
-    }));
-}
-
-#[test]
-fn reset_control_clears_active_inline_styles_for_following_runs() {
-    let line = spec(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Color {
-                value: RichTextColor::Rgba8 {
-                    value: [0x80, 0xc0, 0xff, 0xff],
-                },
-            }),
-        },
-        RichTextNode::Text {
-            text: "blue".to_owned(),
-        },
-        RichTextNode::Control {
-            control: RichTextControl::Reset,
-        },
-        RichTextNode::Text {
-            text: "plain".to_owned(),
-        },
-    ]);
-    let frame = resolve_frame(&line, &context(Vec::new())).expect("frame resolves");
+        }),
+        body: vec![
+            RichTextNode::Text {
+                text: "blue".to_owned(),
+            },
+            RichTextNode::Control {
+                control: RichTextControl::Reset,
+            },
+            RichTextNode::Text {
+                text: "plain".to_owned(),
+            },
+        ],
+    }]);
+    let frame = resolve_test_frame(&line, &context(Vec::new())).expect("frame resolves");
 
     assert_eq!(frame.text, "blueplain");
     assert_eq!(frame.display_map.text_runs.len(), 2);
@@ -383,11 +460,16 @@ fn reset_control_clears_active_inline_styles_for_following_runs() {
             .iter()
             .any(|style| matches!(style, RichTextStyle::Color { .. }))
     );
-    assert!(frame.display_map.text_runs[1].styles.is_empty());
+    assert!(
+        frame.display_map.text_runs[1]
+            .styles
+            .iter()
+            .any(|style| matches!(style, RichTextStyle::Color { .. }))
+    );
     assert_eq!(
         frame.display_map.controls,
         vec![RichTextControlMarker {
-            node_index: 2,
+            node_index: RichTextNodeIndex::new(2),
             text_offset: 4,
             control: RichTextControl::Reset,
             range: None,

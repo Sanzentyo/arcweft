@@ -106,24 +106,31 @@ impl SyntaxIndexProjection {
     }
 }
 
-/// Bracket or colon spelling retained separately from semantic E33 HIR.
+/// Source spelling retained separately from semantic E33 HIR.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SyntaxDialogueApplicationForm {
-    Bracket { terminator: SyntaxBracketTerminator },
+pub enum SyntaxAttachedContentApplicationForm {
+    Bracket {
+        terminator: SyntaxBracketTerminator,
+    },
+    /// A `#` content application.  The hash marker is syntax-owned by the
+    /// enclosing expression; its target is the ordinary expression following
+    /// `#`, and an optional bracket body is retained as the same typed content
+    /// projection used by bracket dialogue applications.
+    Hash,
     Colon,
 }
 
 /// Complete parser-selected E33 payload.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxDialogueApplicationProjection {
-    form: SyntaxDialogueApplicationForm,
+pub struct SyntaxAttachedContentApplicationProjection {
+    form: SyntaxAttachedContentApplicationForm,
     content: SyntaxDialogueContentProjection,
     has_plan: bool,
 }
 
-impl SyntaxDialogueApplicationProjection {
+impl SyntaxAttachedContentApplicationProjection {
     pub(crate) const fn new(
-        form: SyntaxDialogueApplicationForm,
+        form: SyntaxAttachedContentApplicationForm,
         content: SyntaxDialogueContentProjection,
         has_plan: bool,
     ) -> Self {
@@ -134,7 +141,7 @@ impl SyntaxDialogueApplicationProjection {
         }
     }
 
-    pub const fn form(&self) -> &SyntaxDialogueApplicationForm {
+    pub const fn form(&self) -> &SyntaxAttachedContentApplicationForm {
         &self.form
     }
 
@@ -149,10 +156,22 @@ impl SyntaxDialogueApplicationProjection {
     pub fn has_recovery(&self) -> bool {
         matches!(
             self.form,
-            SyntaxDialogueApplicationForm::Bracket {
+            SyntaxAttachedContentApplicationForm::Bracket {
                 terminator: SyntaxBracketTerminator::RecoveredMissing(_)
             }
-        ) || self.content.has_recovery()
+        ) || match (&self.form, &self.content) {
+            // A hash without an attached body is the valid compact content
+            // insertion form (`#name`).  `Inline` is the source-owned marker
+            // for that omission; all other missing/present recovery states
+            // still propagate normally.
+            (
+                SyntaxAttachedContentApplicationForm::Hash,
+                SyntaxDialogueContentProjection::Missing {
+                    boundary: SyntaxDialogueContentRecoveryBoundary::Inline { .. },
+                },
+            ) => false,
+            (_, content) => content.has_recovery(),
+        }
     }
 }
 
@@ -160,6 +179,10 @@ impl SyntaxDialogueApplicationProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxDialogueContentProjection {
     Present(SyntaxDialogueContent),
+    /// A `#raw()[...]` body.  The body is an opaque literal owned by the
+    /// attached application and is deliberately not passed through the
+    /// dialogue-content grammar.
+    RawLiteral(SyntaxRawLiteralBody),
     Missing {
         boundary: SyntaxDialogueContentRecoveryBoundary,
     },
@@ -169,8 +192,137 @@ impl SyntaxDialogueContentProjection {
     pub fn has_recovery(&self) -> bool {
         match self {
             Self::Present(content) => content.has_recovery(),
+            Self::RawLiteral(_) => false,
             Self::Missing { .. } => true,
         }
+    }
+}
+
+/// Typed opaque body for the canonical `#raw()[...]` content call.
+///
+/// The decoded value is retained once by the syntax transaction.  No nested
+/// `DialogueContent` projection is created for it, so bracket-looking bytes
+/// remain literal and cannot publish controls, calls, or further content
+/// applications.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyntaxRawLiteralBody {
+    value: Box<str>,
+    range: SourceRange,
+}
+
+impl SyntaxRawLiteralBody {
+    pub(crate) fn new(value: impl Into<Box<str>>, range: SourceRange) -> Self {
+        Self {
+            value: value.into(),
+            range,
+        }
+    }
+
+    /// Returns the literal body without its `[`/`]` delimiters.
+    pub fn value(&self) -> &str {
+        &self.value
+    }
+
+    /// Returns the exact authored body range.
+    pub const fn range(&self) -> SourceRange {
+        self.range
+    }
+}
+
+/// Typed control actions admitted by bracket dialogue syntax.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntaxDialogueControl {
+    Page,
+    LineWait,
+    HardBreak,
+    TimedWait,
+    Clear,
+    Reset,
+    Speed,
+}
+
+impl SyntaxDialogueControl {
+    pub(crate) const fn from_source_name(source: &str) -> Option<Self> {
+        match source.as_bytes() {
+            b"p" => Some(Self::Page),
+            b"l" => Some(Self::LineWait),
+            b"r" => Some(Self::HardBreak),
+            b"w" => Some(Self::TimedWait),
+            b"clear" => Some(Self::Clear),
+            b"reset" => Some(Self::Reset),
+            b"speed" => Some(Self::Speed),
+            _ => None,
+        }
+    }
+}
+
+/// Typed bracket action identity.  Only controls, marks, and host events
+/// produce point actions; body-bearing modifier forms are represented as
+/// syntax recovery instead.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum SyntaxDialoguePointActionIdentity {
+    Control(SyntaxDialogueControl),
+    Mark(SyntaxDialogueMarkName),
+    Host(SyntaxRichTextHostEvent),
+    Invalid(SyntaxRichTextIssue),
+}
+
+/// Payload family for a zero-width point action.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntaxDialoguePointActionPayload {
+    None,
+    Call(SyntaxExpressionSlot),
+    TimedCue(SyntaxExpressionSlot),
+}
+
+/// Complete typed zero-width bracket action.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyntaxDialoguePointActionProjection {
+    identity: SyntaxDialoguePointActionIdentity,
+    arguments: Box<[SyntaxDialogueActionArgumentProjection]>,
+    payload: SyntaxDialoguePointActionPayload,
+}
+
+impl SyntaxDialoguePointActionProjection {
+    pub(crate) fn new(
+        identity: SyntaxDialoguePointActionIdentity,
+        arguments: impl Into<Box<[SyntaxDialogueActionArgumentProjection]>>,
+        payload: SyntaxDialoguePointActionPayload,
+    ) -> Self {
+        Self {
+            identity,
+            arguments: arguments.into(),
+            payload,
+        }
+    }
+
+    pub const fn identity(&self) -> &SyntaxDialoguePointActionIdentity {
+        &self.identity
+    }
+
+    pub const fn arguments(&self) -> &[SyntaxDialogueActionArgumentProjection] {
+        &self.arguments
+    }
+
+    pub const fn payload(&self) -> SyntaxDialoguePointActionPayload {
+        self.payload
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        matches!(self.identity, SyntaxDialoguePointActionIdentity::Invalid(_))
+            || matches!(
+                &self.identity,
+                SyntaxDialoguePointActionIdentity::Mark(mark) if mark.has_recovery()
+            )
+            || self
+                .arguments
+                .iter()
+                .any(SyntaxDialogueActionArgumentProjection::has_recovery)
+            || matches!(
+                self.payload,
+                SyntaxDialoguePointActionPayload::Call(SyntaxExpressionSlot::Missing)
+                    | SyntaxDialoguePointActionPayload::TimedCue(SyntaxExpressionSlot::Missing)
+            )
     }
 }
 
@@ -183,21 +335,20 @@ pub enum SyntaxDialogueContentRecoveryBoundary {
     Indented { insertion: usize },
 }
 
-/// Complete ordered content and its tag inventory.
+/// Complete ordered dialogue content.
+///
+/// Every source atom is represented in source order.  In particular, a
+/// bracket point action owns its typed payload directly; there is no second
+/// tag table or opening/closing pairing table for consumers to reconcile.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxDialogueContent {
     nodes: Box<[SyntaxDialogueNodeProjection]>,
-    tags: Box<[SyntaxRichTextTagProjection]>,
 }
 
 impl SyntaxDialogueContent {
-    pub(crate) fn new(
-        nodes: impl Into<Box<[SyntaxDialogueNodeProjection]>>,
-        tags: impl Into<Box<[SyntaxRichTextTagProjection]>>,
-    ) -> Self {
+    pub(crate) fn new(nodes: impl Into<Box<[SyntaxDialogueNodeProjection]>>) -> Self {
         Self {
             nodes: nodes.into(),
-            tags: tags.into(),
         }
     }
 
@@ -205,18 +356,10 @@ impl SyntaxDialogueContent {
         &self.nodes
     }
 
-    pub const fn tags(&self) -> &[SyntaxRichTextTagProjection] {
-        &self.tags
-    }
-
     pub fn has_recovery(&self) -> bool {
         self.nodes
             .iter()
             .any(SyntaxDialogueNodeProjection::has_recovery)
-            || self
-                .tags
-                .iter()
-                .any(SyntaxRichTextTagProjection::has_recovery)
     }
 }
 
@@ -224,125 +367,34 @@ impl SyntaxDialogueContent {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxDialogueNodeProjection {
     Text(Box<str>),
-    Raw(Box<str>),
     Escape(char),
-    Ruby { base: Box<str>, ruby: Box<str> },
-    AuthoredStartTag { tag: u32 },
-    InferredStartTag { tag: u32 },
-    AuthoredEndTag(SyntaxRichTextEndTagProjection),
-    InferredEndTag(SyntaxRichTextEndTagProjection),
+    /// Retained Ruby sugar is lowered as a canonical attached content call by
+    /// HIR.  The surface projection keeps the decoded operands only until
+    /// that lowering step; it is never an executable HIR leaf.
+    Ruby {
+        base: Box<str>,
+        ruby: Box<str>,
+    },
     Interpolation(SyntaxExpressionSlot),
+    /// A `#` escape whose ordinary expression child may itself be a
+    /// `AttachedContentApplication` when an attached body is present.
+    ContentApplication(SyntaxExpressionSlot),
+    /// A zero-width bracket action.  The action owns its typed identity,
+    /// arguments, and optional call payload directly; no end-tag or pairing
+    /// record exists for this node family.
+    PointAction(SyntaxDialoguePointActionProjection),
     LineBreak(SyntaxLineBreakKind),
     Error(SyntaxDialogueContentIssue),
 }
 
 impl SyntaxDialogueNodeProjection {
-    pub const fn has_recovery(&self) -> bool {
+    pub fn has_recovery(&self) -> bool {
         matches!(
             self,
-            Self::Interpolation(SyntaxExpressionSlot::Missing) | Self::Error(_)
-        ) || matches!(
-            self,
-            Self::AuthoredEndTag(end) | Self::InferredEndTag(end) if end.has_recovery()
-        )
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxRichTextEndTagProjection {
-    identity: Option<SyntaxRichTextTagIdentity>,
-    inferred: bool,
-    issue: Option<SyntaxRichTextIssue>,
-}
-
-impl SyntaxRichTextEndTagProjection {
-    pub(crate) const fn new(
-        identity: Option<SyntaxRichTextTagIdentity>,
-        inferred: bool,
-        issue: Option<SyntaxRichTextIssue>,
-    ) -> Self {
-        Self {
-            identity,
-            inferred,
-            issue,
-        }
-    }
-
-    pub const fn identity(&self) -> Option<&SyntaxRichTextTagIdentity> {
-        self.identity.as_ref()
-    }
-
-    pub const fn is_inferred(&self) -> bool {
-        self.inferred
-    }
-
-    pub const fn issue(&self) -> Option<&SyntaxRichTextIssue> {
-        self.issue.as_ref()
-    }
-
-    pub const fn has_recovery(&self) -> bool {
-        self.issue.is_some()
-    }
-}
-
-/// One source-ordered typed `RichText` tag.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxRichTextTagProjection {
-    identity: SyntaxRichTextTagIdentity,
-    arguments: Box<[SyntaxRichTextArgumentProjection]>,
-    payload: SyntaxRichTextTagPayloadProjection,
-    paired_end_node: Option<u32>,
-}
-
-impl SyntaxRichTextTagProjection {
-    pub(crate) fn new(
-        identity: SyntaxRichTextTagIdentity,
-        arguments: impl Into<Box<[SyntaxRichTextArgumentProjection]>>,
-        payload: SyntaxRichTextTagPayloadProjection,
-        paired_end_node: Option<u32>,
-    ) -> Self {
-        Self {
-            identity,
-            arguments: arguments.into(),
-            payload,
-            paired_end_node,
-        }
-    }
-
-    pub const fn identity(&self) -> &SyntaxRichTextTagIdentity {
-        &self.identity
-    }
-
-    pub const fn arguments(&self) -> &[SyntaxRichTextArgumentProjection] {
-        &self.arguments
-    }
-
-    pub const fn payload(&self) -> &SyntaxRichTextTagPayloadProjection {
-        &self.payload
-    }
-
-    pub const fn paired_end_node(&self) -> Option<u32> {
-        self.paired_end_node
-    }
-
-    pub(crate) fn pair_with_end_node(&mut self, node: u32) -> bool {
-        if self.paired_end_node.replace(node).is_some() {
-            return false;
-        }
-        true
-    }
-
-    pub fn has_recovery(&self) -> bool {
-        matches!(self.identity, SyntaxRichTextTagIdentity::Invalid(_))
-            || matches!(
-                &self.identity,
-                SyntaxRichTextTagIdentity::Marker(marker) if marker.has_recovery()
-            )
-            || self
-                .arguments
-                .iter()
-                .any(SyntaxRichTextArgumentProjection::has_recovery)
-            || self.payload.has_recovery()
+            Self::Interpolation(SyntaxExpressionSlot::Missing)
+                | Self::ContentApplication(SyntaxExpressionSlot::Missing)
+                | Self::Error(_)
+        ) || matches!(self, Self::PointAction(action) if action.has_recovery())
     }
 }
 
@@ -466,107 +518,21 @@ impl SyntaxDialogueMarkName {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SyntaxRichTextTagIdentity {
-    Builtin(SyntaxBuiltinRichTextTag),
-    Marker(SyntaxDialogueMarkName),
-    DotSelector(Result<SyntaxName, SyntaxNameIssue>),
-    ProjectSymbol(SyntaxProjectSymbolPath),
-    Invalid(SyntaxRichTextIssue),
-}
-
-impl SyntaxRichTextTagIdentity {
-    /// Classifies one parser-delimited tag head without retaining its spelling.
-    pub(crate) fn from_source_name(source: &str) -> Self {
-        if let Some(builtin) = SyntaxBuiltinRichTextTag::from_source_name(source) {
-            return Self::Builtin(builtin);
-        }
-        if let Some(marker) = source.strip_prefix('.') {
-            return Self::DotSelector(SyntaxName::try_new(marker));
-        }
-
-        let (absolute, path) = source
-            .strip_prefix("::")
-            .map_or((false, source), |path| (true, path));
-        Self::ProjectSymbol(SyntaxProjectSymbolPath::new(
-            absolute,
-            path.split("::")
-                .map(SyntaxName::try_new)
-                .collect::<Vec<_>>(),
-        ))
-    }
-
-    pub(crate) fn opens_span(&self) -> bool {
-        match self {
-            Self::Builtin(builtin) => builtin.opens_span(),
-            Self::Marker(_) => false,
-            Self::DotSelector(_) | Self::ProjectSymbol(_) => true,
-            Self::Invalid(_) => false,
-        }
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxProjectSymbolPath {
-    absolute: bool,
-    segments: Box<[Result<SyntaxName, SyntaxNameIssue>]>,
-}
-
-impl SyntaxProjectSymbolPath {
-    pub(crate) fn new(
-        absolute: bool,
-        segments: impl Into<Box<[Result<SyntaxName, SyntaxNameIssue>]>>,
-    ) -> Self {
-        Self {
-            absolute,
-            segments: segments.into(),
-        }
-    }
-
-    pub const fn is_absolute(&self) -> bool {
-        self.absolute
-    }
-
-    pub const fn segments(&self) -> &[Result<SyntaxName, SyntaxNameIssue>] {
-        &self.segments
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SyntaxRichTextTagPayloadProjection {
-    Arguments,
-    FxCall(SyntaxExpressionSlot),
-    DialogueCall(SyntaxExpressionSlot),
-    Condition(SyntaxExpressionSlot),
-    None,
-}
-
-impl SyntaxRichTextTagPayloadProjection {
-    pub const fn has_recovery(&self) -> bool {
-        matches!(
-            self,
-            Self::FxCall(SyntaxExpressionSlot::Missing)
-                | Self::DialogueCall(SyntaxExpressionSlot::Missing)
-                | Self::Condition(SyntaxExpressionSlot::Missing)
-        )
-    }
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum SyntaxRichTextArgumentProjection {
+pub enum SyntaxDialogueActionArgumentProjection {
     Positional {
-        value: SyntaxRichTextValue,
+        value: SyntaxDialogueActionValue,
     },
     Named {
         name: Result<SyntaxName, SyntaxNameIssue>,
-        value: SyntaxRichTextValue,
+        value: SyntaxDialogueActionValue,
     },
     Invalid {
         issue: RichTextArgumentIssue,
-        authored_parts: SyntaxRichTextArgumentParts,
+        authored_parts: SyntaxDialogueActionArgumentParts,
     },
 }
 
-impl SyntaxRichTextArgumentProjection {
+impl SyntaxDialogueActionArgumentProjection {
     pub const fn has_recovery(&self) -> bool {
         matches!(
             self,
@@ -576,9 +542,9 @@ impl SyntaxRichTextArgumentProjection {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SyntaxRichTextValue(Box<str>);
+pub struct SyntaxDialogueActionValue(Box<str>);
 
-impl SyntaxRichTextValue {
+impl SyntaxDialogueActionValue {
     pub(crate) fn new(decoded: impl Into<Box<str>>) -> Self {
         Self(decoded.into())
     }
@@ -589,13 +555,13 @@ impl SyntaxRichTextValue {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SyntaxRichTextArgumentParts {
+pub struct SyntaxDialogueActionArgumentParts {
     name: bool,
     equals: bool,
     value: bool,
 }
 
-impl SyntaxRichTextArgumentParts {
+impl SyntaxDialogueActionArgumentParts {
     pub(crate) const fn new(name: bool, equals: bool, value: bool) -> Self {
         Self {
             name,
@@ -619,10 +585,6 @@ impl SyntaxRichTextArgumentParts {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxRichTextIssue {
-    UnknownTag,
-    UnknownFx,
-    UnknownRegisteredTag,
-    InvalidNesting,
     InvalidPayload,
     ForeignNestedExpression,
     Argument(RichTextArgumentIssue),
@@ -631,10 +593,7 @@ pub enum SyntaxRichTextIssue {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxDialogueContentIssue {
     UnclassifiedToken,
-    InvalidEscape,
-    InvalidRuby,
-    UnmatchedEndTag,
-    UnclosedTag,
+    InvalidPointAction,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -642,167 +601,6 @@ pub enum SyntaxLineBreakKind {
     Line,
     Paragraph,
     Page,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxBuiltinRichTextTag {
-    Page,
-    LineWait,
-    HardBreak,
-    TimedWait,
-    Clear,
-    Reset,
-    Speed,
-    DirectStyle(SyntaxRichTextDirectStyle),
-    Style(SyntaxRichTextStyleSelector),
-    Layout(SyntaxRichTextLayoutSelector),
-    Transform(SyntaxRichTextTransformSelector),
-    Object(SyntaxRichTextObjectSelector),
-    Fx(SyntaxBuiltinRichTextFx),
-    HostEvent(SyntaxRichTextHostEvent),
-    Conditional(SyntaxRichTextConditionalTag),
-}
-
-impl SyntaxBuiltinRichTextTag {
-    /// Resolves a source tag or dot-selector to its canonical typed identity.
-    pub(crate) const fn from_source_name(source: &str) -> Option<Self> {
-        match source.as_bytes() {
-            b"p" | b"page" => Some(Self::Page),
-            b"l" | b"wait" => Some(Self::LineWait),
-            b"r" | b"nl" | b"br" => Some(Self::HardBreak),
-            b"w" => Some(Self::TimedWait),
-            b"clear" | b"er" | b"cm" => Some(Self::Clear),
-            b"reset" => Some(Self::Reset),
-            b"speed" => Some(Self::Speed),
-            b"em" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Emphasis)),
-            b"strong" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Strong)),
-            b"i" | b"italic" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Italic)),
-            b"oblique" | b"slant" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Oblique)),
-            b"color" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Color)),
-            b"font" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Font)),
-            b"size" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Size)),
-            b"ruby" | b"rb" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Ruby)),
-            b".italic" | b".i" => Some(Self::Style(SyntaxRichTextStyleSelector::Italic)),
-            b".oblique" | b".slant" => Some(Self::Style(SyntaxRichTextStyleSelector::Oblique)),
-            b".opacity" | b".alpha" => Some(Self::Style(SyntaxRichTextStyleSelector::Opacity)),
-            b".layer" | b".object_layer" => Some(Self::Style(SyntaxRichTextStyleSelector::Layer)),
-            b".z_index" | b".z" => Some(Self::Style(SyntaxRichTextStyleSelector::ZIndex)),
-            b".horizontal_tb" => Some(Self::Layout(SyntaxRichTextLayoutSelector::HorizontalTb)),
-            b".vertical_rl" | b".vertical" => {
-                Some(Self::Layout(SyntaxRichTextLayoutSelector::VerticalRl))
-            }
-            b".vertical_lr" => Some(Self::Layout(SyntaxRichTextLayoutSelector::VerticalLr)),
-            b".dir" => Some(Self::Layout(SyntaxRichTextLayoutSelector::Direction)),
-            b".ruby_over" => Some(Self::Layout(SyntaxRichTextLayoutSelector::RubyOver)),
-            b".ruby_under" => Some(Self::Layout(SyntaxRichTextLayoutSelector::RubyUnder)),
-            b".ruby_inter_character" => Some(Self::Layout(
-                SyntaxRichTextLayoutSelector::RubyInterCharacter,
-            )),
-            b".offset" | b".pos" => Some(Self::Transform(SyntaxRichTextTransformSelector::Offset)),
-            b".rotate" => Some(Self::Transform(SyntaxRichTextTransformSelector::Rotate)),
-            b".scale" => Some(Self::Transform(SyntaxRichTextTransformSelector::Scale)),
-            b".skew" => Some(Self::Transform(SyntaxRichTextTransformSelector::Skew)),
-            b".object" | b"object" => Some(Self::Object(SyntaxRichTextObjectSelector::Object)),
-            b".wave" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Wave)),
-            b".shake" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Shake)),
-            b".jitter" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Jitter)),
-            b".arc" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Arc)),
-            b".spin" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Spin)),
-            b".pulse" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Pulse)),
-            b".motion" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Motion)),
-            b".typewriter" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Typewriter)),
-            b".sparkle" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Sparkle)),
-            b".shader" | b"shader" => Some(Self::Fx(SyntaxBuiltinRichTextFx::Shader)),
-            b"voice" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Voice)),
-            b"face" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Face)),
-            b"pose" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Pose)),
-            b"show" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Show)),
-            b"hide" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Hide)),
-            b"move" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Move)),
-            b"scale" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Scale)),
-            b"rotate" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Rotate)),
-            b"anim" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Animation)),
-            b"shake" => Some(Self::HostEvent(SyntaxRichTextHostEvent::StageShake)),
-            b"at" => Some(Self::HostEvent(SyntaxRichTextHostEvent::TimedCue)),
-            b"call" | b"!" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Call)),
-            b"signal" => Some(Self::HostEvent(SyntaxRichTextHostEvent::Signal)),
-            b"if" => Some(Self::Conditional(SyntaxRichTextConditionalTag::If)),
-            b"else" => Some(Self::Conditional(SyntaxRichTextConditionalTag::Else)),
-            b"endif" => Some(Self::Conditional(SyntaxRichTextConditionalTag::EndIf)),
-            _ => None,
-        }
-    }
-
-    pub(crate) const fn opens_span(self) -> bool {
-        matches!(
-            self,
-            Self::DirectStyle(_)
-                | Self::Style(_)
-                | Self::Layout(_)
-                | Self::Transform(_)
-                | Self::Object(_)
-                | Self::Fx(_)
-        )
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextDirectStyle {
-    Emphasis,
-    Strong,
-    Italic,
-    Oblique,
-    Color,
-    Font,
-    Size,
-    Ruby,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextStyleSelector {
-    Italic,
-    Oblique,
-    Opacity,
-    Layer,
-    ZIndex,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextLayoutSelector {
-    HorizontalTb,
-    VerticalRl,
-    VerticalLr,
-    Direction,
-    RubyOver,
-    RubyUnder,
-    RubyInterCharacter,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextTransformSelector {
-    Offset,
-    Rotate,
-    Scale,
-    Skew,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextObjectSelector {
-    Object,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxBuiltinRichTextFx {
-    Wave,
-    Shake,
-    Jitter,
-    Arc,
-    Spin,
-    Pulse,
-    Motion,
-    Typewriter,
-    Sparkle,
-    Shader,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -820,13 +618,6 @@ pub enum SyntaxRichTextHostEvent {
     TimedCue,
     Call,
     Signal,
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextConditionalTag {
-    If,
-    Else,
-    EndIf,
 }
 
 /// Quality of one viable candidate parse.
@@ -1239,29 +1030,28 @@ pub enum SyntaxDialogueConfigurationArgumentPart {
 pub enum SyntaxDialogueNodeSourcePart {
     Whole,
     Text,
-    Raw,
     Escape,
-    RubyBase,
-    RubyText,
+    Ruby,
     Interpolation,
+    Hash,
+    Expression,
+    PointAction,
     LineBreak,
     Error,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextTagSourcePart {
+pub enum SyntaxDialoguePointActionSourcePart {
     Whole,
     OpenDelimiter,
     Name,
     Payload,
     CloseDelimiter,
-    InferenceInsertion,
-    EndTag,
     Marker(crate::id_ref::SyntaxIdRefPart),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxRichTextArgumentSourcePart {
+pub enum SyntaxDialogueActionArgumentSourcePart {
     Whole,
     Name,
     Equals,

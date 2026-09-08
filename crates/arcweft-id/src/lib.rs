@@ -1,4 +1,7 @@
+pub mod canonical;
+pub mod closed_enum;
 pub mod dialogue;
+mod effect;
 mod locale;
 pub mod runtime_program;
 mod semantic_type;
@@ -9,6 +12,7 @@ use core::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
+pub use effect::{EffectId, EffectIdError, EffectSemanticDigest};
 pub use locale::{LocaleSemanticDigest, LocaleTag, LocaleTagError};
 pub use semantic_type::RuntimeSemanticTypeId;
 pub use unsafe_audit::{AcceptedUnsafeAuditSemanticId, UnsafeAuditId, UnsafeAuditIdError};
@@ -87,10 +91,6 @@ pub enum DeclarationIdentityFamily {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DeclarationName(String);
 
-/// Validated source-surface alias for a Character declaration.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CharacterSurfaceAlias(String);
-
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum DeclarationNameError {
     #[error("declaration name must not be empty")]
@@ -162,6 +162,19 @@ impl PublicId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Returns the owner-issued bytes of this already validated public
+    /// identity.  Semantic consumers must use this projection instead of
+    /// reparsing or reconstructing the identity from display text.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
+
+    /// Returns the final typed component of this public identity.
+    pub fn last_segment(&self) -> Option<&str> {
+        self.0.rsplit_once('.').map(|(_, segment)| segment)
     }
 }
 
@@ -349,16 +362,6 @@ impl DeclarationName {
     }
 }
 
-impl CharacterSurfaceAlias {
-    pub fn try_new(value: impl Into<String>) -> Result<Self, DeclarationNameError> {
-        validate_declaration_identifier(value.into()).map(Self)
-    }
-
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
 impl TextKey {
     pub fn try_new(value: impl Into<String>) -> Result<Self, IdError> {
         validate_id_text(&value.into(), true, false).map(Self)
@@ -366,6 +369,13 @@ impl TextKey {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Returns the owner-issued bytes of this already validated text-key
+    /// identity.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
     }
 }
 
@@ -423,12 +433,6 @@ impl fmt::Display for DeclarationName {
     }
 }
 
-impl fmt::Display for CharacterSurfaceAlias {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 impl FromStr for EntityId {
     type Err = IdError;
 
@@ -462,14 +466,6 @@ impl FromStr for AssetVirtualPath {
 }
 
 impl FromStr for DeclarationName {
-    type Err = DeclarationNameError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        Self::try_new(value)
-    }
-}
-
-impl FromStr for CharacterSurfaceAlias {
     type Err = DeclarationNameError;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -528,8 +524,8 @@ fn is_reserved_prefix(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AssetId, AssetIdError, AssetVirtualPath, CharacterSurfaceAlias, DeclarationIdentityFamily,
-        DeclarationName, IdErrorKind, PublicId, PublicIdFamilyError, TextKey,
+        AssetId, AssetIdError, AssetVirtualPath, DeclarationIdentityFamily, DeclarationName,
+        IdErrorKind, PublicId, PublicIdFamilyError, TextKey,
     };
 
     #[test]
@@ -679,7 +675,7 @@ mod tests {
     #[test]
     fn retained_local_names_share_the_language_identifier_rule() {
         assert!(DeclarationName::try_new("会話2").is_ok());
-        assert!(CharacterSurfaceAlias::try_new("alice_2").is_ok());
+        assert!(DeclarationName::try_new("alice_2").is_ok());
         assert!(DeclarationName::try_new("dialogue.main").is_err());
         assert!(DeclarationName::try_new("2dialogue").is_err());
     }

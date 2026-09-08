@@ -7,10 +7,127 @@ use crate::proof_return::HirProofReturnSemanticClass;
 
 use super::{
     HirContractOperandList, HirItemInvariantError, HirRequiredName, validate_contract_scopes,
-    validate_function_body, validate_function_signature, validate_locals, validate_optional_expr,
-    validate_parameters, validate_predicate_body, validate_proof_body, validate_signature,
-    validate_type, validate_types,
+    validate_function_body, validate_function_signature, validate_locals, validate_module,
+    validate_optional_attached_content, validate_optional_expr, validate_parameters,
+    validate_predicate_body, validate_proof_body, validate_signature, validate_type,
+    validate_types,
 };
+
+/// Semantic role of a callable's dedicated trailing attached-content
+/// parameter.  The role is closed at the syntax/HIR boundary; later phases
+/// select the runtime/content representation from this value rather than
+/// reparsing the declaration spelling.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirAttachedContentRole {
+    Inline,
+    Rich,
+    Dialogue,
+}
+
+/// Presence policy of one dedicated attached-content parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirAttachedContentPresence {
+    Required,
+    Optional,
+    Defaulted { value: ExprId },
+}
+
+impl HirAttachedContentPresence {
+    pub const fn default_value(self) -> Option<ExprId> {
+        match self {
+            Self::Defaulted { value } => Some(value),
+            Self::Required | Self::Optional => None,
+        }
+    }
+
+    pub const fn is_optional(self) -> bool {
+        matches!(self, Self::Optional)
+    }
+
+    pub const fn is_defaulted(self) -> bool {
+        matches!(self, Self::Defaulted { .. })
+    }
+}
+
+/// Final HIR ownership of one callable attached-content declaration.
+///
+/// The binding is an ordinary callable-scope local, while the role and
+/// presence remain distinct semantic fields.  This keeps source syntax out of
+/// downstream consumers and gives the default expression one explicit HIR
+/// owner when the declaration is defaulted.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirCallableAttachedContentParameter {
+    binding: LocalId,
+    role: HirAttachedContentRole,
+    presence: HirAttachedContentPresence,
+}
+
+/// Exact final-HIR placement of one callable-owned attached-content ABI row.
+///
+/// The parameter owns declaration semantics. Group and ABI coordinates are
+/// derived from the exact callable member that contains it, so downstream
+/// consumers do not repeat Function/Trait/Impl/extern member traversal.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HirCallableAttachedContentInterface {
+    parameter: HirCallableAttachedContentParameter,
+    group: u32,
+    abi_position: u32,
+}
+
+impl HirCallableAttachedContentInterface {
+    pub(super) const fn new(
+        parameter: HirCallableAttachedContentParameter,
+        group: u32,
+        abi_position: u32,
+    ) -> Self {
+        Self {
+            parameter,
+            group,
+            abi_position,
+        }
+    }
+
+    pub const fn parameter(self) -> HirCallableAttachedContentParameter {
+        self.parameter
+    }
+
+    pub const fn group(self) -> u32 {
+        self.group
+    }
+
+    pub const fn abi_position(self) -> u32 {
+        self.abi_position
+    }
+}
+
+impl HirCallableAttachedContentParameter {
+    pub(crate) fn try_new(
+        expected: HirModuleId,
+        binding: LocalId,
+        role: HirAttachedContentRole,
+        presence: HirAttachedContentPresence,
+    ) -> Result<Self, HirItemInvariantError> {
+        validate_module(expected, binding.module())?;
+        validate_optional_expr(expected, presence.default_value())?;
+        Ok(Self {
+            binding,
+            role,
+            presence,
+        })
+    }
+
+    pub const fn binding(self) -> LocalId {
+        self.binding
+    }
+
+    pub const fn role(self) -> HirAttachedContentRole {
+        self.role
+    }
+
+    pub const fn presence(self) -> HirAttachedContentPresence {
+        self.presence
+    }
+}
 
 /// One final generic parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -216,6 +333,7 @@ pub struct HirFunctionSignature {
     ensures: Box<[ExprId]>,
     effects: Box<[HirContractOperandList]>,
     return_type: Option<TypeId>,
+    attached_content: Option<HirCallableAttachedContentParameter>,
 }
 
 impl HirFunctionSignature {
@@ -232,6 +350,7 @@ impl HirFunctionSignature {
         ensures: Box<[ExprId]>,
         effects: Box<[HirContractOperandList]>,
         return_type: Option<TypeId>,
+        attached_content: Option<HirCallableAttachedContentParameter>,
     ) -> Result<Self, HirItemInvariantError> {
         validate_function_signature(
             expected,
@@ -243,6 +362,7 @@ impl HirFunctionSignature {
             &effects,
             return_type,
         )?;
+        validate_optional_attached_content(expected, attached_content, true)?;
         Ok(Self {
             generic_parameters,
             parameter_groups,
@@ -251,6 +371,7 @@ impl HirFunctionSignature {
             ensures,
             effects,
             return_type,
+            attached_content,
         })
     }
 }
@@ -312,6 +433,7 @@ pub struct HirFunctionItem {
     callable_scope: ScopeId,
     requires_scope: ScopeId,
     ensures_scope: ScopeId,
+    attached_content: Option<HirCallableAttachedContentParameter>,
 }
 
 impl HirFunctionItem {
@@ -332,6 +454,7 @@ impl HirFunctionItem {
             &signature.effects,
             signature.return_type,
         )?;
+        validate_optional_attached_content(expected, signature.attached_content, true)?;
         validate_function_body(expected, &body)?;
         scopes.validate_module(expected)?;
         Ok(Self {
@@ -347,6 +470,7 @@ impl HirFunctionItem {
             callable_scope: scopes.callable,
             requires_scope: scopes.requires,
             ensures_scope: scopes.ensures,
+            attached_content: signature.attached_content,
         })
     }
 
@@ -402,6 +526,10 @@ impl HirFunctionItem {
         self.ensures_scope
     }
 
+    pub const fn attached_content(&self) -> Option<HirCallableAttachedContentParameter> {
+        self.attached_content
+    }
+
     pub(super) fn validate_module(
         &self,
         expected: HirModuleId,
@@ -416,6 +544,7 @@ impl HirFunctionItem {
             &self.effects,
             self.return_type,
         )?;
+        validate_optional_attached_content(expected, self.attached_content, true)?;
         validate_contract_scopes(
             expected,
             self.callable_scope,

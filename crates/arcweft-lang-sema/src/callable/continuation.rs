@@ -17,7 +17,8 @@ use thiserror::Error;
 use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
 
 use crate::types::{
-    GenericConstParameterId, GenericTypeParameterId, TypeKind,
+    GenericConstParameterId, GenericConstReference, GenericTypeParameterId, GenericTypeReference,
+    TypeKind,
     constraints::{
         TypeConstraintConstEligibility, TypeConstraintEffectScope, TypeConstraintInvariant,
         TypeConstraintParameterEligibility, TypeConstraintParameterScope, TypeConstraintRejection,
@@ -26,20 +27,55 @@ use crate::types::{
     },
 };
 
-use super::{CallableGenericFirstUse, CallableGroupIndex};
+use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
 
-/// A checked call site is generation-local evidence, not a stable digest input.
+/// The typed semantic family of an attached-content call site.
+///
+/// The discriminator is part of generation-local call-graph evidence.  It is
+/// intentionally separate from the HIR spelling: both a dialogue-line
+/// application and a content-call application use the same site carrier, but
+/// they must never be interchangeable during call sealing.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedAttachedContentApplicationFamily {
+    DialogueLine,
+    ContentCall,
+}
+
+/// A checked call site is generation-local evidence, not a stable digest
+/// input.  Attached content applications carry their typed family so the
+/// callable graph cannot recover it from source spelling or the HIR node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum CheckedCallSite {
     HirCall(ExprId),
-    DialogueApplication(ExprId),
+    AttachedContentApplication {
+        expression: ExprId,
+        family: CheckedAttachedContentApplicationFamily,
+    },
 }
 
 impl CheckedCallSite {
     pub const fn expression(self) -> ExprId {
         match self {
-            Self::HirCall(expression) | Self::DialogueApplication(expression) => expression,
+            Self::HirCall(expression) | Self::AttachedContentApplication { expression, .. } => {
+                expression
+            }
         }
+    }
+
+    pub const fn attached_content_family(self) -> Option<CheckedAttachedContentApplicationFamily> {
+        match self {
+            Self::HirCall(_) => None,
+            Self::AttachedContentApplication { family, .. } => Some(family),
+        }
+    }
+
+    /// Reports whether the call site owns a semantic expression fact for its
+    /// value callee. Attached-content applications retain their static callee
+    /// only as call-site evidence; their checked callable/application row is
+    /// the semantic owner of that spelling. Ordinary HIR calls, including
+    /// value calls, retain the callee expression in the selected graph.
+    pub const fn owns_callee_expression_fact(self) -> bool {
+        matches!(self, Self::HirCall(_))
     }
 }
 
@@ -48,6 +84,8 @@ impl CheckedCallSite {
 /// rejection in the lower algebra.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum CallConstraintInvariant {
+    #[error(transparent)]
+    Instantiation(#[from] crate::types::TypeInstantiationError),
     #[error("call argument mapping was not sealed by its producer")]
     MalformedMapperSeal,
     #[error("callable generic schema inventory is malformed")]
@@ -150,6 +188,12 @@ pub(crate) enum CallConstraintInvariant {
     ReplayProjectionMismatch,
     #[error("an analyzer callback fact scope remained active at candidate finish")]
     ActiveFactScope,
+}
+
+impl From<crate::types::GenericScopeError> for CallConstraintInvariant {
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::Lower(TypeConstraintInvariant::GenericScope(error))
+    }
 }
 
 /// Opaque public carrier for a graph invariant.  The exact lower invariant
@@ -335,13 +379,13 @@ impl PreparedContinuationCandidateSeed {
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct DeferredContinuationParameter {
-    parameter: GenericTypeParameterId,
+    parameter: GenericTypeReference,
     first_remaining_group: CallableGroupIndex,
 }
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct DeferredContinuationConstParameter {
-    parameter: GenericConstParameterId,
+    parameter: GenericConstReference,
     first_remaining_group: CallableGroupIndex,
 }
 
@@ -368,7 +412,10 @@ struct PreparedCallNode<P, U> {
 }
 
 enum PreparedCallNodePayload<P, U> {
-    SelectedValue { prefix: P, result: TypeKind },
+    SelectedValue {
+        prefix: P,
+        result: CallableResultSchema,
+    },
     SelectedContinuation(PreparedCallContinuation<P>),
     Unselected(U),
 }
@@ -791,8 +838,13 @@ pub(crate) struct PreparedCallGraphSealNode<P, U> {
 }
 
 pub(crate) enum PreparedCallGraphSealPayload<P, U> {
-    SelectedValue { prefix: P, result: TypeKind },
-    SelectedContinuation { prefix: P },
+    SelectedValue {
+        prefix: P,
+        result: CallableResultSchema,
+    },
+    SelectedContinuation {
+        prefix: P,
+    },
     Unselected(U),
 }
 
@@ -877,7 +929,7 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 prefix.validate_site(site)?;
                 self.graph.validate_prefix(prefix)?;
                 let application = prefix.application();
-                let sealed_result = application.result_type()?;
+                let sealed_result = application.result_schema()?;
                 if *result != sealed_result
                     || application
                         .selected()
@@ -886,7 +938,10 @@ impl<'a, P, U> PreparedCallGraphIngress<'a, P, U> {
                 {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
-                if actual != &sealed_result {
+                let Some(sealed_result) = sealed_result.value_type() else {
+                    return Err(CallConstraintInvariant::InvalidPreparedNodeState);
+                };
+                if actual != sealed_result {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
                 }
                 if matches!(sealed_result, TypeKind::Function { .. }) {
@@ -1497,7 +1552,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         &mut self,
         site: CheckedCallSite,
         prefix: P,
-    ) -> Result<(TypeKind, Option<PreparedCallContinuationRef>), CallConstraintInvariant>
+    ) -> Result<(CallableResultSchema, Option<PreparedCallContinuationRef>), CallConstraintInvariant>
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -1514,7 +1569,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         let completed_group = application.completed_group();
         let selected = application.selected();
         self.validate_prepared_candidate_ancestry(selected)?;
-        let result = application.result_type()?;
+        let result = application.result_schema()?;
         let next_group = selected.next_group_for(completed_group);
         let function_type = if next_group.is_some() {
             Some(application.function_type()?)
@@ -1523,7 +1578,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         };
         if let Some(function_type) = function_type.as_ref() {
             let deferred = deferred_for_candidate(selected, completed_group);
-            if *function_type != result
+            if !matches!(&result, CallableResultSchema::Value(value) if value == function_type)
                 || !deferred.is_canonical()
                 || !matches!(function_type, TypeKind::Function { .. })
             {
@@ -1587,9 +1642,12 @@ impl<P, U> PreparedCallGraph<P, U> {
         site: CheckedCallSite,
         dependencies: &[PreparedCallContinuationRef],
         prefix: &P,
-        result: &TypeKind,
+        result: &CallableResultSchema,
         function_type: Option<&TypeKind>,
-    ) -> Result<Option<(TypeKind, Option<PreparedCallContinuationRef>)>, CallConstraintInvariant>
+    ) -> Result<
+        Option<(CallableResultSchema, Option<PreparedCallContinuationRef>)>,
+        CallConstraintInvariant,
+    >
     where
         P: PreparedCallPrefixPayload<Unselected = U>,
     {
@@ -1615,7 +1673,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             }
             (PreparedCallNodePayload::SelectedContinuation(sealed), Some(function_type))
                 if sealed.prefix.replay_eq(prefix)
-                    && sealed.prefix.application().result_type()? == *result
+                    && matches!(result, CallableResultSchema::Value(value) if sealed.prefix.application().result_type()? == *value)
                     && sealed.prefix.application().function_type()? == *function_type
                     && Arc::ptr_eq(&sealed.coordinate.issuer, &self.issuer)
                     && sealed.coordinate.node == node_id =>
@@ -1771,13 +1829,13 @@ impl<P, U> PreparedCallGraph<P, U> {
         {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
-        let result = application.result_type()?;
+        let result = application.result_schema()?;
         let next_group = selected.next_group_for(application.completed_group());
         match &node.payload {
             PreparedCallNodePayload::SelectedContinuation(_) => {
                 let function_type = application.function_type()?;
                 if next_group.is_none()
-                    || function_type != result
+                    || !matches!(&result, CallableResultSchema::Value(value) if function_type == *value)
                     || !matches!(function_type, TypeKind::Function { .. })
                 {
                     return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
@@ -1786,7 +1844,10 @@ impl<P, U> PreparedCallGraph<P, U> {
             PreparedCallNodePayload::SelectedValue { result: stored, .. } => {
                 if next_group.is_some()
                     || *stored != result
-                    || matches!(result, TypeKind::Function { .. })
+                    || matches!(
+                        result,
+                        CallableResultSchema::Value(TypeKind::Function { .. })
+                    )
                 {
                     return Err(CallConstraintInvariant::InvalidPreparedNodeState);
                 }
@@ -1958,21 +2019,17 @@ where
         }
         _ => None,
     };
-    let mut types = BTreeMap::<GenericTypeParameterId, TypeConstraintParameterEligibility>::new();
-    let mut consts = BTreeMap::<GenericConstParameterId, TypeConstraintConstEligibility>::new();
+    let mut types = BTreeMap::<GenericTypeReference, TypeConstraintParameterEligibility>::new();
+    let mut consts = BTreeMap::<GenericConstReference, TypeConstraintConstEligibility>::new();
+    let mut free_types = BTreeSet::new();
+    let mut free_consts = BTreeSet::new();
     for parameter in enclosing.types() {
-        if types
-            .insert(parameter.clone(), TypeConstraintParameterEligibility::Rigid)
-            .is_some()
-        {
+        if !free_types.insert(GenericTypeReference::Free(parameter.clone())) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
     for parameter in enclosing.consts() {
-        if consts
-            .insert(parameter.clone(), TypeConstraintConstEligibility::Rigid)
-            .is_some()
-        {
+        if !free_consts.insert(GenericConstReference::Free(parameter.clone())) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
@@ -2015,7 +2072,9 @@ where
                 return Err(CallConstraintInvariant::TerminalFutureEligibleParameter);
             }
         };
-        if types
+        if eligibility == TypeConstraintParameterEligibility::Rigid {
+            free_types.insert(entry.parameter().clone());
+        } else if types
             .insert(entry.parameter().clone(), eligibility)
             .is_some()
         {
@@ -2060,7 +2119,9 @@ where
                 return Err(CallConstraintInvariant::TerminalFutureEligibleParameter);
             }
         };
-        if consts
+        if eligibility == TypeConstraintConstEligibility::Rigid {
+            free_consts.insert(entry.parameter().clone());
+        } else if consts
             .insert(entry.parameter().clone(), eligibility)
             .is_some()
         {
@@ -2078,13 +2139,30 @@ where
         })
         .collect::<Vec<_>>()
         .into_boxed_slice();
-    let type_rows = types.into_iter().map(|(parameter, eligibility)| {
-        TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
-    });
-    let const_rows = consts.into_iter().map(|(parameter, eligibility)| {
-        TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
-    });
+    let type_rows = free_types
+        .into_iter()
+        .map(|parameter| {
+            TypeConstraintTypeParameterScopeRow::new(
+                parameter,
+                TypeConstraintParameterEligibility::Rigid,
+            )
+        })
+        .chain(types.into_iter().map(|(parameter, eligibility)| {
+            TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
+        }));
+    let const_rows = free_consts
+        .into_iter()
+        .map(|parameter| {
+            TypeConstraintConstParameterScopeRow::new(
+                parameter,
+                TypeConstraintConstEligibility::Rigid,
+            )
+        })
+        .chain(consts.into_iter().map(|(parameter, eligibility)| {
+            TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
+        }));
     let scope = TypeConstraintParameterScope::seal_call_scope(
+        inventory.template_binder(),
         type_rows,
         const_rows,
         required,
@@ -2170,7 +2248,7 @@ pub(crate) struct PreparedConstraintInitialization {
     issuer: Arc<PreparedCallGraphIssuer>,
     parameter_scope: TypeConstraintParameterScope,
     effect_scope: TypeConstraintEffectScope,
-    future_parameters: Box<[GenericTypeParameterId]>,
+    future_parameters: Box<[GenericTypeReference]>,
     continuation_seed: PreparedCallConstraintSeed,
 }
 
@@ -2182,7 +2260,7 @@ enum PreparedCallConstraintSeed {
 }
 
 impl PreparedConstraintInitialization {
-    pub(crate) fn future_parameters(&self) -> &[GenericTypeParameterId] {
+    pub(crate) fn future_parameters(&self) -> &[GenericTypeReference] {
         &self.future_parameters
     }
 

@@ -1,11 +1,11 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
-    RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema, RichTextUnit, RichTextValueKind,
-    RichTextValueLimits, SelectorContract, SelectorKind, UnknownPropertyPolicy,
+    Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
+    RichTextPropertySetSchema, RichTextPropertySpec, RichTextUnit, RichTextValueKind,
+    RichTextValueLimits,
 };
 
 /// Closed presentation-style selector inventory.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextStyleSelector {
     /// Italic presentation.
     Italic,
@@ -20,7 +20,7 @@ pub enum RichTextStyleSelector {
 }
 
 /// Semantic properties used by presentation-style selector schemas.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextStyleProperty {
     /// Oblique angle.
     Angle,
@@ -46,11 +46,11 @@ impl RichTextStyleSelector {
     #[must_use]
     pub const fn from_source_name(source: &str) -> Option<Self> {
         match source.as_bytes() {
-            b"italic" | b"i" => Some(Self::Italic),
-            b"oblique" | b"slant" => Some(Self::Oblique),
-            b"opacity" | b"alpha" => Some(Self::Opacity),
-            b"layer" | b"object_layer" => Some(Self::Layer),
-            b"z_index" | b"z" => Some(Self::ZIndex),
+            b"italic" => Some(Self::Italic),
+            b"oblique" => Some(Self::Oblique),
+            b"opacity" => Some(Self::Opacity),
+            b"layer" => Some(Self::Layer),
+            b"z_index" => Some(Self::ZIndex),
             _ => None,
         }
     }
@@ -69,13 +69,33 @@ impl RichTextStyleSelector {
 
     /// Immutable owner-typed schema for this style selector.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<RichTextStyleProperty> {
+    pub const fn property_schema(
+        self,
+    ) -> &'static RichTextPropertySetSchema<RichTextStyleProperty> {
         match self {
-            Self::Italic => &ITALIC_SCHEMA,
-            Self::Oblique => &OBLIQUE_SCHEMA,
-            Self::Opacity => &OPACITY_SCHEMA,
-            Self::Layer => &LAYER_SCHEMA,
-            Self::ZIndex => &Z_INDEX_SCHEMA,
+            Self::Italic => &ITALIC_PROPERTY_SET,
+            Self::Oblique => &OBLIQUE_PROPERTY_SET,
+            Self::Opacity => &OPACITY_PROPERTY_SET,
+            Self::Layer => &LAYER_PROPERTY_SET,
+            Self::ZIndex => &Z_INDEX_PROPERTY_SET,
+        }
+    }
+
+    /// Closed enum domain carried by selector-valued callable parameters.
+    #[must_use]
+    pub const fn schema_id(self) -> arcweft_id::closed_enum::ClosedEnumDomainId {
+        arcweft_rich_text_schema::RichTextEnumDomain::StyleSelector.domain_id()
+    }
+
+    /// Stable zero-based selector ordinal.
+    #[must_use]
+    pub const fn ordinal(self) -> u16 {
+        match self {
+            Self::Italic => 0,
+            Self::Oblique => 1,
+            Self::Opacity => 2,
+            Self::Layer => 3,
+            Self::ZIndex => 4,
         }
     }
 }
@@ -191,73 +211,18 @@ const Z_INDEX: RichTextPropertySpec<RichTextStyleProperty> = RichTextPropertySpe
     allow_empty: false,
 };
 
-const fn selector_schema(
-    source_forms: &'static [RichTextSourceForm],
+const fn property_set(
     properties: &'static [RichTextPropertySpec<RichTextStyleProperty>],
-) -> RichTextTagSchema<RichTextStyleProperty> {
-    RichTextTagSchema {
-        source_forms,
-        selector: SelectorContract::RequiredPositional {
-            kind: SelectorKind::Closed,
-        },
-        properties,
-        unknown_policy: UnknownPropertyPolicy::Reject,
-        output: CheckedOutputKind::Span,
-    }
+) -> RichTextPropertySetSchema<RichTextStyleProperty> {
+    RichTextPropertySetSchema { properties }
 }
 
-const ITALIC_SCHEMA: RichTextTagSchema<RichTextStyleProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".i",
-            canonical: ".italic",
-        },
-    ],
-    NO_PROPERTIES,
-);
-const OBLIQUE_SCHEMA: RichTextTagSchema<RichTextStyleProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".slant",
-            canonical: ".oblique",
-        },
-    ],
-    &[ANGLE],
-);
-const OPACITY_SCHEMA: RichTextTagSchema<RichTextStyleProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".alpha",
-            canonical: ".opacity",
-        },
-    ],
-    &[OPACITY],
-);
-const LAYER_SCHEMA: RichTextTagSchema<RichTextStyleProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".object_layer",
-            canonical: ".layer",
-        },
-    ],
-    &[LAYER],
-);
-const Z_INDEX_SCHEMA: RichTextTagSchema<RichTextStyleProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".z",
-            canonical: ".z_index",
-        },
-    ],
-    &[Z_INDEX],
-);
+const ITALIC_PROPERTY_SET: RichTextPropertySetSchema<RichTextStyleProperty> =
+    property_set(NO_PROPERTIES);
+const OBLIQUE_PROPERTY_SET: RichTextPropertySetSchema<RichTextStyleProperty> =
+    property_set(&[ANGLE]);
+const OPACITY_PROPERTY_SET: RichTextPropertySetSchema<RichTextStyleProperty> =
+    property_set(&[OPACITY]);
+const LAYER_PROPERTY_SET: RichTextPropertySetSchema<RichTextStyleProperty> = property_set(&[LAYER]);
+const Z_INDEX_PROPERTY_SET: RichTextPropertySetSchema<RichTextStyleProperty> =
+    property_set(&[Z_INDEX]);

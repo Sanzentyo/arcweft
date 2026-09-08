@@ -69,6 +69,13 @@ impl PreparedExecutableDeclarationInventory {
                     continue;
                 }
                 let declaration = body.declaration().clone();
+                if analyzer
+                    .symbols
+                    .callable(&declaration)
+                    .is_some_and(|symbol| symbol.is_fx())
+                {
+                    continue;
+                }
                 let mut statements = module
                     .statements()
                     .filter_map(|(owner, _)| {

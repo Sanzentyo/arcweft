@@ -58,14 +58,7 @@ impl<'a> RuntimeAssertionGuardSeed<'a> {
             RuntimeAssertionProfile::DebugOnly => 1,
         }]);
 
-        let digest = hasher.finalize();
-        let mut bytes = [0_u8; 16];
-        bytes.copy_from_slice(&digest.as_bytes()[..16]);
-        if bytes == [0; 16] {
-            bytes[15] = 1;
-        }
-        RuntimeAssertionGuardId::try_from_bytes(bytes)
-            .expect("runtime assertion guard derivation replaces the reserved zero value")
+        finish_guard(hasher)
     }
 }
 
@@ -114,14 +107,7 @@ pub(crate) fn derive_runtime_flow_assertion_guard(
         RuntimeAssertionProfile::DebugOnly => 1,
     }]);
 
-    let digest = hasher.finalize();
-    let mut bytes = [0_u8; 16];
-    bytes.copy_from_slice(&digest.as_bytes()[..16]);
-    if bytes == [0; 16] {
-        bytes[15] = 1;
-    }
-    RuntimeAssertionGuardId::try_from_bytes(bytes)
-        .expect("runtime Flow assertion guard derivation replaces the reserved zero value")
+    finish_guard(hasher)
 }
 
 /// Derives an assertion guard for one accepted dialogue-line identity without
@@ -150,6 +136,35 @@ pub(crate) fn derive_runtime_line_assertion_guard(
         RuntimeAssertionProfile::DebugOnly => 1,
     }]);
 
+    finish_guard(hasher)
+}
+
+/// Derives a guard in the closure's own checked lexical scope. Two closures
+/// inside one declaration cannot reuse each other's assertion ordinals.
+pub(crate) fn derive_runtime_closure_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    closure: &arcweft_lang_sema::callable::CheckedClosureId,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "closure");
+    hasher.update(closure.semantic_digest().as_bytes());
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+    finish_guard(hasher)
+}
+
+fn finish_guard(hasher: blake3::Hasher) -> RuntimeAssertionGuardId {
     let digest = hasher.finalize();
     let mut bytes = [0_u8; 16];
     bytes.copy_from_slice(&digest.as_bytes()[..16]);
@@ -157,9 +172,8 @@ pub(crate) fn derive_runtime_line_assertion_guard(
         bytes[15] = 1;
     }
     RuntimeAssertionGuardId::try_from_bytes(bytes)
-        .expect("runtime dialogue-line assertion guard derivation replaces reserved zero")
+        .expect("runtime assertion guard derivation replaces the reserved zero value")
 }
-
 fn hash_callable(hasher: &mut blake3::Hasher, callable: &CallableDeclarationId) {
     hash_text(hasher, callable.package().as_str());
     hash_module(hasher, callable.module());

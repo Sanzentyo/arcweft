@@ -1,19 +1,5 @@
 pub character designer {
     display = "Reactive View"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Arcweft Demo"
-                color = rgb("#f7fbff")
-                size = 27px
-            }
-            ruby {
-                size = 12px
-                gap = 1px
-            }
-        }
-    }
 }
 
 pub style reactive_panel {
@@ -130,7 +116,7 @@ entry game @entry.reactive_view_style {
 
 flow reactive_view_style(state: GameState) {
     designer(id=@say.reactive_view_style.intro, voice=auto):
-        [font "Arcweft Demo"][color #64d2c8]Reactive View style sample[/color][/font] bundles typed, sheet-owned native Style resources.[r]
+        #font("Arcweft Demo")[#color(rgb("#64d2c8"))[Reactive View style sample]] bundles typed, sheet-owned native Style resources.[r]
         Hover and press the choices below. The shared renderer consumes the same ordered native Style applications for each interaction state.[p]
 
     choice @choice.reactive_view_style {

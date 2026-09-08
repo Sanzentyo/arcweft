@@ -12,7 +12,9 @@ fn typed_binding_retains_exact_annotation_and_semantic_digest() {
     assert_eq!(i64_binding.annotation(), &TypeKind::I64);
     assert_eq!(
         i64_binding.annotation_digest(),
-        TypeKind::I64.semantic_identity_digest()
+        TypeKind::I64
+            .semantic_identity_digest()
+            .expect("stable fixture type")
     );
     assert!(i64_binding.has_valid_semantic_identity());
     assert_ne!(

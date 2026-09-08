@@ -16,8 +16,8 @@ use arcweft_lang_hir::{
 };
 
 use super::{
-    CheckedProjectNominal, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    nominal_schema::validate_checked_nominal,
+    CheckedProjectNominal, CheckedTypeValue, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, nominal_schema::validate_checked_nominal,
 };
 use crate::{
     record_field::AcceptedRecordFieldSemanticId,
@@ -137,6 +137,16 @@ impl ProjectNominalSemanticDefinition {
             Self::Record { digest, .. } | Self::Variant { digest, .. } => *digest,
         }
     }
+
+    /// Issues the final type value only for the exact nominal owner used to
+    /// build this definition.
+    pub(crate) fn issue_type_value(
+        &self,
+        nominal: &CheckedProjectNominal,
+    ) -> Option<CheckedTypeValue> {
+        (self.nominal() == nominal)
+            .then(|| CheckedTypeValue::from_semantic_definition(nominal.clone(), self.digest()))
+    }
 }
 
 /// Immutable generation-bound catalog keyed only by accepted semantic type.
@@ -181,6 +191,17 @@ impl ProjectNominalSemanticCatalog {
         self.by_semantic_type
             .get(&semantic_type)
             .filter(|definition| definition.semantic_type() == semantic_type)
+    }
+
+    /// Issues a final checked type value through the catalog owner after
+    /// validating both semantic identity and the complete nominal payload.
+    pub(crate) fn issue_type_value(
+        &self,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<CheckedTypeValue, FinalSemanticAnalysisError> {
+        self.get(nominal.identity())
+            .and_then(|definition| definition.issue_type_value(nominal))
+            .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)
     }
 
     pub(super) fn validate_inventory<'a>(
@@ -229,7 +250,7 @@ fn build_semantic_definition(
                     semantic_id: AcceptedRecordFieldSemanticId::issue(
                         nominal.identity(),
                         ordinal,
-                        ty.semantic_identity_digest(),
+                        ty.semantic_identity_digest()?,
                     ),
                     ty,
                 });
@@ -311,7 +332,7 @@ fn record_digest(
     for field in fields {
         hasher.update(&field.declaration_ordinal.to_le_bytes());
         hasher.update(field.semantic_id.as_bytes());
-        hasher.update(field.ty.semantic_identity_digest().as_bytes());
+        hasher.update(field.ty.semantic_identity_digest()?.as_bytes());
     }
     Ok(ProjectNominalSemanticDigest(hasher.finalize().into()))
 }

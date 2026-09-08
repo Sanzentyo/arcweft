@@ -1,5 +1,5 @@
-pub character alice { display_name = "Alice" }
-pub character bob { display_name = "Bob" }
+pub character alice { display = "Alice" }
+pub character bob { display = "Bob" }
 
 bench @bench.dense_textual_scalar_len {
     measure iterations = 4 { goto @flow.dense_textual_scalar_len }

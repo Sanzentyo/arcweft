@@ -1,12 +1,18 @@
+use arcweft_dialogue::rich_text::DialogueHostEventKind;
 use arcweft_lang_hir::expr::HirExprKind;
 
 use crate::{
-    checked_rich_text::{CheckedDialogueMark, CheckedDialogueToken, CheckedRichTextAction},
+    checked_rich_text::{
+        CheckedDialogueHostEvent, CheckedDialogueMark, CheckedDialogueToken, CheckedRichTextAction,
+        PreparedCheckedDialogueToken, PreparedCheckedRichTextAction,
+    },
     final_analysis::{
         CheckedExpressionResolution, CheckedStatementPayload, CheckedTriggerView,
         FinalSemanticAnalysis,
     },
-    semantic_coordinate::{SemanticCoordinateIndex, StableCheckedDialogueMarkCoordinate},
+    semantic_coordinate::{
+        SemanticCoordinateIndex, StableCheckedDialogueMarkCoordinate, StableCheckedValueCoordinate,
+    },
 };
 
 use super::{analyze, fixture};
@@ -40,10 +46,9 @@ fn marker_rows(
                 .tokens()
                 .iter()
                 .filter_map(|token| {
-                    let CheckedDialogueToken::Open(tag) = token else {
-                        return None;
-                    };
-                    let CheckedRichTextAction::Marker(mark) = tag.action() else {
+                    let CheckedDialogueToken::PointAction(CheckedRichTextAction::Marker(mark)) =
+                        token
+                    else {
                         return None;
                     };
                     Some((
@@ -69,10 +74,9 @@ fn marker_semantic_rows(report: &FinalSemanticAnalysis) -> Vec<(String, CheckedD
                 .tokens()
                 .iter()
                 .filter_map(|token| {
-                    let CheckedDialogueToken::Open(tag) = token else {
-                        return None;
-                    };
-                    let CheckedRichTextAction::Marker(mark) = tag.action() else {
+                    let CheckedDialogueToken::PointAction(CheckedRichTextAction::Marker(mark)) =
+                        token
+                    else {
                         return None;
                     };
                     Some((mark.diagnostic_name().as_str().to_owned(), mark.clone()))
@@ -97,7 +101,7 @@ fn mark_trigger_rows(report: &FinalSemanticAnalysis) -> Vec<StableCheckedDialogu
 
 fn one_mark_source(mark: &str, handler: &str) -> String {
     format!(
-        "pub character @character.alice Alice as alice {{}}\n\
+        "pub character alice {{}}\n\
          flow main() -> String {{\n\
              alice[before [mark @.{mark}] after] with {{ on mark(@.{handler}) => return \"done\" }}\n\
              return \"done\"\n\
@@ -107,7 +111,7 @@ fn one_mark_source(mark: &str, handler: &str) -> String {
 
 fn two_mark_source(first: &str, second: &str, handler: &str) -> String {
     format!(
-        "pub character @character.alice Alice as alice {{}}\n\
+        "pub character alice {{}}\n\
          flow main() -> String {{\n\
              alice[before [mark @.{first}] middle [mark @.{second}] after] with {{ on mark(@.{handler}) => return \"done\" }}\n\
              return \"done\"\n\
@@ -119,7 +123,7 @@ fn two_mark_source(first: &str, second: &str, handler: &str) -> String {
 fn p06_p11_nested_line_plan_marks_are_checked_against_the_content_catalog() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 flow main() -> String {
     alice[before [mark @.outer] middle [mark @.inner] after] with {
         on mark(@.outer) => on mark(@.inner) => return "done"
@@ -131,13 +135,8 @@ flow main() -> String {
     );
     let report = analyze(&fixture).expect("nested marker line plan is checked");
     let applications = dialogue_application_resolutions(&report);
-    let [
-        CheckedExpressionResolution::DialogueApplication {
-            rich_text,
-            line_plan,
-            ..
-        },
-    ] = applications.as_slice()
+    let [CheckedExpressionResolution::DialogueApplication { rich_text, .. }] =
+        applications.as_slice()
     else {
         panic!("nested fixture publishes one dialogue application")
     };
@@ -146,7 +145,7 @@ flow main() -> String {
     assert_eq!(markers.len(), 2);
     assert_eq!(markers[0].1.ordinal().get(), 0);
     assert_eq!(markers[1].1.ordinal().get(), 1);
-    assert!(line_plan.effect_sites().is_empty());
+    assert!(rich_text.effect_plan().effect_sites().is_empty());
     assert!(rich_text.is_valid());
 
     let triggers = mark_trigger_rows(&report);
@@ -163,10 +162,129 @@ flow main() -> String {
 }
 
 #[test]
+fn call_and_timed_cue_actions_keep_their_checked_payload_owners() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+fn callback() {}
+flow main() -> String {
+    alice[hello [call callback()] [at 120ms call=callback()]]
+    return "done"
+}
+"#,
+        None,
+    );
+    let executable = fixture.project.executable_view().expect("executable HIR");
+    let (_, module) = executable.modules().next().expect("root HIR module");
+    let (_, expression) = module
+        .expressions()
+        .find(|(_, expression)| {
+            matches!(expression.kind(), HirExprKind::AttachedContentApplication(application)
+            if application.content().nodes().iter().any(|node| matches!(
+                node.kind(),
+                arcweft_lang_hir::dialogue_application::HirDialogueNodeKind::PointAction(_)
+            )))
+        })
+        .expect("dialogue application expression");
+    let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+        unreachable!("expression was filtered as an attached content application")
+    };
+    let checked =
+        crate::checked_rich_text::RichTextContentChecker::check(module, application.content())
+            .expect("dialogue content source roles");
+    assert!(checked.report().is_valid());
+    let actions =
+        checked
+            .report()
+            .content()
+            .tokens()
+            .iter()
+            .filter_map(|token| match token {
+                PreparedCheckedDialogueToken::PointAction(
+                    PreparedCheckedRichTextAction::Host { owner, action, .. },
+                ) => Some((*owner, action)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+    let [
+        (
+            call_owner,
+            CheckedDialogueHostEvent::Call {
+                call: call_expression,
+            },
+        ),
+        (
+            timed_owner,
+            CheckedDialogueHostEvent::TimedCue {
+                at,
+                call: timed_expression,
+            },
+        ),
+    ] = actions.as_slice()
+    else {
+        panic!("checked call and timed cue actions retain typed payloads: {actions:?}");
+    };
+    assert_eq!(*call_owner, DialogueHostEventKind::Call);
+    assert_eq!(*timed_owner, DialogueHostEventKind::TimedCue);
+    assert_eq!(at.millis, 120);
+    assert_ne!(call_expression, timed_expression);
+}
+
+#[test]
+fn dialogue_effect_sites_publish_exact_free_local_capture_schemas() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+flow main() -> String {
+    let message = "captured";
+    alice[hello [call log.info("literal")] [at 120ms call=log.info(message)]]
+    return "done"
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("dialogue effect captures are checked");
+    let applications = dialogue_application_resolutions(&report);
+    let [CheckedExpressionResolution::DialogueApplication { rich_text, .. }] =
+        applications.as_slice()
+    else {
+        panic!("capture fixture publishes one dialogue application")
+    };
+    let [literal, captured] = rich_text.effect_plan().effect_sites() else {
+        panic!("capture fixture publishes two checked effect sites")
+    };
+    for site in [literal, captured] {
+        assert_eq!(
+            site.effects().to_labels(),
+            vec!["log.write"],
+            "the callback retains the selected application's exact closed row",
+        );
+    }
+    assert!(literal.captures().is_empty());
+    let [capture] = captured.captures() else {
+        panic!("local-backed effect publishes one capture")
+    };
+    assert_eq!(capture.ty(), &crate::types::TypeKind::String);
+    let StableCheckedValueCoordinate::Expression(application) =
+        captured.effect().application().coordinate()
+    else {
+        panic!("effect application is expression-owned")
+    };
+    assert_eq!(capture.origin().root(), application.root());
+    assert_eq!(
+        report
+            .local(capture.local())
+            .expect("capture local remains in the checked binding catalog")
+            .ty(),
+        capture.ty()
+    );
+}
+
+#[test]
 fn p12_equal_local_mark_names_in_two_applications_have_distinct_coordinates() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 flow main() -> Unit {
     alice[one [mark @.same]]
     alice[two [mark @.same]]
@@ -260,7 +378,15 @@ fn n17_coordinate_issuer_rejects_a_stale_hir_generation() {
     let mark = first_module
         .expressions()
         .find_map(|(_, expression)| match expression.kind() {
-            HirExprKind::DialogueContentApplication(application) => {
+            HirExprKind::AttachedContentApplication(application) => {
+                let arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                    target: _,
+                    plan: _,
+                    coordinates: _,
+                } = application.family()
+                else {
+                    return None;
+                };
                 application.content().marks().first().map(|mark| mark.id())
             }
             _ => None,
@@ -280,7 +406,7 @@ fn n17_coordinate_issuer_rejects_a_stale_hir_generation() {
 fn p06_exact_mark_catalog_publishes_all_rows() {
     let accepted_fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 flow main() -> String {
     alice[zero [mark @.zero] one [mark @.one] two [mark @.two]]
     return "done"

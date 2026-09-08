@@ -4,11 +4,12 @@ use arcweft_lang_syntax::attachment::node::{
     ErrorNodeKind, FunctionItemKind, ImplItemKind, TraitItemKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedCallableParameterKind, AttachedCallableReturn, AttachedFunctionBody,
-    AttachedGenericParameterGroup, AttachedImplAssociatedType, AttachedImplFunction,
-    AttachedImplMember, AttachedItemPrefix, AttachedMethodParameter, AttachedMethodParameterGroup,
-    AttachedMethodReceiverKind, AttachedRequiredName, AttachedTraitAssociatedType,
-    AttachedTraitFunction, AttachedTraitMember, AttachedWhereClause,
+    AstNode, AttachedCallableContentParameter, AttachedCallableParameterKind,
+    AttachedCallableReturn, AttachedFunctionBody, AttachedGenericParameterGroup,
+    AttachedImplAssociatedType, AttachedImplFunction, AttachedImplMember, AttachedItemPrefix,
+    AttachedMethodParameter, AttachedMethodParameterGroup, AttachedMethodReceiverKind,
+    AttachedRequiredName, AttachedTraitAssociatedType, AttachedTraitFunction, AttachedTraitMember,
+    AttachedWhereClause,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
@@ -39,6 +40,7 @@ struct LoweredMethodParts {
     parameter_groups: Box<[HirMethodParameterGroup]>,
     where_predicates: Box<[crate::item::HirWherePredicate]>,
     return_type: Option<crate::identity::TypeId>,
+    attached_content: Option<crate::item::HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     body: Option<HirFunctionBody>,
     issue: Option<HirItemIssue>,
@@ -54,6 +56,7 @@ struct AttachedMethodInput<'a> {
     name: &'a AttachedRequiredName,
     generics: Option<&'a AttachedGenericParameterGroup>,
     parameter_groups: &'a [AttachedMethodParameterGroup],
+    attached_content: Option<&'a AttachedCallableContentParameter>,
     has_parameter_shape_recovery: bool,
     where_clauses: &'a [AttachedWhereClause],
     authored_return: Option<&'a AttachedCallableReturn>,
@@ -69,6 +72,7 @@ impl<'a> From<&'a AttachedTraitFunction> for AttachedMethodInput<'a> {
             name: attached.name(),
             generics: attached.generics(),
             parameter_groups: attached.parameter_groups(),
+            attached_content: attached.attached_content(),
             has_parameter_shape_recovery: attached.has_parameter_shape_recovery(),
             where_clauses: attached.where_clauses(),
             authored_return: attached.authored_return(),
@@ -86,6 +90,7 @@ impl<'a> From<&'a AttachedImplFunction> for AttachedMethodInput<'a> {
             name: attached.name(),
             generics: attached.generics(),
             parameter_groups: attached.parameter_groups(),
+            attached_content: attached.attached_content(),
             has_parameter_shape_recovery: attached.has_parameter_shape_recovery(),
             where_clauses: attached.where_clauses(),
             authored_return: attached.authored_return(),
@@ -406,6 +411,7 @@ impl StagedHirModuleTransaction<'_> {
             parts.parameter_groups,
             parts.where_predicates,
             parts.return_type,
+            parts.attached_content,
             parts.callable_scope,
             parts.body,
         )
@@ -432,6 +438,7 @@ impl StagedHirModuleTransaction<'_> {
             parts.parameter_groups,
             parts.where_predicates,
             parts.return_type,
+            parts.attached_content,
             parts.callable_scope,
             parts.body,
         )
@@ -448,6 +455,9 @@ impl StagedHirModuleTransaction<'_> {
         item_scope: ScopeId,
         attached: &AttachedMethodInput<'_>,
     ) -> Result<LoweredMethodParts, HirLowerFailure> {
+        if attached.attached_content.is_some() && attached.prefix.has_fx_attribute() {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        }
         let callable_scope =
             self.allocate_item_callable_scope(attached.syntax, owner, item_scope)?;
         let prefix = self.lower_item_prefix(attached.prefix, item_scope)?;
@@ -464,6 +474,13 @@ impl StagedHirModuleTransaction<'_> {
             callable_scope,
             attached.has_parameter_shape_recovery,
         )?;
+        let (attached_content, attached_local, attached_recovery) = self
+            .lower_attached_content_parameter(attached.attached_content, callable_scope, false)?;
+        let mut parameter_locals = parameter_locals.into_vec();
+        if let Some(local) = attached_local {
+            parameter_locals.push(local);
+        }
+        require_limit(HirLimit::LocalsPerScope, parameter_locals.len())?;
         let (return_type, return_missing, return_recovery) = match attached.authored_return {
             Some(authored) => {
                 let ty = self.lower_attached_type(authored.ty(), callable_scope)?;
@@ -485,7 +502,7 @@ impl StagedHirModuleTransaction<'_> {
                     block,
                     owner,
                     callable_scope,
-                    parameter_locals,
+                    parameter_locals.clone().into_boxed_slice(),
                 )?;
                 (
                     Some(HirFunctionBody::Block {
@@ -500,7 +517,7 @@ impl StagedHirModuleTransaction<'_> {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
             None => {
-                self.close_scope_members(callable_scope, parameter_locals)?;
+                self.close_scope_members(callable_scope, parameter_locals.into_boxed_slice())?;
                 (None, false)
             }
         };
@@ -512,6 +529,7 @@ impl StagedHirModuleTransaction<'_> {
             parameter_groups,
             where_predicates,
             return_type,
+            attached_content,
             callable_scope,
             body,
             issue: prefix
@@ -520,6 +538,7 @@ impl StagedHirModuleTransaction<'_> {
                 .or_else(|| generic_recovery.then_some(HirItemIssue::MalformedHeader))
                 .or_else(|| parameter_missing_type.then_some(HirItemIssue::MissingType))
                 .or_else(|| parameter_recovery.then_some(HirItemIssue::MalformedHeader))
+                .or_else(|| attached_recovery.then_some(HirItemIssue::MalformedHeader))
                 .or_else(|| return_missing.then_some(HirItemIssue::MissingType))
                 .or_else(|| return_recovery.then_some(HirItemIssue::MalformedHeader))
                 .or_else(|| where_recovery.then_some(HirItemIssue::MalformedHeader))

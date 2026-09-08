@@ -18,21 +18,20 @@ pub(crate) use dialogue::{
     CandidateNodeIndex, PendingCandidateGraph, PendingCandidateNode, PendingCandidateSemantic,
 };
 pub use dialogue::{
-    SyntaxBracketTerminator, SyntaxBuiltinRichTextFx, SyntaxBuiltinRichTextTag,
-    SyntaxCandidateQuality, SyntaxDialogueApplicationForm, SyntaxDialogueApplicationProjection,
-    SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueContent, SyntaxDialogueContentIssue,
-    SyntaxDialogueContentProjection, SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueMarkName,
+    SyntaxAttachedContentApplicationForm, SyntaxAttachedContentApplicationProjection,
+    SyntaxBracketTerminator, SyntaxCandidateQuality, SyntaxDialogueActionArgumentParts,
+    SyntaxDialogueActionArgumentProjection, SyntaxDialogueActionArgumentSourcePart,
+    SyntaxDialogueActionValue, SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueContent,
+    SyntaxDialogueContentIssue, SyntaxDialogueContentProjection,
+    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueControl, SyntaxDialogueMarkName,
     SyntaxDialogueMarkNameIssue, SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart,
+    SyntaxDialoguePointActionIdentity, SyntaxDialoguePointActionPayload,
+    SyntaxDialoguePointActionProjection, SyntaxDialoguePointActionSourcePart,
     SyntaxIndexProjection, SyntaxLineBreakKind, SyntaxPostfixBoundaryToken,
     SyntaxPostfixBracketProjection, SyntaxPostfixBracketRecoveryBoundary,
     SyntaxPostfixCandidateFailure, SyntaxPostfixCandidateFailureKind,
     SyntaxPostfixCandidateFailureSite, SyntaxPostfixDialogueCandidate, SyntaxPostfixIndexCandidate,
-    SyntaxProjectSymbolPath, SyntaxRichTextArgumentParts, SyntaxRichTextArgumentProjection,
-    SyntaxRichTextArgumentSourcePart, SyntaxRichTextConditionalTag, SyntaxRichTextDirectStyle,
-    SyntaxRichTextEndTagProjection, SyntaxRichTextHostEvent, SyntaxRichTextIssue,
-    SyntaxRichTextLayoutSelector, SyntaxRichTextObjectSelector, SyntaxRichTextStyleSelector,
-    SyntaxRichTextTagIdentity, SyntaxRichTextTagPayloadProjection, SyntaxRichTextTagProjection,
-    SyntaxRichTextTagSourcePart, SyntaxRichTextTransformSelector, SyntaxRichTextValue,
+    SyntaxRawLiteralBody, SyntaxRichTextHostEvent, SyntaxRichTextIssue,
 };
 pub(crate) use pending::{PendingExpressionComponent, PendingExpressionProjection};
 
@@ -76,7 +75,7 @@ pub enum ExpressionProjection {
     /// bracket owner.
     Index(SyntaxIndexProjection),
     /// The one selected bracket or colon dialogue-content application.
-    DialogueContentApplication(SyntaxDialogueApplicationProjection),
+    AttachedContentApplication(SyntaxAttachedContentApplicationProjection),
     /// A generic bracket whose two bounded interpretations are both viable or
     /// both failed.
     PostfixBracket(SyntaxPostfixBracketProjection),
@@ -188,7 +187,7 @@ impl ExpressionProjection {
             Self::Call(call) => call.has_recovery(),
             Self::Select(member) => matches!(member, SyntaxSelectedMember::Missing),
             Self::Index(index) => index.has_recovery(),
-            Self::DialogueContentApplication(application) => application.has_recovery(),
+            Self::AttachedContentApplication(application) => application.has_recovery(),
             Self::PostfixBracket(postfix) => postfix.has_recovery(),
             Self::Await { operand, branches } => {
                 operand.is_missing()
@@ -1135,6 +1134,8 @@ pub enum ExpressionComponentRole {
         part: SyntaxCallArgumentPart,
     },
     CallTypeApplication(SyntaxCallTypeApplicationComponentRole),
+    /// The `#` marker owned by a hash content-application wrapper.
+    Hash,
     Target,
     OpenBracket,
     CloseBracket,
@@ -1150,14 +1151,14 @@ pub enum ExpressionComponentRole {
         ordinal: u32,
         part: SyntaxDialogueNodeSourcePart,
     },
-    RichTextTag {
-        tag: u32,
-        part: SyntaxRichTextTagSourcePart,
+    DialoguePointAction {
+        ordinal: u32,
+        part: SyntaxDialoguePointActionSourcePart,
     },
-    RichTextArgument {
-        tag: u32,
+    DialoguePointActionArgument {
+        action: u32,
         argument: u16,
-        part: SyntaxRichTextArgumentSourcePart,
+        part: SyntaxDialogueActionArgumentSourcePart,
     },
     SelectedMember,
     Index,

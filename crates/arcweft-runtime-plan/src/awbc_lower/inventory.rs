@@ -5,19 +5,20 @@ use arcweft_core::awbc::schema::{
     AwbcAgentTypeShape, AwbcAudioCleanup, AwbcAudioCommand, AwbcAudioCommandId,
     AwbcAwaitManyPolicy, AwbcBlock, AwbcBlockId, AwbcCallableExecutable, AwbcChildCleanup,
     AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcConstantId, AwbcContentUnit,
-    AwbcContentUnitId, AwbcDisplayMapEntry, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
-    AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
-    AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
-    AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument, AwbcHostCall, AwbcHostCallId,
-    AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCleanupPolicy,
-    AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcProgram,
-    AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
-    AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType,
-    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind,
-    AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcStructuralRuntimeTypeKind,
-    AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
-    AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantIdentity,
+    AwbcContentUnitId, AwbcDialogueContentEffectSlot, AwbcDialogueContentSlot,
+    AwbcDialogueContentTemplate, AwbcDialogueValueRole, AwbcDisplayMapEntry, AwbcEffectKind,
+    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry, AwbcEntryKind,
+    AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId,
+    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostArgument,
+    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId,
+    AwbcLineCleanupPolicy, AwbcLineTaskGroupId, AwbcPattern, AwbcPatternId,
+    AwbcPresentationCleanup, AwbcProgram, AwbcPureHelperId, AwbcPureProgramBinding, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
+    AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcSignedIntKind, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId,
+    AwbcStructuralRuntimeTypeKind, AwbcSyntheticRuntimeTypeKind, AwbcTableRange, AwbcTaskClass,
+    AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator, AwbcTraitMethodId, AwbcTypeId,
+    AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
 use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole, RuntimeEntryRoles};
@@ -26,18 +27,20 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeHostCallTarget,
-    RuntimePlan, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeDialogueValueRole, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeFunctionEffectSet, RuntimeFunctionInputBinding,
+    RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
-    RuntimeFunctionSiteId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId, RuntimeLocalDeclarationId,
+    RuntimePlanTypeId,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{
     HostTaskRequestTemplate, RuntimeHostArgumentTemplate, TaskOutcomeContract,
 };
-use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
+use arcweft_core::value::{RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
 use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 
@@ -94,6 +97,7 @@ pub struct AwbcLowerStats {
     pub flow_bindings: usize,
     pub flow_executables: usize,
     pub entries: usize,
+    pub content_templates: usize,
 }
 
 impl AwbcLowerStats {
@@ -115,6 +119,7 @@ impl AwbcLowerStats {
             flow_bindings: program.flow_bindings.len(),
             flow_executables: program.flow_executables.len(),
             entries: program.entries.len(),
+            content_templates: program.content_templates.len(),
         }
     }
 }
@@ -149,12 +154,26 @@ pub struct AwbcInventory {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct PendingAwbcClosure {
-    pub function: AwbcFunctionId,
-    pub params: Box<[RuntimeLocalDeclarationId]>,
-    pub captures: Box<[RuntimeLocalDeclarationId]>,
-    pub body: RuntimeExpr,
-    pub path: String,
+pub(crate) enum PendingAwbcClosure {
+    /// A plan-owned function site. Its ordered input rows are the sole ABI
+    /// authority; each row's synthetic input local is bound to the body
+    /// pattern before the site body executes.
+    FunctionSite {
+        function: AwbcFunctionId,
+        inputs: Box<[RuntimeFunctionInputBinding]>,
+        result: RuntimePlanTypeId,
+        body: RuntimeFunctionSiteBody,
+        path: String,
+    },
+    /// A compiler-generated AWBC control-expression thunk. It is not a
+    /// RuntimeFunctionSite and therefore has no checked input-pattern ABI.
+    Control {
+        function: AwbcFunctionId,
+        captures: Box<[RuntimeLocalDeclarationId]>,
+        result: RuntimePlanTypeId,
+        body: RuntimeFunctionSiteBody,
+        path: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -172,6 +191,15 @@ struct NamedTaskSpec<'a> {
 }
 
 impl AwbcInventory {
+    /// Canonical symbol shared by function-value bindings and their target
+    /// frame slots. Source spelling does not name an admitted local.
+    pub(crate) fn local_name(
+        &mut self,
+        local: arcweft_core::runtime_id::RuntimeLocalDeclarationId,
+    ) -> AwbcStringId {
+        self.intern_string(&format!("local.{local}"))
+    }
+
     pub fn new(source_label: &str, options: AwbcLowerOptions) -> Self {
         let program = AwbcProgram::default();
         let semantic_types = program
@@ -270,14 +298,145 @@ impl AwbcInventory {
         self.intern_type(AwbcRuntimeTypeShape::EntityRef);
     }
 
-    pub fn intern_dialogue_content_catalog(&mut self, catalog: &DialogueContentCatalog) {
+    pub fn intern_dialogue_content_catalog(
+        &mut self,
+        catalog: &DialogueContentCatalog,
+        plan: &RuntimePlan,
+    ) {
+        for template in catalog.templates() {
+            let slot_result = template
+                .slots()
+                .iter()
+                .map(|slot| {
+                    let semantic_type = self.semantic_types.get(&slot.semantic_type()).copied().ok_or_else(
+                        || AwbcLowerDiagnostic::error(
+                            format!("dialogue.template.{}", template.id()),
+                            format!(
+                                "template slot {} references semantic type {:?} absent from AWBC runtime type inventory",
+                                slot.slot(),
+                                slot.semantic_type()
+                            ),
+                        ),
+                    )?;
+                let role = match slot.role() {
+                    RuntimeDialogueValueRole::Interpolation => {
+                        AwbcDialogueValueRole::Interpolation
+                    }
+                    RuntimeDialogueValueRole::Content => AwbcDialogueValueRole::Content,
+                };
+                Ok(AwbcDialogueContentSlot {
+                    slot: slot.slot(),
+                    role,
+                    semantic_type,
+                })
+            })
+            .collect::<Result<Vec<_>, AwbcLowerDiagnostic>>();
+            let slots = match slot_result {
+                Ok(slots) => slots,
+                Err(diagnostic) => {
+                    self.diagnostic(diagnostic);
+                    continue;
+                }
+            };
+            let Some(plan_template) = plan.dialogue_content_templates().get(template.id()) else {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("dialogue.template.{}", template.id()),
+                    "dialogue content template is absent from the runtime plan manifest",
+                ));
+                continue;
+            };
+            let effect_result = plan_template
+                .effects()
+                .iter()
+                .map(|effect| {
+                    let capture_types = effect
+                        .capture_types()
+                        .iter()
+                        .map(|ty| {
+                            self.plan_type(*ty).ok_or_else(|| {
+                                AwbcLowerDiagnostic::error(
+                                    format!("dialogue.template.{}", template.id()),
+                                    format!(
+                                        "effect site {} references plan type {ty:?} absent from the AWBC type inventory",
+                                        effect.site()
+                                    ),
+                                )
+                            })
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok(AwbcDialogueContentEffectSlot {
+                        site: effect.site(),
+                        trigger: effect.trigger(),
+                        capture_types,
+                    })
+                })
+                .collect::<Result<Vec<_>, AwbcLowerDiagnostic>>();
+            let effects = match effect_result {
+                Ok(effects) => effects,
+                Err(diagnostic) => {
+                    self.diagnostic(diagnostic);
+                    continue;
+                }
+            };
+            let expected = RuntimeDialogueContentTemplateId::from_zero_based(
+                self.program.content_templates.len(),
+            );
+            if expected != Some(template.id()) {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("dialogue.template.{}", template.id()),
+                    "dialogue content template IDs are not canonical and contiguous",
+                ));
+                continue;
+            }
+            let authority = AwbcDialogueContentTemplate {
+                id: template.id(),
+                digest: template.digest(),
+                slots,
+                effects,
+            };
+            if let Some(existing) = self
+                .program
+                .content_templates
+                .iter()
+                .find(|existing| existing.id == authority.id)
+            {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("dialogue.template.{}", template.id()),
+                    if existing == &authority {
+                        "dialogue content template identity was registered more than once"
+                    } else {
+                        "dialogue content template identity was registered with conflicting authority"
+                    },
+                ));
+            } else {
+                self.program.content_templates.push(authority);
+            }
+        }
         if !self.options.emit_display_map {
             return;
         }
         for spec in catalog.records() {
             let line = spec.line().public_label().into_string();
             let key = self.intern_string(&line);
-            let content = self.intern_content_unit(&line, None);
+            if !self
+                .program
+                .content_templates
+                .iter()
+                .any(|template| template.id == spec.template_id())
+            {
+                self.diagnostic(AwbcLowerDiagnostic::error(
+                    format!("dialogue.line.{line}"),
+                    "dialogue line references an unregistered content template",
+                ));
+                continue;
+            };
+            let content = match self.intern_content_unit(&line, spec.template_id(), None) {
+                Ok(content) => content,
+                Err(error) => {
+                    self.diagnostic(error);
+                    continue;
+                }
+            };
             self.program.display_map.push(AwbcDisplayMapEntry {
                 content,
                 display_key: key,
@@ -360,6 +519,13 @@ impl AwbcInventory {
 
     pub(crate) fn plan_type(&self, plan_type: RuntimePlanTypeId) -> Option<AwbcTypeId> {
         self.plan_types.get(&plan_type).copied()
+    }
+
+    pub(crate) fn semantic_type(
+        &self,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Option<AwbcTypeId> {
+        self.semantic_types.get(&semantic_identity).copied()
     }
 
     pub(crate) fn reserve_plan_type(
@@ -553,12 +719,10 @@ impl AwbcInventory {
         Some(checked.semantic_identity_digest())
     }
 
-    pub fn intern_effect_set(&mut self, mut effects: Vec<&str>) -> AwbcEffectSetId {
-        effects.sort_unstable();
-        effects.dedup();
+    pub fn intern_effect_set(&mut self, effects: &RuntimeFunctionEffectSet) -> AwbcEffectSetId {
         let ids = effects
-            .into_iter()
-            .map(|effect| self.intern_string(effect))
+            .iter()
+            .map(|effect| self.intern_string(effect.as_str()))
             .collect::<Vec<_>>();
         if let Some((index, _)) = self
             .program
@@ -776,6 +940,9 @@ impl AwbcInventory {
             }
             RuntimeValue::Function(_) => {
                 panic!("runtime function state cannot be encoded as an AWBC constant")
+            }
+            RuntimeValue::ProjectContinuation(_) => {
+                panic!("runtime project continuation cannot be encoded as an AWBC constant")
             }
             RuntimeValue::MatrixF32(matrix) => AwbcConstant::TensorF32 {
                 shape: vec![table_index(matrix.rows()), table_index(matrix.cols())],
@@ -1246,8 +1413,20 @@ impl AwbcInventory {
     pub fn intern_content_unit(
         &mut self,
         public_id: &str,
+        template: RuntimeDialogueContentTemplateId,
         group: Option<AwbcLineTaskGroupId>,
-    ) -> AwbcContentUnitId {
+    ) -> Result<AwbcContentUnitId, AwbcLowerDiagnostic> {
+        if !self
+            .program
+            .content_templates
+            .iter()
+            .any(|candidate| candidate.id == template)
+        {
+            return Err(AwbcLowerDiagnostic::error(
+                format!("dialogue.template.{template}"),
+                "content unit references a template that was not admitted into the AWBC template table",
+            ));
+        }
         if let Some((index, _)) = self
             .program
             .content_units
@@ -1255,12 +1434,20 @@ impl AwbcInventory {
             .enumerate()
             .find(|(_, unit)| self.string(unit.public_id) == public_id)
         {
-            return AwbcContentUnitId(table_index(index));
+            let existing = &self.program.content_units[index];
+            if existing.template != template {
+                return Err(AwbcLowerDiagnostic::error(
+                    format!("dialogue.line.{public_id}"),
+                    "content-unit public identity is already joined to a different template",
+                ));
+            }
+            return Ok(AwbcContentUnitId(table_index(index)));
         }
         let id = AwbcContentUnitId(table_index(self.program.content_units.len()));
         let public_id = self.intern_string(public_id);
         self.program.content_units.push(AwbcContentUnit {
             public_id,
+            template,
             marks: Vec::new(),
             effect_site_count: 0,
             line_task_group: group,
@@ -1268,7 +1455,17 @@ impl AwbcInventory {
             source: None,
             resources: Vec::new(),
         });
-        id
+        Ok(id)
+    }
+
+    pub(crate) fn dialogue_template_manifest(
+        &self,
+        template: RuntimeDialogueContentTemplateId,
+    ) -> Option<&AwbcDialogueContentTemplate> {
+        self.program
+            .content_templates
+            .iter()
+            .find(|candidate| candidate.id == template)
     }
 
     pub fn intern_effect(&mut self, effect: &LineEffectRequest) -> AwbcEffectPlanId {
@@ -1300,17 +1497,18 @@ impl AwbcInventory {
     pub fn intern_evaluated_effect(
         &mut self,
         effect: &RuntimeEffectExpr,
+        declared_effects: &RuntimeFunctionEffectSet,
     ) -> Option<AwbcEffectPlanId> {
         let descriptor = effect.host_descriptor()?;
         let arg_count = effect.argument_exprs().len();
-        let key = format!("effect:evaluated:{descriptor:?}:{arg_count}");
+        let effect_set = self.intern_effect_set(declared_effects);
+        let key = format!("effect:evaluated:{descriptor:?}:{arg_count}:{effect_set:?}");
         if let Some(id) = self.effects.get(&key).copied() {
             return Some(id);
         }
         let id = AwbcEffectPlanId(table_index(self.program.effect_plans.len()));
         let kind = effect_kind(&descriptor);
-        let signature =
-            self.intern_signature(vec![self.dynamic_ty(); arg_count], None, AwbcEffectSetId(0));
+        let signature = self.intern_signature(vec![self.dynamic_ty(); arg_count], None, effect_set);
         let capability =
             effect_capability(&descriptor).map(|capability| self.intern_string(capability));
         let static_args = effect_static_args(self, &descriptor);
@@ -1613,6 +1811,9 @@ impl AwbcInventory {
                     .pure_helpers
                     .get(helper.0)
                     .map(|helper| helper.function),
+                RuntimeCallableExecutableCode::FunctionSite(site) => {
+                    self.function_site_function(*site)
+                }
                 RuntimeCallableExecutableCode::ControllerFlow(flow) => self.flow_function(flow),
             };
             let Some(function) = function else {

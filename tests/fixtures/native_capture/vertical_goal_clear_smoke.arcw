@@ -1,11 +1,5 @@
 pub character audit {
-    display_name = "Audit"
-    default_voice = auto
-    dialogue_style {
-        font = "MS Mincho"
-        text_color = "#f4f4ff"
-        text_size = 30
-    }
+    display = "Audit"
 }
 
 entry cli @entry.vertical_goal_clear_smoke {
@@ -13,9 +7,9 @@ entry cli @entry.vertical_goal_clear_smoke {
 }
 
 flow vertical_goal_clear_smoke() -> String {
-    audit.say(id=@say.vertical_goal_clear_smoke.001, voice=auto)[
-        [.vertical_rl jlreq=strict][font "MS Mincho"]吾|[輩](はい)は2026ABC。[/font][/][br]
-        [.vertical_lr jlreq=strict][font "MS Mincho"]縦|[夢](ゆめ)へ[.typewriter cps=1]2026[/]XYZ。[/font][/][p]
+    audit(id=@say.vertical_goal_clear_smoke.001, voice=auto)[
+        #layout(.vertical_rl, jlreq=.strict)[#font("MS Mincho")[吾|[輩](はい)は2026ABC。]][r]
+        #layout(.vertical_lr, jlreq=.strict)[#font("MS Mincho")[縦|[夢](ゆめ)へ#fx(typewriter(characters_per_second=1))[2026]XYZ。]][p]
     ]
 
     return "vertical_goal_clear_smoke"

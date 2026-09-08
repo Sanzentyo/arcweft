@@ -12,9 +12,7 @@ use crate::awbc::schema::{
     AwbcResourceAccess, AwbcResourceAccessMode, AwbcResourceId, AwbcSignatureId, AwbcStreamPlan,
     AwbcStringId, AwbcTableRange, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPolicy, AwbcTypeId,
 };
-use crate::runtime_id::{
-    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeLocalDeclarationId,
-};
+use crate::runtime_id::{RuntimeDialogueMarkId, RuntimeLocalDeclarationId};
 use crate::value::{RuntimeCallTarget, RuntimeIntrinsic};
 use arcweft_character::id::CharacterId;
 use arcweft_interaction_model::audio::{
@@ -1089,10 +1087,6 @@ impl Wire for AwbcLineTaskTrigger {
                 writer.write_u8(2);
                 site.write_wire(writer)?;
             }
-            Self::ContentEffect(site) => {
-                writer.write_u8(3);
-                site.get().get().write_wire(writer)?;
-            }
         }
         Ok(())
     }
@@ -1103,7 +1097,6 @@ impl Wire for AwbcLineTaskTrigger {
             0 => Self::Immediate,
             1 => Self::Mark(runtime_dialogue_mark_id(reader)?),
             2 => Self::Scheduled(AwbcLineHandleSiteId::read_wire(reader)?),
-            3 => Self::ContentEffect(runtime_dialogue_effect_site_id(reader)?),
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "line task trigger",
@@ -1113,18 +1106,6 @@ impl Wire for AwbcLineTaskTrigger {
             }
         })
     }
-}
-
-fn runtime_dialogue_effect_site_id(
-    reader: &mut Reader<'_>,
-) -> Result<RuntimeDialogueEffectSiteId, AwbcCodecError> {
-    NonZeroU32::new(u32::read_wire(reader)?)
-        .map(RuntimeDialogueEffectSiteId::from_accepted_ordinal)
-        .ok_or_else(|| AwbcCodecError::InvalidMetadata {
-            kind: "runtime dialogue effect site identity",
-            message: "must be nonzero".to_owned(),
-            offset: reader.offset(),
-        })
 }
 
 impl Wire for RuntimeLocalDeclarationId {

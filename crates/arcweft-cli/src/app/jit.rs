@@ -306,7 +306,7 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
         RuntimeValue::Duration(value) => format!("{}ns", value.as_nanos()),
         RuntimeValue::Progress(value) => format!("progress/{:.3}", value.ratio()),
         RuntimeValue::Range(value) => value.label(),
-        RuntimeValue::EntityRef(value) => format!("@{value}"),
+        RuntimeValue::EntityRef(value) => format!("@{}", value.runtime_label()),
         RuntimeValue::Tuple(values) => format!("tuple/{}", values.len()),
         RuntimeValue::Seq(sequence) => runtime_sequence_summary(sequence),
         RuntimeValue::Record(fields) => format!("record/{}", fields.len()),
@@ -324,6 +324,12 @@ fn runtime_value_summary(value: &RuntimeValue) -> String {
             "function/{}",
             function.remaining_arity().unwrap_or_default()
         ),
+        RuntimeValue::ProjectContinuation(continuation) => {
+            format!(
+                "project-continuation/{}",
+                continuation.prefix_values().len()
+            )
+        }
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {
                 format!(".{name}(...)")
@@ -1100,8 +1106,8 @@ fn call_add(lhs: RuntimeExprSeed, rhs: RuntimeExprSeed) -> RuntimeExprSeed {
         RuntimeExprSeedKind::Call {
             callee: RuntimeCallTarget::intrinsic(RuntimeIntrinsic::Add),
             args: Box::new([
-                RuntimeCallArgumentSeed::new(lhs, RuntimeCallArgumentMode::Value),
-                RuntimeCallArgumentSeed::new(rhs, RuntimeCallArgumentMode::Value),
+                RuntimeCallArgumentSeed::new(lhs, RuntimeCallArgumentMode::Value, 0),
+                RuntimeCallArgumentSeed::new(rhs, RuntimeCallArgumentMode::Value, 1),
             ]),
         },
     )

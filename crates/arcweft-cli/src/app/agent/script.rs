@@ -8,11 +8,11 @@ use super::{
     AgentTraceRecord, AgentValue, ArcweftBundle, BTreeMap, BTreeSet, BundleKind, CaptureFormat,
     CaptureRequest, CaptureResult, DebugEvent, DebugEventKind, DebugEventSink, DebugScriptRun,
     DebugScriptRunFinish, DebugScriptRunOutcome, DebugSession, DebugSessionStatus, DebugStore,
-    EntityKind, EntitySymbol, EntityType, ExitCode, Infallible, NativeAdapterRegistrar,
-    NoopRagService, ObservationEnvelope, ObserveRequest, Path, PathBuf, ProjectSemanticIndex,
-    RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId, SemanticHash,
-    SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent, agent_project,
-    fs, print_json,
+    DisabledRagService, EntityKind, EntitySymbol, EntityType, ExitCode, Infallible,
+    NativeAdapterRegistrar, ObservationEnvelope, ObserveRequest, Path, PathBuf,
+    ProjectSemanticIndex, RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId,
+    SemanticHash, SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent,
+    agent_project, fs, print_json,
 };
 use arcweft_compiler::{
     incremental::{BuildSnapshotRequest, runtime_plan_artifact_key, snapshot_compiled_project},
@@ -705,7 +705,7 @@ pub(super) fn agent_script_run_bundle(
     let mut runner = AgentRunner::new(
         session,
         CollectingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         agent_script_runtime_policy(input),
         AgentRunnerConfig::new(agent_cli_session_id()),
     );
@@ -1019,7 +1019,6 @@ pub(in crate::app::agent) fn agent_script_project_graph_metadata(
         "symbol_count": graph.symbols.len(),
         "edge_count": graph.edges.len(),
         "summary_symbol_id": summary_symbol.map(|symbol| symbol.symbol_id.as_str()),
-        "has_project_summary": project_summary.is_some(),
         "project_summary": project_summary,
         "symbol_kind_counts": symbol_kind_counts,
         "edge_kind_counts": edge_kind_counts,

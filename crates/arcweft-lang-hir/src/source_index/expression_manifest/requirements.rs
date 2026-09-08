@@ -3,25 +3,26 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::expressions::{
-    ExpressionProjection, SyntaxDialogueApplicationForm, SyntaxDialogueContentProjection,
-    SyntaxDialogueNodeProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
+    ExpressionProjection, SyntaxAttachedContentApplicationForm,
+    SyntaxDialogueActionArgumentProjection, SyntaxDialogueContentProjection,
+    SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueNodeProjection,
+    SyntaxDialoguePointActionIdentity, SyntaxDialoguePointActionPayload, SyntaxRecordField,
 };
 use arcweft_lang_syntax::id_ref::SyntaxIdRefPart;
 
 use super::leaf::id_ref_source_shape;
-use crate::dialogue_application::HirDialogueContentApplication;
+use crate::dialogue_application::HirAttachedContentApplication;
 use crate::expr::{
     HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallCallee,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
     HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirExprKind, HirGenericExprIssue,
-    HirRecordField,
 };
 use crate::leaf::{HirIdRefShape, HirLifetimePathValue, HirLiteral, HirPathValue};
 use crate::source_index::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
-    HirClosureParameterSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
-    HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart,
-    HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceRequirement,
+    HirClosureParameterSourcePart, HirDialogueNodeSourcePart,
+    HirDialoguePointActionArgumentSourcePart, HirDialoguePointActionSourcePart, HirExprSourceRole,
+    HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart, HirSourceRequirement,
 };
 
 #[allow(
@@ -32,6 +33,7 @@ use crate::source_index::{
 pub(super) fn expression_requirements(
     payload: &HirExprKind,
     projection: &ExpressionProjection,
+    target_is_call: bool,
 ) -> Option<BTreeMap<HirExprSourceRole, HirSourceRequirement>> {
     use HirSourceRequirement::{Optional, Required};
 
@@ -205,172 +207,7 @@ pub(super) fn expression_requirements(
                 Required,
             );
         }
-        HirExprKind::Call(expression) => {
-            match expression.callee() {
-                HirCallCallee::Value { .. } => add_expression_requirement(
-                    &mut requirements,
-                    HirExprSourceRole::CallCallee,
-                    Required,
-                ),
-                HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. } => {
-                    for role in [
-                        HirExprSourceRole::CallAssociatedReceiver,
-                        HirExprSourceRole::CallAssociatedSeparator,
-                        HirExprSourceRole::CallAssociatedMember,
-                    ] {
-                        add_expression_requirement(&mut requirements, role, Required);
-                    }
-                }
-            }
-            if let HirCallTypeApplication::Present {
-                spelling,
-                arguments,
-                terminator,
-            } = expression.explicit_type_application()
-            {
-                for role in [
-                    HirCallTypeApplicationSourceRole::Whole,
-                    HirCallTypeApplicationSourceRole::OpenAngle,
-                ] {
-                    add_expression_requirement(
-                        &mut requirements,
-                        HirExprSourceRole::CallTypeApplication(role),
-                        Required,
-                    );
-                }
-                if *spelling == HirCallTypeApplicationSpelling::Turbofish {
-                    add_expression_requirement(
-                        &mut requirements,
-                        HirExprSourceRole::CallTypeApplication(
-                            HirCallTypeApplicationSourceRole::TurbofishSeparator,
-                        ),
-                        Required,
-                    );
-                }
-                add_expression_requirement(
-                    &mut requirements,
-                    HirExprSourceRole::CallTypeApplication(match terminator {
-                        HirCallTypeApplicationTerminator::Closed
-                        | HirCallTypeApplicationTerminator::InvalidPresent => {
-                            HirCallTypeApplicationSourceRole::CloseAngle
-                        }
-                        HirCallTypeApplicationTerminator::RecoveredMissing => {
-                            HirCallTypeApplicationSourceRole::RecoveryEnd
-                        }
-                    }),
-                    Required,
-                );
-                if arguments.len() == 1 && matches!(arguments[0], HirCallTypeArgument::Missing) {
-                    add_expression_requirement(
-                        &mut requirements,
-                        HirExprSourceRole::CallTypeApplication(
-                            HirCallTypeApplicationSourceRole::EmptyInsertion,
-                        ),
-                        Optional,
-                    );
-                }
-                for (position, _) in arguments.iter().enumerate() {
-                    let argument = HirCallTypeArgumentOrdinal::try_new(position)
-                        .expect("Call constructor preflight retains bounded type ordinals");
-                    for part in [
-                        HirCallTypeArgumentSourcePart::Whole,
-                        HirCallTypeArgumentSourcePart::Type,
-                    ] {
-                        add_expression_requirement(
-                            &mut requirements,
-                            HirExprSourceRole::CallTypeApplication(
-                                HirCallTypeApplicationSourceRole::Argument { argument, part },
-                            ),
-                            Required,
-                        );
-                    }
-                    if position > 0 {
-                        add_expression_requirement(
-                            &mut requirements,
-                            HirExprSourceRole::CallTypeApplication(
-                                HirCallTypeApplicationSourceRole::Separator {
-                                    following: argument,
-                                },
-                            ),
-                            Required,
-                        );
-                    }
-                }
-                add_expression_requirement(
-                    &mut requirements,
-                    HirExprSourceRole::CallTypeApplication(
-                        HirCallTypeApplicationSourceRole::TrailingSeparator,
-                    ),
-                    Optional,
-                );
-            }
-            add_expression_requirement(
-                &mut requirements,
-                HirExprSourceRole::CallArgumentListOpen,
-                Required,
-            );
-            add_expression_requirement(
-                &mut requirements,
-                match expression.terminator() {
-                    HirCallArgumentListTerminator::Closed => {
-                        HirExprSourceRole::CallArgumentListClose
-                    }
-                    HirCallArgumentListTerminator::RecoveredMissing => {
-                        HirExprSourceRole::CallArgumentListRecoveryEnd
-                    }
-                },
-                Required,
-            );
-            if expression.arguments().is_empty() {
-                add_expression_requirement(
-                    &mut requirements,
-                    HirExprSourceRole::CallArgumentListEmptyInsertion,
-                    Required,
-                );
-            }
-            for (position, argument) in expression.arguments().iter().enumerate() {
-                let argument_ordinal = HirCallArgumentOrdinal::try_new(position)
-                    .expect("Call constructor preflight retains bounded argument ordinals");
-                let mut add_part = |part| {
-                    add_expression_requirement(
-                        &mut requirements,
-                        HirExprSourceRole::CallArgument {
-                            argument: argument_ordinal,
-                            part,
-                        },
-                        Required,
-                    );
-                };
-                add_part(HirCallArgumentSourcePart::Whole);
-                add_part(HirCallArgumentSourcePart::Value);
-                match argument {
-                    HirCallArgument::Positional { .. } => {}
-                    HirCallArgument::Named { .. } => {
-                        add_part(HirCallArgumentSourcePart::Name);
-                        add_part(HirCallArgumentSourcePart::Equals);
-                    }
-                    HirCallArgument::Spread { .. } => {
-                        add_part(HirCallArgumentSourcePart::Spread);
-                    }
-                }
-                if position > 0 {
-                    add_expression_requirement(
-                        &mut requirements,
-                        HirExprSourceRole::CallArgumentSeparator {
-                            following: argument_ordinal,
-                        },
-                        Required,
-                    );
-                }
-            }
-            if !expression.arguments().is_empty() {
-                add_expression_requirement(
-                    &mut requirements,
-                    HirExprSourceRole::CallArgumentTrailingSeparator,
-                    Optional,
-                );
-            }
-        }
+        HirExprKind::Call(expression) => add_call_requirements(&mut requirements, expression),
         HirExprKind::Select(_) => {
             add_expression_requirement(&mut requirements, HirExprSourceRole::Target, Required);
             add_expression_requirement(
@@ -383,13 +220,13 @@ pub(super) fn expression_requirements(
             add_expression_requirement(&mut requirements, HirExprSourceRole::Target, Required);
             add_expression_requirement(&mut requirements, HirExprSourceRole::Index, Required);
         }
-        HirExprKind::DialogueContentApplication(application) => {
-            let ExpressionProjection::DialogueContentApplication(projection) = projection else {
+        HirExprKind::AttachedContentApplication(application) => {
+            let ExpressionProjection::AttachedContentApplication(projection) = projection else {
                 return None;
             };
             add_expression_requirement(&mut requirements, HirExprSourceRole::Target, Required);
             match projection.form() {
-                SyntaxDialogueApplicationForm::Bracket { .. } => {
+                SyntaxAttachedContentApplicationForm::Bracket { .. } => {
                     add_expression_requirement(
                         &mut requirements,
                         HirExprSourceRole::OpenBracket,
@@ -401,37 +238,93 @@ pub(super) fn expression_requirements(
                         Required,
                     );
                 }
-                SyntaxDialogueApplicationForm::Colon => add_expression_requirement(
+                SyntaxAttachedContentApplicationForm::Colon => add_expression_requirement(
                     &mut requirements,
                     HirExprSourceRole::Colon,
                     Required,
                 ),
-            }
-            add_expression_requirement(&mut requirements, HirExprSourceRole::Content, Required);
-            add_expression_requirement(&mut requirements, HirExprSourceRole::ContentBody, Required);
-            add_expression_requirement(
-                &mut requirements,
-                HirExprSourceRole::Plan,
-                if projection.has_plan() {
-                    Required
-                } else {
-                    Optional
-                },
-            );
-            for coordinate in application.coordinates() {
-                for part in [
-                    HirCallArgumentSourcePart::Whole,
-                    HirCallArgumentSourcePart::Name,
-                    HirCallArgumentSourcePart::Value,
-                ] {
+                SyntaxAttachedContentApplicationForm::Hash => {
                     add_expression_requirement(
                         &mut requirements,
-                        HirExprSourceRole::ConfigurationArgument {
-                            argument: coordinate.argument(),
-                            part,
-                        },
+                        HirExprSourceRole::Hash,
                         Required,
                     );
+                    if matches!(
+                        projection.content(),
+                        SyntaxDialogueContentProjection::Present(_)
+                            | SyntaxDialogueContentProjection::RawLiteral(_)
+                    ) {
+                        add_expression_requirement(
+                            &mut requirements,
+                            HirExprSourceRole::OpenBracket,
+                            Required,
+                        );
+                        add_expression_requirement(
+                            &mut requirements,
+                            HirExprSourceRole::CloseBracket,
+                            Required,
+                        );
+                    }
+                }
+            }
+            if !matches!(
+                projection.content(),
+                SyntaxDialogueContentProjection::Missing {
+                    boundary: SyntaxDialogueContentRecoveryBoundary::Inline { .. }
+                }
+            ) {
+                add_expression_requirement(&mut requirements, HirExprSourceRole::Content, Required);
+                add_expression_requirement(
+                    &mut requirements,
+                    HirExprSourceRole::ContentBody,
+                    Required,
+                );
+            }
+            match application.family() {
+                crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                    coordinates,
+                    ..
+                } => {
+                    add_expression_requirement(
+                        &mut requirements,
+                        HirExprSourceRole::Plan,
+                        if projection.has_plan() {
+                            Required
+                        } else {
+                            Optional
+                        },
+                    );
+                    for coordinate in coordinates {
+                        for part in [
+                            HirCallArgumentSourcePart::Whole,
+                            HirCallArgumentSourcePart::Name,
+                            HirCallArgumentSourcePart::Value,
+                        ] {
+                            add_expression_requirement(
+                                &mut requirements,
+                                HirExprSourceRole::ConfigurationArgument {
+                                    argument: coordinate.argument(),
+                                    part,
+                                },
+                                Required,
+                            );
+                        }
+                    }
+                }
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    ..
+                } if projection.has_plan() => return None,
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    ..
+                } => {}
+            }
+            if target_is_call {
+                if let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                    invocation,
+                    ..
+                } = application.family()
+                {
+                    add_call_requirements(&mut requirements, invocation);
                 }
             }
             add_dialogue_content_requirements(&mut requirements, projection.content());
@@ -494,12 +387,18 @@ pub(super) fn expression_requirements(
                 },
             );
         }
-        HirExprKind::Record(expression) => {
+        HirExprKind::Record(_) => {
+            let ExpressionProjection::Record(fields) = projection else {
+                return None;
+            };
             add_expression_requirement(&mut requirements, HirExprSourceRole::RecordPath, Required);
-            add_record_field_requirements(&mut requirements, expression.fields());
+            add_record_field_requirements(&mut requirements, fields);
         }
-        HirExprKind::RecordLiteral(expression) => {
-            add_record_field_requirements(&mut requirements, expression.fields());
+        HirExprKind::RecordLiteral(_) => {
+            let ExpressionProjection::RecordLiteral(fields) = projection else {
+                return None;
+            };
+            add_record_field_requirements(&mut requirements, fields);
         }
         HirExprKind::Closure(expression) => {
             for (parameter, value) in expression.parameters().iter().enumerate() {
@@ -644,11 +543,177 @@ pub(super) fn expression_requirements(
     Some(requirements)
 }
 
+fn add_call_requirements(
+    requirements: &mut BTreeMap<HirExprSourceRole, HirSourceRequirement>,
+    expression: &crate::expr::HirCallInvocation,
+) {
+    use HirSourceRequirement::{Optional, Required};
+
+    match expression.callee() {
+        HirCallCallee::Value { .. } => {
+            add_expression_requirement(requirements, HirExprSourceRole::CallCallee, Required)
+        }
+        HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. } => {
+            for role in [
+                HirExprSourceRole::CallAssociatedReceiver,
+                HirExprSourceRole::CallAssociatedSeparator,
+                HirExprSourceRole::CallAssociatedMember,
+            ] {
+                add_expression_requirement(requirements, role, Required);
+            }
+        }
+    }
+    if let HirCallTypeApplication::Present {
+        spelling,
+        arguments,
+        terminator,
+    } = expression.explicit_type_application()
+    {
+        for role in [
+            HirCallTypeApplicationSourceRole::Whole,
+            HirCallTypeApplicationSourceRole::OpenAngle,
+        ] {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::CallTypeApplication(role),
+                Required,
+            );
+        }
+        if *spelling == HirCallTypeApplicationSpelling::Turbofish {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::CallTypeApplication(
+                    HirCallTypeApplicationSourceRole::TurbofishSeparator,
+                ),
+                Required,
+            );
+        }
+        add_expression_requirement(
+            requirements,
+            HirExprSourceRole::CallTypeApplication(match terminator {
+                HirCallTypeApplicationTerminator::Closed
+                | HirCallTypeApplicationTerminator::InvalidPresent => {
+                    HirCallTypeApplicationSourceRole::CloseAngle
+                }
+                HirCallTypeApplicationTerminator::RecoveredMissing => {
+                    HirCallTypeApplicationSourceRole::RecoveryEnd
+                }
+            }),
+            Required,
+        );
+        if arguments.len() == 1 && matches!(arguments[0], HirCallTypeArgument::Missing) {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::CallTypeApplication(
+                    HirCallTypeApplicationSourceRole::EmptyInsertion,
+                ),
+                Optional,
+            );
+        }
+        for (position, _) in arguments.iter().enumerate() {
+            let argument = HirCallTypeArgumentOrdinal::try_new(position)
+                .expect("Call constructor preflight retains bounded type ordinals");
+            for part in [
+                HirCallTypeArgumentSourcePart::Whole,
+                HirCallTypeArgumentSourcePart::Type,
+            ] {
+                add_expression_requirement(
+                    requirements,
+                    HirExprSourceRole::CallTypeApplication(
+                        HirCallTypeApplicationSourceRole::Argument { argument, part },
+                    ),
+                    Required,
+                );
+            }
+            if position > 0 {
+                add_expression_requirement(
+                    requirements,
+                    HirExprSourceRole::CallTypeApplication(
+                        HirCallTypeApplicationSourceRole::Separator {
+                            following: argument,
+                        },
+                    ),
+                    Required,
+                );
+            }
+        }
+        add_expression_requirement(
+            requirements,
+            HirExprSourceRole::CallTypeApplication(
+                HirCallTypeApplicationSourceRole::TrailingSeparator,
+            ),
+            Optional,
+        );
+    }
+    add_expression_requirement(
+        requirements,
+        HirExprSourceRole::CallArgumentListOpen,
+        Required,
+    );
+    add_expression_requirement(
+        requirements,
+        match expression.terminator() {
+            HirCallArgumentListTerminator::Closed => HirExprSourceRole::CallArgumentListClose,
+            HirCallArgumentListTerminator::RecoveredMissing => {
+                HirExprSourceRole::CallArgumentListRecoveryEnd
+            }
+        },
+        Required,
+    );
+    if expression.arguments().is_empty() {
+        add_expression_requirement(
+            requirements,
+            HirExprSourceRole::CallArgumentListEmptyInsertion,
+            Required,
+        );
+    }
+    for (position, argument) in expression.arguments().iter().enumerate() {
+        let argument_ordinal = HirCallArgumentOrdinal::try_new(position)
+            .expect("Call constructor preflight retains bounded argument ordinals");
+        let mut add_part = |part| {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::CallArgument {
+                    argument: argument_ordinal,
+                    part,
+                },
+                Required,
+            );
+        };
+        add_part(HirCallArgumentSourcePart::Whole);
+        add_part(HirCallArgumentSourcePart::Value);
+        match argument {
+            HirCallArgument::Positional { .. } => {}
+            HirCallArgument::Named { .. } => {
+                add_part(HirCallArgumentSourcePart::Name);
+                add_part(HirCallArgumentSourcePart::Equals);
+            }
+            HirCallArgument::Spread { .. } => add_part(HirCallArgumentSourcePart::Spread),
+        }
+        if position > 0 {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::CallArgumentSeparator {
+                    following: argument_ordinal,
+                },
+                Required,
+            );
+        }
+    }
+    if !expression.arguments().is_empty() {
+        add_expression_requirement(
+            requirements,
+            HirExprSourceRole::CallArgumentTrailingSeparator,
+            Optional,
+        );
+    }
+}
+
 /// Re-derives the source-role contract for the Dialogue interpretation of an
 /// ambiguous postfix bracket. The candidate keeps the final E33 payload but
 /// borrows every source component from its source-backed outer E34 owner.
 pub(super) fn candidate_dialogue_requirements(
-    application: &HirDialogueContentApplication,
+    application: &HirAttachedContentApplication,
     content: &SyntaxDialogueContentProjection,
 ) -> BTreeMap<HirExprSourceRole, HirSourceRequirement> {
     use HirSourceRequirement::{Optional, Required};
@@ -663,21 +728,30 @@ pub(super) fn candidate_dialogue_requirements(
     ] {
         add_expression_requirement(&mut requirements, role, Required);
     }
-    add_expression_requirement(&mut requirements, HirExprSourceRole::Plan, Optional);
-    for coordinate in application.coordinates() {
-        for part in [
-            HirCallArgumentSourcePart::Whole,
-            HirCallArgumentSourcePart::Name,
-            HirCallArgumentSourcePart::Value,
-        ] {
-            add_expression_requirement(
-                &mut requirements,
-                HirExprSourceRole::ConfigurationArgument {
-                    argument: coordinate.argument(),
-                    part,
-                },
-                Required,
-            );
+    if application.is_dialogue_line() {
+        add_expression_requirement(&mut requirements, HirExprSourceRole::Plan, Optional);
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            coordinates,
+            ..
+        } = application.family()
+        else {
+            return requirements;
+        };
+        for coordinate in coordinates {
+            for part in [
+                HirCallArgumentSourcePart::Whole,
+                HirCallArgumentSourcePart::Name,
+                HirCallArgumentSourcePart::Value,
+            ] {
+                add_expression_requirement(
+                    &mut requirements,
+                    HirExprSourceRole::ConfigurationArgument {
+                        argument: coordinate.argument(),
+                        part,
+                    },
+                    Required,
+                );
+            }
         }
     }
     add_dialogue_content_requirements(&mut requirements, content);
@@ -704,50 +778,37 @@ fn add_dialogue_content_requirements(
             );
         }
     }
-    for (tag, projection) in content.tags().iter().enumerate() {
-        let tag = u32::try_from(tag).expect("bounded RichText tag ordinal fits u32");
+    for (action, node) in content.nodes().iter().enumerate() {
+        let action = u32::try_from(action).expect("bounded Dialogue node ordinal fits u32");
+        let SyntaxDialogueNodeProjection::PointAction(point) = node else {
+            continue;
+        };
         for part in [
-            HirRichTextTagSourcePart::Whole,
-            HirRichTextTagSourcePart::OpenDelimiter,
-            HirRichTextTagSourcePart::Name,
-            HirRichTextTagSourcePart::Payload,
-            HirRichTextTagSourcePart::CloseDelimiter,
+            HirDialoguePointActionSourcePart::Whole,
+            HirDialoguePointActionSourcePart::OpenDelimiter,
+            HirDialoguePointActionSourcePart::Name,
+            HirDialoguePointActionSourcePart::CloseDelimiter,
         ] {
             add_expression_requirement(
                 requirements,
-                HirExprSourceRole::RichTextTag { tag, part },
-                HirSourceRequirement::Required,
-            );
-        }
-        if content.nodes().iter().any(|node| {
-            matches!(
-                node,
-                SyntaxDialogueNodeProjection::InferredStartTag { tag: node_tag }
-                    if *node_tag == tag
-            )
-        }) {
-            add_expression_requirement(
-                requirements,
-                HirExprSourceRole::RichTextTag {
-                    tag,
-                    part: HirRichTextTagSourcePart::InferenceInsertion,
+                HirExprSourceRole::DialoguePointAction {
+                    ordinal: action,
+                    part,
                 },
                 HirSourceRequirement::Required,
             );
         }
-        add_expression_requirement(
-            requirements,
-            HirExprSourceRole::RichTextTag {
-                tag,
-                part: HirRichTextTagSourcePart::EndTag,
-            },
-            if projection.paired_end_node().is_some() {
-                HirSourceRequirement::Required
-            } else {
-                HirSourceRequirement::Optional
-            },
-        );
-        if let SyntaxRichTextTagIdentity::Marker(selector) = projection.identity() {
+        if !matches!(point.payload(), SyntaxDialoguePointActionPayload::None) {
+            add_expression_requirement(
+                requirements,
+                HirExprSourceRole::DialoguePointAction {
+                    ordinal: action,
+                    part: HirDialoguePointActionSourcePart::Payload,
+                },
+                HirSourceRequirement::Required,
+            );
+        }
+        if let SyntaxDialoguePointActionIdentity::Mark(selector) = point.identity() {
             for part in selector
                 .components()
                 .iter()
@@ -755,22 +816,24 @@ fn add_dialogue_content_requirements(
             {
                 add_expression_requirement(
                     requirements,
-                    HirExprSourceRole::RichTextTag {
-                        tag,
-                        part: HirRichTextTagSourcePart::Marker(hir_id_ref_source_part(part)),
+                    HirExprSourceRole::DialoguePointAction {
+                        ordinal: action,
+                        part: HirDialoguePointActionSourcePart::Marker(hir_id_ref_source_part(
+                            part,
+                        )),
                     },
                     HirSourceRequirement::Required,
                 );
             }
         }
-        for (argument, projection) in projection.arguments().iter().enumerate() {
+        for (argument, projection) in point.arguments().iter().enumerate() {
             let argument =
                 u16::try_from(argument).expect("bounded RichText argument ordinal fits u16");
             for part in rich_text_argument_source_parts(projection) {
                 add_expression_requirement(
                     requirements,
-                    HirExprSourceRole::RichTextArgument {
-                        tag,
+                    HirExprSourceRole::DialoguePointActionArgument {
+                        action,
                         argument,
                         part,
                     },
@@ -796,33 +859,30 @@ fn dialogue_node_source_parts(
     node: &SyntaxDialogueNodeProjection,
 ) -> &'static [HirDialogueNodeSourcePart] {
     use HirDialogueNodeSourcePart::{
-        Error, Escape, Interpolation, LineBreak, Raw, RubyBase, RubyText, Text, Whole,
+        Error, Escape, Expression, Hash, Interpolation, LineBreak, PointAction, Ruby, Text, Whole,
     };
 
     match node {
         SyntaxDialogueNodeProjection::Text(_) => &[Whole, Text],
-        SyntaxDialogueNodeProjection::Raw(_) => &[Whole, Raw],
         SyntaxDialogueNodeProjection::Escape(_) => &[Whole, Escape],
-        SyntaxDialogueNodeProjection::Ruby { .. } => &[Whole, RubyBase, RubyText],
-        SyntaxDialogueNodeProjection::AuthoredStartTag { .. }
-        | SyntaxDialogueNodeProjection::InferredStartTag { .. }
-        | SyntaxDialogueNodeProjection::AuthoredEndTag(_)
-        | SyntaxDialogueNodeProjection::InferredEndTag(_) => &[Whole],
+        SyntaxDialogueNodeProjection::Ruby { .. } => &[Whole, Ruby],
         SyntaxDialogueNodeProjection::Interpolation(_) => &[Whole, Interpolation],
+        SyntaxDialogueNodeProjection::ContentApplication(_) => &[Whole, Hash, Expression],
+        SyntaxDialogueNodeProjection::PointAction(_) => &[Whole, PointAction],
         SyntaxDialogueNodeProjection::LineBreak(_) => &[Whole, LineBreak],
         SyntaxDialogueNodeProjection::Error(_) => &[Whole, Error],
     }
 }
 
 fn rich_text_argument_source_parts(
-    argument: &SyntaxRichTextArgumentProjection,
-) -> Vec<HirRichTextArgumentSourcePart> {
-    use HirRichTextArgumentSourcePart::{Equals, Name, Value, Whole};
+    argument: &SyntaxDialogueActionArgumentProjection,
+) -> Vec<HirDialoguePointActionArgumentSourcePart> {
+    use HirDialoguePointActionArgumentSourcePart::{Equals, Name, Value, Whole};
 
     match argument {
-        SyntaxRichTextArgumentProjection::Positional { .. } => vec![Whole, Value],
-        SyntaxRichTextArgumentProjection::Named { .. } => vec![Whole, Name, Equals, Value],
-        SyntaxRichTextArgumentProjection::Invalid { authored_parts, .. } => {
+        SyntaxDialogueActionArgumentProjection::Positional { .. } => vec![Whole, Value],
+        SyntaxDialogueActionArgumentProjection::Named { .. } => vec![Whole, Name, Equals, Value],
+        SyntaxDialogueActionArgumentProjection::Invalid { authored_parts, .. } => {
             let mut parts = vec![Whole];
             if authored_parts.has_name() {
                 parts.push(Name);
@@ -857,7 +917,7 @@ fn add_value_block_requirements(
 
 fn add_record_field_requirements(
     requirements: &mut BTreeMap<HirExprSourceRole, HirSourceRequirement>,
-    fields: &[HirRecordField],
+    fields: &[SyntaxRecordField],
 ) {
     for (field, value) in fields.iter().enumerate() {
         let field = u32::try_from(field).expect("record field ordinal fits u32");
@@ -871,11 +931,11 @@ fn add_record_field_requirements(
         add(HirRecordFieldSourcePart::Whole);
         add(HirRecordFieldSourcePart::Name);
         match value {
-            HirRecordField::Explicit { .. } | HirRecordField::Invalid { .. } => {
+            SyntaxRecordField::Explicit { .. } => {
                 add(HirRecordFieldSourcePart::Colon);
                 add(HirRecordFieldSourcePart::Value);
             }
-            HirRecordField::Shorthand { .. } => {}
+            SyntaxRecordField::Shorthand { .. } => {}
         }
     }
 }

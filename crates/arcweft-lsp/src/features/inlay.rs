@@ -49,15 +49,16 @@ fn inferred_let_type_inlay_hints(
         .into_iter()
         .filter_map(|site| {
             let checked = analysis.expression(site.initializer)?;
+            let ty = checked.value_type()?;
             let has_numeric_fallback = numeric_fallback_ranges.iter().any(|range| {
                 range.start() >= site.expr_range.start() && range.end() <= site.expr_range.end()
             });
             let emit_resolved_type =
-                matches!(checked.ty(), TypeKind::Function { .. }) || has_numeric_fallback;
+                matches!(ty, TypeKind::Function { .. }) || has_numeric_fallback;
             if !emit_resolved_type {
                 return None;
             }
-            Some(let_inlay_for_site(&site, checked.ty(), document))
+            Some(let_inlay_for_site(&site, ty, document))
         })
         .collect::<Vec<_>>();
     if profile.arbitrary_expression_type_inlays() {
@@ -70,7 +71,7 @@ fn numeric_fallback_ranges(module: &HirModule, analysis: &FinalSemanticAnalysis)
     analysis
         .expressions()
         .filter(|(_, checked)| {
-            checked.type_selection() == CheckedTypeSelection::DefaultNumericFallback
+            checked.type_selection() == Some(CheckedTypeSelection::DefaultNumericFallback)
         })
         .map(|(id, _)| id)
         .filter(|id| id.module() == module.module_id())
@@ -119,10 +120,11 @@ fn expression_type_inlay_hints(
             let source = document
                 .text()
                 .get(source_range.start()..source_range.end())?;
-            if !should_emit_expression_type_inlay(expression.kind(), checked.ty(), source) {
+            let ty = checked.value_type()?;
+            if !should_emit_expression_type_inlay(expression.kind(), ty, source) {
                 return None;
             }
-            let label = checked.ty().source_label();
+            let label = ty.source_label();
             if !emitted.insert((source_range.end(), label.clone())) {
                 return None;
             }

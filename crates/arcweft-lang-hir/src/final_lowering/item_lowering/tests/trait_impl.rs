@@ -340,6 +340,113 @@ fn trait_and_impl_lower_to_distinct_inline_members_and_one_scope_per_method() {
     );
 }
 
+#[test]
+fn trait_and_impl_methods_retain_attached_content_slots() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-trait-impl-attached-content",
+        concat!(
+            "trait Renderable {\n",
+            "    fn render(&self)[body?: RichContent] -> Unit\n",
+            "}\n",
+            "impl Renderable for Widget {\n",
+            "    fn render(&self)[body: RichContent] -> Unit { () }\n",
+            "}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        crate::module::HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let trait_item = resolve_item(&module, 0);
+    let HirItemKind::Trait(trait_item) = trait_item.kind() else {
+        panic!("first item must be a Trait")
+    };
+    let HirTraitMember::Function(trait_method) = &trait_item.members()[0] else {
+        panic!("Trait method")
+    };
+    let trait_content = trait_method
+        .attached_content()
+        .expect("Trait attached-content declaration");
+    assert_eq!(
+        trait_content.role(),
+        crate::item::HirAttachedContentRole::Rich
+    );
+    assert_eq!(
+        trait_content.presence(),
+        crate::item::HirAttachedContentPresence::Optional
+    );
+    let trait_scope = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), trait_method.callable_scope())
+        .unwrap();
+    assert_eq!(trait_scope.locals().len(), 2);
+    assert_eq!(trait_scope.locals()[1], trait_content.binding());
+
+    let impl_item = resolve_item(&module, 1);
+    let HirItemKind::Impl(impl_item) = impl_item.kind() else {
+        panic!("second item must be an Impl")
+    };
+    let HirImplMember::Function(impl_method) = &impl_item.members()[0] else {
+        panic!("Impl method")
+    };
+    let impl_content = impl_method
+        .attached_content()
+        .expect("Impl attached-content declaration");
+    assert_eq!(
+        impl_content.presence(),
+        crate::item::HirAttachedContentPresence::Required
+    );
+    let impl_scope = module
+        .arenas()
+        .scopes()
+        .resolve(module.slots(), impl_method.callable_scope())
+        .unwrap();
+    assert_eq!(impl_scope.locals().len(), 2);
+    assert_eq!(impl_scope.locals()[1], impl_content.binding());
+}
+
+#[test]
+fn trait_and_impl_attached_content_defaults_are_rejected() {
+    for (case, source) in [
+        (
+            "trait-default",
+            "trait Renderable {\n    fn render(&self)[body: RichContent = fallback] -> Unit\n}\n",
+        ),
+        (
+            "impl-default",
+            "impl Renderable for Widget {\n    fn render(&self)[body: RichContent = fallback] -> Unit { () }\n}\n",
+        ),
+    ] {
+        let parsed = parse(&format!("arcweft-test://proof/final-hir-{case}"), source);
+        assert!(
+            parsed.diagnostics().is_empty(),
+            "{:?}",
+            parsed.diagnostics()
+        );
+        let key = module_key(&parsed);
+        let database = HirDatabase::try_new().unwrap();
+        let mut transaction = stage(&database, &parsed, &key);
+        assert!(matches!(
+            transaction.lower_parsed_source_items(&parsed),
+            Err(crate::lowering::HirLowerFailure::Invariant(
+                crate::lowering::HirInvariantFailure::InvalidArenaCommit
+            ))
+        ));
+    }
+}
+
 #[allow(
     clippy::too_many_arguments,
     reason = "the assertion receives the complete method owner/scope/payload expectation record"
@@ -496,6 +603,7 @@ fn trait_receiver_kind_tampering_is_rejected_before_publication() {
                         groups.into_boxed_slice(),
                         method.where_predicates().into(),
                         method.return_type(),
+                        None,
                         method.callable_scope(),
                         method.body().cloned(),
                     )
@@ -810,6 +918,7 @@ fn trait_freeze_rejects_member_and_callable_scope_corruption() {
                         method.parameter_groups().into(),
                         method.where_predicates().into(),
                         method.return_type(),
+                        None,
                         method.callable_scope(),
                         Some(HirFunctionBody::Block {
                             scope: *scope,

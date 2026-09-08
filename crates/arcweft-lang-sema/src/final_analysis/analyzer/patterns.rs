@@ -2,23 +2,25 @@
 
 use super::{
     Analyzer, ArrayLength, BTreeMap, BTreeSet, BuiltinTypeConstructor, CheckedPattern,
-    CheckedPatternResolution, CheckedTypedBinding, CheckedVariantOwner, EnumVariantPayload,
-    EnvironmentEnumSchema, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem,
-    HirItemKind, HirModule, HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField,
-    HirPatternKind, HirPatternRecordPath, HirPatternSequenceRest, HirVariantPattern,
-    HirVariantPatternHead, HirVariantPatternHeadValue, HirVariantPatternName,
-    HirVariantPatternPayload, LocalId, PatternId, ProjectNominalBody, ProjectNominalType,
-    ProjectSymbolTable, ProjectTypeTarget, TypeCheckEnv, TypeId, TypeKind,
+    CheckedPatternResolution, CheckedTypedBinding, EnumVariantPayload, EnvironmentEnumSchema,
+    ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput, HirItem, HirItemKind,
+    HirModule, HirPathRoot, HirPathSegment, HirPatternBinding, HirPatternField, HirPatternKind,
+    HirPatternRecordPath, HirPatternSequenceRest, HirVariantPattern, HirVariantPatternHead,
+    HirVariantPatternHeadValue, HirVariantPatternName, HirVariantPatternPayload, LocalId,
+    PatternId, ProjectNominalBody, ProjectNominalType, ProjectSymbolTable, ProjectTypeTarget,
+    TypeCheckEnv, TypeId, TypeKind,
     calls::{checked_project_nominal, nominal_substitutions},
     expression_types::literal_type,
     statements::pattern_span,
 };
 use crate::final_analysis::{
-    PreparedRecordPattern, PreparedRecordPatternField, PreparedRecordPatternFieldIdentity,
+    PreparedRecordPattern, PreparedRecordPatternField, PreparedRecordPatternFieldCoordinate,
     PreparedRecordPatternOwner, PreparedRecordPatternRest, PreparedRecordPatternSource,
 };
-use crate::record_field::CheckedRecordFieldSemanticId;
-use arcweft_lang_hir::item::{HirCapabilityMember, HirImplMember};
+use arcweft_lang_hir::item::{
+    HirAttachedContentPresence, HirCallableAttachedContentParameter, HirCapabilityMember,
+    HirImplMember, HirTraitMember,
+};
 
 use super::entities::EntityReferenceResolutionError;
 
@@ -74,33 +76,17 @@ impl Analyzer<'_, '_, '_> {
                             variant,
                             &ty,
                         )?;
-                        match resolved {
-                            ResolvedVariantPattern::Complete {
-                                owner: variant_owner,
-                                ordinal,
-                                ..
-                            } => CheckedPatternResolution::Variant(
-                                super::CheckedVariantResolution::try_new(variant_owner, ordinal)
-                                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-                            ),
-                            ResolvedVariantPattern::Project {
-                                owner: seed,
-                                ordinal,
-                                ..
-                            } => {
-                                let prepared = super::PreparedProjectVariantPattern::try_new(
-                                    ty.clone(),
-                                    seed,
-                                    ordinal,
-                                )
-                                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-                                input.push_prepared_pattern(
-                                    owner,
-                                    super::PreparedPatternFact::ProjectVariant(prepared),
-                                );
-                                continue;
-                            }
-                        }
+                        let prepared = super::PreparedVariantPattern::try_new(
+                            ty.clone(),
+                            resolved.owner,
+                            resolved.ordinal,
+                        )
+                        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+                        input.push_prepared_pattern(
+                            owner,
+                            super::PreparedPatternFact::Variant(prepared),
+                        );
+                        continue;
                     }
                     HirPatternKind::Error(_) => {
                         return Err(FinalSemanticAnalysisError::RecoveredOwner);
@@ -196,36 +182,12 @@ impl Analyzer<'_, '_, '_> {
             if observed != Some(&field_type) {
                 return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
             }
-            fields.push(match resolved.identity {
-                PreparedRecordPatternFieldIdentity::Project {
-                    declaration_ordinal,
-                } => PreparedRecordPatternField::project(
-                    source_ordinal,
-                    declaration_ordinal,
-                    field_type,
-                    source,
-                ),
-                PreparedRecordPatternFieldIdentity::Environment {
-                    declaration_ordinal,
-                    semantic_id,
-                } => PreparedRecordPatternField::environment(
-                    source_ordinal,
-                    declaration_ordinal,
-                    semantic_id,
-                    field_type,
-                    source,
-                ),
-                PreparedRecordPatternFieldIdentity::VariantPayload {
-                    declaration_ordinal,
-                    semantic_id,
-                } => PreparedRecordPatternField::variant_payload(
-                    source_ordinal,
-                    declaration_ordinal,
-                    semantic_id,
-                    field_type,
-                    source,
-                ),
-            });
+            fields.push(PreparedRecordPatternField::new(
+                source_ordinal,
+                resolved.identity,
+                field_type,
+                source,
+            ));
         }
         if matches!(rest, PreparedRecordPatternRest::Absent) && seen.len() != schema.field_count() {
             return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
@@ -295,50 +257,81 @@ impl Analyzer<'_, '_, '_> {
 
 pub(super) fn seed_item_parameter_types(
     item: &HirItem,
-    types: &BTreeMap<TypeId, TypeKind>,
+    context: PatternSeedContext<'_>,
     locals: &mut BTreeMap<LocalId, TypeKind>,
+    patterns: &mut BTreeMap<PatternId, TypeKind>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     fn seed_parameter(
         parameter: &arcweft_lang_hir::item::HirParameter,
-        types: &BTreeMap<TypeId, TypeKind>,
+        context: PatternSeedContext<'_>,
+        locals: &mut BTreeMap<LocalId, TypeKind>,
+        patterns: &mut BTreeMap<PatternId, TypeKind>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let declared = context.environment.canonical_accepted_type(
+            context.types.get(&parameter.ty()).cloned().ok_or(
+                FinalSemanticAnalysisError::TypeResolutionFailed {
+                    owner: parameter.ty(),
+                },
+            )?,
+        );
+        let binding = match parameter.kind() {
+            arcweft_lang_hir::item::HirParameterKind::RestPositional => {
+                TypeKind::Vec(Box::new(declared))
+            }
+            arcweft_lang_hir::item::HirParameterKind::Fixed
+            | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => declared,
+        };
+        seed_pattern_locals(context, parameter.pattern(), &binding, locals, patterns)
+    }
+    fn seed_attached_content(
+        parameter: Option<HirCallableAttachedContentParameter>,
+        environment: &TypeCheckEnv,
         locals: &mut BTreeMap<LocalId, TypeKind>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let ty = types.get(&parameter.ty()).cloned().ok_or(
-            FinalSemanticAnalysisError::TypeResolutionFailed {
-                owner: parameter.ty(),
-            },
-        )?;
-        for local in parameter.locals() {
-            locals.insert(*local, ty.clone());
+        let Some(parameter) = parameter else {
+            return Ok(());
+        };
+        let content = environment
+            .standard_dialogue_content_type()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let ty = match parameter.presence() {
+            HirAttachedContentPresence::Optional => TypeKind::Option(Box::new(content)),
+            HirAttachedContentPresence::Required | HirAttachedContentPresence::Defaulted { .. } => {
+                content
+            }
+        };
+        if locals.insert(parameter.binding(), ty).is_some() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
         }
         Ok(())
     }
     match item.kind() {
         HirItemKind::Flow(flow) => {
             for parameter in flow.parameters() {
-                seed_parameter(parameter, types, locals)?;
+                seed_parameter(parameter, context, locals, patterns)?;
             }
         }
         HirItemKind::Function(function) => {
             for group in function.parameter_groups() {
                 for parameter in group.parameters() {
-                    seed_parameter(parameter, types, locals)?;
+                    seed_parameter(parameter, context, locals, patterns)?;
                 }
             }
+            seed_attached_content(function.attached_content(), context.environment, locals)?;
         }
         HirItemKind::Predicate(predicate) => {
             for parameter in predicate.parameters() {
-                seed_parameter(parameter, types, locals)?;
+                seed_parameter(parameter, context, locals, patterns)?;
             }
         }
         HirItemKind::Proof(proof) => {
             for parameter in proof.parameters() {
-                seed_parameter(parameter, types, locals)?;
+                seed_parameter(parameter, context, locals, patterns)?;
             }
         }
         HirItemKind::View(view) => {
             for parameter in view.parameters() {
-                seed_parameter(parameter, types, locals)?;
+                seed_parameter(parameter, context, locals, patterns)?;
             }
         }
         HirItemKind::ExternCapability(capability) => {
@@ -348,13 +341,14 @@ pub(super) fn seed_item_parameter_types(
                 };
                 for group in function.parameter_groups() {
                     for parameter in group.parameters() {
-                        seed_parameter(parameter, types, locals)?;
+                        seed_parameter(parameter, context, locals, patterns)?;
                     }
                 }
+                seed_attached_content(function.attached_content(), context.environment, locals)?;
             }
         }
         HirItemKind::Impl(implementation) => {
-            let self_ty = types.get(&implementation.target()).cloned().ok_or(
+            let self_ty = context.types.get(&implementation.target()).cloned().ok_or(
                 FinalSemanticAnalysisError::TypeResolutionFailed {
                     owner: implementation.target(),
                 },
@@ -367,16 +361,38 @@ pub(super) fn seed_item_parameter_types(
                     for parameter in group.parameters() {
                         match parameter {
                             arcweft_lang_hir::item::HirMethodParameter::Receiver(receiver) => {
-                                for local in receiver.locals() {
-                                    locals.insert(*local, self_ty.clone());
-                                }
+                                seed_pattern_locals(
+                                    context,
+                                    receiver.pattern(),
+                                    &self_ty,
+                                    locals,
+                                    patterns,
+                                )?;
                             }
                             arcweft_lang_hir::item::HirMethodParameter::Typed(parameter) => {
-                                seed_parameter(parameter, types, locals)?;
+                                seed_parameter(parameter, context, locals, patterns)?;
                             }
                         }
                     }
                 }
+                seed_attached_content(function.attached_content(), context.environment, locals)?;
+            }
+        }
+        HirItemKind::Trait(trait_item) => {
+            for member in trait_item.members() {
+                let HirTraitMember::Function(function) = member else {
+                    continue;
+                };
+                for group in function.parameter_groups() {
+                    for parameter in group.parameters() {
+                        if let arcweft_lang_hir::item::HirMethodParameter::Typed(parameter) =
+                            parameter
+                        {
+                            seed_parameter(parameter, context, locals, patterns)?;
+                        }
+                    }
+                }
+                seed_attached_content(function.attached_content(), context.environment, locals)?;
             }
         }
         _ => {}
@@ -393,7 +409,7 @@ pub(super) struct PatternSeedContext<'a> {
 }
 
 struct ResolvedRecordPatternField {
-    identity: PreparedRecordPatternFieldIdentity,
+    identity: PreparedRecordPatternFieldCoordinate,
     ty: TypeKind,
 }
 
@@ -404,12 +420,12 @@ enum ResolvedRecordPatternSchema<'a> {
         fields: &'a [arcweft_lang_hir::symbol::nominal::ProjectNominalField],
     },
     Environment {
-        identity: crate::env::nominal::AcceptedEnvironmentRecordIdentity,
+        identity: crate::env::nominal::AcceptedEnvironmentRecord,
         semantics: &'a crate::env::nominal::AcceptedEnvironmentRecordSemantics,
     },
     VariantPayload {
         payload: &'a crate::types::VariantPayloadType,
-        fields: &'a [crate::types::VariantPayloadRecordField],
+        fields: &'a [crate::types::VariantPayloadRecordTypeField],
     },
 }
 
@@ -458,9 +474,7 @@ impl ResolvedRecordPatternSchema<'_> {
                     FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
                 )?;
                 Ok(ResolvedRecordPatternField {
-                    identity: PreparedRecordPatternFieldIdentity::Project {
-                        declaration_ordinal,
-                    },
+                    identity: PreparedRecordPatternFieldCoordinate::new(declaration_ordinal),
                     ty: substitutions.apply(declared),
                 })
             }
@@ -469,10 +483,7 @@ impl ResolvedRecordPatternSchema<'_> {
                     .field(name.as_str())
                     .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
                 Ok(ResolvedRecordPatternField {
-                    identity: PreparedRecordPatternFieldIdentity::Environment {
-                        declaration_ordinal: field.ordinal(),
-                        semantic_id: CheckedRecordFieldSemanticId::Environment(field.semantic_id()),
-                    },
+                    identity: PreparedRecordPatternFieldCoordinate::new(field.ordinal()),
                     ty: field.ty().clone(),
                 })
             }
@@ -482,12 +493,7 @@ impl ResolvedRecordPatternSchema<'_> {
                     .find(|field| field.diagnostic_name() == name.as_str())
                     .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
                 Ok(ResolvedRecordPatternField {
-                    identity: PreparedRecordPatternFieldIdentity::VariantPayload {
-                        declaration_ordinal: field.ordinal(),
-                        semantic_id: CheckedRecordFieldSemanticId::VariantPayload(
-                            field.semantic_id(),
-                        ),
-                    },
+                    identity: PreparedRecordPatternFieldCoordinate::new(field.ordinal()),
                     ty: field.ty().clone(),
                 })
             }
@@ -649,7 +655,7 @@ impl PatternSeeder<'_, '_> {
                     });
                 }
                 for (child, field) in elements.iter().zip(fields) {
-                    self.seed(*child, field.ty())?;
+                    self.seed(*child, field)?;
                 }
             }
             _ => {
@@ -883,7 +889,7 @@ fn resolve_record_pattern_schema<'a>(
                 }
             }
             let identity = accepted
-                .environment_record_identity()
+                .owned_environment_record()
                 .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
             Ok(ResolvedRecordPatternSchema::Environment {
                 identity,
@@ -904,20 +910,11 @@ fn resolve_record_pattern_schema<'a>(
     }
 }
 
-pub(super) fn checked_builtin_closed_owner(
-    schema: &EnvironmentEnumSchema,
-    ty: &TypeKind,
-    owner: ExprId,
-) -> Result<CheckedVariantOwner, FinalSemanticAnalysisError> {
-    CheckedVariantOwner::try_environment(schema, ty)
-        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })
-}
-
 pub(super) fn resolve_closed_variant_path(
     environment: &TypeCheckEnv,
     path: &arcweft_lang_hir::leaf::HirPath,
     owner: ExprId,
-) -> Result<Option<(TypeKind, super::CheckedVariantResolution)>, FinalSemanticAnalysisError> {
+) -> Result<Option<(TypeKind, super::PreparedVariantOwnerSeed, u32)>, FinalSemanticAnalysisError> {
     if path.root() != HirPathRoot::ImplicitCrate {
         return Ok(None);
     }
@@ -946,32 +943,20 @@ pub(super) fn resolve_closed_variant_path(
         u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
     Ok(Some((
         ty.clone(),
-        super::CheckedVariantResolution::try_new(
-            checked_builtin_closed_owner(schema, ty, owner)?,
-            ordinal,
-        )
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+        super::PreparedVariantOwnerSeed::try_environment(schema, ty)?,
+        ordinal,
     )))
 }
 
-enum ResolvedVariantPattern {
-    Complete {
-        owner: CheckedVariantOwner,
-        ordinal: u32,
-        payload: Option<TypeKind>,
-    },
-    Project {
-        owner: super::PreparedProjectVariantOwnerSeed,
-        ordinal: u32,
-        payload: Option<TypeKind>,
-    },
+struct ResolvedVariantPattern {
+    owner: super::PreparedVariantOwnerSeed,
+    ordinal: u32,
+    payload: Option<TypeKind>,
 }
 
 impl ResolvedVariantPattern {
     const fn payload(&self) -> Option<&TypeKind> {
-        match self {
-            Self::Complete { payload, .. } | Self::Project { payload, .. } => payload.as_ref(),
-        }
+        self.payload.as_ref()
     }
 }
 
@@ -986,7 +971,7 @@ fn resolve_variant_pattern(
     };
     match ty {
         TypeKind::ProjectNominal(nominal) => {
-            resolve_project_variant_pattern(context, owner, pattern, nominal, ty, name)
+            resolve_project_variant_pattern(context, owner, pattern, nominal, name)
         }
         TypeKind::Option(item) => {
             validate_builtin_variant_head(pattern.head(), BuiltinTypeConstructor::Option, owner)?;
@@ -997,11 +982,11 @@ fn resolve_variant_pattern(
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
                 }
             };
-            let checked_owner = CheckedVariantOwner::option((**item).clone());
+            let checked_owner = super::PreparedVariantOwnerSeed::option((**item).clone());
             let payload = checked_owner
                 .case_payload_type(ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            Ok(ResolvedVariantPattern::Complete {
+            Ok(ResolvedVariantPattern {
                 owner: checked_owner,
                 ordinal,
                 payload,
@@ -1016,11 +1001,12 @@ fn resolve_variant_pattern(
                     return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
                 }
             };
-            let checked_owner = CheckedVariantOwner::result((**ok).clone(), (**error).clone());
+            let checked_owner =
+                super::PreparedVariantOwnerSeed::result((**ok).clone(), (**error).clone());
             let payload = checked_owner
                 .case_payload_type(ordinal)
                 .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-            Ok(ResolvedVariantPattern::Complete {
+            Ok(ResolvedVariantPattern {
                 owner: checked_owner,
                 ordinal,
                 payload,
@@ -1041,7 +1027,6 @@ fn resolve_project_variant_pattern(
     owner: PatternId,
     pattern: &HirVariantPattern,
     nominal: &ProjectNominalType,
-    ty: &TypeKind,
     name: &super::HirName,
 ) -> Result<ResolvedVariantPattern, FinalSemanticAnalysisError> {
     let declaration = match pattern.head() {
@@ -1071,26 +1056,15 @@ fn resolve_project_variant_pattern(
     let ProjectNominalBody::Enum { variants } = declaration.body() else {
         return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
     };
-    let (selected_ordinal, variant) = variants
+    let (selected_ordinal, _) = variants
         .iter()
         .enumerate()
         .find(|(_, variant)| variant.name().as_str() == name.as_str())
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
     let substitutions = nominal_substitutions(declaration, nominal)
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    let payload = variant
-        .payload()
-        .map(|payload| {
-            context
-                .types
-                .get(&payload)
-                .map(|payload| substitutions.apply(payload))
-                .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner: payload })
-        })
-        .transpose()?;
     let selected_ordinal = u32::try_from(selected_ordinal)
         .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-    let checked_nominal = checked_project_nominal(declaration, ty)?;
     let mut cases = Vec::with_capacity(variants.len());
     for (ordinal, case) in variants.iter().enumerate() {
         let ordinal =
@@ -1111,37 +1085,12 @@ fn resolve_project_variant_pattern(
             Some(case.name().as_str().to_owned()),
         ));
     }
-    let owner = super::PreparedProjectVariantOwnerSeed::try_new(checked_nominal, cases)
+    let owner = super::PreparedVariantOwnerSeed::try_project(nominal.clone(), cases)
         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-    let payload = match payload {
-        None => None,
-        Some(payload) => {
-            let shape = crate::types::VariantPayloadShape::try_tuple(
-                crate::types::VariantPayloadOwnerFamily::Project,
-                owner.nominal().identity(),
-                selected_ordinal,
-                [payload],
-            )
-            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
-            let case = crate::types::AcceptedVariantCaseSemanticId::issue(
-                crate::types::VariantPayloadOwnerFamily::Project,
-                owner.nominal().identity(),
-                selected_ordinal,
-                &shape,
-            );
-            Some(TypeKind::VariantPayload(Box::new(
-                crate::types::VariantPayloadType::try_new(
-                    crate::types::VariantPayloadOwnerFamily::Project,
-                    owner.nominal().identity(),
-                    selected_ordinal,
-                    case,
-                    shape,
-                )
-                .map_err(|_| FinalSemanticAnalysisError::InvalidNominalOwner)?,
-            )))
-        }
-    };
-    Ok(ResolvedVariantPattern::Project {
+    let payload = owner
+        .case_payload_type(selected_ordinal)
+        .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+    Ok(ResolvedVariantPattern {
         owner,
         ordinal: selected_ordinal,
         payload,
@@ -1165,14 +1114,13 @@ fn resolve_closed_variant_pattern(
         .enumerate()
         .find(|(_, variant)| variant.name() == name.as_str())
         .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-    let checked_owner = CheckedVariantOwner::try_environment(schema, ty)
-        .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+    let checked_owner = super::PreparedVariantOwnerSeed::try_environment(schema, ty)?;
     let ordinal =
         u32::try_from(ordinal).map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
     let payload = checked_owner
         .case_payload_type(ordinal)
         .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
-    Ok(ResolvedVariantPattern::Complete {
+    Ok(ResolvedVariantPattern {
         owner: checked_owner,
         ordinal,
         payload,

@@ -17,9 +17,10 @@ use super::{
     CallableDiagnosticCode, CallableDocumentation, CallableGroupIndex, CallableGroupKind,
     CallableLimits, CallableName, CallableParameterAdmission, CallableParameterCoordinate,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
-    CallableQueryLimitError, CallableSource, CheckedCallApplication, CheckedCallOperandDestination,
-    CheckedCallSite, NonCallableSource, ResolvedCallable, SemanticSignatureError, SignatureOrigin,
-    SignatureQueryWorkReport, SignatureWorkReport, UnknownCallKind,
+    CallableQueryLimitError, CallableResultSchema, CallableSource, CheckedCallApplication,
+    CheckedCallOperandDestination, CheckedCallSite, NonCallableSource, ResolvedCallable,
+    SemanticSignatureError, SignatureOrigin, SignatureQueryWorkReport, SignatureWorkReport,
+    UnknownCallKind,
 };
 
 /// Immutable semantic facts committed for one checked call expression.
@@ -113,13 +114,15 @@ impl CallAnalysisOutcome {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
             Self::Selected(application) => application.visit_types(visitor),
             Self::Ambiguous(evidence) => evidence.visit_types(visitor),
             Self::Rejected(evidence) => evidence.visit_types(visitor),
-            Self::NonCallable(evidence) => visitor(evidence.ty()),
+            Self::NonCallable(evidence) => {
+                visitor(crate::types::ScopedTypeView::at_root(evidence.ty()))
+            }
             Self::Missing(_) => Ok(()),
         }
     }
@@ -180,7 +183,7 @@ impl CheckedAmbiguousCallEvidence {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         for candidate in self.candidates() {
             candidate.visit_types(visitor)?;
@@ -233,7 +236,7 @@ impl CheckedRejectedCallEvidence {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         for candidate in self.candidates() {
             candidate.visit_types(visitor)?;
@@ -464,7 +467,7 @@ impl CallTargetFacts {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.outcome.visit_types(visitor)?;
         for diagnostic in self.diagnostics() {
@@ -700,6 +703,44 @@ impl SemanticParameterGroup {
     }
 }
 
+/// Typed presentation of a declaration-owned trailing attached-content
+/// parameter.  Ordinary parameter coordinates remain in
+/// [`SemanticParameterGroup`]; this row is intentionally separate so the
+/// bracketed group cannot be supplied or displayed as a duplicate ordinary
+/// argument.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SemanticAttachedContentParameter {
+    binding: CallableName,
+    role: super::CheckedContentRole,
+    presence: CallableParameterPresence,
+}
+
+impl SemanticAttachedContentParameter {
+    pub const fn new(
+        binding: CallableName,
+        role: super::CheckedContentRole,
+        presence: CallableParameterPresence,
+    ) -> Self {
+        Self {
+            binding,
+            role,
+            presence,
+        }
+    }
+
+    pub const fn binding(&self) -> &CallableName {
+        &self.binding
+    }
+
+    pub const fn role(&self) -> super::CheckedContentRole {
+        self.role
+    }
+
+    pub const fn presence(&self) -> CallableParameterPresence {
+        self.presence
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SemanticSignature {
     candidate: CallableCandidateId,
@@ -708,10 +749,11 @@ pub struct SemanticSignature {
     authored_callee: Arc<str>,
     canonical_callee: Arc<str>,
     groups: Arc<[SemanticParameterGroup]>,
-    result: TypeKind,
+    result: CallableResultSchema,
     effects: EffectRow,
     documentation: CallableDocumentation,
     source: Option<CallableSource>,
+    attached_content: Option<SemanticAttachedContentParameter>,
     current_group: CallableGroupIndex,
     poison: CallPoison,
 }
@@ -725,10 +767,11 @@ impl SemanticSignature {
         authored_callee: Arc<str>,
         canonical_callee: Arc<str>,
         groups: Vec<SemanticParameterGroup>,
-        result: TypeKind,
+        result: CallableResultSchema,
         effects: EffectRow,
         documentation: CallableDocumentation,
         source: Option<CallableSource>,
+        attached_content: Option<SemanticAttachedContentParameter>,
         current_group: CallableGroupIndex,
         poison: CallPoison,
         limits: &CallableLimits,
@@ -762,6 +805,7 @@ impl SemanticSignature {
             effects,
             documentation,
             source,
+            attached_content,
             current_group,
             poison,
         })
@@ -784,7 +828,7 @@ impl SemanticSignature {
     pub fn groups(&self) -> &[SemanticParameterGroup] {
         &self.groups
     }
-    pub const fn result(&self) -> &TypeKind {
+    pub const fn result(&self) -> &CallableResultSchema {
         &self.result
     }
     pub const fn effects(&self) -> &EffectRow {
@@ -795,6 +839,9 @@ impl SemanticSignature {
     }
     pub const fn source(&self) -> Option<&CallableSource> {
         self.source.as_ref()
+    }
+    pub const fn attached_content(&self) -> Option<&SemanticAttachedContentParameter> {
+        self.attached_content.as_ref()
     }
     pub const fn current_group(&self) -> CallableGroupIndex {
         self.current_group
@@ -1129,7 +1176,7 @@ impl CallableDiagnostic {
 
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.subject.visit_types(visitor)?;
         for related in self.related() {
@@ -1142,10 +1189,12 @@ impl CallableDiagnostic {
 impl CallableDiagnosticSubject {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         match self {
-            Self::Method { receiver, .. } => visitor(receiver),
+            Self::Method { receiver, .. } => {
+                visitor(crate::types::ScopedTypeView::at_root(receiver))
+            }
             Self::Candidate(_)
             | Self::Parameter(_)
             | Self::Argument(_)
@@ -1159,7 +1208,7 @@ impl CallableDiagnosticSubject {
 impl CallableDiagnosticRelated {
     pub(crate) fn visit_types<E>(
         &self,
-        visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
+        visitor: &mut impl FnMut(crate::types::ScopedTypeView<'_>) -> Result<(), E>,
     ) -> Result<(), E> {
         self.subject.visit_types(visitor)
     }

@@ -105,7 +105,8 @@ flow main() -> Unit {
         let TypeKind::Vec(item) = report
             .expression(sequence)
             .expect("compact numeric source expression")
-            .ty()
+            .value_type()
+            .expect("compact numeric source value")
         else {
             panic!("Drop compact source retains its Vec type")
         };
@@ -145,7 +146,10 @@ fn make_probe() -> ConstructorProbe {
             .resolve_expr(*value)
             .is_ok_and(|expression| matches!(expression.kind(), HirExprKind::ShortVariant(_)))
             && call.selected_application().is_some_and(|application| {
-                matches!(application.result().ty(), TypeKind::ProjectNominal(_))
+                matches!(
+                    application.result().value_type(),
+                    Some(TypeKind::ProjectNominal(_))
+                )
             })
     }));
 }
@@ -166,37 +170,55 @@ flow stop_policy() -> Unit { drop(.Stop(fade = 120ms))([1i64]...) }
     let mut saw_ok = false;
     let mut saw_err = false;
     let mut saw_closed_record = false;
-    for selected in report.calls().filter_map(|(_, call)| {
-        call.selected_application()
-            .map(|application| application.core().candidates().selected())
-    }) {
-        let crate::callable::ResolvedCallableBaseInstantiation::ExpectedEnum { expected } =
-            selected.instantiation()
-        else {
+    for application in report
+        .calls()
+        .filter_map(|(_, call)| call.selected_application())
+    {
+        let selected = application.core().candidates().selected();
+        if !matches!(
+            selected.instantiation(),
+            crate::callable::ResolvedCallableBaseInstantiation::EnumConstructor
+        ) {
             continue;
-        };
+        }
+        let variant = report
+            .execution_projection()
+            .variant_constructor(
+                fixture
+                    .project
+                    .executable_view()
+                    .expect("executable fixture"),
+                application,
+            )
+            .expect("completed constructor projection")
+            .expect("enum constructor");
         let [group] = selected.schema().groups() else {
             panic!("enum constructor retains one parameter group")
         };
         let [parameter] = group.parameters() else {
             panic!("fixture enum constructor retains one payload field")
         };
-        match expected {
+        let parameter_type = application
+            .core()
+            .solution()
+            .instantiate_template(parameter.declared_type().expect("payload parameter type"))
+            .expect("completed payload type");
+        match variant.owner().ty() {
             TypeKind::Option(item) if item.as_ref() == &TypeKind::I64 => {
-                saw_some = parameter.declared_type() == Some(&TypeKind::I64)
+                saw_some = parameter_type == TypeKind::I64
                     && parameter.passing() == CallableParameterPassing::PositionalOnly;
             }
             TypeKind::Result { ok, error }
                 if ok.as_ref() == &TypeKind::I64 && error.as_ref() == &TypeKind::String =>
             {
-                saw_ok |= parameter.declared_type() == Some(&TypeKind::I64)
+                saw_ok |= parameter_type == TypeKind::I64
                     && parameter.passing() == CallableParameterPassing::PositionalOnly;
-                saw_err |= parameter.declared_type() == Some(&TypeKind::String)
+                saw_err |= parameter_type == TypeKind::String
                     && parameter.passing() == CallableParameterPassing::PositionalOnly;
             }
             _ => {
                 saw_closed_record |= parameter.name().is_some_and(|name| name.as_str() == "fade")
-                    && parameter.declared_type() == Some(&TypeKind::Duration)
+                    && parameter_type == TypeKind::Duration
                     && parameter.passing() == CallableParameterPassing::NamedOnly;
             }
         }

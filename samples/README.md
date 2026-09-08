@@ -11,15 +11,15 @@ run with `arcw`.
   with game, CLI, server, test, and bench entry examples.
 - [rich-text-showcase](rich-text-showcase/README.md) - rich-text rendering
   showcase with Windows fonts, vertical snippets, canonical nested typography
-  defaults, authored dialogue-View styles, speaker preset overrides, and line ruby
+  defaults, authored dialogue-View styles, configured dialogue overrides, and line ruby
   overrides for Agent observe provenance checks.
 - [rich-text-full-grammar.arcw](rich-text-full-grammar.arcw) - broad
-  rich-text grammar sample covering ruby forms, interpolation, control tags,
-  recognized dot selectors, explicit tag families, family-relative dialogue
+  rich-text grammar sample covering ruby forms, interpolation, control actions,
+  recognized dot selectors, explicit content-call families, family-relative dialogue
   defaults, and line option overrides.
 - [rich-text-fx.arcw](rich-text-fx.arcw) - typed reusable presentation Fx with
   required/default named parameters, ordered composition, View `.fx(...)`, and
-  dialogue `[fx ...]...[/fx]` application.
+  dialogue `#fx(...)[...]` application.
   profiles for provenance-aware runtime-plan and LSP cascade checks.
 - [native-style-parity](native-style-parity/README.md) - image-free Web/native
   renderer parity sample for typed native Style and choice rendering.
@@ -38,5 +38,5 @@ run with `arcw`.
   pure function sample showing `f(a, b)(c)` and `f(a)(b)(c, d)` call groups
   without flattening.
 - [rich-text-windows-fonts.arcw](rich-text-windows-fonts.arcw) - Windows
-  default font comparison sample using nested character `dialogue_style`
+  default font comparison sample using an authored presentation Style
   typography for horizontal, mixed, and vertical text.

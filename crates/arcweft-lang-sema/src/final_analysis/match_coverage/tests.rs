@@ -60,7 +60,7 @@ fn statement_ingress_domain_has_only_the_closed_opaque_residual_constructor() {
         assert_eq!(constructors.len(), 1);
         assert!(matches!(
             constructors[0].identity,
-            CoverageConstructorId::Other(owner) if owner == ty.semantic_identity_digest()
+            CoverageConstructorId::Other(owner) if owner == ty.semantic_identity_digest().expect("stable fixture type")
         ));
         assert!(constructors[0].field_types.is_empty());
     }
@@ -261,7 +261,9 @@ fn recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_bas
     );
 
     let recursive_type = TypeKind::Named("coverage-recursive-test".to_owned());
-    let owner = recursive_type.semantic_identity_digest();
+    let owner = recursive_type
+        .semantic_identity_digest()
+        .expect("stable fixture type");
     let (base, recursive, base_pattern, recursive_pattern, wildcard) =
         recursive_domain_patterns(&recursive_type, owner, &semantic_coordinate);
     analyzer.domain_overrides.insert(
@@ -478,7 +480,9 @@ fn variant_witnesses_preserve_unit_tuple_and_name_free_record_rows() {
             .expression(match_owner)
             .expect("stable Match path"),
     );
-    let owner = TypeKind::Named("WitnessOwner".to_owned()).semantic_identity_digest();
+    let owner = TypeKind::Named("WitnessOwner".to_owned())
+        .semantic_identity_digest()
+        .expect("stable fixture type");
 
     assert_unit_variant_witness(owner, &semantic_coordinate);
     assert_tuple_variant_witness(owner, &semantic_coordinate);
@@ -624,9 +628,11 @@ fn execute_match_work(
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("Match expression");
-    let reference = analysis.checked_match_ref(module, &fixture.symbols, owner)?;
     analysis
-        .build_checked_match_for_ref(project, &fixture.symbols, reference, limits)
+        .checked_match_ref(module, &fixture.symbols, owner)
+        .and_then(|reference| {
+            analysis.build_checked_match_for_ref(project, &fixture.symbols, reference, limits)
+        })
         .map(|checked| checked.coverage().work)
 }
 
@@ -776,7 +782,7 @@ fn lower_oracle_pattern(
             assert_eq!(patterns.len(), types.len());
             DeconstructedPatternKind::Constructor {
                 constructor: CoverageConstructorId::Tuple {
-                    owner: ty.semantic_identity_digest(),
+                    owner: ty.semantic_identity_digest().expect("stable fixture type"),
                 },
                 fields: patterns
                     .iter()
@@ -1050,7 +1056,9 @@ fn assert_family_oracle(
     project_enum: TypeKind,
 ) {
     let sequence = TypeKind::Vec(Box::new(TypeKind::Bool));
-    let sequence_owner = sequence.semantic_identity_digest();
+    let sequence_owner = sequence
+        .semantic_identity_digest()
+        .expect("stable fixture type");
     let limits = CheckedMatchLimits::PRODUCTION
         .with_limit(CheckedMatchLimitKind::MatrixRows, 5_000_000)
         .with_limit(CheckedMatchLimitKind::Specializations, 5_000_000)
@@ -1183,7 +1191,7 @@ fn finite_pattern_oracle_agrees_with_matrix_usefulness() {
         .expressions()
         .filter_map(|(_, expression)| expression.match_fact())
         .filter_map(|fact| analysis.expression(fact.scrutinee()))
-        .map(|expression| expression.ty().clone())
+        .filter_map(|expression| expression.value_type().cloned())
         .collect::<Vec<_>>();
     let project_enum = match_types
         .iter()

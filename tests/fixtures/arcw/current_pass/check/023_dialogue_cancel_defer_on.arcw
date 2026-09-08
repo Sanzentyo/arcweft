@@ -1,5 +1,5 @@
-character alice {
-    display_name = "Alice"
+pub character alice {
+    display = "Alice"
 }
 
 flow cancel_edge() -> String {

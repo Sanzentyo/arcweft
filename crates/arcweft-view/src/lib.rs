@@ -42,8 +42,8 @@ pub use fragment::{
 };
 pub use frame::ViewLayerOutput;
 pub use fx::{
-    RetainedViewFxApplication, RetainedViewFxTable, ViewFxArgumentBinding, ViewFxError,
-    ViewFxIdentity, ViewFxOrdinal,
+    RetainedViewFxApplication, RetainedViewFxTable, ViewFxArgumentBinding, ViewFxBindingSource,
+    ViewFxError, ViewFxIdentity, ViewFxOrdinal,
 };
 pub use handler::{
     ViewHandlerInvocation, ViewHandlerRoute, ViewHandlerRouteId, ViewHandlerRouteTable,
@@ -74,9 +74,9 @@ pub use presentation_image::{ViewImagePresentationFrame, ViewImagePresentationIn
 pub use program::{
     BindEvent, BindHandler, EventKind, ViewAwait, ViewAwaitBranch, ViewBranch, ViewCall,
     ViewCallArgument, ViewCustomSpec, ViewElementKind, ViewElementLayoutKind, ViewElementSpec,
-    ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxCallArgument, ViewImageSpec,
-    ViewInstruction, ViewInstructionRange, ViewLocalBinding, ViewProgram, ViewProgramBuilder,
-    ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
+    ViewElementTextInputKind, ViewFxApplicationInstruction, ViewFxArgumentSource,
+    ViewFxCallArgument, ViewImageSpec, ViewInstruction, ViewInstructionRange, ViewLocalBinding,
+    ViewProgram, ViewProgramBuilder, ViewRepeat, ViewSemanticSpec, ViewStableKey, ViewTextSpec,
 };
 pub use reactive::{EntityInvalidation, ReactiveGraph, ReactiveInvalidation, Revision};
 pub use semantics::{

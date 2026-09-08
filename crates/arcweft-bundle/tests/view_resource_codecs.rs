@@ -4,9 +4,9 @@ use arcweft_bundle::resource_codec::view::{
     CompositionOnBlurPolicy, DialogueTextProjection, EnterKeyHint, EventKind, SystemColorOverride,
     TextAssistPolicy, TextCapitalization, ViewAwaitBranchSpan, ViewCallArgumentBindingRef,
     ViewDefinitionRef, ViewDefinitionResource, ViewElementKind, ViewExportValidationError,
-    ViewExportedPart, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewHandlerRef,
-    ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource, ViewInstructionSpan,
-    ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
+    ViewExportedPart, ViewFocusAutoScrollPolicy, ViewFxArgumentBindingRef, ViewFxArgumentSourceRef,
+    ViewHandlerRef, ViewInputKind, ViewInputOptions, ViewInputPurpose, ViewInputResource,
+    ViewInstructionSpan, ViewLayoutBoundsResource, ViewLocalizedTextResource, ViewLogicalRect,
     ViewObserveClassification, ViewOwnedPartRef, ViewParameterResource, ViewPartExportSourceRef,
     ViewProgramInstruction, ViewProgramResource, ViewProgramStyleResources, ViewResourceBudget,
     ViewResourceCompatibility, ViewScrollAxis, ViewScrollIndicatorsPolicy,
@@ -31,7 +31,8 @@ use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor,
 };
 use arcweft_presentation::fx::{
-    FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
+    FiniteF32, FxDefinition, FxDefinitionParameter, FxDefinitionParameterType, FxGraph, FxId,
+    FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
@@ -40,7 +41,7 @@ use arcweft_view::style::{
 };
 use arcweft_view::{
     ViewHandlerProgramId, ViewHandlerResult, ViewHandlerResultRole, ViewHandlerValueTypeId, ViewId,
-    ViewPartLocalName, ViewPartName,
+    ViewParameterCoordinate, ViewPartLocalName, ViewPartName,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 
@@ -101,6 +102,21 @@ fn view_resource_compact_sections_round_trip_with_deterministic_bytes() {
         ViewThemeResource::decode_canonical_section,
         &theme,
     );
+}
+
+#[test]
+fn view_resource_value_program_codec_round_trips_u32_boundaries() {
+    let mut program = fixture_program();
+    program.value_programs.extend([
+        constant_value_program(ViewValueProgramId(2), FxRuntimeValue::U32(0)),
+        constant_value_program(ViewValueProgramId(3), FxRuntimeValue::U32(u32::MAX)),
+    ]);
+    let bytes = program
+        .encode_canonical_section()
+        .expect("U32 View value programs encode");
+    let decoded = ViewProgramResource::decode_canonical_section(&bytes)
+        .expect("U32 View value programs decode");
+    assert_eq!(decoded, program);
 }
 
 #[test]
@@ -465,12 +481,34 @@ fn view_handler_cross_section_rejects_missing_binding_and_nonempty_effects() {
 
 #[test]
 fn view_fx_bindings_are_canonical_bounded_and_unique() {
-    let binding = |parameter: &str| ViewFxArgumentBindingRef {
-        parameter: parameter.to_owned(),
-        value_program: ViewValueProgramId(1),
+    let definition = FxDefinition::new(
+        FxId::try_new("game", "ui.effects.notice").unwrap(),
+        vec![
+            FxDefinitionParameter::try_new(
+                0,
+                "amplitude",
+                FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                None,
+            )
+            .unwrap(),
+            FxDefinitionParameter::try_new(
+                1,
+                "speed",
+                FxDefinitionParameterType::Runtime(FxRuntimeType::F32),
+                None,
+            )
+            .unwrap(),
+        ],
+        FxGraph::default(),
+    )
+    .unwrap();
+    let binding = |parameter| ViewFxArgumentBindingRef {
+        parameter,
+        source: ViewFxArgumentSourceRef::Reactive(ViewValueProgramId(1)),
     };
     let instruction = |arguments| ViewProgramInstruction::ApplyFx {
         fx: FxId::try_new("game", "ui.effects.notice").expect("valid Fx id"),
+        parameter_layout: definition.parameter_layout().digest(),
         arguments,
         key_program: None,
         application_ordinal: 0,
@@ -478,14 +516,16 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
     };
 
     let mut first = fixture_program();
-    first
-        .instructions
-        .push(instruction(vec![binding("speed"), binding("amplitude")]));
+    first.instructions.push(instruction(vec![
+        binding(definition.parameters()[1].index()),
+        binding(definition.parameters()[0].index()),
+    ]));
     first.definitions[0].body.end_instruction = first.instructions.len().try_into().unwrap();
     let mut second = fixture_program();
-    second
-        .instructions
-        .push(instruction(vec![binding("amplitude"), binding("speed")]));
+    second.instructions.push(instruction(vec![
+        binding(definition.parameters()[0].index()),
+        binding(definition.parameters()[1].index()),
+    ]));
     second.definitions[0].body.end_instruction = second.instructions.len().try_into().unwrap();
     assert_eq!(
         first.encode_canonical_section().expect("first encodes"),
@@ -493,9 +533,10 @@ fn view_fx_bindings_are_canonical_bounded_and_unique() {
     );
 
     let mut duplicate = fixture_program();
-    duplicate
-        .instructions
-        .push(instruction(vec![binding("speed"), binding("speed")]));
+    duplicate.instructions.push(instruction(vec![
+        binding(definition.parameters()[1].index()),
+        binding(definition.parameters()[1].index()),
+    ]));
     duplicate.definitions[0].body.end_instruction =
         duplicate.instructions.len().try_into().unwrap();
     assert!(duplicate.encode_canonical_section().is_err());
@@ -583,8 +624,8 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                 slot: 0,
                 value_type: FxRuntimeType::I32,
                 source: ViewValueInputSource::DefinitionParameter {
-                    view: "view.Child".to_owned(),
-                    name: "count".to_owned(),
+                    view: view_ref("view.Child"),
+                    parameter: ViewParameterCoordinate::try_from_index(0).unwrap(),
                 },
             },
             ViewValueInputResource {
@@ -592,8 +633,8 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
                 slot: 1,
                 value_type: FxRuntimeType::F32,
                 source: ViewValueInputSource::DefinitionParameter {
-                    view: "view.Child".to_owned(),
-                    name: "opacity".to_owned(),
+                    view: view_ref("view.Child"),
+                    parameter: ViewParameterCoordinate::try_from_index(1).unwrap(),
                 },
             },
         ],
@@ -620,6 +661,13 @@ fn nested_view_calls_are_ordinal_canonical_required_and_typed() {
 
     let wrong_type = program(vec![binding(0, "count", 1), binding(1, "opacity", 1)]);
     assert!(wrong_type.encode_canonical_section().is_err());
+
+    let mut mismatched_parameter = program(vec![binding(0, "count", 0), binding(1, "opacity", 1)]);
+    mismatched_parameter.value_inputs[0].source = ViewValueInputSource::DefinitionParameter {
+        view: view_ref("view.Child"),
+        parameter: ViewParameterCoordinate::try_from_index(1).unwrap(),
+    };
+    assert!(mismatched_parameter.encode_canonical_section().is_err());
 }
 
 #[test]

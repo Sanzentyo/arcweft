@@ -707,7 +707,8 @@ mod tests {
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use arcweft_text_model::{
-        DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+        DialogueContentCatalog, DialogueContentFragmentTemplate, DialogueContentSpec,
+        RichTextDocument, RichTextNode,
     };
 
     fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
@@ -863,20 +864,72 @@ mod tests {
     fn fixture_bundle_with(display_text: &str, image_bytes: &[u8]) -> ArcweftBundle {
         let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
         let flow = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
+        let template = DialogueContentFragmentTemplate::try_new_canonical(
+            arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+                .expect("template identity"),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            RichTextDocument::new(vec![RichTextNode::Text {
+                text: display_text.to_owned(),
+            }]),
+        )
+        .expect("dialogue template");
         let mut builder = RuntimePlanBuilder::new();
+        let unit_result = arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
+            arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+        );
+        builder
+            .admit_semantic_batch(
+                [arcweft_core::plan::RuntimePlanTypeSeed::new(
+                    unit_result.ty(),
+                    arcweft_core::plan::RuntimePlanTypeProjection::Unit,
+                )],
+                [],
+                [],
+                [],
+            )
+            .expect("unit result type admits");
         let content = builder
             .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
                 line: line.clone(),
+                template: arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
+                    id: template.id(),
+                    digest: template.digest(),
+                    slots: Box::default(),
+                    effects: Box::default(),
+                },
                 values: Box::default(),
+                effect_sites: Box::default(),
                 marks: Box::default(),
+                effect_site_count: Default::default(),
             })
             .expect("dialogue content admits");
+        let line_task_group = builder
+            .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
+                activation_ops: Vec::new(),
+                result_type: unit_result.ty(),
+                handle_sites: Box::default(),
+                root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
+                cancel_rules: Box::default(),
+                cleanup_completed: Vec::new(),
+                cleanup_cancelled: Vec::new(),
+                cleanup_failed: Vec::new(),
+                cleanup_policy: Default::default(),
+            })
+            .expect("line-task group admits");
+        builder
+            .attach_line_task_group_seed(&content, &line_task_group)
+            .expect("line-task group attaches to dialogue content");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
                 flow.clone(),
                 [],
                 vec![
-                    RuntimeFlowOpSeed::Dialogue { content },
+                    RuntimeFlowOpSeed::Dialogue {
+                        content,
+                        result: unit_result,
+                    },
                     RuntimeFlowOpSeed::Return("done".to_owned()),
                 ],
             ))
@@ -906,25 +959,25 @@ mod tests {
             .expect("entry admits");
         let plan = builder.finish().expect("runtime plan is valid");
         let source_map = source_map("windowed-runtime-owner.arcw", "flow main { ... }");
+        let spec = DialogueContentSpec::try_new(
+            line,
+            TextKey::try_new("text.opening").expect("text key"),
+            &template,
+            crate::test_character_plan(),
+            arcweft_text_model::DialoguePresentationSnapshot::new(
+                crate::test_dialogue_profile(),
+                crate::test_dialogue_profile_revision(),
+            ),
+            Vec::new(),
+            source_map
+                .primary_document()
+                .expect("fixture source map retains its source")
+                .product_source_ref(),
+        )
+        .expect("dialogue spec");
         let dialogue_content =
-            DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
-                line,
-                TextKey::try_new("text.opening").expect("text key"),
-                RichTextDocument::new(vec![RichTextNode::Text {
-                    text: display_text.to_owned(),
-                }]),
-                crate::test_character_plan(),
-                arcweft_text_model::DialoguePresentationSnapshot::new(
-                    crate::test_dialogue_profile(),
-                    crate::test_dialogue_profile_revision(),
-                ),
-                Vec::new(),
-                source_map
-                    .primary_document()
-                    .expect("fixture source map retains its source")
-                    .product_source_ref(),
-            )])
-            .expect("final dialogue content catalog");
+            DialogueContentCatalog::try_from_records_and_templates(vec![spec], vec![template])
+                .expect("final dialogue content catalog");
         let product_awbc =
             AwbcLowerer::new(&plan, &dialogue_content, "windowed-runtime-owner.arcw")
                 .lower()

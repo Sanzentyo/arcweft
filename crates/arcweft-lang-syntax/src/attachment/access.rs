@@ -10,20 +10,21 @@ use super::item::TypedItemNode;
 use super::node::{
     AssertionStatementKind, AssignmentStatementKind, AstKind, AstNode, BinaryExpressionKind,
     BlockKind, CallArgumentKind, CallExpressionKind, ChoiceExpressionKind, CloseParenKind,
-    CloseStatementKind, DeclarationHeaderKind, DocBlockKind, ExactAstKind, ExpressionBodyKind,
-    ExpressionStatementKind, FixedParameterGroupKind, FunctionBodyKind, FunctionTypeKind,
-    GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind, LetElseStatementKind,
-    LetStatementKind, LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
+    CloseStatementKind, DeclarationHeaderKind, DialogueActionArgumentPayloadKind,
+    DialogueActionArgumentTokenKind, DialogueActionArgumentValueKind,
+    DialogueActionConditionPayloadKind, DialogueActionDialogueCallPayloadKind,
+    DialogueActionFxCallPayloadKind, DialogueActionInvalidArgumentKind,
+    DialogueActionNamedArgumentKind, DialogueActionPositionalArgumentKind,
+    DialogueActionTimedCuePayloadKind, DialoguePointActionKind, DialoguePointActionNameKind,
+    DocBlockKind, ExactAstKind, ExpressionBodyKind, ExpressionStatementKind,
+    FixedParameterGroupKind, FunctionBodyKind, FunctionTypeKind, GenericApplicationTypeKind,
+    IfStatementKind, LetChoiceStatementKind, LetElseStatementKind, LetStatementKind,
+    LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
     MissingExpressionKind, NameReferenceKind, OmittedBlockTailKind, OpenParenKind,
     OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
     ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
-    ReturnStatementKind, RichTextArgumentPayloadKind, RichTextArgumentTokenKind,
-    RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
-    RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
-    RichTextNamedArgumentKind, RichTextPositionalArgumentKind, RichTextTagKind,
-    RichTextTagNameKind, RichTextTimedCuePayloadKind, SelectStatementKind, TypeArgumentKind,
-    UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind, WholeBindingPatternKind,
-    YieldStatementKind,
+    ReturnStatementKind, SelectStatementKind, TypeArgumentKind, UnsafeLifetimeStatementKind,
+    VisibilityKind, WaitStatementKind, WholeBindingPatternKind, YieldStatementKind,
 };
 use super::{SyntaxAccessError, SyntaxNodeHandle};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -95,7 +96,7 @@ const fn role_class_is_ordinal(role: SyntaxRoleClass) -> bool {
             | SyntaxRoleClass::Branch
             | SyntaxRoleClass::TrailingRecovery
             | SyntaxRoleClass::Argument
-            | SyntaxRoleClass::RichTextTag
+            | SyntaxRoleClass::DialoguePointAction
             | SyntaxRoleClass::MatchArm
             | SyntaxRoleClass::Field
             | SyntaxRoleClass::Member
@@ -987,8 +988,8 @@ impl AstNode<CallArgumentKind> {
     }
 }
 
-impl AstNode<RichTextTagKind> {
-    pub fn name(&self) -> Result<AstNode<RichTextTagNameKind>, SyntaxAccessError> {
+impl AstNode<DialoguePointActionKind> {
+    pub fn name(&self) -> Result<AstNode<DialoguePointActionNameKind>, SyntaxAccessError> {
         self.required_exact_child(SyntaxRole::Name)
     }
 
@@ -997,31 +998,29 @@ impl AstNode<RichTextTagKind> {
     }
 }
 
-impl AstNode<RichTextEndTagKind> {
-    pub fn name(&self) -> Result<Option<AstNode<RichTextTagNameKind>>, SyntaxAccessError> {
-        self.optional_exact_child(SyntaxRole::Name)
-    }
-}
-
-impl AstNode<RichTextArgumentPayloadKind> {
+impl AstNode<DialogueActionArgumentPayloadKind> {
     pub fn arguments(&self) -> Result<Vec<RichTextNode>, SyntaxAccessError> {
         self.ordered_family_children::<RichTextFamily>(SyntaxRoleClass::Argument)
     }
 }
 
-impl AstNode<RichTextTimedCuePayloadKind> {
+impl AstNode<DialogueActionTimedCuePayloadKind> {
     /// Exact duration argument owned by an inline timed cue.
-    pub fn duration(&self) -> Result<AstNode<RichTextPositionalArgumentKind>, SyntaxAccessError> {
+    pub fn duration(
+        &self,
+    ) -> Result<AstNode<DialogueActionPositionalArgumentKind>, SyntaxAccessError> {
         self.required_exact_child(SyntaxRole::Argument(0))
     }
 
     /// Exact call payload owned by an inline timed cue.
-    pub fn call(&self) -> Result<AstNode<RichTextDialogueCallPayloadKind>, SyntaxAccessError> {
+    pub fn call(
+        &self,
+    ) -> Result<AstNode<DialogueActionDialogueCallPayloadKind>, SyntaxAccessError> {
         self.required_exact_child(SyntaxRole::Payload)
     }
 }
 
-impl AstNode<RichTextNamedArgumentKind> {
+impl AstNode<DialogueActionNamedArgumentKind> {
     pub fn key(&self) -> Result<RichTextNode, SyntaxAccessError> {
         self.required_family_child::<RichTextFamily>(SyntaxRole::Key)
     }
@@ -1035,25 +1034,25 @@ impl AstNode<RichTextNamedArgumentKind> {
     }
 }
 
-impl AstNode<RichTextPositionalArgumentKind> {
+impl AstNode<DialogueActionPositionalArgumentKind> {
     pub fn value(&self) -> Result<RichTextNode, SyntaxAccessError> {
         self.required_family_child::<RichTextFamily>(SyntaxRole::Value)
     }
 }
 
-impl AstNode<RichTextInvalidArgumentKind> {
+impl AstNode<DialogueActionInvalidArgumentKind> {
     pub fn issue(&self) -> Result<RichTextNode, SyntaxAccessError> {
         self.required_family_child::<RichTextFamily>(SyntaxRole::Issue)
     }
 }
 
-impl AstNode<RichTextArgumentValueKind> {
-    pub fn token(&self) -> Result<AstNode<RichTextArgumentTokenKind>, SyntaxAccessError> {
+impl AstNode<DialogueActionArgumentValueKind> {
+    pub fn token(&self) -> Result<AstNode<DialogueActionArgumentTokenKind>, SyntaxAccessError> {
         self.required_exact_child(SyntaxRole::Token)
     }
 }
 
-impl AstNode<RichTextArgumentTokenKind> {
+impl AstNode<DialogueActionArgumentTokenKind> {
     pub fn content(&self) -> Result<RichTextNode, SyntaxAccessError> {
         self.required_family_child::<RichTextFamily>(SyntaxRole::Content)
     }
@@ -1067,19 +1066,19 @@ impl AstNode<RichTextArgumentTokenKind> {
     }
 }
 
-impl AstNode<RichTextFxCallPayloadKind> {
+impl AstNode<DialogueActionFxCallPayloadKind> {
     pub fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
         self.required_family_child::<ExpressionFamily>(SyntaxRole::Operand)
     }
 }
 
-impl AstNode<RichTextDialogueCallPayloadKind> {
+impl AstNode<DialogueActionDialogueCallPayloadKind> {
     pub fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
         self.required_family_child::<ExpressionFamily>(SyntaxRole::Operand)
     }
 }
 
-impl AstNode<RichTextConditionPayloadKind> {
+impl AstNode<DialogueActionConditionPayloadKind> {
     pub fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
         self.required_family_child::<ExpressionFamily>(SyntaxRole::Condition)
     }

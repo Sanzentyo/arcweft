@@ -180,6 +180,10 @@ impl CheckedMatchBudget {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum CheckedMatchBuildError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
+    #[error(transparent)]
+    VariantOwner(#[from] super::CheckedVariantOwnerError),
     #[error("checked Match owner evidence is missing at {coordinate:?}")]
     MissingExactOwner {
         coordinate: StableSemanticCoordinate,

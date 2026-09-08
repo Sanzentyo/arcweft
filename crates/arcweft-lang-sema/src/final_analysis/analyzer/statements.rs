@@ -235,7 +235,12 @@ impl Analyzer<'_, '_, '_> {
                     },
                 )?;
                 let item = iteration_item(&iteration);
-                if !iteration_accepts_source(&iteration, source.ty()) {
+                let source_type = source.value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: statement.source(),
+                    },
+                )?;
+                if !iteration_accepts_source(&iteration, source_type) {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 let iterator = self.facts.expressions().get(&statement.iterator()).ok_or(
@@ -251,7 +256,17 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
                         owner: statement.next_value(),
                     })?;
-                if iterator.ty() != &expected_iterator || next_value.ty() != item {
+                let iterator_type = iterator.value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: statement.iterator(),
+                    },
+                )?;
+                let next_value_type = next_value.value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                        owner: statement.next_value(),
+                    },
+                )?;
+                if iterator_type != &expected_iterator || next_value_type != item {
                     return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
                 }
                 Ok(PreparedStatementPayload::Iteration(Box::new(iteration)))
@@ -278,12 +293,15 @@ impl Analyzer<'_, '_, '_> {
                 let target_fact = self.facts.expressions().get(target).ok_or(
                     FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
                 )?;
-                if target_fact.ty() != &TypeKind::Duration {
+                let target_type = target_fact.value_type().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: *target },
+                )?;
+                if target_type != &TypeKind::Duration {
                     return Err(FinalSemanticAnalysisError::StatementOperandTypeMismatch {
                         statement: owner,
                         owner: *target,
                         expected: Box::new(TypeKind::Duration),
-                        actual: Box::new(target_fact.ty().clone()),
+                        actual: Box::new(target_type.clone()),
                     });
                 }
                 Ok(PreparedStatementPayload::Suspension(Box::new(
@@ -400,7 +418,15 @@ impl Analyzer<'_, '_, '_> {
         let PreparedExpressionFact::ProjectField(prepared_field) = target_fact else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
-        if base.ty()
+        let base_type =
+            base.value_type()
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: select.target(),
+                })?;
+        let target_type = target_fact
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: target })?;
+        if base_type
             != self
                 .facts
                 .locals()
@@ -409,15 +435,15 @@ impl Analyzer<'_, '_, '_> {
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        let TypeKind::ProjectNominal(base_nominal) = base.ty() else {
+        let TypeKind::ProjectNominal(base_nominal) = base_type else {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         };
         let declaration = self
             .symbols
             .nominal(base_nominal.declaration())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let nominal = checked_project_nominal(declaration, base.ty())?;
-        if prepared_field.nominal() != &nominal || prepared_field.field_type() != target_fact.ty() {
+        let nominal = checked_project_nominal(declaration, base_type)?;
+        if prepared_field.nominal() != &nominal || prepared_field.field_type() != target_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let value_fact = self
@@ -425,7 +451,10 @@ impl Analyzer<'_, '_, '_> {
             .expressions()
             .get(&value)
             .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
-        if target_fact.ty() != value_fact.ty() {
+        let value_type = value_fact
+            .value_type()
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: value })?;
+        if target_type != value_type {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         Ok(PreparedAssignmentStatement::new(
@@ -433,7 +462,7 @@ impl Analyzer<'_, '_, '_> {
             nominal,
             target,
             value,
-            target_fact.ty().clone(),
+            target_type.clone(),
         ))
     }
 
@@ -463,12 +492,17 @@ impl Analyzer<'_, '_, '_> {
             let checked = self.facts.expressions().get(&condition).ok_or(
                 FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: condition },
             )?;
-            if checked.ty() != &TypeKind::Bool {
+            let Some(checked_type) = checked.value_type() else {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: condition,
+                });
+            };
+            if checked_type != &TypeKind::Bool {
                 return Err(FinalSemanticAnalysisError::AssertionConditionNotBool {
                     owner,
                     condition,
                     index,
-                    actual: Box::new(checked.ty().clone()),
+                    actual: Box::new(checked_type.clone()),
                 });
             }
             if !checked.effects().is_empty() {
@@ -623,7 +657,7 @@ fn checked_effect_identity(
     module: &HirModule,
     owner: ExprId,
 ) -> Result<EffectId, FinalSemanticAnalysisError> {
-    EffectId::try_from_hir_expression(module, owner)
+    crate::effects::project_hir_effect_id(module, owner)
         .map(|(effect, _)| effect)
         .map_err(checked_catalog_error)
 }
@@ -633,13 +667,13 @@ pub(super) fn checked_effect_expression(
     owner: ExprId,
 ) -> Result<(EffectId, Vec<(ExprId, CheckedExpression)>), FinalSemanticAnalysisError> {
     let (effect, owners) =
-        EffectId::try_from_hir_expression(module, owner).map_err(checked_catalog_error)?;
+        crate::effects::project_hir_effect_id(module, owner).map_err(checked_catalog_error)?;
     let facts = owners
         .into_iter()
         .map(|owner| {
             (
                 owner,
-                CheckedExpression::new(
+                CheckedExpression::value(
                     TypeKind::Named("EffectCapability".to_owned()),
                     CheckedTypeSelection::Explicit,
                     EffectSet::new(),

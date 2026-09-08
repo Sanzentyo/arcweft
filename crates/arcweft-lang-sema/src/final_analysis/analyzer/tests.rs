@@ -274,7 +274,7 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
         .facts
         .publish_new_expression(
             inner_owner,
-            CheckedExpression::new(
+            CheckedExpression::value(
                 TypeKind::String,
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
@@ -295,7 +295,7 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
         })
         .expect("candidate call transaction");
     let checked = outcome.into_committed().expect("candidate call result");
-    assert_eq!(checked.ty(), &TypeKind::I64);
+    assert_eq!(checked.value_type(), Some(&TypeKind::I64));
     let selected_sites = analyzer
         .facts
         .prepared_calls()
@@ -346,7 +346,7 @@ fn selected_call_publishes_one_prepared_graph_node() {
         application.result(),
         crate::callable::CheckedCallResult::Value(TypeKind::I64)
     ));
-    assert_eq!(application.result().ty(), &TypeKind::I64);
+    assert_eq!(application.result().value_type(), Some(&TypeKind::I64));
 }
 
 #[test]
@@ -731,6 +731,68 @@ fn three_group_function_values_follow_prepared_adjacency() {
 }
 
 #[test]
+fn block_local_inference_rolls_back_with_its_candidate_expression() {
+    let fixture = crate::final_analysis::tests::fixture(
+        "flow main() -> i64 { return { let value = 41i64\n value + 1i64 } }",
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root module");
+    let owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(expression.kind(), HirExprKind::Block(_)).then_some(owner)
+        })
+        .expect("block expression");
+    let local = module
+        .locals()
+        .next()
+        .map(|(owner, _)| owner)
+        .expect("block local");
+    let cancellation = AtomicBool::new(false);
+    let mut analyzer = Analyzer::new(
+        fixture.project.executable_view().expect("executable HIR"),
+        &fixture.symbols,
+        FinalSemanticCatalogs::production(&fixture.registered),
+        FinalSemanticAnalysisControl::new(&cancellation),
+    )
+    .expect("analyzer");
+    analyzer.resolve_all_types().expect("types");
+    analyzer.seed_local_types().expect("declaration locals");
+    analyzer.staged_callables = Some(analyzer.stage_checked_callables().expect("callables"));
+    assert!(!analyzer.facts.locals().contains_key(&local));
+    let expressions_before = analyzer.facts.expressions().clone();
+    let patterns_before = analyzer.facts.patterns().clone();
+    let locals_before = analyzer.facts.locals().clone();
+    let outcome = analyzer
+        .run_candidate_fact_transaction(|this, authority, _transaction| {
+            let context =
+                AnalyzerExpressionContext::candidate(authority, Rc::clone(&this.call_frames));
+            let checked = this.evaluate_expression(&context, owner, Some(&TypeKind::I64))?;
+            assert_eq!(checked.value_type(), Some(&TypeKind::I64));
+            assert_eq!(this.facts.locals().get(&local), Some(&TypeKind::I64));
+            Ok::<_, AnalyzerExpressionError>(CandidateFactTransactionAction::Rollback(()))
+        })
+        .expect("candidate block evaluation");
+    assert!(matches!(
+        outcome,
+        super::state::CandidateFactTransactionOutcome::RolledBack(())
+    ));
+    assert_eq!(analyzer.facts.expressions(), &expressions_before);
+    assert_eq!(analyzer.facts.patterns(), &patterns_before);
+    assert_eq!(analyzer.facts.locals(), &locals_before);
+    let checked = analyzer
+        .check_expression_published(owner, Some(&TypeKind::I64))
+        .expect("the same block can subsequently publish");
+    assert_eq!(checked.value_type(), Some(&TypeKind::I64));
+    assert_eq!(analyzer.facts.locals().get(&local), Some(&TypeKind::I64));
+}
+
+#[test]
 fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
     let fixture = crate::final_analysis::tests::fixture(
         concat!(
@@ -943,7 +1005,7 @@ fn postfix_ambiguous_rolls_back_both_successful_candidate_rows() {
         this.facts
             .publish_new_expression(
                 index,
-                CheckedExpression::new(
+                CheckedExpression::value(
                     TypeKind::I64,
                     CheckedTypeSelection::Inferred,
                     EffectSet::new(),
@@ -956,7 +1018,7 @@ fn postfix_ambiguous_rolls_back_both_successful_candidate_rows() {
         this.facts
             .publish_new_expression(
                 dialogue,
-                CheckedExpression::new(
+                CheckedExpression::value(
                     TypeKind::I64,
                     CheckedTypeSelection::Inferred,
                     EffectSet::new(),
@@ -1022,7 +1084,7 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
         let contextual = this
             .check_expression_published(owner, Some(&TypeKind::I64))
             .map_err(AnalyzerExpressionError::fatal)?;
-        assert_eq!(contextual.ty(), &TypeKind::I64);
+        assert_eq!(contextual.value_type(), Some(&TypeKind::I64));
         Err::<CandidateFactTransactionAction<()>, _>(AnalyzerExpressionError::fatal(
             FinalSemanticAnalysisError::CheckedCallableCatalog,
         ))
@@ -1039,7 +1101,7 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
     let retry = analyzer
         .check_expression_published(owner, Some(&TypeKind::U64))
         .expect("contextual retry");
-    assert_eq!(retry.ty(), &TypeKind::U64);
+    assert_eq!(retry.value_type(), Some(&TypeKind::U64));
     assert_eq!(analyzer.facts.expressions().get(&owner), Some(&retry));
 }
 
@@ -1119,7 +1181,7 @@ fn function_value_origin_query_resumes_exact_checked_owner() {
             else {
                 return None;
             };
-            if !matches!(checked.ty(), TypeKind::Function { .. }) {
+            if !matches!(checked.value_type(), Some(TypeKind::Function { .. })) {
                 return None;
             }
             let HirLocalValueOrigin::DirectInitializer(initializer) =
@@ -1225,7 +1287,7 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
                 .then_some(owner)
         })
         .expect("callback path");
-    let independent_checked = CheckedExpression::new(
+    let independent_checked = CheckedExpression::value(
         TypeKind::function([TypeKind::I64], TypeKind::I64),
         CheckedTypeSelection::Inferred,
         EffectSet::new(),
@@ -1280,7 +1342,7 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
             (path.as_resolved().and_then(|path| path.lexical_name()) == Some("x")).then_some(owner)
         })
         .expect("cycle path");
-    let cycle_checked = CheckedExpression::new(
+    let cycle_checked = CheckedExpression::value(
         TypeKind::function([TypeKind::I64], TypeKind::I64),
         CheckedTypeSelection::Inferred,
         EffectSet::new(),
@@ -1407,27 +1469,47 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
         )
         .expect("contextual implicit reassign producer");
 
-    let mut implicit = Vec::new();
+    let mut implicit_by_callable = BTreeMap::new();
     let mut explicit = Vec::new();
     for checked in analyzer.facts.expressions().values() {
-        match checked.checked_resolution() {
-            Some(CheckedExpressionResolution::ImplicitCallable(callable)) => {
-                assert!(Arc::ptr_eq(callable.topology(), &analyzer.topology));
-                let [capture] = callable.captures() else {
-                    continue;
-                };
-                implicit.push(capture.mode());
+        match checked {
+            PreparedExpressionFact::OwnerBound(prepared) => {
+                assert!(matches!(
+                    prepared.resolution(),
+                    PreparedOwnerBoundResolution::ImplicitCallable(_)
+                        | PreparedOwnerBoundResolution::ImplicitParameter(_)
+                ));
             }
-            Some(CheckedExpressionResolution::Closure(closure)) => {
-                assert!(Arc::ptr_eq(closure.topology(), &analyzer.topology));
-                let [capture] = closure.captures() else {
-                    continue;
-                };
-                explicit.push(capture.mode());
-            }
+            PreparedExpressionFact::Complete(checked) => match checked.resolution() {
+                CheckedExpressionResolution::Closure(closure) => {
+                    assert!(Arc::ptr_eq(closure.topology(), &analyzer.topology));
+                    let [capture] = closure.captures() else {
+                        continue;
+                    };
+                    explicit.push(capture.mode());
+                }
+                _ => {}
+            },
             _ => {}
         }
     }
+    for ((callable, expression), _) in analyzer.facts.pending_implicit_capture_uses() {
+        let access = analyzer
+            .topology
+            .module(callable.module())
+            .and_then(|module| module.expression_uses().row(*expression))
+            .expect("pending implicit capture topology row")
+            .capture_access();
+        implicit_by_callable
+            .entry(*callable)
+            .and_modify(|mode| {
+                if access == arcweft_lang_hir::scope::CaptureAccess::Reassign {
+                    *mode = access;
+                }
+            })
+            .or_insert(access);
+    }
+    let mut implicit = implicit_by_callable.into_values().collect::<Vec<_>>();
     implicit.sort();
     explicit.sort();
     let expected = vec![
@@ -1505,23 +1587,38 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
             .expressions()
             .iter()
             .find_map(|(owner, checked)| {
-                matches!(
+                (matches!(
                     checked.checked_resolution(),
                     Some(
                         CheckedExpressionResolution::Closure(_)
                             | CheckedExpressionResolution::ImplicitCallable(_)
                     )
-                )
+                ) || matches!(
+                    checked,
+                    PreparedExpressionFact::OwnerBound(prepared)
+                        if matches!(
+                            prepared.resolution(),
+                            PreparedOwnerBoundResolution::ImplicitCallable(_)
+                        )
+                ))
                 .then_some(*owner)
             })
             .expect("terminal function-value producer");
-        let mut progress = crate::callable::prepare_function_value_origin_query(
-            Arc::clone(&analyzer.topology),
-            module,
-            alias_use,
-            analyzer.facts.expressions(),
-        )
-        .expect("origin query");
+        let producer_is_prepared = matches!(
+            analyzer.facts.expressions().get(&producer),
+            Some(PreparedExpressionFact::OwnerBound(_))
+        );
+        let mut progress =
+            crate::callable::prepare_function_value_origin_query_with_pending_captures(
+                Arc::clone(&analyzer.topology),
+                module,
+                alias_use,
+                analyzer.facts.expressions(),
+                analyzer
+                    .pending_capture_identity_rows()
+                    .expect("pending capture identity rows"),
+            )
+            .expect("origin query");
         let evidence = loop {
             match progress {
                 crate::callable::PreparedFunctionValueOriginProgress::Ready(evidence) => {
@@ -1552,6 +1649,14 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
                 producer: actual
             } if *actual == producer
         ));
+
+        // The implicit callable is deliberately still owner-bound in this
+        // pre-seal analyzer fixture. Foreign-topology and producer-mismatch
+        // authority checks apply to the final closure row; the callable's
+        // accepted identity is issued only by the later atomic owner seal.
+        if producer_is_prepared {
+            continue;
+        }
 
         let foreign_topology = fixture
             .project

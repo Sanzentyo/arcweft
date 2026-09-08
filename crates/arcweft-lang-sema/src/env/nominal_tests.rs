@@ -24,7 +24,7 @@ use super::{
     },
 };
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
-use crate::types::{AcceptedNominalType, AgentBuiltinType, TypeKind};
+use crate::types::{AcceptedNominalType, AgentBuiltinType, CompileTimeScalarKind, TypeKind};
 
 fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
     RuntimeOpaqueTypeProducerId::try_new(value).expect("valid test producer")
@@ -690,6 +690,24 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         .expect("standard structural nominal is exact accepted evidence");
     assert_eq!(dialogue.origin(), AcceptedNominalOrigin::NominalRecord);
     assert!(environment.environment_record("DialogueContent").is_some());
+    assert_eq!(
+        dialogue.try_instantiate([]),
+        Ok(TypeKind::Named("DialogueContent".to_owned())),
+        "the environment-record projection remains structural"
+    );
+    let dialogue_content = environment
+        .standard_dialogue_content_type()
+        .expect("standard runtime Content identity");
+    assert_eq!(
+        environment.canonical_accepted_type(TypeKind::Named("DialogueContent".to_owned())),
+        dialogue_content,
+        "callable/value analysis joins standard Content to its exact runtime carrier"
+    );
+    assert_eq!(
+        environment.canonical_accepted_type(TypeKind::Named("DialogueView".to_owned())),
+        TypeKind::Named("DialogueView".to_owned()),
+        "field-bearing dialogue View records retain their structural semantic type"
+    );
 
     let transform = environment
         .nominal_catalog()
@@ -701,6 +719,11 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         AcceptedNominalSemantics::Record(record)
             if record.ty() == &TypeKind::Named("Transform2D".to_owned())
     ));
+    assert_eq!(
+        transform.try_instantiate([]),
+        Ok(TypeKind::Named("Transform2D".to_owned())),
+        "ordinary structural records retain their value-algebra type"
+    );
     let transform_fields = environment
         .environment_record("Transform2D")
         .expect("Transform2D publishes its typed field inventory");
@@ -815,6 +838,36 @@ fn environment_record_fields_preserve_declaration_order_and_typed_identity() {
 }
 
 #[test]
+fn owned_environment_record_retains_the_exact_field_definitions() {
+    fn retained(field_type: TypeKind) -> super::nominal::AcceptedEnvironmentRecord {
+        let record = AcceptedNominalRecord::try_new_record(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Example")),
+            TypeKind::Named("Example".to_owned()),
+            [("value".to_owned(), field_type)],
+            AcceptedNominalOrigin::NominalRecord,
+            None,
+        )
+        .expect("accepted record");
+        record.owned_environment_record().expect("record owner")
+    }
+
+    let integer = retained(TypeKind::I64);
+    let text = retained(TypeKind::String);
+    assert_eq!(integer.nominal(), text.nominal());
+    assert_eq!(integer.semantic_type(), text.semantic_type());
+    assert_eq!(integer.field_count(), text.field_count());
+    assert_ne!(integer, text);
+
+    let integer_field = &integer.semantics().fields()[0];
+    let text_field = &text.semantics().fields()[0];
+    assert_eq!(integer_field.ordinal(), 0);
+    assert_eq!(integer_field.diagnostic_name(), "value");
+    assert_eq!(integer_field.ty(), &TypeKind::I64);
+    assert_eq!(text_field.ty(), &TypeKind::String);
+    assert_ne!(integer_field.semantic_id(), text_field.semantic_id());
+}
+
+#[test]
 fn environment_record_rejects_duplicate_fields() {
     assert!(matches!(
         AcceptedNominalRecord::try_new_record(
@@ -908,6 +961,27 @@ fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
             &AcceptedNominalSemantics::Exact(semantics)
         );
         assert_eq!(record.arity(), 0);
+    }
+    for kind in CompileTimeScalarKind::ALL {
+        let record = environment
+            .nominal_catalog()
+            .exact(&path(kind.source_label()))
+            .expect("standard compile-time scalar is exact accepted evidence");
+        assert_eq!(record.origin(), AcceptedNominalOrigin::Domain);
+        assert_eq!(
+            record.semantics(),
+            &AcceptedNominalSemantics::CompileTimeScalar(kind)
+        );
+        assert_eq!(record.arity(), 0);
+        assert_eq!(
+            record.try_instantiate([]),
+            Ok(TypeKind::CompileTimeScalar(
+                crate::types::CompileTimeScalarType::new(
+                    crate::env::nominal::standard_nominal_id(kind.source_label()),
+                    kind,
+                )
+            ))
+        );
     }
 }
 

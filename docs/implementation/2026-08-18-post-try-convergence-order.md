@@ -194,8 +194,8 @@ Implement the maintained checked-content model from syntax through HIR, sema,
 compiler content plans, runtime/AWBC, formatter/LSP, renderer, Agent capture,
 and fixtures. Delete the replaced surfaces rather than retaining readers:
 
-- remove `$(...)` interpolation;
-- remove compact-curly Ruby and paired Ruby tags;
+- remove the former dollar-parenthesis interpolation;
+- remove compact-curly Ruby and paired Ruby markup;
 - remove unknown-dot custom-call/layout/effect fallback;
 - retain checked `#[expr]` interpolation;
 - retain typed content calls `#name(args)` and attached content
@@ -205,8 +205,8 @@ and fixtures. Delete the replaced surfaces rather than retaining readers:
   controls ordered and unstyled;
 - keep reveal-time `[call name(args)]` distinct from immediate content
   construction;
-- use typed `[mark @.name]` identities. A closed `[.name]` shorthand exists
-  only when its owning builtin enum declares it.
+- use typed `[mark @.name]` identities and only the canonical source names
+  declared by the point-action owner; there is no inferred dot shorthand.
 
 Attached body roles must be checked by the declared content schema. Parser
 name tests, renderer reinterpretation, and source-text fallback are forbidden.

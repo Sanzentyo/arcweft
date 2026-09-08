@@ -10,8 +10,9 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::{
-    FiniteF32, FxColor, FxDiagnosticCode, FxNamedValue, FxPhase, FxRendererInterface,
-    FxResolvedValue, FxResourceId, FxRuntimeValue, FxVec2, Length, Opacity, ResolvedValueOperation,
+    FiniteF32, FxColor, FxDiagnosticCode, FxPhase, FxRendererInterface, FxResolvedValue,
+    FxResourceId, FxRuntimeValue, FxShaderUniform, FxVec2, Length, Opacity,
+    ResolvedFilterOperation, ResolvedMaskOperation, ResolvedShaderUniformOperation,
 };
 
 /// One extra glyph raster pass emitted before the main glyph pass.
@@ -156,39 +157,17 @@ impl ResolvedFxGlyphPass {
 impl ResolvedFxMask {
     /// Resolves the typed values of one `Mask` interface operation.
     pub fn from_operation(
-        operation: &ResolvedValueOperation,
+        operation: &ResolvedMaskOperation,
     ) -> Result<Self, FxRenderResourceError> {
-        if operation.interface != FxRendererInterface::Mask {
-            return Err(FxRenderResourceError::WrongInterface {
-                actual: operation.interface,
+        if let Some(resource) = &operation.resource {
+            return Err(FxRenderResourceError::UnknownResource {
+                resource: resource.as_str().to_owned(),
             });
         }
-        let mut coverage = None;
-        let mut invert = None;
-        for value in &operation.values {
-            match (value.name.as_str(), &value.value) {
-                ("coverage", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
-                    set_once(&mut coverage, *value, "coverage")?;
-                }
-                ("invert", FxResolvedValue::Runtime(FxRuntimeValue::Bool(value))) => {
-                    set_once(&mut invert, *value, "invert")?;
-                }
-                ("resource", FxResolvedValue::Resource(resource)) => {
-                    return Err(FxRenderResourceError::UnknownResource {
-                        resource: resource.as_str().to_owned(),
-                    });
-                }
-                (name, _) => {
-                    return Err(FxRenderResourceError::InvalidProperty {
-                        property: name.to_owned(),
-                    });
-                }
-            }
-        }
-        let coverage = opacity(coverage.unwrap_or(FiniteF32::ONE), "coverage")?;
+        let coverage = opacity(operation.coverage.unwrap_or(FiniteF32::ONE), "coverage")?;
         Ok(Self {
             coverage,
-            invert: invert.unwrap_or(false),
+            invert: operation.invert.unwrap_or(false),
         })
     }
 
@@ -211,47 +190,19 @@ impl ResolvedFxMask {
 impl ResolvedFxOffscreenPass {
     /// Resolves the typed values of one `Filter` interface operation.
     pub fn from_operation(
-        operation: &ResolvedValueOperation,
+        operation: &ResolvedFilterOperation,
     ) -> Result<Self, FxRenderResourceError> {
-        if operation.interface != FxRendererInterface::Filter {
-            return Err(FxRenderResourceError::WrongInterface {
-                actual: operation.interface,
-            });
-        }
-        let mut blur_radius = None;
-        let mut brightness = None;
-        let mut contrast = None;
-        let mut saturation = None;
-        for value in &operation.values {
-            match (value.name.as_str(), &value.value) {
-                ("blur_radius", FxResolvedValue::Runtime(FxRuntimeValue::Length(value))) => {
-                    set_once(&mut blur_radius, *value, "blur_radius")?;
-                }
-                ("brightness", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
-                    set_once(&mut brightness, *value, "brightness")?;
-                }
-                ("contrast", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
-                    set_once(&mut contrast, *value, "contrast")?;
-                }
-                ("saturation", FxResolvedValue::Runtime(FxRuntimeValue::F32(value))) => {
-                    set_once(&mut saturation, *value, "saturation")?;
-                }
-                (name, _) => {
-                    return Err(FxRenderResourceError::InvalidProperty {
-                        property: name.to_owned(),
-                    });
-                }
-            }
-        }
-        let blur_radius = blur_radius.unwrap_or_default();
+        let blur_radius = operation.blur_radius.unwrap_or_default();
         if blur_radius.pixels() < 0.0 {
             return Err(FxRenderResourceError::InvalidNonNegative {
                 property: "blur_radius".to_owned(),
             });
         }
-        let brightness = non_negative(brightness.unwrap_or(FiniteF32::ONE), "brightness")?;
-        let contrast = non_negative(contrast.unwrap_or(FiniteF32::ONE), "contrast")?;
-        let saturation = non_negative(saturation.unwrap_or(FiniteF32::ONE), "saturation")?;
+        let brightness =
+            non_negative(operation.brightness.unwrap_or(FiniteF32::ONE), "brightness")?;
+        let contrast = non_negative(operation.contrast.unwrap_or(FiniteF32::ONE), "contrast")?;
+        let saturation =
+            non_negative(operation.saturation.unwrap_or(FiniteF32::ONE), "saturation")?;
         Ok(Self {
             blur_radius,
             brightness,
@@ -386,14 +337,9 @@ impl FxRenderResourceTable {
     /// Resolves a shader operation to finite backend-executable passes.
     pub fn resolve_shader(
         &self,
-        operation: &ResolvedValueOperation,
+        operation: &ResolvedShaderUniformOperation,
     ) -> Result<ResolvedFxResourceOutput, FxRenderResourceError> {
-        if operation.interface != FxRendererInterface::ShaderUniform {
-            return Err(FxRenderResourceError::WrongInterface {
-                actual: operation.interface,
-            });
-        }
-        let invocation = ShaderInvocation::from_values(&operation.values)?;
+        let invocation = ShaderInvocation::from_operation(operation)?;
         let program = self.get(&invocation.resource).ok_or_else(|| {
             FxRenderResourceError::UnknownResource {
                 resource: invocation.resource.as_str().to_owned(),
@@ -405,32 +351,19 @@ impl FxRenderResourceTable {
 
 struct ShaderInvocation {
     resource: FxResourceId,
-    uniforms: Vec<FxNamedValue>,
+    uniforms: Vec<FxShaderUniform>,
 }
 
 impl ShaderInvocation {
-    fn from_values(values: &[FxNamedValue]) -> Result<Self, FxRenderResourceError> {
-        let mut resource = None;
-        let mut uniforms = None;
-        for value in values {
-            match (value.name.as_str(), &value.value) {
-                ("resource", FxResolvedValue::Resource(value)) => {
-                    set_once(&mut resource, value.clone(), "resource")?;
-                }
-                ("uniforms", FxResolvedValue::Record(value)) => {
-                    set_once(&mut uniforms, value.clone(), "uniforms")?;
-                }
-                ("stage", FxResolvedValue::Selector(_)) => {}
-                (name, _) => {
-                    return Err(FxRenderResourceError::InvalidProperty {
-                        property: name.to_owned(),
-                    });
-                }
-            }
-        }
+    fn from_operation(
+        operation: &ResolvedShaderUniformOperation,
+    ) -> Result<Self, FxRenderResourceError> {
         Ok(Self {
-            resource: resource.ok_or(FxRenderResourceError::MissingResource)?,
-            uniforms: uniforms.unwrap_or_default(),
+            resource: operation
+                .resource
+                .clone()
+                .ok_or(FxRenderResourceError::MissingResource)?,
+            uniforms: operation.uniforms.clone(),
         })
     }
 
@@ -438,7 +371,7 @@ impl ShaderInvocation {
         let mut values = self
             .uniforms
             .iter()
-            .filter(|value| value.name == name)
+            .filter(|value| value.name.as_str() == name)
             .map(|value| &value.value);
         let value = values.next();
         if values.next().is_some() {
@@ -456,7 +389,7 @@ impl ShaderInvocation {
             .find(|value| !allowed.contains(&value.name.as_str()))
         {
             return Err(FxRenderResourceError::InvalidProperty {
-                property: value.name.clone(),
+                property: value.name.as_str().to_owned(),
             });
         }
         Ok(())
@@ -749,20 +682,6 @@ fn opacity(value: FiniteF32, property: &str) -> Result<Opacity, FxRenderResource
     })
 }
 
-fn set_once<T>(
-    slot: &mut Option<T>,
-    value: T,
-    property: &str,
-) -> Result<(), FxRenderResourceError> {
-    if slot.replace(value).is_some() {
-        Err(FxRenderResourceError::DuplicateProperty {
-            property: property.to_owned(),
-        })
-    } else {
-        Ok(())
-    }
-}
-
 fn rgb(red: u8, green: u8, blue: u8) -> FxColor {
     FxColor::new(
         opacity_from_unit(f32::from(red) / 255.0),
@@ -787,32 +706,23 @@ mod tests {
         FxRenderResourceError, FxRenderResourceTable, ResolvedFxMask, ResolvedFxOffscreenPass,
     };
     use crate::fx::{
-        FiniteF32, FxDiagnosticCode, FxNamedValue, FxPhase, FxRendererInterface, FxResolvedValue,
-        FxResourceId, FxRuntimeValue, FxTarget, Length, ResolvedValueOperation,
+        FiniteF32, FxDiagnosticCode, FxPhase, FxResourceId, FxRuntimeValue, FxShaderUniform,
+        FxTarget, Length, ResolvedFilterOperation, ResolvedMaskOperation,
+        ResolvedShaderUniformOperation,
     };
 
     #[test]
     fn builtin_glow_resolves_to_closed_glyph_passes() {
-        let operation = ResolvedValueOperation::new(
-            FxRendererInterface::ShaderUniform,
-            FxPhase::OffscreenPass,
-            FxTarget::Content,
-            vec![
-                FxNamedValue::new(
-                    "resource",
-                    FxResolvedValue::Resource(
-                        FxResourceId::try_new("soft_glow").expect("resource"),
-                    ),
-                ),
-                FxNamedValue::new(
-                    "uniforms",
-                    FxResolvedValue::Record(vec![FxNamedValue::runtime(
-                        "amount",
-                        FxRuntimeValue::F32(FiniteF32::try_new(0.5).expect("finite")),
-                    )]),
-                ),
-            ],
-        );
+        let operation = ResolvedShaderUniformOperation {
+            phase: FxPhase::OffscreenPass,
+            target: FxTarget::Content,
+            resource: Some(FxResourceId::try_new("soft_glow").expect("resource")),
+            stage: None,
+            uniforms: vec![FxShaderUniform::runtime(
+                crate::fx::FxUniformName::try_new("amount").expect("checked-in name"),
+                FxRuntimeValue::F32(FiniteF32::try_new(0.5).expect("finite")),
+            )],
+        };
 
         let output = FxRenderResourceTable::arcweft_builtins()
             .resolve_shader(&operation)
@@ -825,17 +735,13 @@ mod tests {
 
     #[test]
     fn unknown_shader_resource_is_not_a_noop() {
-        let operation = ResolvedValueOperation::new(
-            FxRendererInterface::ShaderUniform,
-            FxPhase::GlyphColor,
-            FxTarget::Glyph,
-            vec![FxNamedValue::new(
-                "resource",
-                FxResolvedValue::Resource(
-                    FxResourceId::try_new("missing.shader").expect("resource"),
-                ),
-            )],
-        );
+        let operation = ResolvedShaderUniformOperation {
+            phase: FxPhase::GlyphColor,
+            target: FxTarget::Glyph,
+            resource: Some(FxResourceId::try_new("missing.shader").expect("resource")),
+            stage: None,
+            uniforms: Vec::new(),
+        };
 
         assert_eq!(
             FxRenderResourceTable::arcweft_builtins().resolve_shader(&operation),
@@ -854,27 +760,24 @@ mod tests {
 
     #[test]
     fn typed_mask_and_filter_validate_closed_values() {
-        let mask = ResolvedFxMask::from_operation(&ResolvedValueOperation::new(
-            FxRendererInterface::Mask,
-            FxPhase::GlyphMask,
-            FxTarget::Glyph,
-            vec![FxNamedValue::runtime(
-                "coverage",
-                FxRuntimeValue::F32(FiniteF32::try_new(0.25).expect("finite")),
-            )],
-        ))
+        let mask = ResolvedFxMask::from_operation(&ResolvedMaskOperation {
+            phase: FxPhase::GlyphMask,
+            target: FxTarget::Glyph,
+            resource: None,
+            coverage: Some(FiniteF32::try_new(0.25).expect("finite")),
+            invert: None,
+        })
         .expect("mask");
         assert!((mask.effective_coverage().value().get() - 0.25).abs() <= f32::EPSILON);
 
-        let filter = ResolvedFxOffscreenPass::from_operation(&ResolvedValueOperation::new(
-            FxRendererInterface::Filter,
-            FxPhase::OffscreenPass,
-            FxTarget::Content,
-            vec![FxNamedValue::runtime(
-                "blur_radius",
-                FxRuntimeValue::Length(Length::try_pixels(4.0).expect("length")),
-            )],
-        ))
+        let filter = ResolvedFxOffscreenPass::from_operation(&ResolvedFilterOperation {
+            phase: FxPhase::OffscreenPass,
+            target: FxTarget::Content,
+            blur_radius: Some(Length::try_pixels(4.0).expect("length")),
+            brightness: None,
+            contrast: None,
+            saturation: None,
+        })
         .expect("filter");
         assert!((filter.blur_radius.pixels() - 4.0).abs() <= f32::EPSILON);
         assert!(!filter.is_identity());

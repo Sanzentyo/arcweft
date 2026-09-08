@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
-use arcweft_lang_hir::project::{HirProjectBuilder, HirProjectModule};
+use arcweft_lang_hir::project::{
+    HirProjectBuilder, HirProjectModule, HirRuntimeExecutableOwner,
+    HirRuntimeExecutableSemanticOwners, HirRuntimeSemanticReachability,
+};
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
@@ -12,6 +15,14 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 #[test]
 fn public_final_hir_boundary_preserves_the_accepted_module_lease() {
+    fn public_executable_owner_partition<'reachability, 'project>(
+        reachability: &'reachability HirRuntimeSemanticReachability<'project>,
+        owner: &HirRuntimeExecutableOwner,
+    ) -> Option<&'reachability HirRuntimeExecutableSemanticOwners> {
+        reachability.executable_owners(owner)
+    }
+
+    let _public_api = public_executable_owner_partition;
     let package = CallablePackageId::try_new("proof-final-hir-public-api").unwrap();
     let path = CanonicalModulePath::crate_root();
     let source_name = SourceName::path("final-hir-public-api.arcw");

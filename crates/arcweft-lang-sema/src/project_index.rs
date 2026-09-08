@@ -274,6 +274,12 @@ pub struct AgentCompileContext<'a> {
 /// Failure while projecting a checked HIR module into an Agent project index.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ProjectSemanticIndexError {
+    #[error("entity {id} type has an invalid generic scope: {source}")]
+    GenericScope {
+        id: PublicId,
+        #[source]
+        source: crate::types::GenericScopeError,
+    },
     #[error("final semantic generation is not accepted by this project index: {0}")]
     FinalAnalysis(Box<crate::final_analysis::FinalSemanticAnalysisError>),
     #[error("typed final-HIR source lookup failed: {0}")]

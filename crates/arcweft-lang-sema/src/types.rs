@@ -1,6 +1,7 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_id::DeclarationIdentityFamily;
+use arcweft_id::closed_enum::ClosedEnumDomainId;
 use arcweft_lang_syntax::{
     ast::module_path::ModulePathRoot, literal::IntSuffix, reference::BorrowKind, types::TypePath,
 };
@@ -14,12 +15,14 @@ mod compatibility;
 pub(crate) mod constraints;
 mod digest;
 mod generic_use;
+mod generics;
 mod match_domain;
 mod mismatch;
 mod nominal;
 mod openness;
 mod order;
 mod project_nominal_visit;
+mod projection_control;
 mod substitution;
 mod variant_payload;
 
@@ -32,11 +35,23 @@ pub(crate) use compatibility::{
 pub(crate) use constraints::ConstraintAcceptance;
 #[cfg(test)]
 pub(crate) use constraints::NoConstraintClient;
+pub use constraints::TypeInstantiationError;
 pub use constraints::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub use digest::SemanticTypeDigest;
-pub(crate) use digest::accepted_nominal_semantic_identity_digest;
+#[cfg(test)]
 pub(crate) use generic_use::TypeGenericUseCollector;
 pub use generic_use::TypeGenericUseError;
+pub(crate) use generic_use::{
+    StableGenericReferenceUseCollector, TypeGenericReferenceUseCollector,
+};
+pub(crate) use generics::ScopedType;
+pub use generics::{
+    BoundConstParameter, BoundEffectParameter, BoundTypeParameter, GenericBinder,
+    GenericConstReference, GenericEffectReference, GenericParameterKind, GenericScope,
+    GenericScopeError, GenericTypeReference, InferenceConstParameter, InferenceEffectParameter,
+    InferenceTypeParameter, ScopedArrayLengthView, ScopedConstReferenceView,
+    ScopedTypeReferenceView, ScopedTypeView, ScopedView,
+};
 pub(crate) use match_domain::{MatchDomainFamily, MatchDomainInvalidity};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
@@ -45,13 +60,17 @@ pub use nominal::{
     TypePoisonId,
 };
 pub(crate) use project_nominal_visit::visit_project_nominals;
+pub(crate) use projection_control::UnmeteredTypeProjection;
+pub use projection_control::{TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind};
 pub(crate) use substitution::TypeParameterSubstitutions;
 pub(crate) use variant_payload::{
     AcceptedVariantCaseSemanticId, AcceptedVariantPayloadFieldSemanticId,
+    VariantPayloadTypeChildren,
 };
 pub use variant_payload::{
-    VariantPayloadOwnerFamily, VariantPayloadRecordField, VariantPayloadShape,
-    VariantPayloadTupleField, VariantPayloadType,
+    CheckedVariantPayload, VariantPayloadOwnerFamily, VariantPayloadRecordField,
+    VariantPayloadRecordTypeField, VariantPayloadSealError, VariantPayloadShape,
+    VariantPayloadTupleField, VariantPayloadType, VariantPayloadTypeShape,
 };
 
 /// Runtime lifetime-registry scope retained by checked semantic types.
@@ -117,7 +136,7 @@ pub enum ArrayLength {
     /// A concrete compile-time length.
     Const(usize),
     /// A declaration-owned generic constant length.
-    Generic(GenericConstParameterId),
+    Generic(GenericConstReference),
     /// A resolver-owned error already reported for this length.
     Error(TypePoisonId),
     /// A checker-local length that remains to be inferred.
@@ -125,6 +144,11 @@ pub enum ArrayLength {
 }
 
 impl ArrayLength {
+    #[must_use]
+    pub fn generic_parameter(parameter: GenericConstParameterId) -> Self {
+        Self::Generic(GenericConstReference::Free(parameter))
+    }
+
     /// Returns the diagnostic and tooling spelling for this semantic length.
     #[must_use]
     pub(crate) fn source_label(&self) -> String {
@@ -514,6 +538,307 @@ pub enum StandardMapFamily {
     Stream,
 }
 
+/// Closed semantic identity of one compile-time View callable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ViewCallableId {
+    Element(arcweft_view::ViewElementKind),
+    Text,
+    RichText,
+}
+
+impl ViewCallableId {
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Element(_) => 0,
+            Self::Text => 1,
+            Self::RichText => 2,
+        }
+    }
+
+    /// Canonical diagnostic/tooling label for this callable identity.
+    pub fn source_label(self) -> String {
+        match self {
+            Self::Element(element) => element.source_name().to_owned(),
+            Self::Text => "Text".to_owned(),
+            Self::RichText => "RichText".to_owned(),
+        }
+    }
+}
+
+/// Closed semantic identity of one compile-time Style callable.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum StyleCallableId {
+    Rgba,
+}
+
+impl StyleCallableId {
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Rgba => 0,
+        }
+    }
+
+    /// Canonical diagnostic/tooling label for this callable identity.
+    pub const fn source_label(self) -> &'static str {
+        match self {
+            Self::Rgba => "rgba",
+        }
+    }
+}
+
+/// Closed semantic identity of one compile-time callable value.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeCallableType {
+    View(ViewCallableId),
+    Style(StyleCallableId),
+}
+
+impl CompileTimeCallableType {
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::View(_) => 0,
+            Self::Style(_) => 1,
+        }
+    }
+
+    /// Canonical diagnostic/tooling label for this callable identity.
+    pub fn source_label(self) -> String {
+        match self {
+            Self::View(id) => format!("View::{}", id.source_label()),
+            Self::Style(id) => format!("Style::{}", id.source_label()),
+        }
+    }
+}
+
+/// Closed semantic kind of one compile-time scalar value.
+///
+/// These values are semantic-only leaves. Their accepted nominal declaration
+/// remains part of the identity because the same scalar kind may be supplied
+/// by more than one accepted environment owner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeScalarKind {
+    Milli,
+    Ratio,
+    Length,
+    Angle,
+    PublicId,
+    Color,
+}
+
+impl CompileTimeScalarKind {
+    /// All closed scalar kinds in their canonical declaration order.
+    pub const ALL: [Self; 6] = [
+        Self::Milli,
+        Self::Ratio,
+        Self::Length,
+        Self::Angle,
+        Self::PublicId,
+        Self::Color,
+    ];
+
+    /// Stable semantic tag in declaration order.
+    pub const fn semantic_tag(self) -> u8 {
+        match self {
+            Self::Milli => 0,
+            Self::Ratio => 1,
+            Self::Length => 2,
+            Self::Angle => 3,
+            Self::PublicId => 4,
+            Self::Color => 5,
+        }
+    }
+
+    /// Canonical diagnostic/tooling label for this scalar kind.
+    pub const fn source_label(self) -> &'static str {
+        match self {
+            Self::Milli => "Milli",
+            Self::Ratio => "Ratio",
+            Self::Length => "Length",
+            Self::Angle => "Angle",
+            Self::PublicId => "PublicId",
+            Self::Color => "Color",
+        }
+    }
+}
+
+/// Exact identity of one accepted compile-time scalar declaration.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CompileTimeScalarType {
+    declaration: crate::env::nominal::AcceptedNominalId,
+    kind: CompileTimeScalarKind,
+}
+
+/// Closed compile-time enum type used by typed Content callable selectors and
+/// enum-valued parameters. `exact_variant` is populated only by a selector
+/// branch row; `None` admits any member of the domain.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CompileTimeEnumType {
+    domain: ClosedEnumDomainId,
+    exact_variant: Option<u16>,
+    allowed_variants: Option<&'static [u16]>,
+}
+
+impl CompileTimeEnumType {
+    pub const fn any(domain: ClosedEnumDomainId) -> Self {
+        Self {
+            domain,
+            exact_variant: None,
+            allowed_variants: None,
+        }
+    }
+
+    pub const fn exact(domain: ClosedEnumDomainId, variant: u16) -> Self {
+        Self {
+            domain,
+            exact_variant: Some(variant),
+            allowed_variants: None,
+        }
+    }
+
+    pub const fn allowed(domain: ClosedEnumDomainId, variants: &'static [u16]) -> Self {
+        Self {
+            domain,
+            exact_variant: None,
+            allowed_variants: Some(variants),
+        }
+    }
+
+    pub const fn domain(self) -> ClosedEnumDomainId {
+        self.domain
+    }
+
+    pub const fn exact_variant(self) -> Option<u16> {
+        self.exact_variant
+    }
+
+    pub const fn allowed_variants(self) -> Option<&'static [u16]> {
+        self.allowed_variants
+    }
+
+    pub fn accepts(self, actual: Self) -> bool {
+        if self.domain != actual.domain {
+            return false;
+        }
+        match (
+            self.exact_variant,
+            self.allowed_variants,
+            actual.exact_variant,
+            actual.allowed_variants,
+        ) {
+            (Some(expected), None, Some(actual), _) => expected == actual,
+            (Some(_), None, None, _) => false,
+            (None, Some(allowed), Some(actual), _) => allowed.contains(&actual),
+            (None, Some(allowed), None, Some(actual)) => {
+                actual.iter().all(|value| allowed.contains(value))
+            }
+            (None, Some(_), None, None) => false,
+            (None, None, _, _) => true,
+            (Some(_), Some(_), _, _) => false,
+        }
+    }
+
+    pub fn source_label(self) -> String {
+        match (self.exact_variant, self.allowed_variants) {
+            (Some(variant), _) => format!("closed_enum:{:?}::{variant}", self.domain),
+            (None, Some(allowed)) => {
+                format!("closed_enum:{:?}[{}]", self.domain, allowed.len())
+            }
+            (None, None) => format!("closed_enum:{:?}", self.domain),
+        }
+    }
+}
+
+/// Exact or expected-only abstract compile-time Fx type.
+///
+/// `Abstract` is the source `Fx` supertype used by consumer schemas. It may
+/// accept an exact producer type, but is never itself a producible application
+/// identity and never authorizes fallback resolution.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CompileTimeFxType {
+    Abstract,
+    /// One Arcweft-owned graph constructor used inside an Fx definition.
+    Constructor(arcweft_presentation::fx::FxSourceConstructor),
+    /// One exact Arcweft-owned standard Fx callable row.
+    Builtin(arcweft_presentation::fx::BuiltinFxCallableRowId),
+    /// One exact project `#[fx]` declaration.
+    Registered(arcweft_presentation::fx::FxId),
+}
+
+impl CompileTimeFxType {
+    pub fn accepts(&self, actual: &Self) -> bool {
+        matches!(self, Self::Abstract) || self == actual
+    }
+
+    pub fn source_label(&self) -> String {
+        match self {
+            Self::Abstract => "Fx".to_owned(),
+            Self::Constructor(id) => format!("Fx::{id:?}"),
+            Self::Builtin(id) => format!(
+                "{}[phase={}]",
+                id.callable().source_name(),
+                id.phase().source_name()
+            ),
+            Self::Registered(id) => id.to_string(),
+        }
+    }
+}
+
+/// Fixed-dimensional compile-time vector type. The component type is kept in
+/// the type identity so a vector cannot silently become a nominal `Vec2` name.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct FixedVectorType {
+    dimensions: crate::callable::VectorDimensions,
+    component: Box<TypeKind>,
+}
+
+impl FixedVectorType {
+    pub fn new(dimensions: crate::callable::VectorDimensions, component: TypeKind) -> Self {
+        Self {
+            dimensions,
+            component: Box::new(component),
+        }
+    }
+
+    pub const fn dimensions(&self) -> crate::callable::VectorDimensions {
+        self.dimensions
+    }
+
+    pub const fn component(&self) -> &TypeKind {
+        &self.component
+    }
+}
+
+impl CompileTimeScalarType {
+    pub(crate) const fn new(
+        declaration: crate::env::nominal::AcceptedNominalId,
+        kind: CompileTimeScalarKind,
+    ) -> Self {
+        Self { declaration, kind }
+    }
+
+    /// Exact accepted declaration that supplies this scalar.
+    pub const fn declaration(&self) -> &crate::env::nominal::AcceptedNominalId {
+        &self.declaration
+    }
+
+    /// Closed semantic scalar kind selected by the accepted declaration.
+    pub const fn kind(&self) -> CompileTimeScalarKind {
+        self.kind
+    }
+
+    /// Canonical diagnostic/tooling label; never parse this back into identity.
+    pub fn source_label(&self) -> String {
+        format!(
+            "{}<{}>",
+            self.kind.source_label(),
+            self.declaration.canonical_path().canonical_string()
+        )
+    }
+}
+
 impl StandardMapFamily {
     pub const ALL: [Self; 9] = [
         Self::Vec,
@@ -687,12 +1012,25 @@ pub enum TypeKind {
     ThreadHandle(Box<TypeKind>),
     Shared(Box<TypeKind>),
     Function {
+        binder: GenericBinder,
         params: Vec<TypeKind>,
         return_type: Box<TypeKind>,
         effects: EffectRow,
     },
+    /// Compile-time callable family selected by the semantic checker.
+    CompileTimeCallable(CompileTimeCallableType),
+    /// Identity-bearing compile-time scalar selected by the accepted catalog.
+    CompileTimeScalar(CompileTimeScalarType),
+    /// Closed compile-time enum domain (optionally narrowed to one variant).
+    CompileTimeEnum(CompileTimeEnumType),
+    /// Exact or contextually open compile-time Fx value.
+    CompileTimeFx(CompileTimeFxType),
+    /// Fixed-dimensional vector with an exact component type.
+    FixedVector(FixedVectorType),
+    /// Compile-time value describing one semantic type.
+    MetaType(Box<TypeKind>),
     /// Generic parameter selected by a declaration-owned typed identity.
-    GenericParam(GenericTypeParameterId),
+    GenericParam(GenericTypeReference),
     /// Source-backed project struct or enum selected through the project table.
     ProjectNominal(ProjectNominalType),
     /// Exact opaque type selected through the accepted environment catalog.
@@ -772,6 +1110,13 @@ impl EntityType {
 }
 
 impl TypeKind {
+    /// Refers to a declaration-owned parameter without opening an inference
+    /// variable or changing its lexical meaning.
+    #[must_use]
+    pub fn generic_parameter(parameter: GenericTypeParameterId) -> Self {
+        Self::GenericParam(GenericTypeReference::Free(parameter))
+    }
+
     /// Resolves a field only when this type is the standard Progress owner.
     #[must_use]
     pub fn progress_field(&self, name: &str) -> Option<(ProgressField, TypeKind)> {
@@ -851,10 +1196,43 @@ impl TypeKind {
             Self::ThreadHandle(inner) => format!("ThreadHandle<{}>", inner.source_label()),
             Self::Shared(inner) => format!("Shared<{}>", inner.source_label()),
             Self::Function {
+                binder,
                 params,
                 return_type,
                 effects,
-            } => Self::function_source_label(params, return_type, effects),
+            } => {
+                let function = Self::function_source_label(params, return_type, effects);
+                if binder.is_empty() {
+                    function
+                } else {
+                    format!(
+                        "for<type:{}, const:{}, effect:{}> {function}",
+                        binder.types(),
+                        binder.const_lengths(),
+                        binder.effects()
+                    )
+                }
+            }
+            Self::CompileTimeCallable(callable) => {
+                format!("CompileTimeCallable<{}>", callable.source_label())
+            }
+            Self::CompileTimeScalar(scalar) => {
+                format!("CompileTimeScalar<{}>", scalar.source_label())
+            }
+            Self::CompileTimeEnum(enum_type) => {
+                format!("CompileTimeEnum<{}>", enum_type.source_label())
+            }
+            Self::CompileTimeFx(fx) => format!("CompileTimeFx<{}>", fx.source_label()),
+            Self::FixedVector(vector) => format!(
+                "Vec{}<{}>",
+                match vector.dimensions() {
+                    crate::callable::VectorDimensions::Two => 2,
+                    crate::callable::VectorDimensions::Three => 3,
+                    crate::callable::VectorDimensions::Four => 4,
+                },
+                vector.component().source_label()
+            ),
+            Self::MetaType(inner) => format!("MetaType<{}>", inner.source_label()),
             Self::GenericParam(parameter) => parameter.source_label(),
             Self::ProjectNominal(nominal) => nominal.source_label(),
             Self::AcceptedNominal(nominal) => nominal.source_label(),
@@ -1006,7 +1384,17 @@ impl TypeKind {
         return_type: TypeKind,
         effects: EffectRow,
     ) -> Self {
+        Self::function_with_binder(GenericBinder::EMPTY, params, return_type, effects)
+    }
+
+    pub(crate) fn function_with_binder(
+        binder: GenericBinder,
+        params: impl IntoIterator<Item = TypeKind>,
+        return_type: TypeKind,
+        effects: EffectRow,
+    ) -> Self {
         Self::Function {
+            binder,
             params: params.into_iter().collect(),
             return_type: Box::new(return_type),
             effects,

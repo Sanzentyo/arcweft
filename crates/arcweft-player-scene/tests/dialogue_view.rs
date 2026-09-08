@@ -7,7 +7,12 @@ use arcweft_bundle::standard_view::{
     dialogue_program, dialogue_style, dialogue_text, install_dialogue_handler_awbc,
 };
 use arcweft_character::id::CharacterId;
-use arcweft_core::{awbc::schema::AwbcProgram, entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_core::{
+    awbc::schema::AwbcProgram,
+    entry::RuntimeValueDigest,
+    plan::RuntimeLineId,
+    runtime_id::{DialogueActivationId, RuntimeDialogueContentPlanId, RuntimePersistentFiberId},
+};
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_player_scene::{
@@ -16,7 +21,7 @@ use arcweft_player_scene::{
     input::{InputController, InputPointerModifiers},
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_render_wgpu::{
     geometry::{PreparedTextOwnerKind, RenderPreferences, RenderViewport},
     view_scene::ViewPrimitive,
@@ -42,6 +47,17 @@ fn test_source_ref() -> ProductSourceRef {
     )
     .expect("test document");
     ProductSourceRef::try_for_identity(source.identity()).expect("product source reference")
+}
+
+fn dialogue_activation() -> DialogueActivationId {
+    DialogueActivationId::new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x63; 32])
+            .expect("fixture artifact"),
+        RuntimePersistentFiberId::from_allocated(1),
+        serde_json::from_value::<RuntimeDialogueContentPlanId>(serde_json::json!(1))
+            .expect("fixture content identity"),
+        0,
+    )
 }
 
 #[test]
@@ -181,17 +197,19 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let program = dialogue_program();
     let text = dialogue_text();
     let style = dialogue_style();
+    let activation = dialogue_activation();
     let mut presentation = BundlePresentationSnapshot::default();
     presentation
         .dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
+            activation.clone(),
             DialogueViewDefinition::new(arcweft_bundle::standard_view::dialogue_view_id()),
             frame,
         )])
         .expect("dialogue append applies");
     presentation
         .dialogue
-        .synchronize_waiting_line(Some(&line))
+        .synchronize_waiting_activation(Some(&activation))
         .expect("waiting entry synchronizes");
 
     let style_source = arcweft_bundle::standard_view::dialogue_style_source_document();
@@ -248,22 +266,44 @@ fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
 }
 
 fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
-    resolve_frame(
-        &DialogueContentSpec::new(
-            line.clone(),
-            TextKey::try_new("text.vertical_ruby").expect("text key"),
-            RichTextDocument::new(vec![RichTextNode::Ruby {
-                base: "漢字".to_owned(),
-                ruby: "かんじ".to_owned(),
-            }]),
-            support::character_plan(),
-            arcweft_text_model::DialoguePresentationSnapshot::new(
-                support::dialogue_profile(),
-                support::dialogue_profile_revision(),
-            ),
-            Vec::new(),
-            test_source_ref(),
+    let template = arcweft_text_model::DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(vec![RichTextNode::Ruby {
+            body: vec![RichTextNode::Text {
+                text: "漢字".to_owned(),
+            }],
+            ruby: "かんじ".to_owned(),
+        }]),
+    )
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
+        line.clone(),
+        TextKey::try_new("text.vertical_ruby").expect("text key"),
+        &template,
+        support::character_plan(),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
         ),
+        Vec::new(),
+        test_source_ref(),
+    )
+    .expect("dialogue spec");
+    let content = arcweft_core::value::RuntimeDialogueContentValue::try_new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+            .expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope");
+    resolve_frame_with_template(
+        &spec,
+        &template,
+        &content,
         &RuntimeLineContext::new(
             Vec::new(),
             DialoguePresentationCharacter {
@@ -321,7 +361,6 @@ fn prepare(presentation: &BundlePresentationSnapshot) -> PlayerPreparedFrame {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )

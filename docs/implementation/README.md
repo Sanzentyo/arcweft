@@ -281,8 +281,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   `rich_text.ruby.size`; nested line-option values such as
   `rich_text=rich_text_style(ruby=ruby_style(size=11px))` now preserve the leaf
   `rich_text.ruby.size` source range for runtime-plan JSON and LSP definition
-  targets. Inline rich-text spans such as
-  `[.ruby_over ruby_size=11px]...[/]` now contribute `InlineSpan` cascade
+  targets. Typed content calls such as
+  `#layout(.ruby_over, ruby_size=11px)[...]` contribute content-scoped cascade
   entries with leaf source ranges, and LSP hover/definition/reference path
   filtering can select those inline leaf fields from dialogue content. Dialogue
   content outside a selected inline style field still falls back to the whole
@@ -303,17 +303,11 @@ Phase 0 / Phase 1 minimal Rust workspace:
   extraction actions were deleted with the semantic speaker canonicalizer.
   Hover, definition, and reference projection remain frozen consumers of the
   current runtime cascade until the typed CharacterDialogue authority switch.
-  The retained canonical RichText action includes dialogue content embedded in
-  line-result `let` bindings such as `let handles = alice()[...] with: ...`, and
-  returns one coordinated rewrite edit so paired constructs such as
-  `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
-  rewrite. Runtime rich-text lowering and formatter/LSP canonicalization treat
-  unknown dot selectors without attributes as zero-width markers, while
-  unknown dot selectors with attributes such as `[.sparkle amp=2px]...[/]`
-  infer custom effect spans and canonicalize them to
-  `[effect .sparkle amp=2px]...[/effect]`. The deleted general sugar planner no
-  longer rewrites speaker lines, `.say`, `with:`, parent paths, ruby shorthand,
-  or scalar dialogue tags. The full rich-text grammar check fixture now includes a
+  The formatter, CLI, and LSP no longer own a RichText source-rewrite action.
+  Body-bearing presentation is authored directly through typed
+  `#call(...)[content]` applications, while bracket forms are closed zero-width
+  point actions. Unknown dot selectors have no inferred span or custom-effect
+  fallback. The full rich-text grammar check fixture now includes a
   family-relative `dialogue defaults` profile and canonical nested `rich_text`
   typography blocks in both defaults and character `dialogue_style` examples.
   Command-backed tooling actions return focused LSP `WorkspaceEdit` values
@@ -332,8 +326,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   lints whose default severity is `error`, so
   `identity::decl_binding_mismatch` no longer reports as an error while still
   exiting successfully. Entity declaration identity linting treats a surface
-  alias such as `character @character.alice Alice as alice` as the declaration
-  name for ID comparison instead of comparing against the display label. It resolves
+  named Character declaration as the source authority; explicit public IDs are
+  reserved for generated or identity-diagnostic source. It resolves
   `arcw.toml` near opened documents, caches profile metadata per document URI,
   refreshes profile metadata on open, save, watched-file, and configuration
   notifications, loads project-local adapter manifests and Rust ABI JSON into
@@ -886,7 +880,7 @@ Current high-confidence state:
   zero-width dialogue markers, line-plan `on mark(.name):` handlers, generic
   line-scoped `thread` blocks, scoped `defer { ... }`, outcome-guarded
   `defer on completed|cancelled|failed`, flat `=== ... ===` fence sugar,
-  `wait(mark(...))` / `wait(duration)` waits, and `'line.*`
+  checked duration waits, reserved-but-rejected `wait(mark(...))`, and `'line.*`
   lifetime registry paths with optional `?` reads. Local dialogue `[hook ...]`
   and `#[hook ...]` syntax is removed; top-level engine hooks remain.
 ## Current Direction
@@ -1727,8 +1721,9 @@ Current high-confidence state:
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.
-- Phase 2.1 tooling has a Sans I/O crate, `arcweft-tooling`, for source edit
-  reports, formatting, RichText-only canonicalization, and source code actions.
+- Phase 2.1 tooling has a Sans I/O crate, `arcweft-tooling`, for diagnostics,
+  formatting, and typed source projections. The former RichText-only
+  canonicalizer/source-action API was deleted; it is not a migration surface.
   The AW-AH-003 sema-backed Speaker canonicalizer, its CLI command, and its LSP
   project-reload/action path were deleted after the final CharacterDialogue
   contracts superseded that carrier.
@@ -1888,7 +1883,7 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/01-language/grammar.md`: grammar summary for `scope`, relative IDs, module paths, and await grouping.
 - `docs/01-language/scenario-surface-syntax.md`: dialogue, choice, and scenario-facing sugar examples.
 - `docs/01-language/modules.md`: `self::`, `super::`, `crate::`, and `parent::` normalization.
-- `docs/04-tooling/cli.md`: explicit formatting/canonicalization commands and
+- `docs/04-tooling/cli.md`: explicit formatting behavior and
   the typed-owner requirement for any future ID materializer.
 - `docs/04-tooling/lsp.md`: source code actions and the removed raw-source ID
   materialization boundary.

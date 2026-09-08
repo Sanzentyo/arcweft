@@ -49,7 +49,7 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         kind: SyntaxKind::CharacterDeclarationItem,
         missing_name: "character {}\n",
         wrong_family_id: "character @view.Wrong Wrong {}\n",
-        relative_id: "character @character:.Wrong Wrong {}\n",
+        relative_id: "character @character:.Wrong {}\n",
         keyword_name: "character view {}\n",
         wrong_id_text: "@view.Wrong",
         keyword_text: "view",
@@ -115,8 +115,8 @@ fn retained_headers_keep_docs_attributes_visibility_ids_names_and_aliases_typed(
     let source = concat!(
         "/// Character documentation\n",
         "#[verify.reviewed]\n",
-        "pub(crate) character @character.alice Alice as alice {\n",
-        "    display_name = \"Alice\"\n",
+        "pub(crate) character @character.alice {\n",
+        "    display = \"Alice\"\n",
         "}\n",
     );
     let built = parse(source);
@@ -127,9 +127,7 @@ fn retained_headers_keep_docs_attributes_visibility_ids_names_and_aliases_typed(
         SyntaxKind::OuterAttribute,
         SyntaxKind::Visibility,
         SyntaxKind::DeclarationPublicId,
-        SyntaxKind::NameDefinition,
-        SyntaxKind::SurfaceAlias,
-        SyntaxKind::CharacterDisplayNameMember,
+        SyntaxKind::CharacterDisplayMember,
         SyntaxKind::LiteralExpression,
     ] {
         assert!(
@@ -155,7 +153,7 @@ fn blank_logical_line_detaches_documentation_from_a_retained_header() {
 
 #[test]
 fn retained_headers_are_lossless_for_lf_crlf_and_unicode_identifiers() {
-    let lf = "character 会話2 {\n    display_name = \"アリス\"\n}\n";
+    let lf = "character 会話2 {\n    display = \"アリス\"\n}\n";
     let crlf = lf.replace('\n', "\r\n");
     for source in [lf, crlf.as_str()] {
         let built = parse(source);

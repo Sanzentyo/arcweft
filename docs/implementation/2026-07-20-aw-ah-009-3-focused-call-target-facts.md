@@ -10,7 +10,7 @@ resolver. It does not publish an LSP result and does not claim completion of
 AW-AH-009.3.
 
 The cut is integrated above main `5d33b2ac3e38` after the CharacterDialogue
-domain switch and the proof-only trusted-metadata cut. The old dialogue `.say`
+domain switch and the proof-only trusted-metadata cut. The old dialogue builder
 surface and
 `DialogueCallableId::SpeakerPreset` are not restored as signature-query
 families.
@@ -76,7 +76,7 @@ FX, enum constructors, builtins, Agent intrinsics, presentation calls,
 inherent methods, trait methods, data-last fallback, and function values still
 need one native query/result-builder integration or explicit
 non-applicability evidence. Dialogue query coverage must follow the accepted
-CharacterDialogue surface; it must not revive `.say`, speaker presets, or an
+CharacterDialogue surface; it must not revive the former builder, speaker presets, or an
 obsolete content-call inventory.
 
 ## Remaining AW-AH-009.3 work

@@ -839,13 +839,13 @@ fn observe_native_jlreq_paragraph_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-jlreq-paragraph-class-mix-{strictness}"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq={strictness}]天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.{strictness})[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report(&path);
@@ -860,13 +860,13 @@ fn assert_native_strict_jlreq_paragraph_class_mix_raw_crop(writing_mode: &str, c
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬月火、山々人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -1001,13 +1001,13 @@ fn observe_native_published_jlreq_plain_western_word_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-plain-western-word-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬Web人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬Web人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -1028,13 +1028,13 @@ fn assert_native_published_jlreq_plain_western_word_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬Web人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬Web人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -1186,13 +1186,13 @@ fn observe_native_published_jlreq_western_word_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-western-word-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -1212,13 +1212,13 @@ fn assert_native_published_jlreq_western_word_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬Web-Test人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -1409,13 +1409,13 @@ fn observe_native_published_jlreq_apostrophe_western_word_class_mix_fixture(
             case.label
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -1452,13 +1452,13 @@ fn assert_native_published_jlreq_apostrophe_western_word_class_mix_case_raw_crop
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -1705,13 +1705,13 @@ fn observe_native_published_jlreq_accented_latin_word_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬café人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬café人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -1732,13 +1732,13 @@ fn assert_native_published_jlreq_accented_latin_word_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬café人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬café人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -1922,13 +1922,13 @@ fn observe_native_published_jlreq_decomposed_accented_latin_word_class_mix_fixtu
             "agent-observe-native-{writing_mode}-published-jlreq-decomposed-accented-latin-word-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -1950,13 +1950,13 @@ fn assert_native_published_jlreq_decomposed_accented_latin_word_class_mix_raw_cr
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2102,13 +2102,13 @@ fn observe_native_zwj_grapheme_strict_class_mix_fixture(writing_mode: &str) -> s
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-zwj-grapheme-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2125,13 +2125,13 @@ fn assert_native_zwj_grapheme_strict_class_mix_raw_crop(writing_mode: &str, capt
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2271,13 +2271,13 @@ fn observe_native_decomposed_kana_strict_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-decomposed-kana-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2295,13 +2295,13 @@ fn assert_native_decomposed_kana_strict_class_mix_raw_crop(writing_mode: &str, c
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2441,13 +2441,13 @@ fn observe_native_variation_selector_strict_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-variation-selector-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2468,13 +2468,13 @@ fn assert_native_variation_selector_strict_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2613,13 +2613,13 @@ fn observe_native_emoji_modifier_strict_class_mix_fixture(writing_mode: &str) ->
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-emoji-modifier-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2637,13 +2637,13 @@ fn assert_native_emoji_modifier_strict_class_mix_raw_crop(writing_mode: &str, ca
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2783,13 +2783,13 @@ fn observe_native_regional_indicator_strict_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-regional-indicator-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2810,13 +2810,13 @@ fn assert_native_regional_indicator_strict_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -2955,13 +2955,13 @@ fn observe_native_keycap_strict_class_mix_fixture(writing_mode: &str) -> serde_j
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-keycap-strict-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -2978,13 +2978,13 @@ fn assert_native_keycap_strict_class_mix_raw_crop(writing_mode: &str, capture_ki
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -3129,13 +3129,13 @@ fn observe_native_published_jlreq_unit_symbol_class_mix_fixture(
             case.label
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -3171,13 +3171,13 @@ fn assert_native_published_jlreq_unit_symbol_class_mix_case_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -3405,13 +3405,13 @@ fn observe_native_published_jlreq_numeric_unit_class_mix_fixture(
             case.label
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -3447,13 +3447,13 @@ fn assert_native_published_jlreq_numeric_unit_class_mix_case_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{}][p]
 }}
-",
+"#,
             case.text
         ),
     );
@@ -3681,13 +3681,13 @@ fn observe_native_published_jlreq_numeric_separator_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-numeric-separator-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -3707,13 +3707,13 @@ fn assert_native_published_jlreq_numeric_separator_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬1,234.56人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -3888,13 +3888,13 @@ fn observe_native_published_jlreq_prefixed_abbreviation_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-prefixed-abbreviation-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬$123人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬$123人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -3915,13 +3915,13 @@ fn assert_native_published_jlreq_prefixed_abbreviation_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬$123人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬$123人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4054,13 +4054,13 @@ fn observe_native_published_jlreq_cent_prefixed_abbreviation_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-cent-prefixed-abbreviation-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬¢123人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬¢123人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -4081,13 +4081,13 @@ fn assert_native_published_jlreq_cent_prefixed_abbreviation_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬¢123人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬¢123人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4232,13 +4232,13 @@ fn observe_native_published_jlreq_yen_prefixed_abbreviation_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -4262,13 +4262,13 @@ fn assert_native_published_jlreq_yen_prefixed_abbreviation_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4428,13 +4428,13 @@ fn observe_native_published_jlreq_postfixed_abbreviation_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-postfixed-abbreviation-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬50%人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬50%人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -4455,13 +4455,13 @@ fn assert_native_published_jlreq_postfixed_abbreviation_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬50%人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬50%人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4604,13 +4604,13 @@ fn observe_native_published_jlreq_ideographic_abbreviation_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-{label}-abbreviation-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -4634,13 +4634,13 @@ fn assert_native_published_jlreq_ideographic_abbreviation_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]{text}[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[{text}][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -4798,13 +4798,13 @@ fn observe_native_published_jlreq_reference_mark_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-reference-mark-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬本¹²。人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬本¹²。人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -4824,13 +4824,13 @@ fn assert_native_published_jlreq_reference_mark_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬本¹²。人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬本¹²。人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5031,13 +5031,13 @@ fn observe_native_published_jlreq_parenthesized_reference_mark_class_mix_fixture
             "agent-observe-native-{writing_mode}-published-jlreq-parenthesized-reference-mark-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬本⁽¹⁾。人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬本⁽¹⁾。人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5058,13 +5058,13 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_class_mix_raw_crop
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬本⁽¹⁾。人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬本⁽¹⁾。人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5240,13 +5240,13 @@ fn observe_native_published_jlreq_temperature_suffix_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-temperature-suffix-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬25℃人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬25℃人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5267,13 +5267,13 @@ fn assert_native_published_jlreq_temperature_suffix_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬25℃人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬25℃人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5404,13 +5404,13 @@ fn observe_native_published_jlreq_decomposed_temperature_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-decomposed-temperature-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬25°C人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬25°C人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5431,13 +5431,13 @@ fn assert_native_published_jlreq_decomposed_temperature_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬25°C人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬25°C人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5576,13 +5576,13 @@ fn observe_native_published_jlreq_subscript_object_class_mix_fixture(
     let path = temp_arcw(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-subscript-object-class-mix"),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬H₂O人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬H₂O人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5602,13 +5602,13 @@ fn assert_native_published_jlreq_subscript_object_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬H₂O人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬H₂O人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5786,13 +5786,13 @@ fn observe_native_published_jlreq_greek_subscript_object_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-greek-subscript-object-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5813,13 +5813,13 @@ fn assert_native_published_jlreq_greek_subscript_object_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬α₂β人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -5956,13 +5956,13 @@ fn observe_native_published_jlreq_greek_superscript_object_class_mix_fixture(
             "agent-observe-native-{writing_mode}-published-jlreq-greek-superscript-object-class-mix"
         ),
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α²β人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬α²β人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let json = observe_native_rich_text_layer_report_with_viewport(
@@ -5983,13 +5983,13 @@ fn assert_native_published_jlreq_greek_superscript_object_class_mix_raw_crop(
     let path = temp_arcw(
         &fixture_name,
         &format!(
-            r"
-character @character.alice Alice as alice {{}}
+            r#"
+pub character alice {{ display = "Alice" }}
 
 flow @flow.main main {{
-    alice: [.{writing_mode} jlreq=strict]天地春夏秋冬α²β人。「川」あっいおーえ―中・外………終[/][p]
+    alice: #layout(.{writing_mode}, jlreq=.strict)[天地春夏秋冬α²β人。「川」あっいおーえ―中・外………終][p]
 }}
-"
+"#
         ),
     );
     let dir = temp_dir(&fixture_name);
@@ -6106,4 +6106,3 @@ fn assert_native_published_jlreq_greek_superscript_object_class_mix_objects<'rep
     );
     following_base
 }
-

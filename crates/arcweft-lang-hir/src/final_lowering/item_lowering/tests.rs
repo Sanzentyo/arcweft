@@ -18,10 +18,10 @@ use crate::identity::{
     SyntheticRole,
 };
 use crate::item::{
-    HirActionDeclaration, HirCharacterAssignmentState, HirCharacterSurfaceAlias,
-    HirDeclarationMemberKind, HirDeclarationMemberPoisonState, HirItem, HirItemIssue, HirItemKind,
-    HirItemPoisonState, HirItemPrefix, HirModuleDeclaration, HirParameterKind, HirPublicIdOrigin,
-    HirRequiredName, HirRetainedName, HirRetainedPublicId,
+    HirActionDeclaration, HirCharacterAssignmentState, HirDeclarationMemberKind,
+    HirDeclarationMemberPoisonState, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState,
+    HirItemPrefix, HirModuleDeclaration, HirParameterKind, HirPublicIdOrigin, HirRequiredName,
+    HirRetainedName, HirRetainedPublicId,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
@@ -179,14 +179,14 @@ fn retained_identity_acceptance_matrix_keeps_one_typed_public_id() {
     for (ordinal, (spelling, expected_origin)) in [
         ("character Alice {}\n", HirPublicIdOrigin::DerivedFromName),
         (
-            "character @character.Alice Alice {}\n",
+            "character @character.Alice {}\n",
             HirPublicIdOrigin::Explicit,
         ),
         (
-            "character @character:.Alice Alice {}\n",
+            "character @character:.Alice {}\n",
             HirPublicIdOrigin::Explicit,
         ),
-        ("character @.Alice Alice {}\n", HirPublicIdOrigin::Explicit),
+        ("character @.Alice {}\n", HirPublicIdOrigin::Explicit),
     ]
     .into_iter()
     .enumerate()
@@ -214,12 +214,9 @@ fn retained_identity_acceptance_matrix_keeps_one_typed_public_id() {
         );
     }
 
-    for (ordinal, spelling) in [
-        "character @view.Alice Alice {}\n",
-        "character @view:.Alice Alice {}\n",
-    ]
-    .into_iter()
-    .enumerate()
+    for (ordinal, spelling) in ["character @view.Alice {}\n", "character @view:.Alice {}\n"]
+        .into_iter()
+        .enumerate()
     {
         let parsed = parse(
             &format!("arcweft-test://retained/identity-matrix-wrong-family-{ordinal}"),
@@ -1528,11 +1525,7 @@ fn action_freeze_rejects_parameter_order_scope_membership_and_scope_kind_tamperi
 fn clean_character_publishes_typed_header_member_expression_and_slot_whole() {
     let parsed = parse(
         "arcweft-test://proof/character-final-hir-clean",
-        concat!(
-            "character alice {\n",
-            "    display_name = \"Alice\"\n",
-            "}\n",
-        ),
+        concat!("character alice {\n", "    display = \"Alice\"\n", "}\n",),
     );
     assert!(
         parsed.diagnostics().is_empty(),
@@ -1559,22 +1552,15 @@ fn clean_character_publishes_typed_header_member_expression_and_slot_whole() {
         character.header().name(),
         HirRetainedName::Resolved(name) if name.as_str() == "alice"
     ));
-    assert!(matches!(
-        character.surface_alias(),
-        HirCharacterSurfaceAlias::Absent
-    ));
-
-    let member_id = character
-        .display_name()
-        .expect("display-name member identity");
+    let member_id = character.display().expect("display member identity");
     assert_eq!(item.members(), [member_id]);
     let member = module
         .declaration_members()
         .resolve(member_id)
         .expect("published Character member");
     assert_eq!(member.state(), HirDeclarationMemberPoisonState::Clean);
-    let HirDeclarationMemberKind::CharacterDisplayName(display) = member.kind() else {
-        panic!("typed Character display-name member")
+    let HirDeclarationMemberKind::CharacterDisplay(display) = member.kind() else {
+        panic!("typed Character display member")
     };
     assert_eq!(display.assignment(), HirCharacterAssignmentState::Present);
     assert!(!display.is_duplicate());
@@ -1590,9 +1576,9 @@ fn character_recovery_matrix_keeps_typed_items_and_owner_whole_primaries() {
     let cases = [
         ("missing-name", "character {}\n", HirItemIssue::MissingName),
         (
-            "missing-alias",
+            "removed-header-components",
             "character Alice as {}\n",
-            HirItemIssue::MissingName,
+            HirItemIssue::MalformedHeader,
         ),
         (
             "missing-body",
@@ -1606,7 +1592,7 @@ fn character_recovery_matrix_keeps_typed_items_and_owner_whole_primaries() {
         ),
         (
             "unclosed-body",
-            "character Alice {\n    display_name = \"Alice\"\n",
+            "character Alice {\n    display = \"Alice\"\n",
             HirItemIssue::Recovery,
         ),
     ];
@@ -1638,8 +1624,8 @@ fn character_member_recovery_preserves_all_ordinals_and_item_owner_whole_primary
         "arcweft-test://proof/character-final-hir-members",
         concat!(
             "character Alice {\n",
-            "    display_name \"Alice\"\n",
-            "    display_name =\n",
+            "    display \"Alice\"\n",
+            "    display =\n",
             "    voice = @res.voice\n",
             "}\n",
         ),
@@ -1693,7 +1679,7 @@ fn character_member_recovery_preserves_all_ordinals_and_item_owner_whole_primary
 fn recovered_character_initializer_remains_a_typed_child_and_poisoned_member() {
     let parsed = parse(
         "arcweft-test://proof/character-final-hir-recovered-child",
-        concat!("character Alice {\n", "    display_name = @\n", "}\n",),
+        concat!("character Alice {\n", "    display = @\n", "}\n",),
     );
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
@@ -1708,8 +1694,8 @@ fn recovered_character_initializer_remains_a_typed_child_and_poisoned_member() {
             crate::item::HirDeclarationMemberIssue::RecoveredChild,
         )
     );
-    let HirDeclarationMemberKind::CharacterDisplayName(display) = member.kind() else {
-        panic!("display-name member")
+    let HirDeclarationMemberKind::CharacterDisplay(display) = member.kind() else {
+        panic!("display member")
     };
     let initializer = display
         .initializer()

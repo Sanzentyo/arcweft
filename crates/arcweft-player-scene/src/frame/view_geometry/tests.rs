@@ -228,7 +228,6 @@ impl GeometryFixture {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         }
     }

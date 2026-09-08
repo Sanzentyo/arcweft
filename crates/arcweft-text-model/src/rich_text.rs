@@ -1,10 +1,10 @@
 //! Authored rich-text nodes and dialogue-local control data.
 
-use crate::{RichTextSpanKind, RichTextStyle};
+use crate::RichTextStyle;
 use arcweft_core::runtime_id::{
     RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
 };
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::InlineFailureSelection;
 use serde::{Deserialize, Serialize};
 
 /// Ordered rich-text document used by source resolvers.
@@ -21,15 +21,21 @@ pub enum RichTextNode {
     Text {
         text: String,
     },
+    /// A lexical modifier with an owned, recursively typed body.
+    ///
+    /// Scope boundaries are structural; there is no separate close node or
+    /// balance stack for a valid document.
+    Scope {
+        style: Box<RichTextStyle>,
+        body: Vec<RichTextNode>,
+    },
     Ruby {
-        base: String,
+        body: Vec<RichTextNode>,
         ruby: String,
     },
-    StyleStart {
-        style: Box<RichTextStyle>,
-    },
-    StyleEnd {
-        span: RichTextSpanKind,
+    /// Source-authored literal text that must not be interpreted as controls.
+    Raw {
+        text: String,
     },
     Control {
         control: RichTextControl,
@@ -39,16 +45,20 @@ pub enum RichTextNode {
         slot: RuntimeDialogueValueSlotId,
         /// Stable authored label used only for diagnostics and fallback text.
         label: String,
-        on_error: InlineFailurePolicy,
+        on_error: InlineFailureSelection,
+    },
+    /// Inserts the immutable fragment selected by a typed Content binding.
+    ///
+    /// Expansion is owned by [`crate::DialogueContentMaterializer`]; a
+    /// renderer receives the resulting node tree and never decodes a raw
+    /// runtime value for this node.
+    ContentInsert {
+        slot: RuntimeDialogueValueSlotId,
+        on_error: InlineFailureSelection,
     },
     HostEvent {
         event: DialogueHostEvent,
     },
-    ConditionalStart {
-        condition: RuntimeDialogueValueSlotId,
-    },
-    ConditionalElse,
-    ConditionalEnd,
 }
 
 /// Text-container-local control instruction.
@@ -63,6 +73,10 @@ pub enum RichTextControl {
     },
     Clear,
     Reset,
+    /// Changes the reveal rate for following source-ordered content.
+    RevealRate {
+        milli_cps: crate::Milli,
+    },
     Mark {
         mark: RuntimeDialogueMarkId,
         diagnostic_name: String,
@@ -72,9 +86,6 @@ pub enum RichTextControl {
     /// mark label.
     Effect {
         site: RuntimeDialogueEffectSiteId,
-    },
-    Raw {
-        text: String,
     },
 }
 
@@ -122,24 +133,23 @@ impl RichTextDocument {
 }
 
 impl RichTextNode {
-    fn static_text(&self) -> Option<&str> {
+    fn static_text(&self) -> Option<String> {
         match self {
-            Self::Text { text }
-            | Self::Control {
-                control: RichTextControl::Raw { text },
-            } => Some(text),
-            Self::Ruby { base, .. } => Some(base),
+            Self::Text { text } | Self::Raw { text } => Some(text.clone()),
+            Self::Scope { body, .. } | Self::Ruby { body, .. } => {
+                let mut text = String::new();
+                for node in body {
+                    text.push_str(&node.static_text()?);
+                }
+                Some(text)
+            }
             Self::Control {
                 control: RichTextControl::HardBreak,
-            } => Some("\n"),
-            Self::StyleStart { .. }
-            | Self::StyleEnd { .. }
-            | Self::Control { .. }
+            } => Some("\n".to_owned()),
+            Self::Control { .. }
             | Self::Interpolation { .. }
-            | Self::HostEvent { .. }
-            | Self::ConditionalStart { .. }
-            | Self::ConditionalElse
-            | Self::ConditionalEnd => None,
+            | Self::ContentInsert { .. }
+            | Self::HostEvent { .. } => None,
         }
     }
 }

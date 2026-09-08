@@ -14,8 +14,9 @@ behavior; no source gate is used.
   builtin selector, family, phase, and property-schema metadata.
 - Replaced the syntax and runtime-plan membership tables with owner lookups and
   typed exhaustive dispatch.
-- Classified attribute-free `[.sparkle]` as an effect and lowered it through
-  the normal typed Fx path.
+- At that revision, classified an attribute-free dot selector as an effect.
+  That inferred surface was later deleted; current source uses an explicit
+  typed `#fx(<typed Fx expression>)[...]` content call.
 
 ### AW-AH-010 — checked physical text bounds
 

@@ -4,7 +4,7 @@ use crate::effect_row::{EffectRow, EffectRowTail};
 
 use super::{
     EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, StageActorHandleType,
-    TypeKind, VariantPayloadShape, VariantPayloadType,
+    TypeKind, VariantPayloadType,
 };
 
 impl TypeKind {
@@ -148,18 +148,36 @@ impl TypeKind {
                     .then_with(|| left_must_drop.cmp(right_must_drop)),
                 (
                     Self::Function {
+                        binder: left_binder,
                         params: left_params,
                         return_type: left_return,
                         effects: left_effects,
                     },
                     Self::Function {
+                        binder: right_binder,
                         params: right_params,
                         return_type: right_return,
                         effects: right_effects,
                     },
-                ) => type_slice_ordering(left_params, right_params)
+                ) => left_binder
+                    .cmp(right_binder)
+                    .then_with(|| type_slice_ordering(left_params, right_params))
                     .then_with(|| left_return.stable_ordering(right_return))
                     .then_with(|| effect_row_ordering(left_effects, right_effects)),
+                (Self::CompileTimeCallable(left), Self::CompileTimeCallable(right)) => {
+                    left.cmp(right)
+                }
+                (Self::CompileTimeScalar(left), Self::CompileTimeScalar(right)) => left
+                    .declaration()
+                    .cmp(right.declaration())
+                    .then_with(|| left.kind().cmp(&right.kind())),
+                (Self::CompileTimeEnum(left), Self::CompileTimeEnum(right)) => left.cmp(right),
+                (Self::CompileTimeFx(left), Self::CompileTimeFx(right)) => left.cmp(right),
+                (Self::FixedVector(left), Self::FixedVector(right)) => left
+                    .dimensions()
+                    .cmp(&right.dimensions())
+                    .then_with(|| left.component().stable_ordering(right.component())),
+                (Self::MetaType(left), Self::MetaType(right)) => left.stable_ordering(right),
                 (Self::GenericParam(left), Self::GenericParam(right)) => left.cmp(right),
                 (Self::ProjectNominal(left), Self::ProjectNominal(right)) => left
                     .declaration()
@@ -236,47 +254,36 @@ fn variant_payload_ordering(left: &VariantPayloadType, right: &VariantPayloadTyp
     left.owner_family()
         .canonical_tag()
         .cmp(&right.owner_family().canonical_tag())
-        .then_with(|| left.owner_type().cmp(&right.owner_type()))
+        .then_with(|| left.owner_type().stable_ordering(right.owner_type()))
         .then_with(|| left.case_ordinal().cmp(&right.case_ordinal()))
-        .then_with(|| left.case().cmp(&right.case()))
         .then_with(|| variant_payload_shape_ordering(left.shape(), right.shape()))
 }
 
 fn variant_payload_shape_ordering(
-    left: &VariantPayloadShape,
-    right: &VariantPayloadShape,
+    left: &super::VariantPayloadTypeShape,
+    right: &super::VariantPayloadTypeShape,
 ) -> Ordering {
+    use super::VariantPayloadTypeShape;
     match (left, right) {
-        (VariantPayloadShape::Unit, VariantPayloadShape::Unit) => Ordering::Equal,
-        (VariantPayloadShape::Unit, _) => Ordering::Less,
-        (_, VariantPayloadShape::Unit) => Ordering::Greater,
-        (VariantPayloadShape::Tuple(left), VariantPayloadShape::Tuple(right)) => left
+        (VariantPayloadTypeShape::Tuple(left), VariantPayloadTypeShape::Tuple(right)) => {
+            type_slice_ordering(left, right)
+        }
+        (VariantPayloadTypeShape::Record(left), VariantPayloadTypeShape::Record(right)) => left
             .iter()
-            .zip(right)
+            .zip(right.iter())
             .map(|(left, right)| {
                 left.ordinal()
                     .cmp(&right.ordinal())
-                    .then_with(|| left.semantic_id().cmp(&right.semantic_id()))
                     .then_with(|| left.ty().stable_ordering(right.ty()))
             })
             .find(|ordering| *ordering != Ordering::Equal)
             .unwrap_or_else(|| left.len().cmp(&right.len())),
-        (VariantPayloadShape::Record(left), VariantPayloadShape::Record(right)) => left
-            .iter()
-            .zip(right)
-            .map(|(left, right)| {
-                left.ordinal()
-                    .cmp(&right.ordinal())
-                    .then_with(|| left.semantic_id().cmp(&right.semantic_id()))
-                    .then_with(|| left.ty().stable_ordering(right.ty()))
-            })
-            .find(|ordering| *ordering != Ordering::Equal)
-            .unwrap_or_else(|| left.len().cmp(&right.len())),
-        (VariantPayloadShape::Tuple(_), VariantPayloadShape::Record(_)) => Ordering::Less,
-        (VariantPayloadShape::Record(_), VariantPayloadShape::Tuple(_)) => Ordering::Greater,
+        (VariantPayloadTypeShape::Tuple(_), VariantPayloadTypeShape::Record(_)) => Ordering::Less,
+        (VariantPayloadTypeShape::Record(_), VariantPayloadTypeShape::Tuple(_)) => {
+            Ordering::Greater
+        }
     }
 }
-
 fn entity_type_ordering(left: &EntityType, right: &EntityType) -> Ordering {
     entity_kind_ordering(left.kind(), right.kind()).then_with(|| {
         match (left.value(), right.value()) {
@@ -483,5 +490,11 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::VoiceHandle => 85,
         TypeKind::VariantPayload(_) => 86,
         TypeKind::StatementIngress(_) => 87,
+        TypeKind::CompileTimeCallable(_) => 88,
+        TypeKind::MetaType(_) => 89,
+        TypeKind::CompileTimeScalar(_) => 90,
+        TypeKind::CompileTimeEnum(_) => 91,
+        TypeKind::CompileTimeFx(_) => 92,
+        TypeKind::FixedVector(_) => 93,
     }
 }

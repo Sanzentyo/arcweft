@@ -1,9 +1,6 @@
 //! Declaration-owned generic substitution for semantic types.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    convert::Infallible,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::effect_row::{
     EffectIssuerRebindError, EffectRow, EffectRowError, EffectRowTail, EffectSubstitution,
@@ -12,9 +9,8 @@ use crate::effect_row::{
 use crate::effects::EffectSet;
 
 use super::{
-    AcceptedNominalType, AcceptedVariantCaseSemanticId, ArrayLength, EntityType,
-    GenericConstParameterId, GenericTypeParameterId, OpenNominalType, ProjectNominalType, TypeKind,
-    VariantPayloadShape, VariantPayloadType,
+    AcceptedNominalType, EntityType, GenericTypeParameterId, GenericTypeReference, OpenNominalType,
+    ProjectNominalType, TypeKind, VariantPayloadType,
 };
 
 /// One call-site instantiation of declaration-owned generic type parameters.
@@ -64,7 +60,7 @@ fn contains_generic_parameter_where(
     predicate: &impl Fn(&GenericTypeParameterId) -> bool,
 ) -> bool {
     match ty {
-        TypeKind::GenericParam(parameter) => predicate(parameter),
+        TypeKind::GenericParam(parameter) => parameter.free_parameter().is_some_and(predicate),
         TypeKind::Range(inner)
         | TypeKind::Probe(inner)
         | TypeKind::Vec(inner)
@@ -75,7 +71,11 @@ fn contains_generic_parameter_where(
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)
+        | TypeKind::MetaType(inner)
         | TypeKind::BorrowRef { inner, .. } => contains_generic_parameter_where(inner, predicate),
+        TypeKind::FixedVector(vector) => {
+            contains_generic_parameter_where(vector.component(), predicate)
+        }
         TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
             contains_generic_parameter_where(item, predicate)
         }
@@ -188,6 +188,11 @@ fn atomic_contains_generic_parameter(
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
         | TypeKind::CharacterDialogue(_)
+        | TypeKind::CompileTimeCallable(_)
+        | TypeKind::CompileTimeScalar(_)
+        | TypeKind::CompileTimeEnum(_)
+        | TypeKind::CompileTimeFx(_)
+        | TypeKind::FixedVector(_)
         | TypeKind::ViewValue
         | TypeKind::CharacterNominal(_)
         | TypeKind::Named(_)
@@ -219,7 +224,8 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Projection { .. }
         | TypeKind::Tuple(_)
         | TypeKind::Choice(_)
-        | TypeKind::VariantPayload(_) => unreachable!("composite type reached atomic generic scan"),
+        | TypeKind::VariantPayload(_)
+        | TypeKind::MetaType(_) => unreachable!("composite type reached atomic generic scan"),
     }
 }
 
@@ -248,7 +254,7 @@ impl TypeKind {
             return substituted;
         }
         match self {
-            Self::GenericParam(parameter) => substitutions
+            Self::GenericParam(GenericTypeReference::Free(parameter)) => substitutions
                 .get(parameter)
                 .cloned()
                 .unwrap_or_else(|| self.clone()),
@@ -296,10 +302,12 @@ impl TypeKind {
                 len: len.clone(),
             },
             Self::Function {
+                binder,
                 params,
                 return_type,
                 effects,
-            } => Self::function_with_effects(
+            } => Self::function_with_binder(
+                *binder,
                 params
                     .iter()
                     .map(|param| param.substitute_type_parameters(substitutions)),
@@ -330,120 +338,16 @@ impl TypeKind {
             Self::DialogueLine(result) => {
                 Self::DialogueLine(Box::new(result.substitute_type_parameters(substitutions)))
             }
-            Self::VariantPayload(payload) => {
-                map_variant_payload_type(payload, |ty| ty.substitute_type_parameters(substitutions))
-            }
-            other => other.clone(),
-        }
-    }
-
-    /// Replaces declaration-owned equality-only constant parameters throughout
-    /// this type. The completed constraint solution is the sole producer of
-    /// these rows; values are canonical `Const` or retained rigid/future
-    /// `Generic` identities, never inferred/error sentinels or expression ASTs.
-    pub(crate) fn substitute_const_parameters(
-        &self,
-        substitutions: &BTreeMap<GenericConstParameterId, ArrayLength>,
-    ) -> Self {
-        let recurse = |ty: &Self| ty.substitute_const_parameters(substitutions);
-        match self {
-            Self::ProjectNominal(nominal) => Self::ProjectNominal(ProjectNominalType::new(
-                nominal.declaration().clone(),
-                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
+            Self::VariantPayload(payload) => Self::VariantPayload(Box::new(
+                payload.map(|ty| ty.substitute_type_parameters(substitutions)),
             )),
-            Self::AcceptedNominal(nominal) => Self::AcceptedNominal(AcceptedNominalType::new(
-                nominal.declaration().clone(),
-                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
-            )),
-            Self::OpenNominal(nominal) => Self::OpenNominal(OpenNominalType::new(
-                nominal.rule().clone(),
-                nominal.path().clone(),
-                nominal.arguments().iter().map(recurse).collect::<Vec<_>>(),
-            )),
-            Self::Range(inner) => Self::Range(Box::new(recurse(inner))),
-            Self::Probe(inner) => Self::Probe(Box::new(recurse(inner))),
-            Self::Vec(inner) => Self::Vec(Box::new(recurse(inner))),
-            Self::Slice(inner) => Self::Slice(Box::new(recurse(inner))),
-            Self::Seq(inner) => Self::Seq(Box::new(recurse(inner))),
-            Self::Need(inner) => Self::Need(Box::new(recurse(inner))),
-            Self::Option(inner) => Self::Option(Box::new(recurse(inner))),
-            Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner))),
-            Self::Shared(inner) => Self::Shared(Box::new(recurse(inner))),
-            Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner))),
-            Self::BorrowRef {
-                kind,
-                lifetime,
-                inner,
-            } => Self::BorrowRef {
-                kind: *kind,
-                lifetime: lifetime.clone(),
-                inner: Box::new(recurse(inner)),
-            },
-            Self::IteratorState { family, item } => Self::IteratorState {
-                family: *family,
-                item: Box::new(recurse(item)),
-            },
-            Self::Array { item, len } => Self::Array {
-                item: Box::new(recurse(item)),
-                len: match len {
-                    ArrayLength::Generic(parameter) => substitutions
-                        .get(parameter)
-                        .cloned()
-                        .unwrap_or_else(|| len.clone()),
-                    ArrayLength::Const(_) | ArrayLength::Error(_) | ArrayLength::Inferred => {
-                        len.clone()
-                    }
-                },
-            },
-            Self::Ref(entity) => Self::Ref(EntityType::new(
-                entity.kind().clone(),
-                entity.value().map(recurse),
-            )),
-            Self::Map { kind, key, value } => Self::Map {
-                kind: *kind,
-                key: Box::new(recurse(key)),
-                value: Box::new(recurse(value)),
-            },
-            Self::Stream { item, error } => Self::Stream {
-                item: Box::new(recurse(item)),
-                error: Box::new(recurse(error)),
-            },
-            Self::Parser { item, error } => Self::Parser {
-                item: Box::new(recurse(item)),
-                error: Box::new(recurse(error)),
-            },
-            Self::Result { ok, error } => Self::Result {
-                ok: Box::new(recurse(ok)),
-                error: Box::new(recurse(error)),
-            },
-            Self::Function {
-                params,
-                return_type,
-                effects,
-            } => Self::function_with_effects(
-                params.iter().map(recurse),
-                recurse(return_type),
-                effects.clone(),
-            ),
-            Self::Projection {
-                subject,
-                trait_name,
-                assoc,
-            } => Self::Projection {
-                subject: Box::new(recurse(subject)),
-                trait_name: trait_name.clone(),
-                assoc: assoc.clone(),
-            },
-            Self::Tuple(items) => Self::Tuple(items.iter().map(recurse).collect()),
-            Self::Choice(items) => Self::Choice(items.iter().map(recurse).collect()),
-            Self::VariantPayload(payload) => map_variant_payload_type(payload, recurse),
             other => other.clone(),
         }
     }
 
     /// Applies issuer-backed effect bindings to every nested function row.
-    /// Type and effect substitution are separate authorities; the checked
-    /// lower solution composes them in that order.
+    /// This projection does not reinterpret caller-owned free type/constant
+    /// declarations as slots in a callee template.
     pub(crate) fn substitute_effect_rows(
         &self,
         substitutions: &EffectSubstitution,
@@ -485,6 +389,11 @@ impl TypeKind {
             Self::ThreadHandle(inner) => Self::ThreadHandle(Box::new(recurse(inner)?)),
             Self::Shared(inner) => Self::Shared(Box::new(recurse(inner)?)),
             Self::DialogueLine(inner) => Self::DialogueLine(Box::new(recurse(inner)?)),
+            Self::MetaType(inner) => Self::MetaType(Box::new(recurse(inner)?)),
+            Self::FixedVector(vector) => Self::FixedVector(super::FixedVectorType::new(
+                vector.dimensions(),
+                recurse(vector.component())?,
+            )),
             Self::BorrowRef {
                 kind,
                 lifetime,
@@ -524,10 +433,12 @@ impl TypeKind {
                 error: Box::new(recurse(error)?),
             },
             Self::Function {
+                binder,
                 params,
                 return_type,
                 effects,
-            } => Self::function_with_effects(
+            } => Self::function_with_binder(
+                *binder,
                 params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
                 recurse(return_type)?,
                 effects.resolve_partial(substitutions)?,
@@ -547,7 +458,9 @@ impl TypeKind {
             Self::Choice(items) => {
                 Self::Choice(items.iter().map(recurse).collect::<Result<Vec<_>, _>>()?)
             }
-            Self::VariantPayload(payload) => try_map_variant_payload_type(payload, recurse)?,
+            Self::VariantPayload(payload) => {
+                Self::VariantPayload(Box::new(payload.try_map(recurse)?))
+            }
             other => other.clone(),
         })
     }
@@ -622,6 +535,11 @@ impl TypeKind {
             Self::Shared(inner) => Self::Shared(substitute(inner)),
             Self::Probe(inner) => Self::Probe(substitute(inner)),
             Self::DialogueLine(inner) => Self::DialogueLine(substitute(inner)),
+            Self::MetaType(inner) => Self::MetaType(substitute(inner)),
+            Self::FixedVector(vector) => Self::FixedVector(super::FixedVectorType::new(
+                vector.dimensions(),
+                *substitute(vector.component()),
+            )),
             _ => return None,
         })
     }
@@ -631,73 +549,15 @@ fn variant_payload_contains_generic(
     payload: &VariantPayloadType,
     predicate: &impl Fn(&GenericTypeParameterId) -> bool,
 ) -> bool {
-    payload.shape().tuple_fields().is_some_and(|fields| {
-        fields
-            .iter()
-            .any(|field| contains_generic_parameter_where(field.ty(), predicate))
-    }) || payload.shape().record_fields().is_some_and(|fields| {
-        fields
-            .iter()
-            .any(|field| contains_generic_parameter_where(field.ty(), predicate))
-    })
-}
-
-fn map_variant_payload_type(
-    payload: &VariantPayloadType,
-    mut map: impl FnMut(&TypeKind) -> TypeKind,
-) -> TypeKind {
-    try_map_variant_payload_type(payload, |ty| Ok::<_, Infallible>(map(ty)))
-        .unwrap_or_else(|_| unreachable!("infallible variant payload mapping failed"))
-}
-
-fn try_map_variant_payload_type<E>(
-    payload: &VariantPayloadType,
-    mut map: impl FnMut(&TypeKind) -> Result<TypeKind, E>,
-) -> Result<TypeKind, E> {
-    let shape = match payload.shape() {
-        VariantPayloadShape::Unit => VariantPayloadShape::Unit,
-        VariantPayloadShape::Tuple(fields) => {
-            let mapped = fields
-                .iter()
-                .map(|field| map(field.ty()))
-                .collect::<Result<Vec<_>, _>>()?;
-            VariantPayloadShape::try_tuple(
-                payload.owner_family(),
-                payload.owner_type(),
-                payload.case_ordinal(),
-                mapped,
-            )
-            .unwrap_or_else(|_| unreachable!("valid variant tuple shape became invalid"))
-        }
-        VariantPayloadShape::Record(fields) => {
-            let mapped = fields
-                .iter()
-                .map(|field| Ok((field.diagnostic_name().to_owned(), map(field.ty())?)))
-                .collect::<Result<Vec<_>, E>>()?;
-            VariantPayloadShape::try_record(
-                payload.owner_family(),
-                payload.owner_type(),
-                payload.case_ordinal(),
-                mapped,
-            )
-            .unwrap_or_else(|_| unreachable!("valid variant record shape became invalid"))
-        }
-    };
-    let case = AcceptedVariantCaseSemanticId::issue(
-        payload.owner_family(),
-        payload.owner_type(),
-        payload.case_ordinal(),
-        &shape,
-    );
-    let rebuilt = VariantPayloadType::try_new(
-        payload.owner_family(),
-        payload.owner_type(),
-        payload.case_ordinal(),
-        case,
-        shape,
-    )
-    .unwrap_or_else(|_| unreachable!("mapped variant payload lost its owner invariant"));
-    Ok(TypeKind::VariantPayload(Box::new(rebuilt)))
+    payload
+        .visit_types(&mut |ty| {
+            if contains_generic_parameter_where(ty, predicate) {
+                Err(())
+            } else {
+                Ok(())
+            }
+        })
+        .is_err()
 }
 
 fn validate_rebound_effect_rows(
@@ -716,6 +576,7 @@ fn validate_rebound_effect_rows(
             params,
             return_type,
             effects,
+            ..
         } => {
             match effects.tail() {
                 EffectRowTail::Closed => {}
@@ -743,10 +604,14 @@ fn validate_rebound_effect_rows(
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
         | TypeKind::DialogueLine(inner)
+        | TypeKind::MetaType(inner)
         | TypeKind::BorrowRef { inner, .. }
         | TypeKind::IteratorState { item: inner, .. }
         | TypeKind::Array { item: inner, .. } => {
             validate_rebound_effect_rows(inner, prepared, checked, authorized_ordinals)
+        }
+        TypeKind::FixedVector(vector) => {
+            validate_rebound_effect_rows(vector.component(), prepared, checked, authorized_ordinals)
         }
         TypeKind::Ref(entity) => entity.value().map_or(Ok(()), |value| {
             validate_rebound_effect_rows(value, prepared, checked, authorized_ordinals)
@@ -774,7 +639,7 @@ fn validate_rebound_effect_rows(
             validate_rebound_effect_rows(subject, prepared, checked, authorized_ordinals)
         }
         TypeKind::Tuple(items) | TypeKind::Choice(items) => validate_children(items),
-        TypeKind::VariantPayload(payload) => payload.shape().visit_types(&mut |field| {
+        TypeKind::VariantPayload(payload) => payload.visit_types(&mut |field| {
             validate_rebound_effect_rows(field, prepared, checked, authorized_ordinals)
         }),
         _ => Ok(()),
@@ -790,7 +655,7 @@ fn observe_type_parameters(
         return true;
     }
     match declared {
-        TypeKind::GenericParam(parameter) => {
+        TypeKind::GenericParam(GenericTypeReference::Free(parameter)) => {
             if let Some(bound) = bindings.get(parameter) {
                 bound == actual
             } else {
@@ -798,6 +663,7 @@ fn observe_type_parameters(
                 true
             }
         }
+        TypeKind::GenericParam(_) => declared == actual,
         TypeKind::ProjectNominal(declared) => match actual {
             TypeKind::ProjectNominal(actual) if declared.declaration() == actual.declaration() => {
                 observe_type_slices(declared.arguments(), actual.arguments(), bindings)
@@ -849,7 +715,8 @@ fn observe_unary_type_parameters(
         | (TypeKind::Option(declared), TypeKind::Option(actual))
         | (TypeKind::ThreadHandle(declared), TypeKind::ThreadHandle(actual))
         | (TypeKind::Shared(declared), TypeKind::Shared(actual))
-        | (TypeKind::DialogueLine(declared), TypeKind::DialogueLine(actual)) => (declared, actual),
+        | (TypeKind::DialogueLine(declared), TypeKind::DialogueLine(actual))
+        | (TypeKind::MetaType(declared), TypeKind::MetaType(actual)) => (declared, actual),
         (TypeKind::Array { item: declared, .. }, TypeKind::Array { item: actual, .. }) => {
             (declared, actual)
         }
@@ -907,7 +774,11 @@ fn observe_composite_type_parameters(
             observe_type_parameters(declared, actual, bindings)
         }
         (TypeKind::VariantPayload(declared), TypeKind::VariantPayload(actual)) => {
-            observe_variant_payload_types(declared, actual, bindings)
+            declared.has_same_header(actual)
+                && declared
+                    .children()
+                    .zip(actual.children())
+                    .all(|(declared, actual)| observe_type_parameters(declared, actual, bindings))
         }
         (
             TypeKind::Stream {
@@ -998,43 +869,6 @@ fn observe_composite_type_parameters(
     Some(observed)
 }
 
-fn observe_variant_payload_types(
-    declared: &VariantPayloadType,
-    actual: &VariantPayloadType,
-    bindings: &mut BTreeMap<GenericTypeParameterId, TypeKind>,
-) -> bool {
-    if declared.owner_family() != actual.owner_family()
-        || declared.owner_type() != actual.owner_type()
-        || declared.case_ordinal() != actual.case_ordinal()
-    {
-        return false;
-    }
-    match (declared.shape(), actual.shape()) {
-        (VariantPayloadShape::Unit, VariantPayloadShape::Unit) => true,
-        (VariantPayloadShape::Tuple(declared), VariantPayloadShape::Tuple(actual)) => {
-            declared.len() == actual.len()
-                && declared.iter().zip(actual).all(|(declared, actual)| {
-                    declared.ordinal() == actual.ordinal()
-                        && observe_type_parameters(declared.ty(), actual.ty(), bindings)
-                })
-        }
-        (VariantPayloadShape::Record(declared), VariantPayloadShape::Record(actual)) => {
-            declared.len() == actual.len()
-                && declared.iter().zip(actual).all(|(declared, actual)| {
-                    declared.ordinal() == actual.ordinal()
-                        && observe_type_parameters(declared.ty(), actual.ty(), bindings)
-                })
-        }
-        (VariantPayloadShape::Unit, _)
-        | (
-            VariantPayloadShape::Tuple(_) | VariantPayloadShape::Record(_),
-            VariantPayloadShape::Unit,
-        )
-        | (VariantPayloadShape::Tuple(_), VariantPayloadShape::Record(_))
-        | (VariantPayloadShape::Record(_), VariantPayloadShape::Tuple(_)) => false,
-    }
-}
-
 fn observe_sequence_type_parameters(
     declared: &TypeKind,
     actual: &TypeKind,
@@ -1073,10 +907,10 @@ mod tests {
         let selected = GenericTypeParameterId::new(owner.clone(), 0);
         let untouched = GenericTypeParameterId::new(owner, 1);
         let ty = TypeKind::Result {
-            ok: Box::new(TypeKind::Vec(Box::new(TypeKind::GenericParam(
+            ok: Box::new(TypeKind::Vec(Box::new(TypeKind::generic_parameter(
                 selected.clone(),
             )))),
-            error: Box::new(TypeKind::GenericParam(untouched.clone())),
+            error: Box::new(TypeKind::generic_parameter(untouched.clone())),
         };
         let substitutions = BTreeMap::from([(selected, TypeKind::String)]);
 
@@ -1084,7 +918,7 @@ mod tests {
             ty.substitute_type_parameters(&substitutions),
             TypeKind::Result {
                 ok: Box::new(TypeKind::Vec(Box::new(TypeKind::String))),
-                error: Box::new(TypeKind::GenericParam(untouched)),
+                error: Box::new(TypeKind::generic_parameter(untouched)),
             }
         );
     }
@@ -1095,7 +929,7 @@ mod tests {
         let error = GenericTypeParameterId::new(owner, 0);
         let declared = TypeKind::Result {
             ok: Box::new(TypeKind::I64),
-            error: Box::new(TypeKind::GenericParam(error.clone())),
+            error: Box::new(TypeKind::generic_parameter(error.clone())),
         };
         let actual = TypeKind::Result {
             ok: Box::new(TypeKind::I64),
@@ -1105,7 +939,7 @@ mod tests {
 
         assert!(substitutions.observe(&declared, &actual));
         assert_eq!(
-            substitutions.apply(&TypeKind::GenericParam(error)),
+            substitutions.apply(&TypeKind::generic_parameter(error)),
             TypeKind::String
         );
     }
@@ -1116,22 +950,22 @@ mod tests {
         let item = GenericTypeParameterId::new(owner.clone(), 0);
         let error = GenericTypeParameterId::new(owner, 1);
         let mut substitutions = TypeParameterSubstitutions::default();
-        assert!(substitutions.observe(&TypeKind::GenericParam(item.clone()), &TypeKind::I64));
+        assert!(substitutions.observe(&TypeKind::generic_parameter(item.clone()), &TypeKind::I64));
 
         let declared = TypeKind::Tuple(vec![
-            TypeKind::GenericParam(error.clone()),
-            TypeKind::GenericParam(item.clone()),
+            TypeKind::generic_parameter(error.clone()),
+            TypeKind::generic_parameter(item.clone()),
         ]);
         let actual = TypeKind::Tuple(vec![TypeKind::Bool, TypeKind::String]);
         assert!(!substitutions.observe(&declared, &actual));
 
         assert_eq!(
-            substitutions.apply(&TypeKind::GenericParam(item)),
+            substitutions.apply(&TypeKind::generic_parameter(item)),
             TypeKind::I64
         );
         assert_eq!(
-            substitutions.apply(&TypeKind::GenericParam(error.clone())),
-            TypeKind::GenericParam(error)
+            substitutions.apply(&TypeKind::generic_parameter(error.clone())),
+            TypeKind::generic_parameter(error)
         );
     }
 
@@ -1139,7 +973,7 @@ mod tests {
     fn resolved_application_only_exposes_concrete_expected_types() {
         let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(13));
         let item = GenericTypeParameterId::new(owner, 0);
-        let declared = TypeKind::Option(Box::new(TypeKind::GenericParam(item.clone())));
+        let declared = TypeKind::Option(Box::new(TypeKind::generic_parameter(item.clone())));
         let mut substitutions = TypeParameterSubstitutions::default();
 
         assert_eq!(
@@ -1147,7 +981,7 @@ mod tests {
             Some(TypeKind::I64)
         );
         assert_eq!(substitutions.apply_resolved(&declared), None);
-        assert!(substitutions.observe(&TypeKind::GenericParam(item), &TypeKind::I64));
+        assert!(substitutions.observe(&TypeKind::generic_parameter(item), &TypeKind::I64));
         assert_eq!(
             substitutions.apply_resolved(&declared),
             Some(TypeKind::Option(Box::new(TypeKind::I64)))

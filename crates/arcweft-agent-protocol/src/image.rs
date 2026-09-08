@@ -6,6 +6,7 @@ use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
     CaptureRendererKind, CaptureScope, FitTransformMetadata, LayoutCoordinateSpace, LayoutRect,
 };
+use arcweft_text_model::RichTextNodeIndex;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -408,7 +409,7 @@ pub struct AgentCaptureRichTextIdentity {
     pub page: usize,
     pub range_start: usize,
     pub range_end: usize,
-    pub node_index: usize,
+    pub node_index: RichTextNodeIndex,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -7,20 +7,15 @@ use arcweft_lang_syntax::attachment::{
     AttachedExpressionNode,
 };
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
-    SyntaxExpressionSlot, SyntaxRecordField, SyntaxRichTextTagPayloadProjection,
+    ExpressionComponentRole, SyntaxDialogueContent, SyntaxDialogueContentProjection,
+    SyntaxDialogueNodeProjection, SyntaxExpressionSlot, SyntaxRecordField,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 
-use super::super::dialogue_projection::{
-    dialogue_node_projection_matches, rich_text_argument_projection_matches,
-    rich_text_payload_projection_matches, rich_text_tag_identity_projection_matches,
-};
+use super::super::dialogue_projection::dialogue_node_projection_matches;
 use super::CandidateChild;
 use crate::arena::ArenaSnapshot;
-use crate::dialogue_application::{
-    HirDialogueCoordinate, HirDialogueNodeKind, HirRichTextTagIdentity, HirRichTextTagPayload,
-};
+use crate::dialogue_application::{HirDialogueCoordinate, HirDialogueNodeKind};
 use crate::expr::{
     HirBinaryOp, HirCallChildPoison, HirExpr, HirExprKind, HirExpressionRecoveryIssue,
     HirRecordField, HirRecordFieldIssue, HirRecoveryIssue,
@@ -29,8 +24,8 @@ use crate::identity::ExprId;
 use crate::leaf::{HirPathIssue, HirPathRoot, HirPathSegment, HirPathValue};
 use crate::slot::SlotSnapshot;
 use crate::source_index::{
-    HirDialogueNodeSourcePart, HirExprSourceRole, HirInsertionPoint, HirRichTextTagSourcePart,
-    HirSourceSite,
+    HirDialogueNodeSourcePart, HirDialoguePointActionSourcePart, HirExprSourceRole,
+    HirInsertionPoint, HirSourceSite,
 };
 
 pub(super) fn candidate_role_map<K: Ord, V>(
@@ -67,113 +62,6 @@ pub(super) fn candidate_node_root_site(
         .map(HirSourceSite::Insertion)
 }
 
-pub(super) const fn dialogue_slot_role(owner: AttachedCandidateDialogueOwner) -> HirExprSourceRole {
-    match owner {
-        AttachedCandidateDialogueOwner::Node { ordinal } => HirExprSourceRole::DialogueNode {
-            ordinal,
-            part: HirDialogueNodeSourcePart::Interpolation,
-        },
-        AttachedCandidateDialogueOwner::Tag { ordinal } => HirExprSourceRole::RichTextTag {
-            tag: ordinal,
-            part: HirRichTextTagSourcePart::Payload,
-        },
-    }
-}
-
-pub(super) fn dialogue_content_matches(
-    actual: &crate::dialogue_application::HirDialogueContent,
-    expected: &SyntaxDialogueContentProjection,
-    node_values: &BTreeMap<u32, ExprId>,
-    tag_values: &BTreeMap<u32, ExprId>,
-) -> bool {
-    let SyntaxDialogueContentProjection::Present(expected) = expected else {
-        return actual.nodes().is_empty()
-            && actual.tags().is_empty()
-            && node_values.is_empty()
-            && tag_values.is_empty();
-    };
-    if actual.nodes().len() != expected.nodes().len()
-        || actual.tags().len() != expected.tags().len()
-    {
-        return false;
-    }
-    for (ordinal, (actual_node, expected_node)) in
-        actual.nodes().iter().zip(expected.nodes()).enumerate()
-    {
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return false;
-        };
-        if actual_node.id().content() != actual.id()
-            || actual_node.id().ordinal() != ordinal
-            || !dialogue_node_projection_matches(actual_node.kind(), expected_node)
-        {
-            return false;
-        }
-        match (actual_node.kind(), expected_node) {
-            (
-                HirDialogueNodeKind::Interpolation(actual),
-                SyntaxDialogueNodeProjection::Interpolation(_),
-            ) if node_values.get(&ordinal) == Some(actual) => {}
-            (_, SyntaxDialogueNodeProjection::Interpolation(_)) => return false,
-            _ if node_values.contains_key(&ordinal) => return false,
-            _ => {}
-        }
-    }
-    for (ordinal, (actual_tag, expected_tag)) in
-        actual.tags().iter().zip(expected.tags()).enumerate()
-    {
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return false;
-        };
-        if actual_tag.id().content() != actual.id()
-            || actual_tag.id().ordinal() != ordinal
-            || !rich_text_tag_identity_projection_matches(
-                actual_tag.identity(),
-                expected_tag.identity(),
-            )
-            || actual_tag.arguments().len() != expected_tag.arguments().len()
-            || !actual_tag
-                .arguments()
-                .iter()
-                .zip(expected_tag.arguments())
-                .all(|(actual, expected)| rich_text_argument_projection_matches(actual, expected))
-            || !rich_text_payload_projection_matches(actual_tag.payload(), expected_tag.payload())
-        {
-            return false;
-        }
-        let actual_value = match actual_tag.payload() {
-            HirRichTextTagPayload::FxCall(value)
-            | HirRichTextTagPayload::DialogueCall(value)
-            | HirRichTextTagPayload::Condition(value) => Some(*value),
-            HirRichTextTagPayload::Arguments
-            | HirRichTextTagPayload::Marker(_)
-            | HirRichTextTagPayload::None => None,
-        };
-        if actual_value != tag_values.get(&ordinal).copied() {
-            return false;
-        }
-    }
-    node_values.len()
-        == expected
-            .nodes()
-            .iter()
-            .filter(|node| matches!(node, SyntaxDialogueNodeProjection::Interpolation(_)))
-            .count()
-        && tag_values.len()
-            == expected
-                .tags()
-                .iter()
-                .filter(|tag| {
-                    matches!(
-                        tag.payload(),
-                        SyntaxRichTextTagPayloadProjection::FxCall(_)
-                            | SyntaxRichTextTagPayloadProjection::DialogueCall(_)
-                            | SyntaxRichTextTagPayloadProjection::Condition(_)
-                    )
-                })
-                .count()
-}
-
 pub(super) fn dialogue_coordinates_match(
     actual: &[HirDialogueCoordinate],
     target: &HirExpr,
@@ -187,30 +75,133 @@ pub(super) fn dialogue_coordinates_match(
     }
 }
 
+pub(super) fn dialogue_slot_role(
+    owner: AttachedCandidateDialogueOwner,
+    content: &SyntaxDialogueContent,
+) -> Option<HirExprSourceRole> {
+    let AttachedCandidateDialogueOwner::Node { ordinal } = owner;
+    let node = content.nodes().get(ordinal as usize)?;
+    match node {
+        SyntaxDialogueNodeProjection::Interpolation(_) => Some(HirExprSourceRole::DialogueNode {
+            ordinal,
+            part: HirDialogueNodeSourcePart::Interpolation,
+        }),
+        SyntaxDialogueNodeProjection::ContentApplication(_) => {
+            Some(HirExprSourceRole::DialogueNode {
+                ordinal,
+                part: HirDialogueNodeSourcePart::Expression,
+            })
+        }
+        SyntaxDialogueNodeProjection::PointAction(action)
+            if !matches!(
+                action.payload(),
+                arcweft_lang_syntax::expressions::SyntaxDialoguePointActionPayload::None
+            ) =>
+        {
+            Some(HirExprSourceRole::DialoguePointAction {
+                ordinal,
+                part: HirDialoguePointActionSourcePart::Payload,
+            })
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn dialogue_content_matches(
+    actual: &crate::dialogue_application::HirDialogueContent,
+    expected: &SyntaxDialogueContentProjection,
+    node_values: &BTreeMap<u32, ExprId>,
+    _action_values: &BTreeMap<u32, ExprId>,
+) -> bool {
+    match expected {
+        SyntaxDialogueContentProjection::Missing { .. } => {
+            actual.nodes().is_empty()
+                && actual.raw_literal().is_none()
+                && node_values.is_empty()
+        }
+        SyntaxDialogueContentProjection::RawLiteral(literal) => {
+            actual
+                .raw_literal()
+                .is_some_and(|actual| actual.as_str() == literal.value())
+                && actual.nodes().is_empty()
+                && node_values.is_empty()
+        }
+        SyntaxDialogueContentProjection::Present(expected) => {
+            actual.raw_literal().is_none()
+                && actual.nodes().len() == expected.nodes().len()
+                && actual
+                    .nodes()
+                    .iter()
+                    .zip(expected.nodes())
+                    .enumerate()
+                    .all(|(ordinal, (actual, expected))| {
+                        let Ok(ordinal) = u32::try_from(ordinal) else {
+                            return false;
+                        };
+                        if actual.id().ordinal() != ordinal
+                            || !dialogue_node_projection_matches(actual.kind(), expected)
+                        {
+                            return false;
+                        }
+                        match (actual.kind(), expected) {
+                            (
+                                HirDialogueNodeKind::Interpolation(value),
+                                SyntaxDialogueNodeProjection::Interpolation(_),
+                            )
+                            | (
+                                HirDialogueNodeKind::ContentApplication(value),
+                                SyntaxDialogueNodeProjection::ContentApplication(_),
+                            ) => node_values.get(&ordinal) == Some(value),
+                            (
+                                HirDialogueNodeKind::PointAction(action),
+                                SyntaxDialogueNodeProjection::PointAction(source),
+                            ) if !matches!(
+                                source.payload(),
+                                arcweft_lang_syntax::expressions::SyntaxDialoguePointActionPayload::None
+                            ) => action.payload().expression().is_some_and(|value| {
+                                node_values.get(&ordinal) == Some(&value)
+                            }),
+                            _ => !node_values.contains_key(&ordinal),
+                        }
+                    })
+                && node_values.len()
+                    == expected
+                        .nodes()
+                        .iter()
+                        .filter(|node| match node {
+                            SyntaxDialogueNodeProjection::Interpolation(_)
+                            | SyntaxDialogueNodeProjection::ContentApplication(_) => true,
+                            SyntaxDialogueNodeProjection::PointAction(action) => !matches!(
+                                action.payload(),
+                                arcweft_lang_syntax::expressions::SyntaxDialoguePointActionPayload::None
+                            ),
+                            _ => false,
+                        })
+                        .count()
+        }
+    }
+}
+
 pub(super) fn dialogue_intrinsic_recovery(
     source: &SyntaxDialogueContentProjection,
-    actual: &crate::dialogue_application::HirDialogueContentApplication,
+    actual: &crate::dialogue_application::HirAttachedContentApplication,
     slots: &SlotSnapshot,
     expressions: &ArenaSnapshot<HirExpr, ExprId>,
     recovery: &mut Option<HirRecoveryIssue>,
 ) -> Option<()> {
-    for tag in actual.content().tags() {
-        if let HirRichTextTagIdentity::Unresolved(unresolved) = tag.identity() {
-            recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
-                unresolved.issue().clone(),
-            ));
-        }
-        for argument in tag.arguments() {
+    for node in actual.content().nodes() {
+        let HirDialogueNodeKind::PointAction(action) = node.kind() else {
+            continue;
+        };
+        for argument in action.arguments() {
             if let Some(issue) = argument.issue() {
                 recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
                     crate::dialogue_application::HirRichTextIssue::Argument(issue),
                 ));
             }
         }
-        if let HirRichTextTagPayload::FxCall(expression)
-        | HirRichTextTagPayload::DialogueCall(expression) = tag.payload()
-        {
-            let expression = expressions.resolve_prepared(slots, *expression).ok()?;
+        if let Some(expression) = action.payload().expression() {
+            let expression = expressions.resolve_prepared(slots, expression).ok()?;
             if !matches!(expression.kind(), HirExprKind::Call(_)) {
                 recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(
                     crate::dialogue_application::HirRichTextIssue::InvalidPayload,
@@ -220,24 +211,14 @@ pub(super) fn dialogue_intrinsic_recovery(
     }
     if let SyntaxDialogueContentProjection::Present(source) = source {
         for (actual, source) in actual.content().nodes().iter().zip(source.nodes()) {
-            match (actual.kind(), source) {
-                (
-                    HirDialogueNodeKind::AuthoredEndTag(actual)
-                    | HirDialogueNodeKind::InferredEndTag(actual),
-                    _,
-                ) => {
-                    if let Some(issue) = actual.issue() {
-                        recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(issue.clone()));
-                    }
-                }
-                (_, SyntaxDialogueNodeProjection::Error(_)) => {
-                    recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
-                        HirExpressionRecoveryIssue::Generic(
-                            crate::expr::HirGenericExprIssue::TransactionalChildFailure,
-                        ),
-                    ));
-                }
-                _ => {}
+            if matches!(source, SyntaxDialogueNodeProjection::Error(_))
+                || matches!(actual.kind(), HirDialogueNodeKind::Error(_))
+            {
+                recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
+                    HirExpressionRecoveryIssue::Generic(
+                        crate::expr::HirGenericExprIssue::TransactionalChildFailure,
+                    ),
+                ));
             }
         }
     }

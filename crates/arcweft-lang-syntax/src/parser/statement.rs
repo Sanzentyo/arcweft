@@ -335,11 +335,13 @@ fn emit_thread_flow_item(
         return;
     }
 
-    let expression = emit_colon_dialogue_application(parser, end, role)
-        .unwrap_or_else(|| emit_expression_node(parser, end, role));
+    let expression_end = statement_expression_end(parser, end);
+    let expression = emit_colon_dialogue_application(parser, expression_end, role)
+        .unwrap_or_else(|| emit_expression_node(parser, expression_end, role));
     if parser.completed_kind(expression.start_event)
-        == Some(SyntaxKind::DialogueContentApplicationExpression)
+        == Some(SyntaxKind::AttachedContentApplicationExpression)
     {
+        bump_until(parser, end);
         return;
     }
 
@@ -349,7 +351,16 @@ fn emit_thread_flow_item(
         role,
     );
     parser.set_start_role(expression.start_event + 1, SyntaxRole::Initializer);
+    bump_until(parser, end);
     parser.finish();
+}
+
+fn statement_expression_end(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
+    if end > parser.cursor() && token_text(parser, end - 1) == Some(";") {
+        end - 1
+    } else {
+        end
+    }
 }
 
 fn thread_flow_await_terminator(
@@ -515,11 +526,7 @@ fn emit_statement_kind(
     kind: SyntaxKind,
     thread_flow_context: bool,
 ) {
-    let child_end = if end > parser.cursor() && token_text(parser, end - 1) == Some(";") {
-        end - 1
-    } else {
-        end
-    };
+    let child_end = statement_expression_end(parser, end);
     let projection_owner = if kind == SyntaxKind::AssertionStatement
         || crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection::kind_requires_projection(kind)
     {

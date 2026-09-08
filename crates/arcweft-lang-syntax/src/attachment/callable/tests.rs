@@ -6,7 +6,8 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::{
-    AstNode, AttachedCallableParameter, AttachedCallableParameterKind, AttachedFunctionBody,
+    AstNode, AttachedCallableParameter, AttachedCallableParameterKind,
+    AttachedContentPresenceSyntax, AttachedContentRoleSyntax, AttachedFunctionBody,
     AttachedPredicateBody, AttachedProofBody, FunctionItemKind, PredicateItemKind, ProofItemKind,
     ProofTrustSyntax,
 };
@@ -156,6 +157,44 @@ fn ordinary_function_attachment_owns_curried_parameters_contracts_and_block_only
     assert_eq!(syntax.kind(), SyntaxKind::FunctionBody);
     assert_eq!(block.kind(), SyntaxKind::Block);
     assert_ne!(syntax.id(), block.id());
+}
+
+#[test]
+fn ordinary_function_attachment_owns_the_dedicated_content_parameter() {
+    let required = attach("fn required(value: String)[body: InlineContent] -> Unit { body }\n");
+    let required = function(&required).semantics().unwrap();
+    let content = required
+        .attached_content()
+        .expect("required attached-content parameter");
+    assert_eq!(content.role(), AttachedContentRoleSyntax::InlineContent);
+    assert!(matches!(
+        content.presence(),
+        AttachedContentPresenceSyntax::Required
+    ));
+    assert_eq!(content.binding().value().unwrap().as_str(), "body");
+
+    let optional = attach("fn optional(value: String)[body?: RichContent] -> Unit { body }\n");
+    let optional = function(&optional).semantics().unwrap();
+    let content = optional
+        .attached_content()
+        .expect("optional attached-content parameter");
+    assert_eq!(content.role(), AttachedContentRoleSyntax::RichContent);
+    assert!(matches!(
+        content.presence(),
+        AttachedContentPresenceSyntax::Optional { .. }
+    ));
+
+    let defaulted =
+        attach("fn defaulted(value: String)[body: DialogueContent = fallback] -> Unit { body }\n");
+    let defaulted = function(&defaulted).semantics().unwrap();
+    let content = defaulted
+        .attached_content()
+        .expect("defaulted attached-content parameter");
+    assert_eq!(content.role(), AttachedContentRoleSyntax::DialogueContent);
+    let AttachedContentPresenceSyntax::Defaulted { value, .. } = content.presence() else {
+        panic!("expected a typed default expression")
+    };
+    assert_eq!(value.syntax().source_text(), "fallback");
 }
 
 #[test]

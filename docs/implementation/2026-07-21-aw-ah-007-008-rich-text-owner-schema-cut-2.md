@@ -1,5 +1,11 @@
 # AW-AH-007/008 RichText owner schemas — cut 2
 
+> Superseded implementation evidence. The provisional unified RichText markup
+> schema described by this dated cut was later deleted. Current zero-width
+> actions use `RichTextPointActionSchema`; body-bearing presentation uses the
+> `PresentationContentCallableCatalog`. The details below describe the 2026-07-21
+> state and are not current source authority.
+
 ## Outcome and basis
 
 This cut implements the owner-enum and immutable-schema portion of M3 from the
@@ -28,8 +34,8 @@ No owner is wired into the production semantic or runtime path yet.
 - closed transform selectors and properties; and
 - the object selector and canonical object metadata properties.
 
-Each owner exposes immutable `RichTextTagSchema<P>` values in deterministic
-owner order. Both domain crates depend one way on the Sans I/O
+Each owner exposed immutable provisional schema rows in deterministic owner
+order. Both domain crates depended one way on the Sans I/O
 `arcweft-rich-text-schema` leaf. The leaf still owns no domain inventory,
 source-name map, checker, registry, diagnostic, or wire representation.
 
@@ -39,19 +45,12 @@ unknown-property policy, reject removed property/selector aliases, and inspect
 the exact defaults, units, limits, closed values, selector contracts, and
 checked-output families represented by the static descriptors.
 
-## Grammar spellings are not compatibility aliases
+## Historical grammar inventory
 
-`page`, `wait`, `nl`, `br`, `er`, `cm`, `rb`, `i`, `slant`, `alpha`,
-`object_layer`, `z`, `vertical`, `pos`, and `!` are the current grammar-owned
-spellings required by the accepted matrix. They are handled only by the
-owning enum and canonicalize to one owner name. There is no configuration
-alias map or second reader.
-
-Removed property and selector spellings such as `speed` as a property,
-`alpha` as a property, `object_layer` as a property, layout `strictness` and
-`gap`, transform-origin `start` and `glyph`, object `struct`, `proxy`, `kind`,
-`z_index`, and `hit`, and untyped `.meta`/`.metadata`/`.data` have no final
-property or selector identity.
+The alias and selector rows evaluated by this cut belonged to the provisional
+unified markup schema. They do not define current grammar or compatibility.
+Current source names come only from the point-action schema and the typed
+content-call catalog.
 
 ## Descriptor boundary and M4 rules
 
@@ -59,7 +58,7 @@ The static schema describes scalar properties and identifies dedicated
 payload surfaces; it does not reinterpret syntax or fabricate a scalar value
 for a callable/expression payload:
 
-- direct `[call]`, `[!]`, `[if]`, and the `call=` portion of `[at ...]` remain
+- the then-current direct call, conditional, and timed-cue payloads remained
   `DedicatedPayload` inputs for the shared HIR callable/expression owner;
 - the timed-cue scalar schema contains only its positional duration;
 - `voice`'s closed `auto` token plus PublicId rule, positional-to-property
@@ -78,7 +77,7 @@ checked value without reparsing strings.
 
 M2 ordered/ranged RichText HIR remains coupled to the accepted attached-syntax
 public switch. The private Proof-concurrency grammar currently has no
-identity-bearing RichText tag/argument descendants, so adding detached HIR now
+identity-bearing provisional RichText markup/argument descendants, so adding detached HIR now
 would create the prohibited second reader.
 
 The rest of M3 remains open:

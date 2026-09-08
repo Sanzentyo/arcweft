@@ -19,9 +19,9 @@ use arcweft_lang_syntax::attachment::{
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     ExpressionRecordFieldPart, SyntaxCallArgumentPart, SyntaxCallTypeApplicationComponentRole,
-    SyntaxCallTypeArgumentPart, SyntaxClosureParameterPart,
-    SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueNodeSourcePart, SyntaxMatchArmPart,
-    SyntaxRichTextArgumentSourcePart, SyntaxRichTextTagSourcePart,
+    SyntaxCallTypeArgumentPart, SyntaxClosureParameterPart, SyntaxDialogueActionArgumentSourcePart,
+    SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueNodeSourcePart,
+    SyntaxDialoguePointActionSourcePart, SyntaxMatchArmPart,
 };
 use arcweft_lang_syntax::id_ref::SyntaxIdRefPart;
 use arcweft_lang_syntax::incremental::ParsedSource;
@@ -30,14 +30,14 @@ use arcweft_source::SourceDocumentIdentity;
 
 use super::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
-    HirClosureParameterSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
+    HirClosureParameterSourcePart, HirDialogueNodeSourcePart,
+    HirDialoguePointActionArgumentSourcePart, HirDialoguePointActionSourcePart, HirExprSourceRole,
     HirIdRefSourcePart, HirMatchArmSourcePart, HirRecordFieldSourcePart,
-    HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceCommitInvariantError,
-    HirSourceIndex, HirSourcePresence, HirSourceQuery, HirSourceRequirement, HirSourceSite,
-    StagedHirSourceIndex, validate_component_source,
+    HirSourceCommitInvariantError, HirSourceIndex, HirSourcePresence, HirSourceQuery,
+    HirSourceRequirement, HirSourceSite, StagedHirSourceIndex, validate_component_source,
 };
 use crate::arena::ArenaSnapshot;
-use crate::dialogue_application::HirDialogueContentApplication;
+use crate::dialogue_application::HirAttachedContentApplication;
 use crate::expr::{
     HirCallArgumentOrdinal, HirCallTypeArgumentOrdinal, HirExpr, HirExprKind, HirGenericExprIssue,
     HirPoisonState, HirRecoveryIssue, HirRecoveryOperandSlot,
@@ -108,7 +108,11 @@ impl StagedHirSourceIndex {
                 },
             );
         }
-        let Some(requirements) = expression_requirements(payload, attached.projection()) else {
+        let Some(requirements) = expression_requirements(
+            payload,
+            attached.projection(),
+            attached_target_is_call(attached),
+        ) else {
             return self.reject(
                 HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
                     owner: SyntheticOwner::Expr(owner),
@@ -170,7 +174,7 @@ impl StagedHirSourceIndex {
         owner: ExprId,
         attached: &AttachedExpressionNode,
         graph: AttachedCandidateGraph<'_>,
-        application: &HirDialogueContentApplication,
+        application: &HirAttachedContentApplication,
     ) -> Result<(), HirSourceCommitInvariantError> {
         self.ensure_open()?;
         if attached.snapshot_id() != parsed.snapshot_id() {
@@ -188,7 +192,13 @@ impl StagedHirSourceIndex {
         };
         if outer == owner
             || application.content().id().owner() != owner
-            || application.plan().is_some()
+            || !matches!(
+                application.family(),
+                crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                    plan: None,
+                    ..
+                } | crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall { .. }
+            )
             || !matches!(
                 attached.projection(),
                 ExpressionProjection::PostfixBracket(
@@ -287,6 +297,67 @@ impl HirSourceIndex {
             return false;
         };
         let entries = entries.collect::<Vec<_>>();
+        let mut content_call_context = entries
+            .iter()
+            .flat_map(|(_, payload)| match payload.kind() {
+                HirExprKind::AttachedContentApplication(application) => application
+                    .content()
+                    .nodes()
+                    .iter()
+                    .filter_map(|node| match node.kind() {
+                        crate::dialogue_application::HirDialogueNodeKind::ContentApplication(
+                            child,
+                        ) => Some(*child),
+                        _ => None,
+                    })
+                    .collect::<Vec<_>>(),
+                _ => Vec::new(),
+            })
+            .collect::<BTreeSet<_>>();
+        let mut content_call_owners = BTreeSet::new();
+        loop {
+            let mut changed = false;
+            for context_owner in content_call_context.clone() {
+                let Some((_, payload)) = entries.iter().find(|(owner, _)| *owner == context_owner)
+                else {
+                    continue;
+                };
+                match payload.kind() {
+                    HirExprKind::AttachedContentApplication(application) => {
+                        changed |= content_call_owners.insert(context_owner);
+                        for node in application.content().nodes() {
+                            if let crate::dialogue_application::HirDialogueNodeKind::ContentApplication(
+                                child,
+                            ) = node.kind()
+                            {
+                                changed |= content_call_context.insert(*child);
+                            }
+                        }
+                    }
+                    HirExprKind::PostfixBracket(postfix) => {
+                        if let crate::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                            dialogue,
+                            ..
+                        } = postfix.candidates()
+                        {
+                            changed |= content_call_context.insert(*dialogue);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if !changed {
+                break;
+            }
+        }
+        if entries.iter().any(|(owner, payload)| {
+            let HirExprKind::AttachedContentApplication(application) = payload.kind() else {
+                return false;
+            };
+            application.is_content_call() != content_call_owners.contains(owner)
+        }) {
+            return false;
+        }
         let expression_rows = ExpressionManifestRows::from_index(self);
         let Some(retained_style_expressions) =
             super::item_projection::retained_style_expression_owners(items, slots)
@@ -314,7 +385,7 @@ impl HirSourceIndex {
             let Ok(metadata) = slots.resolve_prepared(owner) else {
                 return false;
             };
-            match metadata.origin() {
+            let valid = match metadata.origin() {
                 HirOrigin::Source(source) => match parsed.attached_expression(source.syntax()) {
                     Ok(attached) => {
                         self.syntax_owners
@@ -369,11 +440,12 @@ impl HirSourceIndex {
                     let candidate_dialogue_source = key.role()
                         == SyntheticRole::DialogueContentCandidateExpression
                         && key.ordinal() == 0
-                        && matches!(payload.kind(), HirExprKind::DialogueContentApplication(_));
+                        && matches!(payload.kind(), HirExprKind::AttachedContentApplication(_));
                     (!candidate_role || candidate_expressions.contains(&owner))
                         && (expression_rows.has_owner(owner) == candidate_dialogue_source)
                 }
-            }
+            };
+            valid
         }) {
             return false;
         }
@@ -582,8 +654,11 @@ fn expression_manifest_matches(
     payload: &HirExprKind,
     attached: &AttachedExpressionNode,
 ) -> bool {
-    let Some(expected_requirements) = expression_requirements(payload, attached.projection())
-    else {
+    let Some(expected_requirements) = expression_requirements(
+        payload,
+        attached.projection(),
+        attached_target_is_call(attached),
+    ) else {
         return false;
     };
     if !rows.requirements_match(owner, &expected_requirements) {
@@ -607,6 +682,14 @@ fn expression_manifest_matches(
         })
 }
 
+fn attached_target_is_call(attached: &AttachedExpressionNode) -> bool {
+    attached
+        .children()
+        .first()
+        .and_then(|child| child.authored_semantic().ok().flatten())
+        .is_some_and(|target| matches!(target.projection(), ExpressionProjection::Call(_)))
+}
+
 #[allow(
     clippy::result_large_err,
     clippy::too_many_lines,
@@ -627,6 +710,30 @@ fn expression_component_sites(
         };
         let site = HirSourceSite::from_attached_span(parsed.document(), component.source_span())?;
         insert_expression_site(&mut sites, owner, role, site)?;
+    }
+
+    // A ContentCall owns the invocation payload directly. When its target is
+    // authored as a Call, that target has no separate HIR Call owner, so the
+    // target Call's components are re-owned by the attached-content owner.
+    if let HirExprKind::AttachedContentApplication(application) = payload
+        && matches!(
+            application.family(),
+            crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall { .. }
+        )
+        && let Some(target) = attached.children().first()
+        && let Ok(Some(target)) = target.authored_semantic()
+        && matches!(target.projection(), ExpressionProjection::Call(_))
+    {
+        for component in target.components() {
+            validate_component_source(source, component.source_span().source())?;
+            let Some(role) = expression_component_role(target.projection(), component.role())
+            else {
+                continue;
+            };
+            let site =
+                HirSourceSite::from_attached_span(parsed.document(), component.source_span())?;
+            insert_expression_site(&mut sites, owner, role, site)?;
+        }
     }
 
     if matches!(attached.projection(), ExpressionProjection::Path) {
@@ -698,8 +805,12 @@ fn expression_component_sites(
             }
         }
     }
-    if let HirExprKind::DialogueContentApplication(application) = payload
-        && !application.coordinates().is_empty()
+    if let HirExprKind::AttachedContentApplication(application) = payload
+        && let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            coordinates,
+            ..
+        } = application.family()
+        && !coordinates.is_empty()
     {
         let target = attached
             .children()
@@ -730,7 +841,7 @@ fn expression_component_sites(
                 },
             );
         }
-        for coordinate in application.coordinates() {
+        for coordinate in coordinates {
             for (syntax_part, hir_part) in [
                 (
                     SyntaxCallArgumentPart::Whole,
@@ -783,7 +894,7 @@ fn candidate_dialogue_component_sites(
     owner: ExprId,
     attached: &AttachedExpressionNode,
     graph: AttachedCandidateGraph<'_>,
-    application: &HirDialogueContentApplication,
+    application: &HirAttachedContentApplication,
 ) -> Result<BTreeMap<HirExprSourceRole, HirSourceSite>, HirSourceCommitInvariantError> {
     let mut sites = BTreeMap::new();
     for syntax_role in [
@@ -828,8 +939,8 @@ fn candidate_dialogue_component_sites(
         if !matches!(
             role,
             HirExprSourceRole::DialogueNode { .. }
-                | HirExprSourceRole::RichTextTag { .. }
-                | HirExprSourceRole::RichTextArgument { .. }
+                | HirExprSourceRole::DialoguePointAction { .. }
+                | HirExprSourceRole::DialoguePointActionArgument { .. }
         ) {
             return Err(
                 HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
@@ -841,14 +952,22 @@ fn candidate_dialogue_component_sites(
         insert_expression_site(&mut sites, owner, role, site)?;
     }
 
-    for coordinate in application.coordinates() {
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        coordinates,
+        target: application_target,
+        ..
+    } = application.family()
+    else {
+        return Ok(sites);
+    };
+    for coordinate in coordinates {
         for part in [
             HirCallArgumentSourcePart::Whole,
             HirCallArgumentSourcePart::Name,
             HirCallArgumentSourcePart::Value,
         ] {
             let source_query = HirSourceQuery::Expr {
-                owner: application.target(),
+                owner: *application_target,
                 role: HirExprSourceRole::CallArgument {
                     argument: coordinate.argument(),
                     part,
@@ -879,7 +998,7 @@ fn candidate_dialogue_manifest_matches(
     owner: ExprId,
     attached: &AttachedExpressionNode,
     graph: AttachedCandidateGraph<'_>,
-    application: &HirDialogueContentApplication,
+    application: &HirAttachedContentApplication,
 ) -> bool {
     if index
         .syntax_owners
@@ -972,6 +1091,7 @@ pub(crate) fn expression_component_role(
     role: ExpressionComponentRole,
 ) -> Option<HirExprSourceRole> {
     match role {
+        ExpressionComponentRole::Hash => Some(HirExprSourceRole::Hash),
         ExpressionComponentRole::Literal(part) => Some(match part {
             ExpressionLiteralPart::Body => HirExprSourceRole::LiteralBody,
             ExpressionLiteralPart::Prefix => HirExprSourceRole::LiteralPrefix,
@@ -1116,37 +1236,44 @@ pub(crate) fn expression_component_role(
                 part: match part {
                     SyntaxDialogueNodeSourcePart::Whole => HirDialogueNodeSourcePart::Whole,
                     SyntaxDialogueNodeSourcePart::Text => HirDialogueNodeSourcePart::Text,
-                    SyntaxDialogueNodeSourcePart::Raw => HirDialogueNodeSourcePart::Raw,
                     SyntaxDialogueNodeSourcePart::Escape => HirDialogueNodeSourcePart::Escape,
-                    SyntaxDialogueNodeSourcePart::RubyBase => HirDialogueNodeSourcePart::RubyBase,
-                    SyntaxDialogueNodeSourcePart::RubyText => HirDialogueNodeSourcePart::RubyText,
+                    SyntaxDialogueNodeSourcePart::Ruby => HirDialogueNodeSourcePart::Ruby,
                     SyntaxDialogueNodeSourcePart::Interpolation => {
                         HirDialogueNodeSourcePart::Interpolation
+                    }
+                    SyntaxDialogueNodeSourcePart::Hash => HirDialogueNodeSourcePart::Hash,
+                    SyntaxDialogueNodeSourcePart::Expression => {
+                        HirDialogueNodeSourcePart::Expression
+                    }
+                    SyntaxDialogueNodeSourcePart::PointAction => {
+                        HirDialogueNodeSourcePart::PointAction
                     }
                     SyntaxDialogueNodeSourcePart::LineBreak => HirDialogueNodeSourcePart::LineBreak,
                     SyntaxDialogueNodeSourcePart::Error => HirDialogueNodeSourcePart::Error,
                 },
             })
         }
-        ExpressionComponentRole::RichTextTag { tag, part } => {
-            Some(HirExprSourceRole::RichTextTag {
-                tag,
+        ExpressionComponentRole::DialoguePointAction { ordinal, part } => {
+            Some(HirExprSourceRole::DialoguePointAction {
+                ordinal,
                 part: match part {
-                    SyntaxRichTextTagSourcePart::Whole => HirRichTextTagSourcePart::Whole,
-                    SyntaxRichTextTagSourcePart::OpenDelimiter => {
-                        HirRichTextTagSourcePart::OpenDelimiter
+                    SyntaxDialoguePointActionSourcePart::Whole => {
+                        HirDialoguePointActionSourcePart::Whole
                     }
-                    SyntaxRichTextTagSourcePart::Name => HirRichTextTagSourcePart::Name,
-                    SyntaxRichTextTagSourcePart::Payload => HirRichTextTagSourcePart::Payload,
-                    SyntaxRichTextTagSourcePart::CloseDelimiter => {
-                        HirRichTextTagSourcePart::CloseDelimiter
+                    SyntaxDialoguePointActionSourcePart::OpenDelimiter => {
+                        HirDialoguePointActionSourcePart::OpenDelimiter
                     }
-                    SyntaxRichTextTagSourcePart::InferenceInsertion => {
-                        HirRichTextTagSourcePart::InferenceInsertion
+                    SyntaxDialoguePointActionSourcePart::Name => {
+                        HirDialoguePointActionSourcePart::Name
                     }
-                    SyntaxRichTextTagSourcePart::EndTag => HirRichTextTagSourcePart::EndTag,
-                    SyntaxRichTextTagSourcePart::Marker(part) => {
-                        HirRichTextTagSourcePart::Marker(match part {
+                    SyntaxDialoguePointActionSourcePart::Payload => {
+                        HirDialoguePointActionSourcePart::Payload
+                    }
+                    SyntaxDialoguePointActionSourcePart::CloseDelimiter => {
+                        HirDialoguePointActionSourcePart::CloseDelimiter
+                    }
+                    SyntaxDialoguePointActionSourcePart::Marker(part) => {
+                        HirDialoguePointActionSourcePart::Marker(match part {
                             SyntaxIdRefPart::Whole => HirIdRefSourcePart::Whole,
                             SyntaxIdRefPart::AbsoluteMarker => HirIdRefSourcePart::AbsoluteMarker,
                             SyntaxIdRefPart::Family => HirIdRefSourcePart::Family,
@@ -1162,18 +1289,26 @@ pub(crate) fn expression_component_role(
                 },
             })
         }
-        ExpressionComponentRole::RichTextArgument {
-            tag,
+        ExpressionComponentRole::DialoguePointActionArgument {
+            action,
             argument,
             part,
-        } => Some(HirExprSourceRole::RichTextArgument {
-            tag,
+        } => Some(HirExprSourceRole::DialoguePointActionArgument {
+            action,
             argument,
             part: match part {
-                SyntaxRichTextArgumentSourcePart::Whole => HirRichTextArgumentSourcePart::Whole,
-                SyntaxRichTextArgumentSourcePart::Name => HirRichTextArgumentSourcePart::Name,
-                SyntaxRichTextArgumentSourcePart::Equals => HirRichTextArgumentSourcePart::Equals,
-                SyntaxRichTextArgumentSourcePart::Value => HirRichTextArgumentSourcePart::Value,
+                SyntaxDialogueActionArgumentSourcePart::Whole => {
+                    HirDialoguePointActionArgumentSourcePart::Whole
+                }
+                SyntaxDialogueActionArgumentSourcePart::Name => {
+                    HirDialoguePointActionArgumentSourcePart::Name
+                }
+                SyntaxDialogueActionArgumentSourcePart::Equals => {
+                    HirDialoguePointActionArgumentSourcePart::Equals
+                }
+                SyntaxDialogueActionArgumentSourcePart::Value => {
+                    HirDialoguePointActionArgumentSourcePart::Value
+                }
             },
         }),
         ExpressionComponentRole::SelectedMember => Some(HirExprSourceRole::SelectedMember),

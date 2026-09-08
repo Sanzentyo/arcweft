@@ -1,7 +1,7 @@
 //! Exact accepted nominal facts and explicitly bounded open-name rules.
 
 use core::{fmt, hash::Hasher};
-use std::{collections::BTreeMap, hash::Hash};
+use std::{collections::BTreeMap, hash::Hash, sync::Arc};
 
 use arcweft_character::id::CharacterId;
 use arcweft_core::{
@@ -27,7 +27,10 @@ use super::{
 };
 use crate::{
     nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits},
-    types::{CharacterNominalType, SemanticTypeDigest, TypeKind, direct_type_name},
+    types::{
+        CharacterNominalType, CompileTimeScalarKind, CompileTimeScalarType, SemanticTypeDigest,
+        TypeKind, direct_type_name,
+    },
 };
 
 const MAX_OPEN_NAMESPACE_TAIL: u16 = 16;
@@ -82,7 +85,8 @@ pub enum AcceptedNominalSemantics {
     Exact(TypeKind),
     Opaque(AcceptedOpaqueRuntimeCarrier),
     Character(CharacterNominalType),
-    Record(AcceptedEnvironmentRecordSemantics),
+    Record(Arc<AcceptedEnvironmentRecordSemantics>),
+    CompileTimeScalar(CompileTimeScalarKind),
 }
 
 /// Declaration-ordered semantic shape of one accepted environment record.
@@ -104,24 +108,28 @@ pub struct AcceptedEnvironmentRecordField {
     semantic_id: AcceptedEnvironmentFieldSemanticId,
 }
 
-/// Opaque exact identity of one accepted environment record row.
+/// Owned access to one accepted environment record's exact schema.
 ///
 /// Construction remains with the catalog-owned record so prepared/final
 /// semantic carriers cannot pair a type digest with a different nominal owner.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct AcceptedEnvironmentRecordIdentity {
+pub struct AcceptedEnvironmentRecord {
     nominal: AcceptedNominalId,
-    semantic_type: SemanticTypeDigest,
+    semantics: Arc<AcceptedEnvironmentRecordSemantics>,
     field_count: u32,
 }
 
-impl AcceptedEnvironmentRecordIdentity {
+impl AcceptedEnvironmentRecord {
     pub const fn nominal(&self) -> &AcceptedNominalId {
         &self.nominal
     }
 
-    pub const fn semantic_type(&self) -> SemanticTypeDigest {
-        self.semantic_type
+    pub fn semantic_type(&self) -> SemanticTypeDigest {
+        self.semantics.semantic_type()
+    }
+
+    pub fn semantics(&self) -> &AcceptedEnvironmentRecordSemantics {
+        &self.semantics
     }
 
     pub const fn field_count(&self) -> u32 {
@@ -365,6 +373,8 @@ pub enum OpenNominalPatternError {
 /// Invalid accepted/open nominal catalog construction.
 #[derive(Clone, Debug, Eq, Error, Ord, PartialEq, PartialOrd)]
 pub enum AcceptedNominalCatalogError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
     #[error("duplicate accepted nominal path `{path}`")]
     DuplicateExactPath {
         path: TypePath,
@@ -497,6 +507,7 @@ impl AcceptedNominalRecord {
                     AcceptedNominalSemantics::Exact(_)
                         | AcceptedNominalSemantics::Character(_)
                         | AcceptedNominalSemantics::Record(_)
+                        | AcceptedNominalSemantics::CompileTimeScalar(_)
                 ))
         {
             return Err(AcceptedNominalCatalogError::InvalidArity {
@@ -562,7 +573,7 @@ impl AcceptedNominalRecord {
         source: Option<SourceSpan>,
     ) -> Result<Self, AcceptedNominalCatalogError> {
         let ty = normalize_type_kind(ty);
-        let semantic_type = ty.semantic_identity_digest();
+        let semantic_type = ty.semantic_identity_digest()?;
         let id_label = id.source_label();
         let mut names = std::collections::BTreeSet::new();
         let mut accepted = Vec::new();
@@ -579,7 +590,7 @@ impl AcceptedNominalRecord {
                 });
             }
             let field_ty = normalize_type_kind(field_ty);
-            let type_digest = field_ty.semantic_identity_digest();
+            let type_digest = field_ty.semantic_identity_digest()?;
             accepted.push(AcceptedEnvironmentRecordField {
                 diagnostic_name,
                 ordinal,
@@ -595,12 +606,12 @@ impl AcceptedNominalRecord {
         Self::try_new(
             id,
             0,
-            AcceptedNominalSemantics::Record(AcceptedEnvironmentRecordSemantics {
+            AcceptedNominalSemantics::Record(Arc::new(AcceptedEnvironmentRecordSemantics {
                 ty,
                 semantic_type,
                 fields: accepted.into_boxed_slice(),
                 runtime_carrier,
-            }),
+            })),
             origin,
             source,
         )
@@ -649,30 +660,35 @@ impl AcceptedNominalRecord {
         self.source.as_ref()
     }
 
-    pub const fn environment_record(&self) -> Option<&AcceptedEnvironmentRecordSemantics> {
+    pub fn environment_record(&self) -> Option<&AcceptedEnvironmentRecordSemantics> {
         match &self.semantics {
             AcceptedNominalSemantics::Record(record) => Some(record),
             AcceptedNominalSemantics::Exact(_)
             | AcceptedNominalSemantics::Opaque(_)
-            | AcceptedNominalSemantics::Character(_) => None,
+            | AcceptedNominalSemantics::Character(_)
+            | AcceptedNominalSemantics::CompileTimeScalar(_) => None,
         }
     }
 
     /// Exact registered runtime carrier, whether the source-visible nominal is
     /// opaque itself or a domain-supplied record with typed fields.
-    pub const fn runtime_carrier(&self) -> Option<&AcceptedOpaqueRuntimeCarrier> {
+    pub fn runtime_carrier(&self) -> Option<&AcceptedOpaqueRuntimeCarrier> {
         match &self.semantics {
             AcceptedNominalSemantics::Opaque(carrier) => Some(carrier),
             AcceptedNominalSemantics::Record(record) => record.runtime_carrier(),
-            AcceptedNominalSemantics::Exact(_) | AcceptedNominalSemantics::Character(_) => None,
+            AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::Character(_)
+            | AcceptedNominalSemantics::CompileTimeScalar(_) => None,
         }
     }
 
-    pub(crate) fn environment_record_identity(&self) -> Option<AcceptedEnvironmentRecordIdentity> {
-        let record = self.environment_record()?;
-        Some(AcceptedEnvironmentRecordIdentity {
+    pub(crate) fn owned_environment_record(&self) -> Option<AcceptedEnvironmentRecord> {
+        let AcceptedNominalSemantics::Record(record) = &self.semantics else {
+            return None;
+        };
+        Some(AcceptedEnvironmentRecord {
             nominal: self.id.clone(),
-            semantic_type: record.semantic_type(),
+            semantics: Arc::clone(record),
             field_count: u32::try_from(record.fields().len()).ok()?,
         })
     }
@@ -701,9 +717,13 @@ impl AcceptedNominalRecord {
             AcceptedNominalSemantics::Record(record) if arguments.is_empty() => {
                 Ok(record.ty().clone())
             }
+            AcceptedNominalSemantics::CompileTimeScalar(kind) if arguments.is_empty() => Ok(
+                TypeKind::CompileTimeScalar(CompileTimeScalarType::new(self.id.clone(), *kind)),
+            ),
             AcceptedNominalSemantics::Exact(_)
             | AcceptedNominalSemantics::Character(_)
-            | AcceptedNominalSemantics::Record(_) => {
+            | AcceptedNominalSemantics::Record(_)
+            | AcceptedNominalSemantics::CompileTimeScalar(_) => {
                 Err(AcceptedNominalInstantiationError::InvalidSemantics {
                     id: self.id.source_label(),
                 })
@@ -1037,7 +1057,7 @@ impl AcceptedNominalCatalog {
 impl TypeCheckEnv {
     /// Publishes the standard exact domain atoms used by source annotations.
     pub(super) fn with_standard_accepted_nominals(self) -> Self {
-        [
+        let environment = [
             ("DataFormat", TypeKind::DataFormat),
             ("DataShape", TypeKind::DataShape),
             ("AgentValue", TypeKind::AgentValue),
@@ -1113,8 +1133,22 @@ impl TypeCheckEnv {
                         .expect("standard domain atoms have valid exact typed identities"),
                 )
                 .expect("standard domain atoms have distinct non-reserved paths")
-        })
-        .with_standard_opaque_nominals()
+        });
+        let environment = [
+            CompileTimeScalarKind::Milli,
+            CompileTimeScalarKind::Ratio,
+            CompileTimeScalarKind::PublicId,
+        ]
+        .into_iter()
+        .fold(environment, |environment, kind| {
+            environment
+                .try_with_nominal_record(
+                    standard_compile_time_scalar_record(kind, AcceptedNominalOrigin::Domain)
+                        .expect("standard compile-time scalar atoms have valid typed identities"),
+                )
+                .expect("standard compile-time scalar atoms have distinct non-reserved paths")
+        });
+        environment.with_standard_opaque_nominals()
     }
 
     fn with_standard_opaque_nominals(self) -> Self {
@@ -1171,11 +1205,24 @@ pub(super) fn standard_exact_record(
     semantics: TypeKind,
     origin: AcceptedNominalOrigin,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let path = standard_nominal_path(name);
+    let id = standard_nominal_id(name);
     AcceptedNominalRecord::try_new(
-        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
+        id,
         0,
         AcceptedNominalSemantics::Exact(semantics),
+        origin,
+        None,
+    )
+}
+
+pub(super) fn standard_compile_time_scalar_record(
+    kind: CompileTimeScalarKind,
+    origin: AcceptedNominalOrigin,
+) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
+    AcceptedNominalRecord::try_new(
+        standard_nominal_id(kind.source_label()),
+        0,
+        AcceptedNominalSemantics::CompileTimeScalar(kind),
         origin,
         None,
     )
@@ -1185,9 +1232,9 @@ pub(super) fn standard_environment_record(
     name: &str,
     fields: impl IntoIterator<Item = (String, TypeKind)>,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let path = standard_nominal_path(name);
+    let id = standard_nominal_id(name);
     AcceptedNominalRecord::try_new_record(
-        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
+        id,
         TypeKind::Named(name.to_owned()),
         fields,
         AcceptedNominalOrigin::NominalRecord,
@@ -1200,9 +1247,9 @@ pub(super) fn standard_runtime_environment_record(
     fields: impl IntoIterator<Item = (String, TypeKind)>,
     runtime_carrier: AcceptedOpaqueRuntimeCarrier,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let path = standard_nominal_path(name);
+    let id = standard_nominal_id(name);
     AcceptedNominalRecord::try_new_runtime_record(
-        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
+        id,
         TypeKind::Named(name.to_owned()),
         fields,
         runtime_carrier,
@@ -1218,8 +1265,8 @@ fn validate_environment_record(
     let expected_type = direct_type_name(id.canonical_path())
         .map(|name| TypeKind::Named(name.to_owned()))
         .unwrap_or_else(|| record.ty().clone());
-    let expected = expected_type.semantic_identity_digest();
-    let actual = record.ty().semantic_identity_digest();
+    let expected = expected_type.semantic_identity_digest()?;
+    let actual = record.ty().semantic_identity_digest()?;
     if expected != actual || record.semantic_type() != actual {
         return Err(AcceptedNominalCatalogError::RecordIdentityMismatch {
             id: id.source_label(),
@@ -1240,7 +1287,7 @@ fn validate_environment_record(
                 field: field.diagnostic_name().to_owned(),
             });
         }
-        let type_digest = field.ty().semantic_identity_digest();
+        let type_digest = field.ty().semantic_identity_digest()?;
         let semantic_id = accepted_environment_field_semantic_id(actual, ordinal, type_digest);
         if field.ordinal() != ordinal
             || field.type_digest() != type_digest
@@ -1283,6 +1330,13 @@ fn standard_opaque_record(
         spec.persistence(),
         origin,
         None,
+    )
+}
+
+pub(crate) fn standard_nominal_id(name: &str) -> AcceptedNominalId {
+    AcceptedNominalId::new(
+        AcceptedNominalOwnerId::Standard,
+        standard_nominal_path(name),
     )
 }
 

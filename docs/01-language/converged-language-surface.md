@@ -185,6 +185,64 @@ DeclaredRole
     project/user content callables
 ```
 
+Project/user callables declare `DeclaredRole` with one dedicated trailing
+attached-content parameter after all ordinary `()` parameter groups and before
+the result:
+
+```arcw
+fn surround(color: Color)[body: RichContent] -> DialogueContent {
+    compose(color, body)
+}
+
+fn maybe()[body?: InlineContent] -> DialogueContent {
+    match body {
+        Some(content) => content
+        None => empty_content()
+    }
+}
+
+fn fallback()[body: DialogueContent = default_content()] -> DialogueContent {
+    body
+}
+```
+
+The role tokens in this bracket are the closed admission roles above, not
+ordinary type references. `body` is a simple callable-local binding. No marker
+means required, `?` means optional, and `= expression` means defaulted; `?` and
+`=` cannot be combined. Optional bodies bind as `Option<DialogueContent>`.
+Required and defaulted bodies bind as `DialogueContent`; a default expression
+is checked as exact standard `DialogueContent` and runs in the callee only when
+the caller omits the body. A project attached-content declaration requires the
+exact standard `DialogueContent` result.
+
+A default may call the declaring function, a mutually recursive function, a
+generic instantiation, or a callable in another module. Its checked identity
+uses an acyclic default-expression transcript whose callable references end at
+exact checked declaration/schema/effect facts. The callable interface is
+sealed once after those defaults; there is no preliminary interface identity
+and no call/recursion restriction introduced solely for hashing.
+
+Default expressions retain their checked effects and suspension behavior.
+Omission enters the declaring callable's ordinary function frame, evaluates
+the default exactly once in its `None` prologue branch, binds the declared
+content local, and then continues into the authored body. Presence bypasses
+that branch. Project calls, including curried groups, use the same structured
+function-site and native/AWBC call-return authority as other ordinary
+functions; an effectful default is neither rejected for being a default nor
+run through a pure-helper or content-specific interpreter.
+
+The attached body is a distinct terminal runtime operand, not an ordinary
+parenthesized argument. `DialogueLine` content is different: it is a
+line-owned semantic content operand under the dialogue application authority
+and never occupies this attached-body channel.
+
+Content construction evaluates display-value bindings and snapshots the
+captures of reveal-time effect callbacks; it does not execute those effects.
+At reveal, the exact materialized effect site invokes its stored ordinary
+runtime function once through the normal structured or AWBC scheduler. Root
+and nested content use this same callback channel. A line-task action or delay
+does not execute the same rich-text effect in parallel.
+
 Consequently this is valid in Dialogue content:
 
 ```arcw

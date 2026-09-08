@@ -18,10 +18,14 @@ use crate::entry::{
     RuntimeCallableExecutableCode, RuntimeCallableId, RuntimeCallableRole, RuntimeCommandContract,
     RuntimeEntryRoles, RuntimeFlowParameterMode, RuntimeStatefulEntryRoles,
 };
-use crate::runtime_id::{RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimePublicLabel};
+use crate::pattern::RuntimeSemanticTypeId;
+use crate::runtime_id::{
+    RuntimeFunctionSiteId, RuntimeIdError, RuntimeIdFamily, RuntimeIdPath,
+    RuntimeProjectCallSiteId, RuntimePublicLabel,
+};
 use crate::value::RuntimeFlowParameterBinding;
 
-use super::{FlowRuntimeId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId};
+use super::{FlowOp, FlowRuntimeId, RuntimePlan, RuntimePlanValueTypeError, RuntimePureHelperId};
 
 /// Runtime identifier for a source-declared entry.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -584,6 +588,11 @@ pub enum RuntimePlanError {
     MissingCallableHelper { callable: String, helper: usize },
     #[error("role-callable `{callable}` maps to missing controller flow `{flow}`")]
     MissingCallableControllerFlow { callable: String, flow: String },
+    #[error("role-callable `{callable}` maps to missing function site `{site}`")]
+    MissingCallableFunctionSite {
+        callable: String,
+        site: RuntimeFunctionSiteId,
+    },
     #[error("role-flow executable metadata references missing flow `{0}`")]
     MissingExecutableFlow(String),
     #[error("entry `{entry}` targets missing flow `{flow}`")]
@@ -668,12 +677,15 @@ pub enum RuntimePlanError {
     InvalidRouteBindings { entry: String, flow: String },
     #[error("entry `{entry}` direct target `{flow}` requires parameters")]
     ParameterizedDirectEntryTarget { entry: String, flow: String },
+    #[error("runtime plan references missing project-call site {site}")]
+    MissingProjectCallSite { site: RuntimeProjectCallSiteId },
 }
 
 impl RuntimePlan {
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
         let flow_ids = self.verify_flow_schemas()?;
+        self.verify_project_call_sites()?;
         let mut helper_ids = BTreeSet::new();
         for helper in &self.pure_helpers {
             if !helper_ids.insert(helper.id) {
@@ -703,7 +715,16 @@ impl RuntimePlan {
                         flow: flow.canonical_label(),
                     });
                 }
+                RuntimeCallableExecutableCode::FunctionSite(site)
+                    if self.function_sites().get(*site).is_none() =>
+                {
+                    return Err(RuntimePlanError::MissingCallableFunctionSite {
+                        callable: executable.callable.as_str().to_owned(),
+                        site: *site,
+                    });
+                }
                 RuntimeCallableExecutableCode::PureHelper(_)
+                | RuntimeCallableExecutableCode::FunctionSite(_)
                 | RuntimeCallableExecutableCode::ControllerFlow(_) => {}
             }
         }
@@ -747,6 +768,114 @@ impl RuntimePlan {
                 return Err(RuntimePlanError::UnreachableFlowExecutable(
                     executable.flow.canonical_label(),
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    fn verify_project_call_sites(&self) -> Result<(), RuntimePlanError> {
+        let check_ops = |ops: &[FlowOp]| self.verify_project_call_ops(ops);
+        for flow in &self.flows {
+            check_ops(&flow.ops)?;
+        }
+        for site in self.function_sites().iter() {
+            if let Some(body) = site.body().executable() {
+                check_ops(body.ops())?;
+            }
+        }
+        for group in &self.line_task_groups {
+            check_ops(group.activation_ops())?;
+            for node in group.nodes() {
+                if let crate::line_task::LineTaskNode::Action(ops) = node {
+                    check_ops(ops)?;
+                }
+            }
+            for rule in group.cancel_rules() {
+                check_ops(rule.action())?;
+            }
+            check_ops(
+                group
+                    .cleanup()
+                    .actions(crate::line_task::ScopeExit::Completed),
+            )?;
+            check_ops(
+                group
+                    .cleanup()
+                    .actions(crate::line_task::ScopeExit::Cancelled),
+            )?;
+            check_ops(group.cleanup().actions(crate::line_task::ScopeExit::Failed))?;
+        }
+        Ok(())
+    }
+
+    fn verify_project_call_ops(&self, ops: &[FlowOp]) -> Result<(), RuntimePlanError> {
+        for op in ops {
+            match op {
+                FlowOp::ProjectCall { site } => {
+                    if self.project_call_sites().get(*site).is_none() {
+                        return Err(RuntimePlanError::MissingProjectCallSite { site: *site });
+                    }
+                }
+                FlowOp::LetElse { else_ops, .. }
+                | FlowOp::Thread { body: else_ops, .. }
+                | FlowOp::Scope(else_ops)
+                | FlowOp::Loop { body: else_ops, .. }
+                | FlowOp::While { body: else_ops, .. }
+                | FlowOp::WhileLet { body: else_ops, .. } => {
+                    self.verify_project_call_ops(else_ops)?;
+                }
+                FlowOp::If {
+                    then_ops, else_ops, ..
+                }
+                | FlowOp::IfLet {
+                    then_ops, else_ops, ..
+                } => {
+                    self.verify_project_call_ops(then_ops)?;
+                    self.verify_project_call_ops(else_ops)?;
+                }
+                FlowOp::Match { arms, .. } => {
+                    for arm in arms {
+                        self.verify_project_call_ops(&arm.ops)?;
+                    }
+                }
+                FlowOp::LoopNext { body }
+                | FlowOp::WhileNext { body, .. }
+                | FlowOp::WhileLetNext { body, .. }
+                | FlowOp::ForNext { body, .. } => {
+                    self.verify_project_call_ops(body)?;
+                }
+                FlowOp::For { body, .. } => self.verify_project_call_ops(body)?,
+                FlowOp::LetScope { ops, .. } => self.verify_project_call_ops(ops)?,
+                FlowOp::Await { observers, .. } => {
+                    for observer in observers {
+                        self.verify_project_call_ops(&observer.ops)?;
+                    }
+                }
+                FlowOp::Bind(_)
+                | FlowOp::Let { .. }
+                | FlowOp::AssignNominalField { .. }
+                | FlowOp::LineOperation { .. }
+                | FlowOp::CommitDialogueResult { .. }
+                | FlowOp::Dialogue { .. }
+                | FlowOp::Choice { .. }
+                | FlowOp::AwaitMany { .. }
+                | FlowOp::HostCall { .. }
+                | FlowOp::ApplyFunction { .. }
+                | FlowOp::Break(_)
+                | FlowOp::Continue
+                | FlowOp::Goto(_)
+                | FlowOp::GotoExpr(_)
+                | FlowOp::Return(_)
+                | FlowOp::ReturnExpr(_)
+                | FlowOp::Effect(_)
+                | FlowOp::EvaluatedEffect(_)
+                | FlowOp::RegisterCleanup { .. }
+                | FlowOp::CancelCleanup { .. }
+                | FlowOp::EnterScope
+                | FlowOp::ExitScope
+                | FlowOp::CompleteAwaitObserver
+                | FlowOp::ExitScopeBind { .. }
+                | FlowOp::Noop => {}
             }
         }
         Ok(())
@@ -1118,17 +1247,136 @@ impl RuntimePlan {
         Self::verify_stateful_command_contracts(entry, &roles.command_policy.admitted)?;
         let initializer = self.verify_callable(entry, "initializer", &roles.initializer)?;
         let reducer = self.verify_callable(entry, "reducer", &roles.reducer)?;
-        if !matches!(
-            initializer.code,
-            RuntimeCallableExecutableCode::PureHelper(_)
-        ) || !matches!(reducer.code, RuntimeCallableExecutableCode::PureHelper(_))
-        {
+        if !self.verify_stateful_function_site(
+            "initializer",
+            initializer,
+            &[],
+            roles.state.semantic_identity,
+        ) || !self.verify_stateful_function_site(
+            "reducer",
+            reducer,
+            &[roles.state.semantic_identity, roles.event.semantic_identity],
+            roles.state.semantic_identity,
+        ) {
             return Err(RuntimePlanError::IncompatibleEntryRoles {
                 entry: entry.canonical_label(),
                 kind: "stateful callable code".to_owned(),
             });
         }
         Ok(())
+    }
+
+    fn verify_stateful_function_site(
+        &self,
+        role: &'static str,
+        executable: &RuntimeCallableExecutable,
+        expected_inputs: &[RuntimeSemanticTypeId],
+        expected_result: RuntimeSemanticTypeId,
+    ) -> bool {
+        let RuntimeCallableExecutableCode::FunctionSite(site) = executable.code else {
+            return false;
+        };
+        let Some(site) = self.function_sites().get(site) else {
+            return false;
+        };
+        if site.capture_inputs().next().is_some()
+            || !matches!(site.body(), super::RuntimeFunctionSiteBody::Expression(_))
+        {
+            return false;
+        }
+        let parameters = site.parameter_inputs().collect::<Vec<_>>();
+        if parameters.len() != expected_inputs.len() {
+            return false;
+        }
+        for (index, input) in parameters.iter().enumerate() {
+            let super::RuntimeFunctionInputSource::Parameter { position } = input.source() else {
+                return false;
+            };
+            if u32::try_from(index).ok() != Some(position) {
+                return false;
+            }
+            let Some(pattern_type) = self.type_table().get(input.pattern().ty()) else {
+                return false;
+            };
+            let expected_input_matches = if role == "reducer" && index == 0 {
+                let super::RuntimePlanTypeProjection::Reference(inner) = pattern_type.projection()
+                else {
+                    return false;
+                };
+                self.type_table()
+                    .get(*inner)
+                    .is_some_and(|inner| inner.semantic_identity() == expected_inputs[index])
+            } else {
+                pattern_type.semantic_identity() == expected_inputs[index]
+            };
+            if !expected_input_matches {
+                return false;
+            }
+            let Some(local) = self.local_declarations().get(input.input_local()) else {
+                return false;
+            };
+            if local.ty() != input.pattern().ty() {
+                return false;
+            }
+        }
+        let Some(result) = self.type_table().get(site.result()) else {
+            return false;
+        };
+        if role == "initializer" {
+            return result.semantic_identity() == expected_result;
+        }
+        self.is_reducer_result_type(site.result(), expected_result)
+    }
+
+    fn is_reducer_result_type(
+        &self,
+        result: crate::runtime_id::RuntimePlanTypeId,
+        state: RuntimeSemanticTypeId,
+    ) -> bool {
+        let Some(declaration) = self.type_table().get(result) else {
+            return false;
+        };
+        let super::RuntimePlanTypeProjection::Result { value, error, .. } =
+            declaration.projection()
+        else {
+            return false;
+        };
+        self.is_reduction_type(*value, state) && self.is_reducer_error_type(*error)
+    }
+
+    fn is_reduction_type(
+        &self,
+        ty: crate::runtime_id::RuntimePlanTypeId,
+        state: RuntimeSemanticTypeId,
+    ) -> bool {
+        let Some(declaration) = self.type_table().get(ty) else {
+            return false;
+        };
+        let super::RuntimePlanTypeProjection::Opaque {
+            producer,
+            arguments,
+            ..
+        } = declaration.projection()
+        else {
+            return false;
+        };
+        arguments.len() == 1
+            && producer.as_str() == "std.reduction"
+            && self
+                .type_table()
+                .get(arguments[0])
+                .is_some_and(|argument| argument.semantic_identity() == state)
+    }
+
+    fn is_reducer_error_type(&self, ty: crate::runtime_id::RuntimePlanTypeId) -> bool {
+        let Some(declaration) = self.type_table().get(ty) else {
+            return false;
+        };
+        let super::RuntimePlanTypeProjection::Opaque { producer, .. } = declaration.projection()
+        else {
+            return false;
+        };
+        producer.as_str() == "std.reducer_error"
     }
 
     fn verify_stateful_command_contracts(

@@ -6,7 +6,8 @@ use super::{
 };
 use crate::body_edges::{HirBodyChild, HirBodyChildRole};
 use crate::dialogue_application::{
-    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirLinePlan,
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily,
+    HirAttachedContentBodyPresence, HirDialogueContent, HirDialogueContentId, HirLinePlan,
     HirLinePlanItem,
 };
 use crate::expr::{
@@ -307,16 +308,21 @@ fn dialogue_edges_keep_six_statement_roles_and_group_kinds() {
         ]),
     )
     .expect("line plan");
-    let content = HirDialogueContent::try_new(
-        HirDialogueContentId::new(owner),
-        Box::new([]),
-        Box::new([]),
-        Box::new([]),
-    )
-    .expect("empty dialogue content");
-    let dialogue = HirExprKind::DialogueContentApplication(
-        HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
-            .expect("dialogue application"),
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let dialogue = HirExprKind::AttachedContentApplication(
+        HirAttachedContentApplication::try_new_with_body_presence(
+            owner,
+            content,
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan: Some(plan),
+                coordinates: Box::new([]),
+            },
+            HirAttachedContentBodyPresence::Present,
+        )
+        .expect("dialogue application"),
     );
 
     let edges = dialogue

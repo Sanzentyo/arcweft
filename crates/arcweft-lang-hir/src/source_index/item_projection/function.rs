@@ -18,9 +18,9 @@ use crate::source_index::block_projection::{
 };
 
 use super::callable::{
-    CallableScopeIds, CallableScopeSource, contract_scopes_match, contracts_match,
-    direct_children_are_exact, direct_contract_children_are_exact, function_parameter_groups_match,
-    item_body_scope_matches, postcondition_result_matches,
+    CallableScopeIds, CallableScopeSource, attached_content_matches, contract_scopes_match,
+    contracts_match, direct_children_are_exact, direct_contract_children_are_exact,
+    function_parameter_groups_match, item_body_scope_matches, postcondition_result_matches,
 };
 use super::{
     ItemValidationArenas, generic_issue, generic_parameters_match, item_prefix_matches, item_state,
@@ -77,6 +77,18 @@ pub(super) fn payload_matches(
         slots,
         arenas,
         &block_arenas,
+        function
+            .attached_content()
+            .map(|attached| attached.binding()),
+    ) else {
+        return false;
+    };
+    let Some(attached_content) = attached_content_matches(
+        attached.attached_content(),
+        function.attached_content(),
+        function.callable_scope(),
+        slots,
+        arenas,
     ) else {
         return false;
     };
@@ -98,6 +110,7 @@ pub(super) fn payload_matches(
         return false;
     };
     parameter_state.recovered |= attached.has_parameter_shape_recovery();
+    parameter_state.recovered |= attached_content.recovered;
     if !postcondition_result_matches(
         attached.postcondition_result_source_span(),
         function.ensures_scope(),

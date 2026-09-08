@@ -3,10 +3,11 @@
 use crate::identity::{HirModuleId, LocalId, PatternId, ScopeId, TypeId};
 
 use super::{
-    HirFunctionBody, HirGenericParameter, HirItemInvariantError, HirItemPrefix, HirParameter,
-    HirRequiredName, HirWherePredicate, validate_function_body, validate_generic_parameters,
-    validate_locals, validate_optional_type, validate_parameters, validate_pattern, validate_scope,
-    validate_type, validate_types, validate_where_predicates,
+    HirCallableAttachedContentParameter, HirFunctionBody, HirGenericParameter,
+    HirItemInvariantError, HirItemPrefix, HirParameter, HirRequiredName, HirWherePredicate,
+    validate_function_body, validate_generic_parameters, validate_locals,
+    validate_optional_attached_content, validate_optional_type, validate_parameters,
+    validate_pattern, validate_scope, validate_type, validate_types, validate_where_predicates,
 };
 
 /// Ownership mode of one typed method receiver.
@@ -249,6 +250,7 @@ pub struct HirTraitFunction {
     parameter_groups: Box<[HirMethodParameterGroup]>,
     where_predicates: Box<[HirWherePredicate]>,
     return_type: Option<TypeId>,
+    attached_content: Option<HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     body: Option<HirFunctionBody>,
 }
@@ -266,6 +268,7 @@ impl HirTraitFunction {
         parameter_groups: Box<[HirMethodParameterGroup]>,
         where_predicates: Box<[HirWherePredicate]>,
         return_type: Option<TypeId>,
+        attached_content: Option<HirCallableAttachedContentParameter>,
         callable_scope: ScopeId,
         body: Option<HirFunctionBody>,
     ) -> Result<Self, HirItemInvariantError> {
@@ -276,6 +279,7 @@ impl HirTraitFunction {
             &parameter_groups,
             &where_predicates,
             return_type,
+            attached_content,
             callable_scope,
             body.as_ref(),
         )?;
@@ -286,6 +290,7 @@ impl HirTraitFunction {
             parameter_groups,
             where_predicates,
             return_type,
+            attached_content,
             callable_scope,
             body,
         })
@@ -315,6 +320,10 @@ impl HirTraitFunction {
         self.return_type
     }
 
+    pub const fn attached_content(&self) -> Option<HirCallableAttachedContentParameter> {
+        self.attached_content
+    }
+
     pub const fn callable_scope(&self) -> ScopeId {
         self.callable_scope
     }
@@ -331,6 +340,7 @@ impl HirTraitFunction {
             &self.parameter_groups,
             &self.where_predicates,
             self.return_type,
+            self.attached_content,
             self.callable_scope,
             self.body.as_ref(),
         )
@@ -350,6 +360,7 @@ pub struct HirImplFunction {
     parameter_groups: Box<[HirMethodParameterGroup]>,
     where_predicates: Box<[HirWherePredicate]>,
     return_type: Option<TypeId>,
+    attached_content: Option<HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     body: Option<HirFunctionBody>,
 }
@@ -367,6 +378,7 @@ impl HirImplFunction {
         parameter_groups: Box<[HirMethodParameterGroup]>,
         where_predicates: Box<[HirWherePredicate]>,
         return_type: Option<TypeId>,
+        attached_content: Option<HirCallableAttachedContentParameter>,
         callable_scope: ScopeId,
         body: Option<HirFunctionBody>,
     ) -> Result<Self, HirItemInvariantError> {
@@ -377,6 +389,7 @@ impl HirImplFunction {
             &parameter_groups,
             &where_predicates,
             return_type,
+            attached_content,
             callable_scope,
             body.as_ref(),
         )?;
@@ -387,6 +400,7 @@ impl HirImplFunction {
             parameter_groups,
             where_predicates,
             return_type,
+            attached_content,
             callable_scope,
             body,
         })
@@ -416,6 +430,10 @@ impl HirImplFunction {
         self.return_type
     }
 
+    pub const fn attached_content(&self) -> Option<HirCallableAttachedContentParameter> {
+        self.attached_content
+    }
+
     pub const fn callable_scope(&self) -> ScopeId {
         self.callable_scope
     }
@@ -432,6 +450,7 @@ impl HirImplFunction {
             &self.parameter_groups,
             &self.where_predicates,
             self.return_type,
+            self.attached_content,
             self.callable_scope,
             self.body.as_ref(),
         )
@@ -453,6 +472,7 @@ fn validate_method(
     parameter_groups: &[HirMethodParameterGroup],
     where_predicates: &[HirWherePredicate],
     return_type: Option<TypeId>,
+    attached_content: Option<HirCallableAttachedContentParameter>,
     callable_scope: ScopeId,
     body: Option<&HirFunctionBody>,
 ) -> Result<(), HirItemInvariantError> {
@@ -466,6 +486,7 @@ fn validate_method(
     }
     validate_where_predicates(expected, where_predicates)?;
     validate_optional_type(expected, return_type)?;
+    validate_optional_attached_content(expected, attached_content, false)?;
     validate_scope(expected, callable_scope)?;
     if let Some(body) = body {
         validate_function_body(expected, body)?;

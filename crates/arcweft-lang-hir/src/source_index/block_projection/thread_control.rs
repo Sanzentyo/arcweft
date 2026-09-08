@@ -762,7 +762,7 @@ fn thread_flow_item_evidence(
                 .resolve_prepared(slots, *owner)
                 .ok()?
                 .kind(),
-            HirExprKind::DialogueContentApplication(_)
+            HirExprKind::AttachedContentApplication(_)
         ) {
             return None;
         }

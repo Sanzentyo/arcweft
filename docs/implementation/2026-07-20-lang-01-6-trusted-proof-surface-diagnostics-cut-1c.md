@@ -41,8 +41,8 @@ spelling-specific diagnostic, or source gate for it.
   awaits Proof Stage 4.
 - The ordinary expression grammar has no interpolated-string AST variant.
   Trusted reasons accept only `Expr::Literal(Literal::String(_))`. A call or
-  other expression is rejected as `reason_not_string`, while text such as
-  `$(` inside an ordinary quoted literal remains literal text rather than being
+  other expression is rejected as `reason_not_string`, while a
+  dollar-parenthesis byte sequence inside an ordinary quoted literal remains literal text rather than being
   rejected by a spelling scan.
 - Legacy `trusted axiom` input continues through ordinary current-grammar
   recovery with `syntax.parse` and cannot construct a proof.

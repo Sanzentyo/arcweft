@@ -201,7 +201,6 @@ define_family!(
         SyntaxKind::Visibility
             | SyntaxKind::DeclarationHeader
             | SyntaxKind::DeclarationPublicId
-            | SyntaxKind::SurfaceAlias
             | SyntaxKind::GenericParameterGroup
             | SyntaxKind::GenericParameter
             | SyntaxKind::LifetimeParameter
@@ -221,7 +220,7 @@ define_family!(
             | SyntaxKind::ModifiesClause
             | SyntaxKind::DecreasesClause
             | SyntaxKind::ResourceFieldInitializer
-            | SyntaxKind::CharacterDisplayNameMember
+            | SyntaxKind::CharacterDisplayMember
             | SyntaxKind::ViewExportBlock
             | SyntaxKind::ViewExportDeclaration
             | SyntaxKind::ViewFragment
@@ -289,25 +288,24 @@ define_family!(DelimiterFamily, DelimiterNode, Delimiter, |kind| matches!(
 ));
 define_family!(RichTextFamily, RichTextNode, RichText, |kind| matches!(
     kind,
-    SyntaxKind::RichTextTag
-        | SyntaxKind::RichTextEndTag
-        | SyntaxKind::RichTextTagName
-        | SyntaxKind::RichTextArgumentPayload
-        | SyntaxKind::RichTextTimedCuePayload
-        | SyntaxKind::RichTextFxCallPayload
-        | SyntaxKind::RichTextDialogueCallPayload
-        | SyntaxKind::RichTextConditionPayload
-        | SyntaxKind::RichTextPositionalArgument
-        | SyntaxKind::RichTextNamedArgument
-        | SyntaxKind::RichTextInvalidArgument
-        | SyntaxKind::RichTextArgumentKey
-        | SyntaxKind::RichTextArgumentEquals
-        | SyntaxKind::RichTextArgumentValue
-        | SyntaxKind::RichTextArgumentToken
-        | SyntaxKind::RichTextArgumentContent
-        | SyntaxKind::RichTextArgumentQuote
-        | SyntaxKind::RichTextMissingArgumentValue
-        | SyntaxKind::RichTextInvalidArgumentIssue
+    SyntaxKind::DialoguePointAction
+        | SyntaxKind::DialoguePointActionName
+        | SyntaxKind::DialogueActionArgumentPayload
+        | SyntaxKind::DialogueActionTimedCuePayload
+        | SyntaxKind::DialogueActionFxCallPayload
+        | SyntaxKind::DialogueActionDialogueCallPayload
+        | SyntaxKind::DialogueActionConditionPayload
+        | SyntaxKind::DialogueActionPositionalArgument
+        | SyntaxKind::DialogueActionNamedArgument
+        | SyntaxKind::DialogueActionInvalidArgument
+        | SyntaxKind::DialogueActionArgumentKey
+        | SyntaxKind::DialogueActionArgumentEquals
+        | SyntaxKind::DialogueActionArgumentValue
+        | SyntaxKind::DialogueActionArgumentToken
+        | SyntaxKind::DialogueActionArgumentContent
+        | SyntaxKind::DialogueActionArgumentQuote
+        | SyntaxKind::DialogueActionMissingArgumentValue
+        | SyntaxKind::DialogueActionInvalidArgumentIssue
 ));
 define_family!(
     RecoveryFamily,

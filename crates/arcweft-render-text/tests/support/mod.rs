@@ -5,12 +5,15 @@ use arcweft_character::{
         CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
     },
 };
+use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_core::value::RuntimeDialogueContentValue;
 use arcweft_dialogue::character_presentation::{
     CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_text_model::DialogueContentFragmentTemplate;
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
 pub fn character_plan(character: &str) -> CheckedCharacterPresentationPlan {
@@ -47,4 +50,14 @@ pub fn dialogue_profile_revision() -> DialogueProfileRevision {
         AcceptedViewProgramRevision::try_from_bytes([0x42; 32]).unwrap(),
         ResourceTypeRegistry::empty().digest(),
     )
+}
+
+pub fn content_value(template: &DialogueContentFragmentTemplate) -> RuntimeDialogueContentValue {
+    RuntimeDialogueContentValue::try_new(
+        RuntimeArtifactFingerprint::try_from_bytes([0x71; 32]).expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope")
 }

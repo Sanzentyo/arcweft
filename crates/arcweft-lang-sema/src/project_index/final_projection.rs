@@ -93,7 +93,7 @@ fn checked_dialogue_line_references(
         else {
             continue;
         };
-        if project.dialogue_lines().get(target).is_none() {
+        if analysis.dialogue_lines().get(target).is_none() {
             return Err(ProjectSemanticIndexError::MissingAcceptedDialogueLine {
                 target: target.clone(),
             });
@@ -304,7 +304,7 @@ fn index_nonretained_entity(
     }
     let public_id = identity.public_id().clone();
     let source = authored_item_span(item, source_role, &public_id)?;
-    let semantic_hash = entity_semantic_hash(&public_id, &kind, None, checked.effects(), None);
+    let semantic_hash = entity_semantic_hash(&public_id, &kind, None, checked.effects(), None)?;
     let ty = EntityType::new(kind, None);
     let source = SourceAnchor::from_span(source);
     insert_entity(
@@ -595,7 +595,7 @@ fn project_nominal_types(
             .type_parameters()
             .iter()
             .map(|parameter| {
-                TypeKind::GenericParam(GenericTypeParameterId::new(
+                TypeKind::generic_parameter(GenericTypeParameterId::new(
                     GenericParameterOwnerId::Nominal(declaration.id().clone()),
                     parameter.ordinal(),
                 ))
@@ -646,7 +646,7 @@ fn retained_entities(
             value.as_ref(),
             checked.effects(),
             None,
-        );
+        )?;
         insert_entity(
             index,
             EntitySymbol::new(
@@ -711,7 +711,7 @@ fn entry_entities(
             None,
             checked.effects(),
             Some(binding.binding_digest().as_bytes()),
-        );
+        )?;
         insert_entity(
             index,
             EntitySymbol::new(
@@ -787,7 +787,7 @@ fn entity_semantic_hash(
     value: Option<&TypeKind>,
     effects: &crate::effects::EffectSet,
     extra: Option<&[u8]>,
-) -> SemanticHash {
+) -> Result<SemanticHash, ProjectSemanticIndexError> {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"arcweft.project-entity.v1\0");
     hash_bytes(&mut hasher, id.as_str().as_bytes());
@@ -795,7 +795,13 @@ fn entity_semantic_hash(
     match value {
         Some(value) => {
             hasher.update(&[1]);
-            hash_bytes(&mut hasher, value.semantic_identity_digest().as_bytes());
+            let identity = value.semantic_identity_digest().map_err(|source| {
+                ProjectSemanticIndexError::GenericScope {
+                    id: id.clone(),
+                    source,
+                }
+            })?;
+            hash_bytes(&mut hasher, identity.as_bytes());
         }
         None => {
             hasher.update(&[0]);
@@ -814,7 +820,7 @@ fn entity_semantic_hash(
             hasher.update(&[0]);
         }
     }
-    SemanticHash::new(hasher.finalize().to_hex().to_string())
+    Ok(SemanticHash::new(hasher.finalize().to_hex().to_string()))
 }
 
 fn hash_bytes(hasher: &mut blake3::Hasher, bytes: &[u8]) {

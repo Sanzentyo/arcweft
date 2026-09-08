@@ -38,6 +38,8 @@ const CHECKED_DECLARATION_CONTRACT_STEP_TAG: u8 = 10;
 const CHECKED_DECLARATION_ITEM_STEP_TAG: u8 = 11;
 const CHECKED_DECLARATION_MEMBER_STEP_TAG: u8 = 12;
 const CHECKED_DECLARATION_RESULT_STEP_TAG: u8 = 13;
+const CHECKED_ATTACHED_CONTENT_BINDING_STEP_TAG: u8 = 14;
+const CHECKED_ATTACHED_CONTENT_DEFAULT_STEP_TAG: u8 = 15;
 const CHECKED_BODY_COORDINATE_SUFFIX_TAG: u8 = 0;
 #[allow(dead_code)]
 const CHECKED_OUTPUT_TARGET_COORDINATE_SUFFIX_TAG: u8 = 1;
@@ -53,6 +55,8 @@ const CHECKED_DIALOGUE_MARK_COORDINATE_SUFFIX_TAG: u8 = 2;
     reason = "consumed by the version-one statement transcript cut"
 )]
 const CHECKED_DIALOGUE_CONTENT_MARK_FAMILY_TAG: u8 = 0;
+const CHECKED_CONTENT_FRAGMENT_COORDINATE_DOMAIN: &[u8] =
+    b"arcweft.lang.checked-content-fragment-coordinate.v1\0";
 
 /// Stable semantic identity of one accepted declaration root.
 ///
@@ -213,7 +217,11 @@ pub(crate) enum CheckedExpressionChildRole {
     RepeatedValue,
     RepeatLength,
     Callee,
+    ContentCallee,
     Argument {
+        ordinal: u32,
+    },
+    ContentNominalDiscriminator {
         ordinal: u32,
     },
     Target,
@@ -250,7 +258,10 @@ pub(crate) enum CheckedExpressionChildRole {
     DialogueInterpolation {
         ordinal: u32,
     },
-    DialogueTagPayload {
+    AttachedContentApplication {
+        ordinal: u32,
+    },
+    DialoguePointActionPayload {
         ordinal: u32,
     },
     PostfixIndexCandidate,
@@ -347,7 +358,9 @@ impl CheckedExpressionChildRole {
             Self::RepeatedValue => 0x1001,
             Self::RepeatLength => 0x1002,
             Self::Callee => 0x1003,
+            Self::ContentCallee => 0x103E,
             Self::Argument { .. } => 0x1004,
+            Self::ContentNominalDiscriminator { .. } => 0x103F,
             Self::Target => 0x1005,
             Self::Index => 0x1006,
             Self::PipeLeft => 0x1007,
@@ -371,7 +384,8 @@ impl CheckedExpressionChildRole {
             Self::DialogueTarget => 0x1019,
             Self::DialogueCoordinate { .. } => 0x101A,
             Self::DialogueInterpolation { .. } => 0x101B,
-            Self::DialogueTagPayload { .. } => 0x101C,
+            Self::DialoguePointActionPayload { .. } => 0x101C,
+            Self::AttachedContentApplication { .. } => 0x101D,
             Self::PostfixIndexCandidate => 0x1024,
             Self::PostfixDialogueCandidate => 0x1025,
             Self::ForInput => 0x1026,
@@ -411,7 +425,8 @@ impl CheckedExpressionChildRole {
             | Self::Argument { ordinal }
             | Self::DialogueCoordinate { ordinal }
             | Self::DialogueInterpolation { ordinal }
-            | Self::DialogueTagPayload { ordinal }
+            | Self::AttachedContentApplication { ordinal }
+            | Self::DialoguePointActionPayload { ordinal }
             | Self::ChoicePlanAssignment { item: ordinal }
             | Self::ChoicePlanTimeout { item: ordinal }
             | Self::ChoicePlanCancelSignal { item: ordinal }
@@ -463,6 +478,7 @@ impl CheckedExpressionChildRole {
             Self::RepeatedValue
             | Self::RepeatLength
             | Self::Callee
+            | Self::ContentCallee
             | Self::Target
             | Self::Index
             | Self::PipeLeft
@@ -484,6 +500,9 @@ impl CheckedExpressionChildRole {
             | Self::PostfixIndexCandidate
             | Self::PostfixDialogueCandidate
             | Self::ForInput => {}
+            Self::ContentNominalDiscriminator { ordinal } => {
+                output.extend_from_slice(&ordinal.to_le_bytes());
+            }
         }
         Ok(())
     }
@@ -510,6 +529,8 @@ pub(crate) enum CheckedSemanticPathStep {
     Pattern(HirPatternChildRole),
     ParameterPattern { group: u32, parameter: u32 },
     ParameterDefault { group: u32, parameter: u32 },
+    AttachedContentBinding,
+    AttachedContentDefault,
     DeclarationMember { member: u32 },
     DeclarationResult,
 }
@@ -538,6 +559,28 @@ impl CheckedSemanticPath {
 
     pub(crate) fn steps(&self) -> &[CheckedSemanticPathStep] {
         &self.steps
+    }
+
+    pub(crate) fn is_at_or_below(&self, ancestor: &Self) -> bool {
+        self.root == ancestor.root && self.steps.starts_with(&ancestor.steps)
+    }
+
+    /// Verifies that this accepted pattern path is rooted at the exact Match
+    /// arm coordinate used by coverage.  The coverage arm coordinate and the
+    /// accepted owner path are two projections of the same HIR fact; this
+    /// predicate is the reconciliation boundary between them.
+    pub(crate) fn is_match_pattern_under(
+        &self,
+        match_owner: &CheckedSemanticPath,
+        arm: u32,
+    ) -> bool {
+        if self.root != match_owner.root || !self.steps.starts_with(&match_owner.steps) {
+            return false;
+        }
+        matches!(
+            self.steps.get(match_owner.steps.len()),
+            Some(CheckedSemanticPathStep::MatchPattern { arm: accepted }) if *accepted == arm
+        )
     }
 
     pub(crate) fn canonical_bytes(&self) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
@@ -1200,6 +1243,161 @@ impl StableCheckedValueCoordinate {
     }
 }
 
+/// One typed source-order step from a content fragment to a nested
+/// `ContentResult` fragment.
+///
+/// The ordinal is local to the immediately enclosing checked fragment. It is
+/// never an HIR arena identity or a source-text coordinate.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedContentFragmentPathSegment {
+    content_result_ordinal: u32,
+}
+
+impl CheckedContentFragmentPathSegment {
+    /// Converts one zero-based checked source ordinal into the closed path
+    /// segment domain.
+    pub fn try_from_usize(
+        ordinal: usize,
+    ) -> Result<Self, StableCheckedContentFragmentCoordinateError> {
+        Ok(Self {
+            content_result_ordinal: u32::try_from(ordinal).map_err(|_| {
+                StableCheckedContentFragmentCoordinateError::OrdinalOverflow { ordinal }
+            })?,
+        })
+    }
+
+    pub const fn content_result_ordinal(self) -> u32 {
+        self.content_result_ordinal
+    }
+}
+
+/// Stable path inside one checked content-producing value. The empty path is
+/// the root fragment; every member is an exact nested ContentResult boundary.
+#[derive(Clone, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedContentFragmentPath(Box<[CheckedContentFragmentPathSegment]>);
+
+impl CheckedContentFragmentPath {
+    pub fn root() -> Self {
+        Self(Box::new([]))
+    }
+
+    pub fn segments(&self) -> &[CheckedContentFragmentPathSegment] {
+        &self.0
+    }
+
+    /// Returns a child path without mutating or aliasing the parent path.
+    pub fn try_child(
+        &self,
+        ordinal: usize,
+    ) -> Result<Self, StableCheckedContentFragmentCoordinateError> {
+        let child = CheckedContentFragmentPathSegment::try_from_usize(ordinal)?;
+        let length = self
+            .0
+            .len()
+            .checked_add(1)
+            .ok_or(StableCheckedContentFragmentCoordinateError::PathLengthOverflow)?;
+        u64::try_from(length)
+            .map_err(|_| StableCheckedContentFragmentCoordinateError::PathLengthOverflow)?;
+        let mut segments = Vec::with_capacity(length);
+        segments.extend_from_slice(&self.0);
+        segments.push(child);
+        Ok(Self(segments.into_boxed_slice()))
+    }
+}
+
+/// Opaque v1 semantic identity for one runtime-capable checked content
+/// fragment. Only [`StableCheckedContentFragmentCoordinate::semantic_digest`]
+/// can issue these bytes.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StableCheckedContentFragmentDigest([u8; 32]);
+
+impl StableCheckedContentFragmentDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Stable identity input for one root or nested checked content fragment.
+///
+/// The value coordinate owns the accepted expression/binding root. The path
+/// distinguishes fragments recursively produced beneath that value without
+/// exposing the private semantic-coordinate byte grammar to downstream
+/// crates.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StableCheckedContentFragmentCoordinate {
+    owner: StableCheckedValueCoordinate,
+    path: CheckedContentFragmentPath,
+}
+
+impl StableCheckedContentFragmentCoordinate {
+    pub fn root(owner: StableCheckedValueCoordinate) -> Self {
+        Self {
+            owner,
+            path: CheckedContentFragmentPath::root(),
+        }
+    }
+
+    pub const fn owner(&self) -> &StableCheckedValueCoordinate {
+        &self.owner
+    }
+
+    pub const fn path(&self) -> &CheckedContentFragmentPath {
+        &self.path
+    }
+
+    /// Returns the coordinate for one nested ContentResult fragment.
+    pub fn try_child(
+        &self,
+        ordinal: usize,
+    ) -> Result<Self, StableCheckedContentFragmentCoordinateError> {
+        Ok(Self {
+            owner: self.owner.clone(),
+            path: self.path.try_child(ordinal)?,
+        })
+    }
+
+    /// Issues the public opaque identity while retaining the canonical byte
+    /// grammar inside the sema owner.
+    pub fn semantic_digest(
+        &self,
+    ) -> Result<StableCheckedContentFragmentDigest, StableCheckedContentFragmentCoordinateError>
+    {
+        let owner = self
+            .owner
+            .canonical_bytes()
+            .map_err(|_| StableCheckedContentFragmentCoordinateError::CoordinateEncoding)?;
+        let mut transcript = Vec::new();
+        let owner_length = u64::try_from(owner.len())
+            .map_err(|_| StableCheckedContentFragmentCoordinateError::CoordinateEncoding)?;
+        transcript.extend_from_slice(&owner_length.to_le_bytes());
+        transcript.extend_from_slice(&owner);
+        let path_length = u64::try_from(self.path.0.len())
+            .map_err(|_| StableCheckedContentFragmentCoordinateError::PathLengthOverflow)?;
+        transcript.extend_from_slice(&path_length.to_le_bytes());
+        for segment in &self.path.0 {
+            transcript.push(0);
+            transcript.extend_from_slice(&segment.content_result_ordinal.to_le_bytes());
+        }
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(CHECKED_CONTENT_FRAGMENT_COORDINATE_DOMAIN);
+        hasher.update(&transcript);
+        Ok(StableCheckedContentFragmentDigest(
+            *hasher.finalize().as_bytes(),
+        ))
+    }
+}
+
+/// Failure to extend or digest a checked content-fragment coordinate.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum StableCheckedContentFragmentCoordinateError {
+    #[error("checked content fragment ordinal {ordinal} exceeds the u32 identity domain")]
+    OrdinalOverflow { ordinal: usize },
+    #[error("checked content fragment path length exceeds the canonical u64 domain")]
+    PathLengthOverflow,
+    #[error("checked content fragment owner coordinate cannot be encoded")]
+    CoordinateEncoding,
+}
+
 fn write_checked_path_step(
     output: &mut Vec<u8>,
     step: &CheckedSemanticPathStep,
@@ -1254,6 +1452,12 @@ fn write_checked_path_step(
             output.push(6);
             output.extend_from_slice(&group.to_le_bytes());
             output.extend_from_slice(&parameter.to_le_bytes());
+        }
+        CheckedSemanticPathStep::AttachedContentBinding => {
+            output.push(CHECKED_ATTACHED_CONTENT_BINDING_STEP_TAG);
+        }
+        CheckedSemanticPathStep::AttachedContentDefault => {
+            output.push(CHECKED_ATTACHED_CONTENT_DEFAULT_STEP_TAG);
         }
         CheckedSemanticPathStep::DeclarationMember { member } => {
             output.push(CHECKED_DECLARATION_MEMBER_STEP_TAG);
@@ -1344,7 +1548,7 @@ fn write_declaration_item_role(
             output.push(3);
             output.extend_from_slice(&field.to_le_bytes());
         }
-        HirDeclarationItemRootRole::CharacterDisplayName { member } => {
+        HirDeclarationItemRootRole::CharacterDisplay { member } => {
             output.push(4);
             output.extend_from_slice(&member.to_le_bytes());
         }
@@ -1524,6 +1728,15 @@ fn write_expression_owned_role(
     Ok(())
 }
 
+/// Canonical transcript bytes for one expression-owned child/body role.
+pub(crate) fn expression_owned_role_transcript_bytes(
+    role: &HirExpressionOwnedBodyRole,
+) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+    let mut output = Vec::new();
+    write_expression_owned_role(&mut output, role)?;
+    Ok(output)
+}
+
 fn write_line_plan_statement_role(output: &mut Vec<u8>, role: HirLinePlanStatementRole) {
     match role {
         HirLinePlanStatementRole::Init { statement } => {
@@ -1642,6 +1855,16 @@ fn statement_role_tag(role: HirStatementChildRole) -> u8 {
     }
 }
 
+/// Canonical transcript bytes for one checked statement child role.
+pub(crate) fn statement_child_role_transcript_bytes(
+    role: HirStatementChildRole,
+) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+    let mut output = Vec::new();
+    output.push(statement_role_tag(role));
+    write_statement_role_payload(&mut output, role);
+    Ok(output)
+}
+
 fn write_statement_role_payload(output: &mut Vec<u8>, role: HirStatementChildRole) {
     match role {
         HirStatementChildRole::AssertionCondition { ordinal } => {
@@ -1697,6 +1920,16 @@ fn statement_body_tag(role: HirStatementBodyRole) -> u8 {
         HirStatementBodyRole::SourceLocale => 10,
         HirStatementBodyRole::Scope => 11,
     }
+}
+
+/// Canonical transcript bytes for one checked body child role.
+pub(crate) fn body_child_role_transcript_bytes(
+    role: HirBodyChildRole,
+) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+    let mut output = Vec::new();
+    output.push(body_role_tag(role));
+    write_body_role_payload(&mut output, role);
+    Ok(output)
 }
 
 fn write_statement_body_payload(output: &mut Vec<u8>, role: HirStatementBodyRole) {
@@ -1758,6 +1991,16 @@ fn write_pattern_role_payload(output: &mut Vec<u8>, role: HirPatternChildRole) {
     }
 }
 
+/// Canonical transcript bytes for one checked pattern child role.
+pub(crate) fn pattern_child_role_transcript_bytes(
+    role: HirPatternChildRole,
+) -> Result<Vec<u8>, SemanticCoordinateEncodingError> {
+    let mut output = Vec::new();
+    output.push(pattern_role_tag(role));
+    write_pattern_role_payload(&mut output, role);
+    Ok(output)
+}
+
 fn write_len(output: &mut Vec<u8>, value: usize) -> Result<(), SemanticCoordinateEncodingError> {
     let value =
         u64::try_from(value).map_err(|_| SemanticCoordinateEncodingError::LengthOverflow)?;
@@ -1797,5 +2040,56 @@ mod tests {
         assert_ne!(declaration_bytes, item_bytes);
         assert_eq!(declaration_bytes[0], 0x00);
         assert_eq!(item_bytes[0], 0x01);
+    }
+
+    #[test]
+    fn content_fragment_digest_commits_owner_and_typed_nested_path() {
+        let root = AcceptedSemanticRoot::Declaration(AcceptedDeclarationSemanticId::from_bytes(
+            [0x5a; 32],
+        ));
+        let owner = StableCheckedValueCoordinate::Expression(CheckedSemanticPath::new(root, []));
+        let fragment = StableCheckedContentFragmentCoordinate::root(owner.clone());
+        let repeated = StableCheckedContentFragmentCoordinate::root(owner);
+        let first_child = fragment.try_child(0).expect("first nested fragment");
+        let second_child = fragment.try_child(1).expect("second nested fragment");
+        let grandchild = first_child
+            .try_child(0)
+            .expect("nested grandchild fragment");
+
+        assert_eq!(
+            fragment.semantic_digest().expect("root fragment digest"),
+            repeated.semantic_digest().expect("repeated root digest")
+        );
+        assert_ne!(
+            fragment.semantic_digest().expect("root fragment digest"),
+            first_child.semantic_digest().expect("first child digest")
+        );
+        assert_ne!(
+            first_child.semantic_digest().expect("first child digest"),
+            second_child.semantic_digest().expect("second child digest")
+        );
+        assert_ne!(
+            first_child.semantic_digest().expect("first child digest"),
+            grandchild.semantic_digest().expect("grandchild digest")
+        );
+        assert!(fragment.path().segments().is_empty());
+        assert_eq!(first_child.path().segments()[0].content_result_ordinal(), 0);
+    }
+
+    #[test]
+    fn content_fragment_digest_separates_expression_and_binding_owners() {
+        let root = AcceptedSemanticRoot::Item(AcceptedItemSemanticId::from_bytes([0x33; 32]));
+        let path = CheckedSemanticPath::new(root, []);
+        let expression = StableCheckedContentFragmentCoordinate::root(
+            StableCheckedValueCoordinate::Expression(path.clone()),
+        );
+        let binding = StableCheckedContentFragmentCoordinate::root(
+            StableCheckedValueCoordinate::Binding(StableCheckedBindingCoordinate::new(path)),
+        );
+
+        assert_ne!(
+            expression.semantic_digest().expect("expression digest"),
+            binding.semantic_digest().expect("binding digest")
+        );
     }
 }

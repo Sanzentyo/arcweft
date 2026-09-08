@@ -37,7 +37,7 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
         "arcweft-test://proof/dialogue-line-plan-final-hir",
         concat!(
             "entry cli @entry.main { goto @flow.line_handles }\n",
-            "pub character alice { display_name = \"Alice\" }\n",
+            "pub character alice { display = \"Alice\" }\n",
             "flow line_handles() -> String {\n",
             "    let (_, cue) = alice(voice=auto)[聞いて。[p]]\n",
             "    with:\n",
@@ -82,14 +82,18 @@ fn dialogue_line_plan_owns_statement_ids_for_let_callbacks_and_out() {
     let HirStmtKind::Let { initializer, .. } = module.resolve_stmt(*binding).unwrap().kind() else {
         panic!("dialogue line binding must remain a Let statement")
     };
-    let HirExprKind::DialogueContentApplication(application) =
+    let HirExprKind::AttachedContentApplication(application) =
         module.resolve_expr(*initializer).unwrap().kind()
     else {
         panic!("Let initializer must be the Dialogue application")
     };
-    let plan = application
-        .plan()
-        .expect("Dialogue application owns its line plan");
+    let plan = match application.family() {
+        crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            plan: Some(plan),
+            ..
+        } => plan,
+        _ => panic!("Dialogue application owns its line plan"),
+    };
     assert_eq!(plan.items().len(), 6);
     for item in plan.items() {
         let HirLinePlanItem::Statement(statement) = item else {

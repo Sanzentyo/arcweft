@@ -4,9 +4,7 @@ use std::collections::BTreeMap;
 
 use super::{
     FramePlanError, PreparedRichTextStageRequest, RenderViewport,
-    dialogue_timeline::{DialogueRevealPolicy, evaluate_dialogue_reveal},
-    dialogue_transform::presentation_transform,
-    prepared_text::hit_rect_to_layout_rect,
+    dialogue_transform::presentation_transform, prepared_text::hit_rect_to_layout_rect,
 };
 use arcweft_glyphon::{
     GlyphonTextEngine, PreparedTextItem, TextGlyphPaint, TextGlyphTransform, TextInteractionPlan,
@@ -14,10 +12,10 @@ use arcweft_glyphon::{
 };
 use arcweft_presentation::fx::{
     FxApplication, FxApplicationResolver, FxCapabilitySet, FxDiagnostic, FxDiagnosticCode,
-    FxDiagnosticContext, FxEvaluationBudget, FxGraphEvaluator, FxInstanceId, FxNamedValue,
-    FxRenderResourceError, FxRenderResourceTable, FxRendererInterface, FxResolvedValue,
-    FxRuntimeValue, FxTarget, ResolvedFxMask, ResolvedFxOffscreenPass, ResolvedFxOperation,
-    ResolvedFxPlan, ResolvedFxPostProcess,
+    FxDiagnosticContext, FxEvaluationBudget, FxGraphEvaluator, FxInstanceId, FxRenderResourceError,
+    FxRenderResourceTable, FxTarget, ResolvedColorOperation, ResolvedFxMask,
+    ResolvedFxOffscreenPass, ResolvedFxOperation, ResolvedFxPlan, ResolvedFxPostProcess,
+    ResolvedTextStyleOperation,
 };
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextStyle, TextColor,
@@ -25,7 +23,8 @@ use arcweft_render_text::{
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_document};
 use arcweft_text_model::{
-    LineDisplayStage, Milli, RichTextAngle, RichTextPresentation, RichTextRange,
+    DialogueRevealPolicy, LineDisplayStage, Milli, RichTextAngle, RichTextPresentation,
+    RichTextRange, evaluate_dialogue_reveal,
 };
 
 struct DialogueFxEvaluator<'a> {
@@ -78,13 +77,13 @@ impl<'a> DialogueFxEvaluator<'a> {
             }
         };
         let ordinal = if glyph_scope {
-            let instance = binding.instance.instance;
+            let instance = binding.instance.instance();
             let origin = *self.ordinal_origins.entry(instance).or_insert(ordinal);
             ordinal.saturating_sub(origin)
         } else {
             ordinal
         };
-        let budget = self.budgets.entry(binding.instance.instance).or_default();
+        let budget = self.budgets.entry(binding.instance.instance()).or_default();
         let plan = FxGraphEvaluator::evaluate(
             application,
             binding,
@@ -126,7 +125,7 @@ impl<'a> DialogueFxEvaluator<'a> {
             .resolver
             .resolve(application)
             .ok()
-            .map(|binding| binding.instance.instance);
+            .map(|binding| binding.instance.instance());
         self.record(FxDiagnostic::error(
             code,
             FxDiagnosticContext {
@@ -153,26 +152,21 @@ impl<'a> DialogueFxEvaluator<'a> {
         let mut offscreen_passes = Vec::new();
         let mut post_processes = Vec::new();
         for operation in plan.offscreen() {
-            let ResolvedFxOperation::Values(operation) = operation else {
-                self.unsupported(
-                    application,
-                    "offscreen transform operation is not executable",
-                );
-                return false;
-            };
-            let result = match operation.interface {
-                FxRendererInterface::Filter => ResolvedFxOffscreenPass::from_operation(operation)
-                    .map(|pass| {
+            let result = match operation {
+                ResolvedFxOperation::Filter(operation) => {
+                    ResolvedFxOffscreenPass::from_operation(operation).map(|pass| {
                         if !pass.is_identity() {
                             push_unique(&mut offscreen_passes, pass);
                         }
-                    }),
-                FxRendererInterface::ShaderUniform => {
+                    })
+                }
+                ResolvedFxOperation::ShaderUniform(operation) => {
                     self.resources.resolve_shader(operation).map(|_| ())
                 }
-                _ => Err(FxRenderResourceError::WrongInterface {
-                    actual: operation.interface,
-                }),
+                _ => {
+                    self.unsupported(application, "offscreen operation is not executable");
+                    return false;
+                }
             };
             if let Err(error) = result {
                 self.render_resource_error(application, &error);
@@ -180,11 +174,8 @@ impl<'a> DialogueFxEvaluator<'a> {
             }
         }
         for operation in plan.post_process() {
-            let ResolvedFxOperation::Values(operation) = operation else {
-                self.unsupported(
-                    application,
-                    "post-process transform operation is not executable",
-                );
+            let ResolvedFxOperation::ShaderUniform(operation) = operation else {
+                self.unsupported(application, "post-process operation is not executable");
                 return false;
             };
             let output = match self.resources.resolve_shader(operation) {
@@ -250,6 +241,9 @@ fn apply_document_fx<'a>(
                 fx,
             );
             Ok(ResolvedTextRuby::new(
+                annotation.owner_node(),
+                annotation.body_nodes(),
+                annotation.base_runs(),
                 annotation.base_range(),
                 annotation.source_base_range(),
                 annotation.text(),
@@ -291,17 +285,16 @@ fn apply_before_layout_fx(
         let mut unsupported = None;
         for operation in plan.layout() {
             match operation {
-                ResolvedFxOperation::Values(operation)
-                    if operation.interface == FxRendererInterface::TextStyle
-                        && matches!(
-                            operation.target,
-                            FxTarget::Node | FxTarget::Content | FxTarget::Line
-                        ) =>
+                ResolvedFxOperation::TextStyle(operation)
+                    if matches!(
+                        operation.target,
+                        FxTarget::Node | FxTarget::Content | FxTarget::Line
+                    ) =>
                 {
-                    if let Err(message) = apply_text_style_values(
+                    if let Err(message) = apply_text_style_operation(
                         &mut candidate_style,
                         &mut candidate_presentation,
-                        &operation.values,
+                        operation,
                     ) {
                         unsupported = Some(message);
                         break;
@@ -331,62 +324,53 @@ fn apply_before_layout_fx(
     (style, presentation)
 }
 
-fn apply_text_style_values(
+fn apply_text_style_operation(
     style: &mut ResolvedTextStyle,
     presentation: &mut RichTextPresentation,
-    values: &[FxNamedValue],
+    operation: &ResolvedTextStyleOperation,
 ) -> Result<(), String> {
-    for value in values {
-        match (value.name.as_str(), &value.value) {
-            ("weight", FxResolvedValue::Runtime(FxRuntimeValue::I32(weight))) => {
-                *style = style.clone().with_weight(text_weight(*weight)?);
-            }
-            ("color", FxResolvedValue::Runtime(FxRuntimeValue::Color(color))) => {
-                *style = style.clone().with_color(TextColor::from(*color));
-            }
-            ("font_family", FxResolvedValue::String(family)) => {
-                *style = style
-                    .clone()
-                    .with_font_families(vec![text_font_family(family)])
-                    .map_err(|error| error.to_string())?;
-            }
-            ("size", FxResolvedValue::Runtime(FxRuntimeValue::Length(size))) => {
-                let font_size = positive_milli(size.pixels(), "font size")?;
-                let line_height = positive_milli(size.pixels() * 1.35, "line height")?;
-                *style = style
-                    .clone()
-                    .with_font_metrics(font_size, line_height)
-                    .map_err(|error| error.to_string())?;
-            }
-            ("spacing", FxResolvedValue::Runtime(FxRuntimeValue::Length(spacing))) => {
-                let spacing = signed_milli(spacing.pixels(), "text spacing")?;
-                *style = style
-                    .clone()
-                    .with_spacing(spacing, style.word_spacing_milli());
-            }
-            ("slant", FxResolvedValue::Runtime(FxRuntimeValue::Angle(angle))) => {
-                let degrees = signed_milli(angle.radians().to_degrees(), "text slant")?;
-                *style = style.clone().with_slant(TextSlant::Oblique {
-                    angle: RichTextAngle {
-                        degrees: Milli(degrees),
-                    },
-                });
-            }
-            ("opacity", FxResolvedValue::Runtime(FxRuntimeValue::F32(opacity))) => {
-                if !(0.0..=1.0).contains(&opacity.get()) {
-                    return Err(format!(
-                        "RichText opacity {} is outside [0, 1]",
-                        opacity.get()
-                    ));
-                }
-                presentation.opacity = Some(Milli(signed_milli(opacity.get(), "opacity")?));
-            }
-            (name, value) => {
-                return Err(format!(
-                    "RichText text-style property `{name}` has unsupported value {value:?}"
-                ));
-            }
+    if let Some(weight) = operation.weight {
+        *style = style.clone().with_weight(text_weight(weight)?);
+    }
+    if let Some(color) = operation.color {
+        *style = style.clone().with_color(TextColor::from(color));
+    }
+    if let Some(family) = &operation.font_family {
+        *style = style
+            .clone()
+            .with_font_families(vec![text_font_family(family.as_str())])
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(size) = operation.size {
+        let font_size = positive_milli(size.pixels(), "font size")?;
+        let line_height = positive_milli(size.pixels() * 1.35, "line height")?;
+        *style = style
+            .clone()
+            .with_font_metrics(font_size, line_height)
+            .map_err(|error| error.to_string())?;
+    }
+    if let Some(spacing) = operation.spacing {
+        let spacing = signed_milli(spacing.pixels(), "text spacing")?;
+        *style = style
+            .clone()
+            .with_spacing(spacing, style.word_spacing_milli());
+    }
+    if let Some(angle) = operation.slant {
+        let degrees = signed_milli(angle.radians().to_degrees(), "text slant")?;
+        *style = style.clone().with_slant(TextSlant::Oblique {
+            angle: RichTextAngle {
+                degrees: Milli(degrees),
+            },
+        });
+    }
+    if let Some(opacity) = operation.opacity {
+        if !(0.0..=1.0).contains(&opacity.get()) {
+            return Err(format!(
+                "RichText opacity {} is outside [0, 1]",
+                opacity.get()
+            ));
         }
+        presentation.opacity = Some(Milli(signed_milli(opacity.get(), "opacity")?));
     }
     Ok(())
 }
@@ -465,12 +449,12 @@ pub(super) fn prepare_stage(
             complete_stage: request.reveal_complete,
             instant_characters: reduce_motion,
         },
-        request.visual_time_millis,
+        request.reveal_elapsed,
     );
     let cascade = TextStyleCascade::new(request.default_style.clone());
     let document = resolve_stage_document(stage.frame(), stage, &cascade)?;
     let document = document.project(RichTextRange::new(
-        reveal.display_start,
+        reveal.display_start(),
         document.text().len(),
     ))?;
     let source_origin = document.source_origin();
@@ -487,8 +471,8 @@ pub(super) fn prepare_stage(
         engine,
     )?;
     let visible_end = reveal
-        .visible_end
-        .saturating_sub(reveal.display_start)
+        .visible_end()
+        .saturating_sub(reveal.display_start())
         .min(document.text().len());
     let mut paint = TextPaintPlan::from_layout(&layout);
     apply_body_paint(&layout, &mut paint, visible_end, &mut fx)?;
@@ -505,7 +489,7 @@ pub(super) fn prepare_stage(
         Some(bounds),
         viewport.physical_scale_factor_f32(),
     )?;
-    Ok((item, reveal.complete, fx.diagnostics, source_origin))
+    Ok((item, reveal.is_complete(), fx.diagnostics, source_origin))
 }
 
 fn apply_body_paint(
@@ -600,17 +584,13 @@ fn apply_glyph_fx(
                 ResolvedFxOperation::Transform(operation) => {
                     transform = transform.then(operation.transform)?;
                 }
-                ResolvedFxOperation::Values(operation)
-                    if operation.interface == FxRendererInterface::Color =>
-                {
-                    if let Err(message) = apply_color_values(&mut candidate, &operation.values) {
+                ResolvedFxOperation::Color(operation) => {
+                    if let Err(message) = apply_color_operation(&mut candidate, operation) {
                         unsupported = Some(message);
                         break;
                     }
                 }
-                ResolvedFxOperation::Values(operation)
-                    if operation.interface == FxRendererInterface::ShaderUniform =>
-                {
+                ResolvedFxOperation::ShaderUniform(operation) => {
                     match fx.resources.resolve_shader(operation) {
                         Ok(output) if output.post_processes.is_empty() => {
                             candidate.effects.extend(output.glyph_passes);
@@ -626,7 +606,7 @@ fn apply_glyph_fx(
                         }
                     }
                 }
-                ResolvedFxOperation::Values(_) => {
+                _ => {
                     unsupported = Some(format!(
                         "RichText glyph paint does not implement interface {:?}",
                         operation.interface()
@@ -637,12 +617,9 @@ fn apply_glyph_fx(
         }
         if unsupported.is_none() {
             for operation in plan.offscreen() {
-                let ResolvedFxOperation::Values(operation) = operation else {
+                let ResolvedFxOperation::ShaderUniform(operation) = operation else {
                     continue;
                 };
-                if operation.interface != FxRendererInterface::ShaderUniform {
-                    continue;
-                }
                 match fx.resources.resolve_shader(operation) {
                     Ok(output) if output.post_processes.is_empty() => {
                         candidate.effects.extend(output.glyph_passes);
@@ -665,7 +642,7 @@ fn apply_glyph_fx(
                     operation.target(),
                     FxTarget::Node | FxTarget::Content | FxTarget::Line | FxTarget::Glyph
                 ) {
-                    let ResolvedFxOperation::Values(operation) = operation else {
+                    let ResolvedFxOperation::Mask(operation) = operation else {
                         unsupported = Some(
                             "RichText glyph mask cannot execute a transform operation".to_owned(),
                         );
@@ -701,31 +678,31 @@ fn apply_glyph_fx(
     Ok(())
 }
 
-fn apply_color_values(paint: &mut TextGlyphPaint, values: &[FxNamedValue]) -> Result<(), String> {
-    for value in values {
-        match (value.name.as_str(), &value.value) {
-            (
-                "tint" | "multiply" | "color",
-                FxResolvedValue::Runtime(FxRuntimeValue::Color(color)),
-            ) => paint.color = multiply_color(paint.color, TextColor::from(*color)),
-            ("opacity", FxResolvedValue::Runtime(FxRuntimeValue::F32(opacity)))
-                if (0.0..=1.0).contains(&opacity.get()) =>
-            {
-                let value = f32::from(paint.opacity_milli) * opacity.get();
-                #[allow(
-                    clippy::cast_possible_truncation,
-                    clippy::cast_sign_loss,
-                    reason = "both operands are validated in [0, 1000] before rounding"
-                )]
-                {
-                    paint.opacity_milli = value.round() as u16;
-                }
-            }
-            (name, value) => {
-                return Err(format!(
-                    "RichText color property `{name}` has unsupported value {value:?}"
-                ));
-            }
+fn apply_color_operation(
+    paint: &mut TextGlyphPaint,
+    operation: &ResolvedColorOperation,
+) -> Result<(), String> {
+    if let Some(color) = operation.tint {
+        paint.color = multiply_color(paint.color, TextColor::from(color));
+    }
+    if let Some(color) = operation.multiply {
+        paint.color = multiply_color(paint.color, TextColor::from(color));
+    }
+    if let Some(opacity) = operation.opacity {
+        if !(0.0..=1.0).contains(&opacity.get()) {
+            return Err(format!(
+                "RichText opacity {} is outside [0, 1]",
+                opacity.get()
+            ));
+        }
+        let value = f32::from(paint.opacity_milli) * opacity.get();
+        #[allow(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "both operands are validated in [0, 1000] before rounding"
+        )]
+        {
+            paint.opacity_milli = value.round() as u16;
         }
     }
     Ok(())

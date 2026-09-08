@@ -6,8 +6,8 @@ pub(in crate::engine) use store::{
 };
 
 use super::{
-    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeLocalBinding, RuntimeStepOutput,
-    RuntimeValue,
+    Engine, RuntimeDiagnostic, RuntimeEvalError, RuntimeFunctionValue, RuntimeLocalBinding,
+    RuntimeStepOutput, RuntimeValue,
 };
 use crate::effect::{RuntimeDropPolicy, RuntimeDropPolicyExpr, RuntimeEffectExpr};
 use crate::line_task::{
@@ -51,6 +51,10 @@ pub(super) struct DialogueLineTaskStart {
     pub(super) group: crate::line_task::LineTaskGroup,
     pub(super) activation: crate::line_task::LineTaskActivation,
     pub(super) captures: Box<[RuntimeLocalBinding]>,
+    pub(super) callbacks: Vec<(
+        crate::runtime_id::RuntimeDialogueEffectSiteId,
+        RuntimeFunctionValue,
+    )>,
 }
 
 enum DialoguePublicationOutcome {
@@ -77,7 +81,7 @@ impl Engine {
             .dialogue_activations
             .commit_transaction(transaction)
             .map_err(DialogueExecutionError::from)?;
-        self.publish_dialogue_line_receipt(receipt.into_line(), output);
+        Self::publish_dialogue_line_receipt(receipt.into_line(), output);
         Ok(())
     }
 
@@ -91,7 +95,7 @@ impl Engine {
             .commit_terminal_transaction(transaction)
             .map_err(DialogueExecutionError::from)?;
         let (line, disposition) = receipt.into_parts();
-        self.publish_dialogue_line_receipt(line, output);
+        Self::publish_dialogue_line_receipt(line, output);
         Ok(disposition)
     }
 
@@ -105,12 +109,11 @@ impl Engine {
             .commit_published_transaction(transaction)
             .map_err(DialogueExecutionError::from)?;
         let (line, disposition) = receipt.into_parts();
-        self.publish_dialogue_line_receipt(line, output);
+        Self::publish_dialogue_line_receipt(line, output);
         Ok(disposition)
     }
 
     pub(super) fn publish_dialogue_line_receipt(
-        &mut self,
         receipt: crate::line_task::RuntimeDialogueCommitReceipt,
         output: &mut RuntimeStepOutput,
     ) {
@@ -143,7 +146,7 @@ impl Engine {
         let (transaction, batch, event) = match start {
             Some(start) => {
                 let mut candidate = transaction.clone();
-                let batch = match self.prepare_line_task_commands(
+                let mut batch = match self.prepare_line_task_commands(
                     &mut candidate,
                     &start.group,
                     start.activation,
@@ -156,6 +159,12 @@ impl Engine {
                         return;
                     }
                 };
+                if let Err(error) =
+                    self.stage_dialogue_effect_callbacks(&mut batch, &activation, &start.callbacks)
+                {
+                    self.begin_dialogue_failure(transaction, error.into(), output);
+                    return;
+                }
                 (candidate, Some(batch), start.event)
             }
             None => (transaction, None, None),
@@ -206,7 +215,7 @@ impl Engine {
             self.fail_eval(error, output);
             return;
         }
-        if let Err(cleanup) = self.unwind_dialogue_handles(&activation_id, activation, false) {
+        if let Err(cleanup) = Self::unwind_dialogue_handles(&activation_id, activation, false) {
             output.diagnostics.push(RuntimeDiagnostic::new(format!(
                 "dialogue cleanup after primary failure also failed: {cleanup}"
             )));
@@ -250,7 +259,7 @@ impl Engine {
         let activation_id = transaction.activation().clone();
         let (state, activation) = transaction.parts_mut();
         state.phase = DialogueRuntimePhase::Closing;
-        if let Err(error) = self.unwind_dialogue_handles(&activation_id, activation, true) {
+        if let Err(error) = Self::unwind_dialogue_handles(&activation_id, activation, true) {
             self.begin_dialogue_failure(transaction, error, output);
             return;
         }
@@ -269,7 +278,6 @@ impl Engine {
     }
 
     fn unwind_dialogue_handles(
-        &mut self,
         activation_id: &crate::runtime_id::DialogueActivationId,
         activation: &mut NativeDialogueActivationState,
         preserve_result: bool,
@@ -1210,24 +1218,29 @@ impl Engine {
         let line_task_activation = progress_live_line_task_group(
             &group,
             state.elapsed,
-            LineTaskReadyEvents::new(
-                &std::collections::BTreeSet::new(),
-                &std::collections::BTreeSet::new(),
-            ),
+            LineTaskReadyEvents::new(&std::collections::BTreeSet::new()),
             &mut live,
         )?;
+        let template = self
+            .plan
+            .dialogue_content()
+            .get(state.content)
+            .ok_or(crate::line_task::LineRuntimeError::UnknownContentPlan)?
+            .template();
         state.line_task = DialogueLineTaskState::Live(live);
         state.phase = DialogueRuntimePhase::Ready;
         Ok(DialogueLineTaskStart {
             event: Some(FlowEvent::DialogueLine {
                 activation: activation_id.clone(),
                 line: state.line.clone(),
+                template,
                 values: state.values.clone(),
             }),
             request_cancellation: false,
             group,
             activation: line_task_activation,
             captures: state.captures.clone(),
+            callbacks: Vec::new(),
         })
     }
 
@@ -1595,6 +1608,7 @@ mod tests {
             ),
             voice: crate::presentation::RuntimeDialogueVoiceState::Absent,
             values: Box::new([]),
+            effect_callbacks: Box::new([]),
             activation_pc: 0,
             pending_line_operation: None,
             failure: None,

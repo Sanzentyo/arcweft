@@ -17,99 +17,15 @@ pub fn warning(
 }
 
 pub character alice {
-    display_name = "Alice"
-    default_voice = auto
-    dialogue_style {
-        inline_error = InlineFailure.fallback("?")
-
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#d9f2ff")
-                size = 29px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-                wrap = container
-                overflow = page
-            }
-
-            ruby {
-                position = over
-                size = 14px
-                gap = 1px
-                overhang = 7px
-                collision_gap = 2px
-            }
-        }
-    }
+    display = "Alice"
 }
 
 pub character bob {
-    display_name = "Bob"
-    default_voice = auto
-    dialogue_style {
-        inline_error = InlineFailure.fallback("?")
-
-        rich_text {
-            text {
-                font = "Meiryo"
-                color = rgb("#ffe0d0")
-                size = 28px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-                wrap = container
-                overflow = page
-            }
-
-            ruby {
-                position = under
-                size = 14px
-                gap = 2px
-                overhang = 7px
-                collision_gap = 2px
-            }
-        }
-    }
+    display = "Bob"
 }
 
 pub character narrator {
-    display_name = "Narrator"
-    default_voice = auto
-    dialogue_style {
-        inline_error = InlineFailure.fallback("?")
-
-        rich_text {
-            text {
-                font = "Segoe UI"
-                color = rgb("#e8e8e8")
-                size = 27px
-            }
-
-            layout {
-                writing_mode = horizontal_tb
-                jlreq = normal
-                vertical_latin = mixed
-                wrap = container
-                overflow = page
-            }
-
-            ruby {
-                position = over
-                size = 14px
-                gap = 2px
-                overhang = 7px
-                collision_gap = 2px
-            }
-        }
-    }
+    display = "Narrator"
 }
 
 entry cli @entry.rich_text_full_grammar {
@@ -122,41 +38,41 @@ flow rich_text_full_grammar() -> String {
     let debug_label = "debug-ok"
 
     alice(id=@say.full.001, voice=auto, look=.smile, inline_error=InlineFailure.fallback("?"))[
-        ルビ: |[変な夢](へんなゆめ)、|悪夢{あくむ}、｜星影《ほしかげ》、[ruby rt="時計塔"]時の塔[/ruby]、[rb rt=ゆめ]夢[/rb]、#[ruby("秘密", "ひみつ")]。[p]
+        ルビ: |[変な夢](へんなゆめ)、|[悪夢](あくむ)、｜星影《ほしかげ》、#ruby("時計塔")[時の塔]、#ruby("ゆめ")[夢]、#ruby("ひみつ")[秘密]。[p]
     ]
 
     bob(id=@say.full.002, voice=auto, inline_error=InlineFailure.fallback("?"))[
-        補間: #[player_name]、$(debug_label)、#[fmt(score, style="number")]点、#[fmt(score, fallback="?")]、#[fmt(score, on_error=.discard)]。[p]
+        補間: #[player_name]、#[debug_label]、#[fmt(score, style="number")]点、#[fmt(score, fallback="?")]、#[fmt(score, on_error=.discard)]。[p]
     ]
 
     narrator(id=@say.full.003, voice=auto)[
-        待機と改行: 一行目[l]続き[w time=500ms]短縮待ち[w 250ms]改行[r]br別名[br]wait別名[wait]nl別名[nl]ページ別名[page]クリア[clear][er][cm][p]
+        待機と改行: 一行目[l]続き[w time=500ms]短縮待ち[w 250ms]改行[r]クリア[clear][p]
     ]
 
     alice(id=@say.full.004, voice=auto)[
-        装飾: [em:夢]、[strong:本当に]、[color #a8b5ff:夜]、[font serif]serif[/font]、[font "Yu Gothic"]游ゴシック[/font]、[size 36]大[/size]、[fx warning(amplitude=4px, speed=2.0)]再利用Fx[/fx]、[speed cps=24]速度[/speed]、[reset]reset後。[p]
+        装飾: #em()[夢]、#strong()[本当に]、#color(rgb("#a8b5ff"))[夜]、#font("serif")[serif]、#font("Yu Gothic")[游ゴシック]、#size(36pt)[大]、#fx(warning(amplitude=4px, speed=2.0))[再利用Fx]、[speed cps=24]速度[reset]reset後。[p]
     ]
 
     bob(id=@say.full.005, voice=auto)[
-        推論: [.italic]italic[/]、[.oblique 12deg]oblique[/]、[.vertical_rl]縦書き[/]、[.vertical_lr]縦LR[/]、[.offset x=4px y=-2px]offset[/]、[.rotate angle=8deg]rotate[/]、[.scale x=1.2 y=1.2]scale[/]、[.wave amp=2px dir=0,1]wave[/]、[.shake amp=1px seed=full]shake[/]、[.typewriter cps=20]typewriter[/]、[.sparkle amp=2px seed=custom]custom effect[/]、[.keyword]marker。[p]
+        推論: #style(.italic)[italic]、#style(.oblique, angle=12deg)[oblique]、#layout(.vertical_rl)[縦書き]、#layout(.vertical_lr)[縦LR]、#transform(.offset, x=4px, y=-2px)[offset]、#transform(.rotate, angle=8deg)[rotate]、#transform(.scale, x=1.2, y=1.2)[scale]、#fx(wave(amplitude=2px, direction=vec2(0.0, 1.0)))[wave]、#fx(shake(amplitude=1px))[shake]、#fx(typewriter(characters_per_second=20))[typewriter]、#fx(sparkle(amplitude=2px))[custom effect]、[mark @.keyword]marker。[p]
     ]
 
     narrator(id=@say.full.006, voice=auto)[
-        明示family: [style .italic]style[/style]、[layout .horizontal_tb]layout[/layout]、[transform .skew x=2deg y=0deg]transform[/transform]、[effect .jitter amp=1px seed=full]effect[/effect]、[effect .shader id=soft_glow amount=0.4 dir=1,0]shader[/effect]。[p]
+        明示family: #style(.italic)[style]、#layout(.horizontal_tb)[layout]、#transform(.skew, x=2deg, y=0deg)[transform]、#fx(jitter(amplitude=1px))[effect]、#fx(shader(resource=@.soft_glow, amount=0.4, direction=vec2(1.0, 0.0)))[shader]。[p]
     ]
 
     alice(id=@say.full.007, voice=auto)[
-        cue: [voice auto][face smile][pose idle][show alice][hide bob][move x=10 y=0][scale x=1.1][rotate 5deg][anim blink][shake amp=2][at 0.2s call=flash][call flash(color=#ffffff, time=90ms)][! sparkle(intensity=2)][signal .seen][if flag]条件[else]代替[endif][mark .release][p]
+        cue: [voice auto][face @.smile][pose @.idle][show @.alice][hide @.bob][move x=10px y=0px][scale x=1.1][rotate 5deg][anim @.blink][shake amp=2px][at 0.2s call=flash][call flash(color=rgb("#ffffff"), time=90ms)][signal @.seen]条件と代替の表示[mark @.release][p]
     ]
 
     bob(id=@say.full.008, voice=auto)[
-        raw短縮 [raw: [p]や#[expr]をそのまま表示] と escape \[ \] \# \$ \( \) \| \{ \} \: \｜ \《 \》 \\。[p]
+        raw短縮 #raw()[[p]や#[expr]をそのまま表示] と escape \[ \] \# \$ \( \) \| \{ \} \: \｜ \《 \》 \\。[p]
     ]
 
     narrator(id=@say.full.009, voice=auto)[
-        [raw]
+        #raw()[
         raw block: [p] も [.shake] も #[player_name] も解釈しない。
-        [/raw][p]
+        ][p]
     ]
 
     return "rich_text_full_grammar"

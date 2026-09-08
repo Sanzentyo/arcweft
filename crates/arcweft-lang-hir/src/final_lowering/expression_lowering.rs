@@ -36,7 +36,7 @@ use crate::expr::{
     HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
     HirAwaitBranch, HirAwaitBranchKind, HirAwaitExpr, HirBinaryExpr, HirBinaryOp, HirBorrowExpr,
     HirBorrowKind, HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator,
-    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallInvocation,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
     HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr,
     HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr,
@@ -77,6 +77,36 @@ use super::{StagedHirModuleTransaction, require_limit};
 
 type LoweredRangeChildren = (Option<ExprId>, Option<ExprId>, Option<HirRecoveryIssue>);
 
+/// Syntax context selected for an attached content application.
+///
+/// The parser's `ContentApplication` dialogue node is the authority for the
+/// `ContentCall` context. Everything else entering this expression lowering
+/// path is the ordinary DialogueLine context; no target or source re-parsing
+/// is used to classify the payload.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum HirAttachedContentApplicationFamilyKind {
+    DialogueLine,
+    ContentCall,
+}
+
+impl HirAttachedContentApplicationFamilyKind {
+    fn matches(
+        self,
+        family: &crate::dialogue_application::HirAttachedContentApplicationFamily,
+    ) -> bool {
+        matches!(
+            (self, family),
+            (
+                Self::DialogueLine,
+                crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine { .. }
+            ) | (
+                Self::ContentCall,
+                crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall { .. }
+            )
+        )
+    }
+}
+
 pub(super) fn lower_associated_separator(
     separator: SyntaxAssociatedSeparator,
 ) -> HirAssociatedSeparator {
@@ -111,6 +141,19 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedExpressionNode,
         scope: ScopeId,
     ) -> Result<ExprId, HirLowerFailure> {
+        self.lower_attached_expression_inner_with_family(
+            attached,
+            scope,
+            HirAttachedContentApplicationFamilyKind::DialogueLine,
+        )
+    }
+
+    pub(super) fn lower_attached_expression_inner_with_family(
+        &mut self,
+        attached: &AttachedExpressionNode,
+        scope: ScopeId,
+        application_family: HirAttachedContentApplicationFamilyKind,
+    ) -> Result<ExprId, HirLowerFailure> {
         self.validate_attached_expression(attached, scope)?;
         Self::preflight_expression(attached)?;
         let whole = attached.whole_source_span();
@@ -123,11 +166,17 @@ impl StagedHirModuleTransaction<'_> {
         self.control
             .checkpoint(HirLoweringCheckpoint::ChildReserved)?;
         if !reservation.is_first_touch() {
+            if matches!(
+                attached.projection(),
+                ExpressionProjection::AttachedContentApplication(_)
+            ) {
+                return self.validate_reused_content_application(owner, scope, application_family);
+            }
             return self.validate_reused_expression(owner, scope);
         }
 
         let (kind, state, parent_diagnostic_required) =
-            self.project_expression(attached, owner, scope)?;
+            self.project_expression(attached, owner, scope, application_family)?;
         let poisoned = state.is_poisoned();
         let recovery_primary = (poisoned && parent_diagnostic_required)
             .then(|| {
@@ -203,6 +252,27 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
+    pub(super) fn validate_reused_content_application(
+        &mut self,
+        owner: ExprId,
+        scope: ScopeId,
+        expected: HirAttachedContentApplicationFamilyKind,
+    ) -> Result<ExprId, HirLowerFailure> {
+        let retained = self
+            .arenas
+            .expressions()
+            .resolve_staged(&self.slots, owner)
+            .map_err(HirLowerFailure::from)?;
+        let HirExprKind::AttachedContentApplication(application) = retained.kind() else {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        };
+        if retained.scope() == scope && expected.matches(application.family()) {
+            Ok(owner)
+        } else {
+            Err(HirInvariantFailure::InvalidArenaCommit.into())
+        }
+    }
+
     #[allow(
         clippy::too_many_lines,
         reason = "this is the exhaustive one-pass projection from every attached expression family into its final HIR payload"
@@ -212,6 +282,7 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedExpressionNode,
         owner: ExprId,
         scope: ScopeId,
+        application_family: HirAttachedContentApplicationFamilyKind,
     ) -> Result<(HirExprKind, HirPoisonState, bool), HirLowerFailure> {
         let (kind, recovery) = match attached.projection() {
             ExpressionProjection::Unit => (HirExprKind::Unit, None),
@@ -343,17 +414,27 @@ impl StagedHirModuleTransaction<'_> {
                     recovery,
                 )
             }
-            ExpressionProjection::DialogueContentApplication(application) => {
-                let (application, recovery) =
-                    self.lower_dialogue_content_application(attached, owner, scope, application)?;
+            ExpressionProjection::AttachedContentApplication(application) => {
+                let (application, recovery) = self.lower_dialogue_content_application(
+                    attached,
+                    owner,
+                    scope,
+                    application,
+                    application_family,
+                )?;
                 (
-                    HirExprKind::DialogueContentApplication(application),
+                    HirExprKind::AttachedContentApplication(application),
                     recovery,
                 )
             }
             ExpressionProjection::PostfixBracket(postfix) => {
-                let (postfix, recovery) =
-                    self.lower_postfix_bracket(attached, owner, scope, postfix)?;
+                let (postfix, recovery) = self.lower_postfix_bracket(
+                    attached,
+                    owner,
+                    scope,
+                    postfix,
+                    application_family,
+                )?;
                 (HirExprKind::PostfixBracket(postfix), recovery)
             }
             ExpressionProjection::Pipe(_) => {
@@ -601,7 +682,7 @@ impl StagedHirModuleTransaction<'_> {
             // the application owner itself. It deliberately does not mint a
             // synthetic content expression, so that owner must publish the
             // recovery diagnostic directly.
-            ExpressionProjection::DialogueContentApplication(_) => true,
+            ExpressionProjection::AttachedContentApplication(_) => true,
             _ => !matches!(
                 &recovery,
                 Some(
@@ -736,7 +817,7 @@ impl StagedHirModuleTransaction<'_> {
                 return Err(HirInvariantFailure::InvalidSlotCommit.into());
             }
         }
-        if let ExpressionProjection::DialogueContentApplication(application) = attached.projection()
+        if let ExpressionProjection::AttachedContentApplication(application) = attached.projection()
         {
             return Self::preflight_dialogue_content_application(attached, application);
         }
@@ -780,7 +861,7 @@ impl StagedHirModuleTransaction<'_> {
         owner: ExprId,
         scope: ScopeId,
         projection: &SyntaxCallProjection,
-    ) -> Result<(HirCallExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
+    ) -> Result<(HirCallInvocation, Option<HirRecoveryIssue>), HirLowerFailure> {
         if let SyntaxCallProjection::CallbackBlock(callback) = projection {
             if !attached.call_type_children().is_empty() {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
@@ -823,7 +904,7 @@ impl StagedHirModuleTransaction<'_> {
                 )
             };
             let argument_states = [argument_state];
-            let (call, state) = HirCallExpr::try_new(
+            let (call, state) = HirCallInvocation::try_new(
                 HirCallCallee::value(callee),
                 HirCallTypeApplication::absent(),
                 Box::new([HirCallArgument::Positional { value }]),
@@ -1061,7 +1142,7 @@ impl StagedHirModuleTransaction<'_> {
             });
         }
 
-        let (call, state) = HirCallExpr::try_new(
+        let (call, state) = HirCallInvocation::try_new(
             callee,
             explicit_type_application,
             arguments.into_boxed_slice(),
@@ -2059,6 +2140,20 @@ fn recovery_diagnostic_primary(
     whole: arcweft_source::SourceSpan,
 ) -> Result<(HirExprSourceRole, HirSourceSite), HirLowerFailure> {
     let role = match attached.projection() {
+        // Attached content-call recovery is owned by the target call. The
+        // generic recovery channel is used when a recognized language call
+        // has an invalid or missing discriminator, and E33 has no standalone
+        // `Recovery` component to anchor that diagnostic.
+        ExpressionProjection::AttachedContentApplication(_)
+            if matches!(
+                state,
+                HirPoisonState::Poisoned(HirRecoveryIssue::InvalidExpression(
+                    HirExpressionRecoveryIssue::Generic(_)
+                ))
+            ) =>
+        {
+            HirExprSourceRole::Target
+        }
         ExpressionProjection::Select(SyntaxSelectedMember::Missing) => {
             HirExprSourceRole::SelectedMember
         }

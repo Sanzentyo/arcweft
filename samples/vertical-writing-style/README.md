@@ -8,14 +8,15 @@ surface:
   transparent primary-action hit target;
 - `pub view VerticalWritingShowcase(dialogue: DialogueView)` owns the complete
   presentation geometry; and
-- `arcw.toml` selects that View for the `main` launch profile, while
-  `vertical_guide.dialogue_style` owns its ruby defaults.
+- `arcw.toml` selects that View for the `main` launch profile; ruby and other
+  presentation defaults are owned by the selected style/profile authority.
 
 The responsibilities are deliberately separate. `pub style` and the single
 View-root `.style(...)` application control the authored View's visual
 presentation through typed descendant `.part(...)` identities;
-the typed rich-text layout selectors `[.vertical_rl]` and `[.vertical_lr]`
-select writing direction and JLREQ policy for their content runs. View style
+the typed rich-text layout calls `#layout(.vertical_rl)` and
+`#layout(.vertical_lr)` select writing direction and JLREQ policy for their
+content runs. View style
 does not currently define a second `writing-mode` property, so this sample does
 not invent a sample-only alias for one. The capture check observes the
 speaker's authored 18 px size together with its font family and color.

@@ -2,19 +2,21 @@ use arcweft_character::id::CharacterId;
 use arcweft_core::{
     entry::RuntimeValueDigest, plan::RuntimeLineId, runtime_id::RuntimeDialogueValueSlotId,
 };
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{InlineFailurePolicy, InlineFailureSelection};
 use arcweft_id::TextKey;
 use arcweft_render_text::{
     LanguageTag, ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
     RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,
-    TextStyleCascade, TextWeight, resolve_document, resolve_frame, resolve_stage_document,
+    TextStyleCascade, TextWeight, resolve_document, resolve_frame_with_template,
+    resolve_stage_document,
 };
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
-    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter, Milli,
-    RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
-    RichTextLayout, RichTextNode, RichTextPresentation, RichTextPresentationStyle, RichTextRange,
-    RichTextRubyPosition, RichTextStyle, RichTextWritingMode,
+    CharacterDialoguePresentationConfig, DialogueContentFragmentTemplate, DialogueContentSpec,
+    DialoguePresentationCharacter, Milli, RichTextColor, RichTextControl, RichTextDocument,
+    RichTextFontFamily, RichTextInlineDirection, RichTextLayout, RichTextNode,
+    RichTextPresentation, RichTextPresentationStyle, RichTextRange, RichTextRubyPosition,
+    RichTextStyle, RichTextWritingMode,
 };
 use arcweft_view::ViewId;
 use std::collections::BTreeMap;
@@ -73,11 +75,24 @@ fn context() -> RuntimeLineContext {
     )
 }
 
-fn line(nodes: Vec<RichTextNode>) -> DialogueContentSpec {
-    DialogueContentSpec::new(
+struct TestLine {
+    spec: DialogueContentSpec,
+    template: DialogueContentFragmentTemplate,
+}
+
+fn line(nodes: Vec<RichTextNode>) -> TestLine {
+    let template = DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(nodes),
+    )
+    .expect("test dialogue template");
+    let spec = DialogueContentSpec::try_new(
         RuntimeLineId::canonical("resolved.document.test").expect("canonical test line"),
         TextKey::try_new("text.resolved.document.test").expect("text key"),
-        RichTextDocument::new(nodes),
+        &template,
         support::character_plan("character.test"),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             support::dialogue_profile(),
@@ -86,6 +101,8 @@ fn line(nodes: Vec<RichTextNode>) -> DialogueContentSpec {
         Vec::new(),
         source_ref(),
     )
+    .expect("test dialogue spec");
+    TestLine { spec, template }
 }
 
 #[test]
@@ -188,18 +205,21 @@ fn document_rejects_noncontiguous_and_inexact_source_ranges() {
 
 #[test]
 fn stage_resolution_borrows_the_frame_slice_and_retains_full_source_ranges() {
-    let frame = resolve_frame(
-        &line(vec![
-            RichTextNode::Text {
-                text: "夢".to_owned(),
-            },
-            RichTextNode::Control {
-                control: RichTextControl::Page,
-            },
-            RichTextNode::Text {
-                text: "続き".to_owned(),
-            },
-        ]),
+    let line = line(vec![
+        RichTextNode::Text {
+            text: "夢".to_owned(),
+        },
+        RichTextNode::Control {
+            control: RichTextControl::Page,
+        },
+        RichTextNode::Text {
+            text: "続き".to_owned(),
+        },
+    ]);
+    let frame = resolve_frame_with_template(
+        &line.spec,
+        &line.template,
+        &support::content_value(&line.template),
         &context(),
     )
     .expect("frame resolves");
@@ -234,11 +254,10 @@ fn document_projection_rebases_runs_and_ruby_without_cloning_text() {
         RichTextNode::Text {
             text: "前".to_owned(),
         },
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Strong),
-        },
         RichTextNode::Ruby {
-            base: "漢字".to_owned(),
+            body: vec![RichTextNode::Text {
+                text: "漢字".to_owned(),
+            }],
             ruby: "かんじ".to_owned(),
         },
         RichTextNode::Text {
@@ -278,29 +297,29 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
         direction: RichTextInlineDirection::Rtl,
         ..RichTextLayout::default()
     };
-    let document = RichTextDocument::new(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Strong),
-        },
-        RichTextNode::StyleStart {
+    let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Strong),
+        body: vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
                 layout: layout.clone(),
             }),
-        },
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Presentation {
-                presentation: RichTextPresentationStyle {
-                    opacity: Some(Milli(625)),
-                    layer: Some("dialogue".to_owned()),
-                    z_index: Some(3),
-                },
-            }),
-        },
-        RichTextNode::Ruby {
-            base: "漢字".to_owned(),
-            ruby: "かんじ".to_owned(),
-        },
-    ]);
+            body: vec![RichTextNode::Scope {
+                style: Box::new(RichTextStyle::Presentation {
+                    presentation: RichTextPresentationStyle {
+                        opacity: Some(Milli(625)),
+                        layer: Some("dialogue".to_owned()),
+                        z_index: Some(3),
+                    },
+                }),
+                body: vec![RichTextNode::Ruby {
+                    body: vec![RichTextNode::Text {
+                        text: "漢字".to_owned(),
+                    }],
+                    ruby: "かんじ".to_owned(),
+                }],
+            }],
+        }],
+    }]);
 
     let resolved = resolve_document(&document, &TextStyleCascade::new(style()))
         .expect("static document resolves");
@@ -342,31 +361,29 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
 
 #[test]
 fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
-    let document = RichTextDocument::new(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Font {
-                family: RichTextFontFamily::Monospace,
-            }),
-        },
-        RichTextNode::StyleStart {
+    let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Font {
+            family: RichTextFontFamily::Monospace,
+        }),
+        body: vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Color {
                 value: RichTextColor::Rgba8 {
                     value: [0x12, 0x34, 0x56, 0xff],
                 },
             }),
-        },
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Presentation {
-                presentation: RichTextPresentationStyle {
-                    opacity: Some(Milli(500)),
-                    ..RichTextPresentationStyle::default()
-                },
-            }),
-        },
-        RichTextNode::Text {
-            text: "styled".to_owned(),
-        },
-    ]);
+            body: vec![RichTextNode::Scope {
+                style: Box::new(RichTextStyle::Presentation {
+                    presentation: RichTextPresentationStyle {
+                        opacity: Some(Milli(500)),
+                        ..RichTextPresentationStyle::default()
+                    },
+                }),
+                body: vec![RichTextNode::Text {
+                    text: "styled".to_owned(),
+                }],
+            }],
+        }],
+    }]);
 
     let resolved = resolve_document(&document, &TextStyleCascade::default())
         .expect("styled document resolves");
@@ -379,27 +396,25 @@ fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
 
 #[test]
 fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
-    let document = RichTextDocument::new(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Layout {
-                layout: RichTextLayout {
-                    writing_mode: RichTextWritingMode::VerticalRl,
-                    ..RichTextLayout::default()
-                },
-            }),
-        },
-        RichTextNode::StyleStart {
+    let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Layout {
+            layout: RichTextLayout {
+                writing_mode: RichTextWritingMode::VerticalRl,
+                ..RichTextLayout::default()
+            },
+        }),
+        body: vec![RichTextNode::Scope {
             style: Box::new(RichTextStyle::Layout {
                 layout: RichTextLayout {
                     ruby_position: RichTextRubyPosition::Under,
                     ..RichTextLayout::default()
                 },
             }),
-        },
-        RichTextNode::Text {
-            text: "夢".to_owned(),
-        },
-    ]);
+            body: vec![RichTextNode::Text {
+                text: "夢".to_owned(),
+            }],
+        }],
+    }]);
 
     let resolved =
         resolve_document(&document, &TextStyleCascade::default()).expect("nested layout resolves");
@@ -417,8 +432,12 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
 
 #[test]
 fn direct_document_rejects_dynamic_nodes() {
-    let document = RichTextDocument::new(vec![RichTextNode::ConditionalStart {
-        condition: RuntimeDialogueValueSlotId::from_zero_based(0).expect("test slot"),
+    let document = RichTextDocument::new(vec![RichTextNode::Interpolation {
+        slot: RuntimeDialogueValueSlotId::from_zero_based(0).expect("test slot"),
+        label: "condition".to_owned(),
+        on_error: InlineFailureSelection::Explicit {
+            policy: InlineFailurePolicy::FailLine,
+        },
     }]);
 
     assert!(matches!(
@@ -448,16 +467,14 @@ fn direct_document_rejects_public_node_mutation_that_would_stale_the_borrowed_te
 
 #[test]
 fn style_resolution_rejects_zero_sized_authored_text() {
-    let document = RichTextDocument::new(vec![
-        RichTextNode::StyleStart {
-            style: Box::new(RichTextStyle::Size {
-                milli_points: Milli(0),
-            }),
-        },
-        RichTextNode::Text {
+    let document = RichTextDocument::new(vec![RichTextNode::Scope {
+        style: Box::new(RichTextStyle::Size {
+            milli_points: Milli(0),
+        }),
+        body: vec![RichTextNode::Text {
             text: "invalid".to_owned(),
-        },
-    ]);
+        }],
+    }]);
 
     assert!(matches!(
         resolve_document(&document, &TextStyleCascade::default()),
@@ -468,11 +485,15 @@ fn style_resolution_rejects_zero_sized_authored_text() {
 #[test]
 fn source_revision_changes_when_ruby_text_changes_without_base_text_changes() {
     let first = RichTextDocument::new(vec![RichTextNode::Ruby {
-        base: "漢字".to_owned(),
+        body: vec![RichTextNode::Text {
+            text: "漢字".to_owned(),
+        }],
         ruby: "かんじ".to_owned(),
     }]);
     let second = RichTextDocument::new(vec![RichTextNode::Ruby {
-        base: "漢字".to_owned(),
+        body: vec![RichTextNode::Text {
+            text: "漢字".to_owned(),
+        }],
         ruby: "kanji".to_owned(),
     }]);
 

@@ -1,29 +1,9 @@
 pub character zunda_guide {
-    display_name = "ずんだガイド"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#aee28e")
-                size = 26px
-            }
-        }
-    }
+    display = "ずんだガイド"
 }
 
 pub character narrator {
-    display_name = "語り手"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Mincho"
-                color = rgb("#f1dbc8")
-                size = 23px
-            }
-        }
-    }
+    display = "語り手"
 }
 
 pub style web_panel {
@@ -141,7 +121,7 @@ flow main(state: GameState) {
         語り手は明朝体と薄い桃色で表示される。既定のタイプライター表示で、WASMでもnativeでも同じ速度で文字が現れる。[p]これは同じdialogue lineの2ページ目で、次の入力までは次のlineへ進まない。
 
     zunda_guide(id=@say.web_demo.guide, voice=auto, look=.normal):
-        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。[.wave amp=4px freq=8]波打つ文字[/]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。
+        こちらはキャラクターsurfaceの色とフォントを使う行なのだ。#fx(wave(amplitude=4px))[波打つ文字]と、右上のアニメーション画像も同じフレーム計画で動いているのだ。
 
     choice @choice.web_demo {
         @choice.web_demo.continue "このまま進む" -> @flow.done

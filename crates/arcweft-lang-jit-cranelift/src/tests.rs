@@ -174,7 +174,14 @@ fn call(
             callee: RuntimeCallTarget::intrinsic(intrinsic),
             args: args
                 .into_iter()
-                .map(|value| RuntimeCallArgumentSeed::new(value, RuntimeCallArgumentMode::Value))
+                .enumerate()
+                .map(|(index, value)| {
+                    RuntimeCallArgumentSeed::new(
+                        value,
+                        RuntimeCallArgumentMode::Value,
+                        u32::try_from(index).expect("test call ABI position"),
+                    )
+                })
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
         },

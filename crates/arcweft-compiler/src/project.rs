@@ -28,15 +28,14 @@ pub use registration::{
 };
 
 use crate::view::CompiledViewProduct;
-use crate::{lower, parse, style, view};
+use crate::{fx_catalog::CompiledFxCatalog, lower, parse, style, view};
+use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_lang_hir::{
     database::HirDatabase,
     identity::{HirDatabaseCreateError, HirDatabaseId, HirSnapshotId},
     lowering::{HirLoweringControl, HirModuleKey, LoweringRequest},
     module::HirModule,
-    project::{
-        HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder, HirProjectModule,
-    },
+    project::{HirPackageModuleKey, HirProject, HirProjectBuilder, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolTable},
 };
 #[cfg(test)]
@@ -92,6 +91,7 @@ pub enum ProjectCompileStage {
     EntryBinding,
     EntrySelection,
     StyleLower,
+    FxLower,
     ViewLower,
     DialogueProfileAdmission,
     RuntimePlanLower,
@@ -167,10 +167,12 @@ pub struct CompiledProject {
     verification: Arc<VerificationReport>,
     semantic_index: Arc<ProjectSemanticIndex>,
     style: style::CompiledViewStyleArtifact,
-    fx_definitions: Arc<[FxDefinition]>,
+    fx_definitions: FxDefinitions,
     view_product: CompiledViewProduct,
     dialogue_profile: CheckedDialogueProfile,
     runtime_plan: RuntimePlanLowerReport,
+    #[cfg(test)]
+    runtime_facts: arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts,
 }
 
 /// Immutable pre-executable compiler product retained for typed tooling.
@@ -260,6 +262,7 @@ impl ProjectCompileStage {
             Self::EntryBinding => "entry-binding",
             Self::EntrySelection => "entry-selection",
             Self::StyleLower => "style-lower",
+            Self::FxLower => "fx-lower",
             Self::ViewLower => "view-lower",
             Self::DialogueProfileAdmission => "dialogue-profile-admission",
             Self::RuntimePlanLower => "runtime-plan-lower",
@@ -501,7 +504,7 @@ impl CompiledProject {
     }
 
     pub fn fx_definitions(&self) -> &[FxDefinition] {
-        &self.fx_definitions
+        self.fx_definitions.definitions()
     }
 
     pub const fn view_product(&self) -> &CompiledViewProduct {
@@ -517,6 +520,13 @@ impl CompiledProject {
 
     pub const fn runtime_plan(&self) -> &RuntimePlanLowerReport {
         &self.runtime_plan
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn runtime_facts(
+        &self,
+    ) -> &arcweft_runtime_plan::semantic_facts::RuntimePlanSemanticFacts {
+        &self.runtime_facts
     }
 
     /// Binds this exact compiled project's assertion sites to the canonical
@@ -690,23 +700,14 @@ where
                     )
                 })?;
             }
-            Arc::new(project_builder.finish().map_err(|error| match error {
-                HirProjectBuildError::DialogueLines(rejection) => linked_error(
-                    ProjectCompileStage::HirProject,
-                    rejection
-                        .diagnostics()
-                        .iter()
-                        .map(
-                            arcweft_lang_hir::line_identity::DialogueLineDiagnostic::to_source_diagnostic,
-                        ),
-                ),
-                error => linked_error(
+            Arc::new(project_builder.finish().map_err(|error| {
+                linked_error(
                     ProjectCompileStage::HirProject,
                     [
                         Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
                             .with_code("hir.project"),
                     ],
-                ),
+                )
             })?)
         };
         let mut semantic_tail_diagnostics = Vec::new();
@@ -836,7 +837,11 @@ where
             ),
         )
         .and_then(|reachability| {
-            lower::validate_reachable_runtime_callables(final_analysis.as_ref(), &reachability)?;
+            lower::validate_reachable_runtime_callables(
+                registered_world.symbols(),
+                final_analysis.as_ref(),
+                &reachability,
+            )?;
             Ok(reachability)
         })
         .map_err(|error| {
@@ -874,16 +879,21 @@ where
                     ],
                 )
             })?;
-        // Environment-owned FX definitions are supplied by their checked
-        // registration owner. The deleted flattened-HIR reader must not be
-        // recreated from source text or from an obsolete HIR clone.
-        let fx_definitions = Arc::<[FxDefinition]>::from([]);
+        let fx_catalog = CompiledFxCatalog::lower(final_analysis.as_ref())
+        .map_err(|error| {
+            linked_error(
+                ProjectCompileStage::FxLower,
+                [Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                    .with_code("fx.lower")],
+            )
+        })?;
         let view_product = view::ViewProjectLowerer::for_project(
             &hir_project,
             final_analysis.as_ref(),
             registered_world.symbols(),
             &registered_world,
             &style,
+            &fx_catalog,
             project,
             context.resource_types(),
         )
@@ -905,7 +915,11 @@ where
                 .map(view::CheckedViewHandlerProgram::closure),
         )
         .and_then(|reachability| {
-            lower::validate_reachable_runtime_callables(final_analysis.as_ref(), &reachability)?;
+            lower::validate_reachable_runtime_callables(
+                registered_world.symbols(),
+                final_analysis.as_ref(),
+                &reachability,
+            )?;
             Ok(reachability)
         })
         .map_err(|error| {
@@ -956,7 +970,7 @@ where
                 [error.diagnostic()],
             )
         })?;
-        let runtime_facts = lower::project_runtime_semantic_facts_with_view_value_programs(
+        let runtime_facts = lower::project_runtime_semantic_facts_with_view_value_programs_and_fx(
             executable,
             registered_world.symbols(),
             &registered_world,
@@ -971,6 +985,8 @@ where
                     .localization()
                     .character_names()
             }),
+            &fx_catalog,
+            context.instantiation_control(),
         )
         .map_err(|error| {
             linked_error(
@@ -983,6 +999,7 @@ where
         })?;
         let entry_runtime_input = runtime_entry_lowering_input(
             executable,
+            &registered_world,
             registered_world.symbols(),
             &final_analysis,
             &runtime_reachability,
@@ -1026,10 +1043,12 @@ where
             verification,
             semantic_index,
             style,
-            fx_definitions,
+            fx_definitions: fx_catalog.into_definitions(),
             view_product,
             dialogue_profile,
             runtime_plan,
+            #[cfg(test)]
+            runtime_facts,
         })
         })()
         .map_err(|error: ProjectCompileError| error.with_tooling_lease(Arc::clone(&tooling)))

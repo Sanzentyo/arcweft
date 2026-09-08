@@ -1,5 +1,10 @@
 # Dialogue control playback — 2026-07-10
 
+> Historical implementation evidence. The long control aliases described in
+> this dated cut were later removed. Current control spellings are owned solely
+> by `DialogueRichTextControl`: `p`, `l`, `r`, `w`, `clear`, `reset`, `speed`,
+> and `mark`.
+
 ## Status and scope
 
 This slice makes the built-in dialogue playback controls observable behavior in
@@ -24,8 +29,10 @@ not become accidental completion claims.
 - `[w]` starts only when reveal reaches the marker, waits automatically, and
   then resumes. Its duration must be positive and use `ms` or `s`.
 - `[clear]` resets displayed text immediately when reveal reaches the marker.
-  It is not an input wait or a logical-page boundary. `[er]` and `[cm]` are
-  aliases. Its display origin persists across a later `[l]` on the same page.
+  It is not an input wait or a logical-page boundary. In the historical
+  contract recorded by this dated cut, `[er]` and `[cm]` were aliases; those
+  aliases were later removed. Its display origin persists across a later `[l]`
+  on the same page.
 - `[speed ...]` changes the reveal rate for subsequent text until another
   speed/reset boundary or the end of the line. It accepts the named rates
   `slow`, `normal`, and `fast`, or a checked numeric rate from 1 through 240
@@ -104,13 +111,12 @@ capability checks, cancellation, snapshot behavior, and native/Web/AWBC parity
 for marks, calls, signals, voice, and stage events. It must not infer dispatch
 by searching source spellings.
 
-### Duplicate `arcweft-dialogue` model
+### Resolved duplicate dialogue model
 
-`crates/arcweft-dialogue/src/lib.rs` still owns a second `DialogueTag` and
-`DialogueContent::parse_lossy` model for `[p]`, `[l]`, `[r]`, and `[w]`, while
-the compiler path uses syntax/HIR/runtime-plan/render-text types. Remove the
-unused duplicate or redesign it as an intentional facade after its consumers
-and ownership are audited; do not add conversion wrappers between both models.
+The second lossy `arcweft-dialogue` content facade described by this dated note
+was later deleted. Structural syntax/HIR/sema content and the shared runtime
+RichText model are the only authorities; no conversion or compatibility reader
+remains.
 
 ### Generic text policy placeholders
 

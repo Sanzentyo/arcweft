@@ -1008,7 +1008,7 @@ impl<'a> TypeProjector<'a> {
                 },
             ));
         };
-        Ok(TypeKind::GenericParam(parameter.clone()))
+        Ok(TypeKind::generic_parameter(parameter.clone()))
     }
 
     fn boxed_child(

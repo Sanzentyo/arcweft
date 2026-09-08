@@ -35,29 +35,20 @@ pub trait RagService {
 
 /// RAG service used when retrieval is disabled by policy.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct NoopRagService;
+pub struct DisabledRagService;
 
-impl RagService for NoopRagService {
-    type Error = std::convert::Infallible;
+impl RagService for DisabledRagService {
+    type Error = DisabledRagServiceError;
 
     fn query(&mut self, _request: RagRequest) -> Result<RagContextPack, Self::Error> {
-        Ok(RagContextPack {
-            schema_version: 1,
-            query: arcweft_debug_model::rag::RagQuery {
-                query_id: "noop".to_owned(),
-                text: String::new(),
-                program_hash: arcweft_agent_protocol::ids::StableHash::new("noop")
-                    .expect("static noop hash is nonempty"),
-                roots: Vec::new(),
-                graph_depth: 0,
-                limit: 0,
-                max_context_bytes: 0,
-            },
-            items: Vec::new(),
-            truncated: false,
-        })
+        Err(DisabledRagServiceError)
     }
 }
+
+/// Retrieval was requested from a runner configured without a RAG provider.
+#[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
+#[error("Agent RAG retrieval is disabled for this runner")]
+pub struct DisabledRagServiceError;
 
 /// Read-only `AgentSession` backed by validated `.arcwx` trace records.
 ///

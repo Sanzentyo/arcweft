@@ -225,10 +225,21 @@ pub(crate) fn prepare_entry_root_seeds(
         ) else {
             continue;
         };
+        let event_digest = match event_type.semantic_identity_digest() {
+            Ok(identity) => identity,
+            Err(error) => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_type_scope",
+                    format!("Entry event role has an invalid generic scope: {error}"),
+                    entry_member_source(item.module(), item.id(), events[0].0),
+                ));
+                continue;
+            }
+        };
         let seed = PreparedEntryRootSeed {
             entry: item.id(),
             event_type: event.ty(),
-            event_digest: event_type.semantic_identity_digest(),
+            event_digest,
             target,
         };
         if roots.insert(item.id(), seed).is_some() {

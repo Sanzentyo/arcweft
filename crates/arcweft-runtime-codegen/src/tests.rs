@@ -371,6 +371,38 @@ fn awbc_region_lowering_accepts_basic_verified_flow() {
 }
 
 #[test]
+fn awbc_region_lowering_accepts_project_call_as_internal_terminator() {
+    let mut program = program();
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Invoke {
+                function: AwbcFunctionId(0),
+            },
+            result_ty: AwbcTypeId(0),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+
+    let report = lower_awbc_regions(
+        &program,
+        &AwbcRegionLowerOptions {
+            generation: ProgramGenerationId(1),
+            program_digest: PROGRAM_DIGEST,
+            ..AwbcRegionLowerOptions::default()
+        },
+    );
+
+    assert_eq!(report.regions.len(), 1);
+    assert!(report.rejected.is_empty());
+}
+
+#[test]
 fn awbc_region_lowering_rejects_host_boundary_without_opt_in() {
     let mut program = program();
     program.instructions.push(AwbcInstruction::EnsureContent {

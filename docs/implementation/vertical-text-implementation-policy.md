@@ -59,7 +59,8 @@ the concrete choices to follow when turning that package into production code.
 ## Acceptance Criteria
 
 - `samples/rich-text-full-grammar.arcw` and
-  `samples/rich-text-windows-fonts.arcw` render `[.vertical_rl]` as true
+  `samples/rich-text-windows-fonts.arcw` render
+  `#layout(.vertical_rl)[...]` as true
   vertical text in native window and headless PNG captures.
 - Mixed text such as `吾輩は猫である。ABC 123 2026` renders CJK upright, ASCII
   sideways, and eligible digits as text-combine-upright.
@@ -164,9 +165,9 @@ the concrete choices to follow when turning that package into production code.
   compact bracket pairs, small kana, dash/prolonged-sound marks, leader marks,
   repeated dash/leader marks, and strict middle-dot pairs together according to
   the chosen preset, and supplies preset-specific planner break penalties for
-  weaker punctuation pairs. Authors can select the per-span preset with layout
-  attributes such as `[.vertical_rl jlreq=strict]`; `jlreq=auto`/omitted
-  inherits the host textbox `TextLayoutConfig` preset.
+  weaker punctuation pairs. Authors can select the per-content preset with a
+  typed call such as `#layout(.vertical_rl, jlreq=.strict)[...]`; an omitted
+  `jlreq` inherits the host textbox `TextLayoutConfig` preset.
   Initial punctuation compression reduces the inline advance of compressible
   closing punctuation and middle dots to half a body cell. When such punctuation
   must remain at the column end for kinsoku, the layout applies half-cell
@@ -218,7 +219,7 @@ the concrete choices to follow when turning that package into production code.
   4-digit text-combine-upright cluster, proving the page-local layout source
   can be adapted into the same body and ruby GlyphAreas used by the actual
   window renderer. Display-map page boundaries treat ruby bases as atomic:
-  if a `[page]`, `[l]`, or `[clear]` control would place a page break inside a
+  if a `[p]`, `[l]`, or `[clear]` control would place a page break inside a
   ruby base range, native page construction and Agent page metadata move the
   break to the ruby base end so the page-local layout does not omit the ruby
   annotation. Native and CLI unit coverage fix the same artificial split-base

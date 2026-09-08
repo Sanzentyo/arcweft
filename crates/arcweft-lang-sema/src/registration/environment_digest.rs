@@ -8,7 +8,8 @@ use crate::callable::{EnvironmentCallableOwner, ProjectCallablePath, StandardEnv
 use super::{
     AcceptedNominalSource, AcceptedNominalVisibilityIndex, AcceptedNominalWorld,
     CharacterInventoryDigest, CharacterInventoryRevision, EnvironmentPublicationItemId,
-    ProjectRegistrationFacts, RegisteredEnvironmentDigest, RegisteredStatementIngressTypes,
+    ProjectRegistrationFacts, RegisteredClosedEnumDomainCatalog, RegisteredCompileTimeScalarTypes,
+    RegisteredEnvironmentDigest, RegisteredStatementIngressTypes,
 };
 
 const ENVIRONMENT_DOMAIN: &[u8] = b"arcweft.registered-semantic-environment.v1\0";
@@ -23,10 +24,12 @@ pub(super) fn derive(
     callable_catalog_digest: &[u8; 32],
     character_dialogue_fields_digest: &[u8; 32],
     statement_ingress: &RegisteredStatementIngressTypes,
+    compile_time_scalars: &RegisteredCompileTimeScalarTypes,
+    closed_enum_domains: &RegisteredClosedEnumDomainCatalog,
     facts: &ProjectRegistrationFacts,
     character_digest: CharacterInventoryDigest,
     character_revision: CharacterInventoryRevision,
-) -> RegisteredEnvironmentDigest {
+) -> Result<RegisteredEnvironmentDigest, crate::types::GenericScopeError> {
     let mut encoder = Encoder::new(ENVIRONMENT_DOMAIN);
     encoder.string(world.world().package().as_str());
     encoder.string(world.world().root_document().as_str());
@@ -40,27 +43,29 @@ pub(super) fn derive(
     encoder.bytes(
         statement_ingress
             .input()
-            .semantic_identity_digest()
+            .semantic_identity_digest()?
             .as_bytes(),
     );
     encoder.bytes(
         statement_ingress
             .task()
-            .semantic_identity_digest()
+            .semantic_identity_digest()?
             .as_bytes(),
     );
     encoder.bytes(
         statement_ingress
             .scope()
-            .semantic_identity_digest()
+            .semantic_identity_digest()?
             .as_bytes(),
     );
     encoder.bytes(
         statement_ingress
             .frame()
-            .semantic_identity_digest()
+            .semantic_identity_digest()?
             .as_bytes(),
     );
+    encoder.bytes(&compile_time_scalars.semantic_digest()?);
+    encoder.bytes(&closed_enum_domains.digest());
 
     let mut manifests = facts
         .environment_inputs()
@@ -79,7 +84,7 @@ pub(super) fn derive(
 
     encoder.bytes(character_digest.as_bytes());
     encoder.u64(character_revision.get());
-    RegisteredEnvironmentDigest::from_bytes(encoder.finish())
+    Ok(RegisteredEnvironmentDigest::from_bytes(encoder.finish()))
 }
 
 #[cfg(test)]
@@ -156,7 +161,7 @@ impl Encoder {
     }
 
     fn accepted_nominal_id(&mut self, id: &crate::env::nominal::AcceptedNominalId) {
-        let digest = crate::types::accepted_nominal_semantic_identity_digest(id, &[]);
+        let digest = id.semantic_digest();
         self.bytes(digest.as_bytes());
     }
 

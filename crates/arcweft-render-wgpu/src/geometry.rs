@@ -31,7 +31,6 @@ use thiserror::Error;
 mod action_buttons;
 mod control_style;
 mod dialogue_prepared;
-mod dialogue_timeline;
 mod dialogue_transform;
 mod focus_navigation;
 mod images;
@@ -174,7 +173,7 @@ pub struct PreparedViewMaskResource {
 /// Portable choice data supplied by a player/runtime adapter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderChoiceItem {
-    pub id: String,
+    pub id: Option<String>,
     pub label: String,
 }
 
@@ -417,7 +416,7 @@ pub struct PreparedTextDocumentRequest {
 pub struct PreparedRichTextStageRequest {
     pub bounds: HitRect,
     pub default_style: ResolvedTextStyle,
-    pub visual_time_millis: u64,
+    pub reveal_elapsed: arcweft_text_model::DialogueRevealElapsed,
     pub reveal_complete: bool,
 }
 
@@ -499,7 +498,7 @@ struct PlannedFrame {
 /// Choice geometry and stable semantic target.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RenderChoice {
-    pub option_id: String,
+    pub option_id: Option<String>,
     pub label: String,
     pub target: InteractionTarget,
 }

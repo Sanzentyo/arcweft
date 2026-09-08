@@ -2,7 +2,7 @@ use super::{
     HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
     HirAwaitExpr, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr, HirBorrowKind,
     HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
-    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallInvocation,
     HirCallIssue, HirCallTypeApplication, HirChoiceBody, HirChoiceCompactAction,
     HirChoiceCompactArm, HirChoiceExpr, HirChoiceIf, HirChoiceIfBranch, HirChoiceItem,
     HirChoiceMatch, HirChoiceMatchArm, HirChoicePlan, HirChoicePlanError, HirChoicePlanItem,
@@ -19,12 +19,10 @@ use super::{
     HirUnaryExpr, HirUnaryOp,
 };
 use crate::dialogue_application::{
-    HirBuiltinRichTextTag, HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId,
-    HirDialogueCoordinate, HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLinePlan,
-    HirLinePlanItem, HirPostfixBracket, HirPostfixBracketCandidates, HirPostfixCandidateFailure,
-    HirPostfixCandidateFailureKind, HirRichTextArgument, HirRichTextArgumentId,
-    HirRichTextDirectStyle, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
-    HirRichTextTagPayload, HirRichTextValue, HirTextFragment,
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily,
+    HirAttachedContentBodyPresence, HirDialogueContent, HirDialogueContentId,
+    HirDialogueCoordinate, HirLinePlan, HirLinePlanItem, HirPostfixBracket,
+    HirPostfixBracketCandidates, HirPostfixCandidateFailure, HirPostfixCandidateFailureKind,
 };
 use crate::identity::{
     ExprId, HirDatabaseId, HirLimit, HirModuleId, HirTypedId, ItemId, LocalId, PatternId, RawHirId,
@@ -39,9 +37,8 @@ use crate::leaf::{
     HirPathSegment, HirPathValue, HirShortVariantName, HirStringIssue, HirStringLiteral,
 };
 use crate::source_index::{
-    HirCallArgumentSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole, HirIdRefSourcePart,
-    HirMatchArmSourcePart, HirRecordFieldSourcePart, HirRichTextArgumentSourcePart,
-    HirRichTextTagSourcePart, HirSourceQueryError,
+    HirCallArgumentSourcePart, HirExprSourceRole, HirIdRefSourcePart, HirMatchArmSourcePart,
+    HirRecordFieldSourcePart, HirSourceQueryError,
 };
 use core::fmt::Debug;
 use core::hash::Hash;
@@ -67,9 +64,9 @@ fn name(value: &str) -> HirName {
     HirName::try_new(value.into()).expect("valid HIR name")
 }
 
-fn clean_call(callee: HirCallCallee, arguments: Box<[HirCallArgument]>) -> HirCallExpr {
+fn clean_call(callee: HirCallCallee, arguments: Box<[HirCallArgument]>) -> HirCallInvocation {
     let argument_states = vec![HirCallChildPoison::Clean; arguments.len()];
-    let (call, state) = HirCallExpr::try_new(
+    let (call, state) = HirCallInvocation::try_new(
         callee,
         HirCallTypeApplication::absent(),
         arguments,
@@ -89,7 +86,7 @@ fn assert_expr_traits<T: Clone + Debug + Eq + PartialEq>() {}
 fn records_expose_the_exact_required_trait_families() {
     assert_expr_traits::<HirExpr>();
     assert_owned_traits::<HirExprKind>();
-    assert_owned_traits::<HirCallExpr>();
+    assert_owned_traits::<HirCallInvocation>();
     assert_owned_traits::<HirClosureParameter>();
     assert_owned_traits::<HirMatchArm>();
     assert_owned_traits::<HirThreadExpr>();
@@ -282,7 +279,7 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
     let label = name("limit");
 
     let clean_states = [HirCallChildPoison::Clean, HirCallChildPoison::Clean];
-    let (positional_after_named, positional_state) = HirCallExpr::try_new(
+    let (positional_after_named, positional_state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),
         Box::new([
@@ -312,7 +309,7 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
         HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(positional_issue))
     );
 
-    let (duplicate, duplicate_state) = HirCallExpr::try_new(
+    let (duplicate, duplicate_state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),
         Box::new([
@@ -353,7 +350,7 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
     )
     .expect("poisoned call retains duplicate arguments for dialogue coordinates");
     assert!(matches!(retained.kind(), HirExprKind::Call(_)));
-    let (spread, spread_state) = HirCallExpr::try_new(
+    let (spread, spread_state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),
         Box::new([
@@ -382,7 +379,7 @@ fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_ide
         spread_state,
         HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(spread_issue))
     );
-    let (foreign_call, foreign_state) = HirCallExpr::try_new(
+    let (foreign_call, foreign_state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),
         Box::new([HirCallArgument::positional(foreign)]),
@@ -407,7 +404,7 @@ fn call_constructor_retains_present_poisoned_arguments_and_rejects_clean_missing
     let callee = id::<ExprId>(owner_module, 1);
     let value = id::<ExprId>(owner_module, 2);
     let poisoned = [HirCallChildPoison::Poisoned];
-    let (call, state) = HirCallExpr::try_new(
+    let (call, state) = HirCallInvocation::try_new(
         HirCallCallee::value(callee),
         HirCallTypeApplication::absent(),
         Box::new([HirCallArgument::positional(value)]),
@@ -434,7 +431,7 @@ fn call_constructor_retains_present_poisoned_arguments_and_rejects_clean_missing
     );
 
     assert_eq!(
-        HirCallExpr::try_new(
+        HirCallInvocation::try_new(
             HirCallCallee::value(callee),
             HirCallTypeApplication::absent(),
             Box::new([HirCallArgument::missing_positional(value)]),
@@ -465,7 +462,7 @@ fn call_constructor_accepts_exact_and_rejects_one_over_context_limits() {
             .collect::<Vec<_>>()
             .into_boxed_slice();
         let exact_states = vec![HirCallChildPoison::Clean; exact.len()];
-        let (exact_call, exact_state) = HirCallExpr::try_new(
+        let (exact_call, exact_state) = HirCallInvocation::try_new(
             HirCallCallee::value(callee),
             HirCallTypeApplication::absent(),
             exact,
@@ -488,7 +485,7 @@ fn call_constructor_accepts_exact_and_rejects_one_over_context_limits() {
             .into_boxed_slice();
         let one_over_states = vec![HirCallChildPoison::Clean; one_over.len()];
         assert_eq!(
-            HirCallExpr::try_new(
+            HirCallInvocation::try_new(
                 HirCallCallee::value(callee),
                 HirCallTypeApplication::absent(),
                 one_over,
@@ -1035,16 +1032,20 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
         )
         .expect("test thread body"),
     );
-    let content = HirDialogueContent::try_new(
-        HirDialogueContentId::new(owner),
-        Box::new([]),
-        Box::new([]),
-        Box::new([]),
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let dialogue = HirAttachedContentApplication::try_new_with_body_presence(
+        owner,
+        content,
+        HirAttachedContentApplicationFamily::DialogueLine {
+            target: first,
+            plan: None,
+            coordinates: Box::new([]),
+        },
+        HirAttachedContentBodyPresence::Present,
     )
-    .expect("empty dialogue content");
-    let dialogue =
-        HirDialogueContentApplication::try_new(owner, first, content, None, Box::new([]))
-            .expect("test dialogue application");
+    .expect("test dialogue application");
     let postfix = HirPostfixBracket::try_new(
         first,
         HirPostfixBracketCandidates::Invalid {
@@ -1224,7 +1225,7 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
             },
         ),
         (
-            HirExprKind::DialogueContentApplication(dialogue),
+            HirExprKind::AttachedContentApplication(dialogue),
             HirExprSourceRole::ContentBody,
         ),
         (
@@ -1307,16 +1308,21 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
     .into_boxed_slice();
     let coordinates = HirDialogueCoordinate::from_immediate_arguments(&arguments)
         .expect("bounded dialogue coordinates");
-    let content = HirDialogueContent::try_new(
-        HirDialogueContentId::new(owner),
-        Box::new([]),
-        Box::new([]),
-        Box::new([]),
-    )
-    .expect("empty dialogue content");
-    let dialogue = HirExprKind::DialogueContentApplication(
-        HirDialogueContentApplication::try_new(owner, first, content, None, coordinates)
-            .expect("dialogue coordinates"),
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let dialogue = HirExprKind::AttachedContentApplication(
+        HirAttachedContentApplication::try_new_with_body_presence(
+            owner,
+            content,
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target: first,
+                plan: None,
+                coordinates,
+            },
+            HirAttachedContentBodyPresence::Present,
+        )
+        .expect("dialogue coordinates"),
     );
     assert_eq!(dialogue.direct_expression_children(), [first, second]);
     let coordinate = HirCallArgumentOrdinal::try_new(1).expect("coordinate ordinal");
@@ -1452,103 +1458,13 @@ fn postfix_bracket_source_roles_cover_the_closed_component_matrix() {
     );
 }
 
-#[test]
-fn dialogue_and_rich_text_source_roles_validate_nested_typed_ordinals() {
-    let module = module(16);
-    let owner = id::<ExprId>(module, 1);
-    let target = id::<ExprId>(module, 2);
-    let content_id = HirDialogueContentId::new(owner);
-    let tag_id = HirRichTextTagId::try_new(content_id, 0).expect("tag id");
-    let argument_id = HirRichTextArgumentId::try_new(tag_id, 0).expect("argument id");
-    let argument = HirRichTextArgument::named(
-        argument_id,
-        name("tone"),
-        HirRichTextValue::new("calm".into()),
-    );
-    let tag = HirRichTextTag::try_new(
-        tag_id,
-        HirRichTextTagIdentity::Builtin(HirBuiltinRichTextTag::DirectStyle(
-            HirRichTextDirectStyle::Color,
-        )),
-        Box::new([argument]),
-        HirRichTextTagPayload::Arguments,
-    )
-    .expect("rich text tag");
-    let start = HirDialogueNode::new(
-        HirDialogueNodeId::try_new(content_id, 0).expect("start node id"),
-        HirDialogueNodeKind::AuthoredStartTag(tag_id),
-    );
-    let text = HirDialogueNode::new(
-        HirDialogueNodeId::try_new(content_id, 1).expect("text node id"),
-        HirDialogueNodeKind::Text(HirTextFragment::new("hello".into())),
-    );
-    let content = HirDialogueContent::try_new(
-        content_id,
-        Box::new([start, text]),
-        Box::new([tag]),
-        Box::new([]),
-    )
-    .expect("dialogue content");
-    let kind = HirExprKind::DialogueContentApplication(
-        HirDialogueContentApplication::try_new(owner, target, content, None, Box::new([]))
-            .expect("dialogue application"),
-    );
-
-    for role in [
-        HirExprSourceRole::DialogueNode {
-            ordinal: 0,
-            part: HirDialogueNodeSourcePart::Whole,
-        },
-        HirExprSourceRole::DialogueNode {
-            ordinal: 1,
-            part: HirDialogueNodeSourcePart::Text,
-        },
-        HirExprSourceRole::RichTextTag {
-            tag: 0,
-            part: HirRichTextTagSourcePart::Name,
-        },
-        HirExprSourceRole::RichTextArgument {
-            tag: 0,
-            argument: 0,
-            part: HirRichTextArgumentSourcePart::Equals,
-        },
-    ] {
-        assert_eq!(kind.validate_source_role(owner, role), Ok(()));
-    }
-
-    let node_one_over = HirExprSourceRole::DialogueNode {
-        ordinal: 2,
-        part: HirDialogueNodeSourcePart::Error,
-    };
-    assert_eq!(
-        kind.validate_source_role(owner, node_one_over),
-        Err(HirSourceQueryError::ExprOrdinalOutOfBounds {
-            owner,
-            role: node_one_over,
-            length: 2,
-        })
-    );
-    let argument_one_over = HirExprSourceRole::RichTextArgument {
-        tag: 0,
-        argument: 1,
-        part: HirRichTextArgumentSourcePart::Value,
-    };
-    assert_eq!(
-        kind.validate_source_role(owner, argument_one_over),
-        Err(HirSourceQueryError::ExprOrdinalOutOfBounds {
-            owner,
-            role: argument_one_over,
-            length: 1,
-        })
-    );
-}
-
 fn edge_role_tag(role: &HirExpressionChildRole) -> u8 {
     match role {
         HirExpressionChildRole::Element { .. } => 0,
         HirExpressionChildRole::RepeatedValue => 1,
         HirExpressionChildRole::RepeatLength => 2,
         HirExpressionChildRole::Callee => 3,
+        HirExpressionChildRole::ContentCallee => 60,
         HirExpressionChildRole::Argument { .. } => 4,
         HirExpressionChildRole::Target => 5,
         HirExpressionChildRole::Index => 6,
@@ -1573,7 +1489,8 @@ fn edge_role_tag(role: &HirExpressionChildRole) -> u8 {
         HirExpressionChildRole::DialogueTarget => 25,
         HirExpressionChildRole::DialogueCoordinate { .. } => 26,
         HirExpressionChildRole::DialogueInterpolation { .. } => 27,
-        HirExpressionChildRole::DialogueTagPayload { .. } => 28,
+        HirExpressionChildRole::DialoguePointActionPayload { .. } => 28,
+        HirExpressionChildRole::AttachedContentApplication { .. } => 29,
         HirExpressionChildRole::PostfixIndexCandidate => 34,
         HirExpressionChildRole::PostfixDialogueCandidate => 35,
         HirExpressionChildRole::ForInput => 36,
@@ -1685,12 +1602,19 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
         HirDialogueContentId::new(content_owner),
         Box::new([]),
         Box::new([]),
-        Box::new([]),
     )
     .expect("empty dialogue content");
-    let dialogue =
-        HirDialogueContentApplication::try_new(content_owner, first, content, None, Box::new([]))
-            .expect("dialogue application");
+    let dialogue = HirAttachedContentApplication::try_new_with_body_presence(
+        content_owner,
+        content,
+        HirAttachedContentApplicationFamily::DialogueLine {
+            target: first,
+            plan: None,
+            coordinates: Box::new([]),
+        },
+        HirAttachedContentBodyPresence::Present,
+    )
+    .expect("dialogue application");
     let postfix = HirPostfixBracket::try_new(
         first,
         HirPostfixBracketCandidates::Ambiguous {
@@ -1889,7 +1813,7 @@ fn child_edges_have_independent_expected_children_and_role_families_for_all_38_v
             vec![21, 22, 23, 23],
         ),
         (
-            HirExprKind::DialogueContentApplication(dialogue),
+            HirExprKind::AttachedContentApplication(dialogue),
             vec![first],
             vec![25],
         ),
@@ -2149,16 +2073,21 @@ fn dialogue_line_plan_keeps_statement_roots_out_of_direct_expression_edges() {
         ]),
     )
     .expect("line plan");
-    let content = HirDialogueContent::try_new(
-        HirDialogueContentId::new(owner),
-        Box::new([]),
-        Box::new([]),
-        Box::new([]),
-    )
-    .expect("empty dialogue content");
-    let kind = HirExprKind::DialogueContentApplication(
-        HirDialogueContentApplication::try_new(owner, target, content, Some(plan), Box::new([]))
-            .expect("dialogue line plan application"),
+    let content =
+        HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
+            .expect("empty dialogue content");
+    let kind = HirExprKind::AttachedContentApplication(
+        HirAttachedContentApplication::try_new_with_body_presence(
+            owner,
+            content,
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan: Some(plan),
+                coordinates: Box::new([]),
+            },
+            HirAttachedContentBodyPresence::Present,
+        )
+        .expect("dialogue line plan application"),
     );
 
     let edges = kind.child_edges();

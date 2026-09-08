@@ -26,7 +26,7 @@ use arcweft_player_scene::{
     },
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
-use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame_with_template};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::view_scene::ViewPrimitive;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
@@ -194,7 +194,6 @@ fn product_only_surface_is_not_treated_as_retained_geometry() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -241,7 +240,6 @@ fn product_only_scroll_region_is_not_treated_as_retained_geometry() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -283,7 +281,6 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
-        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -374,7 +371,6 @@ fn product_only_hidden_scroll_region_is_not_retained_geometry() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -421,7 +417,6 @@ fn product_only_horizontal_scroll_region_is_not_retained_geometry() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -476,7 +471,6 @@ fn retained_text_ignores_unretained_product_scroll_metadata() {
         fit: PlayerFrameFit::raw(),
         image_time_millis: 0,
         visual_time_millis: 0,
-        dialogue_reveal_complete: false,
         preferences: RenderPreferences::default(),
     };
 
@@ -529,7 +523,6 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
                 fit: PlayerFrameFit::raw(),
                 image_time_millis: 0,
                 visual_time_millis: 0,
-                dialogue_reveal_complete: false,
                 preferences: RenderPreferences::default(),
             },
         )
@@ -562,21 +555,21 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
         ViewRuntimeControlVisualStyle::default(),
     );
     presentation.view.mounts[0].text[0].value = BundleViewTextValue::RichTextDocument {
-        document: Box::new(RichTextDocument::new(vec![
-            RichTextNode::StyleStart {
-                style: Box::new(RichTextStyle::Layout {
-                    layout: RichTextLayout {
-                        writing_mode: RichTextWritingMode::VerticalRl,
-                        direction: RichTextInlineDirection::Rtl,
-                        ..RichTextLayout::default()
-                    },
-                }),
-            },
-            RichTextNode::Ruby {
-                base: "漢字".to_owned(),
+        document: Box::new(RichTextDocument::new(vec![RichTextNode::Scope {
+            style: Box::new(RichTextStyle::Layout {
+                layout: RichTextLayout {
+                    writing_mode: RichTextWritingMode::VerticalRl,
+                    direction: RichTextInlineDirection::Rtl,
+                    ..RichTextLayout::default()
+                },
+            }),
+            body: vec![RichTextNode::Ruby {
+                body: vec![RichTextNode::Text {
+                    text: "漢字".to_owned(),
+                }],
                 ruby: "かんじ".to_owned(),
-            },
-        ])),
+            }],
+        }])),
     };
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
@@ -600,7 +593,6 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )
@@ -650,32 +642,47 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         ViewTextSelectionPolicy::Disabled,
         ViewRuntimeControlVisualStyle::default(),
     );
-    let display = resolve_frame(
-        &DialogueContentSpec::new(
-            RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
-            TextKey::try_new("text.typed_sources.display").expect("text key"),
-            RichTextDocument::new(vec![
-                RichTextNode::Text {
-                    text: "Stage one".to_owned(),
-                },
-                RichTextNode::Control {
-                    control: RichTextControl::Page,
-                },
-                RichTextNode::Text {
-                    text: "Stage two".to_owned(),
-                },
-            ]),
-            support::character_plan(),
-            arcweft_text_model::DialoguePresentationSnapshot::new(
-                support::dialogue_profile(),
-                support::dialogue_profile_revision(),
-            ),
-            Vec::new(),
-            test_source_ref(),
-        ),
-        &test_line_context(),
+    let template = arcweft_text_model::DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0).unwrap(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(vec![
+            RichTextNode::Text {
+                text: "Stage one".to_owned(),
+            },
+            RichTextNode::Control {
+                control: RichTextControl::Page,
+            },
+            RichTextNode::Text {
+                text: "Stage two".to_owned(),
+            },
+        ]),
     )
-    .unwrap();
+    .expect("dialogue template");
+    let spec = DialogueContentSpec::try_new(
+        RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
+        TextKey::try_new("text.typed_sources.display").expect("text key"),
+        &template,
+        support::character_plan(),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
+        ),
+        Vec::new(),
+        test_source_ref(),
+    )
+    .expect("dialogue spec");
+    let content = arcweft_core::value::RuntimeDialogueContentValue::try_new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x71; 32])
+            .expect("fixture artifact"),
+        template.id(),
+        template.digest(),
+        [],
+    )
+    .expect("fixture Content envelope");
+    let display =
+        resolve_frame_with_template(&spec, &template, &content, &test_line_context()).unwrap();
     presentation.view.mounts[1].text[0].value = BundleViewTextValue::DisplayFrame {
         frame: Box::new(display),
         stage_index: 0,
@@ -702,7 +709,6 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
             fit: PlayerFrameFit::raw(),
             image_time_millis: 0,
             visual_time_millis: 0,
-            dialogue_reveal_complete: false,
             preferences: RenderPreferences::default(),
         },
     )

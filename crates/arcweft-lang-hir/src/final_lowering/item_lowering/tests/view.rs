@@ -283,6 +283,9 @@ fn canonical_view_freezes_callable_parameters_exports_and_value_owners() {
         | arcweft_lang_syntax::attachment::AttachedRetainedName::Invalid { syntax } => {
             syntax.source_span()
         }
+        arcweft_lang_syntax::attachment::AttachedRetainedName::Derived { public_id, .. } => {
+            public_id.source_span()
+        }
     };
     let name_lookup = module
         .source_site(

@@ -2,6 +2,7 @@ use super::AwbcCodecError;
 use super::wire::{Reader, Wire, Writer};
 use crate::awbc::schema::{
     AwbcBlockId, AwbcCallableExecutable, AwbcCodeLocation, AwbcContentUnit, AwbcContentUnitId,
+    AwbcDialogueContentEffectSlot, AwbcDialogueContentSlot, AwbcDialogueContentTemplate,
     AwbcDialogueMark, AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind,
     AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFunctionId, AwbcHeader,
     AwbcInstructionId, AwbcLineTaskGroupId, AwbcProgram, AwbcPureProgramBinding, AwbcRegisterId,
@@ -13,13 +14,16 @@ use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
     FlowParameterCoordinate, RootExecutionLimits, RuntimeAgentEntryRoles, RuntimeBytesFormat,
     RuntimeCallableId, RuntimeCallableRole, RuntimeCommandConstructorId, RuntimeCommandContract,
-    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeEntryRoles, RuntimeEnumRepr,
-    RuntimeEnumTagStyle, RuntimeFlowExecutable, RuntimeFlowRole, RuntimeNominalRole,
-    RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaLimits, RuntimeSchemaVariant,
-    RuntimeStatefulEntryRoles, RuntimeTypeSchema, TypeLayoutHash,
+    RuntimeCommandPolicy, RuntimeCommandTargetId, RuntimeDialogueContentTemplateDigest,
+    RuntimeEntryRoles, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeFlowExecutable,
+    RuntimeFlowRole, RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaField,
+    RuntimeSchemaLimits, RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
+    TypeLayoutHash,
 };
 use crate::pattern::RuntimeSemanticTypeId;
+use crate::plan::RuntimeDialogueContentEffectTrigger;
 use crate::plan::{EntryRuntimeId, FlowRuntimeId};
+use crate::runtime_id::RuntimeDialogueContentTemplateId;
 
 impl Wire for AwbcProgram {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
@@ -43,6 +47,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.effect_plans)?;
         writer.write_table(&self.choices)?;
         writer.write_table(&self.choice_options)?;
+        writer.write_table(&self.content_templates)?;
         writer.write_table(&self.content_units)?;
         writer.write_table(&self.line_task_groups)?;
         writer.write_table(&self.line_task_nodes)?;
@@ -83,6 +88,7 @@ impl Wire for AwbcProgram {
             effect_plans: reader.read_table("effect_plans", budget.effect_plans)?,
             choices: reader.read_table("choices", budget.choices)?,
             choice_options: reader.read_table("choice_options", budget.choice_options)?,
+            content_templates: reader.read_table("content_templates", budget.content_templates)?,
             content_units: reader.read_table("content_units", budget.content_units)?,
             line_task_groups: reader.read_table("line_task_groups", budget.line_task_groups)?,
             line_task_nodes: reader.read_table("line_task_nodes", budget.line_task_nodes)?,
@@ -182,9 +188,81 @@ impl Wire for AwbcTraitReceiverMode {
     }
 }
 
+impl Wire for AwbcDialogueContentTemplate {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.id.write_wire(writer)?;
+        self.digest.write_wire(writer)?;
+        self.slots.write_wire(writer)?;
+        self.effects.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            id: RuntimeDialogueContentTemplateId::read_wire(reader)?,
+            digest: RuntimeDialogueContentTemplateDigest::read_wire(reader)?,
+            slots: Vec::<AwbcDialogueContentSlot>::read_wire(reader)?,
+            effects: Vec::<AwbcDialogueContentEffectSlot>::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for RuntimeDialogueContentEffectTrigger {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Content => writer.write_u8(0),
+            Self::Delay { duration } => {
+                writer.write_u8(1);
+                duration.as_nanos().write_wire(writer)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Content),
+            1 => Ok(Self::Delay {
+                duration: crate::time::LogicalDuration::from_nanos(u64::read_wire(reader)?),
+            }),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "dialogue content effect trigger",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
+impl Wire for AwbcDialogueContentEffectSlot {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.site.get().get().write_wire(writer)?;
+        self.trigger.write_wire(writer)?;
+        self.capture_types.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let site = u32::read_wire(reader)?;
+        let site = std::num::NonZeroU32::new(site)
+            .map(crate::runtime_id::RuntimeDialogueEffectSiteId::from_accepted_ordinal)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "dialogue content effect site",
+                message: "effect-site identity must be nonzero".to_owned(),
+                offset,
+            })?;
+        Ok(Self {
+            site,
+            trigger: RuntimeDialogueContentEffectTrigger::read_wire(reader)?,
+            capture_types: Vec::<crate::awbc::schema::AwbcTypeId>::read_wire(reader)?,
+        })
+    }
+}
+
 impl Wire for AwbcContentUnit {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.public_id.write_wire(writer)?;
+        self.template.write_wire(writer)?;
         self.marks.write_wire(writer)?;
         self.effect_site_count.write_wire(writer)?;
         self.line_task_group.write_wire(writer)?;
@@ -196,12 +274,69 @@ impl Wire for AwbcContentUnit {
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         Ok(Self {
             public_id: AwbcStringId::read_wire(reader)?,
+            template: RuntimeDialogueContentTemplateId::read_wire(reader)?,
             marks: Vec::<AwbcDialogueMark>::read_wire(reader)?,
             effect_site_count: u32::read_wire(reader)?,
             line_task_group: Option::<AwbcLineTaskGroupId>::read_wire(reader)?,
             display: Option::<AwbcDisplayMapId>::read_wire(reader)?,
             source: Option::<AwbcSourceMapId>::read_wire(reader)?,
             resources: Vec::<AwbcResourceId>::read_wire(reader)?,
+        })
+    }
+}
+
+impl Wire for RuntimeDialogueContentTemplateId {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.get().get().write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let value = u32::read_wire(reader)?;
+        std::num::NonZeroU32::new(value)
+            .map(RuntimeDialogueContentTemplateId::from_nonzero)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "dialogue content template",
+                message: "template identity must be nonzero".to_owned(),
+                offset,
+            })
+    }
+}
+
+impl Wire for RuntimeDialogueContentTemplateDigest {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        writer.write_bytes(self.as_bytes());
+        Ok(())
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(RuntimeDialogueContentTemplateDigest::from_bytes(
+            <[u8; 32]>::read_wire(reader)?,
+        ))
+    }
+}
+
+impl Wire for AwbcDialogueContentSlot {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.slot.get().get().write_wire(writer)?;
+        self.role.write_wire(writer)?;
+        self.semantic_type.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        let slot = u32::read_wire(reader)?;
+        let slot = std::num::NonZeroU32::new(slot)
+            .map(crate::runtime_id::RuntimeDialogueValueSlotId::from_accepted_ordinal)
+            .ok_or_else(|| AwbcCodecError::InvalidMetadata {
+                kind: "dialogue content slot",
+                message: "slot identity must be nonzero".to_owned(),
+                offset,
+            })?;
+        Ok(Self {
+            slot,
+            role: crate::awbc::schema::AwbcDialogueValueRole::read_wire(reader)?,
+            semantic_type: crate::awbc::schema::AwbcTypeId::read_wire(reader)?,
         })
     }
 }

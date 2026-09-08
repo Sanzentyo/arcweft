@@ -9,10 +9,9 @@ use arcweft_source::SourceSpan;
 
 use super::family::NameFamily;
 use super::node::{
-    CharacterBodyKind, CharacterDeclarationItemKind, CharacterDisplayNameMemberKind,
-    CloseBraceKind, DeclarationHeaderKind, DeclarationPublicIdKind, ErrorDeclarationMemberKind,
-    ErrorNodeKind, MissingBodyKind, MissingDeclarationIdKind, MissingMemberValueKind,
-    SurfaceAliasKind, WrongFamilyReferenceKind,
+    CharacterBodyKind, CharacterDeclarationItemKind, CharacterDisplayMemberKind, CloseBraceKind,
+    DeclarationHeaderKind, DeclarationPublicIdKind, ErrorDeclarationMemberKind, ErrorNodeKind,
+    MissingBodyKind, MissingDeclarationIdKind, MissingMemberValueKind, WrongFamilyReferenceKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::{
@@ -21,9 +20,8 @@ use super::{
 };
 use crate::grammar::declaration_projection::{
     PendingCharacterAssignment, PendingCharacterBodyProjection, PendingCharacterInitializer,
-    PendingCharacterMemberProjection, PendingCharacterSurfaceAlias,
-    PendingDeclarationHeaderProjection, PendingDeclarationName, PendingDeclarationPublicId,
-    PendingDeclarationPublicIdIssue,
+    PendingCharacterMemberProjection, PendingDeclarationHeaderProjection, PendingDeclarationName,
+    PendingDeclarationPublicId, PendingDeclarationPublicIdIssue,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::name::SyntaxName;
@@ -70,9 +68,20 @@ impl AttachedDeclarationIdentity {
 /// Resolved or recovered declaration name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedRetainedName {
-    Resolved { syntax: NameNode, value: SyntaxName },
-    Missing { syntax: NameNode },
-    Invalid { syntax: NameNode },
+    Resolved {
+        syntax: NameNode,
+        value: SyntaxName,
+    },
+    Derived {
+        public_id: AstNode<DeclarationPublicIdKind>,
+        value: SyntaxName,
+    },
+    Missing {
+        syntax: NameNode,
+    },
+    Invalid {
+        syntax: NameNode,
+    },
 }
 
 /// Header semantics shared by retained declaration producers.
@@ -97,21 +106,6 @@ impl AttachedRetainedHeader {
     }
 }
 
-/// Optional Character surface alias with typed missing-name recovery.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AttachedCharacterSurfaceAlias {
-    Absent,
-    Resolved {
-        syntax: AstNode<SurfaceAliasKind>,
-        name: NameNode,
-        value: SyntaxName,
-    },
-    Missing {
-        syntax: AstNode<SurfaceAliasKind>,
-        name: NameNode,
-    },
-}
-
 /// Exact authored assignment token or its parser-owned insertion site.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCharacterAssignment {
@@ -131,17 +125,17 @@ impl AttachedCharacterAssignment {
     }
 }
 
-/// Display-name initializer retained without source rediscovery.
+/// Display initializer retained without source rediscovery.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCharacterInitializer {
     Authored(Box<AttachedExpressionNode>),
     Missing(AstNode<MissingMemberValueKind>),
 }
 
-/// One typed Character display-name member.
+/// One typed Character display member.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AttachedCharacterDisplayNameMember {
-    syntax: AstNode<CharacterDisplayNameMemberKind>,
+pub struct AttachedCharacterDisplayMember {
+    syntax: AstNode<CharacterDisplayMemberKind>,
     source_ordinal: u16,
     name: SourceSpan,
     duplicate: bool,
@@ -149,8 +143,8 @@ pub struct AttachedCharacterDisplayNameMember {
     initializer: AttachedCharacterInitializer,
 }
 
-impl AttachedCharacterDisplayNameMember {
-    pub const fn syntax(&self) -> &AstNode<CharacterDisplayNameMemberKind> {
+impl AttachedCharacterDisplayMember {
+    pub const fn syntax(&self) -> &AstNode<CharacterDisplayMemberKind> {
         &self.syntax
     }
 
@@ -178,7 +172,7 @@ impl AttachedCharacterDisplayNameMember {
 /// Closed Character member inventory in exact source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCharacterMember {
-    DisplayName(Box<AttachedCharacterDisplayNameMember>),
+    Display(Box<AttachedCharacterDisplayMember>),
     Recovery {
         source_ordinal: u16,
         syntax: AstNode<ErrorDeclarationMemberKind>,
@@ -188,7 +182,7 @@ pub enum AttachedCharacterMember {
 impl AttachedCharacterMember {
     pub const fn source_ordinal(&self) -> u16 {
         match self {
-            Self::DisplayName(member) => member.source_ordinal(),
+            Self::Display(member) => member.source_ordinal(),
             Self::Recovery { source_ordinal, .. } => *source_ordinal,
         }
     }
@@ -229,7 +223,6 @@ pub struct AttachedCharacterDeclaration {
     syntax: AstNode<CharacterDeclarationItemKind>,
     prefix: AttachedItemPrefix,
     header: AttachedRetainedHeader,
-    surface_alias: AttachedCharacterSurfaceAlias,
     body: AttachedCharacterBody,
     unexpected_header: bool,
     trailing_syntax: bool,
@@ -246,10 +239,6 @@ impl AttachedCharacterDeclaration {
 
     pub const fn header(&self) -> &AttachedRetainedHeader {
         &self.header
-    }
-
-    pub const fn surface_alias(&self) -> &AttachedCharacterSurfaceAlias {
-        &self.surface_alias
     }
 
     pub const fn body(&self) -> &AttachedCharacterBody {
@@ -277,9 +266,6 @@ impl AstNode<CharacterDeclarationItemKind> {
         let header_syntax =
             self.required_exact_child::<DeclarationHeaderKind>(SyntaxRole::Element(0))?;
         let header = header_syntax.retained_semantics()?;
-        let alias_node =
-            header_syntax.optional_exact_child::<SurfaceAliasKind>(SyntaxRole::Alias)?;
-        let surface_alias = attach_alias(self.id(), alias_node, pending.surface_alias())?;
         let body_node = self
             .syntax()
             .optional_unique_child(SyntaxRole::Body)?
@@ -296,7 +282,6 @@ impl AstNode<CharacterDeclarationItemKind> {
             syntax: self.clone(),
             prefix: item.attached_prefix()?,
             header,
-            surface_alias,
             body,
             unexpected_header: pending.has_unexpected_header(),
             trailing_syntax: pending.has_trailing_syntax(),
@@ -312,15 +297,11 @@ impl AstNode<DeclarationHeaderKind> {
             .declaration_header_projection()
             .cloned()
             .ok_or(SyntaxAccessError::MissingDeclarationHeaderProjection { id: self.id() })?;
-        let public_id = attach_public_id(
-            self.id(),
-            self.optional_exact_child::<DeclarationPublicIdKind>(SyntaxRole::PublicId)?,
-            pending.public_id(),
-        )?;
-        let name_node = self
-            .optional_family_child::<NameFamily>(SyntaxRole::Name)?
-            .ok_or(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: self.id() })?;
-        let name = attach_name(self.id(), self, name_node, pending.name())?;
+        let public_id_syntax =
+            self.optional_exact_child::<DeclarationPublicIdKind>(SyntaxRole::PublicId)?;
+        let public_id = attach_public_id(self.id(), public_id_syntax.clone(), pending.public_id())?;
+        let name_node = self.optional_family_child::<NameFamily>(SyntaxRole::Name)?;
+        let name = attach_name(self.id(), self, public_id_syntax, name_node, pending.name())?;
         Ok(AttachedRetainedHeader {
             syntax: self.clone(),
             public_id,
@@ -406,16 +387,6 @@ fn attach_public_id(
     }
 }
 
-fn validate_exact_range(
-    owner: SyntaxNodeId,
-    actual: arcweft_source::SourceRange,
-    expected: arcweft_source::SourceRange,
-) -> Result<(), SyntaxAccessError> {
-    (actual == expected)
-        .then_some(())
-        .ok_or(SyntaxAccessError::InvalidCharacterProjection { id: owner })
-}
-
 fn validate_retained_range(
     owner: SyntaxNodeId,
     actual: arcweft_source::SourceRange,
@@ -429,13 +400,17 @@ fn validate_retained_range(
 fn attach_name(
     owner: SyntaxNodeId,
     header: &AstNode<DeclarationHeaderKind>,
-    syntax: NameNode,
+    public_id: Option<AstNode<DeclarationPublicIdKind>>,
+    syntax: Option<NameNode>,
     pending: &PendingDeclarationName,
 ) -> Result<AttachedRetainedName, SyntaxAccessError> {
     match pending {
         PendingDeclarationName::Resolved { value, source }
-            if syntax.kind() == SyntaxKind::NameDefinition =>
+            if syntax
+                .as_ref()
+                .is_some_and(|syntax| syntax.kind() == SyntaxKind::NameDefinition) =>
         {
+            let syntax = syntax.expect("checked resolved declaration name");
             validate_retained_range(owner, syntax.range(), *source)?;
             if header
                 .optional_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?
@@ -448,9 +423,23 @@ fn attach_name(
                 value: value.clone(),
             })
         }
-        PendingDeclarationName::Missing { insertion }
-            if syntax.kind() == SyntaxKind::MissingName =>
+        PendingDeclarationName::Derived { value, source }
+            if syntax.is_none()
+                && public_id
+                    .as_ref()
+                    .is_some_and(|public_id| public_id.range() == *source) =>
         {
+            Ok(AttachedRetainedName::Derived {
+                public_id: public_id.expect("checked derived declaration identity"),
+                value: value.clone(),
+            })
+        }
+        PendingDeclarationName::Missing { insertion }
+            if syntax
+                .as_ref()
+                .is_some_and(|syntax| syntax.kind() == SyntaxKind::MissingName) =>
+        {
+            let syntax = syntax.expect("checked missing declaration name");
             validate_retained_range(owner, syntax.range(), *insertion)?;
             if header
                 .optional_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?
@@ -463,44 +452,17 @@ fn attach_name(
         PendingDeclarationName::Invalid {
             insertion,
             recovery,
-        } if syntax.kind() == SyntaxKind::MissingName => {
+        } if syntax
+            .as_ref()
+            .is_some_and(|syntax| syntax.kind() == SyntaxKind::MissingName) =>
+        {
+            let syntax = syntax.expect("checked invalid declaration name");
             validate_retained_range(owner, syntax.range(), *insertion)?;
             let error = header.required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?;
             validate_retained_range(owner, error.range(), *recovery)?;
             Ok(AttachedRetainedName::Invalid { syntax })
         }
         _ => Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner }),
-    }
-}
-
-fn attach_alias(
-    owner: SyntaxNodeId,
-    syntax: Option<AstNode<SurfaceAliasKind>>,
-    pending: &PendingCharacterSurfaceAlias,
-) -> Result<AttachedCharacterSurfaceAlias, SyntaxAccessError> {
-    match (pending, syntax) {
-        (PendingCharacterSurfaceAlias::Absent, None) => Ok(AttachedCharacterSurfaceAlias::Absent),
-        (PendingCharacterSurfaceAlias::Resolved { value, source }, Some(syntax)) => {
-            let name = syntax.required_family_child::<NameFamily>(SyntaxRole::Name)?;
-            if name.kind() != SyntaxKind::NameDefinition {
-                return Err(SyntaxAccessError::InvalidCharacterProjection { id: owner });
-            }
-            validate_exact_range(owner, name.range(), *source)?;
-            Ok(AttachedCharacterSurfaceAlias::Resolved {
-                syntax,
-                name,
-                value: value.clone(),
-            })
-        }
-        (PendingCharacterSurfaceAlias::Missing { insertion }, Some(syntax)) => {
-            let name = syntax.required_family_child::<NameFamily>(SyntaxRole::Name)?;
-            if name.kind() != SyntaxKind::MissingName {
-                return Err(SyntaxAccessError::InvalidCharacterProjection { id: owner });
-            }
-            validate_exact_range(owner, name.range(), *insertion)?;
-            Ok(AttachedCharacterSurfaceAlias::Missing { syntax, name })
-        }
-        _ => Err(SyntaxAccessError::InvalidCharacterProjection { id: owner }),
     }
 }
 
@@ -558,14 +520,14 @@ fn attach_member(
                 syntax: syntax.cast()?,
             })
         }
-        PendingCharacterMemberProjection::DisplayName {
+        PendingCharacterMemberProjection::Display {
             source_ordinal,
             name,
             duplicate,
             assignment,
             initializer,
-        } if syntax.kind() == SyntaxKind::CharacterDisplayNameMember => {
-            let member = syntax.cast::<CharacterDisplayNameMemberKind>()?;
+        } if syntax.kind() == SyntaxKind::CharacterDisplayMember => {
+            let member = syntax.cast::<CharacterDisplayMemberKind>()?;
             if name.start() < member.range().start() || name.end() > member.range().end() {
                 return Err(SyntaxAccessError::InvalidCharacterProjection { id: owner });
             }
@@ -596,8 +558,8 @@ fn attach_member(
                 }
                 _ => return Err(SyntaxAccessError::InvalidCharacterProjection { id: owner }),
             };
-            Ok(AttachedCharacterMember::DisplayName(Box::new(
-                AttachedCharacterDisplayNameMember {
+            Ok(AttachedCharacterMember::Display(Box::new(
+                AttachedCharacterDisplayMember {
                     syntax: member,
                     source_ordinal: *source_ordinal,
                     name,
@@ -613,7 +575,7 @@ fn attach_member(
 
 fn attach_assignment(
     owner: SyntaxNodeId,
-    member: &AstNode<CharacterDisplayNameMemberKind>,
+    member: &AstNode<CharacterDisplayMemberKind>,
     pending: PendingCharacterAssignment,
 ) -> Result<AttachedCharacterAssignment, SyntaxAccessError> {
     let range = pending.range();
@@ -643,8 +605,8 @@ mod tests {
 
     use super::{
         AstNode, AttachedCharacterBody, AttachedCharacterInitializer, AttachedCharacterMember,
-        AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
-        AttachedDeclarationPublicIdIssue, AttachedRetainedName, CharacterDeclarationItemKind,
+        AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue, AttachedRetainedName,
+        CharacterDeclarationItemKind,
     };
     use crate::attachment::{
         GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
@@ -704,12 +666,12 @@ mod tests {
     }
 
     #[test]
-    fn attached_character_semantics_bind_canonical_header_alias_and_member() {
+    fn attached_character_semantics_bind_canonical_header_and_display_member() {
         let source = concat!(
             "/// Alice\n",
             "#[tool.fixture]\n",
-            "pub character @character.alice Alice as alice {\n",
-            "    display_name = \"Alice\"\n",
+            "pub character @character.alice {\n",
+            "    display = \"Alice\"\n",
             "}\n",
         );
         let snapshot = attach(source);
@@ -745,16 +707,12 @@ mod tests {
         }
         assert!(matches!(
             declaration.header().name(),
-            AttachedRetainedName::Resolved { value, .. } if value.as_str() == "Alice"
-        ));
-        assert!(matches!(
-            declaration.surface_alias(),
-            AttachedCharacterSurfaceAlias::Resolved { value, .. } if value.as_str() == "alice"
+            AttachedRetainedName::Derived { value, .. } if value.as_str() == "alice"
         ));
         let members = declaration.body().members();
         assert_eq!(members.len(), 1);
-        let AttachedCharacterMember::DisplayName(member) = &members[0] else {
-            panic!("expected display-name member")
+        let AttachedCharacterMember::Display(member) = &members[0] else {
+            panic!("expected display member")
         };
         assert_eq!(member.source_ordinal(), 0);
         assert!(!member.is_duplicate());
@@ -824,10 +782,7 @@ mod tests {
             semantics[5].header().name(),
             AttachedRetainedName::Invalid { .. }
         ));
-        assert!(matches!(
-            semantics[6].surface_alias(),
-            AttachedCharacterSurfaceAlias::Missing { .. }
-        ));
+        assert!(semantics[6].has_unexpected_header());
     }
 
     #[test]
@@ -853,13 +808,13 @@ mod tests {
     fn attached_character_semantics_preserve_recovered_member_ordinals_and_body_state() {
         let source = concat!(
             "character Alice {\n",
-            "    display_name \"Alice\"\n",
-            "    display_name =\n",
+            "    display \"Alice\"\n",
+            "    display =\n",
             "    voice = @res.voice\n",
             "}\n",
             "character MissingBody\n",
             "character Unclosed {\n",
-            "    display_name = \"Open\"\n",
+            "    display = \"Open\"\n",
         );
         let snapshot = attach(source);
         let declarations = characters(&snapshot);
@@ -875,16 +830,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 1, 2]
         );
-        let AttachedCharacterMember::DisplayName(first) = &members[0] else {
-            panic!("expected first display-name member")
+        let AttachedCharacterMember::Display(first) = &members[0] else {
+            panic!("expected first display member")
         };
         assert!(first.assignment().is_missing());
         assert!(matches!(
             first.initializer(),
             AttachedCharacterInitializer::Authored(_)
         ));
-        let AttachedCharacterMember::DisplayName(second) = &members[1] else {
-            panic!("expected duplicate display-name member")
+        let AttachedCharacterMember::Display(second) = &members[1] else {
+            panic!("expected duplicate display member")
         };
         assert!(second.is_duplicate());
         assert!(matches!(

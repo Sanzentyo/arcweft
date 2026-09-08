@@ -2,7 +2,9 @@
 
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 
-use super::callable::{attach_function_body, method_parameter_shape_has_recovery};
+use super::callable::{
+    attach_function_body, attached_content_parameter, method_parameter_shape_has_recovery,
+};
 use super::family::{FamilyNode, TypeFamily};
 use super::node::{
     AstNode, CloseBraceKind, ErrorItemKind, ErrorNodeKind, FunctionBodyKind, FunctionItemKind,
@@ -10,10 +12,10 @@ use super::node::{
 };
 use super::nominal::{optional_generics, required_name, required_type, where_clauses};
 use super::{
-    AttachedCallableReturn, AttachedFunctionBody, AttachedGenericParameterGroup,
-    AttachedItemPrefix, AttachedMethodParameter, AttachedMethodParameterGroup,
-    AttachedRequiredName, AttachedTypeFamily, AttachedTypeRefNode, AttachedWhereClause,
-    SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
+    AttachedCallableContentParameter, AttachedCallableReturn, AttachedFunctionBody,
+    AttachedGenericParameterGroup, AttachedItemPrefix, AttachedMethodParameter,
+    AttachedMethodParameterGroup, AttachedRequiredName, AttachedTypeFamily, AttachedTypeRefNode,
+    AttachedWhereClause, SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
 };
 
 /// One associated type owned inline by a Trait declaration.
@@ -129,6 +131,7 @@ struct AttachedMethodParts {
     name: AttachedRequiredName,
     generics: Option<AttachedGenericParameterGroup>,
     parameter_groups: Box<[AttachedMethodParameterGroup]>,
+    attached_content: Option<AttachedCallableContentParameter>,
     where_clauses: Box<[AttachedWhereClause]>,
     authored_return: Option<AttachedCallableReturn>,
     body: Option<AttachedFunctionBody>,
@@ -153,6 +156,10 @@ impl AttachedMethodParts {
                 .parameter_groups
                 .iter()
                 .any(AttachedMethodParameterGroup::has_recovery)
+            || self
+                .attached_content
+                .as_ref()
+                .is_some_and(AttachedCallableContentParameter::has_recovery)
             || self
                 .where_clauses
                 .iter()
@@ -200,6 +207,10 @@ impl AttachedTraitFunction {
 
     pub const fn parameter_groups(&self) -> &[AttachedMethodParameterGroup] {
         &self.parts.parameter_groups
+    }
+
+    pub const fn attached_content(&self) -> Option<&AttachedCallableContentParameter> {
+        self.parts.attached_content.as_ref()
     }
 
     pub fn parameters(&self) -> impl Iterator<Item = &AttachedMethodParameter> {
@@ -262,6 +273,10 @@ impl AttachedImplFunction {
 
     pub const fn parameter_groups(&self) -> &[AttachedMethodParameterGroup] {
         &self.parts.parameter_groups
+    }
+
+    pub const fn attached_content(&self) -> Option<&AttachedCallableContentParameter> {
+        self.parts.attached_content.as_ref()
     }
 
     pub fn parameters(&self) -> impl Iterator<Item = &AttachedMethodParameter> {
@@ -788,6 +803,7 @@ fn attach_method_parts(
         name: required_name(&syntax.syntax(), false)?,
         generics: optional_generics(&syntax.syntax())?,
         parameter_groups: syntax.method_parameter_groups()?,
+        attached_content: attached_content_parameter(&syntax.syntax())?,
         where_clauses: where_clauses(&syntax.syntax())?,
         authored_return: syntax
             .optional_exact_child::<ReturnTypeKind>(SyntaxRole::ReturnType)?

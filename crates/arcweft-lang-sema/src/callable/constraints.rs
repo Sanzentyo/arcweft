@@ -220,7 +220,8 @@ where
         value: &TypeKind,
         closure: crate::types::constraints::TypeConstraintProjectionClosure,
     ) {
-        self.lower.request_projection(key, value, closure);
+        self.lower
+            .request_projection(&mut self.context, key, value, closure);
     }
 
     fn with_callback<R>(
@@ -921,10 +922,13 @@ pub(crate) mod tests {
             .iter()
             .map(|(parameter, _)| parameter.clone())
             .collect::<Vec<_>>();
-        let issuer = match parameters
-            .first()
-            .map(|parameter| parameter.owner().clone())
-        {
+        let issuer = match parameters.first().map(|parameter| {
+            parameter
+                .free_parameter()
+                .expect("declaration-owned fixture")
+                .owner()
+                .clone()
+        }) {
             None => crate::callable::CallableGenericParameterIssuer::empty(),
             Some(crate::types::GenericParameterOwnerId::AcceptedNominal(owner)) => {
                 crate::callable::CallableGenericParameterIssuer::accepted_nominal(
@@ -991,9 +995,11 @@ pub(crate) mod tests {
         )
         .expect("test schema");
         let candidate = crate::callable::PreparedResolvedCallable::try_from_intrinsic(
-            crate::callable::CallableCandidateId::Fx(crate::callable::FxCallableSignatureId::Style),
+            crate::callable::CallableCandidateId::FxConstructor(
+                crate::callable::FxSourceConstructor::Style,
+            ),
             crate::callable::SignatureOrigin::Language {
-                family: crate::callable::LanguageCallableFamily::Fx,
+                family: crate::callable::LanguageCallableFamily::FxConstructor,
             },
             Arc::new(schema),
             crate::callable::CallableInstantiation::None,
@@ -1024,6 +1030,7 @@ pub(crate) mod tests {
         type Source = u8;
         type AlternativeIndex = u8;
         type EvidenceRule = ();
+        type ObservedEvidence = ();
         type CheckedEvidence = ();
         type ProbeSemanticBranch = Branch;
         type SealedBranchValue = Sealed;
@@ -1031,12 +1038,12 @@ pub(crate) mod tests {
         type SourceErrorCause = &'static str;
         type ClientInvariant = ();
 
-        fn evidence_accepts(_: &Self::EvidenceRule, _: &Self::CheckedEvidence) -> bool {
+        fn evidence_accepts(_: &Self::EvidenceRule, _: &Self::ObservedEvidence) -> bool {
             true
         }
 
         fn project_checked_evidence(
-            _: &Self::CheckedEvidence,
+            _: &Self::ObservedEvidence,
             _: &TypeKind,
         ) -> Option<Self::CheckedEvidence> {
             Some(())
@@ -1323,7 +1330,11 @@ pub(crate) mod tests {
             3,
             crate::types::constraints::PreparedConstraintSourceProjection::Scalar,
             [],
-            PreparedSourceAlternative::new(0, (), TypeKind::GenericParam(unscoped_parameter())),
+            PreparedSourceAlternative::new(
+                0,
+                (),
+                TypeKind::generic_parameter(unscoped_parameter()),
+            ),
         )
         .expect("one terminal alternative")
     }
@@ -1559,8 +1570,8 @@ pub(crate) mod tests {
             .expect("prepared initialization");
         driver.constrain(
             &TypeKind::Choice(vec![
-                TypeKind::GenericParam(first),
-                TypeKind::GenericParam(second),
+                TypeKind::generic_parameter(first),
+                TypeKind::generic_parameter(second),
             ]),
             &TypeKind::I32,
             ConstraintAcceptance::PatternAcceptsActual,
@@ -1694,8 +1705,8 @@ pub(crate) mod tests {
             .expect("prepared initialization");
         driver.constrain(
             &TypeKind::Choice(vec![
-                TypeKind::GenericParam(first),
-                TypeKind::GenericParam(second),
+                TypeKind::generic_parameter(first),
+                TypeKind::generic_parameter(second),
             ]),
             &TypeKind::I32,
             ConstraintAcceptance::PatternAcceptsActual,

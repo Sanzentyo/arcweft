@@ -88,6 +88,7 @@ pub(crate) struct PreparedCallArgumentMapping {
     schema: super::CallableSignatureSchemaDigest,
     group: CallableGroupIndex,
     arguments: Vec<MappedCallArgument>,
+    dialogue_application: Option<ExprId>,
     dialogue_application_metadata: Box<[PreparedDialogueApplicationMetadataArgument]>,
     omitted_parameters: usize,
     unchecked_or_open_slots: usize,
@@ -172,6 +173,24 @@ impl MappedCallArgumentSlot {
 }
 
 impl PreparedCallArgumentMapping {
+    pub(crate) fn empty(
+        candidate: CallableCandidateId,
+        schema: super::CallableSignatureSchemaDigest,
+        group: CallableGroupIndex,
+        omitted_parameters: usize,
+    ) -> Self {
+        Self {
+            candidate: Some(candidate),
+            schema,
+            group,
+            arguments: Vec::new(),
+            dialogue_application: None,
+            dialogue_application_metadata: Box::new([]),
+            omitted_parameters,
+            unchecked_or_open_slots: 0,
+        }
+    }
+
     pub(crate) fn candidate(&self) -> Option<&CallableCandidateId> {
         self.candidate.as_ref()
     }
@@ -194,10 +213,14 @@ impl PreparedCallArgumentMapping {
         &self.dialogue_application_metadata
     }
 
+    pub(crate) const fn dialogue_application(&self) -> Option<ExprId> {
+        self.dialogue_application
+    }
+
     /// Returns the expression children owned by the inner Call after the
     /// enclosing Dialogue application has retained its metadata coordinates.
-    /// Metadata rows are reference-only from the inner call and therefore do
-    /// not re-enter its semantic child inventory.
+    /// Raw HIR topology remains authoritative for whether each row owns or
+    /// references evaluation; this filter is only the mapper's execution view.
     pub(crate) fn owned_expression_sources(&self) -> Box<[ExprId]> {
         self.arguments
             .iter()
@@ -210,6 +233,36 @@ impl PreparedCallArgumentMapping {
             .map(MappedCallArgument::source)
             .collect::<Vec<_>>()
             .into_boxed_slice()
+    }
+
+    /// Classifies every authored argument for selected-HIR traversal. The
+    /// mapper retains source order while attaching Dialogue metadata to its
+    /// enclosing semantic owner. Raw HIR topology still controls evaluation.
+    pub(crate) fn selected_expression_arguments(
+        &self,
+    ) -> Option<Box<[arcweft_lang_hir::project::HirSelectedCallArgument]>> {
+        self.arguments
+            .iter()
+            .map(|argument| {
+                if self
+                    .dialogue_application_metadata
+                    .iter()
+                    .any(|metadata| metadata.source == argument.source)
+                {
+                    Some(
+                        arcweft_lang_hir::project::HirSelectedCallArgument::with_semantic_owner(
+                            argument.source(),
+                            self.dialogue_application?,
+                        ),
+                    )
+                } else {
+                    Some(arcweft_lang_hir::project::HirSelectedCallArgument::new(
+                        argument.source(),
+                    ))
+                }
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(Vec::into_boxed_slice)
     }
 
     /// Consumes the one outer-application metadata inventory into the
@@ -284,6 +337,8 @@ impl PreparedCallArgumentMapping {
         if consumed.iter().any(|consumed| !consumed) {
             return Err(super::CallConstraintInvariant::MalformedMapperSeal);
         }
+        self.dialogue_application =
+            inventory.map(PreparedDialogueApplicationMetadataInventory::application);
         self.dialogue_application_metadata = metadata.into_boxed_slice();
         Ok(self)
     }
@@ -350,6 +405,10 @@ impl PreparedDialogueApplicationMetadataArgument {
 }
 
 impl PreparedDialogueApplicationMetadataInventory {
+    pub(crate) const fn application(&self) -> ExprId {
+        self.application
+    }
+
     pub(crate) fn seal(
         projection: &HirDialogueApplicationMetadataProjection,
         arguments: Box<[PreparedDialogueApplicationMetadataArgument]>,
@@ -591,6 +650,7 @@ pub(crate) fn map_call_arguments(
         schema: schema_digest,
         group: group.index(),
         arguments: mapped_arguments,
+        dialogue_application: None,
         dialogue_application_metadata: Box::new([]),
         omitted_parameters,
         unchecked_or_open_slots,

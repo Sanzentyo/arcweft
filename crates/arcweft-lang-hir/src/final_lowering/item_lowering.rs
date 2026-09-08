@@ -17,7 +17,7 @@ use arcweft_lang_syntax::incremental::ParsedSource;
 use crate::arena::ArenaReservation;
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{
-    HirCallArgument, HirCallChildPoison, HirCallExpr, HirCallValue, HirRequiredTokenState,
+    HirCallArgument, HirCallChildPoison, HirCallInvocation, HirCallValue, HirRequiredTokenState,
 };
 use crate::identity::SyntheticOwner;
 use crate::identity::{HirLimit, ScopeId};
@@ -546,7 +546,7 @@ impl StagedHirModuleTransaction<'_> {
         }
 
         if arguments.len() == attached.arguments().len() {
-            recovered |= !HirCallExpr::argument_issues(&arguments, &child_states)
+            recovered |= !HirCallInvocation::argument_issues(&arguments, &child_states)
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
                 .is_empty();
         } else {

@@ -6,11 +6,22 @@ pub(super) fn runtime_evaluated_effect(
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<RuntimeEvaluatedEffectFact, RuntimeSemanticProjectionError> {
+    runtime_evaluated_effect_under(effect, symbols, world, analysis, None)
+}
+
+pub(super) fn runtime_evaluated_effect_under(
+    effect: &CheckedEvaluatedEffect,
+    symbols: &ProjectSymbolTable,
+    world: &RegisteredSemanticWorld,
+    analysis: &FinalSemanticAnalysis,
+    instance: Option<ProjectInstanceTypes<'_>>,
+) -> Result<RuntimeEvaluatedEffectFact, RuntimeSemanticProjectionError> {
     let operand = |operand: &CheckedEvaluatedEffectOperand| {
-        runtime_evaluated_effect_operand(operand, symbols, world, analysis)
+        runtime_evaluated_effect_operand(operand, symbols, world, analysis, instance)
     };
-    let lower_fields =
-        |fields: &[CheckedEffectField]| runtime_effect_fields(fields, symbols, world, analysis);
+    let lower_fields = |fields: &[CheckedEffectField]| {
+        runtime_effect_fields(fields, symbols, world, analysis, instance)
+    };
     let operation = match effect.operation() {
         CheckedEvaluatedEffectOperation::Log {
             level,
@@ -82,7 +93,9 @@ pub(super) fn runtime_evaluated_effect(
         }
     };
     Ok(RuntimeEvaluatedEffectFact::new(
+        effect.site_root(),
         effect.application().raw().expression(),
+        runtime_type_under(effect.result(), instance, symbols, world, analysis)?,
         operation,
     ))
 }
@@ -92,10 +105,11 @@ fn runtime_evaluated_effect_operand(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<RuntimeEvaluatedEffectOperandFact, RuntimeSemanticProjectionError> {
     Ok(RuntimeEvaluatedEffectOperandFact::new(
         runtime_call_operand_source(operand.source().raw()),
-        runtime_type(operand.ty(), symbols, world, analysis)?,
+        runtime_type_under(operand.ty(), instance, symbols, world, analysis)?,
     ))
 }
 
@@ -104,13 +118,20 @@ fn runtime_effect_fields(
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
+    instance: Option<ProjectInstanceTypes<'_>>,
 ) -> Result<Box<[RuntimeEffectFieldFact]>, RuntimeSemanticProjectionError> {
     fields
         .iter()
         .map(|field| {
             Ok(RuntimeEffectFieldFact::new(
                 field.open_argument().binding().as_str(),
-                runtime_evaluated_effect_operand(field.operand(), symbols, world, analysis)?,
+                runtime_evaluated_effect_operand(
+                    field.operand(),
+                    symbols,
+                    world,
+                    analysis,
+                    instance,
+                )?,
             ))
         })
         .collect()

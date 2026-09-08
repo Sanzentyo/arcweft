@@ -63,14 +63,14 @@ Comments remain byte-for-byte present in the lossless document. Range
 projection is checked and fails closed; the filter does not reinterpret an
 invalid range as executable source.
 
-The other fixture asserted canonical RichText rewriting inside
-`alice.say()[...]` in an ordinary function body. `.say` is explicitly excluded
+The other fixture asserted canonical RichText rewriting through the former
+dialogue builder in an ordinary function body. That builder is explicitly excluded
 from the accepted AW-AH-009.4 direction, while
-`AW-AH-009.4.2` still owns the final non-`.say` dialogue-content application
+`AW-AH-009.4.2` still owns the final direct dialogue-content application
 node for callable bodies. Direct bracket and colon spellings do not currently
 produce that typed callable-body node, so substituting either would invent the
 unresolved surface. The obsolete fixture was removed without changing the
-production visitor or restoring `.say`. Current colon-form RichText traversal
+production visitor or restoring the former builder. Current colon-form RichText traversal
 inside authored flow branches remains covered. Callable-body dialogue-content
 coverage must be added with the final typed node when AW-AH-009.4.2 is
 implemented.

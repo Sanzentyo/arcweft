@@ -1,17 +1,22 @@
 use crate::entry::{
-    EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
+    EntryBindingIdentity, RuntimeCallableRole, RuntimeDialogueContentTemplateDigest,
+    RuntimeEntryRoles, RuntimeFlowExecutable,
 };
 use crate::pattern::{
     RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeSemanticTypeId,
     RuntimeSemanticTypeIdentityEncoder,
 };
-use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
+use crate::plan::{
+    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeDialogueContentEffectTrigger,
+    RuntimeFlowTargetError,
+};
 use crate::runtime_id::{
-    RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId, RuntimeDialogueValueSlotId,
-    RuntimeLocalDeclarationId,
+    RuntimeDialogueContentTemplateId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
+    RuntimeDialogueValueSlotId, RuntimeLocalDeclarationId,
 };
 use crate::value::{RuntimeAgentConstructor, RuntimeEntityReference, RuntimeHandleKind};
 use arcweft_character::id::CharacterId;
+use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -216,6 +221,7 @@ pub struct AwbcProgram {
     pub effect_plans: Vec<AwbcEffectPlan>,
     pub choices: Vec<AwbcChoice>,
     pub choice_options: Vec<AwbcChoiceOption>,
+    pub content_templates: Vec<AwbcDialogueContentTemplate>,
     pub content_units: Vec<AwbcContentUnit>,
     pub line_task_groups: Vec<AwbcLineTaskGroup>,
     pub line_task_nodes: Vec<AwbcLineTaskNode>,
@@ -256,6 +262,7 @@ impl Default for AwbcProgram {
             effect_plans: Vec::new(),
             choices: Vec::new(),
             choice_options: Vec::new(),
+            content_templates: Vec::new(),
             content_units: Vec::new(),
             line_task_groups: Vec::new(),
             line_task_nodes: Vec::new(),
@@ -1283,7 +1290,7 @@ awbc_u8_enum! {
     /// Typed role of one value supplied to a dialogue content slot.
     pub enum AwbcDialogueValueRole {
         Interpolation = 0,
-        Condition = 1,
+        Content = 1,
     }
 }
 
@@ -1373,6 +1380,7 @@ pub enum AwbcOpcode {
     CallTraitMethod = 0x22,
     ApplyFunction = 0x23,
     EnsureContent = 0x24,
+    MakeDialogueContent = 0x28,
     EmitEffect = 0x25,
     StartTask = 0x26,
     SpawnFiber = 0x27,
@@ -1396,6 +1404,7 @@ pub enum AwbcOpcode {
     GotoStatic = 0x84,
     GotoDynamic = 0x85,
     Return = 0x86,
+    ProjectCall = 0x87,
     HostCall = 0x88,
     Await = 0x89,
     AwaitMany = 0x8a,
@@ -1437,6 +1446,7 @@ impl AwbcOpcode {
         Self::EmitEffect,
         Self::StartTask,
         Self::SpawnFiber,
+        Self::MakeDialogueContent,
         Self::StreamYield,
         Self::StreamClose,
         Self::ExecuteLineOperation,
@@ -1457,6 +1467,7 @@ impl AwbcOpcode {
         Self::GotoStatic,
         Self::GotoDynamic,
         Self::Return,
+        Self::ProjectCall,
         Self::HostCall,
         Self::Await,
         Self::AwaitMany,
@@ -1524,6 +1535,7 @@ impl AwbcOpcode {
             | Self::CallTraitMethod
             | Self::ApplyFunction
             | Self::EnsureContent
+            | Self::MakeDialogueContent
             | Self::EmitEffect
             | Self::StartTask
             | Self::SpawnFiber => AwbcOpcodeFamily::CallTask,
@@ -1547,6 +1559,7 @@ impl AwbcOpcode {
             | Self::GotoStatic
             | Self::GotoDynamic
             | Self::Return
+            | Self::ProjectCall
             | Self::HostCall
             | Self::Await
             | Self::AwaitMany
@@ -1702,6 +1715,13 @@ pub enum AwbcInstruction {
     EnsureContent {
         content: AwbcContentUnitId,
     },
+    /// Constructs the exact Content opaque envelope from evaluated registers.
+    MakeDialogueContent {
+        destination: AwbcRegisterId,
+        template: RuntimeDialogueContentTemplateId,
+        values: Vec<AwbcDialogueValueBinding>,
+        effects: Vec<AwbcDialogueContentEffectBinding>,
+    },
     EmitEffect {
         effect: AwbcEffectPlanId,
         args: Vec<AwbcRegisterId>,
@@ -1836,6 +1856,7 @@ impl AwbcInstruction {
             Self::CallPureHelper { .. } => AwbcOpcode::CallPureHelper,
             Self::CallIntrinsic { .. } => AwbcOpcode::CallIntrinsic,
             Self::EnsureContent { .. } => AwbcOpcode::EnsureContent,
+            Self::MakeDialogueContent { .. } => AwbcOpcode::MakeDialogueContent,
             Self::EmitEffect { .. } => AwbcOpcode::EmitEffect,
             Self::StartTask { .. } => AwbcOpcode::StartTask,
             Self::SpawnFiber { .. } => AwbcOpcode::SpawnFiber,
@@ -1904,6 +1925,129 @@ awbc_u8_enum! {
     }
 }
 
+// Source-evaluation mode of one physical project-call operand.
+awbc_u8_enum! {
+    pub enum AwbcProjectCallOperandMode {
+        Value = 0,
+        Spread = 1,
+    }
+}
+
+/// The exact continuation ABI carried by a project-call boundary.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProjectContinuationAbi {
+    pub lineage: RuntimeProjectContinuationLineageId,
+    pub function_type: AwbcTypeId,
+    pub prefix_types: Vec<AwbcTypeId>,
+}
+
+/// One source-ordered physical project-call operand.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProjectCallOperand {
+    pub value: AwbcRegisterId,
+    pub mode: AwbcProjectCallOperandMode,
+}
+
+/// Source of a default function capture. Values are selected only from
+/// already-materialized continuation/current logical rows.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProjectCallCaptureSource {
+    ContinuationPrefix { position: u32 },
+    CurrentLogical { position: u32 },
+}
+
+/// Exact terminal function and its once-only default captures.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProjectCallDefaultFunction {
+    pub site: AwbcFunctionId,
+    pub captures: Vec<AwbcProjectCallCaptureSource>,
+}
+
+/// Attached Content presence algebra. Ordinary parameters do not use these
+/// states.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProjectCallAttachedPresence {
+    RequiredPresent,
+    OptionalPresent,
+    OptionalOmitted,
+    DefaultedPresent,
+    DefaultedOmitted {
+        default: AwbcProjectCallDefaultFunction,
+    },
+}
+
+/// One ordinary logical parameter materialization.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProjectCallOrdinaryMaterialization {
+    Fixed {
+        parameter: u32,
+        abi_ty: AwbcTypeId,
+        binding_ty: AwbcTypeId,
+        source_index: u32,
+    },
+    Rest {
+        parameter: u32,
+        abi_ty: AwbcTypeId,
+        binding_ty: AwbcTypeId,
+        source_indices: Vec<u32>,
+    },
+}
+
+/// The attached logical parameter materialization row.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProjectCallAttachedMaterialization {
+    pub abi_ty: AwbcTypeId,
+    pub binding_ty: AwbcTypeId,
+    pub source_index: Option<u32>,
+    pub presence: AwbcProjectCallAttachedPresence,
+}
+
+/// Direct or continuation input of one project-call state machine.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProjectCallInput {
+    Direct,
+    Continuation {
+        callee: AwbcRegisterId,
+        expected_abi: AwbcProjectContinuationAbi,
+    },
+}
+
+/// Terminal outcome of one project-call group.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub enum AwbcProjectCallOutcome {
+    Continue {
+        result_abi: AwbcProjectContinuationAbi,
+        next_group: u32,
+    },
+    Invoke {
+        function: AwbcFunctionId,
+    },
+}
+
+/// Single ANF/control-transfer AWBC payload for a project-call site.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AwbcProjectCall {
+    pub input: AwbcProjectCallInput,
+    pub completed_group: u32,
+    pub operands: Vec<AwbcProjectCallOperand>,
+    pub ordinary: Vec<AwbcProjectCallOrdinaryMaterialization>,
+    pub attached: Option<AwbcProjectCallAttachedMaterialization>,
+    pub outcome: AwbcProjectCallOutcome,
+    pub result_ty: AwbcTypeId,
+    pub result_pattern: AwbcPatternId,
+    pub resume: AwbcResumePointId,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum AwbcTerminator {
     Jump {
@@ -1936,6 +2080,7 @@ pub enum AwbcTerminator {
     Dialogue {
         content: AwbcContentUnitId,
         values: Vec<AwbcDialogueValueBinding>,
+        effects: Vec<AwbcDialogueContentEffectBinding>,
         line_task_captures: Vec<AwbcRegisterId>,
         result: AwbcDialogueResultTarget,
         resume: AwbcResumePointId,
@@ -1965,6 +2110,9 @@ pub enum AwbcTerminator {
     },
     Return {
         value: Option<AwbcRegisterId>,
+    },
+    ProjectCall {
+        call: AwbcProjectCall,
     },
     Trap {
         code: AwbcTrapCode,
@@ -1998,6 +2146,7 @@ impl AwbcTerminator {
             Self::AwaitMany { .. } => AwbcOpcode::AwaitMany,
             Self::HostCall { .. } => AwbcOpcode::HostCall,
             Self::Return { .. } => AwbcOpcode::Return,
+            Self::ProjectCall { .. } => AwbcOpcode::ProjectCall,
             Self::Trap { .. } => AwbcOpcode::Trap,
             Self::BudgetYield { .. } => AwbcOpcode::BudgetYield,
             Self::Unreachable => AwbcOpcode::Unreachable,
@@ -2013,6 +2162,7 @@ impl AwbcTerminator {
             | Self::AwaitMany { resume, .. }
             | Self::HostCall { resume, .. }
             | Self::BudgetYield { resume } => Some(*resume),
+            Self::ProjectCall { call } => Some(call.resume),
             Self::Jump { .. }
             | Self::Branch { .. }
             | Self::Match { .. }
@@ -2474,12 +2624,47 @@ pub struct AwbcChoiceOption {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcContentUnit {
     pub public_id: AwbcStringId,
+    pub template: RuntimeDialogueContentTemplateId,
     pub marks: Vec<AwbcDialogueMark>,
     pub effect_site_count: u32,
     pub line_task_group: Option<AwbcLineTaskGroupId>,
     pub display: Option<AwbcDisplayMapId>,
     pub source: Option<AwbcSourceMapId>,
     pub resources: Vec<AwbcResourceId>,
+}
+
+/// Immutable AWBC authority for one dialogue content template.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueContentTemplate {
+    pub id: RuntimeDialogueContentTemplateId,
+    pub digest: RuntimeDialogueContentTemplateDigest,
+    pub slots: Vec<AwbcDialogueContentSlot>,
+    pub effects: Vec<AwbcDialogueContentEffectSlot>,
+}
+
+/// Canonical AWBC slot manifest entry for one immutable dialogue template.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueContentSlot {
+    pub slot: RuntimeDialogueValueSlotId,
+    pub role: AwbcDialogueValueRole,
+    pub semantic_type: AwbcTypeId,
+}
+
+/// Static AWBC ABI schema for one dialogue-content effect callback.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueContentEffectSlot {
+    pub site: RuntimeDialogueEffectSiteId,
+    pub trigger: RuntimeDialogueContentEffectTrigger,
+    pub capture_types: Vec<AwbcTypeId>,
+}
+
+/// One AWBC callback function and the registers captured into it when content
+/// is constructed.  The callback has zero ordinary arguments at runtime.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcDialogueContentEffectBinding {
+    pub site: RuntimeDialogueEffectSiteId,
+    pub function: AwbcFunctionId,
+    pub captures: Vec<AwbcRegisterId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -2650,7 +2835,6 @@ pub enum AwbcLineTaskTrigger {
     Immediate,
     Mark(RuntimeDialogueMarkId),
     Scheduled(AwbcLineHandleSiteId),
-    ContentEffect(RuntimeDialogueEffectSiteId),
 }
 
 awbc_u8_enum! {

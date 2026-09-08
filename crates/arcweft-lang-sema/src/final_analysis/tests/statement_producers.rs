@@ -456,7 +456,7 @@ const ANALYZER_ROWS: &[SourceRow] = &[
     SourceRow {
         matrix: MATRIX[5],
         source: concat!(
-            "pub character @character.akane Akane as akane {}\n",
+            "pub character akane {}\n",
             "flow line() -> String {\n",
             "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
             "    with:\n",

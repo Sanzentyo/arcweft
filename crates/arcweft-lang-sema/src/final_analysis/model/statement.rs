@@ -192,7 +192,7 @@ impl CheckedAssignmentPlace {
     ) -> Option<Self> {
         if field.owner_type() != nominal.identity()
             || field.runtime_field().is_none()
-            || field.field_type() != field_type.semantic_identity_digest()
+            || field.field_type() != field_type.semantic_identity_digest().ok()?
         {
             return None;
         }

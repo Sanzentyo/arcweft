@@ -61,6 +61,22 @@ fn empty_capability_is_lossless_and_has_no_members() {
 }
 
 #[test]
+fn capability_functions_admit_the_dedicated_content_parameter() {
+    let source = concat!(
+        "extern capability host {\n",
+        "    fn render(value: String)[body: DialogueContent]\n",
+        "}\n",
+    );
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+    assert_eq!(kind_count(entries, SyntaxKind::AttachedContentParameter), 1);
+    assert_eq!(kind_count(entries, SyntaxKind::AttachedContentRole), 1);
+    assert_eq!(kind_count(entries, SyntaxKind::QuestionMarkNode), 0);
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn capability_types_functions_effects_and_curried_parameters_are_typed_and_lossless() {
     let source = r"/// host filesystem boundary
 #[audit(external)]

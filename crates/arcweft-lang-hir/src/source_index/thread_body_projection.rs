@@ -1019,7 +1019,7 @@ fn thread_body_semantic_items_match(
             .is_ok_and(|expression| {
                 matches!(
                     expression.kind(),
-                    HirExprKind::DialogueContentApplication(_)
+                    HirExprKind::AttachedContentApplication(_)
                 )
             }),
         HirThreadFlowItem::Statement(owner) => statements

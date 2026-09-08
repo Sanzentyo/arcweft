@@ -9,7 +9,11 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-use super::{SemanticTypeDigest, TypeKind};
+use super::{GenericScopeError, SemanticTypeDigest, TypeKind};
+
+mod projection;
+pub(crate) use projection::VariantPayloadTypeChildren;
+pub use projection::{VariantPayloadRecordTypeField, VariantPayloadType, VariantPayloadTypeShape};
 
 const VARIANT_CASE_SEMANTIC_DOMAIN: &[u8] = b"arcweft.lang.accepted-variant-case.v1\0";
 const VARIANT_PAYLOAD_FIELD_SEMANTIC_DOMAIN: &[u8] =
@@ -54,21 +58,39 @@ pub enum VariantPayloadShape {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct VariantPayloadType {
+pub struct CheckedVariantPayload {
     owner_family: VariantPayloadOwnerFamily,
-    owner_type: SemanticTypeDigest,
+    owner_type: Box<TypeKind>,
+    owner_semantic_type: SemanticTypeDigest,
     case_ordinal: u32,
     case: AcceptedVariantCaseSemanticId,
     shape: VariantPayloadShape,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum VariantPayloadSealError {
+/// Failure to bind a payload shape to one accepted variant case.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum VariantPayloadSealError {
+    #[error("variant payload owner has an invalid generic scope: {0}")]
+    InvalidOwnerScope(#[from] GenericScopeError),
+    #[error("variant payload owner contains a poisoned type")]
+    PoisonedOwnerType,
+    #[error("variant payload field ordinal overflow")]
     FieldOrdinalOverflow,
+    #[error("variant payload has duplicate record field names")]
     DuplicateRecordFieldName,
+    #[error("variant payload field {ordinal} has a poisoned type")]
     PoisonedFieldType { ordinal: u32 },
+    #[error("variant payload field {ordinal} has an invalid generic scope: {error}")]
+    InvalidFieldScope {
+        ordinal: u32,
+        #[source]
+        error: GenericScopeError,
+    },
+    #[error("unit variants have no anonymous payload type")]
     UnitPayloadType,
+    #[error("variant payload fields do not belong to the selected owner and case")]
     InvalidFieldRows,
+    #[error("variant payload case identity is inconsistent with its shape")]
     CaseIdentityMismatch,
 }
 
@@ -79,40 +101,67 @@ impl AcceptedVariantCaseSemanticId {
         case_ordinal: u32,
         shape: &VariantPayloadShape,
     ) -> Self {
+        match shape {
+            VariantPayloadShape::Unit => Self::issue_from_fields(
+                owner_family,
+                owner_type,
+                case_ordinal,
+                0,
+                0,
+                std::iter::empty(),
+            ),
+            VariantPayloadShape::Tuple(fields) => Self::issue_from_fields(
+                owner_family,
+                owner_type,
+                case_ordinal,
+                1,
+                fields.len(),
+                fields
+                    .iter()
+                    .map(|field| (field.ordinal, field.semantic_id)),
+            ),
+            VariantPayloadShape::Record(fields) => Self::issue_from_fields(
+                owner_family,
+                owner_type,
+                case_ordinal,
+                2,
+                fields.len(),
+                fields
+                    .iter()
+                    .map(|field| (field.ordinal, field.semantic_id)),
+            ),
+        }
+    }
+
+    fn issue_from_fields(
+        owner_family: VariantPayloadOwnerFamily,
+        owner_type: SemanticTypeDigest,
+        case_ordinal: u32,
+        shape_tag: u8,
+        field_count: usize,
+        fields: impl IntoIterator<Item = (u32, AcceptedVariantPayloadFieldSemanticId)>,
+    ) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(VARIANT_CASE_SEMANTIC_DOMAIN);
         hasher.update(&[owner_family.canonical_tag()]);
         hasher.update(owner_type.as_bytes());
         hasher.update(&case_ordinal.to_le_bytes());
-        match shape {
-            VariantPayloadShape::Unit => {
-                hasher.update(&[0]);
+        hasher.update(&[shape_tag]);
+        if shape_tag != 0 {
+            hasher.update(
+                &u64::try_from(field_count)
+                    .expect("payload field inventories have u32 ordinals")
+                    .to_le_bytes(),
+            );
+        }
+        for (ordinal, field) in fields {
+            if shape_tag == 1 {
+                hasher.update(&ordinal.to_le_bytes());
             }
-            VariantPayloadShape::Tuple(fields) => {
-                hasher.update(&[1]);
-                hasher.update(&field_count(
-                    fields.last().map(VariantPayloadTupleField::ordinal),
-                ));
-                for field in fields {
-                    hasher.update(&field.ordinal.to_le_bytes());
-                    hasher.update(field.semantic_id.as_bytes());
-                    hasher.update(field.ty.semantic_identity_digest().as_bytes());
-                }
-            }
-            VariantPayloadShape::Record(fields) => {
-                hasher.update(&[2]);
-                hasher.update(&field_count(
-                    fields.last().map(VariantPayloadRecordField::ordinal),
-                ));
-                for field in fields {
-                    hasher.update(field.semantic_id.as_bytes());
-                    hasher.update(field.ty.semantic_identity_digest().as_bytes());
-                }
-            }
+            hasher.update(field.as_bytes());
         }
         Self(hasher.finalize().into())
     }
-
     pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
     }
@@ -126,6 +175,24 @@ impl AcceptedVariantPayloadFieldSemanticId {
         shape_tag: u8,
         field_ordinal: u32,
         ty: &TypeKind,
+    ) -> Result<Self, GenericScopeError> {
+        Ok(Self::issue_from_type_digest(
+            owner_family,
+            owner_type,
+            case_ordinal,
+            shape_tag,
+            field_ordinal,
+            ty.semantic_identity_digest()?,
+        ))
+    }
+
+    fn issue_from_type_digest(
+        owner_family: VariantPayloadOwnerFamily,
+        owner_type: SemanticTypeDigest,
+        case_ordinal: u32,
+        shape_tag: u8,
+        field_ordinal: u32,
+        ty: SemanticTypeDigest,
     ) -> Self {
         let mut hasher = blake3::Hasher::new();
         hasher.update(VARIANT_PAYLOAD_FIELD_SEMANTIC_DOMAIN);
@@ -134,7 +201,7 @@ impl AcceptedVariantPayloadFieldSemanticId {
         hasher.update(&case_ordinal.to_le_bytes());
         hasher.update(&[shape_tag]);
         hasher.update(&field_ordinal.to_le_bytes());
-        hasher.update(ty.semantic_identity_digest().as_bytes());
+        hasher.update(ty.as_bytes());
         Self(hasher.finalize().into())
     }
 
@@ -231,7 +298,10 @@ impl VariantPayloadShape {
                         1,
                         ordinal,
                         &ty,
-                    ),
+                    )
+                    .map_err(|error| {
+                        VariantPayloadSealError::InvalidFieldScope { ordinal, error }
+                    })?,
                     ty,
                 })
             })
@@ -265,7 +335,8 @@ impl VariantPayloadShape {
                     2,
                     ordinal,
                     &ty,
-                ),
+                )
+                .map_err(|error| VariantPayloadSealError::InvalidFieldScope { ordinal, error })?,
                 diagnostic_name,
                 ty,
             });
@@ -343,15 +414,15 @@ impl VariantPayloadShape {
             Self::Tuple(fields) => fields.iter().enumerate().all(|(ordinal, field)| {
                 u32::try_from(ordinal).is_ok_and(|ordinal| {
                     field.ordinal == ordinal
-                        && field.semantic_id
-                            == AcceptedVariantPayloadFieldSemanticId::issue(
-                                owner_family,
-                                owner_type,
-                                case_ordinal,
-                                1,
-                                ordinal,
-                                &field.ty,
-                            )
+                        && AcceptedVariantPayloadFieldSemanticId::issue(
+                            owner_family,
+                            owner_type,
+                            case_ordinal,
+                            1,
+                            ordinal,
+                            &field.ty,
+                        )
+                        .is_ok_and(|identity| field.semantic_id == identity)
                 }) && !field.ty.contains_nominal_poison()
             }),
             Self::Record(fields) => {
@@ -361,15 +432,15 @@ impl VariantPayloadShape {
                         field.ordinal == ordinal
                             && names.insert(field.diagnostic_name.as_str())
                             && !field.ty.contains_nominal_poison()
-                            && field.semantic_id
-                                == AcceptedVariantPayloadFieldSemanticId::issue(
-                                    owner_family,
-                                    owner_type,
-                                    case_ordinal,
-                                    2,
-                                    ordinal,
-                                    &field.ty,
-                                )
+                            && AcceptedVariantPayloadFieldSemanticId::issue(
+                                owner_family,
+                                owner_type,
+                                case_ordinal,
+                                2,
+                                ordinal,
+                                &field.ty,
+                            )
+                            .is_ok_and(|identity| field.semantic_id == identity)
                     })
                 })
             }
@@ -388,28 +459,44 @@ impl VariantPayloadShape {
     }
 }
 
-impl VariantPayloadType {
+impl CheckedVariantPayload {
+    pub fn semantic_type(&self) -> SemanticTypeDigest {
+        self.case.payload_type_identity()
+    }
+
+    pub fn to_type(&self) -> VariantPayloadType {
+        self.clone().into_type()
+    }
     pub(crate) fn try_new(
         owner_family: VariantPayloadOwnerFamily,
-        owner_type: SemanticTypeDigest,
+        owner_type: TypeKind,
         case_ordinal: u32,
         case: AcceptedVariantCaseSemanticId,
         shape: VariantPayloadShape,
     ) -> Result<Self, VariantPayloadSealError> {
+        if owner_type.contains_nominal_poison() {
+            return Err(VariantPayloadSealError::PoisonedOwnerType);
+        }
+        let owner_semantic_type = owner_type.semantic_identity_digest()?;
         if shape.is_unit() {
             return Err(VariantPayloadSealError::UnitPayloadType);
         }
-        if !shape.has_valid_rows(owner_family, owner_type, case_ordinal) {
+        if !shape.has_valid_rows(owner_family, owner_semantic_type, case_ordinal) {
             return Err(VariantPayloadSealError::InvalidFieldRows);
         }
-        if AcceptedVariantCaseSemanticId::issue(owner_family, owner_type, case_ordinal, &shape)
-            != case
+        if AcceptedVariantCaseSemanticId::issue(
+            owner_family,
+            owner_semantic_type,
+            case_ordinal,
+            &shape,
+        ) != case
         {
             return Err(VariantPayloadSealError::CaseIdentityMismatch);
         }
         Ok(Self {
             owner_family,
-            owner_type,
+            owner_type: Box::new(owner_type),
+            owner_semantic_type,
             case_ordinal,
             case,
             shape,
@@ -420,8 +507,12 @@ impl VariantPayloadType {
         self.owner_family
     }
 
-    pub const fn owner_type(&self) -> SemanticTypeDigest {
-        self.owner_type
+    pub fn owner_type(&self) -> &TypeKind {
+        &self.owner_type
+    }
+
+    pub const fn owner_semantic_type(&self) -> SemanticTypeDigest {
+        self.owner_semantic_type
     }
 
     pub const fn case_ordinal(&self) -> u32 {
@@ -435,12 +526,11 @@ impl VariantPayloadType {
     pub const fn shape(&self) -> &VariantPayloadShape {
         &self.shape
     }
-}
 
-fn field_count(last_ordinal: Option<u32>) -> [u8; 8] {
-    last_ordinal
-        .map_or(0, |ordinal| u64::from(ordinal) + 1)
-        .to_le_bytes()
+    /// Retains the typed owner and payload terms while releasing the identity seal.
+    pub fn into_type(self) -> VariantPayloadType {
+        VariantPayloadType::from_checked(self)
+    }
 }
 
 #[cfg(test)]
@@ -448,17 +538,25 @@ mod tests {
     use super::*;
 
     fn owner(name: &str) -> SemanticTypeDigest {
-        TypeKind::Named(name.to_owned()).semantic_identity_digest()
+        TypeKind::Named(name.to_owned())
+            .semantic_identity_digest()
+            .expect("stable test type")
     }
 
     fn payload_type(
         owner_family: VariantPayloadOwnerFamily,
-        owner_type: SemanticTypeDigest,
+        owner_type: TypeKind,
         case_ordinal: u32,
         shape: VariantPayloadShape,
     ) -> VariantPayloadType {
-        let case =
-            AcceptedVariantCaseSemanticId::issue(owner_family, owner_type, case_ordinal, &shape);
+        let case = AcceptedVariantCaseSemanticId::issue(
+            owner_family,
+            owner_type
+                .semantic_identity_digest()
+                .expect("fixture owner type"),
+            case_ordinal,
+            &shape,
+        );
         VariantPayloadType::try_new(owner_family, owner_type, case_ordinal, case, shape)
             .expect("fixture payload schema is internally consistent")
     }
@@ -560,13 +658,13 @@ mod tests {
         .expect("renamed record schema");
         let original_type = payload_type(
             VariantPayloadOwnerFamily::BuiltinClosed,
-            owner,
+            TypeKind::Named("RenameInvariant".to_owned()),
             3,
             original.clone(),
         );
         let renamed_type = payload_type(
             VariantPayloadOwnerFamily::BuiltinClosed,
-            owner,
+            TypeKind::Named("RenameInvariant".to_owned()),
             3,
             renamed.clone(),
         );
@@ -575,8 +673,12 @@ mod tests {
         assert!(!original.has_same_diagnostic_schema(&renamed));
         assert_eq!(original_type, renamed_type);
         assert_eq!(
-            TypeKind::VariantPayload(Box::new(original_type)).semantic_identity_digest(),
-            TypeKind::VariantPayload(Box::new(renamed_type)).semantic_identity_digest(),
+            TypeKind::VariantPayload(Box::new(original_type))
+                .semantic_identity_digest()
+                .expect("stable test type"),
+            TypeKind::VariantPayload(Box::new(renamed_type))
+                .semantic_identity_digest()
+                .expect("stable test type"),
         );
         let original_fields = original.record_fields().expect("record fields");
         let renamed_fields = renamed.record_fields().expect("record fields");

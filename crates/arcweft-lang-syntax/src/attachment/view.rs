@@ -642,7 +642,10 @@ fn retained_header_has_recovery(header: &AttachedRetainedHeader) -> bool {
     matches!(
         header.public_id(),
         AttachedDeclarationPublicId::Recovered { .. }
-    ) || !matches!(header.name(), AttachedRetainedName::Resolved { .. })
+    ) || !matches!(
+        header.name(),
+        AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. }
+    )
 }
 
 fn view_parameter_has_recovery(parameter: &AttachedCallableParameter) -> bool {

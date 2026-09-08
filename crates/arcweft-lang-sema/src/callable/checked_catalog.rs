@@ -6,6 +6,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
+    identity::{ExprId, LocalId, PatternId},
     project::AcceptedHirProjectGeneration,
     symbol::{CallableDeclarationDigest, CallableDeclarationKey, FlowDeclarationId},
 };
@@ -14,14 +15,20 @@ use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 use crate::{
     effect_row::{EffectRow, EffectRowError, EffectRowTail, EffectSubsetError, EffectSubstitution},
     effects::EffectSet,
-    final_analysis::CheckedFunctionExecution,
+    final_analysis::{
+        CheckedExecutableControlRole, CheckedFunctionExecution, CheckedOrdinaryFunctionEmission,
+        CheckedPatternSemanticDigest, CheckedSuspensionRole,
+    },
     nominal::TypeSourceEvidence,
-    types::TypeKind,
+    semantic_coordinate::{StableCheckedBindingCoordinate, StableCheckedValueCoordinate},
+    types::{SemanticTypeDigest, TypeKind},
 };
 
 use super::{
-    CallableAccess, CallableCandidateId, CallableEffectSchema, CallableName, CallableRecord,
-    CheckedCallableContext, CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId,
+    CallableAccess, CallableAttachedContentExecution, CallableAttachedContentPolicy,
+    CallableCandidateId, CallableEffectSchema, CallableGroupIndex, CallableName,
+    CallableParameterPassing, CallableParameterPresence, CallableRecord, CheckedCallableContext,
+    CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId, CheckedContentRole,
     EnvironmentCallablePublicationDigest, ReceiverMethodKey, RegisteredCallableCatalog,
     RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
 };
@@ -330,14 +337,297 @@ impl CallableInterfaceDigest {
     }
 }
 
+/// Distinct v1 identity of one checked attached-content default expression.
+///
+/// The generation-local source is retained by the owning row for lowering,
+/// while this digest commits the accepted-rooted acyclic transcript.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedAttachedContentDefaultExpressionDigest([u8; 32]);
+
+impl CheckedAttachedContentDefaultExpressionDigest {
+    pub(crate) const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAttachedContentDefault {
+    source: ExprId,
+    coordinate: StableCheckedValueCoordinate,
+    result: SemanticTypeDigest,
+    effects: EffectRow,
+    suspension: CheckedSuspensionRole,
+    control: CheckedExecutableControlRole,
+    expression: CheckedAttachedContentDefaultExpressionDigest,
+    captures: Box<[CheckedAttachedContentDefaultCapture]>,
+}
+
+/// One logical ordinary parameter whose pattern must be rebound inside the
+/// attached-default function because the default expression reads at least
+/// one of its locals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAttachedContentDefaultCapture {
+    parameter: super::CallableParameterCoordinate,
+    pattern: PatternId,
+    pattern_digest: CheckedPatternSemanticDigest,
+    bindings: Box<[LocalId]>,
+    binding_evidence: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+    used_locals: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+    binding_type: TypeKind,
+}
+
+/// Exact free-local evidence covered by one logical parameter capture.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedAttachedContentDefaultCaptureLocal {
+    local: LocalId,
+    origin: StableCheckedBindingCoordinate,
+    ty: TypeKind,
+}
+
+impl CheckedAttachedContentDefaultCaptureLocal {
+    pub(crate) const fn new(
+        local: LocalId,
+        origin: StableCheckedBindingCoordinate,
+        ty: TypeKind,
+    ) -> Self {
+        Self { local, origin, ty }
+    }
+
+    pub const fn local(&self) -> LocalId {
+        self.local
+    }
+
+    pub const fn origin(&self) -> &StableCheckedBindingCoordinate {
+        &self.origin
+    }
+
+    pub const fn ty(&self) -> &TypeKind {
+        &self.ty
+    }
+}
+
+impl CheckedAttachedContentDefaultCapture {
+    pub(crate) const fn new(
+        parameter: super::CallableParameterCoordinate,
+        pattern: PatternId,
+        pattern_digest: CheckedPatternSemanticDigest,
+        bindings: Box<[LocalId]>,
+        binding_evidence: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+        used_locals: Box<[CheckedAttachedContentDefaultCaptureLocal]>,
+        binding_type: TypeKind,
+    ) -> Self {
+        Self {
+            parameter,
+            pattern,
+            pattern_digest,
+            bindings,
+            binding_evidence,
+            used_locals,
+            binding_type,
+        }
+    }
+
+    pub const fn parameter(&self) -> super::CallableParameterCoordinate {
+        self.parameter
+    }
+
+    pub const fn pattern(&self) -> PatternId {
+        self.pattern
+    }
+
+    pub const fn pattern_digest(&self) -> CheckedPatternSemanticDigest {
+        self.pattern_digest
+    }
+
+    pub const fn bindings(&self) -> &[LocalId] {
+        &self.bindings
+    }
+
+    pub const fn binding_evidence(&self) -> &[CheckedAttachedContentDefaultCaptureLocal] {
+        &self.binding_evidence
+    }
+
+    pub const fn used_locals(&self) -> &[CheckedAttachedContentDefaultCaptureLocal] {
+        &self.used_locals
+    }
+
+    pub const fn binding_type(&self) -> &TypeKind {
+        &self.binding_type
+    }
+}
+
+impl CheckedAttachedContentDefault {
+    pub(crate) const fn new(
+        source: ExprId,
+        coordinate: StableCheckedValueCoordinate,
+        result: SemanticTypeDigest,
+        effects: EffectRow,
+        suspension: CheckedSuspensionRole,
+        control: CheckedExecutableControlRole,
+        expression: CheckedAttachedContentDefaultExpressionDigest,
+        captures: Box<[CheckedAttachedContentDefaultCapture]>,
+    ) -> Self {
+        Self {
+            source,
+            coordinate,
+            result,
+            effects,
+            suspension,
+            control,
+            expression,
+            captures,
+        }
+    }
+
+    pub const fn source(&self) -> ExprId {
+        self.source
+    }
+
+    pub const fn coordinate(&self) -> &StableCheckedValueCoordinate {
+        &self.coordinate
+    }
+
+    pub const fn result(&self) -> SemanticTypeDigest {
+        self.result
+    }
+
+    pub const fn effects(&self) -> &EffectRow {
+        &self.effects
+    }
+
+    pub const fn suspension(&self) -> CheckedSuspensionRole {
+        self.suspension
+    }
+
+    pub const fn control(&self) -> CheckedExecutableControlRole {
+        self.control
+    }
+
+    pub const fn expression(&self) -> CheckedAttachedContentDefaultExpressionDigest {
+        self.expression
+    }
+
+    pub const fn captures(&self) -> &[CheckedAttachedContentDefaultCapture] {
+        &self.captures
+    }
+}
+
+/// Final checked callee-side attached-content interface.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCallableAttachedContentParameter {
+    group: CallableGroupIndex,
+    binding: LocalId,
+    binding_coordinate: StableCheckedBindingCoordinate,
+    admission: CheckedContentRole,
+    presence: CallableParameterPresence,
+    abi_position: u32,
+    binding_type: TypeKind,
+    abi_type: TypeKind,
+    default: Option<CheckedAttachedContentDefault>,
+}
+
+impl CheckedCallableAttachedContentParameter {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) const fn new(
+        group: CallableGroupIndex,
+        binding: LocalId,
+        binding_coordinate: StableCheckedBindingCoordinate,
+        admission: CheckedContentRole,
+        presence: CallableParameterPresence,
+        abi_position: u32,
+        binding_type: TypeKind,
+        abi_type: TypeKind,
+        default: Option<CheckedAttachedContentDefault>,
+    ) -> Self {
+        Self {
+            group,
+            binding,
+            binding_coordinate,
+            admission,
+            presence,
+            abi_position,
+            binding_type,
+            abi_type,
+            default,
+        }
+    }
+
+    pub const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn binding(&self) -> LocalId {
+        self.binding
+    }
+
+    pub const fn binding_coordinate(&self) -> &StableCheckedBindingCoordinate {
+        &self.binding_coordinate
+    }
+
+    pub const fn admission(&self) -> CheckedContentRole {
+        self.admission
+    }
+
+    pub const fn presence(&self) -> CallableParameterPresence {
+        self.presence
+    }
+
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
+    }
+
+    pub const fn binding_type(&self) -> &TypeKind {
+        &self.binding_type
+    }
+
+    pub const fn abi_type(&self) -> &TypeKind {
+        &self.abi_type
+    }
+
+    pub const fn default(&self) -> Option<&CheckedAttachedContentDefault> {
+        self.default.as_ref()
+    }
+}
+
 /// Sole checked metadata/effect record for one accepted callable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedCallableFacts {
     id: CheckedCallableId,
     record: Arc<CallableRecord>,
     execution: CheckedCallableExecution,
+    suspension: CheckedSuspensionRole,
+    control: CheckedExecutableControlRole,
     effects: CheckedCallableEffects,
-    interface_digest: CallableInterfaceDigest,
+    attached_content: Option<CheckedCallableAttachedContentParameter>,
+    interface_digest: Option<CallableInterfaceDigest>,
+}
+
+/// Final execution authority for one latent closure body. Effects and
+/// suspension are sealed from the same selected executable fold so consumers
+/// cannot combine rows from different traversals.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedClosureExecution {
+    effects: EffectRow,
+    suspension: CheckedSuspensionRole,
+    control: CheckedExecutableControlRole,
+}
+
+impl CheckedClosureExecution {
+    pub const fn effects(&self) -> &EffectRow {
+        &self.effects
+    }
+
+    pub const fn suspension(&self) -> CheckedSuspensionRole {
+        self.suspension
+    }
+
+    pub const fn control(&self) -> CheckedExecutableControlRole {
+        self.control
+    }
 }
 
 impl CheckedCallableFacts {
@@ -379,6 +669,67 @@ impl CheckedCallableFacts {
 
     pub const fn execution(&self) -> &CheckedCallableExecution {
         &self.execution
+    }
+
+    /// Final transitive suspension role closed over the selected project-call
+    /// graph. This is not inferred from an effect row or source spelling.
+    pub const fn suspension(&self) -> CheckedSuspensionRole {
+        self.suspension
+    }
+
+    /// Final structural-control role closed over the selected executable
+    /// expression inventory. A project call always requires Flow lowering,
+    /// independently of effects and transitive suspension.
+    pub const fn control(&self) -> CheckedExecutableControlRole {
+        self.control
+    }
+
+    pub fn ordinary_function_emission(&self) -> Option<CheckedOrdinaryFunctionEmission> {
+        self.ordinary_function_emission_with_effects(self.exposed_row().concrete())
+    }
+
+    pub fn ordinary_function_emission_with_effects(
+        &self,
+        effects: &EffectSet,
+    ) -> Option<CheckedOrdinaryFunctionEmission> {
+        let CheckedCallableExecution::Runtime(execution) = &self.execution else {
+            return None;
+        };
+        Some(
+            match (execution, self.suspension, effects.is_empty(), self.control) {
+                (
+                    CheckedFunctionExecution::DirectFrame,
+                    CheckedSuspensionRole::NonSuspending,
+                    true,
+                    CheckedExecutableControlRole::ExpressionCompatible,
+                ) => CheckedOrdinaryFunctionEmission::ExpressionFunctionSite,
+                (
+                    CheckedFunctionExecution::DirectFrame,
+                    CheckedSuspensionRole::NonSuspending,
+                    false,
+                    _,
+                )
+                | (
+                    CheckedFunctionExecution::DirectFrame,
+                    CheckedSuspensionRole::MaySuspend,
+                    _,
+                    _,
+                )
+                | (
+                    CheckedFunctionExecution::DirectFrame,
+                    CheckedSuspensionRole::NonSuspending,
+                    true,
+                    CheckedExecutableControlRole::FlowRequired,
+                ) => CheckedOrdinaryFunctionEmission::ExecutableFunctionSite,
+                (CheckedFunctionExecution::StreamFactory { .. }, _, _, _) => {
+                    CheckedOrdinaryFunctionEmission::StreamFactoryUnsupported
+                }
+            },
+        )
+    }
+
+    pub const fn attached_content(&self) -> Option<&CheckedCallableAttachedContentParameter> {
+        self.attached_content.as_ref()
     }
 
     pub const fn actual_row(&self) -> Option<&EffectRow> {
@@ -428,7 +779,12 @@ impl CheckedCallableFacts {
         }
     }
 
-    pub const fn interface_digest(&self) -> CallableInterfaceDigest {
+    pub fn interface_digest(&self) -> CallableInterfaceDigest {
+        self.interface_digest
+            .expect("checked callable interfaces are sealed before publication")
+    }
+
+    pub(crate) const fn sealed_interface_digest(&self) -> Option<CallableInterfaceDigest> {
         self.interface_digest
     }
 
@@ -437,6 +793,21 @@ impl CheckedCallableFacts {
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
         self.record.schema().visit_types(visitor)?;
+        if let Some(attached) = &self.attached_content {
+            visitor(attached.binding_type())?;
+            visitor(attached.abi_type())?;
+            if let Some(default) = attached.default() {
+                for capture in default.captures() {
+                    visitor(capture.binding_type())?;
+                    for local in capture.binding_evidence() {
+                        visitor(local.ty())?;
+                    }
+                    for local in capture.used_locals() {
+                        visitor(local.ty())?;
+                    }
+                }
+            }
+        }
         match &self.execution {
             CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory {
                 item,
@@ -527,7 +898,7 @@ pub struct CheckedCallableCatalog {
     method_index: HashMap<ReceiverMethodKey, Arc<[CheckedCallableId]>>,
     extension_index: HashMap<CallableName, Arc<[CheckedCallableId]>>,
     inaccessible_methods: HashMap<ReceiverMethodKey, Arc<[CheckedCallableId]>>,
-    closure_rows: BTreeMap<CheckedClosureId, EffectRow>,
+    closure_rows: BTreeMap<CheckedClosureId, CheckedClosureExecution>,
     closure_source_index: BTreeMap<SourceSpan, CheckedClosureId>,
     source_index: BTreeMap<CheckedCallableSourceKey, CheckedCallableId>,
 }
@@ -594,6 +965,50 @@ impl CheckedCallableCatalog {
         &self,
     ) -> impl ExactSizeIterator<Item = &CheckedCallableFacts> + DoubleEndedIterator {
         self.records.values()
+    }
+
+    /// Atomically joins the complete checked attached-content row batch and
+    /// issues every callable interface digest exactly once.
+    pub(crate) fn seal_interfaces(
+        &mut self,
+        mut attached: BTreeMap<CheckedCallableId, Option<CheckedCallableAttachedContentParameter>>,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if attached.len() != self.records.len()
+            || self
+                .records
+                .values()
+                .any(|facts| facts.interface_digest.is_some() || facts.attached_content.is_some())
+        {
+            return Err(CheckedCallableCatalogBuildError::DuplicateInterfaceSeal);
+        }
+        let mut sealed = BTreeMap::new();
+        for (id, facts) in &self.records {
+            let row = attached
+                .remove(id)
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            validate_attached_content_interface(facts, row.as_ref())?;
+            let digest = interface_digest(
+                facts.record(),
+                facts.execution(),
+                facts.suspension(),
+                facts.control(),
+                facts.exposed_row(),
+                row.as_ref(),
+            )?;
+            sealed.insert(id.clone(), (row, digest));
+        }
+        if !attached.is_empty() || sealed.len() != self.records.len() {
+            return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+        }
+        for (id, (row, digest)) in sealed {
+            let facts = self
+                .records
+                .get_mut(&id)
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            facts.attached_content = row;
+            facts.interface_digest = Some(digest);
+        }
+        Ok(())
     }
 
     pub(crate) fn visit_types<E>(
@@ -761,6 +1176,13 @@ impl CheckedCallableCatalog {
         &self,
         id: &CheckedClosureId,
     ) -> Result<&EffectRow, CheckedCallableLookupError> {
+        Ok(self.closure_execution(id)?.effects())
+    }
+
+    pub fn closure_execution(
+        &self,
+        id: &CheckedClosureId,
+    ) -> Result<&CheckedClosureExecution, CheckedCallableLookupError> {
         self.validate_context(id.owner())?;
         self.closure_rows
             .get(id)
@@ -770,7 +1192,9 @@ impl CheckedCallableCatalog {
     pub(crate) fn closure_rows(
         &self,
     ) -> impl ExactSizeIterator<Item = (&CheckedClosureId, &EffectRow)> {
-        self.closure_rows.iter()
+        self.closure_rows
+            .iter()
+            .map(|(id, execution)| (id, execution.effects()))
     }
 
     /// Resolves the latent row of one closure through its exact accepted
@@ -785,6 +1209,31 @@ impl CheckedCallableCatalog {
             .get(source)
             .ok_or(CheckedCallableLookupError::Missing)?;
         self.closure_row(id)
+    }
+
+    pub fn closure_execution_at_source(
+        &self,
+        source: &SourceSpan,
+    ) -> Result<&CheckedClosureExecution, CheckedCallableLookupError> {
+        let id = self
+            .closure_source_index
+            .get(source)
+            .ok_or(CheckedCallableLookupError::Missing)?;
+        self.closure_execution(id)
+    }
+
+    /// Returns the sole checked closure identity and execution row selected by
+    /// one exact source span. Runtime instance projection retains this typed
+    /// identity rather than rebuilding it from a raw expression ID.
+    pub fn closure_identity_and_execution_at_source(
+        &self,
+        source: &SourceSpan,
+    ) -> Result<(&CheckedClosureId, &CheckedClosureExecution), CheckedCallableLookupError> {
+        let id = self
+            .closure_source_index
+            .get(source)
+            .ok_or(CheckedCallableLookupError::Missing)?;
+        Ok((id, self.closure_execution(id)?))
     }
 
     fn validate_context(&self, id: &CheckedCallableId) -> Result<(), CheckedCallableLookupError> {
@@ -857,6 +1306,7 @@ fn validate_checked_context(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum CheckedCallableCatalogBuildError {
+    GenericScope(crate::types::GenericScopeError),
     GenerationMismatch,
     CandidateMismatch,
     DuplicateCallable,
@@ -878,6 +1328,14 @@ pub(crate) enum CheckedCallableCatalogBuildError {
     EffectSubset(Box<EffectSubsetError>),
     ForbiddenEffects(EffectSet),
     ForeignClosureOwner,
+    InvalidAttachedContentInterface,
+    DuplicateInterfaceSeal,
+}
+
+impl From<crate::types::GenericScopeError> for CheckedCallableCatalogBuildError {
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::GenericScope(error)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -907,6 +1365,8 @@ pub(crate) struct PendingCheckedCallable {
     id: CheckedCallableId,
     record: Arc<CallableRecord>,
     execution: CheckedCallableExecution,
+    suspension: Option<CheckedSuspensionRole>,
+    control: Option<CheckedExecutableControlRole>,
     contract: PendingCallableEffectContract,
     inferred: Option<EffectRow>,
     completion: PendingCallableCompletion,
@@ -928,6 +1388,24 @@ impl PendingCheckedCallable {
             | PendingCallableEffectContract::RecordFixed => None,
         }
     }
+
+    /// Exposed interface evidence available at this preparation stage.
+    /// An authored bound is authoritative before body inference completes;
+    /// an omitted bound remains unavailable until its inferred row is set.
+    pub(crate) fn known_exposed_row(&self) -> Option<&EffectRow> {
+        match &self.contract {
+            PendingCallableEffectContract::Body(contract)
+            | PendingCallableEffectContract::BodylessTraitRequirement(contract) => {
+                match contract.permission() {
+                    EffectPermission::Bounded(row) => Some(row),
+                    EffectPermission::UnboundedInference => self.inferred.as_ref(),
+                }
+            }
+            PendingCallableEffectContract::RecordFixed => {
+                self.record.schema().effects().fixed_row()
+            }
+        }
+    }
 }
 
 /// Private, consuming construction transaction for a checked catalog.
@@ -939,7 +1417,7 @@ pub(crate) struct CheckedCallableCatalogBuilder {
     checked_by_candidate: HashMap<CallableCandidateId, CheckedCallableId>,
     method_index: HashMap<ReceiverMethodKey, Vec<CheckedCallableId>>,
     extension_index: HashMap<CallableName, Vec<CheckedCallableId>>,
-    closure_rows: BTreeMap<CheckedClosureId, EffectRow>,
+    closure_rows: BTreeMap<CheckedClosureId, CheckedClosureExecution>,
     closure_source_index: BTreeMap<SourceSpan, CheckedClosureId>,
     source_index: BTreeMap<CheckedCallableSourceKey, CheckedCallableId>,
     effect_substitution: EffectSubstitution,
@@ -990,7 +1468,7 @@ impl CheckedCallableCatalogBuilder {
             .as_ref()
             .ok_or(CheckedCallableCatalogBuildError::GenerationMismatch)?;
         Ok(registered
-            .records_in_identity_order()
+            .records_in_identity_order()?
             .into_iter()
             .map(Arc::clone)
             .collect())
@@ -1118,11 +1596,17 @@ impl CheckedCallableCatalogBuilder {
         } else {
             PendingCallableCompletion::Complete
         };
+        let suspension = (!matches!(contract, PendingCallableEffectContract::Body(_)))
+            .then_some(CheckedSuspensionRole::NonSuspending);
+        let control = (!matches!(contract, PendingCallableEffectContract::Body(_)))
+            .then_some(CheckedExecutableControlRole::ExpressionCompatible);
         let candidate = record.id().clone();
         let pending = PendingCheckedCallable {
             id: id.clone(),
             record,
             execution,
+            suspension,
+            control,
             contract,
             inferred: None,
             completion,
@@ -1181,15 +1665,57 @@ impl CheckedCallableCatalogBuilder {
         Ok(())
     }
 
+    pub(crate) fn assign_suspension_role(
+        &mut self,
+        id: &CheckedCallableId,
+        suspension: CheckedSuspensionRole,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if self.state != CheckedCatalogBuildState::Inferring {
+            return Err(CheckedCallableCatalogBuildError::InvalidState);
+        }
+        let pending = self
+            .pending
+            .get_mut(id)
+            .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+        if !matches!(pending.contract, PendingCallableEffectContract::Body(_)) {
+            return Err(CheckedCallableCatalogBuildError::InvalidExecutionRole);
+        }
+        if pending.suspension.replace(suspension).is_some() {
+            return Err(CheckedCallableCatalogBuildError::DuplicateInference);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn assign_control_role(
+        &mut self,
+        id: &CheckedCallableId,
+        control: CheckedExecutableControlRole,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if self.state != CheckedCatalogBuildState::Inferring {
+            return Err(CheckedCallableCatalogBuildError::InvalidState);
+        }
+        let pending = self
+            .pending
+            .get_mut(id)
+            .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+        if !matches!(pending.contract, PendingCallableEffectContract::Body(_)) {
+            return Err(CheckedCallableCatalogBuildError::InvalidExecutionRole);
+        }
+        if pending.control.replace(control).is_some() {
+            return Err(CheckedCallableCatalogBuildError::DuplicateInference);
+        }
+        Ok(())
+    }
+
     pub(crate) fn begin_validation(&mut self) -> Result<(), CheckedCallableCatalogBuildError> {
         if self.state != CheckedCatalogBuildState::Inferring {
             return Err(CheckedCallableCatalogBuildError::InvalidState);
         }
-        if self
-            .pending
-            .values()
-            .any(|pending| pending.completion == PendingCallableCompletion::AwaitingInference)
-        {
+        if self.pending.values().any(|pending| {
+            pending.completion == PendingCallableCompletion::AwaitingInference
+                || pending.suspension.is_none()
+                || pending.control.is_none()
+        }) {
             return Err(CheckedCallableCatalogBuildError::MissingInference);
         }
         self.state = CheckedCatalogBuildState::Validating;
@@ -1362,6 +1888,8 @@ impl CheckedCallableCatalogBuilder {
         &mut self,
         id: CheckedClosureId,
         row: EffectRow,
+        suspension: CheckedSuspensionRole,
+        control: CheckedExecutableControlRole,
     ) -> Result<(), CheckedCallableCatalogBuildError> {
         if self.state != CheckedCatalogBuildState::Inferring {
             return Err(CheckedCallableCatalogBuildError::InvalidState);
@@ -1390,7 +1918,14 @@ impl CheckedCallableCatalogBuilder {
             return Err(CheckedCallableCatalogBuildError::DuplicateSource);
         }
         self.closure_source_index.insert(source, id.clone());
-        self.closure_rows.insert(id, row);
+        self.closure_rows.insert(
+            id,
+            CheckedClosureExecution {
+                effects: row,
+                suspension,
+                control,
+            },
+        );
         Ok(())
     }
 
@@ -1401,11 +1936,15 @@ impl CheckedCallableCatalogBuilder {
             return Err(CheckedCallableCatalogBuildError::InvalidState);
         }
         self.validate_freeze_indices()?;
-        for row in self.closure_rows.values_mut() {
-            *row =
-                EffectRow::closed(row.resolve(&self.effect_substitution).map_err(|error| {
-                    CheckedCallableCatalogBuildError::EffectRow(Box::new(error))
-                })?);
+        for execution in self.closure_rows.values_mut() {
+            execution.effects = EffectRow::closed(
+                execution
+                    .effects
+                    .resolve(&self.effect_substitution)
+                    .map_err(|error| {
+                        CheckedCallableCatalogBuildError::EffectRow(Box::new(error))
+                    })?,
+            );
         }
         let mut records = BTreeMap::new();
         for (id, pending) in std::mem::take(&mut self.pending) {
@@ -1420,19 +1959,23 @@ impl CheckedCallableCatalogBuilder {
                     return Err(CheckedCallableCatalogBuildError::RecordPointerMismatch);
                 }
             }
+            let suspension = pending
+                .suspension
+                .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+            let control = pending
+                .control
+                .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
             let effects = finish_effects(pending.contract, pending.inferred)?;
             validate_fact_roles(&pending.record, &pending.execution, &effects)?;
-            let interface_digest = interface_digest(
-                &pending.record,
-                &pending.execution,
-                exposed_row(&pending.record, &effects),
-            );
             let facts = CheckedCallableFacts {
                 id: id.clone(),
                 record: pending.record,
                 execution: pending.execution,
+                suspension,
+                control,
                 effects,
-                interface_digest,
+                attached_content: None,
+                interface_digest: None,
             };
             if records.insert(id, facts).is_some() {
                 return Err(CheckedCallableCatalogBuildError::DuplicateCallable);
@@ -1560,14 +2103,16 @@ impl CheckedCallableCatalogBuilder {
         if self.closure_source_index.len() != self.closure_rows.len() {
             return Err(CheckedCallableCatalogBuildError::CorruptIndex);
         }
-        for (closure, row) in &self.closure_rows {
-            if !self.pending.contains_key(closure.owner()) || !row.is_known() {
+        for (closure, execution) in &self.closure_rows {
+            if !self.pending.contains_key(closure.owner()) || !execution.effects.is_known() {
                 return Err(CheckedCallableCatalogBuildError::CorruptIndex);
             }
             if self.closure_source_index.get(closure.expression()) != Some(closure) {
                 return Err(CheckedCallableCatalogBuildError::CorruptIndex);
             }
-            row.resolve(&self.effect_substitution)
+            execution
+                .effects
+                .resolve(&self.effect_substitution)
                 .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?;
         }
         Ok(())
@@ -1765,31 +2310,163 @@ fn validate_fact_roles(
     }
 }
 
-fn exposed_row<'a>(
-    record: &'a CallableRecord,
-    effects: &'a CheckedCallableEffects,
-) -> &'a EffectRow {
-    match effects {
-        CheckedCallableEffects::Body { contract, inferred } => contract.exposed_or(inferred),
-        CheckedCallableEffects::BodylessTraitRequirement { contract } => {
-            let EffectPermission::Bounded(row) = contract.permission() else {
-                unreachable!("validated bodyless contract is bounded")
-            };
-            row
+fn validate_attached_content_interface(
+    facts: &CheckedCallableFacts,
+    attached: Option<&CheckedCallableAttachedContentParameter>,
+) -> Result<(), CheckedCallableCatalogBuildError> {
+    let declared = facts.record().schema().attached_content();
+    let runtime_project = matches!(facts.record().id(), CallableCandidateId::Project(_));
+    let expected = declared.filter(|parameter| {
+        runtime_project && parameter.execution() == CallableAttachedContentExecution::RuntimeContent
+    });
+    let (Some(parameter), Some(attached)) = (expected, attached) else {
+        return if expected.is_none() && attached.is_none() {
+            Ok(())
+        } else {
+            Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)
+        };
+    };
+    let CallableAttachedContentPolicy::Declared(admission) = parameter.policy() else {
+        return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+    };
+    let result = facts
+        .record()
+        .schema()
+        .value_type()
+        .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+    let binding_type = match parameter.presence() {
+        CallableParameterPresence::Optional => TypeKind::Option(Box::new(result.clone())),
+        CallableParameterPresence::Required | CallableParameterPresence::Defaulted => {
+            result.clone()
         }
-        CheckedCallableEffects::RecordFixed => record
+    };
+    let abi_type = match parameter.presence() {
+        CallableParameterPresence::Required => result.clone(),
+        CallableParameterPresence::Optional | CallableParameterPresence::Defaulted => {
+            TypeKind::Option(Box::new(result.clone()))
+        }
+    };
+    let abi_position = u32::try_from(
+        facts
+            .record()
             .schema()
-            .effects()
-            .fixed_row()
-            .expect("validated fixed record has fixed row"),
+            .group(parameter.group())
+            .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?
+            .parameters()
+            .len(),
+    )
+    .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+    if attached.group() != parameter.group()
+        || attached.admission() != admission
+        || attached.presence() != parameter.presence()
+        || attached.abi_position() != abi_position
+        || attached.binding_type() != &binding_type
+        || attached.abi_type() != &abi_type
+    {
+        return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+    }
+    if let Some(default) = attached.default() {
+        let mut previous = None;
+        let mut used_origins = BTreeSet::new();
+        for capture in default.captures() {
+            let group = facts
+                .record()
+                .schema()
+                .group(capture.parameter().group())
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            let schema_parameter = group
+                .parameters()
+                .get(capture.parameter().parameter().get())
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            if schema_parameter.index() != capture.parameter().parameter() {
+                return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+            }
+            let abi_type = schema_parameter
+                .declared_type()
+                .ok_or(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+            let expected_binding_type = match schema_parameter.passing() {
+                CallableParameterPassing::RestPositional => {
+                    TypeKind::Vec(Box::new(abi_type.clone()))
+                }
+                CallableParameterPassing::RestNamed => {
+                    return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+                }
+                CallableParameterPassing::PositionalOnly
+                | CallableParameterPassing::PositionalOrNamed
+                | CallableParameterPassing::NamedOnly => abi_type.clone(),
+            };
+            let mut binding_locals = BTreeSet::new();
+            let mut binding_origins = BTreeSet::new();
+            let binding_evidence_valid = capture.bindings().len()
+                == capture.binding_evidence().len()
+                && capture
+                    .bindings()
+                    .iter()
+                    .zip(capture.binding_evidence())
+                    .all(|(binding, evidence)| {
+                        binding == &evidence.local()
+                            && binding_locals.insert(*binding)
+                            && binding_origins.insert(evidence.origin().clone())
+                    });
+            let binding_evidence_ordered = capture
+                .binding_evidence()
+                .windows(2)
+                .all(|pair| pair[0].origin() < pair[1].origin());
+            let used_evidence_valid = capture.used_locals().iter().all(|local| {
+                capture.binding_evidence().iter().any(|binding| {
+                    binding.local() == local.local()
+                        && binding.origin() == local.origin()
+                        && binding.ty() == local.ty()
+                }) && used_origins.insert(local.origin().clone())
+            });
+            let used_evidence_ordered = capture
+                .used_locals()
+                .windows(2)
+                .all(|pair| pair[0].origin() < pair[1].origin());
+            if capture.parameter().group().get() > parameter.group().get()
+                || previous.is_some_and(|previous| previous >= capture.parameter())
+                || capture.binding_type() != &expected_binding_type
+                || capture.bindings().is_empty()
+                || capture.used_locals().is_empty()
+                || !binding_evidence_valid
+                || !binding_evidence_ordered
+                || !used_evidence_valid
+                || !used_evidence_ordered
+            {
+                return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+            }
+            previous = Some(capture.parameter());
+        }
+    }
+    match (parameter.presence(), attached.default()) {
+        (CallableParameterPresence::Defaulted, Some(default))
+            if default.result() == result.semantic_identity_digest()?
+                && matches!(default.effects().tail(), EffectRowTail::Closed) =>
+        {
+            Ok(())
+        }
+        (CallableParameterPresence::Required | CallableParameterPresence::Optional, None) => Ok(()),
+        _ => Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface),
     }
 }
 
 fn interface_digest(
     record: &CallableRecord,
     execution: &CheckedCallableExecution,
+    suspension: CheckedSuspensionRole,
+    control: CheckedExecutableControlRole,
     exposed: &EffectRow,
-) -> CallableInterfaceDigest {
+    attached: Option<&CheckedCallableAttachedContentParameter>,
+) -> Result<CallableInterfaceDigest, CheckedCallableCatalogBuildError> {
+    let binding_coordinate = attached
+        .map(|attached| attached.binding_coordinate().canonical_bytes())
+        .transpose()
+        .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+    let default_coordinate = attached
+        .and_then(CheckedCallableAttachedContentParameter::default)
+        .map(|default| default.coordinate().canonical_bytes())
+        .transpose()
+        .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
     let mut encoder = super::digest::CanonicalEncoder::default();
     match record.id() {
         CallableCandidateId::Project(declaration) => {
@@ -1830,13 +2507,95 @@ fn interface_digest(
             own_scope_yields,
         }) => {
             encoder.tag(2);
-            encoder.bytes(item.semantic_identity_digest().as_bytes());
-            encoder.bytes(error.semantic_identity_digest().as_bytes());
+            encoder.bytes(item.semantic_identity_digest()?.as_bytes());
+            encoder.bytes(error.semantic_identity_digest()?.as_bytes());
             encoder.u32(*own_scope_yields);
         }
     }
+    encoder.tag(match suspension {
+        CheckedSuspensionRole::NonSuspending => 0,
+        CheckedSuspensionRole::MaySuspend => 1,
+    });
+    encoder.tag(match control {
+        CheckedExecutableControlRole::ExpressionCompatible => 0,
+        CheckedExecutableControlRole::FlowRequired => 1,
+    });
     encode_row(&mut encoder, exposed);
-    CallableInterfaceDigest(encoder.finish(b"arcweft.callable-interface.v1\0"))
+    match (attached, binding_coordinate.as_deref()) {
+        (None, None) => encoder.bool(false),
+        (Some(attached), Some(binding_coordinate)) => {
+            encoder.bool(true);
+            encoder.usize(attached.group().get());
+            encoder.bytes(binding_coordinate);
+            encoder.tag(attached.admission().semantic_tag().into());
+            encoder.tag(match attached.presence() {
+                CallableParameterPresence::Required => 0,
+                CallableParameterPresence::Optional => 1,
+                CallableParameterPresence::Defaulted => 2,
+            });
+            encoder.u32(attached.abi_position());
+            encoder.bytes(
+                attached
+                    .binding_type()
+                    .semantic_identity_digest()?
+                    .as_bytes(),
+            );
+            encoder.bytes(attached.abi_type().semantic_identity_digest()?.as_bytes());
+            match (attached.default(), default_coordinate.as_deref()) {
+                (None, None) => encoder.bool(false),
+                (Some(default), Some(default_coordinate)) => {
+                    encoder.bool(true);
+                    encoder.bytes(default_coordinate);
+                    encoder.bytes(default.result().as_bytes());
+                    encode_row(&mut encoder, default.effects());
+                    encoder.tag(match default.suspension() {
+                        CheckedSuspensionRole::NonSuspending => 0,
+                        CheckedSuspensionRole::MaySuspend => 1,
+                    });
+                    encoder.tag(match default.control() {
+                        CheckedExecutableControlRole::ExpressionCompatible => 0,
+                        CheckedExecutableControlRole::FlowRequired => 1,
+                    });
+                    encoder.bytes(default.expression().as_bytes());
+                    encoder.usize(default.captures().len());
+                    for capture in default.captures() {
+                        encoder.usize(capture.parameter().group().get());
+                        encoder.usize(capture.parameter().parameter().get());
+                        encoder.bytes(capture.pattern_digest().as_bytes());
+                        encoder.bytes(
+                            capture
+                                .binding_type()
+                                .semantic_identity_digest()?
+                                .as_bytes(),
+                        );
+                        encoder.usize(capture.binding_evidence().len());
+                        for binding in capture.binding_evidence() {
+                            let origin = binding.origin().canonical_bytes().map_err(|_| {
+                                CheckedCallableCatalogBuildError::InvalidAttachedContentInterface
+                            })?;
+                            encoder.bytes(&origin);
+                            encoder.bytes(binding.ty().semantic_identity_digest()?.as_bytes());
+                        }
+                        encoder.usize(capture.used_locals().len());
+                        for local in capture.used_locals() {
+                            let origin = local.origin().canonical_bytes().map_err(|_| {
+                                CheckedCallableCatalogBuildError::InvalidAttachedContentInterface
+                            })?;
+                            encoder.bytes(&origin);
+                            encoder.bytes(local.ty().semantic_identity_digest()?.as_bytes());
+                        }
+                    }
+                }
+                _ => {
+                    return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface);
+                }
+            }
+        }
+        _ => return Err(CheckedCallableCatalogBuildError::InvalidAttachedContentInterface),
+    }
+    Ok(CallableInterfaceDigest(
+        encoder.finish(b"arcweft.callable-interface.v1\0")?,
+    ))
 }
 
 fn encode_access(encoder: &mut super::digest::CanonicalEncoder, access: &CallableAccess) {

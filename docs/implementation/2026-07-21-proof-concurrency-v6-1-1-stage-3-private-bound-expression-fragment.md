@@ -66,7 +66,7 @@ the package's public `UnboundFragment<K>` plus explicit source-span attachment
 API must land together. Publishing a partial fragment family now would create
 the prohibited dual reader.
 
-The cut also does not add RichText tag nodes, reparse dialogue payload ranges,
+The cut also does not add provisional RichText markup nodes, reparse dialogue payload ranges,
 or migrate REPL, LSP, HIR, compiler, or runtime consumers. Those consumers must
 switch atomically after the retained top-level grammar and complete bound
 fragment contract converge.

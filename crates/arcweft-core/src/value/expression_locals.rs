@@ -55,6 +55,14 @@ impl RuntimeExpr {
                 body_bound.push(*binding);
                 body.collect_evaluation_free_locals(plan, &body_bound, locals)?;
             }
+            RuntimeExprKind::DialogueContent {
+                values, effects, ..
+            } => {
+                collect_slice_free_locals(plan, values, bound, locals)?;
+                for effect in effects {
+                    collect_slice_free_locals(plan, &effect.captures, bound, locals)?;
+                }
+            }
             RuntimeExprKind::Tuple(items) | RuntimeExprKind::BracketSeq(items) => {
                 collect_slice_free_locals(plan, items, bound, locals)?;
             }
@@ -94,14 +102,11 @@ impl RuntimeExpr {
             RuntimeExprKind::Call { args, .. } | RuntimeExprKind::PureCall { args, .. } => {
                 collect_argument_free_locals(plan, args, bound, locals)?;
             }
-            RuntimeExprKind::Function(site) => {
-                let function = plan
-                    .function_sites()
+            RuntimeExprKind::Function { site, captures } => {
+                plan.function_sites()
                     .get(*site)
                     .ok_or(RuntimeExprFreeLocalError::UnknownFunctionSite { site: *site })?;
-                for capture in function.captures() {
-                    push_free_local(*capture, bound, locals);
-                }
+                collect_slice_free_locals(plan, captures, bound, locals)?;
             }
             RuntimeExprKind::Apply { callee, args } => {
                 callee.collect_evaluation_free_locals(plan, bound, locals)?;

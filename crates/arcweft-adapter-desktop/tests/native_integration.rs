@@ -1,5 +1,5 @@
 use arcweft_core::{
-    pattern::{RuntimeCheckedType, RuntimeVariantIdentity},
+    pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeCheckedType},
     task::{
         CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskOutcomeContract,
         TaskPolicy, TaskPriority, TaskSpec,
@@ -30,16 +30,12 @@ fn native_desktop_capabilities_complete_through_host_registry() {
     let HostTaskCompletion::Ready(payload) = outcome.completion else {
         panic!("capabilities request succeeds");
     };
-    let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Result,
-        ordinal: 0,
-        payload: Some(payload),
-        ..
-    } = payload.value()
+    let Some((RuntimeBuiltinVariantCaseIdentity::ResultOk, Some(payload))) =
+        payload.value().builtin_variant_case()
     else {
         panic!("desktop response is a Result::Ok payload");
     };
-    let RuntimeValue::String(payload) = payload.as_ref() else {
+    let RuntimeValue::String(payload) = payload else {
         panic!("desktop response payload is JSON text");
     };
     let response: DesktopResponse =

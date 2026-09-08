@@ -21,21 +21,22 @@ use super::declaration::{AttachedDeclarationIdentity, attach_declaration_identit
 use super::family::{ExpressionFamily, NameFamily, PatternFamily, TypeFamily};
 use super::item_prefix::is_verify_trusted_attribute;
 use super::node::{
-    AssertionStatementKind, AstNode, CloseBraceKind, CloseParenKind, ColonKind, EffectsClauseKind,
+    AssertionStatementKind, AstNode, AttachedContentParameterKind, AttachedContentRoleKind,
+    CloseBraceKind, CloseBracketKind, CloseParenKind, ColonKind, EffectsClauseKind,
     EnsuresClauseKind, EqualsKind, ErrorNodeKind, ExpressionBodyKind, ExtensionReceiverMarkerKind,
     FixedParameterGroupKind, FunctionBodyKind, FunctionItemKind, MissingBodyKind, OpenBraceKind,
-    OpenParenKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, PredicateItemKind,
-    ProofBlockKind, ProofBodyKind, ProofItemKind, RequiresClauseKind, RestParameterMarkerKind,
-    ReturnTypeKind, ThinArrowKind,
+    OpenBracketKind, OpenParenKind, ParameterKind, PredicateBlockKind, PredicateBodyKind,
+    PredicateItemKind, ProofBlockKind, ProofBodyKind, ProofItemKind, QuestionKind,
+    RequiresClauseKind, RestParameterMarkerKind, ReturnTypeKind, ThinArrowKind,
 };
-use super::nominal::{optional_generics, required_name, where_clauses};
+use super::nominal::{optional_generics, required_name, required_name_at, where_clauses};
 use super::source_file::AttachedDelimiterState;
 use super::{
     AttachedAttributeValue, AttachedDeclarationPublicId, AttachedExpressionNode,
     AttachedGenericParameterGroup, AttachedItemPrefix, AttachedOuterAttribute,
     AttachedOuterAttributeForm, AttachedPatternNode, AttachedRequiredName,
     AttachedRequiredPunctuation, AttachedTypeFamily, AttachedTypeRefNode, AttachedWhereClause,
-    DeclarationBodyNode, NameNode, SyntaxAccessError, TypedItemNode,
+    DeclarationBodyNode, NameNode, SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
 };
 
 /// Decoded, non-blank trusted-proof justification retained exactly as authored.
@@ -147,6 +148,131 @@ impl AttachedCallableParameterDefault {
 
     pub fn has_recovery(&self) -> bool {
         self.value.projection().has_recovery()
+    }
+}
+
+/// Closed admission role owned by a trailing attached-content parameter.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AttachedContentRoleSyntax {
+    InlineContent,
+    RichContent,
+    DialogueContent,
+}
+
+/// Presence and default ownership of a trailing attached-content parameter.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedContentPresenceSyntax {
+    Required,
+    Optional {
+        question: AstNode<QuestionKind>,
+    },
+    Defaulted {
+        equals: AstNode<EqualsKind>,
+        value: AttachedExpressionNode,
+    },
+}
+
+impl AttachedContentPresenceSyntax {
+    pub const fn question(&self) -> Option<&AstNode<QuestionKind>> {
+        match self {
+            Self::Optional { question } => Some(question),
+            Self::Required | Self::Defaulted { .. } => None,
+        }
+    }
+
+    pub const fn equals(&self) -> Option<&AstNode<EqualsKind>> {
+        match self {
+            Self::Defaulted { equals, .. } => Some(equals),
+            Self::Required | Self::Optional { .. } => None,
+        }
+    }
+
+    pub const fn value(&self) -> Option<&AttachedExpressionNode> {
+        match self {
+            Self::Defaulted { value, .. } => Some(value),
+            Self::Required | Self::Optional { .. } => None,
+        }
+    }
+
+    pub const fn is_optional(&self) -> bool {
+        matches!(self, Self::Optional { .. })
+    }
+
+    pub const fn is_defaulted(&self) -> bool {
+        matches!(self, Self::Defaulted { .. })
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.value()
+            .is_some_and(|value| value.projection().has_recovery())
+    }
+}
+
+/// One dedicated trailing callable body parameter.
+///
+/// The bracketed declaration is intentionally not represented as an ordinary
+/// [`AttachedCallableParameter`]. Its role is a closed admission policy and its
+/// presence owns the optional/default syntax that later becomes one HIR local
+/// and one runtime ABI slot.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedCallableContentParameter {
+    syntax: AstNode<AttachedContentParameterKind>,
+    open: AstNode<OpenBracketKind>,
+    binding: AttachedRequiredName,
+    presence: AttachedContentPresenceSyntax,
+    colon: AttachedRequiredPunctuation,
+    role: AttachedContentRoleSyntax,
+    role_syntax: AstNode<AttachedContentRoleKind>,
+    close: AstNode<CloseBracketKind>,
+}
+
+impl AttachedCallableContentParameter {
+    pub const fn syntax(&self) -> &AstNode<AttachedContentParameterKind> {
+        &self.syntax
+    }
+
+    pub const fn open(&self) -> &AstNode<OpenBracketKind> {
+        &self.open
+    }
+
+    pub const fn binding(&self) -> &AttachedRequiredName {
+        &self.binding
+    }
+
+    pub const fn presence(&self) -> &AttachedContentPresenceSyntax {
+        &self.presence
+    }
+
+    pub const fn colon(&self) -> &AttachedRequiredPunctuation {
+        &self.colon
+    }
+
+    pub const fn role(&self) -> AttachedContentRoleSyntax {
+        self.role
+    }
+
+    pub const fn role_syntax(&self) -> &AstNode<AttachedContentRoleKind> {
+        &self.role_syntax
+    }
+
+    pub const fn close(&self) -> &AstNode<CloseBracketKind> {
+        &self.close
+    }
+
+    /// Zero-width anchor immediately after the attached-content parameter.
+    pub fn end_source_span(&self) -> arcweft_source::SourceSpan {
+        let end = self.close.range().end();
+        self.close
+            .syntax()
+            .source_span_for_range(arcweft_source::SourceRange::new(end, end))
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.binding.is_missing()
+            || self.colon.is_missing()
+            || self.open.range().is_empty()
+            || self.close.range().is_empty()
+            || self.presence.has_recovery()
     }
 }
 
@@ -1188,11 +1314,72 @@ fn attach_authored_proof_trust(attributes: &[&AttachedOuterAttribute]) -> Attach
     }
 }
 
+impl AstNode<AttachedContentParameterKind> {
+    /// Binds the exact trailing attached-content declaration without treating
+    /// it as an ordinary parenthesized parameter.
+    pub fn callable_semantics(
+        &self,
+    ) -> Result<AttachedCallableContentParameter, SyntaxAccessError> {
+        let binding = required_name_at(&self.syntax(), SyntaxRole::AttachedContentBinding, false)?;
+        let question =
+            self.optional_exact_child::<QuestionKind>(SyntaxRole::AttachedContentQuestion)?;
+        let equals = self.optional_exact_child::<EqualsKind>(SyntaxRole::AttachedContentEquals)?;
+        let value =
+            self.optional_family_child::<ExpressionFamily>(SyntaxRole::AttachedContentDefault)?;
+        let presence = match (question, equals, value) {
+            (None, None, None) => AttachedContentPresenceSyntax::Required,
+            (Some(question), None, None) => AttachedContentPresenceSyntax::Optional { question },
+            (None, Some(equals), Some(value)) => AttachedContentPresenceSyntax::Defaulted {
+                equals,
+                value: value.semantic()?,
+            },
+            _ => {
+                return Err(SyntaxAccessError::InvalidItemProjection { id: self.id() });
+            }
+        };
+        let role_syntax =
+            self.required_exact_child::<AttachedContentRoleKind>(SyntaxRole::AttachedContentRole)?;
+        let role = match role_syntax.source_text() {
+            "InlineContent" => AttachedContentRoleSyntax::InlineContent,
+            "RichContent" => AttachedContentRoleSyntax::RichContent,
+            "DialogueContent" => AttachedContentRoleSyntax::DialogueContent,
+            _ => return Err(SyntaxAccessError::InvalidItemProjection { id: self.id() }),
+        };
+        Ok(AttachedCallableContentParameter {
+            syntax: self.clone(),
+            open: self.required_exact_child::<OpenBracketKind>(SyntaxRole::AttachedContentOpen)?,
+            binding,
+            presence,
+            colon: punctuation(
+                &self.required_exact_child::<ColonKind>(SyntaxRole::AttachedContentColon)?,
+            ),
+            role,
+            role_syntax,
+            close: self
+                .required_exact_child::<CloseBracketKind>(SyntaxRole::AttachedContentClose)?,
+        })
+    }
+}
+
+pub(super) fn attached_content_parameter(
+    owner: &SyntaxNodeHandle,
+) -> Result<Option<AttachedCallableContentParameter>, SyntaxAccessError> {
+    owner
+        .optional_unique_child(SyntaxRole::AttachedContentParameter)?
+        .map(|syntax| {
+            syntax
+                .cast::<AttachedContentParameterKind>()?
+                .callable_semantics()
+        })
+        .transpose()
+}
+
 impl AstNode<FunctionItemKind> {
     /// Binds the complete ordinary function without detached syntax or body alternatives.
     pub fn semantics(&self) -> Result<AttachedFunctionDeclaration, SyntaxAccessError> {
         let item = TypedItemNode::Function(self.clone());
         let parameter_groups = self.callable_parameter_groups()?;
+        let attached_content = attached_content_parameter(&self.syntax())?;
         let authored_return = self
             .optional_exact_child::<ReturnTypeKind>(SyntaxRole::ReturnType)?
             .map(|syntax| syntax.callable_semantics())
@@ -1205,6 +1392,7 @@ impl AstNode<FunctionItemKind> {
             name: required_name(&item.syntax(), false)?,
             generics: optional_generics(&item.syntax())?,
             parameter_groups,
+            attached_content,
             where_clauses: where_clauses(&item.syntax())?,
             contracts: attach_contracts(&item)?,
             authored_return,

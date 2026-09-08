@@ -344,9 +344,12 @@ impl<'a> EntryContractBuilder<'a> {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
+        let schema_result = schema
+            .value_type()
+            .ok_or_else(|| "entry role callable schema has a non-value result".to_owned())?;
         let checked_result = match function.return_type() {
             Some(result) => self.checked_type(result)?,
-            None if schema.result() == &TypeKind::Unit => schema.result(),
+            None if schema_result == &TypeKind::Unit => schema_result,
             None => {
                 return Err(
                     "accepted callable schema disagrees with an omitted Unit source result"
@@ -354,7 +357,7 @@ impl<'a> EntryContractBuilder<'a> {
                 );
             }
         };
-        if checked_result != schema.result() {
+        if checked_result != schema_result {
             return Err(
                 "accepted callable schema disagrees with checked source result type".to_owned(),
             );
@@ -561,20 +564,23 @@ impl<'a> EntryContractBuilder<'a> {
                 inner: Box::new(self.canonical_type_kind(inner)?),
             },
             TypeKind::Function {
+                binder,
                 params,
                 return_type,
                 effects,
-            } if effects.tail() == EffectRowTail::Closed => CanonicalType::Function {
-                params: params
-                    .iter()
-                    .map(|parameter| self.canonical_type_kind(parameter))
-                    .collect::<Result<Vec<_>, _>>()?,
-                result: Box::new(self.canonical_type_kind(return_type)?),
-                effects: CanonicalEffectRow {
-                    effects: effects.concrete().to_labels(),
-                    tail: 0,
-                },
-            },
+            } if binder.is_empty() && effects.tail() == EffectRowTail::Closed => {
+                CanonicalType::Function {
+                    params: params
+                        .iter()
+                        .map(|parameter| self.canonical_type_kind(parameter))
+                        .collect::<Result<Vec<_>, _>>()?,
+                    result: Box::new(self.canonical_type_kind(return_type)?),
+                    effects: CanonicalEffectRow {
+                        effects: effects.concrete().to_labels(),
+                        tail: 0,
+                    },
+                }
+            }
             TypeKind::Tuple(items) => CanonicalType::Tuple(
                 items
                     .iter()
@@ -590,11 +596,19 @@ impl<'a> EntryContractBuilder<'a> {
                 alternatives.dedup();
                 CanonicalType::Choice(alternatives)
             }
-            TypeKind::GenericParam(parameter) => CanonicalType::Named(parameter.source_label()),
+            TypeKind::GenericParam(_) => {
+                return Err("a generic reference is not a closed entry contract".to_owned());
+            }
             TypeKind::Error(poison) => {
                 return Err(format!(
                     "poisoned type {} is not an accepted entry contract",
                     poison.index()
+                ));
+            }
+            TypeKind::CompileTimeScalar(_) => {
+                return Err(format!(
+                    "compile-time scalar `{}` is not an accepted entry contract",
+                    ty.source_label()
                 ));
             }
             unsupported => {

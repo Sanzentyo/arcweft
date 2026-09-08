@@ -1,11 +1,5 @@
 pub character alice {
-    display_name = "Alice"
-    default_voice = auto
-    dialogue_style {
-        font = "MS Mincho"
-        text_color = "#d9f2ff"
-        text_size = 30
-    }
+    display = "Alice"
 }
 
 entry cli @entry.vertical_tutr_golden {
@@ -13,8 +7,8 @@ entry cli @entry.vertical_tutr_golden {
 }
 
 flow vertical_tutr_golden() -> String {
-    alice.say(id=@say.vertical_tutr_golden.001, voice=auto)[
-        [.vertical_rl][font "MS Mincho"]吾輩は猫である。ABC 123 2026。ー「縦書き」[/font][/][p]
+    alice(id=@say.vertical_tutr_golden.001, voice=auto)[
+        #layout(.vertical_rl)[#font("MS Mincho")[吾輩は猫である。ABC 123 2026。ー「縦書き」]][p]
     ]
 
     return "vertical_tutr_golden"

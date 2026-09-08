@@ -1,9 +1,11 @@
 //! Session-facing retained Fx lifecycle and observation projection.
 
 use super::BundleSession;
-use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot};
+use crate::fx_runtime::{BundleFxRuntimeError, BundleFxRuntimeSnapshot, bind_runtime_template};
 use arcweft_bundle::fx_definitions::FxDefinitions;
-use arcweft_presentation::fx::{FxGraphChildPath, FxId, FxInstanceId, FxRuntimeValue};
+use arcweft_presentation::fx::{
+    FxAuthoredSeed, FxGraphChildPath, FxInstanceId, FxInstanceIdentity, FxRuntimeValue,
+};
 
 impl BundleSession {
     /// Returns the canonical bundle definitions used by all renderer adapters.
@@ -19,16 +21,24 @@ impl BundleSession {
     /// Retains one stable application and refreshes only its reactive parameter slots.
     pub fn retain_fx_instance(
         &mut self,
-        definition: &FxId,
-        instance: FxInstanceId,
+        identity: FxInstanceIdentity,
         parameters: Vec<FxRuntimeValue>,
         child_path: FxGraphChildPath,
-        authored_seed: Option<&[u8]>,
+        authored_seed: Option<FxAuthoredSeed>,
     ) -> Result<(), BundleFxRuntimeError> {
+        let instance = identity.instance();
+        let definition = identity.definition().clone();
+        let active = self.fx_definitions.get(&definition).ok_or_else(|| {
+            BundleFxRuntimeError::MissingDefinition {
+                definition: Box::new(definition.clone()),
+                instance,
+            }
+        })?;
+        let template = bind_runtime_template(active, &parameters)?;
         let result = self.presentation.fx.retain_instance(
             &self.fx_definitions,
-            definition,
-            instance,
+            identity,
+            template,
             parameters,
             child_path,
             authored_seed,

@@ -33,8 +33,9 @@ use crate::{
     final_analysis::{FinalSemanticAnalysis, RuntimeProjectNominalKind},
     types::{
         AcceptedNominalType, AgentBuiltinType, ArrayLength, CharacterNominalFamily,
-        CharacterNominalType, EntityKind, HandleState, IteratorStateKind, LifetimeScopeKind,
-        MapKind, ProjectNominalType, StageActorHandleType, TypeKind, VariantPayloadShape,
+        CharacterNominalType, EntityKind, GenericScopeError, HandleState, IteratorStateKind,
+        LifetimeScopeKind, MapKind, ProjectNominalType, SemanticTypeDigest, StageActorHandleType,
+        TypeKind, VariantPayloadTypeShape,
     },
 };
 
@@ -230,6 +231,7 @@ impl From<RuntimeOwnershipError> for CheckedOwnershipError {
             | RuntimeOwnershipError::ArrayLengthMismatch { .. }
             | RuntimeOwnershipError::Canonical { .. }
             | RuntimeOwnershipError::Snapshot { .. }
+            | RuntimeOwnershipError::GenericScope { .. }
             | RuntimeOwnershipError::BuiltinVariantSchema { .. }
             | RuntimeOwnershipError::VariantPayloadSchema { .. } => Self::Rejected,
         }
@@ -363,6 +365,12 @@ impl std::fmt::Display for RuntimeOwnershipRejection {
 pub(crate) enum RuntimeOwnershipError {
     #[error("checked ownership exceeded its configured work limit")]
     WorkLimit,
+    #[error("runtime type identity has an invalid generic scope at {path}: {source}")]
+    GenericScope {
+        path: RuntimeOwnershipPath,
+        #[source]
+        source: GenericScopeError,
+    },
     #[error("runtime ownership rejected at {path}: {reason}")]
     Rejected {
         path: RuntimeOwnershipPath,
@@ -420,6 +428,7 @@ impl RuntimeOwnershipError {
         match self {
             Self::WorkLimit => panic!("work-limit errors do not own a semantic path"),
             Self::Rejected { path, .. }
+            | Self::GenericScope { path, .. }
             | Self::CarrierMismatch { path }
             | Self::ArrayLengthMismatch { path, .. }
             | Self::Canonical { path, .. }
@@ -438,6 +447,7 @@ impl RuntimeOwnershipError {
         match self {
             Self::Rejected { reason, .. } => Some(*reason),
             Self::WorkLimit
+            | Self::GenericScope { .. }
             | Self::CarrierMismatch { .. }
             | Self::ArrayLengthMismatch { .. }
             | Self::Canonical { .. }
@@ -821,6 +831,17 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         Some((self.analysis?, world, world.symbols()))
     }
 
+    fn semantic_type_identity(
+        ty: &TypeKind,
+        path: &RuntimeOwnershipPath,
+    ) -> Result<SemanticTypeDigest, RuntimeOwnershipError> {
+        ty.semantic_identity_digest()
+            .map_err(|source| RuntimeOwnershipError::GenericScope {
+                path: path.clone(),
+                source,
+            })
+    }
+
     fn exact_runtime_type_identity(
         &self,
         ty: &TypeKind,
@@ -832,6 +853,8 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | TypeKind::Error(_)
             | TypeKind::Projection { .. }
             | TypeKind::Named(_)
+            | TypeKind::CompileTimeCallable(_)
+            | TypeKind::MetaType(_)
             | TypeKind::Array {
                 len: ArrayLength::Generic(_) | ArrayLength::Error(_) | ArrayLength::Inferred,
                 ..
@@ -839,15 +862,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 path,
                 RuntimeOwnershipRejection::UnresolvedType,
             )),
-            TypeKind::ProjectNominal(nominal) => {
+            TypeKind::ProjectNominal(_) => {
                 let Some((analysis, _, _)) = self.authority() else {
                     return Err(RuntimeOwnershipError::rejected(
                         path,
                         RuntimeOwnershipRejection::MissingCanonicalIdentity,
                     ));
                 };
-                let semantic_type =
-                    TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
+                let semantic_type = Self::semantic_type_identity(ty, path)?;
                 analysis
                     .runtime_nominal_projection(semantic_type)
                     .map(|projection| projection.semantic_identity())
@@ -879,12 +901,12 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                             RuntimeOwnershipRejection::MissingCanonicalIdentity,
                         )
                     })?;
-                Ok(runtime_semantic_identity(ty))
+                Self::semantic_type_identity(ty, path).map(Into::into)
             }
             TypeKind::Need(payload) => self
                 .exact_runtime_type_identity(payload, path)
-                .map(|_| runtime_semantic_identity(ty)),
-            _ => Ok(runtime_semantic_identity(ty)),
+                .and_then(|_| Self::semantic_type_identity(ty, path).map(Into::into)),
+            _ => Self::semantic_type_identity(ty, path).map(Into::into),
         }
     }
 
@@ -1166,7 +1188,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 let payload_identity = self.exact_runtime_type_identity(payload, path)?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Need(RuntimeNeedOwnershipCertificate {
-                        need_identity: runtime_semantic_identity(ty),
+                        need_identity: Self::semantic_type_identity(ty, path)?.into(),
                         payload_identity,
                     }),
                 ))
@@ -1240,7 +1262,15 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             TypeKind::DialogueLine(_) => {
                 rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
             }
-            TypeKind::ViewValue => rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner),
+            TypeKind::ViewValue
+            | TypeKind::CompileTimeCallable(_)
+            | TypeKind::CompileTimeScalar(_)
+            | TypeKind::CompileTimeEnum(_)
+            | TypeKind::CompileTimeFx(_)
+            | TypeKind::FixedVector(_)
+            | TypeKind::MetaType(_) => {
+                rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
+            }
             TypeKind::CharacterNominal(nominal) => Self::classify_character_nominal(nominal, path),
             TypeKind::Named(_) => self.classify_environment_runtime_nominal(ty, path, traversal),
             TypeKind::Tuple(items) => {
@@ -1258,15 +1288,14 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 checked(RuntimeCheckedType::Tuple(checked_items))
             }
             TypeKind::VariantPayload(payload) => match payload.shape() {
-                VariantPayloadShape::Unit => rejected(RuntimeOwnershipRejection::UnresolvedType),
-                VariantPayloadShape::Tuple(fields) => {
+                VariantPayloadTypeShape::Tuple(fields) => {
                     let mut checked_fields = Vec::with_capacity(fields.len());
-                    for field in fields {
+                    for (index, field) in fields.iter().enumerate() {
+                        let ordinal =
+                            u32::try_from(index).map_err(|_| RuntimeOwnershipError::WorkLimit)?;
                         let admission = self.classify_at(
-                            field.ty(),
-                            &path.pushed(RuntimeOwnershipPathSegment::VariantPayloadField(
-                                field.ordinal(),
-                            )),
+                            field,
+                            &path.pushed(RuntimeOwnershipPathSegment::VariantPayloadField(ordinal)),
                             OwnershipTraversal::child_depth(depth)?,
                             traversal,
                         )?;
@@ -1274,7 +1303,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     }
                     checked(RuntimeCheckedType::Tuple(checked_fields))
                 }
-                VariantPayloadShape::Record(fields) => {
+                VariantPayloadTypeShape::Record(fields) => {
                     let mut checked_fields = Vec::with_capacity(fields.len());
                     for field in fields {
                         let field_path = path.pushed(
@@ -1376,7 +1405,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
             RuntimeOwnershipProjection::Text {
                 checked: RuntimeCheckedType::String,
-                semantic_identity: runtime_semantic_identity(ty),
+                semantic_identity: Self::semantic_type_identity(ty, path)?.into(),
             },
         ))
     }
@@ -1398,11 +1427,11 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
             ));
         };
-        let identity = runtime_semantic_identity(&TypeKind::ProjectNominal(nominal.clone()));
+        let semantic_type =
+            Self::semantic_type_identity(&TypeKind::ProjectNominal(nominal.clone()), path)?;
+        let identity = semantic_type.into();
         traversal.enter_nominal(identity, path)?;
         let result = (|| {
-            let semantic_type =
-                TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
             let projected = analysis
                 .runtime_nominal_projection(semantic_type)
                 .ok_or_else(|| {
@@ -1486,10 +1515,9 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     }
                 }
             };
-            let checked_type = TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest();
             traversal.push_evidence(OwnershipEvidenceRow::ProjectNominal {
                 semantic_identity: *identity.as_bytes(),
-                checked_type: *checked_type.as_bytes(),
+                checked_type: *semantic_type.as_bytes(),
                 declaration_shape: *projected.layout().as_bytes(),
             })?;
             Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
@@ -1548,8 +1576,8 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
             ));
         };
-        let semantic_identity =
-            runtime_semantic_identity(&TypeKind::AcceptedNominal(nominal.clone()));
+        let semantic_identity: RuntimeSemanticTypeId =
+            Self::semantic_type_identity(&TypeKind::AcceptedNominal(nominal.clone()), path)?.into();
         if !matches!(carrier.value_class(), RuntimeOpaqueValueClass::Plain) {
             return Err(RuntimeOwnershipError::rejected(
                 path,
@@ -1586,11 +1614,12 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
             ));
         };
-        let semantic_identity = runtime_semantic_identity(ty);
+        let semantic_type = Self::semantic_type_identity(ty, path)?;
+        let semantic_identity: RuntimeSemanticTypeId = semantic_type.into();
         let carrier = world
             .environment()
             .nominal_catalog()
-            .environment_record_for_semantic_type(ty.semantic_identity_digest())
+            .environment_record_for_semantic_type(semantic_type)
             .and_then(|record| record.runtime_carrier())
             .ok_or_else(|| {
                 RuntimeOwnershipError::rejected(
@@ -1936,10 +1965,6 @@ fn validate_variant_cases(
     Ok(())
 }
 
-fn runtime_semantic_identity(ty: &TypeKind) -> RuntimeSemanticTypeId {
-    RuntimeSemanticTypeId::from_bytes(*ty.semantic_identity_digest().as_bytes())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1974,6 +1999,31 @@ mod tests {
                 .validate_live_value(&RuntimeValue::UInt(RuntimeUInt::U8(1)))
                 .is_ok()
         );
+    }
+
+    #[test]
+    fn compile_time_types_are_rejected_at_runtime_ownership_boundary() {
+        let classifier = RuntimeProducerArgumentClassifier::for_test();
+        let types = [
+            TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::View(
+                crate::types::ViewCallableId::Text,
+            )),
+            TypeKind::CompileTimeCallable(crate::types::CompileTimeCallableType::Style(
+                crate::types::StyleCallableId::Rgba,
+            )),
+            TypeKind::MetaType(Box::new(TypeKind::I32)),
+        ];
+
+        for ty in types {
+            let error = classifier
+                .classify(&ty)
+                .expect_err("compile-time semantic type must not become a runtime carrier");
+            assert_eq!(
+                error.rejection(),
+                Some(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
+            );
+            assert!(error.path().segments().is_empty());
+        }
     }
 
     #[test]
@@ -2074,6 +2124,27 @@ mod tests {
     }
 
     #[test]
+    fn need_identity_rejects_a_payload_with_an_escaped_binder() {
+        let scope = crate::types::GenericScope::default()
+            .with_binder(crate::types::GenericBinder::new(1, 0, 0));
+        let escaped = scope.bound_type(0, 0).expect("type slot");
+        let payload = TypeKind::Stream {
+            item: Box::new(TypeKind::GenericParam(escaped)),
+            error: Box::new(TypeKind::Unit),
+        };
+        let error = RuntimeProducerArgumentClassifier::for_test()
+            .classify(&TypeKind::Need(Box::new(payload)))
+            .expect_err("a persistent Need identity requires its complete type scope");
+        assert_eq!(
+            error,
+            RuntimeOwnershipError::GenericScope {
+                path: RuntimeOwnershipPath::root(),
+                source: GenericScopeError::UnknownDepth { depth: 0 },
+            }
+        );
+    }
+
+    #[test]
     fn need_uses_payload_identity_without_recursing_payload_retainability() {
         let payload = TypeKind::Stream {
             item: Box::new(TypeKind::I32),
@@ -2087,11 +2158,17 @@ mod tests {
         };
         assert_eq!(
             certificate.payload_identity(),
-            runtime_semantic_identity(&payload)
+            RuntimeSemanticTypeId::from(
+                payload.semantic_identity_digest().expect("closed payload")
+            )
         );
         assert_eq!(
             certificate.need_identity(),
-            runtime_semantic_identity(&TypeKind::Need(Box::new(payload)))
+            RuntimeSemanticTypeId::from(
+                TypeKind::Need(Box::new(payload))
+                    .semantic_identity_digest()
+                    .expect("closed Need type")
+            )
         );
         assert_eq!(
             admission
@@ -2178,6 +2255,7 @@ mod tests {
         );
         rejected(
             TypeKind::Function {
+                binder: crate::types::GenericBinder::EMPTY,
                 params: vec![TypeKind::I32],
                 return_type: Box::new(TypeKind::Unit),
                 effects: EffectRow::closed(crate::effects::EffectSet::new()),

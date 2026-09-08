@@ -16,6 +16,7 @@ use crate::awbc::schema::{
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles};
 use crate::pattern::RuntimeOpaqueTypeAdmission;
+use crate::value::RuntimeDialogueOpaqueRole;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -874,7 +875,7 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
             AwbcPattern::Literal(constant) => {
                 check_index(program.constants.len(), constant.0, "constants", &at)?;
             }
-            AwbcPattern::Entity(_) => {}
+            AwbcPattern::Entity(_) | AwbcPattern::Discard => {}
             AwbcPattern::Tuple(items) | AwbcPattern::Sequence { items, .. } => {
                 for child in items {
                     check_index(program.patterns.len(), child.0, "patterns", &at)?;
@@ -910,7 +911,6 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
             AwbcPattern::Whole { inner, .. } => {
                 check_index(program.patterns.len(), inner.0, "patterns", &at)?;
             }
-            AwbcPattern::Discard => {}
         }
     }
     let mut state = vec![0_u8; program.patterns.len()];
@@ -1524,9 +1524,111 @@ fn verify_audio_command_refs(
 
 fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
     let program = verifier.program;
+    for (index, template) in program.content_templates.iter().enumerate() {
+        let at = format!("content template {index}");
+        let expected = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(index)
+            .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "dialogue content template table exceeds the template identity domain"
+                    .to_owned(),
+            })?;
+        if template.id != expected {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "dialogue content template IDs are not canonical and contiguous"
+                    .to_owned(),
+            });
+        }
+        for (slot_index, slot) in template.slots.iter().enumerate() {
+            let expected =
+                crate::runtime_id::RuntimeDialogueValueSlotId::from_zero_based(slot_index)
+                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message:
+                            "dialogue content template slot count exceeds the slot identity domain"
+                                .to_owned(),
+                    })?;
+            if slot.slot != expected {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "dialogue content template slots are not canonical and contiguous"
+                        .to_owned(),
+                });
+            }
+            check_index(
+                program.runtime_types.len(),
+                slot.semantic_type.0,
+                "runtime_types",
+                &at,
+            )?;
+            match slot.role {
+                crate::awbc::schema::AwbcDialogueValueRole::Interpolation => {
+                    if !is_inline_text_runtime_type(program, slot.semantic_type) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "dialogue interpolation slot type is outside the closed inline-text algebra"
+                                .to_owned(),
+                        });
+                    }
+                }
+                crate::awbc::schema::AwbcDialogueValueRole::Content => {
+                    if !is_exact_dialogue_content_type(program, slot.semantic_type) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message:
+                                "dialogue content slot type is not the exact Content opaque owner"
+                                    .to_owned(),
+                        });
+                    }
+                }
+            }
+        }
+        for (effect_index, effect) in template.effects.iter().enumerate() {
+            let expected =
+                crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(effect_index)
+                    .ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message:
+                            "dialogue content effect count exceeds the effect-site identity domain"
+                                .to_owned(),
+                    })?;
+            if effect.site != expected {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "dialogue content effect sites are not canonical and contiguous"
+                        .to_owned(),
+                });
+            }
+            for capture_type in &effect.capture_types {
+                check_index(
+                    program.runtime_types.len(),
+                    capture_type.0,
+                    "runtime_types",
+                    &at,
+                )?;
+            }
+        }
+    }
     for (index, content) in program.content_units.iter().enumerate() {
         let at = format!("content unit {index}");
         check_string(program, content.public_id, &at)?;
+        let Some(template) = program
+            .content_templates
+            .iter()
+            .find(|template| template.id == content.template)
+        else {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "content unit references a missing immutable content template".to_owned(),
+            });
+        };
+        if usize::try_from(content.effect_site_count).ok() != Some(template.effects.len()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: at.clone(),
+                message: "content unit effect-site count disagrees with its template manifest"
+                    .to_owned(),
+            });
+        }
         let mut marks = BTreeSet::new();
         for mark in &content.marks {
             check_string(program, mark.label, &at)?;
@@ -1828,6 +1930,43 @@ fn verify_content_and_line_tables(verifier: &Verifier<'_, '_>) -> Result<(), Awb
         }
     }
     Ok(())
+}
+
+fn runtime_shape(program: &AwbcProgram, ty: AwbcTypeId) -> Option<&AwbcRuntimeTypeShape> {
+    program
+        .runtime_types
+        .get(ty.index())
+        .map(AwbcRuntimeType::shape)
+}
+
+fn is_inline_text_runtime_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
+    matches!(
+        runtime_shape(program, ty),
+        Some(
+            AwbcRuntimeTypeShape::Bool
+                | AwbcRuntimeTypeShape::Int(_)
+                | AwbcRuntimeTypeShape::UInt(_)
+                | AwbcRuntimeTypeShape::F32
+                | AwbcRuntimeTypeShape::F64
+                | AwbcRuntimeTypeShape::String
+                | AwbcRuntimeTypeShape::Char
+                | AwbcRuntimeTypeShape::Duration
+                | AwbcRuntimeTypeShape::EntityRef
+                | AwbcRuntimeTypeShape::Progress
+        )
+    )
+}
+
+fn is_exact_dialogue_content_type(program: &AwbcProgram, ty: AwbcTypeId) -> bool {
+    let Some(AwbcRuntimeTypeShape::Opaque { arguments, .. }) = runtime_shape(program, ty) else {
+        return false;
+    };
+    arguments.is_empty()
+        && program
+            .opaque_owner(ty)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| RuntimeDialogueOpaqueRole::Content.accepts_exact_owner(&owner))
 }
 
 fn verify_stream_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {

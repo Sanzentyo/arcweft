@@ -118,6 +118,15 @@ pub enum SyntaxRole {
     GenericParameter(u16),
     ParameterGroup,
     Parameter(u16),
+    AttachedContentParameter,
+    AttachedContentOpen,
+    AttachedContentBinding,
+    AttachedContentQuestion,
+    AttachedContentColon,
+    AttachedContentRole,
+    AttachedContentEquals,
+    AttachedContentDefault,
+    AttachedContentClose,
     ExtensionReceiver,
     ParameterPattern,
     ParameterType,
@@ -144,7 +153,7 @@ pub enum SyntaxRole {
     Callee,
     Argument(u16),
     DialogueNode(u32),
-    RichTextTag(u32),
+    DialoguePointAction(u32),
     Payload,
     Key,
     Equals,
@@ -203,6 +212,15 @@ pub enum SyntaxRoleClass {
     GenericParameter,
     ParameterGroup,
     Parameter,
+    AttachedContentParameter,
+    AttachedContentOpen,
+    AttachedContentBinding,
+    AttachedContentQuestion,
+    AttachedContentColon,
+    AttachedContentRole,
+    AttachedContentEquals,
+    AttachedContentDefault,
+    AttachedContentClose,
     ExtensionReceiver,
     ParameterPattern,
     ParameterType,
@@ -229,7 +247,7 @@ pub enum SyntaxRoleClass {
     Callee,
     Argument,
     DialogueNode,
-    RichTextTag,
+    DialoguePointAction,
     Payload,
     Key,
     Equals,
@@ -283,6 +301,15 @@ impl SyntaxRole {
             Self::GenericParameter(_) => SyntaxRoleClass::GenericParameter,
             Self::ParameterGroup => SyntaxRoleClass::ParameterGroup,
             Self::Parameter(_) => SyntaxRoleClass::Parameter,
+            Self::AttachedContentParameter => SyntaxRoleClass::AttachedContentParameter,
+            Self::AttachedContentOpen => SyntaxRoleClass::AttachedContentOpen,
+            Self::AttachedContentBinding => SyntaxRoleClass::AttachedContentBinding,
+            Self::AttachedContentQuestion => SyntaxRoleClass::AttachedContentQuestion,
+            Self::AttachedContentColon => SyntaxRoleClass::AttachedContentColon,
+            Self::AttachedContentRole => SyntaxRoleClass::AttachedContentRole,
+            Self::AttachedContentEquals => SyntaxRoleClass::AttachedContentEquals,
+            Self::AttachedContentDefault => SyntaxRoleClass::AttachedContentDefault,
+            Self::AttachedContentClose => SyntaxRoleClass::AttachedContentClose,
             Self::ExtensionReceiver => SyntaxRoleClass::ExtensionReceiver,
             Self::ParameterPattern => SyntaxRoleClass::ParameterPattern,
             Self::ParameterType => SyntaxRoleClass::ParameterType,
@@ -309,7 +336,7 @@ impl SyntaxRole {
             Self::Callee => SyntaxRoleClass::Callee,
             Self::Argument(_) => SyntaxRoleClass::Argument,
             Self::DialogueNode(_) => SyntaxRoleClass::DialogueNode,
-            Self::RichTextTag(_) => SyntaxRoleClass::RichTextTag,
+            Self::DialoguePointAction(_) => SyntaxRoleClass::DialoguePointAction,
             Self::Payload => SyntaxRoleClass::Payload,
             Self::Key => SyntaxRoleClass::Key,
             Self::Equals => SyntaxRoleClass::Equals,
@@ -381,7 +408,7 @@ impl SyntaxRole {
             | Self::Branch(ordinal)
             | Self::TrailingRecovery(ordinal)
             | Self::DialogueNode(ordinal)
-            | Self::RichTextTag(ordinal)
+            | Self::DialoguePointAction(ordinal)
             | Self::MatchArm(ordinal)
             | Self::Element(ordinal)
             | Self::Recovery(ordinal) => Some(ordinal),
@@ -394,6 +421,15 @@ impl SyntaxRole {
             | Self::Name
             | Self::GenericGroup
             | Self::ParameterGroup
+            | Self::AttachedContentParameter
+            | Self::AttachedContentOpen
+            | Self::AttachedContentBinding
+            | Self::AttachedContentQuestion
+            | Self::AttachedContentColon
+            | Self::AttachedContentRole
+            | Self::AttachedContentEquals
+            | Self::AttachedContentDefault
+            | Self::AttachedContentClose
             | Self::ExtensionReceiver
             | Self::ParameterPattern
             | Self::ParameterType

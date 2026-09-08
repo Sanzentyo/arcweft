@@ -88,16 +88,43 @@ pub struct HirCallTypeArgumentOrdinalError {
     limit: usize,
 }
 
-/// One ordinary, unresolved-dot, or explicit-associated Call.
+/// One ordinary, unresolved-dot, or explicit-associated call invocation.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirCallExpr {
+pub struct HirCallInvocation {
     callee: HirCallCallee,
     explicit_type_application: HirCallTypeApplication,
     arguments: Box<[HirCallArgument]>,
     terminator: HirCallArgumentListTerminator,
+    form: HirCallInvocationForm,
 }
 
-impl HirCallExpr {
+/// Source form retained by an invocation embedded in an attached-content
+/// application. A bare value (`#name`) is not an ordinary zero-argument call
+/// (`#name()`), so the distinction remains in HIR rather than being inferred
+/// from an empty argument list later.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirCallInvocationForm {
+    Value,
+    Parenthesized,
+}
+
+/// Non-ID invocation payload shared by ordinary Calls and attached content
+/// calls. The alias keeps one canonical call schema while allowing the owning
+/// expression family to retain an invocation without publishing a nested
+/// `HirExprKind::Call` owner.
+impl HirCallInvocation {
+    /// Builds an empty value invocation for an attached content call whose
+    /// target is not authored as a separate ordinary-call expression.
+    pub(crate) fn bare_value(value: ExprId) -> Self {
+        Self {
+            callee: HirCallCallee::value(value),
+            explicit_type_application: HirCallTypeApplication::Absent,
+            arguments: Box::new([]),
+            terminator: HirCallArgumentListTerminator::Closed,
+            form: HirCallInvocationForm::Value,
+        }
+    }
+
     pub(crate) fn try_new(
         callee: HirCallCallee,
         explicit_type_application: HirCallTypeApplication,
@@ -144,6 +171,7 @@ impl HirCallExpr {
             explicit_type_application,
             arguments,
             terminator,
+            form: HirCallInvocationForm::Parenthesized,
         };
         let state = call
             .primary_issue(child_states)
@@ -167,6 +195,10 @@ impl HirCallExpr {
 
     pub const fn terminator(&self) -> HirCallArgumentListTerminator {
         self.terminator
+    }
+
+    pub const fn form(&self) -> HirCallInvocationForm {
+        self.form
     }
 
     pub(crate) fn issues(&self, child_states: HirCallChildStates<'_>) -> Box<[HirCallIssue]> {
@@ -251,7 +283,7 @@ impl HirCallExpr {
             })
     }
 
-    pub(super) fn contains_recovery_payload(&self) -> bool {
+    pub(crate) fn contains_recovery_payload(&self) -> bool {
         let associated_recovery =
             self.callee
                 .associated_parts()
@@ -310,7 +342,7 @@ impl HirCallExpr {
             || self.has_duplicate_named_arguments()
     }
 
-    pub(super) fn validate_module(
+    pub(crate) fn validate_module(
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirExprInvariantError> {

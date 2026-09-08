@@ -1,7 +1,11 @@
 use crate::{
     config::{AgentControllerRunConfig, AgentRunnerConfig},
     effect_policy::AgentEffectPolicyError,
-    error::{AgentHostResponseKind, AgentRunError},
+    error::{
+        AgentHostRequestAdmissionErrorKind, AgentHostResponseAdmissionError,
+        AgentHostResponseAdmissionErrorKind, AgentHostResponseKind, AgentRunError,
+        AgentRuntimeValueSerializationErrorKind,
+    },
     host_request::{agent_host_request_from_call, agent_host_request_from_task},
     label_parse::parse_capture_format,
     policy::{RuntimeAgentCapability, RuntimeAgentPolicy},
@@ -11,8 +15,10 @@ use crate::{
         runtime_project_graph_symbol_payload, runtime_rag_context_payload,
         runtime_resource_payload,
     },
-    runtime_value::{runtime_field, runtime_predicate},
-    session::{AgentSession, NoopRagService, ReplayAgentSession, ReplayAgentSessionError},
+    runtime_value::{runtime_field, runtime_predicate, runtime_value_to_json},
+    session::{
+        AgentSession, DisabledRagService, RagService, ReplayAgentSession, ReplayAgentSessionError,
+    },
 };
 use arcweft_agent_protocol::protocol::ActionResult;
 use arcweft_agent_protocol::{
@@ -32,7 +38,7 @@ use arcweft_agent_protocol::{
         AgentHostResponse, AgentProjectFlowControlSummary, AgentProjectGraph,
         AgentProjectGraphEdge, AgentProjectGraphSummary, AgentProjectGraphSymbol, AgentSessionInfo,
         CaptureFormat, CaptureRequest, CaptureResult, CaptureTarget, ObservationEnvelope,
-        ObserveRequest, PointerButton, WaitRequest,
+        ObserveRequest, PointerButton, RagRequest, WaitRequest,
     },
     resource::{AgentResource, AgentResourceBody, AgentResourceKind},
     trace::{AgentTraceKind, AgentTraceRecord},
@@ -53,7 +59,10 @@ use arcweft_core::{
         RuntimeAgentEntryRoles, RuntimeCallableId, RuntimeCallableRole, RuntimeEntryRoles,
         RuntimeFlowExecutable, RuntimeFlowSchema,
     },
-    pattern::{RuntimeCheckedType, RuntimeSemanticTypeId},
+    pattern::{
+        RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeCheckedType,
+        RuntimeCheckedVariantCase, RuntimeSemanticTypeId, RuntimeVariantIdentity,
+    },
     plan::{
         EntryRuntimeId, FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
         RuntimeAwaitTargetSeed, RuntimeCallableExecutableSeed, RuntimeCallableExecutableSeedCode,
@@ -67,8 +76,9 @@ use arcweft_core::{
     task::{HostCapabilityId, HostTaskRequest, NeedId, TaskId, TaskOutcomeContract},
     time::LogicalDuration,
     value::{
-        RuntimeAgentCompareOp, RuntimeAgentField, RuntimeAgentPath, RuntimeAgentPredicate,
-        RuntimeAgentProbe, RuntimeAgentValue, RuntimeFieldValue, RuntimePayload, RuntimeValue,
+        DenseSeq, DenseSeqStorage, RuntimeAgentCompareOp, RuntimeAgentField, RuntimeAgentPath,
+        RuntimeAgentPredicate, RuntimeAgentProbe, RuntimeAgentValue, RuntimeFieldValue,
+        RuntimePayload, RuntimeSeq, RuntimeValue,
     },
 };
 use arcweft_debug_model::{
@@ -94,9 +104,85 @@ fn runtime_record_get<'a>(
 
 fn runtime_record_string(fields: &[RuntimeFieldValue], name: &str) -> Result<String, String> {
     match runtime_record_get(fields, name)? {
-        RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Ok(value.clone()),
+        RuntimeValue::String(value) => Ok(value.clone()),
+        RuntimeValue::EntityRef(value) => Ok(value.runtime_label()),
         value => Err(format!("record field `{name}` is not text: {value:?}")),
     }
+}
+
+fn runtime_option_some(value: &RuntimeValue) -> Option<&RuntimeValue> {
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionSome, Some(payload))) => Some(payload),
+        _ => None,
+    }
+}
+
+fn runtime_option_is_none(value: &RuntimeValue) -> bool {
+    matches!(
+        value.builtin_variant_case(),
+        Some((RuntimeBuiltinVariantCaseIdentity::OptionNone, None))
+    )
+}
+
+fn controller_resource_body_checked_type() -> RuntimeCheckedType {
+    let owner = RuntimeBuiltinVariantIdentity::AgentResourceBody;
+    let payloads = [
+        Some(RuntimeCheckedType::AgentValue),
+        Some(RuntimeCheckedType::String),
+        Some(RuntimeCheckedType::Agent(
+            RuntimeAgentOperationalType::BinaryResourceBody,
+        )),
+    ];
+    RuntimeCheckedType::Variant {
+        owner: RuntimeVariantIdentity::Builtin(owner),
+        arguments: Vec::new(),
+        cases: owner
+            .cases()
+            .iter()
+            .zip(payloads)
+            .map(|(schema, payload)| RuntimeCheckedVariantCase {
+                name: schema.name().to_owned(),
+                payload: payload.map(Box::new),
+            })
+            .collect(),
+    }
+}
+
+fn observed_object_payload_fixture(
+    id: &str,
+    parent_id: Option<&str>,
+    entity: Option<&str>,
+    text: Option<&str>,
+) -> serde_json::Value {
+    let mut object = serde_json::json!({
+        "id": id,
+        "layer": "dialogue.rich_text",
+        "role": "dialogue_view",
+        "visible": true,
+        "enabled": true,
+        "bbox": {
+            "space": "viewport",
+            "x": 24,
+            "y": 384,
+            "width": 752,
+            "height": 168
+        },
+        "polygon": [],
+        "capture_refs": {
+            "object_id_color": { "red": 0, "green": 0, "blue": 0, "alpha": 0 },
+            "captures": []
+        },
+        "content": { "kind": "custom", "object_type": "fixture" }
+    });
+    let fields = object
+        .as_object_mut()
+        .expect("observed object fixture is an object");
+    for (name, value) in [("parent_id", parent_id), ("entity", entity), ("text", text)] {
+        if let Some(value) = value {
+            fields.insert(name.to_owned(), serde_json::Value::String(value.to_owned()));
+        }
+    }
+    object
 }
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
@@ -132,12 +218,14 @@ const RESOURCE_RESULT_TY: u8 = 16;
 const ENTITY_METADATA_RESULT_TY: u8 = 17;
 const PROJECT_NEIGHBORHOOD_RESULT_TY: u8 = 18;
 const OBSERVATION_RESULT_TY: u8 = 19;
-const CAPTURE_REFERENCE_PAYLOAD_TY: u8 = 20;
-const RESOURCE_PAYLOAD_TY: u8 = 21;
-const ENTITY_METADATA_PAYLOAD_TY: u8 = 22;
-const PROJECT_NEIGHBORHOOD_PAYLOAD_TY: u8 = 23;
-const OBSERVATION_PAYLOAD_TY: u8 = 24;
-const STRING_PAYLOAD_TY: u8 = 25;
+const AGENT_VALUE_TY: u8 = 20;
+const BINARY_BODY_TY: u8 = 21;
+const CAPTURE_REFERENCE_PAYLOAD_TY: u8 = 22;
+const RESOURCE_PAYLOAD_TY: u8 = 23;
+const ENTITY_METADATA_PAYLOAD_TY: u8 = 24;
+const PROJECT_NEIGHBORHOOD_PAYLOAD_TY: u8 = 25;
+const OBSERVATION_PAYLOAD_TY: u8 = 26;
+const STRING_PAYLOAD_TY: u8 = 27;
 
 fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
     controller_checked_type(marker).semantic_identity_digest()
@@ -154,7 +242,7 @@ fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
         CAPTURE_TARGET_TY => agent(RuntimeAgentOperationalType::CaptureTarget),
         CAPTURE_REFERENCE_TY => agent(RuntimeAgentOperationalType::CaptureReference),
         RESOURCE_TY => agent(RuntimeAgentOperationalType::Resource),
-        RESOURCE_BODY_TY => agent(RuntimeAgentOperationalType::ResourceBody),
+        RESOURCE_BODY_TY => controller_resource_body_checked_type(),
         ENTITY_METADATA_TY => agent(RuntimeAgentOperationalType::EntityMetadata),
         PROJECT_NEIGHBORHOOD_TY => agent(RuntimeAgentOperationalType::ProjectGraphNeighborhood),
         OBSERVATION_TY => agent(RuntimeAgentOperationalType::Observation),
@@ -180,6 +268,8 @@ fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
             ok: Box::new(controller_checked_type(OBSERVATION_TY)),
             error: Box::new(RuntimeCheckedType::String),
         },
+        AGENT_VALUE_TY => RuntimeCheckedType::AgentValue,
+        BINARY_BODY_TY => agent(RuntimeAgentOperationalType::BinaryResourceBody),
         CAPTURE_REFERENCE_PAYLOAD_TY => {
             RuntimeCheckedType::Tuple(vec![controller_checked_type(CAPTURE_REFERENCE_TY)])
         }
@@ -204,7 +294,7 @@ fn controller_expr(ty: u8, kind: RuntimeExprSeedKind) -> RuntimeExprSeed {
     RuntimeExprSeed::new(controller_type(ty), kind)
 }
 
-fn controller_agent_types() -> [RuntimePlanTypeSeed; 25] {
+fn controller_agent_types() -> [RuntimePlanTypeSeed; 27] {
     [
         RuntimePlanTypeSeed::new(
             controller_type(STRING_TY),
@@ -237,7 +327,15 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 25] {
         ),
         RuntimePlanTypeSeed::new(
             controller_type(RESOURCE_BODY_TY),
-            RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::ResourceBody),
+            RuntimePlanTypeProjection::BuiltinVariant {
+                owner: RuntimeBuiltinVariantIdentity::AgentResourceBody,
+                cases: vec![
+                    Some(controller_type(AGENT_VALUE_TY)),
+                    Some(controller_type(STRING_TY)),
+                    Some(controller_type(BINARY_BODY_TY)),
+                ]
+                .into_boxed_slice(),
+            },
         ),
         RuntimePlanTypeSeed::new(
             controller_type(ENTITY_METADATA_TY),
@@ -337,6 +435,14 @@ fn controller_agent_types() -> [RuntimePlanTypeSeed; 25] {
                 value_payload: controller_type(OBSERVATION_PAYLOAD_TY),
                 error_payload: controller_type(STRING_PAYLOAD_TY),
             },
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(AGENT_VALUE_TY),
+            RuntimePlanTypeProjection::AgentValue,
+        ),
+        RuntimePlanTypeSeed::new(
+            controller_type(BINARY_BODY_TY),
+            RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::BinaryResourceBody),
         ),
     ]
 }
@@ -726,7 +832,7 @@ fn observation(tick: u64, ready: bool) -> ObservationEnvelope {
         render_hash: format!("render.{tick}"),
         actions: Vec::new(),
         signals: BTreeMap::from([("signal.ready".to_owned(), AgentValue::Bool(ready))]),
-        payload: serde_json::json!({}),
+        payload: serde_json::json!({"objects": []}),
     }
 }
 
@@ -761,7 +867,7 @@ fn observation_with_signal(
         render_hash: format!("render.{tick}"),
         actions: Vec::new(),
         signals: BTreeMap::from([(signal.to_owned(), value)]),
-        payload: serde_json::json!({}),
+        payload: serde_json::json!({"objects": []}),
     }
 }
 
@@ -783,7 +889,7 @@ fn observation_with_action_target(
             enabled,
         }],
         signals: BTreeMap::new(),
-        payload: serde_json::json!({}),
+        payload: serde_json::json!({"objects": []}),
     }
 }
 
@@ -1196,23 +1302,13 @@ fn read_resource_binding_program() -> AwbcProgram {
                     observers: Vec::new(),
                 },
                 RuntimeFlowOpSeed::ReturnExpr(controller_expr(
-                    STRING_TY,
+                    RESOURCE_BODY_TY,
                     RuntimeExprSeedKind::Field {
                         target: Box::new(controller_expr(
-                            RESOURCE_BODY_TY,
-                            RuntimeExprSeedKind::Field {
-                                target: Box::new(controller_expr(
-                                    RESOURCE_TY,
-                                    RuntimeExprSeedKind::Local(resource),
-                                )),
-                                field: RuntimeFieldProjectionSeed::Agent(
-                                    RuntimeAgentField::ResourceBody,
-                                ),
-                            },
+                            RESOURCE_TY,
+                            RuntimeExprSeedKind::Local(resource),
                         )),
-                        field: RuntimeFieldProjectionSeed::Agent(
-                            RuntimeAgentField::ResourceBodyJson,
-                        ),
+                        field: RuntimeFieldProjectionSeed::Agent(RuntimeAgentField::ResourceBody),
                     },
                 )),
             ],
@@ -1449,7 +1545,7 @@ fn wait_requires_stable_predicate_matches() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1487,7 +1583,7 @@ fn wait_matches_entity_probe_against_string_observation_id() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1526,7 +1622,7 @@ fn wait_matches_enabled_action_target_predicate() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1618,6 +1714,70 @@ fn effect_form_observe_defaults_to_object_payloads() {
 }
 
 #[test]
+fn checkpoint_requires_an_explicit_name_on_both_controller_routes() {
+    let effect_error = agent_host_request_from_call(&RuntimeCall {
+        callee: "checkpoint".to_owned(),
+        args: Vec::new(),
+    })
+    .expect_err("effect checkpoint without a name is rejected");
+    assert_eq!(
+        effect_error.kind(),
+        AgentHostRequestAdmissionErrorKind::MissingArgument
+    );
+
+    let task_error = agent_host_request_from_task(&HostTaskRequest::Custom {
+        capability: HostCapabilityId("agent".to_owned()),
+        operation: "checkpoint".to_owned(),
+        args: Vec::new(),
+        named_args: Vec::new(),
+    })
+    .expect_err("task checkpoint without a name is rejected");
+    assert_eq!(
+        task_error.kind(),
+        AgentHostRequestAdmissionErrorKind::MissingArgument
+    );
+}
+
+#[test]
+fn disabled_rag_service_rejects_instead_of_fabricating_an_empty_context() {
+    let error = DisabledRagService
+        .query(RagRequest {
+            query: "why?".to_owned(),
+            roots: Vec::new(),
+            graph_depth: 1,
+            limit: 8,
+        })
+        .expect_err("disabled retrieval is a typed failure");
+
+    assert_eq!(
+        error.to_string(),
+        "Agent RAG retrieval is disabled for this runner"
+    );
+}
+
+#[test]
+fn runtime_value_json_projection_rejects_non_finite_numbers() {
+    let error = runtime_value_to_json(&RuntimeValue::F64(f64::NAN))
+        .expect_err("non-finite JSON numbers are rejected");
+
+    assert_eq!(
+        error.kind(),
+        AgentRuntimeValueSerializationErrorKind::NonFiniteNumber
+    );
+    assert_eq!(error.path(), "$runtime");
+
+    let error = runtime_value_to_json(&RuntimeValue::Seq(RuntimeSeq::Dense(DenseSeq::F64(
+        DenseSeqStorage::new(vec![f64::INFINITY]),
+    ))))
+    .expect_err("nested dense non-finite numbers are rejected before serde can emit null");
+    assert_eq!(
+        error.kind(),
+        AgentRuntimeValueSerializationErrorKind::NonFiniteNumber
+    );
+    assert_eq!(error.path(), "$runtime.values[0]");
+}
+
+#[test]
 fn effect_form_advance_text_call_lowers_to_host_action() {
     let request = agent_host_request_from_call(&RuntimeCall {
         callee: "advance_text".to_owned(),
@@ -1693,7 +1853,7 @@ fn physical_pointer_click_requires_runtime_policy_grant() {
     let mut denied = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Act]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1708,7 +1868,7 @@ fn physical_pointer_click_requires_runtime_policy_grant() {
     let mut granted = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::ActPhysical]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1744,7 +1904,7 @@ fn custom_task_attach_records_runtime_resource_payload() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRecord]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1779,7 +1939,7 @@ fn observation_payload_exposes_action_targets_for_contains_checks() {
             enabled: true,
         }],
         signals: BTreeMap::new(),
-        payload: serde_json::json!({}),
+        payload: serde_json::json!({"objects": []}),
     }));
 
     let RuntimeValue::Record(fields) = runtime_payload_from_response(&response)
@@ -1817,12 +1977,13 @@ fn observation_payload_rejects_invalid_action_target_identity() {
             enabled: true,
         }],
         signals: BTreeMap::new(),
-        payload: serde_json::json!({}),
+        payload: serde_json::json!({"objects": []}),
     }));
 
     assert!(matches!(
         runtime_payload_from_response(&response),
-        Err(message) if message.contains("invalid Agent action identity")
+        Err(AgentHostResponseAdmissionError::InvalidIdentity { path, .. })
+            if path == "observation.actions[0].id"
     ));
 }
 
@@ -1836,25 +1997,12 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
         actions: Vec::new(),
         signals: BTreeMap::new(),
         payload: serde_json::json!({
-            "objects": [
-                {
-                    "id": "object.dialogue.0.0",
-                    "parent_id": "object.dialogue.0",
-                    "entity": "dialogue.main",
-                    "layer": "dialogue.rich_text",
-                    "role": "dialogue_view",
-                    "visible": true,
-                    "enabled": true,
-                    "bbox": {
-                        "space": "viewport",
-                        "x": 24,
-                        "y": 384,
-                        "width": 752,
-                        "height": 168
-                    },
-                    "text": "Hello"
-                }
-            ]
+            "objects": [observed_object_payload_fixture(
+                "object.dialogue.0.0",
+                Some("object.dialogue.0"),
+                Some("dialogue.main"),
+                Some("Hello")
+            )]
         }),
     }));
 
@@ -1883,6 +2031,24 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
         Ok(&RuntimeValue::String("dialogue_view".to_owned()))
     );
     assert_eq!(
+        runtime_record_get(&object_fields, "parent_id")
+            .ok()
+            .and_then(runtime_option_some),
+        Some(&RuntimeValue::String("object.dialogue.0".to_owned()))
+    );
+    assert_eq!(
+        runtime_record_get(&object_fields, "entity")
+            .ok()
+            .and_then(runtime_option_some),
+        Some(&RuntimeValue::String("dialogue.main".to_owned()))
+    );
+    assert_eq!(
+        runtime_record_get(&object_fields, "text")
+            .ok()
+            .and_then(runtime_option_some),
+        Some(&RuntimeValue::String("Hello".to_owned()))
+    );
+    assert_eq!(
         runtime_record_get(bbox_fields, "width"),
         Ok(&RuntimeValue::u32(752))
     );
@@ -1890,6 +2056,54 @@ fn observation_payload_exposes_observed_objects_for_visual_regression_scripts() 
         runtime_record_get(bbox_fields, "height"),
         Ok(&RuntimeValue::u32(168))
     );
+}
+
+#[test]
+fn observed_object_options_distinguish_absent_from_explicit_empty() {
+    let response = AgentHostResponse::Observation(Box::new(ObservationEnvelope {
+        tick: 9,
+        frame_id: "frame.9".to_owned(),
+        state_hash: "state.9".to_owned(),
+        render_hash: "render.9".to_owned(),
+        actions: Vec::new(),
+        signals: BTreeMap::new(),
+        payload: serde_json::json!({
+            "objects": [
+                observed_object_payload_fixture("object.absent", None, None, None),
+                observed_object_payload_fixture("object.empty", Some(""), Some(""), Some(""))
+            ]
+        }),
+    }));
+
+    let RuntimeValue::Record(fields) = runtime_payload_from_response(&response)
+        .expect("observed objects pass typed admission")
+        .0
+    else {
+        panic!("observation payload is a record");
+    };
+    let RuntimeValue::Seq(objects) =
+        runtime_record_get(&fields, "objects").expect("objects field exists")
+    else {
+        panic!("objects field is a sequence");
+    };
+    let RuntimeValue::Record(absent) = objects.value_at(0) else {
+        panic!("absent fixture is a record");
+    };
+    let RuntimeValue::Record(explicit_empty) = objects.value_at(1) else {
+        panic!("explicit-empty fixture is a record");
+    };
+
+    for field in ["parent_id", "entity", "text"] {
+        assert!(runtime_option_is_none(
+            runtime_record_get(&absent, field).expect("optional field exists")
+        ));
+        assert_eq!(
+            runtime_record_get(&explicit_empty, field)
+                .ok()
+                .and_then(runtime_option_some),
+            Some(&RuntimeValue::String(String::new()))
+        );
+    }
 }
 
 #[test]
@@ -1912,6 +2126,30 @@ fn effect_form_wait_call_lowers_composite_predicate() {
 }
 
 #[test]
+fn effect_form_wait_rejects_empty_composite_predicates() {
+    for predicate in [
+        "any()",
+        "any(,)",
+        "any(exists(signal(@signal.ready)),)",
+        "all()",
+        "all(exists(signal(@signal.ready)),)",
+    ] {
+        let error = agent_host_request_from_call(&RuntimeCall {
+            callee: "wait".to_owned(),
+            args: vec![predicate.to_owned(), "timeout = 1ms".to_owned()],
+        })
+        .expect_err("empty composite predicate arguments are rejected");
+        assert_eq!(
+            error.kind(),
+            AgentHostRequestAdmissionErrorKind::InvalidArguments
+        );
+        assert!(
+            error.to_string().contains("predicate") || error.to_string().contains("empty argument")
+        );
+    }
+}
+
+#[test]
 fn wait_matches_composite_float_predicate() {
     let session = TestSession {
         observations: vec![ObservationEnvelope {
@@ -1924,13 +2162,13 @@ fn wait_matches_composite_float_predicate() {
                 ("signal.ready".to_owned(), AgentValue::Bool(true)),
                 ("metric.fps".to_owned(), AgentValue::F64(60.0)),
             ]),
-            payload: serde_json::json!({}),
+            payload: serde_json::json!({"objects": []}),
         }],
     };
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -1977,6 +2215,7 @@ fn wait_matches_state_and_observation_field_predicates() {
             actions: Vec::new(),
             signals: BTreeMap::new(),
             payload: serde_json::json!({
+                "objects": [],
                 "state": {
                     "route.phase": "opening"
                 }
@@ -1986,7 +2225,7 @@ fn wait_matches_state_and_observation_field_predicates() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2035,6 +2274,7 @@ fn wait_matches_diagnostics_has_error_predicate() {
                 actions: Vec::new(),
                 signals: BTreeMap::new(),
                 payload: serde_json::json!({
+                    "objects": [],
                     "diagnostics": [
                         { "severity": "warning", "message": "not fatal" }
                     ]
@@ -2048,6 +2288,7 @@ fn wait_matches_diagnostics_has_error_predicate() {
                 actions: Vec::new(),
                 signals: BTreeMap::new(),
                 payload: serde_json::json!({
+                    "objects": [],
                     "diagnostics": [
                         { "severity": "error", "message": "render mismatch" }
                     ]
@@ -2058,7 +2299,7 @@ fn wait_matches_diagnostics_has_error_predicate() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2111,7 +2352,7 @@ fn assertion_host_request_records_passed_expect() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2137,7 +2378,7 @@ fn assertion_host_request_fails_deny_with_structured_event() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2169,7 +2410,7 @@ fn capture_requires_policy_capability() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2197,7 +2438,7 @@ fn controller_awbc_dispatches_effect_calls_to_runner_host_boundary() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2236,7 +2477,7 @@ fn controller_awbc_propagates_invalid_host_response_admission() {
             observations: vec![invalid],
         },
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2250,8 +2491,9 @@ fn controller_awbc_propagates_invalid_host_response_admission() {
         runner
             .run_controller_awbc(program, &entry, AgentControllerRunConfig::default())
             .expect_err("invalid host response must abort before runtime resumption"),
-        AgentRunError::InvalidHostResponse(message)
-            if message.contains("invalid Agent action identity")
+        AgentRunError::InvalidHostResponse(error)
+            if error.kind() == AgentHostResponseAdmissionErrorKind::InvalidIdentity
+                && error.path() == "observation.actions[0].id"
     ));
 }
 
@@ -2260,7 +2502,7 @@ fn controller_runtime_assertion_uses_typed_failure_report_not_agent_expect_reque
     let mut runner = AgentRunner::new(
         TestSession::default(),
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2293,7 +2535,7 @@ fn controller_bundle_runs_through_product_awbc_host_boundary() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2319,7 +2561,7 @@ fn assert_agent_artifact_mismatch(bundle: &ArcweftBundle) {
             observations: vec![observation(1, true)],
         },
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2373,7 +2615,7 @@ fn controller_awbc_rejects_explicit_non_agent_entry_before_execution() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2392,7 +2634,7 @@ fn controller_bundle_rejects_strict_project_binding_mismatch_before_execution() 
     let mut runner = AgentRunner::new(
         session,
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2432,7 +2674,7 @@ fn controller_bundle_rejects_compatible_project_entity_mismatch_before_execution
     let mut runner = AgentRunner::new(
         session,
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2472,7 +2714,7 @@ fn controller_bundle_requires_launch_grant_for_verified_effects_before_execution
     let mut runner = AgentRunner::new(
         TestSession::default(),
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2499,7 +2741,7 @@ fn controller_bundle_rejects_host_request_absent_from_verified_effects() {
     let mut runner = AgentRunner::new(
         session,
         RecordingDebugSink::default(),
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::DebugRecord,
@@ -2532,7 +2774,7 @@ fn controller_awbc_resumes_bound_capture_response() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::Capture,
@@ -2565,7 +2807,7 @@ fn controller_awbc_executes_and_resumes_direct_agent_host_call() {
             observations: vec![observation(1, true)],
         },
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::Observe]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2597,7 +2839,7 @@ fn controller_bundle_enforces_agent_manifest_capture_budget() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([
             RuntimeAgentCapability::Observe,
             RuntimeAgentCapability::Capture,
@@ -2624,7 +2866,7 @@ fn controller_awbc_resumes_bound_resource_response_fields() {
     let mut runner = AgentRunner::new(
         TestSession::default(),
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::ResourceRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2642,8 +2884,7 @@ fn controller_awbc_resumes_bound_resource_response_fields() {
     ));
     assert!(matches!(
         report.final_status,
-        Some(FlowFiberStatus::Done(FlowExit::Return(ref value)))
-            if value == "{\"uri\":\"agent://resource/test\"}"
+        Some(FlowFiberStatus::Done(FlowExit::Return(_)))
     ));
 }
 
@@ -2688,7 +2929,7 @@ fn controller_awbc_resumes_bound_entity_metadata_response_fields() {
             project_graph: AgentProjectGraph::default(),
         },
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2725,7 +2966,7 @@ fn controller_awbc_resumes_project_graph_neighborhood_fields() {
             project_graph: project_neighbors_test_graph(),
         },
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::new([RuntimeAgentCapability::DebugRead]),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );
@@ -2763,14 +3004,22 @@ fn controller_awbc_resumes_project_graph_neighborhood_fields() {
     let RuntimeValue::Record(fields) = runtime_project_graph_symbol_payload(flow_symbol) else {
         panic!("symbol payload is a record");
     };
+    let RuntimeValue::Record(flow_control_fields) = runtime_record_get(&fields, "flow_control")
+        .ok()
+        .and_then(runtime_option_some)
+        .expect("flow-control summary is Some(record)")
+    else {
+        panic!("flow-control summary is a record");
+    };
     assert!(matches!(
-        runtime_record_get(&fields, "has_dynamic_control"),
+        runtime_record_get(flow_control_fields, "has_dynamic_control"),
         Ok(RuntimeValue::Bool(true))
     ));
     assert!(matches!(
-        runtime_record_get(&fields, "dynamic_goto_count"),
+        runtime_record_get(flow_control_fields, "dynamic_goto_count"),
         Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
     ));
+    assert!(runtime_record_get(&fields, "has_flow_control").is_err());
     let summary_symbol = match &report.responses[0] {
         AgentHostResponse::ProjectGraphNeighborhood(neighborhood) => neighborhood
             .symbols
@@ -2783,14 +3032,19 @@ fn controller_awbc_resumes_project_graph_neighborhood_fields() {
     else {
         panic!("summary symbol payload is a record");
     };
+    let RuntimeValue::Record(project_summary_fields) =
+        runtime_record_get(&summary_fields, "project_summary")
+            .ok()
+            .and_then(runtime_option_some)
+            .expect("project summary is Some(record)")
+    else {
+        panic!("project summary is a record");
+    };
     assert!(matches!(
-        runtime_record_get(&summary_fields, "has_project_summary"),
-        Ok(RuntimeValue::Bool(true))
-    ));
-    assert!(matches!(
-        runtime_record_get(&summary_fields, "relation_count"),
+        runtime_record_get(project_summary_fields, "relation_count"),
         Ok(RuntimeValue::UInt(arcweft_core::value::RuntimeUInt::U32(1)))
     ));
+    assert!(runtime_record_get(&summary_fields, "has_project_summary").is_err());
     assert!(matches!(
         report.final_status,
         Some(FlowFiberStatus::Done(FlowExit::Return(_)))
@@ -2835,6 +3089,116 @@ fn project_graph_neighborhood_uses_exact_symbol_identity_when_public_labels_matc
 }
 
 #[test]
+fn project_graph_symbol_options_distinguish_absent_from_explicit_empty() {
+    let absent = AgentProjectGraphSymbol {
+        symbol_id: graph_symbol_id("flow:optional-absent"),
+        public_id: None,
+        qualified_name: None,
+        kind: "flow".to_owned(),
+        semantic_hash: None,
+        flow_control: None,
+        project_summary: None,
+        summary: String::new(),
+    };
+    let RuntimeValue::Record(absent_fields) = runtime_project_graph_symbol_payload(&absent) else {
+        panic!("symbol payload is a record");
+    };
+    for field in ["id", "semantic_hash", "flow_control", "project_summary"] {
+        assert!(runtime_option_is_none(
+            runtime_record_get(&absent_fields, field).expect("optional field exists")
+        ));
+    }
+    for removed in [
+        "has_entity",
+        "has_semantic_hash",
+        "has_flow_control",
+        "has_project_summary",
+    ] {
+        assert!(runtime_record_get(&absent_fields, removed).is_err());
+    }
+
+    let explicit_empty = AgentProjectGraphSymbol {
+        semantic_hash: Some(String::new()),
+        ..absent
+    };
+    let RuntimeValue::Record(explicit_fields) =
+        runtime_project_graph_symbol_payload(&explicit_empty)
+    else {
+        panic!("symbol payload is a record");
+    };
+    assert_eq!(
+        runtime_record_get(&explicit_fields, "semantic_hash")
+            .ok()
+            .and_then(runtime_option_some),
+        Some(&RuntimeValue::String(String::new()))
+    );
+}
+
+#[test]
+fn entity_source_and_positions_retain_each_option_boundary() {
+    let entity = RequiredEntity {
+        public_id: PublicId::new("flow.optional-source").expect("valid public id"),
+        kind: "flow".to_owned(),
+        semantic_hash: StableHash::new("hir:flow:optional-source").expect("valid semantic hash"),
+        source_anchor: None,
+    };
+    let RuntimeValue::Record(absent_fields) =
+        runtime_payload_from_response(&AgentHostResponse::EntityMetadata(Box::new(entity.clone())))
+            .expect("entity payload admits")
+            .0
+    else {
+        panic!("entity payload is a record");
+    };
+    assert!(runtime_option_is_none(
+        runtime_record_get(&absent_fields, "source").expect("source field exists")
+    ));
+
+    let with_source = RequiredEntity {
+        source_anchor: Some(RequiredEntitySourceAnchor {
+            path: String::new(),
+            start_byte: 0,
+            end_byte: 0,
+            start: None,
+            end: Some(RequiredEntitySourcePosition { line: 1, column: 1 }),
+        }),
+        ..entity
+    };
+    let RuntimeValue::Record(fields) =
+        runtime_payload_from_response(&AgentHostResponse::EntityMetadata(Box::new(with_source)))
+            .expect("entity payload admits")
+            .0
+    else {
+        panic!("entity payload is a record");
+    };
+    let RuntimeValue::Record(source_fields) = runtime_record_get(&fields, "source")
+        .ok()
+        .and_then(runtime_option_some)
+        .expect("source is Some(record)")
+    else {
+        panic!("source payload is a record");
+    };
+    assert_eq!(
+        runtime_record_get(source_fields, "path"),
+        Ok(&RuntimeValue::String(String::new()))
+    );
+    assert!(runtime_option_is_none(
+        runtime_record_get(source_fields, "start").expect("start exists")
+    ));
+    let RuntimeValue::Record(end_fields) = runtime_record_get(source_fields, "end")
+        .ok()
+        .and_then(runtime_option_some)
+        .expect("end is Some(record)")
+    else {
+        panic!("end payload is a record");
+    };
+    assert_eq!(
+        runtime_record_get(end_fields, "line"),
+        Ok(&RuntimeValue::u32(1))
+    );
+    assert!(runtime_record_get(source_fields, "has_source").is_err());
+}
+
+#[test]
 fn resource_runtime_payload_preserves_json_body_value() {
     let json_payload = runtime_resource_payload(&serde_json::json!({
         "uri": "agent://resource/json",
@@ -2849,27 +3213,19 @@ fn resource_runtime_payload_preserves_json_body_value() {
                 "matched": true
             }
         }
-    }));
+    }))
+    .expect("typed JSON resource is admitted");
     let RuntimeValue::Record(resource_fields) = json_payload else {
         panic!("resource payload is a record");
     };
-    let RuntimeValue::Record(body_fields) =
-        runtime_record_get(&resource_fields, "body").expect("body field exists")
+    let body = runtime_record_get(&resource_fields, "body").expect("body field exists");
+    let Some((RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson, Some(body))) =
+        body.builtin_variant_case()
     else {
-        panic!("body payload is a record");
+        panic!("body payload is the canonical Json variant");
     };
-    assert_eq!(
-        runtime_record_string(body_fields, "kind").expect("body kind is a string"),
-        "json"
-    );
-    assert_eq!(
-        runtime_record_string(body_fields, "json").expect("body json is a string"),
-        "{\"matched\":true,\"tick\":3,\"uri\":\"agent://resource/json\"}"
-    );
-    let RuntimeValue::Record(value_fields) =
-        runtime_record_get(body_fields, "value").expect("body value exists")
-    else {
-        panic!("json body value is a record");
+    let RuntimeValue::Record(value_fields) = body else {
+        panic!("json body payload is an AgentValue record");
     };
     assert_eq!(
         runtime_record_string(value_fields, "uri").expect("json uri is a string"),
@@ -2879,6 +3235,10 @@ fn resource_runtime_payload_preserves_json_body_value() {
         runtime_record_get(value_fields, "matched").expect("matched field exists"),
         RuntimeValue::Bool(true)
     ));
+    assert_eq!(
+        runtime_record_get(value_fields, "tick").expect("tick field exists"),
+        &RuntimeValue::i64(3)
+    );
 }
 
 #[test]
@@ -2892,27 +3252,17 @@ fn resource_runtime_payload_preserves_text_body_value() {
             "body_kind": "text",
             "body": "hello"
         }
-    }));
+    }))
+    .expect("typed text resource is admitted");
     let RuntimeValue::Record(resource_fields) = text_payload else {
         panic!("resource payload is a record");
     };
-    let RuntimeValue::Record(body_fields) =
-        runtime_record_get(&resource_fields, "body").expect("body field exists")
-    else {
-        panic!("body payload is a record");
-    };
-    assert_eq!(
-        runtime_record_string(body_fields, "kind").expect("body kind is a string"),
-        "text"
-    );
-    assert_eq!(
-        runtime_record_string(body_fields, "text").expect("body text is a string"),
-        "hello"
-    );
-    assert_eq!(
-        runtime_record_string(body_fields, "value").expect("body value is a string"),
-        "hello"
-    );
+    let body = runtime_record_get(&resource_fields, "body").expect("body field exists");
+    assert!(matches!(
+        body.builtin_variant_case(),
+        Some((RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyText, Some(RuntimeValue::String(value))))
+            if value == "hello"
+    ));
 }
 
 #[test]
@@ -2929,50 +3279,211 @@ fn resource_runtime_payload_preserves_bytes_body_value() {
                 "data": "aGVsbG8="
             }
         }
-    }));
+    }))
+    .expect("typed binary resource is admitted");
     let RuntimeValue::Record(resource_fields) = bytes_payload else {
         panic!("resource payload is a record");
     };
-    let RuntimeValue::Record(body_fields) =
-        runtime_record_get(&resource_fields, "body").expect("body field exists")
+    let body = runtime_record_get(&resource_fields, "body").expect("body field exists");
+    let Some((RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyBytesBase64, Some(body))) =
+        body.builtin_variant_case()
     else {
-        panic!("body payload is a record");
+        panic!("body payload is the canonical BytesBase64 variant");
+    };
+    let RuntimeValue::Record(binary_fields) = body else {
+        panic!("binary body payload is a record");
     };
     assert_eq!(
-        runtime_record_string(body_fields, "kind").expect("body kind is a string"),
-        "bytes_base64"
+        runtime_record_get(binary_fields, "encoding")
+            .expect("encoding field exists")
+            .builtin_variant_case()
+            .map(|(case, payload)| (case, payload.is_none())),
+        Some((
+            RuntimeBuiltinVariantCaseIdentity::AgentBinaryEncodingBase64,
+            true
+        ))
     );
-    assert_eq!(
-        runtime_record_string(body_fields, "base64").expect("body data is a string"),
-        "aGVsbG8="
-    );
-    assert_eq!(
-        runtime_record_string(body_fields, "encoding").expect("body encoding is a string"),
-        "base64"
-    );
-    let RuntimeValue::Record(value_fields) =
-        runtime_record_get(body_fields, "value").expect("body value exists")
+    assert!(matches!(
+        runtime_record_get(binary_fields, "data").expect("data field exists"),
+        RuntimeValue::Agent(arcweft_core::value::RuntimeAgentValue::BinaryData(data))
+            if data == "aGVsbG8="
+    ));
+}
+
+#[test]
+fn resource_runtime_payload_rejects_missing_fields_and_unknown_body_kinds() {
+    for value in [
+        serde_json::json!({
+            "uri": "agent://resource/missing-hash",
+            "kind": "logs",
+            "mime_type": "text/plain",
+            "body": { "body_kind": "text", "body": "hello" }
+        }),
+        serde_json::json!({
+            "uri": "agent://resource/unknown-body",
+            "kind": "logs",
+            "mime_type": "text/plain",
+            "hash": "unknown.hash",
+            "body": { "body_kind": "mystery", "body": "hello" }
+        }),
+    ] {
+        let error = runtime_resource_payload(&value)
+            .expect_err("malformed resource protocol shapes are rejected");
+        assert_eq!(
+            error.kind(),
+            AgentHostResponseAdmissionErrorKind::InvalidShape
+        );
+        assert_eq!(error.response(), AgentHostResponseKind::Resource);
+        assert_eq!(error.path(), "resource");
+    }
+}
+
+#[test]
+fn resource_json_null_is_the_explicit_runtime_unit_value() {
+    let resource = serde_json::to_value(AgentResource::new(
+        AgentResourceUri::new("agent://resource/null").expect("resource URI"),
+        AgentResourceKind::ObservationLatest,
+        "application/json",
+        "null.hash",
+        None,
+        AgentResourceBody::Json(serde_json::Value::Null),
+    ))
+    .expect("typed resource serializes");
+    let RuntimeValue::Record(resource_fields) =
+        runtime_resource_payload(&resource).expect("typed resource is admitted")
     else {
-        panic!("bytes body value is a record");
+        panic!("resource payload is a record");
     };
+    let body = runtime_record_get(&resource_fields, "body").expect("body field exists");
+    let Some((RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyJson, Some(body))) =
+        body.builtin_variant_case()
+    else {
+        panic!("body payload is the canonical Json variant");
+    };
+
+    assert!(matches!(body, RuntimeValue::Unit));
+}
+
+#[test]
+fn observation_object_projection_rejects_invalid_protocol_shape_with_index_path() {
+    let error = runtime_payload_from_response(&AgentHostResponse::Observation(Box::new(
+        ObservationEnvelope {
+            tick: 1,
+            frame_id: "frame.1".to_owned(),
+            state_hash: "state.1".to_owned(),
+            render_hash: "render.1".to_owned(),
+            actions: Vec::new(),
+            signals: BTreeMap::new(),
+            payload: serde_json::json!({ "objects": [{ "id": "object.incomplete" }] }),
+        },
+    )))
+    .expect_err("incomplete observed object is rejected");
+
     assert_eq!(
-        runtime_record_string(value_fields, "data").expect("body value data is a string"),
-        "aGVsbG8="
+        error.kind(),
+        AgentHostResponseAdmissionErrorKind::InvalidShape
     );
+    assert_eq!(error.response(), AgentHostResponseKind::Observation);
+    assert_eq!(error.path(), "observation.payload.objects[0]");
+}
+
+#[test]
+fn observation_signal_projection_rejects_non_finite_numbers() {
+    let mut observation = observation(1, true);
+    observation
+        .signals
+        .insert("metric.bad".to_owned(), AgentValue::F64(f64::NAN));
+    let error =
+        runtime_payload_from_response(&AgentHostResponse::Observation(Box::new(observation)))
+            .expect_err("non-finite Agent signal is rejected");
+
+    assert_eq!(
+        error.kind(),
+        AgentHostResponseAdmissionErrorKind::InvalidValue
+    );
+    assert_eq!(error.path(), "observation.signals.metric.bad");
+}
+
+#[test]
+fn rag_context_projection_rejects_missing_required_fields() {
+    let error = runtime_rag_context_payload(&serde_json::json!({
+        "schema_version": 1,
+        "query": { "text": "incomplete" },
+        "items": []
+    }))
+    .expect_err("incomplete RAG context is rejected");
+
+    assert_eq!(
+        error.kind(),
+        AgentHostResponseAdmissionErrorKind::InvalidShape
+    );
+    assert_eq!(error.response(), AgentHostResponseKind::RagContext);
+    assert_eq!(error.path(), "rag_context");
+}
+
+#[test]
+fn rag_context_projection_rejects_noncanonical_schema_version() {
+    let error = runtime_rag_context_payload(&serde_json::json!({
+        "schema_version": 2,
+        "query": {
+            "query_id": "query.version",
+            "text": "version",
+            "program_hash": "program.version",
+            "roots": [],
+            "graph_depth": 1,
+            "limit": 1,
+            "max_context_bytes": 1024
+        },
+        "items": [],
+        "truncated": false
+    }))
+    .expect_err("noncanonical RAG schema version is rejected");
+
+    assert_eq!(
+        error.kind(),
+        AgentHostResponseAdmissionErrorKind::InvalidValue
+    );
+    assert_eq!(error.path(), "rag_context.schema_version");
 }
 
 #[test]
 fn rag_context_runtime_payload_exposes_summary_fields() {
     let rag_payload = runtime_rag_context_payload(&serde_json::json!({
+        "schema_version": 1,
         "query": {
-            "text": "why did opening flow stall?"
+            "query_id": "query.opening",
+            "text": "why did opening flow stall?",
+            "program_hash": "program.opening",
+            "roots": [],
+            "graph_depth": 1,
+            "limit": 2,
+            "max_context_bytes": 4096
         },
         "items": [
-            { "id": "item.1" },
-            { "id": "item.2" }
+            {
+                "chunk_id": "item.1",
+                "kind": "source",
+                "title": "first",
+                "body": "first body",
+                "fused_score": 1.0,
+                "channels": ["lexical"],
+                "entity_ids": [],
+                "source_anchor": null
+            },
+            {
+                "chunk_id": "item.2",
+                "kind": "documentation",
+                "title": "second",
+                "body": "second body",
+                "fused_score": 0.5,
+                "channels": ["summary"],
+                "entity_ids": [],
+                "source_anchor": null
+            }
         ],
         "truncated": true
-    }));
+    }))
+    .expect("typed RAG context is admitted");
     let RuntimeValue::Record(fields) = rag_payload else {
         panic!("RAG context payload is a record");
     };
@@ -2991,7 +3502,7 @@ fn rag_context_runtime_payload_exposes_summary_fields() {
     ));
     assert_eq!(
         runtime_record_string(&fields, "json").expect("json is a string"),
-        "{\"items\":[{\"id\":\"item.1\"},{\"id\":\"item.2\"}],\"query\":{\"text\":\"why did opening flow stall?\"},\"truncated\":true}"
+        "{\"items\":[{\"body\":\"first body\",\"channels\":[\"lexical\"],\"chunk_id\":\"item.1\",\"entity_ids\":[],\"fused_score\":1.0,\"kind\":\"source\",\"source_anchor\":null,\"title\":\"first\"},{\"body\":\"second body\",\"channels\":[\"summary\"],\"chunk_id\":\"item.2\",\"entity_ids\":[],\"fused_score\":0.5,\"kind\":\"documentation\",\"source_anchor\":null,\"title\":\"second\"}],\"query\":{\"graph_depth\":1,\"limit\":2,\"max_context_bytes\":4096,\"program_hash\":\"program.opening\",\"query_id\":\"query.opening\",\"roots\":[],\"text\":\"why did opening flow stall?\"},\"schema_version\":1,\"truncated\":true}"
     );
 }
 
@@ -3007,7 +3518,7 @@ fn controller_awbc_resumes_bound_wait_response() {
     let mut runner = AgentRunner::new(
         session,
         NullDebugEventSink,
-        NoopRagService,
+        DisabledRagService,
         RuntimeAgentPolicy::default(),
         AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
     );

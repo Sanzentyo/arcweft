@@ -682,8 +682,6 @@ const fn is_error_syntax_kind(kind: u16) -> bool {
         || kind == SyntaxKind::ErrorExpression as u16
         || kind == SyntaxKind::ErrorPattern as u16
         || kind == SyntaxKind::ErrorType as u16
-        || kind == SyntaxKind::RichTextInvalidArgument as u16
-        || kind == SyntaxKind::RichTextInvalidArgumentIssue as u16
         || kind == SyntaxKind::ErrorNode as u16
 }
 
@@ -728,7 +726,13 @@ fn hir_body_facts(
         let tag = expression_kind_tag(expression.kind());
         *expression_tags.entry(tag).or_insert(0_usize) += 1;
         match expression.kind() {
-            HirExprKind::DialogueContentApplication(_) => counts.dialogues += 1,
+            HirExprKind::AttachedContentApplication(application)
+                if matches!(
+                    application.family(),
+                    arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                        ..
+                    }
+                ) => counts.dialogues += 1,
             HirExprKind::Choice(_) => counts.choices += 1,
             HirExprKind::Await(awaited) => {
                 counts.awaits += 1;
@@ -1242,7 +1246,7 @@ const fn expression_kind_tag(kind: &HirExprKind) -> &'static str {
         HirExprKind::If(_) => "if",
         HirExprKind::IfLet(_) => "if-let",
         HirExprKind::Match(_) => "match",
-        HirExprKind::DialogueContentApplication(_) => "dialogue-content-application",
+        HirExprKind::AttachedContentApplication(_) => "attached-content-application",
         HirExprKind::PostfixBracket(_) => "postfix-bracket",
         HirExprKind::Error(_) => "error",
         HirExprKind::ForSynthetic(_) => "for-synthetic",
@@ -1255,13 +1259,9 @@ const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
         HirStmtKind::Let { .. } => "let",
         HirStmtKind::Assign { .. } => "assign",
         HirStmtKind::LetElse { .. } => "let-else",
-        HirStmtKind::LetChoice { .. } => "let-choice",
-        HirStmtKind::LetScope { .. } => "let-scope",
-        HirStmtKind::LetActionReceive { .. } => "let-action-receive",
         HirStmtKind::Return { .. } => "return",
         HirStmtKind::Out { .. } => "out",
         HirStmtKind::Goto { .. } => "goto",
-        HirStmtKind::DeferBlock { .. } => "defer-block",
         HirStmtKind::Defer { .. } => "defer",
         HirStmtKind::Yield { .. } => "yield",
         HirStmtKind::Signal { .. } => "signal",

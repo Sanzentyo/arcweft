@@ -1257,81 +1257,11 @@ impl<T> Localized<T> {
     }
 }
 
-/// Inline rich-text tag.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct InlineTag {
-    name: String,
-    attrs: OrderedMap<String, String>,
-}
-
-impl InlineTag {
-    /// Creates an inline tag with no attributes.
-    pub fn new(name: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            attrs: OrderedMap::new(),
-        }
-    }
-
-    /// Tag name.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Adds or replaces an attribute.
-    pub fn insert_attr(&mut self, name: impl Into<String>, value: impl Into<String>) {
-        self.attrs.insert(name.into(), value.into());
-    }
-}
-
-/// Ruby annotation attached to a base text span.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RubyText {
-    base: String,
-    ruby: String,
-}
-
-impl RubyText {
-    /// Creates ruby text.
-    pub fn new(base: impl Into<String>, ruby: impl Into<String>) -> Self {
-        Self {
-            base: base.into(),
-            ruby: ruby.into(),
-        }
-    }
-}
-
-/// One rich-text run.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum TextRun {
-    Text(String),
-    Tag(InlineTag),
-    Ruby(RubyText),
-}
-
-/// Ordered rich-text content.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct RichText {
-    runs: std::vec::Vec<TextRun>,
-}
-
-impl RichText {
-    /// Appends one run.
-    pub fn push(&mut self, run: TextRun) {
-        self.runs.push(run);
-    }
-
-    /// Runs in authored order.
-    pub fn runs(&self) -> &[TextRun] {
-        self.runs.as_slice()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        Arena, Array, DependencyGraph, EntityStore, OrderedMap, Patch, PatchSet, RichText,
-        RingBuffer, SignalBus, StatePath, TaskQueue, TextRun, Tree, Vec,
+        Arena, Array, DependencyGraph, EntityStore, OrderedMap, Patch, PatchSet, RingBuffer,
+        SignalBus, StatePath, TaskQueue, Tree, Vec,
     };
 
     #[test]
@@ -1426,7 +1356,7 @@ mod tests {
     }
 
     #[test]
-    fn ring_buffer_signal_and_rich_text_are_pure_data() {
+    fn ring_buffer_and_signal_are_pure_data() {
         let mut ring = RingBuffer::with_capacity(2);
         assert_eq!(ring.push_back(1), None);
         assert_eq!(ring.push_back(2), None);
@@ -1436,9 +1366,5 @@ mod tests {
         let mut bus = SignalBus::default();
         assert_eq!(bus.set("ready", true), None);
         assert_eq!(bus.get("ready").expect("signal").get(), &true);
-
-        let mut text = RichText::default();
-        text.push(TextRun::Text("hello".to_owned()));
-        assert_eq!(text.runs(), &[TextRun::Text("hello".to_owned())]);
     }
 }

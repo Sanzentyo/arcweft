@@ -7,8 +7,8 @@ use arcweft_lang_syntax::reference::BorrowKind;
 use crate::effect_row::EffectRow;
 
 use super::super::{
-    AcceptedNominalType, ArrayLength, EntityType, GenericTypeParameterId, IteratorStateKind,
-    LifetimeScopeKind, MapKind, OpenNominalType, ProjectNominalType, TypeKind,
+    AcceptedNominalType, ArrayLength, EntityType, GenericBinder, GenericTypeReference,
+    IteratorStateKind, LifetimeScopeKind, MapKind, OpenNominalType, ProjectNominalType, TypeKind,
 };
 use super::{TypeConstraintError, TypeConstraintRejection};
 
@@ -74,15 +74,27 @@ impl TypeKind {
             | Self::CharacterPatch(_)
             | Self::FocusPatch
             | Self::CharacterDialogue(_)
+            | Self::CompileTimeCallable(_)
+            | Self::CompileTimeScalar(_)
+            | Self::CompileTimeEnum(_)
+            | Self::CompileTimeFx(_)
             | Self::ViewValue
             | Self::CharacterNominal(_)
-            | Self::VariantPayload(_)
             | Self::Unit) => TypeConstraintShape::Leaf(ty),
             Self::Never => TypeConstraintShape::Never,
             Self::GenericParam(parameter) => TypeConstraintShape::Generic(parameter),
+            Self::VariantPayload(payload) => TypeConstraintShape::Payload(payload),
             Self::Error(_) | Self::Projection { .. } => TypeConstraintShape::Unresolved,
             Self::Named(name) if is_placeholder_name(name) => TypeConstraintShape::Unresolved,
             ty @ Self::Named(_) => TypeConstraintShape::Leaf(ty),
+            Self::MetaType(child) => TypeConstraintShape::Unary {
+                kind: UnaryShape::MetaType,
+                child,
+            },
+            Self::FixedVector(vector) => TypeConstraintShape::Unary {
+                kind: UnaryShape::FixedVector(vector.dimensions()),
+                child: vector.component(),
+            },
             Self::Range(child) => TypeConstraintShape::Unary {
                 kind: UnaryShape::Range,
                 child,
@@ -152,10 +164,12 @@ impl TypeKind {
                 second: error,
             },
             Self::Function {
+                binder,
                 params,
                 return_type,
                 effects,
             } => TypeConstraintShape::Function {
+                binder,
                 params,
                 result: return_type,
                 effects,
@@ -180,9 +194,10 @@ impl TypeKind {
 
 #[derive(Clone, Copy)]
 pub(crate) enum TypeConstraintShape<'a> {
+    Payload(&'a super::super::VariantPayloadType),
     Leaf(&'a TypeKind),
     Never,
-    Generic(&'a GenericTypeParameterId),
+    Generic(&'a GenericTypeReference),
     Unresolved,
     Unary {
         kind: UnaryShape,
@@ -213,6 +228,7 @@ pub(crate) enum TypeConstraintShape<'a> {
         second: &'a TypeKind,
     },
     Function {
+        binder: &'a GenericBinder,
         params: &'a [TypeKind],
         result: &'a TypeKind,
         effects: &'a EffectRow,
@@ -226,8 +242,16 @@ pub(crate) enum TypeConstraintShape<'a> {
 }
 
 impl<'a> TypeConstraintShape<'a> {
+    pub(crate) const fn binder(self) -> GenericBinder {
+        match self {
+            Self::Function { binder, .. } => *binder,
+            _ => GenericBinder::EMPTY,
+        }
+    }
+
     pub(crate) fn children(self) -> TypeConstraintChildren<'a> {
         match self {
+            Self::Payload(payload) => TypeConstraintChildren::Payload(payload.children()),
             Self::Leaf(_) | Self::Never | Self::Generic(_) | Self::Unresolved => {
                 TypeConstraintChildren::None
             }
@@ -257,6 +281,7 @@ impl<'a> TypeConstraintShape<'a> {
 
     pub(crate) fn same_header(self, other: Self) -> bool {
         match (self, other) {
+            (Self::Payload(left), Self::Payload(right)) => left.has_same_header(right),
             (Self::Leaf(left), Self::Leaf(right)) => left == right,
             (Self::Never, Self::Never) | (Self::Unresolved, Self::Unresolved) => true,
             (Self::Generic(left), Self::Generic(right)) => left == right,
@@ -282,9 +307,18 @@ impl<'a> TypeConstraintShape<'a> {
                 },
             ) => left_kind == right_kind && left_lifetime == right_lifetime,
             (Self::Pair { kind: left, .. }, Self::Pair { kind: right, .. }) => left == right,
-            (Self::Function { params: left, .. }, Self::Function { params: right, .. }) => {
-                left.len() == right.len()
-            }
+            (
+                Self::Function {
+                    binder: left_binder,
+                    params: left,
+                    ..
+                },
+                Self::Function {
+                    binder: right_binder,
+                    params: right,
+                    ..
+                },
+            ) => left_binder == right_binder && left.len() == right.len(),
             (
                 Self::Nominal {
                     nominal: left,
@@ -303,12 +337,36 @@ impl<'a> TypeConstraintShape<'a> {
     }
 
     pub(crate) fn rebuild(self, children: Vec<TypeKind>) -> Result<TypeKind, TypeConstraintError> {
+        self.rebuild_with(
+            children,
+            &mut (),
+            |(), length| Ok(length.clone()),
+            |(), row| Ok(row.clone()),
+        )
+    }
+
+    /// Projects owned scalar children before constructing the result. Type
+    /// and scalar projection share this exhaustive structural constructor.
+    pub(crate) fn rebuild_with<C, E: From<TypeConstraintError>>(
+        self,
+        children: Vec<TypeKind>,
+        context: &mut C,
+        length: impl FnOnce(&mut C, &ArrayLength) -> Result<ArrayLength, E>,
+        effects_row: impl FnOnce(&mut C, &EffectRow) -> Result<EffectRow, E>,
+    ) -> Result<TypeKind, E> {
         let mut children = children.into_iter();
         let rebuilt = match self {
+            Self::Payload(payload) => {
+                TypeKind::VariantPayload(Box::new(payload.map(|_| next_child(&mut children))))
+            }
             Self::Leaf(ty) => ty.clone(),
             Self::Never => TypeKind::Never,
             Self::Generic(parameter) => TypeKind::GenericParam(parameter.clone()),
-            Self::Unresolved => return Err(TypeConstraintRejection::UnresolvedType.into()),
+            Self::Unresolved => {
+                return Err(E::from(TypeConstraintError::from(
+                    TypeConstraintRejection::UnresolvedType,
+                )));
+            }
             Self::Unary { kind, .. } => kind.rebuild(next_child(&mut children)),
             Self::Iterator { family, .. } => TypeKind::IteratorState {
                 family: *family,
@@ -316,7 +374,7 @@ impl<'a> TypeConstraintShape<'a> {
             },
             Self::Array { len, .. } => TypeKind::Array {
                 item: Box::new(next_child(&mut children)),
-                len: len.clone(),
+                len: length(context, len)?,
             },
             Self::Ref(entity) => TypeKind::Ref(EntityType::new(
                 entity.kind().clone(),
@@ -335,15 +393,18 @@ impl<'a> TypeConstraintShape<'a> {
             Self::Pair { kind, .. } => {
                 kind.rebuild(next_child(&mut children), next_child(&mut children))
             }
-            Self::Function { effects, .. } => {
+            Self::Function {
+                binder, effects, ..
+            } => {
                 let mut children = children.collect::<Vec<_>>();
                 let result = children
                     .pop()
                     .expect("function shape retains one result child");
                 TypeKind::Function {
+                    binder: *binder,
                     params: children,
                     return_type: Box::new(result),
-                    effects: effects.clone(),
+                    effects: effects_row(context, effects)?,
                 }
             }
             Self::Nominal { nominal, .. } => nominal.rebuild(children.collect()),
@@ -361,6 +422,7 @@ fn next_child(children: &mut impl Iterator<Item = TypeKind>) -> TypeKind {
 }
 
 pub(crate) enum TypeConstraintChildren<'a> {
+    Payload(super::super::VariantPayloadTypeChildren<'a>),
     None,
     One(Option<&'a TypeKind>),
     Two {
@@ -379,6 +441,7 @@ impl<'a> Iterator for TypeConstraintChildren<'a> {
 
     fn next(&mut self) -> Option<Self::Item> {
         match self {
+            Self::Payload(children) => children.next(),
             Self::None => None,
             Self::One(child) => child.take(),
             Self::Two { first, second } => first.take().or_else(|| second.take()),
@@ -390,6 +453,7 @@ impl<'a> Iterator for TypeConstraintChildren<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum UnaryShape {
+    FixedVector(crate::callable::VectorDimensions),
     Range,
     Probe,
     Vec,
@@ -400,12 +464,16 @@ pub(crate) enum UnaryShape {
     ThreadHandle,
     Shared,
     DialogueLine,
+    MetaType,
 }
 
 impl UnaryShape {
     fn rebuild(self, child: TypeKind) -> TypeKind {
         let child = Box::new(child);
         match self {
+            Self::FixedVector(dimensions) => {
+                TypeKind::FixedVector(super::super::FixedVectorType::new(dimensions, *child))
+            }
             Self::Range => TypeKind::Range(child),
             Self::Probe => TypeKind::Probe(child),
             Self::Vec => TypeKind::Vec(child),
@@ -416,6 +484,7 @@ impl UnaryShape {
             Self::ThreadHandle => TypeKind::ThreadHandle(child),
             Self::Shared => TypeKind::Shared(child),
             Self::DialogueLine => TypeKind::DialogueLine(child),
+            Self::MetaType => TypeKind::MetaType(child),
         }
     }
 }

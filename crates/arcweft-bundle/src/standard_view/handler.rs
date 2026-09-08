@@ -244,11 +244,28 @@ mod tests {
     use arcweft_core::{
         awbc::product_step::evaluate_pure_program_with_backend,
         pure::VmRuntimePureCallBackend,
-        value::{RuntimeDialogueActionValue, RuntimeDialogueViewValue, RuntimeValue},
+        runtime_id::RuntimeDialogueContentTemplateId,
+        value::{
+            RuntimeDialogueActionValue, RuntimeDialogueContentValue, RuntimeDialogueOpaqueRole,
+            RuntimeDialogueViewValue, RuntimeValue,
+        },
     };
 
     fn dialogue_view_value() -> RuntimeValue {
         let wrap = |role: RuntimeDialogueOpaqueRole| {
+            if role == RuntimeDialogueOpaqueRole::Content {
+                return RuntimeDialogueContentValue::try_new(
+                    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0xe1; 32])
+                        .expect("artifact"),
+                    RuntimeDialogueContentTemplateId::from_zero_based(0).expect("template"),
+                    arcweft_core::entry::RuntimeDialogueContentTemplateDigest::from_bytes(
+                        [0xe2; 32],
+                    ),
+                    [],
+                )
+                .expect("content")
+                .into_runtime_value();
+            }
             role.exact_owner()
                 .try_wrap(RuntimeValue::Unit)
                 .expect("standard dialogue role is exact")

@@ -6,6 +6,7 @@ use std::{
 
 use arcweft_lang_hir::{
     item::{
+        HirAttachedContentPresence, HirAttachedContentRole, HirCallableAttachedContentParameter,
         HirCapabilityFunction, HirCapabilityMember, HirFlowItem, HirFunctionItem, HirImplFunction,
         HirImplMember, HirItem, HirItemPrefix, HirMethodParameter, HirMethodParameterGroup,
         HirParameter, HirParameterKind, HirPredicate, HirProof, HirTraitFunction, HirTraitMember,
@@ -15,18 +16,19 @@ use arcweft_lang_hir::{
     pattern::{HirPatternBinding, HirPatternKind},
     project::HirProjectView,
     source_index::{
-        HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
-        HirFlowParameterSourcePart, HirFlowReturnSourcePart, HirFlowSourceRole, HirItemSourceRole,
-        HirSourcePresence, HirSourceQuery, HirSourceSite,
+        HirCallableAttachedContentSourcePart, HirCallableParameterSourcePart,
+        HirCallableSourceOwner, HirCallableSourceRole, HirFlowParameterSourcePart,
+        HirFlowReturnSourcePart, HirFlowSourceRole, HirItemSourceRole, HirSourcePresence,
+        HirSourceQuery, HirSourceSite,
     },
     symbol::{CallableSymbol, ProjectSymbolTable, ProjectSymbolTargetId},
 };
 
 use crate::{
     effect_row::EffectRow,
-    effects::{EffectId, EffectSet},
+    effects::EffectSet,
     env::TypeCheckEnv,
-    nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
+    nominal::{CheckedTypeReferenceCache, NominalResolutionIndex, TypeNameResolution},
     registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp, EnvironmentManifestDigest},
     types::TypeKind,
 };
@@ -35,19 +37,21 @@ use super::digest::CanonicalEncoder;
 use super::limits::CatalogBuildWork;
 use super::nominal_signature::ProjectSignatureResolver;
 use super::{
-    CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError,
-    CallableCandidateId, CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema,
-    CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
-    CallableOverloadIndex, CallableParameter, CallableParameterAdmission, CallableParameterGroup,
-    CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterSource, CallablePath, CallablePathError, CallableProviderId, CallableRecord,
-    CallableSignatureSchema, CallableSource, CallableValidator, CatalogCallableEntry,
-    DocumentationProvenance, EnvironmentCallableCatalog, EnvironmentCallableId,
-    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
-    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, EquivalentCallableSource,
-    NonEmptyCallableSet, ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding,
-    RegisteredCallableCatalog, RegisteredProjectModuleCallables, SignatureOrigin,
-    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
+    CallableAccess, CallableArgumentPolicy, CallableAttachedContentExecution,
+    CallableAttachedContentParameter, CallableAttachedContentPolicy, CallableAuthorityRank,
+    CallableBuildLimitError, CallableCandidateId, CallableCatalogBuildError, CallableDocumentation,
+    CallableEffectSchema, CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey,
+    CallableName, CallableOverloadIndex, CallableParameter, CallableParameterAdmission,
+    CallableParameterGroup, CallableParameterIndex, CallableParameterPassing,
+    CallableParameterPresence, CallableParameterSource, CallablePath, CallablePathError,
+    CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource, CallableValidator,
+    CatalogCallableEntry, CheckedContentRole, DocumentationProvenance, EnvironmentCallableCatalog,
+    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
+    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
+    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
+    ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding, RegisteredCallableCatalog,
+    RegisteredProjectModuleCallables, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
+    UnknownNamedArgumentPolicy,
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
@@ -125,13 +129,13 @@ impl StandardEnvironmentMethodProjection {
             receiver.clone(),
             member.clone(),
         ));
-        let id = EnvironmentCallableId::new(
+        let id = EnvironmentCallableId::try_new(
             EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core),
             EnvironmentCallableKind::Method,
             key,
             CallableOverloadIndex::try_from_usize(0)
                 .map_err(|_| super::CallablePublicationError::InvalidOverload)?,
-        );
+        )?;
         Ok(Self {
             id,
             schema: schema.clone(),
@@ -254,7 +258,7 @@ impl RegisteredCallableCatalogBuilder {
             u64::try_from(path_segment_count)
                 .map_err(|_| CallableCatalogBuildError::WorkOverflow)?,
         )?;
-        let resolved = ProjectSignatureResolver::new(
+        let mut resolved = ProjectSignatureResolver::new(
             project,
             symbols,
             nominal_world,
@@ -262,7 +266,33 @@ impl RegisteredCallableCatalogBuilder {
             &mut self.nominal_cache,
         )
         .resolve_project_signature(symbol)?;
+        let type_environment = nominal_world.typecheck_env();
+        resolved.return_type = type_environment.canonical_accepted_type(resolved.return_type);
+        resolved.parameter_types = resolved
+            .parameter_types
+            .into_iter()
+            .map(|group| {
+                group
+                    .into_iter()
+                    .map(|parameter| type_environment.canonical_accepted_type(parameter))
+                    .collect()
+            })
+            .collect();
         let callable = final_project_callable(module, symbol)?;
+        if symbol.is_fx() {
+            // A project Fx declaration is a first-class typed value.  Keep
+            // the exact declaration identity in the callable result instead
+            // of exposing a nominal `Fx` name or the builtin constructor
+            // family.  The application carrier later joins this identity to
+            // its mapped/defaulted arguments and stable call site.
+            let definition = arcweft_presentation::fx::FxId::try_new(
+                symbol.declaration().package().as_str(),
+                symbol.declaration().qualified_name(),
+            )
+            .map_err(|_| identity_mismatch(symbol))?;
+            resolved.return_type =
+                TypeKind::CompileTimeFx(crate::types::CompileTimeFxType::Registered(definition));
+        }
         let parameters = project_parameters(
             module,
             symbol,
@@ -271,7 +301,26 @@ impl RegisteredCallableCatalogBuilder {
             &self.limits,
             &mut self.work,
         )?;
-        let effects = if matches!(callable, FinalProjectCallable::ExternCapability { .. }) {
+        let signature_span = project_signature_span(module, symbol, &callable)?;
+        let result_span = project_result_span(module, symbol, &callable)?;
+        let attached_content = project_attached_content_parameter(
+            module,
+            symbol,
+            &callable,
+            &parameters.groups,
+            &mut resolved.return_type,
+            nominal_world,
+            &self.nominal_resolutions,
+            &signature_span,
+            result_span.as_ref(),
+        )?;
+        let effects = if symbol.is_fx() {
+            // `#[fx]` is a compile-time graph declaration whose purity is
+            // implied by the declaration role and checked by the dedicated Fx
+            // body sealer. It must not enter ordinary project effect inference,
+            // which would require a parallel checked-expression body model.
+            CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new()))
+        } else if matches!(callable, FinalProjectCallable::ExternCapability { .. }) {
             let declared = effect_set(module, symbol, &callable, &mut self.work)?;
             CallableEffectSchema::fixed(EffectRow::closed(declared))
         } else {
@@ -289,7 +338,7 @@ impl RegisteredCallableCatalogBuilder {
             }
             _ => CallableValidator::Ordinary,
         };
-        let mut schema = CallableSignatureSchema::try_new(
+        let mut schema = CallableSignatureSchema::try_new_with_attached_content(
             parameters.groups,
             resolved.return_type,
             effects,
@@ -302,6 +351,7 @@ impl RegisteredCallableCatalogBuilder {
                 },
             ),
             validator,
+            attached_content,
             resolved.generic_issuer,
             &self.limits,
         )?;
@@ -311,13 +361,11 @@ impl RegisteredCallableCatalogBuilder {
         let host_call_contract = resolved.host_call_contract;
         let schema = Arc::new(schema);
         let documentation = project_documentation(symbol, callable.prefix().documentation())?;
-        let signature_span = project_signature_span(module, symbol, &callable)?;
         let name_span = project_name_span(module, symbol, &callable)?;
         let identity_span = project_identity_span(module, symbol, &callable)?;
         if &identity_span != symbol.name_span() {
             return Err(identity_mismatch(symbol));
         }
-        let result_span = project_result_span(module, symbol, &callable)?;
         let callable_source = CallableSource::try_new(
             Some(symbol.declaration().clone()),
             Some(signature_span),
@@ -437,12 +485,12 @@ impl RegisteredCallableCatalogBuilder {
             self.project_bindings,
             &mut self.work,
         )?;
-        Ok(RegisteredCallableCatalog::new(
+        Ok(RegisteredCallableCatalog::try_new(
             self.nominal_world,
             project,
             environment,
             self.nominal_resolutions,
-        ))
+        )?)
     }
 }
 
@@ -538,6 +586,131 @@ impl FinalProjectCallable<'_> {
                 )
             })
     }
+
+    fn attached_content(&self) -> Option<HirCallableAttachedContentParameter> {
+        match self {
+            Self::Function { callable, .. } => callable.attached_content(),
+            Self::ExternCapability { callable } => callable.attached_content(),
+            Self::TraitMethod { callable, .. } => callable.attached_content(),
+            Self::ImplMethod { callable, .. } => callable.attached_content(),
+            Self::Flow { .. } | Self::Predicate { .. } | Self::Proof { .. } | Self::View { .. } => {
+                None
+            }
+        }
+    }
+
+    fn return_type(&self) -> Option<arcweft_lang_hir::identity::TypeId> {
+        match self {
+            Self::Function { callable, .. } => callable.return_type(),
+            Self::ExternCapability { callable } => callable.return_type(),
+            Self::TraitMethod { callable, .. } => callable.return_type(),
+            Self::ImplMethod { callable, .. } => callable.return_type(),
+            Self::Flow { callable, .. } => callable.result().authored_type(),
+            Self::Predicate { callable, .. } => Some(callable.return_type()),
+            Self::Proof { callable, .. } => Some(callable.return_type()),
+            Self::View { .. } => None,
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the sole project attached-content projection validates its complete declaration authority"
+)]
+fn project_attached_content_parameter(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+    groups: &[CallableParameterGroup],
+    result: &mut TypeKind,
+    nominal_world: &AcceptedNominalWorld,
+    nominal_resolutions: &NominalResolutionIndex,
+    signature_span: &arcweft_source::SourceSpan,
+    result_span: Option<&arcweft_source::SourceSpan>,
+) -> Result<Option<CallableAttachedContentParameter>, CallableCatalogBuildError> {
+    let Some(attached) = callable.attached_content() else {
+        return Ok(None);
+    };
+    let attached_span = callable_span(
+        module,
+        symbol,
+        HirCallableSourceRole::AttachedContent {
+            owner: symbol.source_owner(),
+            part: HirCallableAttachedContentSourcePart::Whole,
+        },
+    )?
+    .ok_or_else(|| identity_mismatch(symbol))?;
+    if symbol.is_fx() {
+        return Err(CallableCatalogBuildError::ProjectAttachedContentOnFx {
+            declaration: symbol.declaration().clone(),
+            span: attached_span,
+        });
+    }
+    let expected = nominal_world
+        .typecheck_env()
+        .standard_dialogue_content_type()
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let TypeKind::AcceptedNominal(expected_nominal) = &expected else {
+        return Err(identity_mismatch(symbol));
+    };
+    let result_owner = callable
+        .return_type()
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let report = nominal_resolutions
+        .report(result_owner)
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let recovered = report.outcome().product().recovered();
+    let expected_record = nominal_world
+        .nominal_catalog()
+        .exact(expected_nominal.declaration().canonical_path())
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let expected_recovered = expected_record
+        .try_instantiate([])
+        .map_err(|_| identity_mismatch(symbol))?;
+    let exact_identity = report.outcome().product().nodes().iter().any(|node| {
+        matches!(
+            node.outcome(),
+            TypeNameResolution::Accepted(nominal)
+                if nominal == expected_nominal
+        ) || matches!(
+            node.outcome(),
+            TypeNameResolution::AcceptedExact { accepted, .. }
+                if accepted == expected_nominal.declaration()
+        )
+    });
+    if recovered != &expected_recovered || !exact_identity {
+        return Err(
+            CallableCatalogBuildError::ProjectAttachedContentResultMismatch {
+                declaration: symbol.declaration().clone(),
+                span: result_span
+                    .cloned()
+                    .unwrap_or_else(|| signature_span.clone()),
+                expected: Box::new(expected),
+                actual: Box::new(result.clone()),
+            },
+        );
+    }
+    *result = expected;
+    let group = groups
+        .last()
+        .map(CallableParameterGroup::index)
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let presence = match attached.presence() {
+        HirAttachedContentPresence::Required => CallableParameterPresence::Required,
+        HirAttachedContentPresence::Optional => CallableParameterPresence::Optional,
+        HirAttachedContentPresence::Defaulted { .. } => CallableParameterPresence::Defaulted,
+    };
+    let role = match attached.role() {
+        HirAttachedContentRole::Inline => CheckedContentRole::Inline,
+        HirAttachedContentRole::Rich => CheckedContentRole::Rich,
+        HirAttachedContentRole::Dialogue => CheckedContentRole::Dialogue,
+    };
+    Ok(Some(CallableAttachedContentParameter::new(
+        group,
+        presence,
+        CallableAttachedContentPolicy::Declared(role),
+        CallableAttachedContentExecution::RuntimeContent,
+    )))
 }
 
 fn method_parameters(group: &HirMethodParameterGroup) -> Vec<FinalProjectParameter<'_>> {
@@ -607,6 +780,15 @@ fn final_project_callable<'a>(
         },
         _ => Err(identity_mismatch(symbol)),
     }
+}
+
+/// Projects the exact declaration-owned attached-content HIR row through the
+/// same callable-family join used by project schema construction.
+pub(crate) fn project_callable_attached_content(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+) -> Result<Option<HirCallableAttachedContentParameter>, CallableCatalogBuildError> {
+    final_project_callable(module, symbol).map(|callable| callable.attached_content())
 }
 
 fn callable_span(
@@ -770,7 +952,7 @@ fn effect_set(
         .iter()
         .map(|effect| {
             work.charge(1)?;
-            EffectId::try_from_hir_expression(module, *effect)
+            crate::effects::project_hir_effect_id(module, *effect)
                 .map(|(effect, _)| effect)
                 .map_err(|_| identity_mismatch(symbol))
         })
@@ -812,6 +994,20 @@ fn project_parameters(
                 parameter_source_index,
             )
             .map_err(|_| identity_mismatch(symbol))?;
+            if parameter.default().is_some() && !symbol.is_fx() {
+                let span = parameter_source
+                    .default()
+                    .cloned()
+                    .ok_or_else(|| identity_mismatch(symbol))?;
+                return Err(
+                    CallableCatalogBuildError::UnsupportedProjectParameterDefault {
+                        declaration: symbol.declaration().clone(),
+                        group: group_id,
+                        parameter: parameter_id,
+                        span,
+                    },
+                );
+            }
             sources.push(parameter_source.clone());
             if parameter
                 .typed()
@@ -838,8 +1034,12 @@ fn project_parameters(
                             .cloned()
                             .ok_or_else(|| identity_mismatch(symbol))?,
                     ),
-                    parameter_passing(module, *parameter, symbol)?,
-                    if parameter.default().is_some() {
+                    if symbol.is_fx() {
+                        CallableParameterPassing::NamedOnly
+                    } else {
+                        parameter_passing(module, *parameter, symbol)?
+                    },
+                    if symbol.is_fx() && parameter.default().is_some() {
                         CallableParameterPresence::Defaulted
                     } else {
                         CallableParameterPresence::Required
@@ -1206,12 +1406,12 @@ fn finish_environment(
     for publication in publications {
         let publication_digest = publication.digest();
         for publication_record in publication.records() {
-            let id = EnvironmentCallableId::new(
+            let id = EnvironmentCallableId::try_new(
                 publication.owner().clone(),
                 publication_record.kind(),
                 publication_record.key().clone(),
                 publication_record.overload(),
-            );
+            )?;
             let candidate = CallableCandidateId::Environment(id.clone());
             if by_id.contains_key(&id) {
                 return Err(CallableCatalogBuildError::DuplicateTypedId {
@@ -1452,7 +1652,7 @@ impl TypeCheckEnv {
             )?;
             records.push(projection.into_publication_record(offset + ordinal)?);
         }
-        let manifest_digest = standard_manifest_digest(&records);
+        let manifest_digest = standard_manifest_digest(&records)?;
         EnvironmentCallablePublication::try_new_projected(
             owner,
             nominal_world,
@@ -1465,7 +1665,7 @@ impl TypeCheckEnv {
 
 fn standard_manifest_digest(
     records: &[EnvironmentCallablePublicationRecord],
-) -> EnvironmentManifestDigest {
+) -> Result<EnvironmentManifestDigest, crate::types::GenericScopeError> {
     const DOMAIN: &[u8] = b"arcweft.standard-environment-manifest.v1\0";
 
     let mut records = records.iter().collect::<Vec<_>>();
@@ -1478,7 +1678,9 @@ fn standard_manifest_digest(
         encoder.usize(record.overload().get());
         encoder.bytes(record.schema().semantic_digest().as_bytes());
     }
-    EnvironmentManifestDigest::from_bytes(encoder.finish(DOMAIN))
+    Ok(EnvironmentManifestDigest::from_bytes(
+        encoder.finish(DOMAIN)?,
+    ))
 }
 
 fn environment_record_from_schema(

@@ -95,7 +95,7 @@ impl AttachedDialogueLinePlanBody {
 pub(super) fn attached_dialogue_line_plan(
     application: &AttachedExpressionNode,
 ) -> Result<Option<AttachedDialogueLinePlan>, SyntaxAccessError> {
-    let ExpressionProjection::DialogueContentApplication(projection) = application.projection()
+    let ExpressionProjection::AttachedContentApplication(projection) = application.projection()
     else {
         return Ok(None);
     };

@@ -5,6 +5,7 @@ pub mod agent_project;
 pub mod content_partition;
 pub mod effect_manifest;
 pub mod error;
+pub(crate) mod fx_catalog;
 pub mod incremental;
 pub mod link;
 pub mod lower;

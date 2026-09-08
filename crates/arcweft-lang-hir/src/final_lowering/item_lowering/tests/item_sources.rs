@@ -10,10 +10,10 @@ use arcweft_lang_syntax::patterns::PatternComponentRole;
 use arcweft_source::SourceSpan;
 
 use crate::source_index::{
-    HirCallableEffectSourcePart, HirCallableParameterSourcePart, HirCallableSourceOwner,
-    HirCallableSourceRole, HirDeclarationSourceRole, HirEntrySourcePart, HirItemSourceRole,
-    HirSourcePresence, HirSourceQuery, HirSourceQueryError, HirUseBindingSourcePart,
-    HirUseSourceRole,
+    HirCallableAttachedContentSourcePart, HirCallableEffectSourcePart,
+    HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+    HirDeclarationSourceRole, HirEntrySourcePart, HirItemSourceRole, HirSourcePresence,
+    HirSourceQuery, HirSourceQueryError, HirUseBindingSourcePart, HirUseSourceRole,
 };
 
 fn item_query(owner: crate::identity::ItemId, role: HirItemSourceRole) -> HirSourceQuery {
@@ -239,6 +239,180 @@ fn callable_roles_preserve_final_item_and_inline_member_ownership() {
         Err(HirSourceQueryError::ItemRoleNotApplicable { owner, .. })
             if owner == capability_owner
     ));
+}
+
+#[test]
+fn attached_content_roles_preserve_every_typed_callable_component() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-attached-content-sources",
+        concat!(
+            "fn render(value: String)[body?: RichContent] -> Unit { () }\n",
+            "extern capability host {\n",
+            "    fn emit(value: String)[body: DialogueContent]\n",
+            "}\n",
+        ),
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let attached = parsed.items().unwrap();
+    let TypedItemNode::Function(function) = &attached[0] else {
+        panic!("ordinary function fixture")
+    };
+    let function = function.semantics().unwrap();
+    let content = function.attached_content().unwrap();
+    let owner = module.source_ordered_items()[0];
+    let source_owner = HirCallableSourceOwner::Item;
+    let query = |part| {
+        callable_query(
+            owner,
+            HirCallableSourceRole::AttachedContent {
+                owner: source_owner,
+                part,
+            },
+        )
+    };
+    for (part, expected) in [
+        (
+            HirCallableAttachedContentSourcePart::Whole,
+            Some(content.syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Open,
+            Some(content.open().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Binding,
+            Some(content.binding().syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Question,
+            Some(content.presence().question().unwrap().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Colon,
+            Some(content.colon().source_span().clone()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Role,
+            Some(content.role_syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Equals,
+            content
+                .presence()
+                .equals()
+                .map(|equals| equals.source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Default,
+            content
+                .presence()
+                .value()
+                .map(|value| value.syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Close,
+            Some(content.close().source_span()),
+        ),
+    ] {
+        match expected {
+            Some(expected) => assert_present_span(&module, &parsed, query(part), &expected),
+            None => assert!(matches!(
+                module.source_site(parsed.document().identity(), query(part)),
+                Ok(lookup) if matches!(lookup.presence(), HirSourcePresence::AbsentOptional)
+            )),
+        }
+    }
+
+    let TypedItemNode::ExternCapability(capability) = &attached[1] else {
+        panic!("extern capability fixture")
+    };
+    let capability = capability.semantics().unwrap();
+    let [AttachedCapabilityMember::Function(function)] = capability.body().members() else {
+        panic!("extern function fixture")
+    };
+    let content = function.attached_content().unwrap();
+    let owner = module.source_ordered_items()[1];
+    let source_owner = HirCallableSourceOwner::ExternCapabilityFunction { member: 0 };
+    for (part, expected) in [
+        (
+            HirCallableAttachedContentSourcePart::Whole,
+            Some(content.syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Open,
+            Some(content.open().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Binding,
+            Some(content.binding().syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Colon,
+            Some(content.colon().source_span().clone()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Role,
+            Some(content.role_syntax().source_span()),
+        ),
+        (
+            HirCallableAttachedContentSourcePart::Close,
+            Some(content.close().source_span()),
+        ),
+    ] {
+        assert_present_span(
+            &module,
+            &parsed,
+            callable_query(
+                owner,
+                HirCallableSourceRole::AttachedContent {
+                    owner: source_owner,
+                    part,
+                },
+            ),
+            expected
+                .as_ref()
+                .expect("required attached-content source span"),
+        );
+    }
+
+    let ordinary_rows = module
+        .resolve_item(module.source_ordered_items()[0])
+        .unwrap()
+        .kind()
+        .attached_content_callable_parameters()
+        .collect::<Vec<_>>();
+    assert_eq!(ordinary_rows.len(), 1);
+    assert_eq!(ordinary_rows[0].0, HirCallableSourceOwner::Item);
+    assert_eq!(
+        ordinary_rows[0].1.role(),
+        crate::item::HirAttachedContentRole::Rich
+    );
+    assert_eq!(
+        ordinary_rows[0].1.presence(),
+        crate::item::HirAttachedContentPresence::Optional
+    );
+
+    let capability_rows = module
+        .resolve_item(module.source_ordered_items()[1])
+        .unwrap()
+        .kind()
+        .attached_content_callable_parameters()
+        .collect::<Vec<_>>();
+    assert_eq!(capability_rows.len(), 1);
+    assert_eq!(
+        capability_rows[0].0,
+        HirCallableSourceOwner::ExternCapabilityFunction { member: 0 }
+    );
+    assert_eq!(
+        capability_rows[0].1.role(),
+        crate::item::HirAttachedContentRole::Dialogue
+    );
+    assert_eq!(
+        capability_rows[0].1.presence(),
+        crate::item::HirAttachedContentPresence::Required
+    );
 }
 
 #[test]

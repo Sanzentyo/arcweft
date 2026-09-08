@@ -266,6 +266,22 @@ impl AttachedItemPrefix {
         &self.attributes
     }
 
+    /// Whether this prefix carries the closed compile-time `#[fx]` marker.
+    ///
+    /// This is a declaration-owner fact, not a source-string rewrite: only an
+    /// implicit-crate single identifier path is admitted as the marker.
+    pub fn has_fx_attribute(&self) -> bool {
+        self.attributes.iter().any(|attribute| {
+            matches!(attribute.path().root(), AttachedPathRoot::ImplicitCrate)
+                && matches!(
+                    attribute.path().segments(),
+                    [segment]
+                        if segment.kind() == AttachedPathSegmentKind::Identifier
+                            && segment.source_text() == "fx"
+                )
+        })
+    }
+
     pub const fn visibility(&self) -> Option<&AttachedVisibility> {
         self.visibility.as_ref()
     }

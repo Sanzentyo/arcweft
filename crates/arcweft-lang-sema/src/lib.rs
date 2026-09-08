@@ -8,7 +8,9 @@ pub mod assertion;
 pub mod callable;
 pub mod character_definition;
 pub mod character_dialogue;
+mod checked_compile_time;
 pub mod checked_rich_text;
+mod checked_text_proxy;
 pub mod dialogue_view;
 pub mod effect_analysis;
 pub mod effect_catalog;
@@ -31,6 +33,7 @@ pub use producer_admission::{
     CheckedNeedProducerAdmission, CheckedNeedProducerAdmissionDigest,
     CheckedNeedProducerAdmissionError, CheckedProducerArgumentAdmission,
 };
+pub use record_field::AcceptedRecordFieldSemanticId;
 pub mod project_index;
 pub mod proof_return;
 pub mod registration;

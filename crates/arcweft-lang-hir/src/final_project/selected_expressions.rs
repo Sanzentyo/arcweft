@@ -7,9 +7,14 @@ use std::{
 
 use thiserror::Error;
 
-use crate::dialogue_application::{HirPostfixBracket, HirPostfixBracketCandidates};
-use crate::expr::{HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole};
-use crate::identity::{ExprId, HirModuleId};
+use crate::dialogue_application::{
+    HirAttachedContentApplication, HirAttachedContentApplicationFamily,
+    HirContentCallSemanticEvidence, HirPostfixBracket, HirPostfixBracketCandidates,
+};
+use crate::expr::{
+    HirCallInvocation, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
+};
+use crate::identity::{ExprId, HirModuleId, TypeId};
 use crate::module::HirModule;
 
 use super::{
@@ -20,6 +25,7 @@ use super::{
 pub(super) struct HirSelectedRuntimeExpressionOwners {
     pub(super) reached: BTreeSet<ExprId>,
     pub(super) typed: BTreeSet<ExprId>,
+    pub(super) edges: BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
 }
 
 /// Topology-bound semantic expression graph after bounded alternatives have
@@ -33,17 +39,48 @@ pub struct HirSelectedExpressionGraph {
     topology: Arc<HirProjectEvaluationTopology>,
     owners: BTreeSet<ExprId>,
     edges: BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
+    type_roots: BTreeSet<TypeId>,
 }
 
-/// Exact semantic child inventory selected for one accepted Call. Authored
-/// arguments remain HIR-owned and are always followed; the higher layer owns
-/// whether one already-checked callee expression is semantically retained.
+/// Exact semantic child inventory selected for one accepted Call. Raw HIR
+/// edges remain the sole evaluation-ownership authority; metadata rows also
+/// name the enclosing semantic owner that must be selected in the same graph.
 /// `None` is the closed representation for a static namespace/type spelling,
 /// not permission to rediscover a callee from syntax.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirSelectedCallExpressionInventory {
-    arguments: Box<[ExprId]>,
+    arguments: Box<[HirSelectedCallArgument]>,
     callee: Option<ExprId>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirSelectedCallArgument {
+    expression: ExprId,
+    semantic_owner: Option<ExprId>,
+}
+
+impl HirSelectedCallArgument {
+    pub const fn new(expression: ExprId) -> Self {
+        Self {
+            expression,
+            semantic_owner: None,
+        }
+    }
+
+    pub const fn with_semantic_owner(expression: ExprId, semantic_owner: ExprId) -> Self {
+        Self {
+            expression,
+            semantic_owner: Some(semantic_owner),
+        }
+    }
+
+    pub const fn expression(self) -> ExprId {
+        self.expression
+    }
+
+    pub const fn semantic_owner(self) -> Option<ExprId> {
+        self.semantic_owner
+    }
 }
 
 /// Higher-layer disposition of a raw final-HIR Call expression. A structural
@@ -58,10 +95,25 @@ pub enum HirSelectedCallExpressionDisposition {
 
 impl HirSelectedCallExpressionInventory {
     pub fn new(arguments: Box<[ExprId]>, callee: Option<ExprId>) -> Self {
+        Self::with_argument_semantics(
+            arguments
+                .into_vec()
+                .into_iter()
+                .map(HirSelectedCallArgument::new)
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
+            callee,
+        )
+    }
+
+    pub fn with_argument_semantics(
+        arguments: Box<[HirSelectedCallArgument]>,
+        callee: Option<ExprId>,
+    ) -> Self {
         Self { arguments, callee }
     }
 
-    pub fn arguments(&self) -> &[ExprId] {
+    pub fn arguments(&self) -> &[HirSelectedCallArgument] {
         &self.arguments
     }
 
@@ -79,8 +131,25 @@ impl HirSelectedExpressionGraph {
         self.owners.iter().copied()
     }
 
+    /// Returns whether this exact checked graph selected one expression owner.
+    ///
+    /// Selection is intentionally queried through the sealed graph rather
+    /// than reconstructed from HIR child edges. This lets downstream HIR
+    /// acceptance distinguish an outer postfix source site from its selected
+    /// synthetic dialogue candidate.
+    pub fn contains_expression(&self, owner: ExprId) -> bool {
+        self.owners.contains(&owner)
+    }
+
     pub fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
         self.edges.get(&owner).map_or(&[], Box::as_ref)
+    }
+
+    /// Returns every type root reached by the complete semantic expression
+    /// graph, including roots that are intentionally semantic-only at the
+    /// runtime boundary.
+    pub fn type_roots(&self) -> impl Iterator<Item = TypeId> + '_ {
+        self.type_roots.iter().copied()
     }
 }
 
@@ -88,6 +157,7 @@ struct HirSelectedExpressionTraversal {
     reached: BTreeSet<ExprId>,
     typed: BTreeSet<ExprId>,
     edges: BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
+    type_roots: BTreeSet<TypeId>,
 }
 
 struct SelectedExpressionTraversalInput<'a, Postfix, Calls, Disposition> {
@@ -212,6 +282,7 @@ impl HirExecutableProjectView<'_> {
             topology: Arc::clone(topology),
             owners: traversal.typed,
             edges: traversal.edges,
+            type_roots: traversal.type_roots,
         })
     }
 
@@ -236,6 +307,7 @@ impl HirExecutableProjectView<'_> {
         Ok(HirSelectedRuntimeExpressionOwners {
             reached: traversal.reached,
             typed: traversal.typed,
+            edges: traversal.edges,
         })
     }
 
@@ -268,6 +340,8 @@ impl HirExecutableProjectView<'_> {
         let mut visited = BTreeSet::new();
         let mut selected = BTreeSet::new();
         let mut selected_edges = BTreeMap::new();
+        let mut type_roots = BTreeSet::new();
+        let mut required_semantic_owners = BTreeSet::new();
 
         while let Some(owner) = pending.pop_front() {
             if excluded_roots.contains(&owner)
@@ -277,6 +351,11 @@ impl HirExecutableProjectView<'_> {
                 continue;
             }
             let kind = resolve_expression(&modules, owner)?;
+            type_roots.extend(
+                kind.direct_type_roots()
+                    .into_iter()
+                    .map(crate::expr::HirExpressionTypeRoot::type_id),
+            );
             if domain == SelectedExpressionDomain::SemanticAnalysis
                 && matches!(kind, HirExprKind::Call(_))
             {
@@ -293,9 +372,33 @@ impl HirExecutableProjectView<'_> {
                     &mut pending,
                     &mut selected,
                     &mut selected_edges,
+                    &mut required_semantic_owners,
                 )? {
                     continue;
                 }
+            }
+            if domain == SelectedExpressionDomain::SemanticAnalysis
+                && let HirExprKind::AttachedContentApplication(application) = kind
+                && let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+                    application.family()
+                && invocation.form() == crate::expr::HirCallInvocationForm::Parenthesized
+            {
+                // Language-owned content callees are static namespace
+                // identities. Their path is checked through the attached
+                // callable fact and is not a semantic expression operand;
+                // ordinary authored arguments and the attached body remain
+                // part of the selected graph.
+                selected.insert(owner);
+                let mut followed_edges = Vec::new();
+                append_selected_language_content_operands(
+                    topology,
+                    owner,
+                    invocation,
+                    &mut pending,
+                    &mut followed_edges,
+                )?;
+                selected_edges.insert(owner, followed_edges.into_boxed_slice());
+                continue;
             }
             let projection = if domain == SelectedExpressionDomain::RuntimeType {
                 expression_disposition(owner).ok_or(
@@ -310,15 +413,18 @@ impl HirExecutableProjectView<'_> {
             };
             let mut followed_edges = Vec::new();
             let value = match (kind, projection) {
-                (HirExprKind::Call(_), HirRuntimeExpressionProjection::Call { result, callee }) => {
+                (
+                    HirExprKind::Call(call),
+                    HirRuntimeExpressionProjection::Call { result, callee },
+                ) => {
                     if result == HirRuntimeValueRetention::Retain {
                         selected.insert(owner);
                     }
-                    append_selected_call_operands(
+                    append_selected_invocation_operands(
                         topology,
                         &modules,
                         owner,
-                        kind,
+                        call,
                         callee,
                         &mut pending,
                         &mut followed_edges,
@@ -337,6 +443,24 @@ impl HirExecutableProjectView<'_> {
                             expression: owner,
                         },
                     );
+                }
+                (HirExprKind::AttachedContentApplication(application), projection)
+                    if domain == SelectedExpressionDomain::RuntimeType =>
+                {
+                    let value = append_selected_attached_content_operands(
+                        topology,
+                        &modules,
+                        owner,
+                        application,
+                        projection,
+                        &mut pending,
+                        &mut followed_edges,
+                    )?;
+                    selected_edges.insert(owner, followed_edges.into_boxed_slice());
+                    if value == HirRuntimeValueRetention::Retain {
+                        selected.insert(owner);
+                    }
+                    continue;
                 }
                 (_, HirRuntimeExpressionProjection::Call { .. }) => {
                     return Err(
@@ -366,18 +490,6 @@ impl HirExecutableProjectView<'_> {
                     }
                     .apply(candidate)?;
                 }
-                HirExprKind::DialogueContentApplication(_)
-                    if domain == SelectedExpressionDomain::RuntimeType =>
-                {
-                    if value != HirRuntimeValueRetention::Omit {
-                        return Err(
-                            HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention {
-                                expression: owner,
-                            },
-                        );
-                    }
-                    enqueue_expression_edges(topology, owner, &mut pending, &mut followed_edges);
-                }
                 _ => {
                     if value == HirRuntimeValueRetention::Retain {
                         selected.insert(owner);
@@ -387,10 +499,14 @@ impl HirExecutableProjectView<'_> {
             }
             selected_edges.insert(owner, followed_edges.into_boxed_slice());
         }
+        if !required_semantic_owners.is_subset(&selected) {
+            return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+        }
         Ok(HirSelectedExpressionTraversal {
             reached: visited,
             typed: selected,
             edges: selected_edges,
+            type_roots,
         })
     }
 }
@@ -437,6 +553,7 @@ fn apply_selected_semantic_call(
     pending: &mut VecDeque<ExprId>,
     selected: &mut BTreeSet<ExprId>,
     selected_edges: &mut BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
+    required_semantic_owners: &mut BTreeSet<ExprId>,
 ) -> Result<bool, HirSelectedExpressionInventoryError> {
     let HirSelectedCallExpressionDisposition::Callable(call) = disposition else {
         return Ok(false);
@@ -451,6 +568,7 @@ fn apply_selected_semantic_call(
         call.callee(),
         pending,
         &mut followed_edges,
+        required_semantic_owners,
     )?;
     selected_edges.insert(owner, followed_edges.into_boxed_slice());
     Ok(true)
@@ -557,12 +675,13 @@ fn append_selected_call_expression_edges(
     topology: &HirProjectEvaluationTopology,
     owner: ExprId,
     kind: &HirExprKind,
-    arguments: &[ExprId],
+    arguments: &[HirSelectedCallArgument],
     callee: Option<ExprId>,
     pending: &mut VecDeque<ExprId>,
     followed: &mut Vec<HirExpressionEvaluationEdge>,
+    required_semantic_owners: &mut BTreeSet<ExprId>,
 ) -> Result<(), HirSelectedExpressionInventoryError> {
-    let HirExprKind::Call(_) = kind else {
+    let HirExprKind::Call(invocation) = kind else {
         return Err(
             HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
                 expression: owner,
@@ -577,20 +696,32 @@ fn append_selected_call_expression_edges(
                 edge,
                 HirExpressionEvaluationEdge::Expression {
                     role: HirExpressionChildRole::Argument { .. },
-                    ownership: HirExpressionChildOwnership::Owning,
                     ..
                 }
             )
         })
         .collect::<Vec<_>>();
-    if argument_edges.len() != arguments.len()
-        || argument_edges
+    if invocation.arguments().len() != arguments.len() {
+        return Err(
+            HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression: owner },
+        );
+    }
+    let mut consumed_edges = BTreeSet::new();
+    for (ordinal, (authored, selected)) in invocation.arguments().iter().zip(arguments).enumerate()
+    {
+        if authored.value() != selected.expression() {
+            return Err(
+                HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                    expression: owner,
+                },
+            );
+        }
+        let matching = argument_edges
             .iter()
-            .zip(arguments)
             .enumerate()
-            .any(|(ordinal, (edge, expected))| {
-                edge.child() != *expected
-                    || !matches!(
+            .filter(|(_, edge)| {
+                edge.child() == selected.expression()
+                    && matches!(
                         edge,
                         HirExpressionEvaluationEdge::Expression {
                             role: HirExpressionChildRole::Argument { ordinal: actual },
@@ -598,14 +729,99 @@ fn append_selected_call_expression_edges(
                         } if usize::try_from(*actual).ok() == Some(ordinal)
                     )
             })
-    {
+            .collect::<Vec<_>>();
+        if matching.len() != 1 {
+            return Err(
+                HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                    expression: owner,
+                },
+            );
+        }
+        let (edge_index, edge) = matching.first().copied().ok_or(
+            HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression: owner },
+        )?;
+        consumed_edges.insert(edge_index);
+        if selected.semantic_owner().is_none()
+            && !matches!(
+                edge,
+                HirExpressionEvaluationEdge::Expression {
+                    ownership: HirExpressionChildOwnership::Owning,
+                    ..
+                }
+            )
+        {
+            return Err(
+                HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                    expression: owner,
+                },
+            );
+        }
+        if let Some(semantic_owner) = selected.semantic_owner() {
+            let semantic_edges = topology.expression_edges(semantic_owner);
+            let target_count = semantic_edges
+                .iter()
+                .filter(|edge| {
+                    matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression {
+                            role: HirExpressionChildRole::DialogueTarget,
+                            child,
+                            ..
+                        } if *child == owner
+                    )
+                })
+                .count();
+            let coordinate_count = semantic_edges
+                .iter()
+                .filter(|edge| {
+                    matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression {
+                            role: HirExpressionChildRole::DialogueCoordinate {
+                                ordinal: coordinate_ordinal,
+                            },
+                            child,
+                            ..
+                        } if *child == selected.expression()
+                            && usize::try_from(*coordinate_ordinal).ok() == Some(ordinal)
+                    )
+                })
+                .count();
+            if target_count != 1 || coordinate_count != 1 {
+                return Err(
+                    HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                        expression: owner,
+                    },
+                );
+            }
+            required_semantic_owners.insert(semantic_owner);
+        }
+        match edge {
+            HirExpressionEvaluationEdge::Expression {
+                ownership: HirExpressionChildOwnership::Owning,
+                ..
+            } => {
+                let edge = *edge;
+                pending.push_back(edge.child());
+                followed.push(edge.clone());
+            }
+            HirExpressionEvaluationEdge::Expression {
+                ownership: HirExpressionChildOwnership::ReferenceOnly,
+                ..
+            } => followed.push((*edge).clone()),
+            _ => {
+                return Err(
+                    HirSelectedExpressionInventoryError::InvalidSelectedCallArguments {
+                        expression: owner,
+                    },
+                );
+            }
+        }
+    }
+    if consumed_edges.len() != argument_edges.len() {
         return Err(
             HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression: owner },
         );
-    }
-    for edge in argument_edges {
-        pending.push_back(edge.child());
-        followed.push(edge.clone());
     }
     let Some(callee) = callee else {
         return Ok(());
@@ -635,39 +851,57 @@ fn append_selected_call_expression_edges(
     Ok(())
 }
 
-fn append_selected_call_operands(
+fn append_selected_invocation_operands(
     topology: &HirProjectEvaluationTopology,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     owner: ExprId,
-    kind: &HirExprKind,
+    invocation: &HirCallInvocation,
     callee: HirRuntimeCallCalleeDisposition,
     pending: &mut VecDeque<ExprId>,
     followed: &mut Vec<HirExpressionEvaluationEdge>,
 ) -> Result<(), HirSelectedExpressionInventoryError> {
-    let HirExprKind::Call(call) = kind else {
+    let argument_edges = topology
+        .expression_edges(owner)
+        .iter()
+        .filter(|edge| {
+            matches!(
+                edge,
+                HirExpressionEvaluationEdge::Expression {
+                    role: HirExpressionChildRole::Argument { .. },
+                    ownership: HirExpressionChildOwnership::Owning,
+                    ..
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    if argument_edges.len() != invocation.arguments().len()
+        || argument_edges
+            .iter()
+            .zip(invocation.arguments())
+            .enumerate()
+            .any(|(ordinal, (edge, expected))| {
+                edge.child() != expected.value()
+                    || !matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression {
+                            role: HirExpressionChildRole::Argument { ordinal: actual },
+                            ..
+                        } if usize::try_from(*actual).ok() == Some(ordinal)
+                    )
+            })
+    {
         return Err(
-            HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
-                expression: owner,
-            },
+            HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression: owner },
         );
-    };
-    for edge in topology.expression_edges(owner).iter().filter(|edge| {
-        matches!(
-            edge,
-            HirExpressionEvaluationEdge::Expression {
-                role: HirExpressionChildRole::Argument { .. },
-                ownership: HirExpressionChildOwnership::Owning,
-                ..
-            }
-        )
-    }) {
+    }
+    for edge in argument_edges {
         pending.push_back(edge.child());
         followed.push(edge.clone());
     }
     if callee == HirRuntimeCallCalleeDisposition::Static {
         return Ok(());
     }
-    let callee_owner = call.callee().value_expression().ok_or(
+    let callee_owner = invocation.callee().value_expression().ok_or(
         HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
     )?;
     let module = modules.get(&callee_owner.module()).copied().ok_or(
@@ -676,7 +910,7 @@ fn append_selected_call_operands(
         },
     )?;
     let receiver = module
-        .resolve_call_value_receiver(call)
+        .resolve_call_value_receiver(invocation)
         .map_err(
             |_| HirSelectedExpressionInventoryError::UnresolvedExpression {
                 expression: callee_owner,
@@ -685,7 +919,182 @@ fn append_selected_call_operands(
         .ok_or(
             HirSelectedExpressionInventoryError::MissingRuntimeCallReceiver { expression: owner },
         )?;
-    pending.push_back(receiver);
+    if let Some(edge) = topology.expression_edges(owner).iter().find(|edge| {
+        matches!(
+            edge,
+            HirExpressionEvaluationEdge::Expression {
+                role: HirExpressionChildRole::Callee,
+                ownership: HirExpressionChildOwnership::Owning,
+                child,
+            } if *child == receiver
+        )
+    }) {
+        pending.push_back(edge.child());
+        followed.push(edge.clone());
+    } else {
+        pending.push_back(receiver);
+    }
+    Ok(())
+}
+
+fn append_selected_attached_content_operands(
+    topology: &HirProjectEvaluationTopology,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    owner: ExprId,
+    application: &HirAttachedContentApplication,
+    projection: HirRuntimeExpressionProjection,
+    pending: &mut VecDeque<ExprId>,
+    followed: &mut Vec<HirExpressionEvaluationEdge>,
+) -> Result<HirRuntimeValueRetention, HirSelectedExpressionInventoryError> {
+    let HirAttachedContentApplicationFamily::ContentCall {
+        invocation,
+        evidence,
+    } = application.family()
+    else {
+        let HirRuntimeExpressionProjection::Structural { value } = projection else {
+            return Err(
+                HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                    expression: owner,
+                },
+            );
+        };
+        if value != HirRuntimeValueRetention::Omit {
+            return Err(
+                HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention {
+                    expression: owner,
+                },
+            );
+        }
+        enqueue_expression_edges(topology, owner, pending, followed);
+        return Ok(value);
+    };
+
+    match (evidence, invocation.form()) {
+        (HirContentCallSemanticEvidence::TextProxyObject { .. }, _)
+        | (
+            HirContentCallSemanticEvidence::None,
+            crate::expr::HirCallInvocationForm::Parenthesized,
+        ) => {
+            if invocation.form() != crate::expr::HirCallInvocationForm::Parenthesized
+                || projection
+                    != (HirRuntimeExpressionProjection::Structural {
+                        value: HirRuntimeValueRetention::Omit,
+                    })
+            {
+                return Err(
+                    HirSelectedExpressionInventoryError::InvalidRuntimeValueRetention {
+                        expression: owner,
+                    },
+                );
+            }
+            enqueue_attached_content_body_edges(topology, owner, pending, followed);
+            Ok(HirRuntimeValueRetention::Omit)
+        }
+        (HirContentCallSemanticEvidence::None, _) => match (invocation.form(), projection) {
+            (
+                crate::expr::HirCallInvocationForm::Value,
+                HirRuntimeExpressionProjection::Structural { value },
+            ) if value == HirRuntimeValueRetention::Retain => {
+                append_selected_invocation_operands(
+                    topology,
+                    modules,
+                    owner,
+                    invocation,
+                    HirRuntimeCallCalleeDisposition::RuntimeReceiver,
+                    pending,
+                    followed,
+                )?;
+                enqueue_attached_content_body_edges(topology, owner, pending, followed);
+                Ok(value)
+            }
+            (
+                crate::expr::HirCallInvocationForm::Parenthesized,
+                HirRuntimeExpressionProjection::Call { result, callee },
+            ) if result == HirRuntimeValueRetention::Retain => {
+                append_selected_invocation_operands(
+                    topology, modules, owner, invocation, callee, pending, followed,
+                )?;
+                enqueue_attached_content_body_edges(topology, owner, pending, followed);
+                Ok(result)
+            }
+            _ => Err(
+                HirSelectedExpressionInventoryError::InvalidRuntimeCallDisposition {
+                    expression: owner,
+                },
+            ),
+        },
+    }
+}
+
+fn enqueue_attached_content_body_edges(
+    topology: &HirProjectEvaluationTopology,
+    owner: ExprId,
+    pending: &mut VecDeque<ExprId>,
+    followed: &mut Vec<HirExpressionEvaluationEdge>,
+) {
+    for edge in topology.expression_edges(owner).iter().filter(|edge| {
+        matches!(
+            edge,
+            HirExpressionEvaluationEdge::Expression {
+                role: HirExpressionChildRole::DialogueInterpolation { .. }
+                    | HirExpressionChildRole::AttachedContentApplication { .. }
+                    | HirExpressionChildRole::DialoguePointActionPayload { .. },
+                ownership: HirExpressionChildOwnership::Owning,
+                ..
+            }
+        )
+    }) {
+        pending.push_back(edge.child());
+        followed.push(edge.clone());
+    }
+}
+
+fn append_selected_language_content_operands(
+    topology: &HirProjectEvaluationTopology,
+    owner: ExprId,
+    invocation: &HirCallInvocation,
+    pending: &mut VecDeque<ExprId>,
+    followed: &mut Vec<HirExpressionEvaluationEdge>,
+) -> Result<(), HirSelectedExpressionInventoryError> {
+    let argument_edges = topology
+        .expression_edges(owner)
+        .iter()
+        .filter(|edge| {
+            matches!(
+                edge,
+                HirExpressionEvaluationEdge::Expression {
+                    role: HirExpressionChildRole::Argument { .. },
+                    ownership: HirExpressionChildOwnership::Owning,
+                    ..
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    if argument_edges.len() != invocation.arguments().len()
+        || argument_edges
+            .iter()
+            .zip(invocation.arguments())
+            .enumerate()
+            .any(|(ordinal, (edge, expected))| {
+                edge.child() != expected.value()
+                    || !matches!(
+                        edge,
+                        HirExpressionEvaluationEdge::Expression {
+                            role: HirExpressionChildRole::Argument { ordinal: actual },
+                            ..
+                        } if usize::try_from(*actual).ok() == Some(ordinal)
+                    )
+            })
+    {
+        return Err(
+            HirSelectedExpressionInventoryError::InvalidSelectedCallArguments { expression: owner },
+        );
+    }
+    for edge in argument_edges {
+        pending.push_back(edge.child());
+        followed.push(edge.clone());
+    }
+    enqueue_attached_content_body_edges(topology, owner, pending, followed);
     Ok(())
 }
 

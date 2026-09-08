@@ -34,8 +34,8 @@ use arcweft_lang_syntax::attachment::{
 };
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedReceiver,
-    SyntaxCallArgumentPart, SyntaxCallCalleeProjection, SyntaxCallProjection,
-    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxDialogueApplicationForm,
+    SyntaxAttachedContentApplicationForm, SyntaxCallArgumentPart, SyntaxCallCalleeProjection,
+    SyntaxCallProjection, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
     SyntaxDialogueContentProjection, SyntaxExpressionSlot, SyntaxPlaceholderKind,
     SyntaxPostfixBracketProjection, SyntaxSelectedMember,
 };
@@ -48,7 +48,10 @@ use super::leaf::{
 };
 use super::projection::poison_state_matches;
 use crate::arena::ArenaSnapshot;
-use crate::dialogue_application::HirPostfixBracketCandidates;
+use crate::dialogue_application::{
+    HirAttachedContentApplicationFamily, HirAttachedContentBodyPresence,
+    HirPostfixBracketCandidates,
+};
 use crate::expr::{
     HirAssociatedReceiver, HirBorrowKind, HirCallArgument, HirCallCallee, HirCallChildPoison,
     HirCallChildStates, HirCallTypeApplication, HirCallTypeArgument, HirCallValue,
@@ -201,9 +204,16 @@ pub(super) fn validate_candidate_expressions(
             return None;
         }
         let dialogue_payload = expressions.resolve_prepared(slots, actual_dialogue).ok()?;
-        let HirExprKind::DialogueContentApplication(application) = dialogue_payload.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = dialogue_payload.kind() else {
             return None;
         };
+        if !matches!(
+            application.family(),
+            HirAttachedContentApplicationFamily::DialogueLine { .. }
+                | HirAttachedContentApplicationFamily::ContentCall { .. }
+        ) {
+            return None;
+        }
         if !super::candidate_dialogue_manifest_matches(
             index,
             parsed,
@@ -459,10 +469,15 @@ impl<'a> CandidateValidationCursor<'a> {
             .then_some(recovered_child(HirExprSourceRole::Target));
         let content = graph.dialogue_content()?;
         let mut node_values = BTreeMap::new();
-        let mut tag_values = BTreeMap::new();
+        let action_values = BTreeMap::new();
         if matches!(content, SyntaxDialogueContentProjection::Present(_)) {
+            let arcweft_lang_syntax::expressions::SyntaxDialogueContentProjection::Present(content) =
+                content
+            else {
+                return None;
+            };
             for slot in graph.dialogue_expression_slots()? {
-                let role = dialogue_slot_role(slot.owner());
+                let role = dialogue_slot_role(slot.owner(), content)?;
                 let child = match slot.slot() {
                     SyntaxExpressionSlot::Authored => {
                         self.validate_expression(slot.node(), scope)?
@@ -478,9 +493,6 @@ impl<'a> CandidateValidationCursor<'a> {
                     AttachedCandidateDialogueOwner::Node { ordinal } => {
                         node_values.insert(ordinal, child.id)
                     }
-                    AttachedCandidateDialogueOwner::Tag { ordinal } => {
-                        tag_values.insert(ordinal, child.id)
-                    }
                 };
                 if destination.is_some() {
                     return None;
@@ -492,17 +504,46 @@ impl<'a> CandidateValidationCursor<'a> {
             });
         }
         let payload = self.expressions.resolve_prepared(self.slots, root).ok()?;
-        let HirExprKind::DialogueContentApplication(application) = payload.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = payload.kind() else {
             return None;
         };
+        let expected_body_presence = match content {
+            SyntaxDialogueContentProjection::Missing { .. } => {
+                HirAttachedContentBodyPresence::Absent
+            }
+            SyntaxDialogueContentProjection::Present(_)
+            | SyntaxDialogueContentProjection::RawLiteral(_) => {
+                HirAttachedContentBodyPresence::Present
+            }
+        };
+        if application.body_presence() != expected_body_presence {
+            return None;
+        }
+        if !matches!(
+            application.family(),
+            HirAttachedContentApplicationFamily::DialogueLine { .. }
+                | HirAttachedContentApplicationFamily::ContentCall { .. }
+        ) {
+            return None;
+        }
         let content_matches =
-            dialogue_content_matches(application.content(), content, &node_values, &tag_values);
+            dialogue_content_matches(application.content(), content, &node_values, &action_values);
+        let (application_target, plan, coordinates) = match application.family() {
+            HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan,
+                coordinates,
+            } => (*target, plan.is_some(), coordinates.as_ref()),
+            HirAttachedContentApplicationFamily::ContentCall { invocation, .. } => {
+                (invocation.callee().value_expression()?, false, &[][..])
+            }
+        };
         let coordinates_match = dialogue_coordinates_match(
-            application.coordinates(),
+            coordinates,
             self.expressions.resolve_prepared(self.slots, target).ok()?,
         );
-        if application.target() != target
-            || application.plan().is_some()
+        if application_target != target
+            || plan
             || application.content().id().owner() != root
             || !content_matches
             || !coordinates_match
@@ -666,13 +707,23 @@ impl<'a> CandidateValidationCursor<'a> {
                     if actual.target() == target.id && actual.index() == index.id)
             }
             (
-                HirExprKind::DialogueContentApplication(actual),
-                ExpressionProjection::DialogueContentApplication(expected),
+                HirExprKind::AttachedContentApplication(actual),
+                ExpressionProjection::AttachedContentApplication(expected),
             ) => {
                 let (target, remaining) = children.split_first()?;
+                let (actual_target, plan, coordinates) = match actual.family() {
+                    HirAttachedContentApplicationFamily::DialogueLine {
+                        target,
+                        plan,
+                        coordinates,
+                    } => (*target, plan.as_ref(), coordinates.as_ref()),
+                    HirAttachedContentApplicationFamily::ContentCall { invocation, .. } => {
+                        (invocation.callee().value_expression()?, None, &[][..])
+                    }
+                };
                 if target.role != HirExprSourceRole::Target
-                    || actual.target() != target.id
-                    || actual.plan().is_some()
+                    || actual_target != target.id
+                    || plan.is_some()
                     || expected.has_plan()
                     || actual.content().id().owner() != id
                 {
@@ -683,7 +734,7 @@ impl<'a> CandidateValidationCursor<'a> {
                     .then_some(recovered_child(HirExprSourceRole::Target));
                 if matches!(
                     expected.form(),
-                    SyntaxDialogueApplicationForm::Bracket {
+                    SyntaxAttachedContentApplicationForm::Bracket {
                         terminator:
                             arcweft_lang_syntax::expressions::SyntaxBracketTerminator::RecoveredMissing(_)
                     }
@@ -693,7 +744,7 @@ impl<'a> CandidateValidationCursor<'a> {
                     });
                 }
                 let mut node_values = BTreeMap::new();
-                let mut tag_values = BTreeMap::new();
+                let mut action_values = BTreeMap::new();
                 match expected.content() {
                     SyntaxDialogueContentProjection::Missing { .. } => {
                         if !remaining.is_empty() {
@@ -716,17 +767,24 @@ impl<'a> CandidateValidationCursor<'a> {
                                 HirExprSourceRole::DialogueNode {
                                     ordinal,
                                     part:
-                                        crate::source_index::HirDialogueNodeSourcePart::Interpolation,
+                                        crate::source_index::HirDialogueNodeSourcePart::Interpolation
+                                        | crate::source_index::HirDialogueNodeSourcePart::Expression,
                                 } => node_values.insert(ordinal, child.id),
-                                HirExprSourceRole::RichTextTag {
-                                    tag,
-                                    part: crate::source_index::HirRichTextTagSourcePart::Payload,
-                                } => tag_values.insert(tag, child.id),
+                                HirExprSourceRole::DialoguePointAction {
+                                    ordinal,
+                                    part:
+                                        crate::source_index::HirDialoguePointActionSourcePart::Payload,
+                                } => action_values.insert(ordinal, child.id),
                                 _ => return None,
                             };
                             if previous.is_some() {
                                 return None;
                             }
+                        }
+                    }
+                    SyntaxDialogueContentProjection::RawLiteral(_) => {
+                        if !remaining.is_empty() {
+                            return None;
                         }
                     }
                 }
@@ -741,10 +799,10 @@ impl<'a> CandidateValidationCursor<'a> {
                     actual.content(),
                     expected.content(),
                     &node_values,
-                    &tag_values,
+                    &action_values,
                 );
                 let coordinates_match = dialogue_coordinates_match(
-                    actual.coordinates(),
+                    coordinates,
                     self.expressions
                         .resolve_prepared(self.slots, target.id)
                         .ok()?,
@@ -1116,7 +1174,7 @@ impl<'a> CandidateValidationCursor<'a> {
         &mut self,
         node: AttachedCandidateNode<'_>,
         expression_projection: &ExpressionProjection,
-        actual: &crate::expr::HirCallExpr,
+        actual: &crate::expr::HirCallInvocation,
         projection: &SyntaxCallProjection,
         scope: ScopeId,
     ) -> Option<Option<HirRecoveryIssue>> {

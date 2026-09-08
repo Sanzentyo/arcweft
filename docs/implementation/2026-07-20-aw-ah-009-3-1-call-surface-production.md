@@ -56,7 +56,7 @@ threshold in the current checkout.
 ### CharacterDialogue supersedes the package's dialogue special forms
 
 The package's D-01 through D-04 clauses require exact argument-list carriers on
-the old colon speaker head and `alice.say(...)[...]` content-call surface.
+the old colon speaker head and the then-current builder-shaped content-call surface.
 Those clauses are not implemented and are not counted as accepted. The later
 AW-AH-009.4 CharacterDialogue direction removes `say` and replaces those
 speaker/content-call forms. Adding `SpeakerLineSurface::argument_list()` or a

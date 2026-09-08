@@ -15,8 +15,10 @@ use crate::callable::{
     PreparedCallGraphDelta, PreparedCallGraphReplayMismatch, PreparedCallGraphSiteState,
 };
 use crate::{
-    checked_rich_text::PreparedCheckedDialogueMarkCatalog,
-    final_analysis::{PreparedDialogueApplication, PreparedExpressionFact},
+    checked_rich_text::{PreparedCheckedContentCatalog, PreparedCheckedRichTextCheck},
+    final_analysis::{
+        PreparedContentApplication, PreparedDialogueApplication, PreparedExpressionFact,
+    },
 };
 
 #[derive(Debug)]
@@ -28,7 +30,7 @@ pub(super) struct TakenDialogueApplication {
     owner: ExprId,
     site: CheckedCallSite,
     application: PreparedDialogueApplication,
-    markers: PreparedCheckedDialogueMarkCatalog,
+    content: PreparedCheckedRichTextCheck,
 }
 
 impl TakenDialogueApplication {
@@ -36,13 +38,41 @@ impl TakenDialogueApplication {
         self,
     ) -> (
         PreparedDialogueApplication,
-        PreparedCheckedDialogueMarkCatalog,
+        PreparedCheckedRichTextCheck,
         DialogueApplicationReplacementProof,
     ) {
         (
             self.application,
-            self.markers,
+            self.content,
             DialogueApplicationReplacementProof {
+                owner: self.owner,
+                site: self.site,
+            },
+        )
+    }
+}
+
+/// Affine authority to replace one generic content application after its
+/// checked body row has been consumed by the late seal.
+pub(super) struct TakenContentApplication {
+    owner: ExprId,
+    site: CheckedCallSite,
+    application: PreparedContentApplication,
+    content: Option<PreparedCheckedRichTextCheck>,
+}
+
+impl TakenContentApplication {
+    pub(super) fn into_parts(
+        self,
+    ) -> (
+        PreparedContentApplication,
+        Option<PreparedCheckedRichTextCheck>,
+        ContentApplicationReplacementProof,
+    ) {
+        (
+            self.application,
+            self.content,
+            ContentApplicationReplacementProof {
                 owner: self.owner,
                 site: self.site,
             },
@@ -53,6 +83,13 @@ impl TakenDialogueApplication {
 /// Move-only proof that the late seal took the exact prior call-correlated
 /// dialogue row and may publish only its same-site final replacement.
 pub(super) struct DialogueApplicationReplacementProof {
+    owner: ExprId,
+    site: CheckedCallSite,
+}
+
+/// Move-only proof that a generic content application took the exact
+/// prior call-correlated row and may publish only its same-site replacement.
+pub(super) struct ContentApplicationReplacementProof {
     owner: ExprId,
     site: CheckedCallSite,
 }
@@ -264,10 +301,11 @@ pub(super) struct SemanticFactState {
     locals: BTreeMap<LocalId, TypeKind>,
     patterns: BTreeMap<PatternId, TypeKind>,
     expressions: BTreeMap<ExprId, PreparedExpressionFact>,
-    dialogue_mark_catalogs: BTreeMap<ExprId, PreparedCheckedDialogueMarkCatalog>,
+    checked_content: PreparedCheckedContentCatalog,
     expression_stack: BTreeSet<ExprId>,
     iteration_facts: BTreeMap<ExprId, CheckedIteration>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, LocalId>,
+    implicit_capture_use_order: Vec<ImplicitCaptureUseKey>,
     prepared_calls: Option<AnalyzerPreparedCallGraph>,
     final_calls: BTreeMap<ExprId, CallTargetFacts>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
@@ -299,9 +337,13 @@ pub(super) struct CandidateSemanticProjection {
     locals: BTreeMap<LocalId, Option<TypeKind>>,
     patterns: BTreeMap<PatternId, Option<TypeKind>>,
     expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
-    dialogue_mark_catalogs: BTreeMap<ExprId, Option<PreparedCheckedDialogueMarkCatalog>>,
+    checked_content: BTreeMap<
+        arcweft_lang_hir::dialogue_application::HirDialogueContentId,
+        Option<PreparedCheckedRichTextCheck>,
+    >,
     iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
+    implicit_capture_use_order: Box<[ImplicitCaptureUseKey]>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
 }
 
@@ -440,7 +482,7 @@ impl std::fmt::Debug for CandidateSemanticProjection {
             .field("locals", &self.locals.len())
             .field("patterns", &self.patterns.len())
             .field("expressions", &self.expressions.len())
-            .field("dialogue_mark_catalogs", &self.dialogue_mark_catalogs.len())
+            .field("checked_content", &self.checked_content.len())
             .field("iterations", &self.iterations.len())
             .field("implicit_capture_uses", &self.implicit_capture_uses.len())
             .field(
@@ -467,7 +509,7 @@ pub(super) enum CandidateSemanticReplayMismatch {
     Locals,
     Patterns,
     Expressions,
-    DialogueMarkCatalogs,
+    CheckedContent,
     Iterations,
     ImplicitCaptureUses,
     PhysicalCandidateEvaluations,
@@ -511,13 +553,16 @@ impl CandidateSemanticProjection {
         if self.expressions != other.expressions {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
-        if self.dialogue_mark_catalogs != other.dialogue_mark_catalogs {
-            return Some(CandidateSemanticReplayMismatch::DialogueMarkCatalogs);
+        if self.checked_content != other.checked_content {
+            return Some(CandidateSemanticReplayMismatch::CheckedContent);
         }
         if self.iterations != other.iterations {
             return Some(CandidateSemanticReplayMismatch::Iterations);
         }
         if self.implicit_capture_uses != other.implicit_capture_uses {
+            return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
+        }
+        if self.implicit_capture_use_order != other.implicit_capture_use_order {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
         }
         None
@@ -529,7 +574,7 @@ struct CandidateProjectionOwners {
     locals: BTreeSet<LocalId>,
     patterns: BTreeSet<PatternId>,
     expressions: BTreeSet<ExprId>,
-    dialogue_mark_catalogs: BTreeSet<ExprId>,
+    checked_content: BTreeSet<arcweft_lang_hir::dialogue_application::HirDialogueContentId>,
     iterations: BTreeSet<ExprId>,
     implicit_capture_uses: BTreeSet<ImplicitCaptureUseKey>,
 }
@@ -547,9 +592,9 @@ enum SemanticFactMutation {
         owner: ExprId,
         previous: Option<Box<PreparedExpressionFact>>,
     },
-    DialogueMarkCatalog {
-        owner: ExprId,
-        previous: Option<Box<PreparedCheckedDialogueMarkCatalog>>,
+    CheckedContent {
+        content: arcweft_lang_hir::dialogue_application::HirDialogueContentId,
+        previous: Option<Box<PreparedCheckedRichTextCheck>>,
     },
     Iteration {
         owner: ExprId,
@@ -558,6 +603,7 @@ enum SemanticFactMutation {
     ImplicitCaptureUse {
         key: ImplicitCaptureUseKey,
         previous: Option<LocalId>,
+        order_index: usize,
     },
 }
 
@@ -568,10 +614,11 @@ impl SemanticFactState {
             locals: BTreeMap::new(),
             patterns: BTreeMap::new(),
             expressions: BTreeMap::new(),
-            dialogue_mark_catalogs: BTreeMap::new(),
+            checked_content: PreparedCheckedContentCatalog::default(),
             expression_stack: BTreeSet::new(),
             iteration_facts: BTreeMap::new(),
             implicit_capture_uses: BTreeMap::new(),
+            implicit_capture_use_order: Vec::new(),
             prepared_calls: Some(PreparedCallGraph::new()),
             final_calls: BTreeMap::new(),
             physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript::default(
@@ -798,8 +845,13 @@ impl SemanticFactState {
         target: &CandidateFactTransactionAuthority<'_>,
         site: crate::callable::CheckedCallSite,
         prefix: AnalyzerPreparedCallPrefix,
-    ) -> Result<(TypeKind, Option<PreparedCallContinuationRef>), CandidateFactTransactionViolation>
-    {
+    ) -> Result<
+        (
+            crate::callable::CallableResultSchema,
+            Option<PreparedCallContinuationRef>,
+        ),
+        CandidateFactTransactionViolation,
+    > {
         self.ensure_healthy()?;
         if !Arc::ptr_eq(&self.issuer, &target.checkpoint.issuer) {
             return Err(CandidateFactTransactionViolation::ForeignCheckpoint);
@@ -882,12 +934,18 @@ impl SemanticFactState {
         ) {
             return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
         }
-        let site = self
-            .expressions
-            .get(&owner)
-            .and_then(|fact| fact.checked_call_site(owner))
-            .filter(|site| *site == CheckedCallSite::DialogueApplication(owner))
-            .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
+        let site =
+            self.expressions
+                .get(&owner)
+                .and_then(|fact| fact.checked_call_site(owner))
+                .filter(|site| {
+                    *site == (CheckedCallSite::AttachedContentApplication {
+                        expression: owner,
+                        family:
+                            crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
+                    })
+                })
+                .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
         let PreparedExpressionFact::DialogueApplication(application) = self
             .expressions
             .remove(&owner)
@@ -895,18 +953,70 @@ impl SemanticFactState {
         else {
             unreachable!("the checked variant test proves the row family")
         };
-        let catalog = self
-            .dialogue_mark_catalogs
-            .remove(&owner)
+        let content_id = application.content();
+        let content = self
+            .checked_content
+            .take(content_id)
             .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
-        if catalog.content().owner() != owner {
+        if content.content_id() != content_id || content_id.owner() != owner {
             return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
         }
         Ok(TakenDialogueApplication {
             owner,
             site,
             application,
-            markers: catalog,
+            content,
+        })
+    }
+
+    pub(super) fn take_content_application(
+        &mut self,
+        owner: ExprId,
+    ) -> Result<TakenContentApplication, CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        if self.prepared_calls.is_some()
+            || !self.candidate_checkpoints.is_empty()
+            || !self.candidate_journal.is_empty()
+        {
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+        }
+        let site =
+            self.expressions
+                .get(&owner)
+                .and_then(|fact| fact.checked_call_site(owner))
+                .filter(|site| {
+                    *site == (CheckedCallSite::AttachedContentApplication {
+                        expression: owner,
+                        family:
+                            crate::callable::CheckedAttachedContentApplicationFamily::ContentCall,
+                    })
+                })
+                .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
+        let PreparedExpressionFact::ContentApplication(application) = self
+            .expressions
+            .remove(&owner)
+            .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?
+        else {
+            return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+        };
+        let content = match application.content() {
+            Some(content_id) => {
+                let content = self
+                    .checked_content
+                    .take(content_id)
+                    .ok_or(CandidateFactTransactionViolation::ProjectionUnavailable)?;
+                if content.content_id() != content_id || content_id.owner() != owner {
+                    return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
+                }
+                Some(content)
+            }
+            None => None,
+        };
+        Ok(TakenContentApplication {
+            owner,
+            site,
+            application,
+            content,
         })
     }
 
@@ -921,7 +1031,11 @@ impl SemanticFactState {
             || !self.candidate_checkpoints.is_empty()
             || !self.candidate_journal.is_empty()
             || self.expressions.contains_key(&proof.owner)
-            || proof.site != CheckedCallSite::DialogueApplication(proof.owner)
+            || proof.site
+                != (CheckedCallSite::AttachedContentApplication {
+                    expression: proof.owner,
+                    family: crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
+                })
             || value.checked_call_site(proof.owner) != Some(proof.site)
         {
             return Err(ExpressionFactWriteViolation::Candidate(
@@ -932,8 +1046,34 @@ impl SemanticFactState {
         Ok(())
     }
 
-    pub(super) fn dialogue_mark_catalogs_are_empty(&self) -> bool {
-        self.dialogue_mark_catalogs.is_empty()
+    pub(super) fn publish_sealed_content_application(
+        &mut self,
+        proof: ContentApplicationReplacementProof,
+        value: PreparedExpressionFact,
+    ) -> Result<(), ExpressionFactWriteViolation> {
+        self.ensure_healthy()
+            .map_err(ExpressionFactWriteViolation::Candidate)?;
+        if self.prepared_calls.is_some()
+            || !self.candidate_checkpoints.is_empty()
+            || !self.candidate_journal.is_empty()
+            || self.expressions.contains_key(&proof.owner)
+            || proof.site
+                != (CheckedCallSite::AttachedContentApplication {
+                    expression: proof.owner,
+                    family: crate::callable::CheckedAttachedContentApplicationFamily::ContentCall,
+                })
+            || value.checked_call_site(proof.owner) != Some(proof.site)
+        {
+            return Err(ExpressionFactWriteViolation::Candidate(
+                Self::call_graph_mismatch(),
+            ));
+        }
+        self.write_expression(proof.owner, value);
+        Ok(())
+    }
+
+    pub(super) fn checked_content_is_empty(&self) -> bool {
+        self.checked_content.is_empty()
     }
 
     pub(super) const fn iteration_facts(&self) -> &BTreeMap<ExprId, CheckedIteration> {
@@ -970,25 +1110,57 @@ impl SemanticFactState {
             .copied()
     }
 
-    /// Journal-removes and returns every pending use owned by one implicit
-    /// callable. The checked callable fact immediately seals these rows into
-    /// topology-authenticated evidence.
-    pub(super) fn take_implicit_capture_uses(
+    /// Affinely drains the complete implicit-capture ledger after candidate
+    /// evaluation has closed. Every observed owner must belong to the exact
+    /// accepted owner set; no per-owner drain can leave a second mutable view
+    /// of the ledger or silently discard an unowned row.
+    pub(super) fn take_implicit_capture_uses_for_owners(
         &mut self,
-        callable: ExprId,
-    ) -> Result<Box<[(ExprId, LocalId)]>, CandidateFactTransactionViolation> {
+        owners: &BTreeSet<ExprId>,
+    ) -> Result<BTreeMap<ExprId, Box<[(ExprId, LocalId)]>>, CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
-        let rows = self
-            .implicit_capture_uses
-            .iter()
-            .filter_map(|((owner, expression), local)| {
-                (*owner == callable).then_some((*expression, *local))
-            })
-            .collect::<Vec<_>>();
-        for (expression, _) in &rows {
-            self.remove_implicit_capture_use((callable, *expression));
+        if !self.candidate_checkpoints.is_empty() || !self.candidate_journal.is_empty() {
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
         }
-        Ok(rows.into_boxed_slice())
+        if self.implicit_capture_uses.len() != self.implicit_capture_use_order.len()
+            || self
+                .implicit_capture_uses
+                .keys()
+                .any(|key| !owners.contains(&key.0))
+            || self
+                .implicit_capture_use_order
+                .iter()
+                .enumerate()
+                .any(|(index, key)| {
+                    self.implicit_capture_uses.get(key).is_none()
+                        || self.implicit_capture_use_order[..index].contains(key)
+                        || !owners.contains(&key.0)
+                })
+        {
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+        }
+        let ordered = std::mem::take(&mut self.implicit_capture_use_order);
+        let mut values = std::mem::take(&mut self.implicit_capture_uses);
+        let mut rows = owners
+            .iter()
+            .copied()
+            .map(|owner| (owner, Vec::new()))
+            .collect::<BTreeMap<_, Vec<_>>>();
+        for key @ (owner, expression) in ordered {
+            let local = values
+                .remove(&key)
+                .ok_or(CandidateFactTransactionViolation::UnrecoverableLedger)?;
+            rows.get_mut(&owner)
+                .ok_or(CandidateFactTransactionViolation::UnrecoverableLedger)?
+                .push((expression, local));
+        }
+        if !values.is_empty() {
+            return Err(CandidateFactTransactionViolation::UnrecoverableLedger);
+        }
+        Ok(rows
+            .into_iter()
+            .map(|(owner, rows)| (owner, rows.into_boxed_slice()))
+            .collect())
     }
 
     pub(super) const fn calls(&self) -> &BTreeMap<ExprId, CallTargetFacts> {
@@ -1331,6 +1503,15 @@ impl SemanticFactState {
             PhysicalCandidateEvaluationTranscript::default()
         };
         let owners = self.projection_owners(journal_start);
+        let implicit_capture_use_order = self
+            .implicit_capture_use_order
+            .iter()
+            .copied()
+            .filter(|key| owners.implicit_capture_uses.contains(key))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        self.implicit_capture_use_order
+            .retain(|key| !implicit_capture_use_order.contains(key));
         let projection = CandidateSemanticProjection {
             authority: CandidateProjectionAuthority {
                 issuer: Arc::clone(&self.issuer),
@@ -1352,10 +1533,10 @@ impl SemanticFactState {
                 .into_iter()
                 .map(|owner| (owner, self.expressions.remove(&owner)))
                 .collect(),
-            dialogue_mark_catalogs: owners
-                .dialogue_mark_catalogs
+            checked_content: owners
+                .checked_content
                 .into_iter()
-                .map(|owner| (owner, self.dialogue_mark_catalogs.remove(&owner)))
+                .map(|content| (content, self.checked_content.take(content)))
                 .collect(),
             iterations: owners
                 .iterations
@@ -1367,6 +1548,7 @@ impl SemanticFactState {
                 .into_iter()
                 .map(|key| (key, self.implicit_capture_uses.remove(&key)))
                 .collect(),
+            implicit_capture_use_order,
             physical_candidate_argument_evaluations,
         };
         self.rollback_journal(journal_start);
@@ -1428,9 +1610,10 @@ impl SemanticFactState {
             locals,
             patterns,
             expressions,
-            dialogue_mark_catalogs,
+            checked_content,
             iterations,
             implicit_capture_uses,
+            implicit_capture_use_order,
             physical_candidate_argument_evaluations,
         } = projection;
         if let Some((key, existing, proposed)) =
@@ -1457,9 +1640,10 @@ impl SemanticFactState {
                     locals,
                     patterns,
                     expressions,
-                    dialogue_mark_catalogs,
+                    checked_content,
                     iterations,
                     implicit_capture_uses,
+                    implicit_capture_use_order,
                     physical_candidate_argument_evaluations,
                 }),
             });
@@ -1483,9 +1667,10 @@ impl SemanticFactState {
                         locals,
                         patterns,
                         expressions,
-                        dialogue_mark_catalogs,
+                        checked_content,
                         iterations,
                         implicit_capture_uses,
+                        implicit_capture_use_order,
                         physical_candidate_argument_evaluations,
                     }),
                 });
@@ -1499,9 +1684,10 @@ impl SemanticFactState {
             locals,
             patterns,
             expressions,
-            dialogue_mark_catalogs,
+            checked_content,
             iterations,
             implicit_capture_uses,
+            implicit_capture_use_order,
         );
         Ok(())
     }
@@ -1621,9 +1807,15 @@ impl SemanticFactState {
         }
         let previous = self.implicit_capture_uses.insert(key, local);
         debug_assert!(previous.is_none());
+        let order_index = self.implicit_capture_use_order.len();
+        self.implicit_capture_use_order.push(key);
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::ImplicitCaptureUse { key, previous });
+                .push(SemanticFactMutation::ImplicitCaptureUse {
+                    key,
+                    previous,
+                    order_index,
+                });
         }
         Ok(())
     }
@@ -1666,21 +1858,25 @@ impl SemanticFactState {
 
     fn validate_call_expression_graph(&self) -> Result<(), CandidateFactTransactionViolation> {
         let graph = self.prepared_calls()?;
-        if self.expressions.iter().any(|(owner, expression)| {
+        let expression_mismatch = self.expressions.iter().find(|(owner, expression)| {
             expression
-                .checked_call_site(*owner)
+                .checked_call_site(**owner)
                 .is_some_and(|site| graph.site_state(site).is_none())
-        }) || graph.sites().any(|site| {
+        });
+        let graph_mismatch = graph.sites().find(|site| {
+            let site = *site;
             let owner = match site {
-                CheckedCallSite::HirCall(owner) | CheckedCallSite::DialogueApplication(owner) => {
-                    owner
-                }
+                CheckedCallSite::HirCall(owner)
+                | CheckedCallSite::AttachedContentApplication {
+                    expression: owner, ..
+                } => owner,
             };
             self.expressions
                 .get(&owner)
                 .and_then(|expression| expression.checked_call_site(owner))
                 != Some(site)
-        }) {
+        });
+        if expression_mismatch.is_some() || graph_mismatch.is_some() {
             return Err(Self::call_graph_mismatch());
         }
         Ok(())
@@ -1745,21 +1941,48 @@ impl SemanticFactState {
         Ok(())
     }
 
-    pub(super) fn publish_dialogue_mark_catalog(
+    /// Discards a candidate-resolution-only expression after the selected
+    /// semantic channel has established that the source is not an owned
+    /// expression in the final graph.
+    ///
+    /// Call-bearing expressions cannot be discarded here because their fact
+    /// and prepared-call graph node form one transaction. Static ContentCall
+    /// callees are the motivating owner: the selected call target/schema is
+    /// final authority, while the authored callee spelling is not a content
+    /// child and therefore must not escape as a parallel expression fact.
+    pub(super) fn discard_provisional_expression(
         &mut self,
         owner: ExprId,
-        catalog: PreparedCheckedDialogueMarkCatalog,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
-        if catalog.content().owner() != owner || self.dialogue_mark_catalogs.contains_key(&owner) {
+        if self
+            .expressions
+            .get(&owner)
+            .is_some_and(|expression| expression.checked_call_site(owner).is_some())
+        {
+            return Err(Self::call_graph_mismatch());
+        }
+        self.remove_expression(owner);
+        Ok(())
+    }
+
+    pub(super) fn publish_checked_content(
+        &mut self,
+        owner: ExprId,
+        checked: PreparedCheckedRichTextCheck,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        let content = checked.content_id();
+        if content.owner() != owner || self.checked_content.contains(content) {
             return Err(CandidateFactTransactionViolation::ProjectionUnavailable);
         }
-        let previous = self.dialogue_mark_catalogs.insert(owner, catalog);
-        debug_assert!(previous.is_none());
+        self.checked_content
+            .insert(checked)
+            .map_err(|_| CandidateFactTransactionViolation::ProjectionUnavailable)?;
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::DialogueMarkCatalog {
-                    owner,
+                .push(SemanticFactMutation::CheckedContent {
+                    content,
                     previous: None,
                 });
         }
@@ -1790,6 +2013,31 @@ impl SemanticFactState {
         self.validate_call_expression_write(owner, &value)
             .map_err(ExpressionFactWriteViolation::Candidate)?;
         self.write_expression(owner, value);
+        Ok(())
+    }
+
+    /// Atomically installs a complete owner-bound replacement batch. All
+    /// existence, health, and call-site checks happen before the first map
+    /// mutation, so a malformed replacement cannot publish a partial seal.
+    pub(super) fn replace_existing_expressions(
+        &mut self,
+        replacements: BTreeMap<ExprId, PreparedExpressionFact>,
+    ) -> Result<(), ExpressionFactWriteViolation> {
+        self.ensure_healthy()
+            .map_err(ExpressionFactWriteViolation::Candidate)?;
+        if replacements
+            .keys()
+            .any(|owner| !self.expressions.contains_key(owner))
+        {
+            return Err(ExpressionFactWriteViolation::MissingPublishedFact);
+        }
+        for (owner, value) in &replacements {
+            self.validate_call_expression_write(*owner, value)
+                .map_err(ExpressionFactWriteViolation::Candidate)?;
+        }
+        for (owner, value) in replacements {
+            self.write_expression(owner, value);
+        }
         Ok(())
     }
 
@@ -1834,9 +2082,27 @@ impl SemanticFactState {
 
     fn remove_implicit_capture_use(&mut self, key: ImplicitCaptureUseKey) {
         let previous = self.implicit_capture_uses.remove(&key);
+        let order_index = if previous.is_some() {
+            let Some(index) = self
+                .implicit_capture_use_order
+                .iter()
+                .position(|existing| *existing == key)
+            else {
+                self.poison = Some(CandidateFactTransactionViolation::UnrecoverableLedger);
+                return;
+            };
+            self.implicit_capture_use_order.remove(index);
+            Some(index)
+        } else {
+            None
+        };
         if previous.is_some() && !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::ImplicitCaptureUse { key, previous });
+                .push(SemanticFactMutation::ImplicitCaptureUse {
+                    key,
+                    previous,
+                    order_index: order_index.expect("present capture has an order index"),
+                });
         }
     }
 
@@ -1953,8 +2219,8 @@ impl SemanticFactState {
                 SemanticFactMutation::Expression { owner, .. } => {
                     owners.expressions.insert(*owner);
                 }
-                SemanticFactMutation::DialogueMarkCatalog { owner, .. } => {
-                    owners.dialogue_mark_catalogs.insert(*owner);
+                SemanticFactMutation::CheckedContent { content, .. } => {
+                    owners.checked_content.insert(*content);
                 }
                 SemanticFactMutation::Iteration { owner, .. } => {
                     owners.iterations.insert(*owner);
@@ -1988,12 +2254,15 @@ impl SemanticFactState {
                         previous.map(|previous| *previous),
                     );
                 }
-                SemanticFactMutation::DialogueMarkCatalog { owner, previous } => {
-                    restore_map_entry(
-                        &mut self.dialogue_mark_catalogs,
-                        owner,
-                        previous.map(|previous| *previous),
-                    );
+                SemanticFactMutation::CheckedContent { content, previous } => {
+                    if self
+                        .checked_content
+                        .replace(content, previous.map(|previous| *previous))
+                        .is_err()
+                    {
+                        self.poison =
+                            Some(CandidateFactTransactionViolation::ProjectionUnavailable);
+                    }
                 }
                 SemanticFactMutation::Iteration { owner, previous } => {
                     restore_map_entry(
@@ -2002,8 +2271,22 @@ impl SemanticFactState {
                         previous.map(|previous| *previous),
                     );
                 }
-                SemanticFactMutation::ImplicitCaptureUse { key, previous } => {
+                SemanticFactMutation::ImplicitCaptureUse {
+                    key,
+                    previous,
+                    order_index,
+                } => {
                     restore_map_entry(&mut self.implicit_capture_uses, key, previous);
+                    if previous.is_some() {
+                        self.implicit_capture_use_order
+                            .insert(order_index.min(self.implicit_capture_use_order.len()), key);
+                    } else if self
+                        .implicit_capture_use_order
+                        .get(order_index)
+                        .is_some_and(|existing| *existing == key)
+                    {
+                        self.implicit_capture_use_order.remove(order_index);
+                    }
                 }
             }
         }
@@ -2014,9 +2297,13 @@ impl SemanticFactState {
         locals: BTreeMap<LocalId, Option<TypeKind>>,
         patterns: BTreeMap<PatternId, Option<TypeKind>>,
         expressions: BTreeMap<ExprId, Option<PreparedExpressionFact>>,
-        dialogue_mark_catalogs: BTreeMap<ExprId, Option<PreparedCheckedDialogueMarkCatalog>>,
+        checked_content: BTreeMap<
+            arcweft_lang_hir::dialogue_application::HirDialogueContentId,
+            Option<PreparedCheckedRichTextCheck>,
+        >,
         iterations: BTreeMap<ExprId, Option<CheckedIteration>>,
         implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
+        implicit_capture_use_order: Box<[ImplicitCaptureUseKey]>,
     ) {
         for (owner, value) in locals {
             self.apply_local(owner, value);
@@ -2027,11 +2314,17 @@ impl SemanticFactState {
         for (owner, value) in expressions {
             self.apply_expression(owner, value);
         }
-        for (owner, value) in dialogue_mark_catalogs {
-            self.apply_dialogue_mark_catalog(owner, value);
+        for (content, value) in checked_content {
+            self.apply_checked_content(content, value);
         }
         for (owner, value) in iterations {
             self.apply_iteration(owner, value);
+        }
+        let mut implicit_capture_uses = implicit_capture_uses;
+        for key in implicit_capture_use_order {
+            if let Some(value) = implicit_capture_uses.remove(&key) {
+                self.apply_implicit_capture_use(key, value);
+            }
         }
         for (key, value) in implicit_capture_uses {
             self.apply_implicit_capture_use(key, value);
@@ -2062,19 +2355,22 @@ impl SemanticFactState {
         }
     }
 
-    fn apply_dialogue_mark_catalog(
+    fn apply_checked_content(
         &mut self,
-        owner: ExprId,
-        value: Option<PreparedCheckedDialogueMarkCatalog>,
+        content: arcweft_lang_hir::dialogue_application::HirDialogueContentId,
+        value: Option<PreparedCheckedRichTextCheck>,
     ) {
-        let previous = match value {
-            Some(value) => self.dialogue_mark_catalogs.insert(owner, value),
-            None => self.dialogue_mark_catalogs.remove(&owner),
+        let previous = match self.checked_content.replace(content, value) {
+            Ok(previous) => previous,
+            Err(_) => {
+                self.poison = Some(CandidateFactTransactionViolation::ProjectionUnavailable);
+                return;
+            }
         };
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::DialogueMarkCatalog {
-                    owner,
+                .push(SemanticFactMutation::CheckedContent {
+                    content,
                     previous: previous.map(Box::new),
                 });
         }
@@ -2096,9 +2392,15 @@ impl SemanticFactState {
                 .is_some_and(|existing| *existing == value);
             if !already_present {
                 let previous = self.implicit_capture_uses.insert(key, value);
+                let order_index = self.implicit_capture_use_order.len();
+                self.implicit_capture_use_order.push(key);
                 if !self.candidate_checkpoints.is_empty() {
                     self.candidate_journal
-                        .push(SemanticFactMutation::ImplicitCaptureUse { key, previous });
+                        .push(SemanticFactMutation::ImplicitCaptureUse {
+                            key,
+                            previous,
+                            order_index,
+                        });
                 }
             }
         } else {
@@ -2368,7 +2670,13 @@ mod tests {
             BTreeSet::new(),
             [site],
             BTreeMap::new(),
-            BTreeMap::from([(owner, Some(CheckedCallSite::DialogueApplication(owner)),)]),
+            BTreeMap::from([(
+                owner,
+                Some(CheckedCallSite::AttachedContentApplication {
+                    expression: owner,
+                    family: crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
+                }),
+            )]),
         ));
     }
 
@@ -2699,5 +3007,58 @@ mod tests {
         state
             .rollback_candidate_transaction(checkpoint)
             .expect("rollback after conflict");
+    }
+
+    #[test]
+    fn implicit_capture_ledger_drains_affinely_in_event_order_for_exact_owners() {
+        let (callable, first_local, _) = call_identity();
+        let (_, second_local) = distinct_test_locals();
+        let sites = graph_sites();
+        let first_expression = sites[0].expression();
+        let second_expression = sites[1].expression();
+        assert_ne!(first_expression, second_expression);
+
+        let mut state = SemanticFactState::new();
+        state
+            .record_implicit_capture_use(callable, second_expression, second_local)
+            .expect("later event");
+        state
+            .record_implicit_capture_use(callable, first_expression, first_local)
+            .expect("earlier source event");
+
+        let drained = state
+            .take_implicit_capture_uses_for_owners(&BTreeSet::from([callable]))
+            .expect("exact owner ledger drain");
+        assert_eq!(
+            drained.get(&callable).map(Box::as_ref),
+            Some(
+                &[
+                    (second_expression, second_local),
+                    (first_expression, first_local),
+                ][..]
+            )
+        );
+        assert!(state.pending_implicit_capture_uses().is_empty());
+    }
+
+    #[test]
+    fn implicit_capture_ledger_rejects_an_unowned_row_without_draining() {
+        let (callable, local, _) = call_identity();
+        let expression = graph_sites()[0].expression();
+        let foreign_callable = graph_sites()[2].expression();
+        let mut state = SemanticFactState::new();
+        state
+            .record_implicit_capture_use(foreign_callable, expression, local)
+            .expect("foreign owner row");
+        assert_eq!(
+            state
+                .take_implicit_capture_uses_for_owners(&BTreeSet::from([callable]))
+                .expect_err("unowned row must reject the whole drain"),
+            CandidateFactTransactionViolation::UnrecoverableLedger
+        );
+        assert_eq!(
+            state.implicit_capture_use(foreign_callable, expression),
+            Some(local)
+        );
     }
 }

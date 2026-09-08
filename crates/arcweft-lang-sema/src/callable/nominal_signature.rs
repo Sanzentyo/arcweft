@@ -423,7 +423,7 @@ impl<'a> ProjectSignatureResolver<'a> {
         } else {
             let ordinal = u16::try_from(generic_scope.bindings().len())
                 .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
-            TypeKind::GenericParam(GenericTypeParameterId::new(owner.clone(), ordinal))
+            TypeKind::generic_parameter(GenericTypeParameterId::new(owner.clone(), ordinal))
         };
         let self_scope = SelfTypeScope::Known(self_type.clone());
         let parameter_types = parameter_groups

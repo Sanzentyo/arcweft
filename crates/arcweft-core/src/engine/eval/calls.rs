@@ -250,17 +250,22 @@ impl Engine {
         args: &[RuntimeCallArgument],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<Vec<RuntimeValue>, RuntimeEvalError> {
-        let mut values = Vec::with_capacity(args.len());
+        let mut materialized = Vec::with_capacity(args.len());
         for argument in args {
             let value = self.evaluate_expr_with_backend(argument.value(), pure_backend)?;
-            match argument.mode() {
-                RuntimeCallArgumentMode::Value => values.push(value),
-                RuntimeCallArgumentMode::Spread => {
-                    values.extend(runtime_value_into_sequence_values(value).map_err(|value| {
+            let values = match argument.mode() {
+                RuntimeCallArgumentMode::Value => vec![value],
+                RuntimeCallArgumentMode::Spread => runtime_value_into_sequence_values(value)
+                    .map_err(|value| {
                         RuntimeEvalError::InvalidSpread(runtime_value_label(&value))
-                    })?);
-                }
-            }
+                    })?,
+            };
+            materialized.push((argument.abi_position(), values));
+        }
+        materialized.sort_by_key(|(position, _)| *position);
+        let mut values = Vec::new();
+        for (_, materialized) in materialized {
+            values.extend(materialized);
         }
         Ok(values)
     }

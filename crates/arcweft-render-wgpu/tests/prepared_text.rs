@@ -129,7 +129,7 @@ fn controls_enter_the_prepared_batch_during_frame_planning() {
         .expect("project font registers");
     let mut scene = empty_scene();
     scene.choices.push(RenderChoiceItem {
-        id: "choice_one".to_owned(),
+        id: Some("choice_one".to_owned()),
         label: "選択肢 One".to_owned(),
     });
     let frame = planner.prepare(&scene).expect("choice frame prepares");

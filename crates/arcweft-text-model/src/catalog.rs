@@ -2,8 +2,14 @@
 
 use std::collections::BTreeMap;
 
-use crate::RichTextDocument;
-use arcweft_core::plan::RuntimeLineId;
+use crate::{
+    DialogueContentFragmentCatalog, DialogueContentFragmentCatalogError,
+    DialogueContentFragmentTemplate, DialogueContentFragmentTemplateError,
+};
+use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_core::entry::RuntimeDialogueContentTemplateDigest;
+use arcweft_core::plan::{RuntimeDialogueContentApplicationKey, RuntimeLineId};
+use arcweft_core::runtime_id::RuntimeDialogueContentTemplateId;
 use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision,
     character_presentation::CheckedCharacterPresentationPlan,
@@ -21,7 +27,8 @@ use thiserror::Error;
 pub struct DialogueContentSpec {
     line: RuntimeLineId,
     text_key: TextKey,
-    content: RichTextDocument,
+    template: RuntimeDialogueContentTemplateId,
+    template_digest: RuntimeDialogueContentTemplateDigest,
     character: CheckedCharacterPresentationPlan,
     presentation: DialoguePresentationSnapshot,
     inline_styles: Vec<RichTextStyleContribution>,
@@ -53,10 +60,39 @@ impl DialoguePresentationSnapshot {
 }
 
 impl DialogueContentSpec {
-    pub fn new(
+    /// Creates a line record around the immutable template authority.
+    pub fn try_new(
         line: RuntimeLineId,
         text_key: TextKey,
-        content: RichTextDocument,
+        template: &DialogueContentFragmentTemplate,
+        character: CheckedCharacterPresentationPlan,
+        presentation: DialoguePresentationSnapshot,
+        inline_styles: Vec<RichTextStyleContribution>,
+        source: ProductSourceRef,
+    ) -> Result<Self, DialogueContentSpecError> {
+        template.validate_for_catalog().map_err(|source| {
+            DialogueContentSpecError::InvalidTemplate {
+                template: template.id(),
+                source: Box::new(source),
+            }
+        })?;
+        Ok(Self {
+            line,
+            text_key,
+            template: template.id(),
+            template_digest: template.digest(),
+            character,
+            presentation,
+            inline_styles,
+            source,
+        })
+    }
+
+    fn from_identity(
+        line: RuntimeLineId,
+        text_key: TextKey,
+        template: RuntimeDialogueContentTemplateId,
+        template_digest: RuntimeDialogueContentTemplateDigest,
         character: CheckedCharacterPresentationPlan,
         presentation: DialoguePresentationSnapshot,
         inline_styles: Vec<RichTextStyleContribution>,
@@ -65,7 +101,8 @@ impl DialogueContentSpec {
         Self {
             line,
             text_key,
-            content,
+            template,
+            template_digest,
             character,
             presentation,
             inline_styles,
@@ -81,8 +118,14 @@ impl DialogueContentSpec {
         &self.text_key
     }
 
-    pub const fn content(&self) -> &RichTextDocument {
-        &self.content
+    #[must_use]
+    pub const fn template_id(&self) -> RuntimeDialogueContentTemplateId {
+        self.template
+    }
+
+    #[must_use]
+    pub const fn template_digest(&self) -> RuntimeDialogueContentTemplateDigest {
+        self.template_digest
     }
 
     pub const fn character(&self) -> &CheckedCharacterPresentationPlan {
@@ -104,22 +147,58 @@ impl DialogueContentSpec {
     pub const fn source(&self) -> &ProductSourceRef {
         &self.source
     }
+
+    #[must_use]
+    pub fn key(&self) -> RuntimeDialogueContentApplicationKey {
+        RuntimeDialogueContentApplicationKey::new(self.line.clone(), self.template)
+    }
+}
+
+/// Invalid line record assembled around a checked content template.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum DialogueContentSpecError {
+    #[error("dialogue content template `{template}` is invalid: {source}")]
+    InvalidTemplate {
+        template: RuntimeDialogueContentTemplateId,
+        #[source]
+        source: Box<DialogueContentFragmentTemplateError>,
+    },
 }
 
 /// Immutable static dialogue catalog with exact keyed lookup.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DialogueContentCatalog {
     records: Vec<DialogueContentSpec>,
-    by_line: BTreeMap<RuntimeLineId, usize>,
+    by_application: BTreeMap<RuntimeDialogueContentApplicationKey, usize>,
+    templates: Vec<DialogueContentFragmentTemplate>,
+    by_template: BTreeMap<RuntimeDialogueContentTemplateId, usize>,
 }
 
 /// Invalid static dialogue catalog transcript.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum DialogueContentCatalogError {
-    #[error("dialogue content catalog repeats runtime line `{line}`")]
-    DuplicateLine { line: RuntimeLineId },
-    #[error("dialogue content catalog is not in canonical (line, text_key) order")]
+    #[error("dialogue content catalog repeats application `{key:?}`")]
+    DuplicateApplication {
+        key: RuntimeDialogueContentApplicationKey,
+    },
+    #[error("dialogue content catalog is not in canonical (line, template, text_key) order")]
     NonCanonicalOrder,
+    #[error("dialogue content catalog repeats template `{template}`")]
+    DuplicateTemplate {
+        template: RuntimeDialogueContentTemplateId,
+    },
+    #[error("dialogue content catalog templates are not in canonical identity order")]
+    NonCanonicalTemplateOrder,
+    #[error("dialogue content catalog application `{key:?}` references a missing template")]
+    MissingTemplate {
+        key: RuntimeDialogueContentApplicationKey,
+    },
+    #[error("dialogue content template `{template}` is invalid: {source}")]
+    InvalidTemplate {
+        template: RuntimeDialogueContentTemplateId,
+        #[source]
+        source: Box<DialogueContentFragmentTemplateError>,
+    },
 }
 
 impl DialogueContentCatalog {
@@ -127,39 +206,118 @@ impl DialogueContentCatalog {
     pub const fn new() -> Self {
         Self {
             records: Vec::new(),
-            by_line: BTreeMap::new(),
+            by_application: BTreeMap::new(),
+            templates: Vec::new(),
+            by_template: BTreeMap::new(),
         }
     }
 
-    /// Accepts only the sole schema's canonical `(line, text_key)` order.
-    pub fn try_from_records(
+    /// Builds the complete catalog from top-level line records and every
+    /// nested immutable template emitted by the compiler.
+    pub fn try_from_records_and_templates(
         records: Vec<DialogueContentSpec>,
+        templates: Vec<DialogueContentFragmentTemplate>,
     ) -> Result<Self, DialogueContentCatalogError> {
         if records
             .windows(2)
-            .any(|pair| (pair[0].line(), pair[0].text_key()) > (pair[1].line(), pair[1].text_key()))
+            .any(|pair| (pair[0].key(), pair[0].text_key()) > (pair[1].key(), pair[1].text_key()))
         {
             return Err(DialogueContentCatalogError::NonCanonicalOrder);
         }
-        let mut by_line = BTreeMap::new();
+        let mut by_application = BTreeMap::new();
         for (index, record) in records.iter().enumerate() {
-            if by_line.insert(record.line().clone(), index).is_some() {
-                return Err(DialogueContentCatalogError::DuplicateLine {
-                    line: record.line().clone(),
+            let key = record.key();
+            if by_application.insert(key.clone(), index).is_some() {
+                return Err(DialogueContentCatalogError::DuplicateApplication { key });
+            }
+        }
+        for template in &templates {
+            template.validate_for_catalog().map_err(|source| {
+                DialogueContentCatalogError::InvalidTemplate {
+                    template: template.id(),
+                    source: Box::new(source),
+                }
+            })?;
+        }
+        if templates
+            .windows(2)
+            .any(|pair| pair[0].id() >= pair[1].id())
+        {
+            if let Some(pair) = templates
+                .windows(2)
+                .find(|pair| pair[0].id() == pair[1].id())
+            {
+                return Err(DialogueContentCatalogError::DuplicateTemplate {
+                    template: pair[0].id(),
+                });
+            }
+            return Err(DialogueContentCatalogError::NonCanonicalTemplateOrder);
+        }
+        let mut by_template = BTreeMap::new();
+        for (index, template) in templates.iter().enumerate() {
+            if by_template.insert(template.id(), index).is_some() {
+                return Err(DialogueContentCatalogError::DuplicateTemplate {
+                    template: template.id(),
                 });
             }
         }
-        Ok(Self { records, by_line })
+        for record in &records {
+            let Some(template) = by_template
+                .get(&record.template_id())
+                .and_then(|index| templates.get(*index))
+            else {
+                return Err(DialogueContentCatalogError::MissingTemplate { key: record.key() });
+            };
+            if template.id() != record.template_id()
+                || template.digest() != record.template_digest()
+            {
+                return Err(DialogueContentCatalogError::InvalidTemplate {
+                    template: record.template_id(),
+                    source: Box::new(DialogueContentFragmentTemplateError::DigestMismatch {
+                        expected: template.digest(),
+                        actual: record.template_digest(),
+                    }),
+                });
+            }
+        }
+        Ok(Self {
+            records,
+            by_application,
+            templates,
+            by_template,
+        })
     }
 
     pub fn records(&self) -> &[DialogueContentSpec] {
         &self.records
     }
 
-    pub fn find(&self, line: &RuntimeLineId) -> Option<&DialogueContentSpec> {
-        self.by_line
-            .get(line)
+    pub fn find(&self, key: &RuntimeDialogueContentApplicationKey) -> Option<&DialogueContentSpec> {
+        self.by_application
+            .get(key)
             .and_then(|index| self.records.get(*index))
+    }
+
+    #[must_use]
+    pub fn templates(&self) -> &[DialogueContentFragmentTemplate] {
+        &self.templates
+    }
+
+    #[must_use]
+    pub fn find_template(
+        &self,
+        template: RuntimeDialogueContentTemplateId,
+    ) -> Option<&DialogueContentFragmentTemplate> {
+        self.by_template
+            .get(&template)
+            .and_then(|index| self.templates.get(*index))
+    }
+
+    pub fn fragment_catalog(
+        &self,
+        artifact: RuntimeArtifactFingerprint,
+    ) -> Result<DialogueContentFragmentCatalog, DialogueContentFragmentCatalogError> {
+        DialogueContentFragmentCatalog::try_from_templates(artifact, self.templates.clone())
     }
 }
 
@@ -174,7 +332,8 @@ impl Default for DialogueContentCatalog {
 struct DialogueContentSpecWire {
     line: RuntimeLineId,
     text_key: String,
-    content: RichTextDocument,
+    template: RuntimeDialogueContentTemplateId,
+    template_digest: RuntimeDialogueContentTemplateDigest,
     character: CheckedCharacterPresentationPlan,
     presentation: DialoguePresentationProfile,
     presentation_revision: DialogueProfileRevision,
@@ -190,7 +349,8 @@ impl Serialize for DialogueContentSpec {
         DialogueContentSpecWire {
             line: self.line.clone(),
             text_key: self.text_key.as_str().to_owned(),
-            content: self.content.clone(),
+            template: self.template,
+            template_digest: self.template_digest,
             character: self.character.clone(),
             presentation: self.presentation.profile().clone(),
             presentation_revision: self.presentation.revision().clone(),
@@ -207,10 +367,11 @@ impl<'de> Deserialize<'de> for DialogueContentSpec {
         D: Deserializer<'de>,
     {
         let wire = DialogueContentSpecWire::deserialize(deserializer)?;
-        Ok(Self::new(
+        Ok(Self::from_identity(
             wire.line,
             TextKey::try_new(wire.text_key).map_err(serde::de::Error::custom)?,
-            wire.content,
+            wire.template,
+            wire.template_digest,
             wire.character,
             DialoguePresentationSnapshot::new(wire.presentation, wire.presentation_revision),
             wire.inline_styles,
@@ -224,7 +385,17 @@ impl Serialize for DialogueContentCatalog {
     where
         S: Serializer,
     {
-        self.records.serialize(serializer)
+        #[derive(Serialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire<'a> {
+            records: &'a [DialogueContentSpec],
+            templates: &'a [DialogueContentFragmentTemplate],
+        }
+        Wire {
+            records: &self.records,
+            templates: &self.templates,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -233,7 +404,14 @@ impl<'de> Deserialize<'de> for DialogueContentCatalog {
     where
         D: Deserializer<'de>,
     {
-        Self::try_from_records(Vec::<DialogueContentSpec>::deserialize(deserializer)?)
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Wire {
+            records: Vec<DialogueContentSpec>,
+            templates: Vec<DialogueContentFragmentTemplate>,
+        }
+        let wire = Wire::deserialize(deserializer)?;
+        Self::try_from_records_and_templates(wire.records, wire.templates)
             .map_err(serde::de::Error::custom)
     }
 }

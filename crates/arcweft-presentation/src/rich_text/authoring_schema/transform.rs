@@ -1,12 +1,11 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextEnumSchemaId,
-    RichTextNumericLimits, RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema,
-    RichTextUnit, RichTextValueKind, RichTextValueLimits, SelectorContract, SelectorKind,
-    UnknownPropertyPolicy,
+    Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextEnumDomain,
+    RichTextNumericLimits, RichTextPropertySetSchema, RichTextPropertySpec, RichTextUnit,
+    RichTextValueKind, RichTextValueLimits,
 };
 
 /// Closed post-layout transform selector inventory.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextTransformSelector {
     /// Translation transform.
     Offset,
@@ -19,7 +18,7 @@ pub enum RichTextTransformSelector {
 }
 
 /// Semantic properties used by post-layout transform schemas.
-#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RichTextTransformProperty {
     /// Horizontal component.
     X,
@@ -41,7 +40,7 @@ impl RichTextTransformSelector {
     #[must_use]
     pub const fn from_source_name(source: &str) -> Option<Self> {
         match source.as_bytes() {
-            b"offset" | b"pos" => Some(Self::Offset),
+            b"offset" => Some(Self::Offset),
             b"rotate" => Some(Self::Rotate),
             b"scale" => Some(Self::Scale),
             b"skew" => Some(Self::Skew),
@@ -62,12 +61,31 @@ impl RichTextTransformSelector {
 
     /// Immutable owner-typed schema for this transform selector.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<RichTextTransformProperty> {
+    pub const fn property_schema(
+        self,
+    ) -> &'static RichTextPropertySetSchema<RichTextTransformProperty> {
         match self {
-            Self::Offset => &OFFSET_SCHEMA,
-            Self::Rotate => &ROTATE_SCHEMA,
-            Self::Scale => &SCALE_SCHEMA,
-            Self::Skew => &SKEW_SCHEMA,
+            Self::Offset => &OFFSET_PROPERTY_SET,
+            Self::Rotate => &ROTATE_PROPERTY_SET,
+            Self::Scale => &SCALE_PROPERTY_SET,
+            Self::Skew => &SKEW_PROPERTY_SET,
+        }
+    }
+
+    /// Closed enum domain carried by selector-valued callable parameters.
+    #[must_use]
+    pub const fn schema_id(self) -> arcweft_id::closed_enum::ClosedEnumDomainId {
+        arcweft_rich_text_schema::RichTextEnumDomain::TransformSelector.domain_id()
+    }
+
+    /// Stable zero-based selector ordinal.
+    #[must_use]
+    pub const fn ordinal(self) -> u16 {
+        match self {
+            Self::Offset => 0,
+            Self::Rotate => 1,
+            Self::Scale => 2,
+            Self::Skew => 3,
         }
     }
 }
@@ -102,8 +120,10 @@ impl RichTextTransformProperty {
     }
 }
 
-const TARGET_ENUM: RichTextEnumSchemaId = RichTextEnumSchemaId::new("rich_text.transform.target");
-const ORIGIN_ENUM: RichTextEnumSchemaId = RichTextEnumSchemaId::new("rich_text.transform.origin");
+const TARGET_ENUM: arcweft_id::closed_enum::ClosedEnumDomainId =
+    RichTextEnumDomain::TransformTarget.domain_id();
+const ORIGIN_ENUM: arcweft_id::closed_enum::ClosedEnumDomainId =
+    RichTextEnumDomain::TransformOrigin.domain_id();
 const SINGLE: Multiplicity = Multiplicity::Single;
 
 const OFFSET_LIMITS: RichTextValueLimits = RichTextValueLimits {
@@ -284,50 +304,17 @@ const SKEW_PROPERTIES: [RichTextPropertySpec<RichTextTransformProperty>; 4] = [
     origin_property(0),
 ];
 
-const fn selector_schema(
-    source_forms: &'static [RichTextSourceForm],
+const fn property_set(
     properties: &'static [RichTextPropertySpec<RichTextTransformProperty>],
-) -> RichTextTagSchema<RichTextTransformProperty> {
-    RichTextTagSchema {
-        source_forms,
-        selector: SelectorContract::RequiredPositional {
-            kind: SelectorKind::Closed,
-        },
-        properties,
-        unknown_policy: UnknownPropertyPolicy::Reject,
-        output: CheckedOutputKind::Span,
-    }
+) -> RichTextPropertySetSchema<RichTextTransformProperty> {
+    RichTextPropertySetSchema { properties }
 }
 
-const OFFSET_SCHEMA: RichTextTagSchema<RichTextTransformProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-        RichTextSourceForm::GrammarSpelling {
-            source: ".pos",
-            canonical: ".offset",
-        },
-    ],
-    &OFFSET_PROPERTIES,
-);
-const ROTATE_SCHEMA: RichTextTagSchema<RichTextTransformProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &ROTATE_PROPERTIES,
-);
-const SCALE_SCHEMA: RichTextTagSchema<RichTextTransformProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &SCALE_PROPERTIES,
-);
-const SKEW_SCHEMA: RichTextTagSchema<RichTextTransformProperty> = selector_schema(
-    &[
-        RichTextSourceForm::ExplicitFamily,
-        RichTextSourceForm::DotSelector,
-    ],
-    &SKEW_PROPERTIES,
-);
+const OFFSET_PROPERTY_SET: RichTextPropertySetSchema<RichTextTransformProperty> =
+    property_set(&OFFSET_PROPERTIES);
+const ROTATE_PROPERTY_SET: RichTextPropertySetSchema<RichTextTransformProperty> =
+    property_set(&ROTATE_PROPERTIES);
+const SCALE_PROPERTY_SET: RichTextPropertySetSchema<RichTextTransformProperty> =
+    property_set(&SCALE_PROPERTIES);
+const SKEW_PROPERTY_SET: RichTextPropertySetSchema<RichTextTransformProperty> =
+    property_set(&SKEW_PROPERTIES);

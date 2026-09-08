@@ -17,9 +17,9 @@ use crate::arena::ArenaSnapshot;
 use crate::expr::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
     HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison, HirCallChildStates,
-    HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
-    HirCallTypeArgument, HirCallValue, HirExpr, HirRecoveredName, HirRecoveryIssue,
-    HirRequiredTokenState,
+    HirCallInvocationForm, HirCallTypeApplication, HirCallTypeApplicationSpelling,
+    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallValue, HirExpr, HirRecoveredName,
+    HirRecoveryIssue, HirRequiredTokenState,
 };
 use crate::identity::{ExprId, TypeId};
 use crate::slot::{HirOrigin, SlotSnapshot};
@@ -30,7 +30,7 @@ use crate::type_ref::HirType;
     reason = "one Call projection validates callee, arguments, punctuation, ownership, and recovery in source order"
 )]
 pub(super) fn call_projection_matches(
-    actual: &crate::expr::HirCallExpr,
+    actual: &crate::expr::HirCallInvocation,
     expected: &SyntaxCallProjection,
 ) -> bool {
     if let SyntaxCallProjection::CallbackBlock(expected) = expected {
@@ -38,6 +38,7 @@ pub(super) fn call_projection_matches(
             return false;
         };
         return matches!(actual.callee(), HirCallCallee::Value { .. })
+            && actual.form() == HirCallInvocationForm::Parenthesized
             && matches!(
                 actual.explicit_type_application(),
                 HirCallTypeApplication::Absent
@@ -92,7 +93,8 @@ pub(super) fn call_projection_matches(
         }
         _ => false,
     };
-    if !callee_matches
+    if actual.form() != HirCallInvocationForm::Parenthesized
+        || !callee_matches
         || !call_type_application_matches(
             actual.explicit_type_application(),
             expected.explicit_type_application(),
@@ -292,8 +294,63 @@ pub(super) fn call_children_match(
     types: &ArenaSnapshot<HirType, TypeId>,
     parent: ExprId,
     payload: &HirExpr,
-    expression: &crate::expr::HirCallExpr,
+    expression: &crate::expr::HirCallInvocation,
     attached: &AttachedExpressionNode,
+) -> bool {
+    call_children_match_inner(
+        parsed,
+        slots,
+        expressions,
+        types,
+        parent,
+        payload,
+        expression,
+        attached,
+        true,
+    )
+}
+
+/// Matches a call invocation embedded in another expression owner. Its
+/// children still belong to the call's attached syntax, but the enclosing
+/// owner carries the recovery state, so the ordinary call-root poison check
+/// must not be applied a second time.
+pub(super) fn call_invocation_children_match(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    expressions: &ArenaSnapshot<HirExpr, ExprId>,
+    types: &ArenaSnapshot<HirType, TypeId>,
+    parent: ExprId,
+    payload: &HirExpr,
+    expression: &crate::expr::HirCallInvocation,
+    attached: &AttachedExpressionNode,
+) -> bool {
+    call_children_match_inner(
+        parsed,
+        slots,
+        expressions,
+        types,
+        parent,
+        payload,
+        expression,
+        attached,
+        false,
+    )
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    reason = "ordinary and embedded Call roots share one exact child projection with only root-state handling varied"
+)]
+fn call_children_match_inner(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    expressions: &ArenaSnapshot<HirExpr, ExprId>,
+    types: &ArenaSnapshot<HirType, TypeId>,
+    parent: ExprId,
+    payload: &HirExpr,
+    expression: &crate::expr::HirCallInvocation,
+    attached: &AttachedExpressionNode,
+    validate_root_state: bool,
 ) -> bool {
     let ExpressionProjection::Call(projection) = attached.projection() else {
         return false;
@@ -434,7 +491,7 @@ pub(super) fn call_children_match(
             &type_argument_states,
         ))
         .map(HirRecoveryIssue::InvalidCall);
-    poison_state_matches(payload.state(), expected)
+    !validate_root_state || poison_state_matches(payload.state(), expected)
 }
 
 fn call_associated_receiver_matches(

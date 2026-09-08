@@ -1,7 +1,8 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
 use super::fiber::{
-    FiberAwaitTarget, FiberResumeTarget, FiberScope, FiberScopeCleanup, FiberState, FiberStatus,
-    FiberSuspension, FiberSuspensionReason, FiberTrap,
+    AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
+    FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,
+    FiberTrap,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
@@ -14,8 +15,10 @@ use crate::pattern::{
 use crate::plan::{FlowRuntimeId, RuntimeAgentOperationalType, RuntimeFlowTargetError};
 use crate::value::{
     RuntimeFunctionValue, RuntimeHandleKind, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
-    RuntimeValue, runtime_sequence_values,
+    RuntimeProjectContinuation, RuntimeProjectContinuationAbi, RuntimeValue,
+    runtime_sequence_values,
 };
+use arcweft_id::runtime_program::RuntimeProjectContinuationLineageId;
 
 fn runtime_type(marker: u8, shape: AwbcRuntimeTypeShape) -> AwbcRuntimeType {
     AwbcRuntimeType::new(RuntimeSemanticTypeId::from_bytes([marker; 32]), shape)
@@ -84,6 +87,706 @@ fn minimal_program() -> AwbcProgram {
     }
 }
 
+fn project_call_invoke_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    program.constants = vec![AwbcConstant::Unit];
+    program.runtime_types = vec![runtime_type(1, AwbcRuntimeTypeShape::Unit)];
+    program.patterns = vec![AwbcPattern::Discard];
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: Some(AwbcTypeId(0)),
+        effects: AwbcEffectSetId(0),
+    });
+    program.frame_layouts.push(AwbcFrameLayout {
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(2, 1),
+        entry_block: AwbcBlockId(2),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Invoke {
+                function: AwbcFunctionId(1),
+            },
+            result_ty: AwbcTypeId(0),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(0),
+    });
+    program.resume_points.push(AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    });
+    program.canonicalize_string_table();
+    program
+}
+
+fn project_call_continuation_program() -> (AwbcProgram, RuntimeValue) {
+    let mut program = minimal_program();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
+    program.patterns = vec![AwbcPattern::Discard];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Continuation {
+                callee: AwbcRegisterId(0),
+                expected_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
+                    function_type: AwbcTypeId(1),
+                    prefix_types: vec![AwbcTypeId(0)],
+                },
+            },
+            completed_group: 1,
+            operands: vec![AwbcProjectCallOperand {
+                value: AwbcRegisterId(1),
+                mode: AwbcProjectCallOperandMode::Value,
+            }],
+            ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+                parameter: 0,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+                source_index: 0,
+            }],
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Continue {
+                result_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
+                    function_type: AwbcTypeId(1),
+                    prefix_types: vec![AwbcTypeId(0), AwbcTypeId(0)],
+                },
+                next_group: 2,
+            },
+            result_ty: AwbcTypeId(1),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.resume_points.push(AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    });
+    let abi = RuntimeProjectContinuationAbi::from_admitted_parts(
+        RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
+        program.runtime_types[1].semantic_identity(),
+        vec![program.runtime_types[0].semantic_identity()].into_boxed_slice(),
+    );
+    let continuation = RuntimeProjectContinuation::from_snapshot_parts(
+        abi,
+        vec![RuntimeValue::Unit].into_boxed_slice(),
+    )
+    .expect("continuation fixture has a complete prefix");
+    (program, RuntimeValue::ProjectContinuation(continuation))
+}
+
+fn project_call_continuation_verifier_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(
+            2,
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
+    program.patterns = vec![AwbcPattern::Discard];
+    program.constants = vec![AwbcConstant::Unit];
+    program.frame_layouts[0] = AwbcFrameLayout {
+        slots: vec![
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+            AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            },
+        ],
+        max_scope_depth: 0,
+    };
+    program.frame_layouts.push(AwbcFrameLayout {
+        slots: vec![AwbcFrameSlot {
+            name: None,
+            ty: AwbcTypeId(0),
+            role: AwbcFrameSlotRole::Temporary,
+            scope_depth: 0,
+        }],
+        max_scope_depth: 0,
+    });
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: Some(AwbcTypeId(0)),
+        effects: AwbcEffectSetId(0),
+    });
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Ordinary,
+        signature: AwbcSignatureId(1),
+        frame_layout: AwbcFrameLayoutId(1),
+        blocks: AwbcTableRange::new(2, 1),
+        entry_block: AwbcBlockId(2),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Continuation {
+                callee: AwbcRegisterId(0),
+                expected_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
+                    function_type: AwbcTypeId(1),
+                    prefix_types: vec![AwbcTypeId(0)],
+                },
+            },
+            completed_group: 1,
+            operands: vec![AwbcProjectCallOperand {
+                value: AwbcRegisterId(1),
+                mode: AwbcProjectCallOperandMode::Value,
+            }],
+            ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+                parameter: 0,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+                source_index: 0,
+            }],
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Continue {
+                result_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x42; 32]),
+                    function_type: AwbcTypeId(1),
+                    prefix_types: vec![AwbcTypeId(0), AwbcTypeId(0)],
+                },
+                next_group: 2,
+            },
+            result_ty: AwbcTypeId(1),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(2, 1),
+        terminator: AwbcTerminator::Return {
+            value: Some(AwbcRegisterId(0)),
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.constants = vec![AwbcConstant::Unit];
+    program.instructions = vec![
+        AwbcInstruction::MakeFunction {
+            dst: AwbcRegisterId(0),
+            function: AwbcFunctionId(1),
+            params: Vec::new(),
+            capture_names: Vec::new(),
+            captures: Vec::new(),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    program
+}
+
+fn project_call_fixed_program() -> AwbcProgram {
+    let mut program = project_call_invoke_program();
+    program.constants = vec![AwbcConstant::Unit];
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.signatures[1].params = vec![AwbcTypeId(0)];
+    program.frame_layouts[1].slots[0].role = AwbcFrameSlotRole::Parameter;
+    program.instructions = vec![AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(0),
+    }];
+    program.blocks[0].instructions = AwbcTableRange::new(0, 1);
+    program.blocks[2].instructions = AwbcTableRange::new(1, 0);
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: vec![AwbcProjectCallOperand {
+                value: AwbcRegisterId(0),
+                mode: AwbcProjectCallOperandMode::Value,
+            }],
+            ordinary: vec![AwbcProjectCallOrdinaryMaterialization::Fixed {
+                parameter: 0,
+                abi_ty: AwbcTypeId(0),
+                binding_ty: AwbcTypeId(0),
+                source_index: 0,
+            }],
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Invoke {
+                function: AwbcFunctionId(1),
+            },
+            result_ty: AwbcTypeId(0),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program
+}
+
+fn expect_project_call_rejection(program: AwbcProgram, message: &str) {
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("malformed ProjectCall must be rejected");
+    assert!(
+        error.to_string().contains(message),
+        "expected ProjectCall rejection containing {message:?}, got {error:?}"
+    );
+}
+
+fn project_call_mut(program: &mut AwbcProgram) -> &mut AwbcProjectCall {
+    match &mut program.blocks[0].terminator {
+        AwbcTerminator::ProjectCall { call } => call,
+        terminator => panic!("test program does not have a ProjectCall terminator: {terminator:?}"),
+    }
+}
+
+fn project_call_default_program() -> AwbcProgram {
+    let mut program = minimal_program();
+    program
+        .strings
+        .extend(["Some".to_owned(), "None".to_owned()]);
+    program.constants = vec![AwbcConstant::Unit];
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(2, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(0)])),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Variant {
+                owner: AwbcVariantIdentity::Builtin(
+                    crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+                ),
+                arguments: Vec::new(),
+                cases: vec![
+                    AwbcVariantCase {
+                        name: AwbcStringId(1),
+                        payload: Some(AwbcTypeId(1)),
+                    },
+                    AwbcVariantCase {
+                        name: AwbcStringId(2),
+                        payload: None,
+                    },
+                ],
+            },
+        ),
+    ];
+    program.patterns = vec![AwbcPattern::Discard];
+    program.signatures.extend([
+        AwbcSignature {
+            params: Vec::new(),
+            result: Some(AwbcTypeId(0)),
+            effects: AwbcEffectSetId(0),
+        },
+        AwbcSignature {
+            params: vec![AwbcTypeId(0)],
+            result: Some(AwbcTypeId(0)),
+            effects: AwbcEffectSetId(0),
+        },
+    ]);
+    program.frame_layouts.extend([
+        AwbcFrameLayout {
+            slots: vec![AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(0),
+                role: AwbcFrameSlotRole::Temporary,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            slots: vec![
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: AwbcTypeId(0),
+                    role: AwbcFrameSlotRole::Temporary,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        },
+    ]);
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.functions.extend([
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(1),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(2, 1),
+            entry_block: AwbcBlockId(2),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(2),
+            frame_layout: AwbcFrameLayoutId(2),
+            blocks: AwbcTableRange::new(3, 1),
+            entry_block: AwbcBlockId(3),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+    ]);
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: Some(AwbcProjectCallAttachedMaterialization {
+                abi_ty: AwbcTypeId(2),
+                binding_ty: AwbcTypeId(0),
+                source_index: None,
+                presence: AwbcProjectCallAttachedPresence::DefaultedOmitted {
+                    default: AwbcProjectCallDefaultFunction {
+                        site: AwbcFunctionId(1),
+                        captures: Vec::new(),
+                    },
+                },
+            }),
+            outcome: AwbcProjectCallOutcome::Invoke {
+                function: AwbcFunctionId(2),
+            },
+            result_ty: AwbcTypeId(0),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.extend([
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 1),
+            terminator: AwbcTerminator::Return {
+                value: Some(AwbcRegisterId(0)),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(2),
+            instructions: AwbcTableRange::new(1, 1),
+            terminator: AwbcTerminator::Return {
+                value: Some(AwbcRegisterId(1)),
+            },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+    ]);
+    program.instructions.extend([
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+    ]);
+    program.resume_points.push(AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    });
+    program.canonicalize_string_table();
+    program
+}
+
+fn goto_unwind_program(dynamic: bool) -> AwbcProgram {
+    let mut program = minimal_program();
+    let inner_flags = if dynamic {
+        AwbcFunctionFlags::empty()
+            .with(AwbcFunctionFlag::Deterministic)
+            .with(AwbcFunctionFlag::HasDynamicTarget)
+    } else {
+        AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic)
+    };
+    program.strings.push("target".to_owned());
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(2, AwbcRuntimeTypeShape::String),
+    ];
+    program.constants = vec![AwbcConstant::Unit, AwbcConstant::String(AwbcStringId(1))];
+    program.signatures.push(AwbcSignature {
+        params: Vec::new(),
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.effect_plans = vec![AwbcEffectPlan {
+        kind: AwbcEffectKind::Wait,
+        signature: AwbcSignatureId(1),
+        capability: None,
+        audio: None,
+        static_args: vec![AwbcConstantId(0)],
+        resources: Vec::new(),
+    }];
+    program.frame_layouts = vec![
+        AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            slots: vec![AwbcFrameSlot {
+                name: None,
+                ty: AwbcTypeId(1),
+                role: AwbcFrameSlotRole::Local,
+                scope_depth: 0,
+            }],
+            max_scope_depth: 0,
+        },
+        AwbcFrameLayout {
+            slots: Vec::new(),
+            max_scope_depth: 0,
+        },
+    ];
+    program.functions[0].blocks = AwbcTableRange::new(0, 1);
+    program.functions[0].frame_layout = AwbcFrameLayoutId(0);
+    program.functions.extend([
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Ordinary,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(1),
+            blocks: AwbcTableRange::new(1, 1),
+            entry_block: AwbcBlockId(1),
+            flags: inner_flags,
+        },
+        AwbcFunction {
+            public_id: None,
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(2),
+            blocks: AwbcTableRange::new(2, 1),
+            entry_block: AwbcBlockId(2),
+            flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+        },
+    ]);
+    program.blocks[0].terminator = AwbcTerminator::Return { value: None };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 1),
+        terminator: if dynamic {
+            AwbcTerminator::GotoDynamic {
+                target: AwbcRegisterId(0),
+                args: Vec::new(),
+            }
+        } else {
+            AwbcTerminator::GotoStatic {
+                function: AwbcFunctionId(2),
+                args: Vec::new(),
+            }
+        },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(2),
+        instructions: AwbcTableRange::new(1, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    program.instructions.push(AwbcInstruction::LoadConst {
+        dst: AwbcRegisterId(0),
+        constant: AwbcConstantId(1),
+    });
+    program.flow_bindings.push(test_flow_binding("target", 2));
+    program
+}
+
+fn project_call_target_goto_program(dynamic: bool) -> AwbcProgram {
+    let mut program = project_call_invoke_program();
+    program.strings.push("goto-target".to_owned());
+    program
+        .runtime_types
+        .push(runtime_type(2, AwbcRuntimeTypeShape::String));
+    program
+        .constants
+        .push(AwbcConstant::String(AwbcStringId(1)));
+    if dynamic {
+        program.frame_layouts[1].slots[0].ty = AwbcTypeId(1);
+        program.functions[1].flags = AwbcFunctionFlags::empty()
+            .with(AwbcFunctionFlag::Deterministic)
+            .with(AwbcFunctionFlag::HasDynamicTarget);
+        program.instructions[0] = AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(1),
+        };
+    }
+    program.blocks[2].terminator = if dynamic {
+        AwbcTerminator::GotoDynamic {
+            target: AwbcRegisterId(0),
+            args: Vec::new(),
+        }
+    } else {
+        AwbcTerminator::GotoStatic {
+            function: AwbcFunctionId(2),
+            args: Vec::new(),
+        }
+    };
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Flow,
+        signature: AwbcSignatureId(0),
+        frame_layout: AwbcFrameLayoutId(0),
+        blocks: AwbcTableRange::new(3, 1),
+        entry_block: AwbcBlockId(3),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(2),
+        instructions: AwbcTableRange::new(1, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    program
+        .flow_bindings
+        .push(test_flow_binding("goto-target", 2));
+    program.canonicalize_string_table();
+    program
+}
+
+fn project_call_default_goto_program() -> AwbcProgram {
+    let mut program = project_call_default_program();
+    program.blocks[2].terminator = AwbcTerminator::GotoStatic {
+        function: AwbcFunctionId(3),
+        args: Vec::new(),
+    };
+    program.functions.push(AwbcFunction {
+        public_id: None,
+        kind: AwbcFunctionKind::Flow,
+        signature: AwbcSignatureId(0),
+        frame_layout: AwbcFrameLayoutId(0),
+        blocks: AwbcTableRange::new(4, 1),
+        entry_block: AwbcBlockId(4),
+        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+    });
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(3),
+        instructions: AwbcTableRange::new(2, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    program
+        .flow_bindings
+        .push(test_flow_binding("default-goto-target", 3));
+    program
+}
+
 #[test]
 fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
     use AwbcOpcodeFamily::{CallTask, Ownership, StreamLine, Terminator, Value};
@@ -118,6 +821,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::EmitEffect, 0x25, CallTask),
         (AwbcOpcode::StartTask, 0x26, CallTask),
         (AwbcOpcode::SpawnFiber, 0x27, CallTask),
+        (AwbcOpcode::MakeDialogueContent, 0x28, CallTask),
         (AwbcOpcode::StreamYield, 0x32, StreamLine),
         (AwbcOpcode::StreamClose, 0x34, StreamLine),
         (AwbcOpcode::ExecuteLineOperation, 0x35, StreamLine),
@@ -138,6 +842,7 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         (AwbcOpcode::GotoStatic, 0x84, Terminator),
         (AwbcOpcode::GotoDynamic, 0x85, Terminator),
         (AwbcOpcode::Return, 0x86, Terminator),
+        (AwbcOpcode::ProjectCall, 0x87, Terminator),
         (AwbcOpcode::HostCall, 0x88, Terminator),
         (AwbcOpcode::Await, 0x89, Terminator),
         (AwbcOpcode::AwaitMany, 0x8a, Terminator),
@@ -173,6 +878,957 @@ fn opcode_owner_exhaustively_seals_every_v1_byte_and_family() {
         assert_eq!(AwbcOpcode::from_encoded(encoded), expected);
     }
     assert!(serde_json::from_value::<AwbcOpcode>(serde_json::json!(0xff)).is_err());
+}
+
+#[test]
+fn project_call_direct_continue_reenters_the_verified_resume_block() {
+    let mut program = minimal_program();
+    program.runtime_types = vec![
+        runtime_type(1, AwbcRuntimeTypeShape::Unit),
+        runtime_type(2, AwbcRuntimeTypeShape::Dynamic),
+        runtime_type(
+            3,
+            AwbcRuntimeTypeShape::Function {
+                parameters: Vec::new(),
+                result: AwbcTypeId(0),
+            },
+        ),
+    ];
+    program.patterns = vec![AwbcPattern::Discard];
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Continue {
+                result_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x31; 32]),
+                    function_type: AwbcTypeId(2),
+                    prefix_types: Vec::new(),
+                },
+                next_group: 1,
+            },
+            result_ty: AwbcTypeId(2),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(0),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::CallableBoundary,
+        source_map: None,
+    });
+    program.resume_points.push(AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    });
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("direct ProjectCall program verifies");
+    let encoded = program
+        .encode_canonical()
+        .expect("encode direct ProjectCall program");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode direct ProjectCall program");
+    assert_eq!(decoded, program);
+
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 8,
+        },
+    )
+    .expect("execute direct ProjectCall");
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+}
+
+#[test]
+fn project_call_invoke_rejoins_the_verified_site_after_target_return() {
+    let program = project_call_invoke_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("invoking ProjectCall program verifies");
+
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("execute invoking ProjectCall");
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+    assert_eq!(fiber.frames.len(), 1);
+}
+
+#[test]
+fn project_call_continuation_input_extends_and_reenters_the_verified_resume_block() {
+    let (program, continuation) = project_call_continuation_program();
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    fiber
+        .active_frame_mut()
+        .expect("caller frame")
+        .set_register(AwbcRegisterId(0), continuation)
+        .expect("continuation register");
+    fiber
+        .active_frame_mut()
+        .expect("caller frame")
+        .set_register(AwbcRegisterId(1), RuntimeValue::Unit)
+        .expect("current value register");
+    fiber
+        .validate_for_program(&program)
+        .expect("continuation input validates against the AWBC type table");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("execute continuation ProjectCall");
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+}
+
+#[test]
+fn project_call_defaulted_omitted_runs_default_once_then_target() {
+    let program = project_call_default_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("defaulted ProjectCall program verifies");
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 32,
+        },
+    )
+    .expect("execute defaulted ProjectCall");
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+    assert_eq!(fiber.frames.len(), 1);
+}
+
+#[test]
+fn project_call_rejects_flat_option_payload_in_attached_default_abi() {
+    let mut program = project_call_default_program();
+    program.runtime_types[2] = runtime_type(
+        3,
+        AwbcRuntimeTypeShape::Variant {
+            owner: AwbcVariantIdentity::Builtin(
+                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
+            ),
+            arguments: Vec::new(),
+            cases: vec![
+                AwbcVariantCase {
+                    name: AwbcStringId(1),
+                    payload: Some(AwbcTypeId(0)),
+                },
+                AwbcVariantCase {
+                    name: AwbcStringId(2),
+                    payload: None,
+                },
+            ],
+        },
+    );
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("flat Option payload must not be admitted");
+    assert!(matches!(
+        error,
+        AwbcVerifyError::InvalidInvariant { message, .. }
+            if message.contains("builtin variant owner has a non-canonical case schema")
+    ));
+}
+
+#[test]
+fn project_call_rejects_a_nonadvancing_continuation_group() {
+    let mut program = project_call_invoke_program();
+    program.runtime_types.push(runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    program.blocks[0].terminator = AwbcTerminator::ProjectCall {
+        call: AwbcProjectCall {
+            input: AwbcProjectCallInput::Direct,
+            completed_group: 0,
+            operands: Vec::new(),
+            ordinary: Vec::new(),
+            attached: None,
+            outcome: AwbcProjectCallOutcome::Continue {
+                result_abi: AwbcProjectContinuationAbi {
+                    lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x51; 32]),
+                    function_type: AwbcTypeId(1),
+                    prefix_types: Vec::new(),
+                },
+                next_group: 3,
+            },
+            result_ty: AwbcTypeId(1),
+            result_pattern: AwbcPatternId(0),
+            resume: AwbcResumePointId(0),
+        },
+    };
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("continuation must advance exactly one group");
+    assert!(matches!(
+        error,
+        AwbcVerifyError::InvalidInvariant { message, .. }
+            if message.contains("does not advance one group")
+    ));
+}
+
+#[test]
+fn project_call_verifier_applies_the_call_row_budget_before_register_walk() {
+    let (program, _) = project_call_continuation_program();
+    let mut budget = AwbcVerifyBudget::default();
+    budget.args_per_call = 0;
+    assert_eq!(
+        program.verify(budget, AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::BudgetExceeded {
+            budget: "args_per_call"
+        })
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_invalid_input_group_and_abi_shapes() {
+    let mut direct = project_call_invoke_program();
+    project_call_mut(&mut direct).completed_group = 1;
+    expect_project_call_rejection(direct, "direct project-call input requires group zero");
+
+    let mut continuation = project_call_continuation_verifier_program();
+    project_call_mut(&mut continuation).completed_group = 0;
+    expect_project_call_rejection(
+        continuation,
+        "continuation project-call input requires a prior group",
+    );
+
+    let mut non_function = project_call_continuation_verifier_program();
+    if let AwbcProjectCallInput::Continuation { expected_abi, .. } =
+        &mut project_call_mut(&mut non_function).input
+    {
+        expected_abi.function_type = AwbcTypeId(0);
+    }
+    expect_project_call_rejection(
+        non_function,
+        "project-call ABI function type is not a function",
+    );
+
+    let mut dynamic_prefix = project_call_continuation_verifier_program();
+    dynamic_prefix
+        .runtime_types
+        .push(AwbcRuntimeType::dynamic());
+    if let AwbcProjectCallInput::Continuation { expected_abi, .. } =
+        &mut project_call_mut(&mut dynamic_prefix).input
+    {
+        expected_abi.prefix_types[0] = AwbcTypeId(2);
+    }
+    expect_project_call_rejection(
+        dynamic_prefix,
+        "project-call ABI prefix cannot use Dynamic types",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_noncanonical_logical_and_source_rows() {
+    let mut sparse_parameter = project_call_fixed_program();
+    if let Some(AwbcProjectCallOrdinaryMaterialization::Fixed { parameter, .. }) =
+        project_call_mut(&mut sparse_parameter).ordinary.first_mut()
+    {
+        *parameter = 1;
+    }
+    expect_project_call_rejection(
+        sparse_parameter,
+        "project-call logical parameter rows are not dense",
+    );
+
+    let mut fixed_spread = project_call_fixed_program();
+    project_call_mut(&mut fixed_spread).operands[0].mode = AwbcProjectCallOperandMode::Spread;
+    expect_project_call_rejection(
+        fixed_spread,
+        "fixed project-call source must be a value operand",
+    );
+
+    let mut repeated_source = project_call_fixed_program();
+    let call = project_call_mut(&mut repeated_source);
+    call.operands.push(AwbcProjectCallOperand {
+        value: AwbcRegisterId(0),
+        mode: AwbcProjectCallOperandMode::Value,
+    });
+    call.ordinary
+        .push(AwbcProjectCallOrdinaryMaterialization::Fixed {
+            parameter: 1,
+            abi_ty: AwbcTypeId(0),
+            binding_ty: AwbcTypeId(0),
+            source_index: 0,
+        });
+    expect_project_call_rejection(repeated_source, "project-call source operand is repeated");
+
+    let mut unconsumed_source = project_call_fixed_program();
+    project_call_mut(&mut unconsumed_source)
+        .operands
+        .push(AwbcProjectCallOperand {
+            value: AwbcRegisterId(99),
+            mode: AwbcProjectCallOperandMode::Value,
+        });
+    expect_project_call_rejection(
+        unconsumed_source,
+        "project-call source operand is not consumed",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_rest_shape_and_spread_type_mismatches() {
+    let mut non_sequence_binding = project_call_fixed_program();
+    project_call_mut(&mut non_sequence_binding).ordinary =
+        vec![AwbcProjectCallOrdinaryMaterialization::Rest {
+            parameter: 0,
+            abi_ty: AwbcTypeId(0),
+            binding_ty: AwbcTypeId(0),
+            source_indices: vec![0],
+        }];
+    expect_project_call_rejection(non_sequence_binding, "rest binding type must be a sequence");
+
+    let mut wrong_spread_item = project_call_fixed_program();
+    wrong_spread_item.runtime_types.push(runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Sequence(AwbcTypeId(0)),
+    ));
+    let call = project_call_mut(&mut wrong_spread_item);
+    call.operands[0].mode = AwbcProjectCallOperandMode::Spread;
+    call.ordinary = vec![AwbcProjectCallOrdinaryMaterialization::Rest {
+        parameter: 0,
+        abi_ty: AwbcTypeId(0),
+        binding_ty: AwbcTypeId(1),
+        source_indices: vec![0],
+    }];
+    expect_project_call_rejection(
+        wrong_spread_item,
+        "rest spread source has the wrong item type",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_attached_presence_and_source_mismatches() {
+    let mut parity = project_call_default_program();
+    project_call_mut(&mut parity)
+        .attached
+        .as_mut()
+        .expect("default fixture has attached row")
+        .source_index = Some(0);
+    expect_project_call_rejection(parity, "project-call attached source parity is invalid");
+
+    let mut optional_wrong_type = project_call_default_program();
+    let attached = project_call_mut(&mut optional_wrong_type)
+        .attached
+        .as_mut()
+        .expect("default fixture has attached row");
+    attached.presence = AwbcProjectCallAttachedPresence::OptionalPresent;
+    attached.source_index = Some(0);
+    attached.abi_ty = AwbcTypeId(0);
+    expect_project_call_rejection(
+        optional_wrong_type,
+        "optional attached ABI must be the builtin Option type",
+    );
+
+    let mut required_spread = project_call_default_program();
+    required_spread.runtime_types[2] = runtime_type(3, AwbcRuntimeTypeShape::Unit);
+    let call = project_call_mut(&mut required_spread);
+    call.operands.push(AwbcProjectCallOperand {
+        value: AwbcRegisterId(0),
+        mode: AwbcProjectCallOperandMode::Spread,
+    });
+    let attached = call
+        .attached
+        .as_mut()
+        .expect("default fixture has attached row");
+    attached.abi_ty = AwbcTypeId(0);
+    attached.binding_ty = AwbcTypeId(0);
+    attached.source_index = Some(0);
+    attached.presence = AwbcProjectCallAttachedPresence::RequiredPresent;
+    expect_project_call_rejection(
+        required_spread,
+        "required attached source must be a value operand",
+    );
+
+    let mut omitted_with_source = project_call_default_program();
+    let attached = project_call_mut(&mut omitted_with_source)
+        .attached
+        .as_mut()
+        .expect("default fixture has attached row");
+    attached.presence = AwbcProjectCallAttachedPresence::OptionalOmitted;
+    attached.source_index = Some(0);
+    expect_project_call_rejection(
+        omitted_with_source,
+        "project-call attached source parity is invalid",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_continuation_result_abi_mismatches() {
+    let mut dropped_prefix = project_call_continuation_verifier_program();
+    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
+        &mut project_call_mut(&mut dropped_prefix).outcome
+    {
+        result_abi.prefix_types.clear();
+    }
+    expect_project_call_rejection(
+        dropped_prefix,
+        "project-call continuation drops its existing prefix",
+    );
+
+    let mut changed_identity = project_call_continuation_verifier_program();
+    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
+        &mut project_call_mut(&mut changed_identity).outcome
+    {
+        result_abi.lineage = RuntimeProjectContinuationLineageId::from_checked_digest([0x99; 32]);
+    }
+    expect_project_call_rejection(
+        changed_identity,
+        "project-call continuation changes lineage or function type",
+    );
+
+    let mut noncanonical_prefix = project_call_continuation_verifier_program();
+    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
+        &mut project_call_mut(&mut noncanonical_prefix).outcome
+    {
+        result_abi.prefix_types.push(AwbcTypeId(0));
+    }
+    expect_project_call_rejection(
+        noncanonical_prefix,
+        "project-call continuation prefix length is not canonical",
+    );
+
+    let mut changed_binding = project_call_continuation_verifier_program();
+    if let AwbcProjectCallOutcome::Continue { result_abi, .. } =
+        &mut project_call_mut(&mut changed_binding).outcome
+    {
+        result_abi.prefix_types[1] = AwbcTypeId(1);
+    }
+    expect_project_call_rejection(
+        changed_binding,
+        "project-call continuation binding types disagree",
+    );
+
+    let mut attached_continue = project_call_default_program();
+    attached_continue.runtime_types.push(runtime_type(
+        4,
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    project_call_mut(&mut attached_continue).outcome = AwbcProjectCallOutcome::Continue {
+        result_abi: AwbcProjectContinuationAbi {
+            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x88; 32]),
+            function_type: AwbcTypeId(3),
+            prefix_types: vec![AwbcTypeId(0)],
+        },
+        next_group: 1,
+    };
+    expect_project_call_rejection(
+        attached_continue,
+        "project-call continuation cannot carry an attached materialization",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_invoke_target_identity_and_result_mismatches() {
+    let mut missing_target = project_call_invoke_program();
+    project_call_mut(&mut missing_target).outcome = AwbcProjectCallOutcome::Invoke {
+        function: AwbcFunctionId(99),
+    };
+    expect_project_call_rejection(missing_target, "functions` index 99 is out of bounds");
+
+    let mut missing_signature = project_call_invoke_program();
+    missing_signature.functions[1].signature = AwbcSignatureId(99);
+    expect_project_call_rejection(missing_signature, "signatures` index 99");
+
+    let mut result_mismatch = project_call_invoke_program();
+    result_mismatch
+        .runtime_types
+        .push(runtime_type(2, AwbcRuntimeTypeShape::String));
+    project_call_mut(&mut result_mismatch).result_ty = AwbcTypeId(1);
+    expect_project_call_rejection(result_mismatch, "type mismatch");
+
+    let mut target_kind = project_call_invoke_program();
+    target_kind.functions[1].kind = AwbcFunctionKind::Flow;
+    expect_project_call_rejection(
+        target_kind,
+        "project-call target must be an ordinary function",
+    );
+
+    let mut default_noninvoke = project_call_default_program();
+    default_noninvoke.runtime_types.push(runtime_type(
+        4,
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    project_call_mut(&mut default_noninvoke).outcome = AwbcProjectCallOutcome::Continue {
+        result_abi: AwbcProjectContinuationAbi {
+            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x77; 32]),
+            function_type: AwbcTypeId(3),
+            prefix_types: Vec::new(),
+        },
+        next_group: 1,
+    };
+    expect_project_call_rejection(
+        default_noninvoke,
+        "project-call continuation cannot carry an attached materialization",
+    );
+}
+
+#[test]
+fn project_call_verifier_rejects_default_capture_domain_and_effect_mismatches() {
+    let mut direct_prefix = project_call_default_program();
+    if let Some(AwbcProjectCallAttachedMaterialization {
+        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
+        ..
+    }) = project_call_mut(&mut direct_prefix).attached.as_mut()
+    {
+        default.captures = vec![AwbcProjectCallCaptureSource::ContinuationPrefix { position: 0 }];
+    }
+    expect_project_call_rejection(direct_prefix, "default capture cannot use a direct prefix");
+
+    let mut out_of_range = project_call_default_program();
+    if let Some(AwbcProjectCallAttachedMaterialization {
+        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
+        ..
+    }) = project_call_mut(&mut out_of_range).attached.as_mut()
+    {
+        default.captures = vec![AwbcProjectCallCaptureSource::CurrentLogical { position: 0 }];
+    }
+    expect_project_call_rejection(
+        out_of_range,
+        "default capture current position is out of range",
+    );
+
+    let mut default_effects = project_call_default_program();
+    default_effects.strings.push("effect".to_owned());
+    default_effects.effect_sets.push(AwbcEffectSet {
+        effects: vec![AwbcStringId(2)],
+    });
+    default_effects.signatures[1].effects = AwbcEffectSetId(1);
+    default_effects.canonicalize_string_table();
+    expect_project_call_rejection(default_effects, "project-call default");
+
+    let mut target_effects = project_call_invoke_program();
+    target_effects.strings.push("effect".to_owned());
+    target_effects.effect_sets.push(AwbcEffectSet {
+        effects: vec![AwbcStringId(1)],
+    });
+    target_effects.signatures[1].effects = AwbcEffectSetId(1);
+    target_effects.canonicalize_string_table();
+    expect_project_call_rejection(target_effects, "project-call target");
+}
+
+#[test]
+fn project_call_verifier_applies_each_project_call_argument_budget() {
+    let (mut continuation, _) = project_call_continuation_program();
+    continuation.constants = vec![AwbcConstant::Unit];
+    continuation.instructions = vec![
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(0),
+            constant: AwbcConstantId(0),
+        },
+        AwbcInstruction::LoadConst {
+            dst: AwbcRegisterId(1),
+            constant: AwbcConstantId(0),
+        },
+    ];
+    continuation.blocks[0].instructions = AwbcTableRange::new(0, 2);
+    let mut prefix_budget = continuation.clone();
+    let call = project_call_mut(&mut prefix_budget);
+    call.operands.clear();
+    call.ordinary.clear();
+    let mut budget = AwbcVerifyBudget::default();
+    budget.args_per_call = 0;
+    prefix_budget
+        .verify(budget, AwbcVerifyContext::default())
+        .expect_err("the continuation prefix budget is enforced before register walk");
+
+    let mut result_prefix_budget = project_call_invoke_program();
+    result_prefix_budget.runtime_types.push(runtime_type(
+        2,
+        AwbcRuntimeTypeShape::Function {
+            parameters: Vec::new(),
+            result: AwbcTypeId(0),
+        },
+    ));
+    project_call_mut(&mut result_prefix_budget).outcome = AwbcProjectCallOutcome::Continue {
+        result_abi: AwbcProjectContinuationAbi {
+            lineage: RuntimeProjectContinuationLineageId::from_checked_digest([0x22; 32]),
+            function_type: AwbcTypeId(1),
+            prefix_types: vec![AwbcTypeId(0)],
+        },
+        next_group: 1,
+    };
+    project_call_mut(&mut result_prefix_budget).result_ty = AwbcTypeId(0);
+    let mut budget = AwbcVerifyBudget::default();
+    budget.args_per_call = 0;
+    expect_project_call_rejection_with_budget(result_prefix_budget, budget, "args_per_call");
+
+    let mut default_capture_budget = project_call_default_program();
+    if let Some(AwbcProjectCallAttachedMaterialization {
+        presence: AwbcProjectCallAttachedPresence::DefaultedOmitted { default },
+        ..
+    }) = project_call_mut(&mut default_capture_budget)
+        .attached
+        .as_mut()
+    {
+        default.captures = vec![AwbcProjectCallCaptureSource::CurrentLogical { position: 0 }];
+    }
+    let mut budget = AwbcVerifyBudget::default();
+    budget.args_per_call = 0;
+    expect_project_call_rejection_with_budget(default_capture_budget, budget, "args_per_call");
+}
+
+fn expect_project_call_rejection_with_budget(
+    program: AwbcProgram,
+    budget: AwbcVerifyBudget,
+    message: &str,
+) {
+    let error = program
+        .verify(budget, AwbcVerifyContext::default())
+        .expect_err("malformed ProjectCall must be rejected");
+    assert!(
+        error.to_string().contains(message),
+        "expected ProjectCall rejection containing {message:?}, got {error:?}"
+    );
+}
+
+#[test]
+fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
+    let program = project_call_default_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("defaulted ProjectCall program verifies");
+
+    let mut default_fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut default_fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("enter default function");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(default_fiber.frames.len(), 2);
+    default_fiber
+        .validate_for_program(&program)
+        .expect("default stage validates");
+    let default_snapshot = AwbcFiberStateSnapshot::from_live(&default_fiber).expect("snapshot");
+    let default_restored = default_snapshot.into_live().expect("restore snapshot");
+    default_restored
+        .validate_for_program(&program)
+        .expect("restored default stage validates");
+
+    let mut target_fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut target_fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 3,
+        },
+    )
+    .expect("enter target function after default");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(target_fiber.frames.len(), 2);
+    assert_eq!(target_fiber.cursor.function, AwbcFunctionId(2));
+    target_fiber
+        .validate_for_program(&program)
+        .expect("target stage validates");
+    let target_snapshot = AwbcFiberStateSnapshot::from_live(&target_fiber).expect("snapshot");
+    let mut target_restored = target_snapshot.into_live().expect("restore snapshot");
+    target_restored
+        .validate_for_program(&program)
+        .expect("restored target stage validates");
+    let return_to = target_restored.frames[1]
+        .return_to
+        .as_mut()
+        .expect("target return point");
+    if let FiberReturnContinuation::ProjectCallTarget { site } = &mut return_to.continuation {
+        site.caller_function = AwbcFunctionId(99);
+    } else {
+        panic!("target frame must carry a ProjectCall continuation");
+    }
+    assert!(matches!(
+        target_restored.validate_for_program(&program),
+        Err(super::fiber::FiberStateError::InvalidFrame)
+    ));
+}
+
+#[test]
+fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return() {
+    for dynamic in [false, true] {
+        let program = goto_unwind_program(dynamic);
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect("goto unwind program verifies");
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+        fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
+            key: "caller-cleanup".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: Vec::new(),
+        });
+        fiber
+            .push_call_frame_at(
+                &program,
+                AwbcFunctionId(1),
+                super::fiber::FiberReturnPoint::ordinary(
+                    super::fiber::FiberCursor {
+                        function: AwbcFunctionId(0),
+                        block: AwbcBlockId(0),
+                        instruction_offset: 0,
+                    },
+                    None,
+                ),
+                &[],
+            )
+            .expect("push nested goto frame");
+        fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
+            key: "callee-cleanup".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: Vec::new(),
+        });
+        fiber
+            .validate_for_program(&program)
+            .expect("nested goto frames validate before transfer");
+        let output = super::vm::step(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .expect("execute nonlocal goto");
+        assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+        assert_eq!(fiber.frames.len(), 1);
+        assert_eq!(
+            fiber.active_frame().expect("new root frame").function,
+            AwbcFunctionId(2)
+        );
+        assert!(
+            fiber
+                .active_frame()
+                .expect("new root frame")
+                .return_to
+                .is_none()
+        );
+        let cleanup_effects = output
+            .observations
+            .iter()
+            .filter_map(|observation| match observation {
+                super::vm::VmObservation::Effect { effect, .. } => Some(*effect),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            cleanup_effects,
+            vec![AwbcEffectPlanId(0), AwbcEffectPlanId(0)]
+        );
+    }
+}
+
+#[test]
+fn project_call_target_goto_abandons_target_continuation_and_unwinds_all_frames() {
+    for dynamic in [false, true] {
+        let program = project_call_target_goto_program(dynamic);
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect("ProjectCall target-goto program verifies");
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+        let output = super::vm::step(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .expect("enter ProjectCall target");
+        assert_eq!(output.exit, super::vm::VmExit::Running);
+        assert_eq!(fiber.frames.len(), 2);
+        assert!(matches!(
+            fiber.frames[1]
+                .return_to
+                .as_ref()
+                .map(|point| &point.continuation),
+            Some(FiberReturnContinuation::ProjectCallTarget { .. })
+        ));
+        fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
+            key: "caller-cleanup".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: Vec::new(),
+        });
+        fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
+            key: "target-cleanup".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: Vec::new(),
+        });
+        let output = super::vm::step(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 16,
+            },
+        )
+        .expect("execute target nonlocal goto");
+        assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+        assert_eq!(fiber.frames.len(), 1);
+        assert_eq!(
+            fiber.active_frame().expect("new root frame").function,
+            AwbcFunctionId(2)
+        );
+        assert!(
+            fiber
+                .active_frame()
+                .expect("new root frame")
+                .return_to
+                .is_none()
+        );
+        let cleanup_effects = output
+            .observations
+            .iter()
+            .filter_map(|observation| match observation {
+                super::vm::VmObservation::Effect { effect, .. } => Some(*effect),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            cleanup_effects,
+            vec![AwbcEffectPlanId(0), AwbcEffectPlanId(0)]
+        );
+    }
+}
+
+#[test]
+fn project_call_default_goto_abandons_default_continuation_and_unwinds_all_frames() {
+    let program = project_call_default_goto_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("ProjectCall default-goto program verifies");
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("enter ProjectCall default");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(fiber.frames.len(), 2);
+    assert!(matches!(
+        fiber.frames[1]
+            .return_to
+            .as_ref()
+            .map(|point| &point.continuation),
+        Some(FiberReturnContinuation::ProjectCallDefault { .. })
+    ));
+    fiber.frames[0].root_cleanups.push(FiberScopeCleanup {
+        key: "caller-cleanup".to_owned(),
+        effect: AwbcEffectPlanId(0),
+        args: Vec::new(),
+    });
+    fiber.frames[1].root_cleanups.push(FiberScopeCleanup {
+        key: "default-cleanup".to_owned(),
+        effect: AwbcEffectPlanId(0),
+        args: Vec::new(),
+    });
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 16,
+        },
+    )
+    .expect("execute default nonlocal goto");
+    assert_eq!(output.exit, super::vm::VmExit::Returned(None));
+    assert_eq!(fiber.frames.len(), 1);
+    assert_eq!(
+        fiber.active_frame().expect("new root frame").function,
+        AwbcFunctionId(3)
+    );
+    assert!(
+        fiber
+            .active_frame()
+            .expect("new root frame")
+            .return_to
+            .is_none()
+    );
+    let cleanup_effects = output
+        .observations
+        .iter()
+        .filter_map(|observation| match observation {
+            super::vm::VmObservation::Effect { effect, .. } => Some(*effect),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        cleanup_effects,
+        vec![AwbcEffectPlanId(0), AwbcEffectPlanId(0)]
+    );
+}
+
+#[test]
+fn project_call_target_snapshot_rejoins_verified_site_and_rejects_tampering() {
+    let program = project_call_invoke_program();
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("invoking ProjectCall program verifies");
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).expect("fiber");
+    let output = super::vm::step(
+        &program,
+        &mut fiber,
+        super::vm::VmStepOptions {
+            max_instructions: 1,
+        },
+    )
+    .expect("enter target function");
+    assert_eq!(output.exit, super::vm::VmExit::Running);
+    assert_eq!(fiber.frames.len(), 2);
+    fiber
+        .validate_for_program(&program)
+        .expect("live target continuation validates");
+
+    let encoded = serde_json::to_vec(&AwbcFiberStateSnapshot::from_live(&fiber).expect("snapshot"))
+        .expect("snapshot codec");
+    let snapshot: AwbcFiberStateSnapshot =
+        serde_json::from_slice(&encoded).expect("snapshot decode");
+    let mut restored = snapshot.into_live().expect("restore snapshot");
+    restored
+        .validate_for_program(&program)
+        .expect("restored target continuation validates");
+
+    let return_to = restored.frames[1]
+        .return_to
+        .as_mut()
+        .expect("target return point");
+    if let FiberReturnContinuation::ProjectCallTarget { site } = &mut return_to.continuation {
+        site.block = AwbcBlockId(99);
+    } else {
+        panic!("target frame must carry a ProjectCall continuation");
+    }
+    assert!(matches!(
+        restored.validate_for_program(&program),
+        Err(super::fiber::FiberStateError::InvalidFrame)
+    ));
 }
 
 #[test]
@@ -1444,6 +3100,62 @@ fn canonical_codec_is_deterministic_and_round_trips() {
 }
 
 #[test]
+fn dialogue_content_effect_manifest_and_instruction_codec_round_trip() {
+    let mut program = minimal_program();
+    let template = crate::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+        .expect("template identity");
+    let site = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(0)
+        .expect("effect site identity");
+    let delayed_site = crate::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(1)
+        .expect("second effect site identity");
+    program.content_templates.push(AwbcDialogueContentTemplate {
+        id: template,
+        digest: crate::entry::RuntimeDialogueContentTemplateDigest::from_bytes([0x71; 32]),
+        slots: Vec::new(),
+        effects: vec![
+            AwbcDialogueContentEffectSlot {
+                site,
+                trigger: crate::plan::RuntimeDialogueContentEffectTrigger::Content,
+                capture_types: Vec::new(),
+            },
+            AwbcDialogueContentEffectSlot {
+                site: delayed_site,
+                trigger: crate::plan::RuntimeDialogueContentEffectTrigger::Delay {
+                    duration: crate::time::LogicalDuration::from_nanos(17),
+                },
+                capture_types: Vec::new(),
+            },
+        ],
+    });
+    program
+        .instructions
+        .push(AwbcInstruction::MakeDialogueContent {
+            destination: AwbcRegisterId(0),
+            template,
+            values: Vec::new(),
+            effects: vec![
+                AwbcDialogueContentEffectBinding {
+                    site,
+                    function: AwbcFunctionId(0),
+                    captures: Vec::new(),
+                },
+                AwbcDialogueContentEffectBinding {
+                    site: delayed_site,
+                    function: AwbcFunctionId(0),
+                    captures: Vec::new(),
+                },
+            ],
+        });
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode dialogue content effect ABI");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode dialogue content effect ABI");
+    assert_eq!(decoded, program);
+}
+
+#[test]
 fn canonical_codec_round_trips_checked_flow_identity_and_public_label() {
     let mut program = minimal_program();
     let flow = FlowRuntimeId::from_checked_declaration_digest([0xa5; 32], "flow.opening")
@@ -2619,6 +4331,7 @@ fn expression_apply_preserves_dynamic_call_frame_across_suspension_and_resume() 
     assert_eq!(
         fiber.frames[1]
             .return_to
+            .clone()
             .expect("dynamic call continuation")
             .cursor,
         super::fiber::FiberCursor {

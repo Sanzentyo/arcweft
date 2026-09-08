@@ -1,6 +1,5 @@
 pub character narrator {
     display = "Arcweft Window Demo"
-    default_voice = auto
 }
 
 struct GameState {

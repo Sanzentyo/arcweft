@@ -25,7 +25,6 @@ use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_desktop_native::NativeDesktopBackend;
 use arcweft_layout::ScalePolicy;
-use arcweft_player_scene::dialogue::{DialogueVisualClock, DialogueVisualClockSnapshot};
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameError, PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest,
@@ -318,7 +317,6 @@ struct NativeSceneState {
     session_save_on_exit_completed: bool,
     prepared: Option<arcweft_render_wgpu::geometry::PreparedFrame>,
     pending_environment: VecDeque<WindowedEnvironmentIngressEnvelope>,
-    dialogue_visual_clock: DialogueVisualClock,
     started_at: Instant,
     next_tick: u64,
 }
@@ -327,7 +325,6 @@ struct NativeSceneState {
 struct NativePlayerSessionSave {
     runtime_session: Vec<u8>,
     input: InputControllerSnapshot,
-    dialogue_visual_clock: DialogueVisualClockSnapshot,
 }
 
 impl NativePlayerSessionSave {
@@ -348,7 +345,6 @@ impl NativePlayerSessionSave {
 
 struct RestoredNativePlayerState {
     input: InputControllerSnapshot,
-    dialogue_visual_clock: DialogueVisualClockSnapshot,
 }
 
 fn run_shared_scene_window(
@@ -995,10 +991,7 @@ fn load_native_player_session_save(
         &save.runtime_session,
         &arcweft_save::SaveDecodeOptions::default(),
     )?;
-    Ok(Some(RestoredNativePlayerState {
-        input: save.input,
-        dialogue_visual_clock: save.dialogue_visual_clock,
-    }))
+    Ok(Some(RestoredNativePlayerState { input: save.input }))
 }
 
 fn restored_windowed_runtime_and_input(
@@ -1006,32 +999,27 @@ fn restored_windowed_runtime_and_input(
     backend: NativeDesktopBackend,
     session_load: Option<&Path>,
     entry: Option<&EntryRuntimeId>,
-) -> Result<(WindowedRuntimeOwner, InputController, DialogueVisualClock), NativeSceneWindowError> {
+) -> Result<(WindowedRuntimeOwner, InputController), NativeSceneWindowError> {
     let mut session_options = BundleSessionOptions::default();
     session_options.entry = entry.cloned();
     let mut runtime =
         WindowedRuntimeOwner::from_bundle_with_desktop_backend(bundle, session_options, backend)?;
     let restored = load_native_player_session_save(&mut runtime, session_load)?;
     let mut input = InputController::default();
-    let mut dialogue_visual_clock = DialogueVisualClock::default();
     if let Some(restored) = restored {
         input.restore_snapshot(restored.input)?;
-        dialogue_visual_clock.restore(restored.dialogue_visual_clock, 0);
     }
-    Ok((runtime, input, dialogue_visual_clock))
+    Ok((runtime, input))
 }
 
 fn save_native_player_session(
     path: &Path,
     runtime: &WindowedRuntimeOwner,
     input: &InputController,
-    dialogue_visual_clock: &DialogueVisualClock,
-    elapsed_millis: u64,
 ) -> Result<(), NativeSceneWindowError> {
     let save = NativePlayerSessionSave {
         runtime_session: runtime.session().export_session_save_bytes()?,
         input: input.snapshot(),
-        dialogue_visual_clock: dialogue_visual_clock.snapshot(elapsed_millis),
     };
     let bytes = arcweft_save::encode_typed_json_save(
         &save,
@@ -1063,7 +1051,7 @@ fn save_native_player_session(
 #[cfg(test)]
 mod tests {
     use super::{
-        DialogueVisualClockSnapshot, InputControllerSnapshot, NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID,
+        InputControllerSnapshot, NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID,
         NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION, NativePlayerSessionSave,
         surrounding_excerpt_range, text_input_commit_from_key_text,
         window_ime_composition_selection,
@@ -1075,7 +1063,6 @@ mod tests {
         let save = NativePlayerSessionSave {
             runtime_session: Vec::new(),
             input: InputControllerSnapshot::default(),
-            dialogue_visual_clock: DialogueVisualClockSnapshot::default(),
         };
         let mut payload = serde_json::to_value(save).unwrap();
         payload

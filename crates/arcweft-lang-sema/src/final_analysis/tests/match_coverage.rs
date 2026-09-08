@@ -28,7 +28,7 @@ fn build_only_checked_match(
     report.build_checked_match_for_ref(
         project,
         &fixture.symbols,
-        checked_match_reference(&report, module, &fixture.symbols, owner),
+        super::checked_match_reference(&report, module, &fixture.symbols, owner),
         limits,
     )
 }
@@ -266,7 +266,7 @@ fn assert_drop_policy_payload_types(report: &FinalSemanticAnalysis) {
     );
     let payload_type = payload_records[0].0.ty();
     assert!(matches!(payload_type, TypeKind::VariantPayload(payload)
-        if matches!(payload.shape(), crate::types::VariantPayloadShape::Record(fields)
+        if matches!(payload.shape(), crate::types::VariantPayloadTypeShape::Record(fields)
             if matches!(fields.as_ref(), [field]
                 if field.diagnostic_name() == "fade" && field.ty() == &TypeKind::Duration))));
     assert_eq!(payload_records[1].0.ty(), payload_type);
@@ -327,7 +327,8 @@ fn assert_drop_policy_coverage(fixture: &Fixture, report: &FinalSemanticAnalysis
         let scrutinee_type = report
             .expression(authored.scrutinee())
             .expect("checked Match scrutinee")
-            .ty();
+            .value_type()
+            .expect("Match scrutinee value");
         let mut budget = CheckedMatchBudget::new(CheckedMatchLimits::PRODUCTION);
         let coverage = MatchCoverageAnalyzer::new(
             report,
@@ -425,7 +426,7 @@ fn root(flag: bool) -> i64 {
         report.build_checked_match_for_ref_with_control(
             project,
             &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
+            super::checked_match_reference(&report, module, &fixture.symbols, owner),
             CheckedMatchLimits::PRODUCTION,
             FinalSemanticAnalysisControl::new(&cancelled),
         ),

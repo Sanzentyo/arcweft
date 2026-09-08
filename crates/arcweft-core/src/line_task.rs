@@ -1,8 +1,7 @@
 use crate::plan::FlowOp;
 use crate::runtime_id::{
-    DialogueActivationId, RuntimeDialogueEffectSiteId, RuntimeDialogueMarkId,
-    RuntimeLineHandleSiteId, RuntimeLineHandleToken, RuntimeLineTaskNodeId,
-    RuntimeLocalDeclarationId, RuntimePlanTypeId,
+    DialogueActivationId, RuntimeDialogueMarkId, RuntimeLineHandleSiteId, RuntimeLineHandleToken,
+    RuntimeLineTaskNodeId, RuntimeLocalDeclarationId, RuntimePlanTypeId,
 };
 use crate::step::RuntimeDialogueContentEventKind;
 use crate::time::LogicalDuration;
@@ -173,23 +172,20 @@ pub(crate) trait LineTaskPlanView {
 }
 
 /// Typed, activation-scoped events that may arm line-task children during one
-/// reducer step. Rich-text effect sites deliberately do not share the authored
-/// mark namespace: their identities are sealed by the dialogue content plan.
+/// reducer step.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct LineTaskReadyEvents<'a> {
     marks: &'a BTreeSet<RuntimeDialogueMarkId>,
-    content_effects: &'a BTreeSet<RuntimeDialogueEffectSiteId>,
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct AcceptedLineTaskContentEvents {
     marks: BTreeSet<RuntimeDialogueMarkId>,
-    effects: BTreeSet<RuntimeDialogueEffectSiteId>,
 }
 
 impl AcceptedLineTaskContentEvents {
     pub(crate) const fn ready(&self) -> LineTaskReadyEvents<'_> {
-        LineTaskReadyEvents::new(&self.marks, &self.effects)
+        LineTaskReadyEvents::new(&self.marks)
     }
 
     pub(crate) const fn marks(&self) -> &BTreeSet<RuntimeDialogueMarkId> {
@@ -198,22 +194,12 @@ impl AcceptedLineTaskContentEvents {
 }
 
 impl<'a> LineTaskReadyEvents<'a> {
-    pub(crate) const fn new(
-        marks: &'a BTreeSet<RuntimeDialogueMarkId>,
-        content_effects: &'a BTreeSet<RuntimeDialogueEffectSiteId>,
-    ) -> Self {
-        Self {
-            marks,
-            content_effects,
-        }
+    pub(crate) const fn new(marks: &'a BTreeSet<RuntimeDialogueMarkId>) -> Self {
+        Self { marks }
     }
 
     const fn marks(self) -> &'a BTreeSet<RuntimeDialogueMarkId> {
         self.marks
-    }
-
-    const fn content_effects(self) -> &'a BTreeSet<RuntimeDialogueEffectSiteId> {
-        self.content_effects
     }
 }
 
@@ -320,7 +306,6 @@ pub enum LineTaskTrigger {
     #[default]
     Immediate,
     Mark(RuntimeDialogueMarkId),
-    ContentEffect(RuntimeDialogueEffectSiteId),
     Scheduled(RuntimeLineHandleSiteId),
 }
 
@@ -1069,9 +1054,7 @@ impl LineTaskLiveState {
                 RuntimeDialogueContentEventKind::Mark(mark) => {
                     accepted.marks.insert(mark);
                 }
-                RuntimeDialogueContentEventKind::Effect(effect) => {
-                    accepted.effects.insert(effect);
-                }
+                RuntimeDialogueContentEventKind::Effect(_) => {}
             }
         }
         Ok(accepted)
@@ -1160,7 +1143,7 @@ fn validate_snapshot<P: LineTaskPlanView>(
                 token: scheduled.token.clone(),
             }
         })?;
-        validate_scheduled_lane_scope(plan, scheduled).map_err(|_| {
+        validate_scheduled_lane_scope(plan, scheduled).map_err(|()| {
             LineTaskSnapshotError::InvalidScheduledLane {
                 token: scheduled.token.clone(),
             }
@@ -1463,8 +1446,7 @@ pub(crate) fn complete_live_line_task_work<P: LineTaskPlanView>(
     let mut activation = LineTaskActivation::default();
     if matches!(candidate.phase, LineTaskPhase::Active) {
         let empty_marks = BTreeSet::new();
-        let empty_effects = BTreeSet::new();
-        let ready = LineTaskReadyEvents::new(&empty_marks, &empty_effects);
+        let ready = LineTaskReadyEvents::new(&empty_marks);
         match &instance {
             LineTaskWorkInstance::Activation(_) => {
                 activate_node(
@@ -1886,7 +1868,6 @@ fn trigger_is_ready(trigger: &LineTaskTrigger, events: LineTaskReadyEvents<'_>) 
     match trigger {
         LineTaskTrigger::Immediate => true,
         LineTaskTrigger::Mark(mark) => events.marks().contains(mark),
-        LineTaskTrigger::ContentEffect(site) => events.content_effects().contains(site),
         LineTaskTrigger::Scheduled(_) => false,
     }
 }

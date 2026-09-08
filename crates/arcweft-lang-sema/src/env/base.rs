@@ -4,8 +4,9 @@ use super::{
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
     nominal::{
         AcceptedEnvironmentRecordSemantics, AcceptedNominalCatalog, AcceptedNominalOrigin,
-        AcceptedNominalRecord, AcceptedOpaqueRuntimeCarrier, standard_environment_record,
-        standard_exact_record, standard_runtime_environment_record,
+        AcceptedNominalRecord, AcceptedNominalSemantics, AcceptedOpaqueRuntimeCarrier,
+        standard_compile_time_scalar_record, standard_environment_record, standard_exact_record,
+        standard_runtime_environment_record,
     },
 };
 use crate::callable::{
@@ -29,8 +30,9 @@ use crate::registration::{
     StatementIngressTypeRoleId,
 };
 use crate::types::{
-    CharacterNominalType, EntityType, GenericParameterOwnerId, GenericTypeParameterId,
-    LanguageIntrinsicGenericOwner, TypeKind, direct_type_name,
+    AcceptedNominalType, CharacterNominalType, CompileTimeFxType, CompileTimeScalarKind,
+    EntityType, GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner,
+    TypeKind, direct_type_name,
 };
 use arcweft_core::time::LogicalDuration;
 use arcweft_data::DataFormat;
@@ -40,6 +42,10 @@ use arcweft_lang_syntax::{
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
     },
     types::FnParamKind,
+};
+use arcweft_presentation::fx::{
+    BUILTIN_FX_CALLABLE_CATALOG, BuiltinFxCallableParameter, BuiltinFxCallableRow,
+    BuiltinFxParameterPresence, BuiltinFxParameterType, FxEnumDomain,
 };
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
@@ -539,6 +545,7 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_standard_builtins(self) -> Self {
         self.with_standard_presentation_nominals()
+            .with_standard_builtin_fx_callables()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
             .with_standard_dialogue_value_enums()
@@ -662,10 +669,10 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_standard_presentation_nominals(self) -> Self {
         let environment = [
-            ("Fx", TypeKind::Named("Fx".to_owned())),
-            ("Color", TypeKind::Named("Color".to_owned())),
-            ("Length", TypeKind::Named("Length".to_owned())),
-            ("Angle", TypeKind::Named("Angle".to_owned())),
+            // `Abstract` is the expected-only source `Fx` supertype. Exact
+            // constructors/callables produce a different identity; failure
+            // never synthesizes this type as a fallback value.
+            ("Fx", TypeKind::CompileTimeFx(CompileTimeFxType::Abstract)),
             ("AudioLevel", TypeKind::Named("AudioLevel".to_owned())),
             ("Tempo", TypeKind::Named("Tempo".to_owned())),
             ("Rgba8", TypeKind::Named("Rgba8".to_owned())),
@@ -682,6 +689,21 @@ impl TypeCheckEnv {
                         .expect("standard presentation atoms have valid typed identities"),
                 )
                 .expect("standard presentation atoms have distinct paths")
+        });
+
+        let environment = [
+            CompileTimeScalarKind::Color,
+            CompileTimeScalarKind::Length,
+            CompileTimeScalarKind::Angle,
+        ]
+        .into_iter()
+        .fold(environment, |environment, kind| {
+            environment
+                .try_with_nominal_record(
+                    standard_compile_time_scalar_record(kind, AcceptedNominalOrigin::Domain)
+                        .expect("standard compile-time scalar atoms have valid typed identities"),
+                )
+                .expect("standard compile-time scalar atoms have distinct non-reserved paths")
         });
 
         environment.with_standard_nominal_record(
@@ -704,6 +726,78 @@ impl TypeCheckEnv {
                 ("origin_y".to_owned(), TypeKind::Named("Length".to_owned())),
                 ("opacity".to_owned(), TypeKind::F32),
             ],
+        )
+    }
+
+    #[must_use]
+    fn with_standard_builtin_fx_callables(self) -> Self {
+        BUILTIN_FX_CALLABLE_CATALOG
+            .iter()
+            .fold(self, |environment, row| {
+                environment.with_standard_builtin_fx_row(row)
+            })
+    }
+
+    #[must_use]
+    fn with_standard_builtin_fx_row(self, row: BuiltinFxCallableRow) -> Self {
+        let parameters =
+            row.parameters()
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(index, parameter)| {
+                    let index = CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                        crate::callable::CallableSchemaError::ParameterLimit {
+                            actual: row.parameters().len(),
+                            limit: PRODUCTION_CALLABLE_LIMITS.max_parameters_per_callable(),
+                        }
+                    })?;
+                    CallableParameter::try_new(
+                        index,
+                        Some(CallableName::try_new(parameter.source_name()).map_err(|_| {
+                            crate::callable::CallableSchemaError::MissingParameterName {
+                                group: CallableGroupIndex::ZERO,
+                                parameter: index,
+                            }
+                        })?),
+                        CallableParameterAdmission::checked(self.canonical_accepted_type(
+                            self.builtin_fx_parameter_type(row, parameter),
+                        )),
+                        CallableParameterPassing::NamedOnly,
+                        builtin_fx_parameter_presence(parameter),
+                        None,
+                        None,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .expect("builtin Fx parameter rows form a canonical callable schema");
+        let group = CallableParameterGroup::try_new(
+            CallableGroupIndex::ZERO,
+            CallableGroupKind::Initial,
+            parameters,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("builtin Fx row fits the production callable limits");
+        let schema = CallableSignatureSchema::try_new(
+            vec![group],
+            TypeKind::CompileTimeFx(CompileTimeFxType::Builtin(row.id())),
+            CallableEffectSchema::fixed(EffectRow::closed(crate::effects::EffectSet::new())),
+            CallableArgumentPolicy::new(
+                UnknownNamedArgumentPolicy::Reject,
+                SpreadArgumentPolicy::Reject,
+            ),
+            CallableValidator::BuiltinFx(row.id()),
+            CallableGenericParameterIssuer::empty(),
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("builtin Fx row is a valid closed callable schema");
+        self.with_typed_standard_overload_schema(
+            standard_callable_path([row.source_name()]),
+            CallableOverloadIndex::try_from_usize(usize::from(
+                row.id().callable_overload_ordinal(),
+            ))
+            .expect("builtin Fx row tag fits the overload identity"),
+            schema,
         )
     }
 
@@ -972,6 +1066,7 @@ impl TypeCheckEnv {
             ),
         )
         .with_standard_view_modifier(ViewModifierId::OnActivate)
+        .with_standard_view_modifier(ViewModifierId::Fx)
     }
 
     #[must_use]
@@ -1119,6 +1214,26 @@ impl TypeCheckEnv {
         self.nominal_catalog
             .exact(&path.into())
             .filter(|record| record.environment_record().is_some())
+    }
+
+    /// Returns the exact accepted nominal used for the standard dialogue
+    /// content carrier. The lookup and runtime-role check are owned by the
+    /// environment catalog; consumers must not rediscover this identity from
+    /// a source type spelling.
+    pub(crate) fn standard_dialogue_content_type(&self) -> Option<TypeKind> {
+        let record = self.accepted_environment_record(DIALOGUE_CONTENT_TYPE)?;
+        let carrier = record.runtime_carrier()?;
+        let role = DialogueRuntimeValueRole::Content;
+        if carrier.producer() != &role.producer()
+            || carrier.value_class() != role.value_class()
+            || carrier.persistence() != role.persistence()
+        {
+            return None;
+        }
+        Some(TypeKind::AcceptedNominal(AcceptedNominalType::new(
+            record.id().clone(),
+            [],
+        )))
     }
 
     /// Registers the semantic-role inventory used by dialogue View parameters.
@@ -1616,17 +1731,33 @@ impl TypeCheckEnv {
         signature
     }
 
-    /// Canonicalizes internal named atoms against this environment's accepted
-    /// nominal catalog. Semantic catalogs and standard callable publication
-    /// share this boundary so one accepted type has one identity everywhere.
+    /// Canonicalizes internal named atoms at the callable/value boundary.
+    ///
+    /// Ordinary environment records keep their structural type. The standard
+    /// dialogue Content row is different: its catalog-owned runtime role is
+    /// the exact value and ABI identity, so every nested occurrence joins to
+    /// that accepted nominal here rather than at individual consumers.
     pub(crate) fn canonical_accepted_type(&self, ty: TypeKind) -> TypeKind {
+        let standard_dialogue_content = self.standard_dialogue_content_type();
         map_named_type_kind(ty, &|name| {
             self.nominal_catalog
                 .exact_records()
                 .find(|record| {
                     direct_type_name(record.id().canonical_path()) == Some(name.as_str())
                 })
-                .and_then(|record| record.try_instantiate([]).ok())
+                .and_then(|record| {
+                    if standard_dialogue_content.as_ref().is_some_and(|content| {
+                        matches!(
+                            content,
+                            TypeKind::AcceptedNominal(content)
+                                if content.declaration() == record.id()
+                        )
+                    }) {
+                        standard_dialogue_content.clone()
+                    } else {
+                        record.try_instantiate([]).ok()
+                    }
+                })
                 .unwrap_or(TypeKind::Named(name))
         })
     }
@@ -1728,6 +1859,7 @@ fn evaluated_log_schema(level: CallableLogLevel) -> CallableSignatureSchema {
         CallableGenericParameterIssuer::empty(),
     )
     .with_evaluated_effect(CallableEvaluatedEffect::Log(level))
+    .expect("fixed standard log schema was sealed before attaching its evaluated effect")
 }
 
 fn evaluated_entity_write_schema(
@@ -1766,6 +1898,7 @@ fn evaluated_entity_write_schema(
             .expect("entity write generic owner has one typed parameter"),
     )
     .with_evaluated_effect(effect)
+    .expect("fixed standard entity schema was sealed before attaching its evaluated effect")
 }
 
 fn drop_schema(id: DropCallableId) -> CallableSignatureSchema {
@@ -1811,7 +1944,11 @@ fn drop_schema(id: DropCallableId) -> CallableSignatureSchema {
     .expect("drop receiver is a canonical explicit receiver coordinate");
     match id {
         DropCallableId::Drop | DropCallableId::DropWithPolicy | DropCallableId::DropOptional => {
-            schema.with_evaluated_effect(CallableEvaluatedEffect::Drop(id))
+            schema
+                .with_evaluated_effect(CallableEvaluatedEffect::Drop(id))
+                .expect(
+                    "fixed standard drop schema was sealed before attaching its evaluated effect",
+                )
         }
         DropCallableId::OnDrop => schema,
     }
@@ -1866,12 +2003,91 @@ fn stop_now_binding() -> EnvironmentBindingId {
     EnvironmentBindingId::try_new("stop_now").expect("stop_now binding identity is valid")
 }
 
+impl TypeCheckEnv {
+    fn builtin_fx_parameter_type(
+        &self,
+        row: BuiltinFxCallableRow,
+        parameter: BuiltinFxCallableParameter,
+    ) -> TypeKind {
+        match parameter.parameter_type() {
+            BuiltinFxParameterType::Bool => TypeKind::Bool,
+            BuiltinFxParameterType::Seed32 => TypeKind::U32,
+            BuiltinFxParameterType::FixedMilli => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::Milli)
+            }
+            BuiltinFxParameterType::Ratio => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::Ratio)
+            }
+            BuiltinFxParameterType::Length => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::Length)
+            }
+            BuiltinFxParameterType::Angle => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::Angle)
+            }
+            BuiltinFxParameterType::Duration => TypeKind::Duration,
+            BuiltinFxParameterType::Color => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::Color)
+            }
+            BuiltinFxParameterType::Vec2 => {
+                TypeKind::FixedVector(crate::types::FixedVectorType::new(
+                    crate::callable::VectorDimensions::Two,
+                    TypeKind::F32,
+                ))
+            }
+            BuiltinFxParameterType::Resource => {
+                self.accepted_compile_time_scalar_type(CompileTimeScalarKind::PublicId)
+            }
+            BuiltinFxParameterType::Phase => {
+                TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::exact(
+                    FxEnumDomain::Phase.domain_id(),
+                    row.phase().tag(),
+                ))
+            }
+            BuiltinFxParameterType::Target => TypeKind::CompileTimeEnum(
+                crate::types::CompileTimeEnumType::any(FxEnumDomain::Target.domain_id()),
+            ),
+            BuiltinFxParameterType::MotionFunction => TypeKind::CompileTimeEnum(
+                crate::types::CompileTimeEnumType::any(FxEnumDomain::MotionFunction.domain_id()),
+            ),
+        }
+    }
+
+    fn accepted_compile_time_scalar_type(&self, expected: CompileTimeScalarKind) -> TypeKind {
+        self.nominal_catalog
+            .exact_records()
+            .find(|record| {
+                matches!(
+                    record.semantics(),
+                    AcceptedNominalSemantics::CompileTimeScalar(actual) if *actual == expected
+                )
+            })
+            .and_then(|record| record.try_instantiate(Box::<[TypeKind]>::default()).ok())
+            .expect("the standard environment seals every builtin Fx scalar owner")
+    }
+}
+
+const fn builtin_fx_parameter_presence(
+    parameter: BuiltinFxCallableParameter,
+) -> CallableParameterPresence {
+    match parameter.presence() {
+        BuiltinFxParameterPresence::Required => CallableParameterPresence::Required,
+        BuiltinFxParameterPresence::Optional => CallableParameterPresence::Optional,
+        BuiltinFxParameterPresence::Defaulted(_) => CallableParameterPresence::Defaulted,
+        BuiltinFxParameterPresence::Conditional {
+            default: Some(_), ..
+        } => CallableParameterPresence::Defaulted,
+        BuiltinFxParameterPresence::Conditional { default: None, .. } => {
+            CallableParameterPresence::Optional
+        }
+    }
+}
+
 fn standard_overload(index: usize) -> CallableOverloadIndex {
     CallableOverloadIndex::try_from_usize(index).expect("standard overload index is representable")
 }
 
 fn language_intrinsic_generic(owner: LanguageIntrinsicGenericOwner) -> TypeKind {
-    TypeKind::GenericParam(GenericTypeParameterId::new(
+    TypeKind::generic_parameter(GenericTypeParameterId::new(
         GenericParameterOwnerId::LanguageIntrinsic(owner),
         0,
     ))
@@ -2020,10 +2236,12 @@ fn map_named_type_kind(ty: TypeKind, resolve_named: &impl Fn(String) -> TypeKind
             TypeKind::Shared(Box::new(map_named_type_kind(*inner, resolve_named)))
         }
         TypeKind::Function {
+            binder,
             params,
             return_type,
             effects,
-        } => TypeKind::function_with_effects(
+        } => TypeKind::function_with_binder(
+            binder,
             params
                 .into_iter()
                 .map(|parameter| map_named_type_kind(parameter, resolve_named)),

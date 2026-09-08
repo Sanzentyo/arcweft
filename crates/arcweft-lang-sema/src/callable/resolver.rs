@@ -22,9 +22,11 @@ pub(crate) use outcome::{
 };
 pub(crate) use outcome::{NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget};
 use preparation::classify_prepared_callee;
+#[cfg(test)]
+pub(crate) use preparation::prepare_function_value_origin_query;
 pub(crate) use preparation::{
-    prepare_final_call_callee, prepare_function_value_origin_query, prepare_language_free_dot_path,
-    prepare_presentation_callee_id,
+    prepare_final_call_callee, prepare_function_value_origin_query_with_pending_captures,
+    prepare_language_free_dot_path, prepare_presentation_callee_id,
 };
 pub(crate) use prepared_identity::{
     PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
@@ -41,10 +43,13 @@ use std::{
 };
 
 use arcweft_lang_hir::{
-    dialogue_application::HirDialogueContentApplication,
+    dialogue_application::{
+        HirAttachedContentApplication, HirAttachedContentApplicationFamily, HirDialogueContentId,
+    },
     expr::{
         HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
-        HirCallCallee, HirCallExpr, HirExpr, HirExprKind, HirRecoveredName, HirSelectedMember,
+        HirCallArgumentOrdinal, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
+        HirRecoveredName, HirSelectedMember,
     },
     identity::{ExprId, HirModuleId, LocalId, TypeId},
     leaf::{HirPath, HirPathRoot, HirPathSegment, HirPathValue},
@@ -62,11 +67,11 @@ use crate::{
     effect_model::CallableId,
     final_analysis::{
         CheckedCaptureAuthorityViolation, CheckedExpression, CheckedExpressionResolution,
-        CheckedValueResolution, PreparedExpressionFact,
+        CheckedValueResolution, PreparedExpressionFact, PreparedOwnerBoundResolution,
     },
     nominal::{ResolvedAssociatedTypeReceiver, TypeResolutionReport},
     registration::RegisteredSemanticWorld,
-    types::{TypeKind, VariantPayloadOwnerFamily, VariantPayloadShape},
+    types::{TypeKind, VariantPayloadShape},
 };
 
 use super::CharacterDialoguePatchContext;
@@ -75,16 +80,15 @@ use super::{
     CallConstraintInvariant, CallableAuthorityRank, CallableCandidateId, CallableFamily,
     CallableGroupIndex, CallableLimits, CallableLookupKey, CallableName,
     CallableParameterCoordinate, CallableParameterIndex, CallableParameterPresence, CallablePath,
-    CallableRecord, CallableSignatureSchema, CallableValidator, CapacityMethodId,
-    CheckedCallableDeclaration, CheckedCallableId, CheckedMethodLookup, CollectionMethodId,
-    CorruptCallableCatalogReason, DomainMethodId, EnvironmentCallableId, EnvironmentCallableKind,
-    EnvironmentCallableOwner, EquivalentCallableSource, FunctionValueOrdinal,
-    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
-    LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId, LocalCallableId,
-    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId,
-    PresentationSchemaContext, ProjectCallablePath, ProjectNameBinding, PromotionCallableId,
-    ReceiverMethodKey, ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId,
-    StandardEnvironmentId,
+    CallableRecord, CallableSignatureSchema, CallableSignatureSchemaDigest, CallableValidator,
+    CapacityMethodId, CheckedCallableDeclaration, CheckedCallableId, CheckedMethodLookup,
+    CollectionMethodId, CorruptCallableCatalogReason, DomainMethodId, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EquivalentCallableSource,
+    FunctionValueOrdinal, FunctionValueSignatureId, IntegerMethodId, LanguageCallableFamily,
+    LineContextMethodId, LineScheduleCallableId, LocalCallableId, OptionConstructorKind,
+    PresentationCallableId, PresentationHandleMethodId, PresentationSchemaContext,
+    ProjectCallablePath, ProjectNameBinding, PromotionCallableId, ReceiverMethodKey,
+    ResolveCallError, ResolverWork, ResultConstructorKind, StageMethodId, StandardEnvironmentId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -93,6 +97,7 @@ pub(crate) enum PreparedCallCallee<'a> {
         path: &'a CallablePath,
         project: Option<&'a CallableDeclarationKey>,
         scope: PreparedFreeCallScope,
+        context: PreparedFreeCallContext,
     },
     EnumConstructor {
         seed: &'a AcceptedEnumVariantCase,
@@ -132,6 +137,15 @@ pub(crate) enum PreparedFreeCallScope {
     ExplicitProject,
 }
 
+/// Context carried into free-call resolution. Attached Content calls are
+/// resolved from the catalog's exact implicit head; they do not carry a
+/// lossy operation discriminator.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedFreeCallContext {
+    Ordinary,
+    AttachedContent,
+}
+
 /// Owned pre-resolver callee selected from one final-HIR call and already
 /// checked child facts.
 ///
@@ -144,6 +158,7 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
         path: Box<CallablePath>,
         project: Option<Box<CallableDeclarationKey>>,
         scope: PreparedFreeCallScope,
+        context: PreparedFreeCallContext,
     },
     EnumConstructor {
         seed: Box<AcceptedEnumVariantCase>,
@@ -177,13 +192,52 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedCallCalleeConstraintInputs {
     Free,
-    ExpectedEnum { expected: TypeKind },
+    EnumConstructor,
     ValueReceiver { source: ExprId, actual: TypeKind },
     AssociatedType { actual: TypeKind },
     DialogueCallee,
     DialogueApplication,
+    StaticContentCallee(PreparedStaticContentCallee),
     FunctionValue { actual: TypeKind },
     NonCallable,
+}
+
+/// Static language/content callee evidence used by Object proxy calls.
+///
+/// The HIR expression is retained only as a source-owner coordinate. Its
+/// callee fact is intentionally not published: the exact content identity and
+/// callable schema are the complete semantic authority for candidate checks.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct PreparedStaticContentCallee {
+    expression: ExprId,
+    identity: super::ContentCallableIdentity,
+    schema: CallableSignatureSchemaDigest,
+}
+
+impl PreparedStaticContentCallee {
+    pub(crate) const fn new(
+        expression: ExprId,
+        identity: super::ContentCallableIdentity,
+        schema: CallableSignatureSchemaDigest,
+    ) -> Self {
+        Self {
+            expression,
+            identity,
+            schema,
+        }
+    }
+
+    pub(crate) const fn expression(self) -> ExprId {
+        self.expression
+    }
+
+    pub(crate) const fn identity(self) -> super::ContentCallableIdentity {
+        self.identity
+    }
+
+    pub(crate) const fn schema(self) -> CallableSignatureSchemaDigest {
+        self.schema
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -206,130 +260,172 @@ impl PreparedImplicitExtensionReceiver {
     }
 }
 
-/// Schema-sealed source role for one non-runtime Dialogue application
-/// operand.  Content and line-plan rows are relative to the enclosing checked
-/// application site; the target keeps its exact HIR expression source so C1
-/// can pair it with the corresponding stable expression coordinate.
+/// Closed owner family for semantic call operands.  Additional semantic
+/// producers (for example an Object text-proxy type) must enter this algebra
+/// explicitly; no stringly or open fallback can share the prepared row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum PreparedDialogueCallOperandSource {
-    Target { expression: ExprId },
-    Content,
-    LinePlan,
+pub(crate) enum PreparedCallSemanticOperandOwner {
+    DialogueApplication,
+    TextProxyObject,
+}
+
+/// Typed role of a semantic call operand.  The source expression is retained
+/// separately on each row, including the enclosing application for content
+/// and line-plan roles.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum PreparedCallSemanticOperandRole {
+    DialogueTarget,
+    DialogueContent,
+    DialogueLinePlan,
+    TextProxyNominalDiscriminator,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedDialogueCallOperand {
-    source: PreparedDialogueCallOperandSource,
-    coordinate: CallableParameterCoordinate,
-    actual: TypeKind,
+pub(crate) enum PreparedCallSemanticOperand {
+    DialogueTarget {
+        source: ExprId,
+        coordinate: CallableParameterCoordinate,
+        actual: TypeKind,
+    },
+    DialogueContent {
+        source: ExprId,
+        coordinate: CallableParameterCoordinate,
+        actual: TypeKind,
+    },
+    DialogueLinePlan {
+        source: ExprId,
+        coordinate: CallableParameterCoordinate,
+        actual: TypeKind,
+    },
+    TextProxyNominalDiscriminator {
+        argument: HirCallArgumentOrdinal,
+        source: ExprId,
+        coordinate: CallableParameterCoordinate,
+        actual: TypeKind,
+    },
 }
 
-impl PreparedDialogueCallOperand {
-    pub(crate) const fn source(&self) -> PreparedDialogueCallOperandSource {
-        self.source
+impl PreparedCallSemanticOperand {
+    pub(crate) const fn text_proxy_object(
+        source: ExprId,
+        argument: HirCallArgumentOrdinal,
+        coordinate: CallableParameterCoordinate,
+        actual: TypeKind,
+    ) -> Self {
+        Self::TextProxyNominalDiscriminator {
+            argument,
+            source,
+            coordinate,
+            actual,
+        }
+    }
+
+    pub(crate) const fn owner(&self) -> PreparedCallSemanticOperandOwner {
+        match self {
+            Self::DialogueTarget { .. }
+            | Self::DialogueContent { .. }
+            | Self::DialogueLinePlan { .. } => {
+                PreparedCallSemanticOperandOwner::DialogueApplication
+            }
+            Self::TextProxyNominalDiscriminator { .. } => {
+                PreparedCallSemanticOperandOwner::TextProxyObject
+            }
+        }
+    }
+
+    pub(crate) const fn source(&self) -> ExprId {
+        match self {
+            Self::DialogueTarget { source, .. }
+            | Self::DialogueContent { source, .. }
+            | Self::DialogueLinePlan { source, .. }
+            | Self::TextProxyNominalDiscriminator { source, .. } => *source,
+        }
+    }
+
+    pub(crate) const fn argument(&self) -> Option<HirCallArgumentOrdinal> {
+        match self {
+            Self::TextProxyNominalDiscriminator { argument, .. } => Some(*argument),
+            Self::DialogueTarget { .. }
+            | Self::DialogueContent { .. }
+            | Self::DialogueLinePlan { .. } => None,
+        }
+    }
+
+    pub(crate) const fn role(&self) -> PreparedCallSemanticOperandRole {
+        match self {
+            Self::DialogueTarget { .. } => PreparedCallSemanticOperandRole::DialogueTarget,
+            Self::DialogueContent { .. } => PreparedCallSemanticOperandRole::DialogueContent,
+            Self::DialogueLinePlan { .. } => PreparedCallSemanticOperandRole::DialogueLinePlan,
+            Self::TextProxyNominalDiscriminator { .. } => {
+                PreparedCallSemanticOperandRole::TextProxyNominalDiscriminator
+            }
+        }
     }
 
     pub(crate) const fn coordinate(&self) -> CallableParameterCoordinate {
-        self.coordinate
+        match self {
+            Self::DialogueTarget { coordinate, .. }
+            | Self::DialogueContent { coordinate, .. }
+            | Self::DialogueLinePlan { coordinate, .. }
+            | Self::TextProxyNominalDiscriminator { coordinate, .. } => *coordinate,
+        }
     }
 
     pub(crate) const fn actual(&self) -> &TypeKind {
-        &self.actual
+        match self {
+            Self::DialogueTarget { actual, .. }
+            | Self::DialogueContent { actual, .. }
+            | Self::DialogueLinePlan { actual, .. }
+            | Self::TextProxyNominalDiscriminator { actual, .. } => actual,
+        }
     }
 }
 
-/// The sole prepared authority for the structural operands of a Dialogue
-/// content application.  These operands participate in schema admission and
-/// lower constraint closure but are never projected as authored/runtime call
-/// arguments.
+/// Candidate-local attached-content input selected from one exact HIR
+/// application. The callable schema owns presence, admission role, and
+/// execution behavior; this carrier owns only whether a body was supplied and
+/// the raw identity of that supplied content.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedCallAttachedContentOperand {
+    Omitted,
+    Present { source: HirDialogueContentId },
+}
+
+impl PreparedCallAttachedContentOperand {
+    pub(crate) const fn present(source: HirDialogueContentId) -> Self {
+        Self::Present { source }
+    }
+}
+
+/// Complete prepared call input authority.  Every call owns an ordinary
+/// argument mapping (which may be empty) and a typed semantic-operand ledger
+/// at the same time; the two projections are never mutually exclusive.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PreparedDialogueCallConstraintInputs {
-    candidate: CallableCandidateId,
-    schema: super::CallableSignatureSchemaDigest,
-    group: CallableGroupIndex,
-    operands: Box<[PreparedDialogueCallOperand]>,
+pub(crate) struct PreparedCallInputs {
+    mapping: super::PreparedCallArgumentMapping,
+    semantic_operands: Box<[PreparedCallSemanticOperand]>,
+    attached_content: Option<PreparedCallAttachedContentOperand>,
 }
 
-/// Mutually exclusive source inventory for one prepared call.  Ordinary HIR
-/// calls own an authored mapper seal; Dialogue content applications own their
-/// schema-sealed structural operands here and therefore have no authored
-/// mapping at all.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PreparedCallInputProjection {
-    Authored(super::PreparedCallArgumentMapping),
-    SemanticOnly(PreparedDialogueCallConstraintInputs),
-}
-
-impl PreparedCallInputProjection {
-    pub(crate) fn authored(&self) -> Option<&super::PreparedCallArgumentMapping> {
-        match self {
-            Self::Authored(mapping) => Some(mapping),
-            Self::SemanticOnly(_) => None,
+impl PreparedCallInputs {
+    pub(crate) fn new(
+        mapping: super::PreparedCallArgumentMapping,
+        semantic_operands: Box<[PreparedCallSemanticOperand]>,
+        attached_content: Option<PreparedCallAttachedContentOperand>,
+    ) -> Self {
+        Self {
+            mapping,
+            semantic_operands,
+            attached_content,
         }
     }
 
-    pub(crate) const fn semantic_only(&self) -> Option<&PreparedDialogueCallConstraintInputs> {
-        match self {
-            Self::Authored(_) => None,
-            Self::SemanticOnly(inputs) => Some(inputs),
-        }
-    }
-
-    pub(crate) fn candidate(&self) -> Option<&CallableCandidateId> {
-        match self {
-            Self::Authored(mapping) => mapping.candidate(),
-            Self::SemanticOnly(inputs) => Some(inputs.candidate()),
-        }
-    }
-
-    pub(crate) fn schema(&self) -> Option<super::CallableSignatureSchemaDigest> {
-        match self {
-            Self::Authored(mapping) => Some(mapping.schema()),
-            Self::SemanticOnly(inputs) => Some(inputs.schema()),
-        }
-    }
-
-    pub(crate) fn group(&self) -> Option<CallableGroupIndex> {
-        match self {
-            Self::Authored(mapping) => Some(mapping.group()),
-            Self::SemanticOnly(inputs) => Some(inputs.group()),
-        }
-    }
-
-    pub(crate) fn omitted_parameters(&self) -> usize {
-        match self {
-            Self::Authored(mapping) => mapping.omitted_parameters(),
-            Self::SemanticOnly(inputs) => usize::from(inputs.operands().len() == 2),
-        }
-    }
-
-    pub(crate) fn unchecked_or_open_slots(&self) -> usize {
-        self.authored().map_or(
-            0,
-            super::PreparedCallArgumentMapping::unchecked_or_open_slots,
-        )
-    }
-
-    pub(crate) fn expression_sources(&self) -> Box<[ExprId]> {
-        match self {
-            Self::Authored(mapping) => mapping.owned_expression_sources(),
-            Self::SemanticOnly(inputs) => inputs
-                .operands()
-                .iter()
-                .filter_map(|operand| match operand.source() {
-                    PreparedDialogueCallOperandSource::Target { expression } => Some(expression),
-                    PreparedDialogueCallOperandSource::Content
-                    | PreparedDialogueCallOperandSource::LinePlan => None,
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        }
-    }
-}
-
-impl PreparedDialogueCallConstraintInputs {
-    pub(crate) fn seal(
+    /// Seals the structural inputs owned by a Dialogue content application.
+    /// The ordinary mapping is deliberately present and empty so all call
+    /// paths retain one composite authority.
+    pub(crate) fn dialogue_application(
         candidate: &PreparedResolvedCallable,
+        application: ExprId,
         target_expression: ExprId,
         target_actual: TypeKind,
         has_line_plan: bool,
@@ -367,60 +463,123 @@ impl PreparedDialogueCallConstraintInputs {
             .cloned()
             .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
         let group_index = group.index();
-        let mut operands = Vec::with_capacity(if has_line_plan { 3 } else { 2 });
-        operands.push(PreparedDialogueCallOperand {
-            source: PreparedDialogueCallOperandSource::Target {
-                expression: target_expression,
-            },
+        let mut semantic_operands = Vec::with_capacity(if has_line_plan { 3 } else { 2 });
+        semantic_operands.push(PreparedCallSemanticOperand::DialogueTarget {
+            source: target_expression,
             coordinate: CallableParameterCoordinate::new(group_index, target.index()),
             actual: target_actual,
         });
-        operands.push(PreparedDialogueCallOperand {
-            source: PreparedDialogueCallOperandSource::Content,
+        semantic_operands.push(PreparedCallSemanticOperand::DialogueContent {
+            source: application,
             coordinate: CallableParameterCoordinate::new(group_index, content.index()),
             actual: content_actual,
         });
         if has_line_plan {
-            operands.push(PreparedDialogueCallOperand {
-                source: PreparedDialogueCallOperandSource::LinePlan,
+            semantic_operands.push(PreparedCallSemanticOperand::DialogueLinePlan {
+                source: application,
                 coordinate: CallableParameterCoordinate::new(group_index, line_plan.index()),
                 actual: line_plan_actual,
             });
         }
-        Ok(Self {
-            candidate: candidate.id().clone(),
-            schema: candidate.schema().semantic_digest(),
-            group: group_index,
-            operands: operands.into_boxed_slice(),
-        })
+        Ok(Self::new(
+            super::PreparedCallArgumentMapping::empty(
+                candidate.id().clone(),
+                candidate.schema().semantic_digest(),
+                group_index,
+                usize::from(!has_line_plan),
+            ),
+            semantic_operands.into_boxed_slice(),
+            None,
+        ))
     }
 
     pub(crate) fn validates(&self, candidate: &PreparedResolvedCallable) -> bool {
-        self.candidate == *candidate.id()
-            && self.schema == candidate.schema().semantic_digest()
-            && self.group == candidate.call_group()
+        self.mapping.candidate() == Some(candidate.id())
+            && self.mapping.schema() == candidate.schema().semantic_digest()
+            && self.mapping.group() == candidate.call_group()
+            && match (
+                candidate
+                    .schema()
+                    .attached_content()
+                    .filter(|parameter| parameter.group() == candidate.call_group()),
+                self.attached_content,
+            ) {
+                (None, None) => true,
+                (Some(parameter), Some(PreparedCallAttachedContentOperand::Omitted)) => {
+                    parameter.presence() != CallableParameterPresence::Required
+                }
+                (Some(_), Some(PreparedCallAttachedContentOperand::Present { .. })) => true,
+                (None, Some(_)) | (Some(_), None) => false,
+            }
     }
 
-    pub(crate) const fn candidate(&self) -> &CallableCandidateId {
-        &self.candidate
+    pub(crate) fn mapping(&self) -> &super::PreparedCallArgumentMapping {
+        &self.mapping
+    }
+
+    pub(crate) fn semantic_operands(&self) -> &[PreparedCallSemanticOperand] {
+        &self.semantic_operands
+    }
+
+    pub(crate) const fn attached_content(&self) -> Option<PreparedCallAttachedContentOperand> {
+        self.attached_content
+    }
+
+    pub(crate) fn candidate(&self) -> Option<&CallableCandidateId> {
+        self.mapping.candidate()
     }
 
     pub(crate) const fn schema(&self) -> super::CallableSignatureSchemaDigest {
-        self.schema
+        self.mapping.schema()
     }
 
     pub(crate) const fn group(&self) -> CallableGroupIndex {
-        self.group
+        self.mapping.group()
     }
 
-    pub(crate) fn operands(&self) -> &[PreparedDialogueCallOperand] {
-        &self.operands
+    pub(crate) fn omitted_parameters(&self) -> usize {
+        self.mapping.omitted_parameters()
+            + match self.attached_content {
+                Some(PreparedCallAttachedContentOperand::Omitted) => 1,
+                None | Some(PreparedCallAttachedContentOperand::Present { .. }) => 0,
+            }
+    }
+
+    pub(crate) const fn unchecked_or_open_slots(&self) -> usize {
+        self.mapping.unchecked_or_open_slots()
+    }
+
+    pub(crate) fn expression_sources(&self) -> Box<[ExprId]> {
+        let mut sources = self.mapping.owned_expression_sources().into_vec();
+        sources.extend(self.semantic_operands.iter().filter_map(|operand| {
+            (operand.owner() == PreparedCallSemanticOperandOwner::DialogueApplication
+                && operand.role() == PreparedCallSemanticOperandRole::DialogueTarget)
+                .then_some(operand.source())
+        }));
+        sources.into_boxed_slice()
     }
 }
 
 impl PreparedCallCalleeConstraintInputs {
     pub(crate) const fn is_function_value(&self) -> bool {
         matches!(self, Self::FunctionValue { .. })
+    }
+
+    pub(crate) fn validates_candidate(&self, candidate: &PreparedResolvedCallable) -> bool {
+        match self {
+            Self::StaticContentCallee(static_callee) => {
+                candidate.id() == &super::CallableCandidateId::Content(static_callee.identity())
+                    && candidate.schema().semantic_digest() == static_callee.schema()
+            }
+            Self::Free
+            | Self::EnumConstructor
+            | Self::ValueReceiver { .. }
+            | Self::AssociatedType { .. }
+            | Self::DialogueCallee
+            | Self::DialogueApplication
+            | Self::FunctionValue { .. }
+            | Self::NonCallable => true,
+        }
     }
 
     /// Classifies an unresolved-dot source whose base path had no value fact.
@@ -432,12 +591,7 @@ impl PreparedCallCalleeConstraintInputs {
         instantiation: &'a CallableInstantiation,
     ) -> Result<Option<&'a TypeKind>, super::CallConstraintInvariant> {
         match (self, instantiation) {
-            (
-                Self::ExpectedEnum { expected },
-                CallableInstantiation::ExpectedEnum {
-                    expected: instantiated,
-                },
-            ) if expected == instantiated => Ok(None),
+            (Self::EnumConstructor, CallableInstantiation::EnumConstructor) => Ok(None),
             (
                 Self::Free,
                 CallableInstantiation::None
@@ -445,6 +599,7 @@ impl PreparedCallCalleeConstraintInputs {
                 | CallableInstantiation::Option
                 | CallableInstantiation::Character { .. },
             ) => Ok(None),
+            (Self::StaticContentCallee(_), CallableInstantiation::None) => Ok(None),
             (Self::AssociatedType { actual }, CallableInstantiation::TypeReceiver { receiver })
                 if actual == receiver.receiver() =>
             {
@@ -471,9 +626,7 @@ impl PreparedFinalCallCallee<'_> {
     pub(crate) fn constraint_inputs(&self) -> PreparedCallCalleeConstraintInputs {
         match self {
             Self::Free { .. } => PreparedCallCalleeConstraintInputs::Free,
-            Self::EnumConstructor { seed } => PreparedCallCalleeConstraintInputs::ExpectedEnum {
-                expected: seed.expected.clone(),
-            },
+            Self::EnumConstructor { .. } => PreparedCallCalleeConstraintInputs::EnumConstructor,
             Self::Selected {
                 receiver_expression,
                 receiver_type,
@@ -501,10 +654,12 @@ impl PreparedFinalCallCallee<'_> {
                 path,
                 project,
                 scope,
+                context,
             } => PreparedCallCallee::Free {
                 path,
                 project: project.as_deref(),
                 scope: *scope,
+                context: *context,
             },
             Self::EnumConstructor { seed } => PreparedCallCallee::EnumConstructor { seed },
             Self::Selected {
@@ -570,6 +725,8 @@ pub(crate) enum PrepareFinalCallCalleeError {
     InvalidCallExpression { expression: ExprId },
     #[error("call callee child is absent from staged semantic facts")]
     MissingExpressionFact { expression: ExprId },
+    #[error("call callee has no value result")]
+    MissingValueType { expression: ExprId },
     #[error("call callee path cannot be represented by the typed callable path owner")]
     InvalidValuePath { expression: ExprId },
     #[error("call callee has no authored source span")]
@@ -648,104 +805,54 @@ struct TypedEnvironmentMethodCandidate<'a> {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct AcceptedEnumVariantCase {
     id: super::EnumVariantSignatureId,
-    case_ordinal: u32,
-    expected: TypeKind,
     schema: CallableSignatureSchema,
 }
 
 impl AcceptedEnumVariantCase {
-    pub(crate) fn try_from_checked(
-        checked: &PreparedExpressionFact,
+    pub(crate) fn try_from_prepared(
+        authority: CallResolverAuthority<'_>,
+        prepared: &crate::final_analysis::PreparedVariantExpression,
         limits: &CallableLimits,
-    ) -> Result<Option<Self>, super::CallableSchemaError> {
-        let (owner, ordinal, payload, expected) = match checked {
-            PreparedExpressionFact::ProjectVariant(prepared) => {
-                let Some(selected_index) = usize::try_from(prepared.selected_ordinal()).ok() else {
-                    return Ok(None);
-                };
-                let selected = prepared
-                    .owner()
-                    .cases()
-                    .get(selected_index)
-                    .filter(|case| case.ordinal() == prepared.selected_ordinal());
-                let Some(selected) = selected else {
-                    return Ok(None);
-                };
-                let owner = prepared.owner().nominal().identity();
-                let payload = match selected.payload() {
-                    None => VariantPayloadShape::Unit,
-                    Some(payload) => VariantPayloadShape::try_tuple(
-                        VariantPayloadOwnerFamily::Project,
-                        owner,
-                        selected.ordinal(),
-                        [payload.clone()],
-                    )
-                    .map_err(|_| {
-                        super::CallableSchemaError::FamilyInvariant {
-                            family: super::CallableFamily::EnumConstructor,
-                            code: super::CallableFamilyInvariantCode::InvalidParameterType,
-                        }
-                    })?,
-                };
-                (
+    ) -> Result<Self, super::CallableSchemaError> {
+        let selected = prepared
+            .owner()
+            .case(prepared.selected_ordinal())
+            .expect("prepared variant retains its selected case");
+        let expected = prepared.owner().ty();
+        let owner = expected.semantic_identity_digest()?;
+        let payload = match selected.payload() {
+            None => VariantPayloadShape::Unit,
+            Some(payload) => payload
+                .try_seal(
+                    prepared.owner().payload_owner_family(),
                     owner,
                     selected.ordinal(),
-                    payload,
-                    prepared.owner().nominal().ty(),
                 )
-            }
-            PreparedExpressionFact::Complete(checked) => {
-                let CheckedExpressionResolution::Variant(variant) = checked.resolution() else {
-                    return Ok(None);
-                };
-                if !variant.owner().has_valid_case_rows() {
-                    return Ok(None);
-                }
-                let selected = variant.selected();
-                if checked.ty().semantic_identity_digest() != variant.owner().semantic_type() {
-                    return Ok(None);
-                }
-                (
-                    variant.owner().semantic_type(),
-                    selected.ordinal(),
-                    selected.payload().clone(),
-                    checked.ty().clone(),
-                )
-            }
-            PreparedExpressionFact::DialogueApplication(_)
-            | PreparedExpressionFact::Method(_)
-            | PreparedExpressionFact::Entry(_)
-            | PreparedExpressionFact::ProjectField(_)
-            | PreparedExpressionFact::ProjectRecord(_) => return Ok(None),
+                .map_err(|_| super::CallableSchemaError::FamilyInvariant {
+                    family: super::CallableFamily::EnumConstructor,
+                    code: super::CallableFamilyInvariantCode::InvalidParameterType,
+                })?,
         };
-        if checked.ty() != &expected {
-            return Ok(None);
+        let id = super::EnumVariantSignatureId::new(owner, selected.ordinal());
+        let (issuer, template) = super::CallableGenericParameterIssuer::for_enum_constructor_type(
+            &expected,
+            authority.symbols,
+        )?;
+        if expected != template {
+            return Err(super::CallableSchemaError::InvalidCandidateIssuer);
         }
-        let id = super::EnumVariantSignatureId::new(owner, ordinal);
         let schema = CallableSignatureSchema::for_accepted_enum_case(
             id.clone(),
             &payload,
             expected.clone(),
+            issuer,
             limits,
         )?;
-        Ok(Some(Self {
-            id,
-            case_ordinal: ordinal,
-            expected,
-            schema,
-        }))
+        Ok(Self { id, schema })
     }
 
     pub(crate) const fn id(&self) -> &super::EnumVariantSignatureId {
         &self.id
-    }
-
-    pub(crate) const fn case_ordinal(&self) -> u32 {
-        self.case_ordinal
-    }
-
-    pub(crate) const fn expected(&self) -> &TypeKind {
-        &self.expected
     }
 }
 
@@ -841,6 +948,7 @@ pub(crate) struct PreparedFunctionValueOriginQuery {
     callee: ExprId,
     current: ExprId,
     visited: std::collections::BTreeSet<LocalId>,
+    pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
 }
 
 pub(crate) struct PreparedFunctionValueOriginNeed {
@@ -882,12 +990,31 @@ impl PreparedFunctionValueOriginQuery {
     ) -> Result<Box<[super::PreparedCaptureIdentityRow]>, PreparedFunctionValueOriginQueryError>
     {
         let captures = match fact.resolution() {
-            CheckedExpressionResolution::ImplicitCallable(callable) => {
-                callable.validate_authority(&self.topology, producer)
-            }
-            CheckedExpressionResolution::Closure(closure) => {
-                closure.validate_authority(&self.topology, producer)
-            }
+            CheckedExpressionResolution::ImplicitCallable(callable) => callable
+                .validate_authority(&self.topology, producer)
+                .map(|captures| {
+                    captures
+                        .iter()
+                        .map(|capture| {
+                            super::PreparedCaptureIdentityRow::new(
+                                capture.lookup_local(),
+                                capture.mode(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice()
+                }),
+            CheckedExpressionResolution::Closure(closure) => closure
+                .validate_authority(&self.topology, producer)
+                .map(|captures| {
+                    captures
+                        .iter()
+                        .map(|capture| {
+                            super::PreparedCaptureIdentityRow::new(capture.local(), capture.mode())
+                        })
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice()
+                }),
             _ => return Ok(Box::new([])),
         }
         .map_err(|violation| match &violation {
@@ -898,26 +1025,25 @@ impl PreparedFunctionValueOriginQuery {
                 PreparedFunctionValueOriginQueryError::CaptureProducerMismatch(violation)
             }
             CheckedCaptureAuthorityViolation::MissingProducer { .. }
+            | CheckedCaptureAuthorityViolation::GenericScope(_)
             | CheckedCaptureAuthorityViolation::MissingExpressionUse { .. }
             | CheckedCaptureAuthorityViolation::MissingLocalBinding { .. }
             | CheckedCaptureAuthorityViolation::InternalLocalBinding { .. }
             | CheckedCaptureAuthorityViolation::DuplicateUse { .. }
             | CheckedCaptureAuthorityViolation::PlaceholderEvidenceMismatch
-            | CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch => {
+            | CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch
+            | CheckedCaptureAuthorityViolation::IdentityCoordinateEncoding => {
                 PreparedFunctionValueOriginQueryError::CaptureEvidenceMismatch(violation)
             }
         })?;
-        Ok(captures
-            .iter()
-            .map(|capture| super::PreparedCaptureIdentityRow::new(capture.local(), capture.mode()))
-            .collect::<Vec<_>>()
-            .into_boxed_slice())
+        Ok(captures)
     }
 
     fn start(
         topology: Arc<HirProjectEvaluationTopology>,
         module: &HirModule,
         callee: ExprId,
+        pending_capture_rows: Arc<BTreeMap<ExprId, Box<[PreparedCaptureIdentityRow]>>>,
     ) -> Self {
         Self {
             topology,
@@ -925,6 +1051,7 @@ impl PreparedFunctionValueOriginQuery {
             callee,
             current: callee,
             visited: std::collections::BTreeSet::new(),
+            pending_capture_rows,
         }
     }
 
@@ -980,6 +1107,28 @@ impl PreparedFunctionValueOriginQuery {
         module: &HirModule,
         fact: &PreparedExpressionFact,
     ) -> Result<PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQueryError> {
+        if let PreparedExpressionFact::OwnerBound(owner_bound) = fact {
+            if matches!(
+                owner_bound.resolution(),
+                PreparedOwnerBoundResolution::ImplicitCallable(_)
+            ) {
+                let captures = self
+                    .pending_capture_rows
+                    .get(&self.current)
+                    .cloned()
+                    .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
+                return Ok(PreparedFunctionValueOriginProgress::Ready(
+                    PreparedFunctionValueOriginEvidence::new(
+                        self.callee,
+                        PreparedFunctionValueOriginProducer::IndependentExpression {
+                            producer: self.current,
+                        },
+                        captures,
+                    ),
+                ));
+            }
+            return Err(PreparedFunctionValueOriginQueryError::Invalid);
+        }
         let fact = fact
             .complete()
             .ok_or(PreparedFunctionValueOriginQueryError::Invalid)?;
@@ -1084,7 +1233,7 @@ pub(crate) struct CallResolverRequest<'a> {
     authority: CallResolverAuthority<'a>,
     checked: CheckedCallResolverAuthority<'a>,
     presentation_character_owner: Option<&'a ResolvedCharacterOwner>,
-    call: Option<&'a HirCallExpr>,
+    call: Option<&'a HirCallInvocation>,
     classification: CallCalleeClassificationFact,
     cancellation: &'a AtomicBool,
     prepared_continuations: &'a dyn super::PreparedCallContinuationAuthority,
@@ -1197,10 +1346,19 @@ impl<'a> CallResolverAuthority<'a> {
         callee: &PreparedCallCallee<'_>,
         expression: ExprId,
         limits: &CallableLimits,
-    ) -> Result<(&'a HirCallExpr, CallCalleeClassificationFact), ResolveCallError> {
+    ) -> Result<(&'a HirCallInvocation, CallCalleeClassificationFact), ResolveCallError> {
         let expression = self.validate_expression(expression, limits)?;
-        let HirExprKind::Call(call) = expression.kind() else {
-            return Err(ResolveCallError::InvalidResolvedCallable);
+        let call = match expression.kind() {
+            HirExprKind::Call(call) => call,
+            HirExprKind::AttachedContentApplication(application) => {
+                let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
+                    application.family()
+                else {
+                    return Err(ResolveCallError::InvalidResolvedCallable);
+                };
+                invocation
+            }
+            _ => return Err(ResolveCallError::InvalidResolvedCallable),
         };
         let classification = classify_prepared_callee(callee, call, self.module)?;
         Ok((call, classification))
@@ -1213,15 +1371,24 @@ impl<'a> CallResolverAuthority<'a> {
         limits: &CallableLimits,
     ) -> Result<
         (
-            &'a HirDialogueContentApplication,
+            &'a HirAttachedContentApplication,
             CallCalleeClassificationFact,
         ),
         ResolveCallError,
     > {
         let expression = self.validate_expression(expression, limits)?;
-        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+        let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
+        let HirAttachedContentApplicationFamily::DialogueLine {
+            target,
+            plan,
+            coordinates,
+        } = application.family()
+        else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        };
+        let _ = (plan, coordinates);
         let PreparedCallCallee::Dialogue {
             id,
             callee,
@@ -1237,7 +1404,7 @@ impl<'a> CallResolverAuthority<'a> {
         Ok((
             application,
             CallCalleeClassificationFact::Value {
-                expression: application.target(),
+                expression: *target,
             },
         ))
     }
@@ -1403,7 +1570,7 @@ impl<'a> CallResolverRequest<'a> {
         })
     }
 
-    pub(crate) const fn parenthesized_call(&self) -> Option<&'a HirCallExpr> {
+    pub(crate) const fn parenthesized_call(&self) -> Option<&'a HirCallInvocation> {
         self.call
     }
     pub(crate) const fn classification(&self) -> CallCalleeClassificationFact {

@@ -310,7 +310,7 @@ fn quoted_token(source: &str, delimiter: char) -> (usize, bool) {
 }
 
 /// Leaves an unescaped square close visible to the parser when an unterminated
-/// string would otherwise swallow the rest of a dialogue tag and its siblings.
+/// string would otherwise swallow the rest of a dialogue point action and its siblings.
 /// A normally closed string remains one token, including any `]` in its body.
 fn unescaped_recovery_square_close(source: &str) -> Option<usize> {
     let mut escaped = false;

@@ -10,9 +10,8 @@ parser API.
 
 The shared document lexer and cursor now emit `FlowBody`, `Block`, statement,
 and expression descendants without reparsing source strings. In Flow
-expression positions, call-shaped dialogue surfaces such as
-`alice.say()[本文です。[p]]` and direct non-ASCII dialogue surfaces such as
-`alice[おはよう。[p]]` emit `DialogueCallExpression`. Ordinary index expressions
+expression positions, Character content applications such as
+`alice[本文です。[p]]` emit `DialogueCallExpression`. Ordinary index expressions
 such as `rows[0]` and `rows[index]` continue to emit `IndexExpression`.
 
 An unclosed call-shaped dialogue surface emits a typed missing close and

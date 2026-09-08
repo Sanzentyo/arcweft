@@ -89,9 +89,9 @@ own identity-bearing tag or tag-argument nodes.
 
 ## RichText boundary
 
-This cut deliberately does not manufacture private RichText tag nodes, reparse
-tag payload ranges, wrap detached `DialogueTagArg` values, or publish a dual
-reader. Ordered and ranged RichText tag arguments must be produced by the same
+This cut deliberately does not manufacture private provisional RichText markup nodes, reparse
+provisional markup payload ranges, wrap detached dialogue-argument values, or publish a dual
+reader. Ordered and ranged provisional RichText arguments must be produced by the same
 shared grammar transaction that becomes the sole `ParsedSource` authority.
 Only then may the attached accessor and HIR ownership switch land together.
 
@@ -102,7 +102,7 @@ The remaining public Stage 3 work is one dependency-ordered migration:
 1. finish the canonical top-level declaration reduction and accepted item
    inventory;
 2. extend the shared grammar transaction to every retained surface, including
-   ordered/ranged RichText tags and arguments;
+   ordered/ranged provisional RichText markup and arguments;
 3. add bound fragment entry points needed by REPL/tooling without returning a
    detached AST;
 4. switch `ParsedSource`, HIR lowering, project/LSP/compiler consumers, and

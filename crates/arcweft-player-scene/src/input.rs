@@ -204,7 +204,9 @@ pub struct InputOutcome {
 pub enum DialogueProgress {
     #[default]
     None,
-    Reveal,
+    Reveal {
+        target: arcweft_view::DialogueAdvanceTarget,
+    },
     Advance {
         target: arcweft_view::DialogueAdvanceTarget,
     },
@@ -212,7 +214,7 @@ pub enum DialogueProgress {
 
 impl DialogueProgress {
     pub const fn reveals(self) -> bool {
-        matches!(self, Self::Reveal)
+        matches!(self, Self::Reveal { .. })
     }
 
     pub const fn advances(self) -> bool {
@@ -225,7 +227,7 @@ impl DialogueProgress {
 
     fn merge(self, other: Self) -> Self {
         match (self, other) {
-            (Self::Reveal, _) | (_, Self::Reveal) => Self::Reveal,
+            (Self::Reveal { target }, _) | (_, Self::Reveal { target }) => Self::Reveal { target },
             (Self::Advance { target }, _) | (_, Self::Advance { target }) => {
                 Self::Advance { target }
             }
@@ -901,7 +903,11 @@ fn dialogue_progress_for_frame(frame: &PreparedFrame, requested: bool) -> Dialog
         return DialogueProgress::None;
     };
     if !dialogue.reveal_complete {
-        return DialogueProgress::Reveal;
+        return dialogue
+            .primary_action
+            .map_or(DialogueProgress::None, |target| DialogueProgress::Reveal {
+                target,
+            });
     }
     dialogue
         .primary_action
@@ -980,12 +986,13 @@ fn choice_action(
     target: &arcweft_presentation::input::InteractionTarget,
 ) -> Option<Action> {
     let choice = frame.choice_for_target(target)?;
+    let option_id = choice.option_id.as_ref()?;
     let kind = PublicId::try_new("action.choice.select").ok()?;
     frame
         .semantics
         .lower_action(target, &kind)
         .ok()
-        .map(|action| action.with_payload(choice.option_id.clone()))
+        .map(|action| action.with_payload(option_id.clone()))
 }
 
 fn pointer_activation_effects(

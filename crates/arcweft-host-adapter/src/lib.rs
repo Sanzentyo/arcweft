@@ -823,6 +823,7 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Agent(value) => value.label(),
         RuntimeValue::Reduction(_) => "Reduction",
         RuntimeValue::Function(_) => "Function",
+        RuntimeValue::ProjectContinuation(_) => "ProjectContinuation",
         RuntimeValue::Variant { .. } => "Variant",
         RuntimeValue::Iterator(_) => "Iterator",
     }

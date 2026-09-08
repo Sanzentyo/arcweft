@@ -1,7 +1,7 @@
 use arcweft_rich_text_schema::{
-    CheckedOutputKind, Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
-    RichTextPropertySpec, RichTextSourceForm, RichTextTagSchema, RichTextUnit, RichTextValueKind,
-    RichTextValueLimits, SelectorContract, UnknownPropertyPolicy,
+    Multiplicity, PropertyPresence, RichTextDefaultValue, RichTextNumericLimits,
+    RichTextPropertySetSchema, RichTextPropertySpec, RichTextUnit, RichTextValueKind,
+    RichTextValueLimits,
 };
 
 /// Closed presentation-owned direct span inventory.
@@ -55,12 +55,12 @@ impl RichTextDirectStyle {
         match source.as_bytes() {
             b"em" => Some(Self::Emphasis),
             b"strong" => Some(Self::Strong),
-            b"i" | b"italic" => Some(Self::Italic),
-            b"oblique" | b"slant" => Some(Self::Oblique),
+            b"italic" => Some(Self::Italic),
+            b"oblique" => Some(Self::Oblique),
             b"color" => Some(Self::Color),
             b"font" => Some(Self::Font),
             b"size" => Some(Self::Size),
-            b"ruby" | b"rb" => Some(Self::Ruby),
+            b"ruby" => Some(Self::Ruby),
             _ => None,
         }
     }
@@ -82,16 +82,18 @@ impl RichTextDirectStyle {
 
     /// Immutable owner-typed schema for this direct style.
     #[must_use]
-    pub const fn schema(self) -> &'static RichTextTagSchema<RichTextDirectStyleProperty> {
+    pub const fn property_schema(
+        self,
+    ) -> &'static RichTextPropertySetSchema<RichTextDirectStyleProperty> {
         match self {
-            Self::Emphasis => &EMPHASIS_SCHEMA,
-            Self::Strong => &STRONG_SCHEMA,
-            Self::Italic => &ITALIC_SCHEMA,
-            Self::Oblique => &OBLIQUE_SCHEMA,
-            Self::Color => &COLOR_SCHEMA,
-            Self::Font => &FONT_SCHEMA,
-            Self::Size => &SIZE_SCHEMA,
-            Self::Ruby => &RUBY_SCHEMA,
+            Self::Emphasis => &EMPHASIS_PROPERTY_SET,
+            Self::Strong => &STRONG_PROPERTY_SET,
+            Self::Italic => &ITALIC_PROPERTY_SET,
+            Self::Oblique => &OBLIQUE_PROPERTY_SET,
+            Self::Color => &COLOR_PROPERTY_SET,
+            Self::Font => &FONT_PROPERTY_SET,
+            Self::Size => &SIZE_PROPERTY_SET,
+            Self::Ruby => &RUBY_PROPERTY_SET,
         }
     }
 }
@@ -216,56 +218,25 @@ const RUBY_TEXT: RichTextPropertySpec<RichTextDirectStyleProperty> = RichTextPro
     allow_empty: false,
 };
 
-const fn span_schema(
-    source_forms: &'static [RichTextSourceForm],
+const fn property_set(
     properties: &'static [RichTextPropertySpec<RichTextDirectStyleProperty>],
-) -> RichTextTagSchema<RichTextDirectStyleProperty> {
-    RichTextTagSchema {
-        source_forms,
-        selector: SelectorContract::None,
-        properties,
-        unknown_policy: UnknownPropertyPolicy::Reject,
-        output: CheckedOutputKind::Span,
-    }
+) -> RichTextPropertySetSchema<RichTextDirectStyleProperty> {
+    RichTextPropertySetSchema { properties }
 }
 
-const EMPHASIS_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> =
-    span_schema(&[RichTextSourceForm::CanonicalTag("em")], NO_PROPERTIES);
-const STRONG_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> =
-    span_schema(&[RichTextSourceForm::CanonicalTag("strong")], NO_PROPERTIES);
-const ITALIC_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> = span_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("italic"),
-        RichTextSourceForm::GrammarSpelling {
-            source: "i",
-            canonical: "italic",
-        },
-    ],
-    NO_PROPERTIES,
-);
-const OBLIQUE_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> = span_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("oblique"),
-        RichTextSourceForm::GrammarSpelling {
-            source: "slant",
-            canonical: "oblique",
-        },
-    ],
-    &[ANGLE],
-);
-const COLOR_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> =
-    span_schema(&[RichTextSourceForm::CanonicalTag("color")], &[COLOR_VALUE]);
-const FONT_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> =
-    span_schema(&[RichTextSourceForm::CanonicalTag("font")], &[FONT_VALUE]);
-const SIZE_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> =
-    span_schema(&[RichTextSourceForm::CanonicalTag("size")], &[SIZE_VALUE]);
-const RUBY_SCHEMA: RichTextTagSchema<RichTextDirectStyleProperty> = span_schema(
-    &[
-        RichTextSourceForm::CanonicalTag("ruby"),
-        RichTextSourceForm::GrammarSpelling {
-            source: "rb",
-            canonical: "ruby",
-        },
-    ],
-    &[RUBY_TEXT],
-);
+const EMPHASIS_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(NO_PROPERTIES);
+const STRONG_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(NO_PROPERTIES);
+const ITALIC_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(NO_PROPERTIES);
+const OBLIQUE_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(&[ANGLE]);
+const COLOR_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(&[COLOR_VALUE]);
+const FONT_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(&[FONT_VALUE]);
+const SIZE_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(&[SIZE_VALUE]);
+const RUBY_PROPERTY_SET: RichTextPropertySetSchema<RichTextDirectStyleProperty> =
+    property_set(&[RUBY_TEXT]);

@@ -577,8 +577,8 @@ mod tests {
     fn syntax_diagnostic_projection_preserves_and_validates_related_ranges() {
         let source = concat!(
             "character Alice {\n",
-            "    display_name = \"Alice\"\n",
-            "    display_name = \"Other\"\n",
+            "    display = \"Alice\"\n",
+            "    display = \"Other\"\n",
             "}\n",
         );
         let (document, parsed) = attached(

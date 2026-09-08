@@ -1,7 +1,7 @@
 entry cli @entry.main { goto @flow.line_handles }
 
 pub character alice {
-    display_name = "Alice"
+    display = "Alice"
 }
 
 flow line_handles() -> String {

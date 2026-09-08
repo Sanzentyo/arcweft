@@ -1,29 +1,9 @@
 pub character zundamon {
     display = "ずんだもん"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Gothic"
-                color = rgb("#9fe66f")
-                size = 27px
-            }
-        }
-    }
 }
 
 pub character narrator {
     display = "語り手"
-    default_voice = auto
-    dialogue_style {
-        rich_text {
-            text {
-                font = "Yu Mincho"
-                color = rgb("#efd6c4")
-                size = 23px
-            }
-        }
-    }
 }
 
 pub style zundamon_panel {
@@ -131,7 +111,7 @@ flow normal(state: GameState) {
         立ち絵はローカル生成されたずんだもん素材を使う。語り手は別characterなので、色とフォントが明確に違う。[p]
 
     zundamon(id=@say.zundamon.normal, voice=auto, look=.normal):
-        ぼくのcharacter styleでは緑の文字になるのだ。既定のタイプライターで表示されて、[.wave amp=4px freq=8]この部分だけ少し揺れる[/]のだ。[p]
+        ぼくのcharacter styleでは緑の文字になるのだ。既定のタイプライターで表示されて、#fx(wave(amplitude=4px))[この部分だけ少し揺れる]のだ。[p]
 
     choice @choice.zundamon.normal {
         @choice.zundamon.to_smile "笑顔に切り替える" -> @flow.smile

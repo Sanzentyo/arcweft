@@ -29,7 +29,8 @@ use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, Bu
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_text_model::{
-    DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+    DialogueContentCatalog, DialogueContentFragmentTemplate, DialogueContentSpec, RichTextDocument,
+    RichTextNode,
 };
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use serde::Serialize;
@@ -1009,7 +1010,7 @@ fn dialogue_bundle(
     extra_flow: bool,
 ) -> ArcweftBundle {
     let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
-    let plan = dialogue_runtime_plan(&line, changed_main_code, extra_flow);
+    let plan = dialogue_runtime_plan(&line, display_text, changed_main_code, extra_flow);
     let source_map = source_map(source_label, source);
     let dialogue_content = dialogue_content_catalog(line, display_text, &source_map);
     with_optional_fixture_image(
@@ -1026,19 +1027,45 @@ fn dialogue_bundle(
 
 fn dialogue_runtime_plan(
     line: &RuntimeLineId,
+    display_text: &str,
     changed_main_code: bool,
     extra_flow: bool,
 ) -> RuntimePlan {
     let main = FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id");
     let done = FlowRuntimeId::from_runtime_target_value("flow.done").expect("flow runtime id");
+    let template = fixture_dialogue_template(display_text);
     let mut builder = fixture_plan_builder();
     let content = builder
         .push_dialogue_content_seed(RuntimeDialogueContentPlanSeed {
             line: line.clone(),
+            template: arcweft_core::plan::RuntimeDialogueContentTemplateManifestSeed {
+                id: template.id(),
+                digest: template.digest(),
+                slots: Box::default(),
+                effects: Box::default(),
+            },
             values: Box::default(),
+            effect_sites: Box::default(),
             marks: Box::default(),
+            effect_site_count: Default::default(),
         })
         .expect("dialogue content admits");
+    let line_task_group = builder
+        .push_line_task_group_seed(arcweft_core::plan::RuntimeLineTaskGroupSeed {
+            activation_ops: Vec::new(),
+            result_type: arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+            handle_sites: Box::default(),
+            root: arcweft_core::plan::RuntimeLineTaskNodeSeed::Action(Vec::new()),
+            cancel_rules: Box::default(),
+            cleanup_completed: Vec::new(),
+            cleanup_cancelled: Vec::new(),
+            cleanup_failed: Vec::new(),
+            cleanup_policy: Default::default(),
+        })
+        .expect("line-task group admits");
+    builder
+        .attach_line_task_group_seed(&content, &line_task_group)
+        .expect("line-task group attaches to dialogue content");
     push_fixture_flow(
         &mut builder,
         main.clone(),
@@ -1077,7 +1104,12 @@ fn dialogue_main_ops(
         return vec![RuntimeFlowOpSeed::Return("changed".to_owned())];
     }
     vec![
-        RuntimeFlowOpSeed::Dialogue { content },
+        RuntimeFlowOpSeed::Dialogue {
+            content,
+            result: arcweft_core::plan::RuntimeDialogueResultTargetSeed::discard(
+                arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest(),
+            ),
+        },
         RuntimeFlowOpSeed::Choice {
             id: Some("choice.opening".to_owned()),
             options: vec![RuntimeChoiceOptionSeed {
@@ -1095,13 +1127,14 @@ fn dialogue_main_ops(
 
 fn fixture_plan_builder() -> RuntimePlanBuilder {
     let string_type = fixture_string_type();
+    let unit_type = arcweft_core::pattern::RuntimeCheckedType::Unit.semantic_identity_digest();
     let mut builder = RuntimePlanBuilder::new();
     builder
         .admit_semantic_batch(
-            [RuntimePlanTypeSeed::new(
-                string_type,
-                RuntimePlanTypeProjection::String,
-            )],
+            [
+                RuntimePlanTypeSeed::new(string_type, RuntimePlanTypeProjection::String),
+                RuntimePlanTypeSeed::new(unit_type, RuntimePlanTypeProjection::Unit),
+            ],
             [],
             [],
             [],
@@ -1142,12 +1175,11 @@ fn dialogue_content_catalog(
     display_text: &str,
     source_map: &SourceMapSection,
 ) -> DialogueContentCatalog {
-    DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
+    let template = fixture_dialogue_template(display_text);
+    let spec = DialogueContentSpec::try_new(
         line,
         TextKey::try_new("text.opening").expect("text key"),
-        RichTextDocument::new(vec![RichTextNode::Text {
-            text: display_text.to_owned(),
-        }]),
+        &template,
         crate::character_support::character_plan(),
         arcweft_text_model::DialoguePresentationSnapshot::new(
             DialoguePresentationProfile::engine_default(),
@@ -1158,8 +1190,24 @@ fn dialogue_content_catalog(
             .primary_document()
             .expect("fixture source map retains its source")
             .product_source_ref(),
-    )])
-    .expect("final dialogue content catalog")
+    )
+    .expect("dialogue spec");
+    DialogueContentCatalog::try_from_records_and_templates(vec![spec], vec![template])
+        .expect("final dialogue content catalog")
+}
+
+fn fixture_dialogue_template(display_text: &str) -> DialogueContentFragmentTemplate {
+    DialogueContentFragmentTemplate::try_new_canonical(
+        arcweft_core::runtime_id::RuntimeDialogueContentTemplateId::from_zero_based(0)
+            .expect("template identity"),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        RichTextDocument::new(vec![RichTextNode::Text {
+            text: display_text.to_owned(),
+        }]),
+    )
+    .expect("dialogue template")
 }
 
 fn bundle_from_runtime_parts(

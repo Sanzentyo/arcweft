@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::{
-    AttachedCallableContractClause, AttachedCallableParameter, AttachedCallableParameterKind,
+    AttachedCallableContentParameter, AttachedCallableContractClause, AttachedCallableParameter,
+    AttachedCallableParameterKind, AttachedContentPresenceSyntax, AttachedContentRoleSyntax,
     AttachedFixedParameterGroup, SyntaxNodeId,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
@@ -15,6 +16,7 @@ use crate::identity::{
     TypeId,
 };
 use crate::item::{
+    HirAttachedContentPresence, HirAttachedContentRole, HirCallableAttachedContentParameter,
     HirContractOperandList, HirFunctionParameterGroup, HirParameter, HirParameterKind,
 };
 use crate::scope::{HirLocalKind, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
@@ -241,6 +243,75 @@ pub(super) struct ParameterState {
     pub recovered: bool,
 }
 
+pub(super) struct AttachedContentState {
+    pub recovered: bool,
+}
+
+pub(super) fn attached_content_matches(
+    attached: Option<&AttachedCallableContentParameter>,
+    retained: Option<HirCallableAttachedContentParameter>,
+    callable_scope: ScopeId,
+    slots: &SlotSnapshot,
+    arenas: &ItemValidationArenas<'_>,
+) -> Option<AttachedContentState> {
+    let (Some(attached), Some(retained)) = (attached, retained) else {
+        return (attached.is_none() && retained.is_none())
+            .then_some(AttachedContentState { recovered: false });
+    };
+    let binding = retained.binding();
+    let source_name = attached.binding().value()?.as_str();
+    let local = arenas.locals.resolve_prepared(slots, binding).ok()?;
+    if !source_owner_matches(
+        slots,
+        binding,
+        attached.binding().syntax().id(),
+        &HirSourceSite::Span(attached.binding().syntax().source_span()),
+    ) || local.scope() != callable_scope
+        || local.kind() != HirLocalKind::Parameter
+        || local.name().as_str() != source_name
+        || local.pattern().is_some()
+        || local.annotation().is_some()
+        || local.is_mutable_binding()
+    {
+        return None;
+    }
+    let role_matches = matches!(
+        (attached.role(), retained.role()),
+        (
+            AttachedContentRoleSyntax::InlineContent,
+            HirAttachedContentRole::Inline
+        ) | (
+            AttachedContentRoleSyntax::RichContent,
+            HirAttachedContentRole::Rich
+        ) | (
+            AttachedContentRoleSyntax::DialogueContent,
+            HirAttachedContentRole::Dialogue
+        )
+    );
+    if !role_matches {
+        return None;
+    }
+    let default_matches = match (attached.presence(), retained.presence()) {
+        (AttachedContentPresenceSyntax::Required, HirAttachedContentPresence::Required)
+        | (AttachedContentPresenceSyntax::Optional { .. }, HirAttachedContentPresence::Optional) => {
+            true
+        }
+        (
+            AttachedContentPresenceSyntax::Defaulted { value, .. },
+            HirAttachedContentPresence::Defaulted { value: retained },
+        ) => source_expression_matches(slots, arenas.expressions, retained, value, callable_scope),
+        _ => false,
+    };
+    default_matches.then_some(AttachedContentState {
+        recovered: attached.has_recovery()
+            || local.is_poisoned()
+            || retained
+                .presence()
+                .default_value()
+                .is_some_and(|value| slot_is_poisoned(slots, value)),
+    })
+}
+
 #[derive(Clone, Copy)]
 pub(super) enum ParameterSurfacePolicy {
     Function,
@@ -256,6 +327,7 @@ pub(super) fn function_parameter_groups_match(
     slots: &SlotSnapshot,
     arenas: &ItemValidationArenas<'_>,
     block_arenas: &BlockValidationArenas<'_>,
+    attached_content_local: Option<LocalId>,
 ) -> Option<ParameterState> {
     if attached.len() != retained.len() {
         return None;
@@ -291,6 +363,7 @@ pub(super) fn function_parameter_groups_match(
         slots,
         arenas,
         block_arenas,
+        attached_content_local,
     )
 }
 
@@ -309,6 +382,7 @@ pub(super) fn parameters_match<'a, 'b>(
     slots: &SlotSnapshot,
     arenas: &ItemValidationArenas<'_>,
     block_arenas: &BlockValidationArenas<'_>,
+    attached_content_local: Option<LocalId>,
 ) -> Option<ParameterState> {
     let attached = attached.into_iter().collect::<Vec<_>>();
     let retained = retained.into_iter().collect::<Vec<_>>();
@@ -431,6 +505,9 @@ pub(super) fn parameters_match<'a, 'b>(
             || ty.is_poisoned()
             || attached.has_recovery()
             || surface_recovery;
+    }
+    if let Some(local) = attached_content_local {
+        expected_locals.push(local);
     }
     let callable = arenas.scopes.resolve_prepared(slots, callable_scope).ok()?;
     if callable.locals() != expected_locals

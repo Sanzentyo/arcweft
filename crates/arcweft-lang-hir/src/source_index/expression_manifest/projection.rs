@@ -11,7 +11,7 @@ use arcweft_lang_syntax::expressions::{
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
 
-use super::call::{call_children_match, call_projection_matches};
+use super::call::{call_children_match, call_invocation_children_match, call_projection_matches};
 use super::dialogue_projection::dialogue_application_projection_matches;
 use super::expression_component_role;
 use super::leaf::{
@@ -21,8 +21,8 @@ use super::leaf::{
 };
 use crate::arena::ArenaSnapshot;
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueNodeKind, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirPostfixCandidateFailureKind, HirRichTextTagPayload,
+    HirAttachedContentApplication, HirDialogueNodeKind, HirPostfixBracket,
+    HirPostfixBracketCandidates, HirPostfixCandidateFailureKind,
 };
 use crate::expr::{
     HirBinaryOp, HirBorrowKind, HirComputationBlockKind, HirExpr, HirExprKind,
@@ -115,8 +115,8 @@ pub(super) fn expression_payload_matches(
         }
         (HirExprKind::Index(_), ExpressionProjection::Index(_)) => true,
         (
-            HirExprKind::DialogueContentApplication(actual),
-            ExpressionProjection::DialogueContentApplication(expected),
+            HirExprKind::AttachedContentApplication(actual),
+            ExpressionProjection::AttachedContentApplication(expected),
         ) => dialogue_application_projection_matches(actual, expected),
         (HirExprKind::PostfixBracket(actual), ExpressionProjection::PostfixBracket(expected)) => {
             postfix_bracket_projection_matches(actual, expected)
@@ -416,7 +416,8 @@ fn record_fields_projection_match(
                 HirRecordField::Invalid {
                     issue: HirRecordFieldIssue::MissingName,
                 },
-                SyntaxRecordField::Explicit { name: Err(_), .. },
+                SyntaxRecordField::Explicit { name: Err(_), .. }
+                | SyntaxRecordField::Shorthand { name: Err(_) },
                 false,
             ) => true,
             (
@@ -487,11 +488,12 @@ pub(super) fn expression_children_match(
             parsed, slots, arenas, parent, payload, expression, attached,
         );
     }
-    if let HirExprKind::DialogueContentApplication(expression) = payload.kind() {
+    if let HirExprKind::AttachedContentApplication(expression) = payload.kind() {
         return dialogue_application_children_match(
             parsed,
             slots,
             expressions,
+            types,
             parent,
             payload,
             expression,
@@ -672,45 +674,98 @@ fn dialogue_application_children_match(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     expressions: &ArenaSnapshot<HirExpr, ExprId>,
+    types: &ArenaSnapshot<HirType, TypeId>,
     parent: ExprId,
     payload: &HirExpr,
-    application: &HirDialogueContentApplication,
+    application: &HirAttachedContentApplication,
     attached: &AttachedExpressionNode,
 ) -> bool {
     let Some(target) = attached.children().first() else {
         return false;
     };
-    if target.component_role() != ExpressionComponentRole::Target
-        || !expression_child_matches(
-            parsed,
-            slots,
-            expressions,
-            parent,
-            payload.scope(),
-            attached,
-            target,
-            application.target(),
-        )
-    {
+    if target.component_role() != ExpressionComponentRole::Target {
         return false;
+    }
+    match application.family() {
+        crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+            target: target_id,
+            ..
+        } => {
+            if !expression_child_matches(
+                parsed,
+                slots,
+                expressions,
+                parent,
+                payload.scope(),
+                attached,
+                target,
+                *target_id,
+            ) {
+                return false;
+            }
+        }
+        crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+            invocation,
+            ..
+        } => {
+            let Ok(Some(target_attached)) = target.authored_semantic() else {
+                return false;
+            };
+            let target_projection = target_attached.projection();
+            let Some(target_id) = invocation.callee().value_expression() else {
+                return false;
+            };
+            if let ExpressionProjection::Call(call_projection) = target_projection {
+                if !call_projection_matches(invocation, call_projection) {
+                    return false;
+                }
+                if !call_invocation_children_match(
+                    parsed,
+                    slots,
+                    expressions,
+                    types,
+                    parent,
+                    payload,
+                    invocation,
+                    &target_attached,
+                ) {
+                    return false;
+                }
+            } else if !expression_child_matches(
+                parsed,
+                slots,
+                expressions,
+                parent,
+                payload.scope(),
+                attached,
+                target,
+                target_id,
+            ) {
+                return false;
+            }
+        }
     }
 
     let expected_nested = application
         .content()
         .nodes()
         .iter()
-        .filter(|node| matches!(node.kind(), HirDialogueNodeKind::Interpolation(_)))
+        .filter(|node| {
+            matches!(
+                node.kind(),
+                HirDialogueNodeKind::Interpolation(_) | HirDialogueNodeKind::ContentApplication(_)
+            )
+        })
         .count()
         + application
             .content()
-            .tags()
+            .nodes()
             .iter()
-            .filter(|tag| {
+            .filter(|node| {
                 matches!(
-                    tag.payload(),
-                    HirRichTextTagPayload::FxCall(_)
-                        | HirRichTextTagPayload::DialogueCall(_)
-                        | HirRichTextTagPayload::Condition(_)
+                    node.kind(),
+                    HirDialogueNodeKind::PointAction(action)
+                        if action.payload().expression().is_some()
                 )
             })
             .count();
@@ -737,21 +792,30 @@ fn dialogue_application_children_match(
                         _ => None,
                     })
             }),
-            ExpressionComponentRole::RichTextTag {
-                tag,
-                part: arcweft_lang_syntax::expressions::SyntaxRichTextTagSourcePart::Payload,
-            } => usize::try_from(tag).ok().and_then(|tag| {
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: arcweft_lang_syntax::expressions::SyntaxDialogueNodeSourcePart::Expression,
+            } => usize::try_from(ordinal).ok().and_then(|ordinal| {
                 application
                     .content()
-                    .tags()
-                    .get(tag)
-                    .and_then(|tag| match tag.payload() {
-                        HirRichTextTagPayload::FxCall(expression)
-                        | HirRichTextTagPayload::DialogueCall(expression)
-                        | HirRichTextTagPayload::Condition(expression) => Some(*expression),
-                        HirRichTextTagPayload::Arguments
-                        | HirRichTextTagPayload::Marker(_)
-                        | HirRichTextTagPayload::None => None,
+                    .nodes()
+                    .get(ordinal)
+                    .and_then(|node| match node.kind() {
+                        HirDialogueNodeKind::ContentApplication(expression) => Some(*expression),
+                        _ => None,
+                    })
+            }),
+            ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: arcweft_lang_syntax::expressions::SyntaxDialoguePointActionSourcePart::Payload,
+            } => usize::try_from(ordinal).ok().and_then(|ordinal| {
+                application
+                    .content()
+                    .nodes()
+                    .get(ordinal)
+                    .and_then(|node| match node.kind() {
+                        HirDialogueNodeKind::PointAction(action) => action.payload().expression(),
+                        _ => None,
                     })
             }),
             _ => None,
@@ -843,17 +907,25 @@ fn postfix_candidate_root_matches(
                 && key.role() == role
                 && key.ordinal() == 0
     ) && matches!(metadata.source_site(), HirSourceSite::Insertion(_))
-        && payload.scope() == parent_scope
-        && match (role, payload.kind()) {
-            (SyntheticRole::PostfixIndexCandidateExpression, HirExprKind::Index(index)) => {
-                index.target() == target
-            }
-            (
-                SyntheticRole::DialogueContentCandidateExpression,
-                HirExprKind::DialogueContentApplication(application),
-            ) => application.target() == target,
-            _ => false,
+        && payload.scope() == parent_scope && match (role, payload.kind()) {
+        (SyntheticRole::PostfixIndexCandidateExpression, HirExprKind::Index(index)) => {
+            index.target() == target
         }
+        (
+            SyntheticRole::DialogueContentCandidateExpression,
+            HirExprKind::AttachedContentApplication(application),
+        ) => match application.family() {
+            crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                target: actual,
+                ..
+            } => *actual == target,
+            crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+                invocation,
+                ..
+            } => invocation.callee().value_expression() == Some(target),
+        },
+        _ => false,
+    }
 }
 
 fn error_recovery_prefix_matches(

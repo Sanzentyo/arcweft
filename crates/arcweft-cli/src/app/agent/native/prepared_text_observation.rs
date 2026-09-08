@@ -15,8 +15,8 @@ use arcweft_presentation::hit::HitRect;
 use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 use arcweft_text_model::{
-    ResolvedRichTextNode, RichTextControl, RichTextObjectProxy, RichTextPresentation,
-    RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
+    LineDisplayStageProjection, RichTextNodeIndex, RichTextObjectProxy, RichTextPresentation,
+    RichTextTextRun, RichTextTextSource,
 };
 
 pub(super) fn agent_view_prepared_text_root_id(owner: &PreparedTextOwner) -> Option<String> {
@@ -33,7 +33,7 @@ pub(super) fn agent_dialogue_prepared_text_objects(
     capture_step: usize,
     dialogue: usize,
     entry: usize,
-    frame: LineDisplayFrame,
+    frame: LineDisplayStageProjection,
     prepared: &PreparedFrame,
     viewport: &AgentViewport,
 ) -> Result<Vec<AgentObservedObject>, ExitCode> {
@@ -94,7 +94,7 @@ fn dialogue_view_object(
     capture_step: usize,
     dialogue: usize,
     entry: usize,
-    frame: LineDisplayFrame,
+    frame: LineDisplayStageProjection,
     owner: &PreparedTextOwner,
     parent_id: Option<String>,
     viewport: &AgentViewport,
@@ -159,6 +159,7 @@ fn dialogue_children(
         entry,
         dialogue_object,
         frame,
+        page_index: frame.page_index,
         owner,
         item,
         viewport,
@@ -177,7 +178,8 @@ struct DialogueProjection<'a> {
     dialogue_id: usize,
     entry: usize,
     dialogue_object: &'a AgentObservedObject,
-    frame: &'a LineDisplayFrame,
+    frame: &'a LineDisplayStageProjection,
+    page_index: usize,
     owner: &'a PreparedTextOwner,
     item: &'a PreparedTextItem,
     viewport: &'a AgentViewport,
@@ -220,14 +222,15 @@ fn prepared_body_clusters(item: &PreparedTextItem) -> Vec<PreparedBodyCluster<'_
 
 fn dialogue_page_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedObject> {
     let visible_range = RichTextRange::new(
-        context.owner.source_origin,
+        0,
         context
-            .owner
-            .source_origin
-            .saturating_add(context.item.interaction.text.len())
+            .item
+            .interaction
+            .text
+            .len()
             .min(context.frame.text.len()),
     );
-    let page = rich_text_page_for_range(context.frame, visible_range);
+    let page = context.page_index;
     let Some(text) = text_for_range(context.frame, visible_range) else {
         return Vec::new();
     };
@@ -290,7 +293,7 @@ fn dialogue_line_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         let Some(bbox) = agent_bbox_from_layout(line.bounds, context.viewport) else {
             continue;
         };
-        let page = rich_text_page_for_range(context.frame, range);
+        let page = context.page_index;
         let id = line_object_id(context.dialogue_id, context.entry, line_index);
         children.push(dialogue_child_object(
             context.capture_step,
@@ -333,13 +336,10 @@ fn dialogue_run_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedOb
         else {
             continue;
         };
-        if matches!(
-            run.source,
-            RichTextTextSource::ControlHardBreak | RichTextTextSource::ControlRaw
-        ) {
+        if matches!(run.source, RichTextTextSource::ControlHardBreak) {
             continue;
         }
-        let page = rich_text_page_for_range(context.frame, *range);
+        let page = context.page_index;
         let id = run_object_id(context.dialogue_id, context.entry, *original_index);
         let parent_id = layout_line_for_range(context.owner, context.item, *range).map_or_else(
             || page_object_id(context.dialogue_id, context.entry, page),
@@ -461,7 +461,18 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
         ) else {
             continue;
         };
-        let Some((ruby_index, ruby)) = find_ruby(context.frame, range, &layout_ruby.text) else {
+        let Some((ruby_index, ruby)) = context
+            .frame
+            .display_map
+            .ruby_annotations
+            .iter()
+            .enumerate()
+            .find(|(_, ruby)| {
+                ruby.owner_node == layout_ruby.owner_node
+                    && ruby.base_range == range
+                    && ruby.ruby == layout_ruby.text
+            })
+        else {
             continue;
         };
         let Some(base_bbox) = agent_bbox_from_layout(layout_ruby.base_bounds, context.viewport)
@@ -474,7 +485,7 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
             continue;
         };
         let bbox = agent_union_bbox(&base_bbox, &annotation_bbox);
-        let page = rich_text_page_for_range(context.frame, range);
+        let page = context.page_index;
         let id = format!(
             "object.dialogue.{}.{}.ruby.{ruby_index}",
             context.dialogue_id, context.entry
@@ -498,7 +509,7 @@ fn dialogue_ruby_objects(context: &DialogueProjection<'_>) -> Vec<AgentObservedO
                     index: ruby_index,
                     page,
                     range,
-                    node_index: ruby.node_index,
+                    node_index: ruby.owner_node,
                     source: None,
                     ruby: Some(ruby.ruby.clone()),
                     presentation: Some(ruby.presentation.clone()),
@@ -543,7 +554,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         let Some(bbox) = agent_bbox_from_layout(glyph.layout_bounds, context.viewport) else {
             continue;
         };
-        let page = rich_text_page_for_range(context.frame, range);
+        let page = context.page_index;
         let parent_id = run_object_id(context.dialogue_id, context.entry, run_index);
         let glyph_id = format!(
             "object.dialogue.{}.{}.glyph.{glyph_index}.{}.{}",
@@ -590,7 +601,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
         let Some(bbox) = agent_bbox_from_layout(cluster.bounds, context.viewport) else {
             continue;
         };
-        let page = rich_text_page_for_range(context.frame, range);
+        let page = context.page_index;
         let parent_id = run_object_id(context.dialogue_id, context.entry, run_index);
         let cluster_index = usize::try_from(cluster.index).unwrap_or(usize::MAX);
         let cluster_id = format!(
@@ -623,7 +634,7 @@ fn dialogue_glyph_objects(context: &DialogueProjection<'_>) -> Vec<AgentObserved
 }
 
 fn dialogue_run_geometry<'a>(
-    frame: &'a LineDisplayFrame,
+    frame: &'a LineDisplayStageProjection,
     owner: &PreparedTextOwner,
     item: &PreparedTextItem,
     viewport: &AgentViewport,
@@ -765,7 +776,7 @@ fn dialogue_child_object(
         text: Some(spec.text.clone()),
         rich_text_ref: Some(spec.reference),
         content: AgentObservedObjectContent::RichText {
-            frame: Box::new(child_frame(
+            frame: Box::new(child_projection(
                 dialogue
                     .rich_text_frame()
                     .expect("dialogue child keeps its parent frame"),
@@ -775,8 +786,11 @@ fn dialogue_child_object(
     }
 }
 
-fn child_frame(parent: &LineDisplayFrame, text: String) -> LineDisplayFrame {
-    LineDisplayFrame {
+fn child_projection(
+    parent: &LineDisplayStageProjection,
+    text: String,
+) -> LineDisplayStageProjection {
+    LineDisplayStageProjection {
         line: parent.line.clone(),
         character: parent.character.clone(),
         text_key: parent.text_key.clone(),
@@ -784,11 +798,28 @@ fn child_frame(parent: &LineDisplayFrame, text: String) -> LineDisplayFrame {
         text: text.clone(),
         base_styles: parent.base_styles.clone(),
         style_contributions: parent.style_contributions.clone(),
-        nodes: vec![ResolvedRichTextNode::Text { text }],
-        display_map: arcweft_text_model::RichTextDisplayMap::default(),
+        display_map: arcweft_text_model::RichTextDisplayMap {
+            source_node_count: arcweft_text_model::RichTextNodeCount::new(1),
+            text_runs: (!text.is_empty())
+                .then(|| RichTextTextRun {
+                    range: RichTextRange::new(0, text.len()),
+                    source: RichTextTextSource::Text,
+                    node_index: RichTextNodeIndex::new(0),
+                    styles: parent.base_styles.clone(),
+                    presentation: RichTextPresentation::default(),
+                })
+                .into_iter()
+                .collect(),
+            ..arcweft_text_model::RichTextDisplayMap::default()
+        },
+        stage_index: parent.stage_index,
+        page_index: parent.page_index,
+        reveal_start: 0,
+        end: parent.end,
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
+        content: parent.content.clone(),
     }
 }
 
@@ -831,8 +862,8 @@ fn global_range_unbounded(
     range: RichTextRange,
 ) -> Option<RichTextRange> {
     Some(RichTextRange::new(
-        owner.source_origin.checked_add(range.start)?,
-        owner.source_origin.checked_add(range.end)?,
+        range.start.checked_sub(owner.source_origin)?,
+        range.end.checked_sub(owner.source_origin)?,
     ))
 }
 
@@ -840,11 +871,14 @@ fn valid_range(range: RichTextRange, text_len: usize) -> Option<std::ops::Range<
     (range.start <= range.end && range.end <= text_len).then_some(range.start..range.end)
 }
 
-fn text_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> Option<&str> {
+fn text_for_range(frame: &LineDisplayStageProjection, range: RichTextRange) -> Option<&str> {
     frame.text.get(valid_range(range, frame.text.len())?)
 }
 
-fn find_run(frame: &LineDisplayFrame, range: RichTextRange) -> Option<(usize, &RichTextTextRun)> {
+fn find_run(
+    frame: &LineDisplayStageProjection,
+    range: RichTextRange,
+) -> Option<(usize, &RichTextTextRun)> {
     frame
         .display_map
         .text_runs
@@ -858,27 +892,6 @@ fn find_run(frame: &LineDisplayFrame, range: RichTextRange) -> Option<(usize, &R
                 .iter()
                 .enumerate()
                 .find(|(_, run)| ranges_overlap(run.range, range))
-        })
-}
-
-fn find_ruby<'a>(
-    frame: &'a LineDisplayFrame,
-    range: RichTextRange,
-    text: &str,
-) -> Option<(usize, &'a RichTextRubyAnnotation)> {
-    frame
-        .display_map
-        .ruby_annotations
-        .iter()
-        .enumerate()
-        .find(|(_, ruby)| ruby.base_range == range && ruby.ruby == text)
-        .or_else(|| {
-            frame
-                .display_map
-                .ruby_annotations
-                .iter()
-                .enumerate()
-                .find(|(_, ruby)| ranges_overlap(ruby.base_range, range))
         })
 }
 
@@ -897,73 +910,6 @@ fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
     left.start < right.end && right.start < left.end
 }
 
-fn rich_text_page_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> usize {
-    let Some(range) = valid_range(range, frame.text.len()) else {
-        return 0;
-    };
-    page_ranges(frame)
-        .into_iter()
-        .filter(|page| !page.is_empty())
-        .position(|page| range.start >= page.start && range.end <= page.end)
-        .unwrap_or(0)
-}
-
-fn page_ranges(frame: &LineDisplayFrame) -> Vec<std::ops::Range<usize>> {
-    let mut breaks = frame
-        .display_map
-        .controls
-        .iter()
-        .filter(|marker| {
-            matches!(
-                marker.control,
-                RichTextControl::Page | RichTextControl::LineWait | RichTextControl::Clear
-            )
-        })
-        .map(|marker| offset_before_node(frame, marker.node_index))
-        .map(|offset| offset_after_ruby_base(frame, offset))
-        .filter(|offset| *offset <= frame.text.len() && frame.text.is_char_boundary(*offset))
-        .collect::<Vec<_>>();
-    breaks.sort_unstable();
-    breaks.dedup();
-    let mut start = 0;
-    let mut ranges = Vec::with_capacity(breaks.len().saturating_add(1));
-    for end in breaks {
-        if start <= end {
-            ranges.push(start..end);
-            start = end;
-        }
-    }
-    ranges.push(start..frame.text.len());
-    ranges
-}
-
-fn offset_after_ruby_base(frame: &LineDisplayFrame, offset: usize) -> usize {
-    let mut adjusted = offset;
-    loop {
-        let Some(range) = frame
-            .display_map
-            .ruby_annotations
-            .iter()
-            .filter_map(|ruby| valid_range(ruby.base_range, frame.text.len()))
-            .find(|range| range.start < adjusted && adjusted < range.end)
-        else {
-            return adjusted;
-        };
-        adjusted = range.end;
-    }
-}
-
-fn offset_before_node(frame: &LineDisplayFrame, node_index: usize) -> usize {
-    frame
-        .display_map
-        .text_runs
-        .iter()
-        .filter(|run| run.node_index < node_index)
-        .map(|run| run.range.end)
-        .max()
-        .unwrap_or(0)
-}
-
 fn page_object_id(dialogue: usize, entry: usize, page: usize) -> String {
     format!("object.dialogue.{dialogue}.{entry}.page.{page}")
 }
@@ -976,17 +922,17 @@ fn run_object_id(dialogue: usize, entry: usize, run: usize) -> String {
     format!("object.dialogue.{dialogue}.{entry}.run.{run}")
 }
 
-fn range_node_index(frame: &LineDisplayFrame, range: RichTextRange) -> usize {
+fn range_node_index(frame: &LineDisplayStageProjection, range: RichTextRange) -> RichTextNodeIndex {
     frame
         .display_map
         .text_runs
         .iter()
         .find(|run| ranges_overlap(run.range, range))
-        .map_or(0, |run| run.node_index)
+        .map_or(RichTextNodeIndex::new(0), |run| run.node_index)
 }
 
 fn presentation_for_range(
-    frame: &LineDisplayFrame,
+    frame: &LineDisplayStageProjection,
     range: RichTextRange,
 ) -> Option<RichTextPresentation> {
     frame
@@ -1001,7 +947,7 @@ fn presentation_for_range(
         })
 }
 
-fn object_depth_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> Option<i32> {
+fn object_depth_for_range(frame: &LineDisplayStageProjection, range: RichTextRange) -> Option<i32> {
     frame
         .display_map
         .text_runs
@@ -1011,7 +957,10 @@ fn object_depth_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> Opt
         .max()
 }
 
-fn object_layer_for_range(frame: &LineDisplayFrame, range: RichTextRange) -> Option<String> {
+fn object_layer_for_range(
+    frame: &LineDisplayStageProjection,
+    range: RichTextRange,
+) -> Option<String> {
     frame
         .display_map
         .text_runs

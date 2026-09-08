@@ -8,9 +8,9 @@ use std::{
 use arcweft_data::TypeShape;
 
 use super::{
-    NominalProjectionLimitKind, NominalSchemaExpander, NominalSchemaPath,
+    NominalProjectionLimitKind, NominalProjectionRequest, NominalSchemaExpander, NominalSchemaPath,
     NominalSchemaProjectionError, ProjectionBudget, RuntimeNominalProjectionContext,
-    RuntimeNominalProjectionRequest, RuntimeNominalProjectionRequestInventory,
+    RuntimeNominalProjectionRequestInventory,
 };
 use crate::{
     final_analysis::{
@@ -26,6 +26,42 @@ use crate::{
         SemanticTypeDigest, TypeKind,
     },
 };
+
+#[test]
+fn call_execution_requires_result_availability_to_match_selection() {
+    use crate::effects::EffectSet;
+    use crate::final_analysis::{
+        CheckedExpression, CheckedExpressionResolution, CheckedTypeSelection,
+        FinalSemanticAnalysisError,
+    };
+    for (source, forged) in [
+        (
+            "fn target() -> i64 { 42i64 }\nfn caller() { target(); }\n",
+            CheckedExpression::unavailable_call(),
+        ),
+        (
+            "fn caller(speaker: Ref<Character>) { show(speaker, look = 1i64); }\n",
+            CheckedExpression::value(
+                TypeKind::Unit,
+                CheckedTypeSelection::Inferred,
+                EffectSet::new(),
+                CheckedExpressionResolution::Call,
+            ),
+        ),
+    ] {
+        let fixture = fixture(source, None);
+        let analysis = analyze(&fixture).expect("call evidence");
+        let calls = analysis
+            .calls()
+            .map(|(owner, call)| (owner, call.clone()))
+            .collect::<BTreeMap<_, _>>();
+        let owner = *calls.keys().next().expect("one call");
+        assert!(matches!(
+            super::execution_plan_for_expression(owner, &forged, &calls),
+            Err(FinalSemanticAnalysisError::CallFactMismatch)
+        ));
+    }
+}
 
 fn projection_fixture() -> Fixture {
     fixture(
@@ -83,7 +119,9 @@ fn checked(fixture: &Fixture, report: &FinalSemanticAnalysis, name: &str) -> Che
     CheckedProjectNominal::new(
         nominal.declaration().clone(),
         declaration.owner(),
-        TypeKind::ProjectNominal(nominal.clone()).semantic_identity_digest(),
+        TypeKind::ProjectNominal(nominal.clone())
+            .semantic_identity_digest()
+            .expect("stable fixture type"),
         nominal.arguments().to_vec(),
     )
 }
@@ -337,13 +375,15 @@ fn generic_substitution_cycle_is_typed_and_leaves_no_cache_row() {
         GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(7)),
         0,
     );
-    let substitutions =
-        BTreeMap::from([(parameter.clone(), TypeKind::GenericParam(parameter.clone()))]);
+    let substitutions = BTreeMap::from([(
+        parameter.clone(),
+        TypeKind::generic_parameter(parameter.clone()),
+    )]);
     let mut budget = ProjectionBudget::new(NominalResolutionLimits::PRODUCTION);
 
     assert_eq!(
         expander.type_shape(
-            &TypeKind::GenericParam(parameter.clone()),
+            &TypeKind::generic_parameter(parameter.clone()),
             &substitutions,
             &mut BTreeSet::new(),
             &mut BTreeSet::new(),
@@ -478,10 +518,10 @@ fn sealed_catalog_retains_instantiated_fields_and_variant_payloads() {
     let cancellation = AtomicBool::new(false);
     let mut inventory = RuntimeNominalProjectionRequestInventory::default();
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(pair.clone()))
+        .insert(NominalProjectionRequest::new(pair.clone()))
         .expect("Pair request");
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(choice.clone()))
+        .insert(NominalProjectionRequest::new(choice.clone()))
         .expect("ChoiceValue request");
 
     let seal = context(
@@ -509,12 +549,13 @@ fn sealed_catalog_retains_instantiated_fields_and_variant_payloads() {
             .collect::<Vec<_>>(),
         [(0, &TypeKind::I64), (1, &TypeKind::Bool)]
     );
-    assert!(
-        pair_projection
-            .record_fields()
-            .iter()
-            .all(|field| field.field_type() == field.ty().semantic_identity_digest())
-    );
+    assert!(pair_projection.record_fields().iter().all(|field| {
+        field.field_type()
+            == field
+                .ty()
+                .semantic_identity_digest()
+                .expect("stable fixture type")
+    }));
 
     let choice_projection = catalog
         .get_semantic(choice.identity())
@@ -538,7 +579,7 @@ fn projection_seal_rejects_missing_and_post_inventory_requests() {
     let cancellation = AtomicBool::new(false);
     let mut projected = RuntimeNominalProjectionRequestInventory::default();
     projected
-        .insert(RuntimeNominalProjectionRequest::new(first.clone()))
+        .insert(NominalProjectionRequest::new(first.clone()))
         .expect("First request");
 
     let missing = context(
@@ -559,7 +600,7 @@ fn projection_seal_rejects_missing_and_post_inventory_requests() {
 
     let mut expanded = projected.clone();
     expanded
-        .insert(RuntimeNominalProjectionRequest::new(second.clone()))
+        .insert(NominalProjectionRequest::new(second.clone()))
         .expect("Second request");
     let unexpected = context(
         &fixture,
@@ -587,12 +628,13 @@ fn missing_cached_projection_reports_the_first_semantic_digest() {
     let cancellation = AtomicBool::new(false);
     let mut inventory = RuntimeNominalProjectionRequestInventory::default();
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(first))
+        .insert(NominalProjectionRequest::new(first))
         .expect("First request");
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(second))
+        .insert(NominalProjectionRequest::new(second))
         .expect("Second request");
     let expected = *inventory
+        .requests
         .by_semantic_type
         .keys()
         .next()
@@ -641,10 +683,10 @@ fn projection_failure_precedence_uses_semantic_digest_not_insertion_order() {
     };
     let mut inventory = RuntimeNominalProjectionRequestInventory::default();
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(wrong_second))
+        .insert(NominalProjectionRequest::new(wrong_second))
         .expect("later digest is inserted first");
     inventory
-        .insert(RuntimeNominalProjectionRequest::new(wrong_first))
+        .insert(NominalProjectionRequest::new(wrong_first))
         .expect("earlier digest is inserted second");
 
     assert!(matches!(

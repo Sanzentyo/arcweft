@@ -28,8 +28,7 @@ impl AcceptedSemanticShapeCatalog {
             let canonical_ty = environment
                 .typecheck_env()
                 .canonical_accepted_type(ty.clone());
-            let owner = CheckedVariantOwner::try_environment(schema, &canonical_ty)
-                .ok_or(FinalSemanticAnalysisError::InvalidNominalOwner)?;
+            let owner = CheckedVariantOwner::try_environment(schema, &canonical_ty)?;
             catalog.insert_variant(&canonical_ty, owner)?;
         }
         for (nominal, variants) in environment.character_enum_variant_sets() {
@@ -37,8 +36,7 @@ impl AcceptedSemanticShapeCatalog {
             let owner = CheckedVariantOwner::try_character_nominal(
                 nominal.clone(),
                 variants.iter().cloned(),
-            )
-            .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+            )?;
             catalog.insert_variant(&ty, owner)?;
         }
         for accepted in environment.nominal_catalog().exact_records() {
@@ -46,7 +44,7 @@ impl AcceptedSemanticShapeCatalog {
                 continue;
             };
             let semantic_type = record.semantic_type();
-            if record.ty().semantic_identity_digest() != semantic_type
+            if record.ty().semantic_identity_digest()? != semantic_type
                 || catalog.closed_variants.contains_key(&semantic_type)
             {
                 return Err(FinalSemanticAnalysisError::InvalidNominalOwner);
@@ -69,7 +67,7 @@ impl AcceptedSemanticShapeCatalog {
         ty: &TypeKind,
         owner: CheckedVariantOwner,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let semantic_type = ty.semantic_identity_digest();
+        let semantic_type = ty.semantic_identity_digest()?;
         if owner.semantic_type() != semantic_type
             || self.environment_records.contains_key(&semantic_type)
         {
@@ -95,9 +93,7 @@ impl AcceptedSemanticShapeCatalog {
         &self,
         semantic_type: SemanticTypeDigest,
     ) -> Option<&CheckedVariantOwner> {
-        self.closed_variants
-            .get(&semantic_type)
-            .filter(|owner| owner.semantic_type() == semantic_type && owner.has_valid_case_rows())
+        self.closed_variants.get(&semantic_type)
     }
 
     pub(crate) fn environment_record(
@@ -108,7 +104,10 @@ impl AcceptedSemanticShapeCatalog {
             .get(&semantic_type)
             .filter(|record| {
                 record.semantic_type() == semantic_type
-                    && record.ty().semantic_identity_digest() == semantic_type
+                    && record
+                        .ty()
+                        .semantic_identity_digest()
+                        .is_ok_and(|digest| digest == semantic_type)
             })
     }
 }

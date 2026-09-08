@@ -7,7 +7,7 @@ use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
 use crate::serde_helpers::default_true;
 use arcweft_layout::stage_placement::{ResolvedStagePlacement, StagePlacement};
-use arcweft_text_model::LineDisplayFrame;
+use arcweft_text_model::LineDisplayStageProjection;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
@@ -66,9 +66,13 @@ pub struct AgentObservedObject {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum AgentObservedObjectContent {
-    RichText { frame: Box<LineDisplayFrame> },
+    RichText {
+        frame: Box<LineDisplayStageProjection>,
+    },
     Image(Box<AgentObservedImageContent>),
-    Custom { object_type: String },
+    Custom {
+        object_type: String,
+    },
 }
 
 impl AgentObservedObjectContent {
@@ -132,7 +136,7 @@ pub struct AgentObservedImageContent {
 }
 
 impl AgentObservedObject {
-    pub fn rich_text_frame(&self) -> Option<&LineDisplayFrame> {
+    pub fn rich_text_frame(&self) -> Option<&LineDisplayStageProjection> {
         match &self.content {
             AgentObservedObjectContent::RichText { frame } => Some(frame.as_ref()),
             AgentObservedObjectContent::Image(_) | AgentObservedObjectContent::Custom { .. } => {

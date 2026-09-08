@@ -21,11 +21,27 @@ const SELECT_PROGRESS_FIELD_TAG: u16 = 0x0403;
 const SELECT_FIELD_TAG: u16 = 0x0404;
 pub(crate) const REMOVED_SELECT_TUPLE_ELEMENT_TAG: u16 = 0x0405;
 pub(crate) const REMOVED_SELECT_RECORD_ELEMENT_TAG: u16 = 0x0406;
+pub(crate) const REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG: u16 = 0x0211;
+pub(crate) const REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG: u16 = 0x0213;
 pub(crate) const REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG: u16 = 0x1022;
 pub(crate) const REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG: u16 = 0x1023;
 const EXPRESSION_RESOLUTION_TAG_BASE: u16 = 0x0200;
-const EXPRESSION_RESOLUTION_TAG_END: u16 = 0x021B;
-const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 28;
+const EXPRESSION_RESOLUTION_TAG_CONTENT_APPLICATION: u16 = 0x021C;
+const EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_CALLEE: u16 = 0x021D;
+const EXPRESSION_RESOLUTION_TAG_TYPE_VALUE: u16 = 0x021E;
+const EXPRESSION_RESOLUTION_TAG_TEXT_PROXY_SCALAR: u16 = 0x021F;
+const EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_ENUM: u16 = 0x0220;
+const EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION: u16 = 0x0221;
+const EXPRESSION_RESOLUTION_TAG_END: u16 = EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION;
+// This count is the number of live constructors, not the width of the
+// numeric range.  0x0211 and 0x0213 are retained tombstones for removed
+// constructors and must never be reused.
+const EXPRESSION_RESOLUTION_TAG_COUNT: u16 = 32;
+const EXPRESSION_RESOLUTION_LIVE_TAGS: [u16; 32] = [
+    0x0200, 0x0201, 0x0202, 0x0203, 0x0204, 0x0205, 0x0206, 0x0207, 0x0208, 0x0209, 0x020A, 0x020B,
+    0x020C, 0x020D, 0x020E, 0x020F, 0x0210, 0x0212, 0x0214, 0x0215, 0x0216, 0x0217, 0x0218, 0x0219,
+    0x021A, 0x021B, 0x021C, 0x021D, 0x021E, 0x021F, 0x0220, 0x0221,
+];
 const VALUE_RESOLUTION_TAG_BASE: u16 = 0x0300;
 const VALUE_RESOLUTION_TAG_END: u16 = 0x0307;
 const VALUE_RESOLUTION_TAG_COUNT: u16 = 8;
@@ -33,10 +49,8 @@ const PATTERN_RESOLUTION_TAG_BASE: u16 = 0x0600;
 const PATTERN_RESOLUTION_TAG_END: u16 = 0x0605;
 const PATTERN_RESOLUTION_TAG_COUNT: u16 = 6;
 const _: () = {
-    assert!(
-        EXPRESSION_RESOLUTION_TAG_END
-            == EXPRESSION_RESOLUTION_TAG_BASE + EXPRESSION_RESOLUTION_TAG_COUNT - 1
-    );
+    assert!(EXPRESSION_RESOLUTION_TAG_END == 0x0221);
+    assert!(EXPRESSION_RESOLUTION_LIVE_TAGS.len() == EXPRESSION_RESOLUTION_TAG_COUNT as usize);
     assert!(
         PATTERN_RESOLUTION_TAG_END
             == PATTERN_RESOLUTION_TAG_BASE + PATTERN_RESOLUTION_TAG_COUNT - 1
@@ -44,6 +58,14 @@ const _: () = {
     assert!(VALUE_RESOLUTION_TAG_END == VALUE_RESOLUTION_TAG_BASE + VALUE_RESOLUTION_TAG_COUNT - 1);
     assert!(REMOVED_SELECT_TUPLE_ELEMENT_TAG > SELECT_FIELD_TAG);
     assert!(REMOVED_SELECT_RECORD_ELEMENT_TAG > REMOVED_SELECT_TUPLE_ELEMENT_TAG);
+    assert!(REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG == EXPRESSION_RESOLUTION_TAG_BASE + 17);
+    assert!(REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG == EXPRESSION_RESOLUTION_TAG_BASE + 19);
+    assert!(
+        EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_CALLEE
+            > EXPRESSION_RESOLUTION_TAG_CONTENT_APPLICATION
+    );
+    assert!(EXPRESSION_RESOLUTION_TAG_TYPE_VALUE > EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_CALLEE);
+    assert!(EXPRESSION_RESOLUTION_TAG_TEXT_PROXY_SCALAR > EXPRESSION_RESOLUTION_TAG_TYPE_VALUE);
     assert!(REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG < REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG);
 };
 
@@ -161,6 +183,7 @@ impl CheckedNestedEvidenceRole {
 /// Failure while enriching HIR-only edges with checked evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedChildEdgeError {
+    GenericScope(crate::types::GenericScopeError),
     MissingExpression,
     ChildCountMismatch,
     ChildIdentityMismatch,
@@ -189,27 +212,58 @@ impl fmt::Display for CheckedChildEdgeError {
     }
 }
 
-impl std::error::Error for CheckedChildEdgeError {}
+impl std::error::Error for CheckedChildEdgeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::GenericScope(source) => Some(source),
+            _ => None,
+        }
+    }
+}
 
-/// One publication-time edge fact for a final-HIR owner.
-///
-/// The edge vector and the optional callable join are one atomic semantic
-/// product.  A caller can never observe accepted edges while the callable
-/// evidence for the same owner is missing or invalid.
+/// One typed final-HIR child edge. The child and role remain available to
+/// coordinate and validation authorities. Every edge is traversed exactly once
+/// by the semantic transcript in HIR order.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedExpressionChildEdge {
+    child: ExprId,
+    role: CheckedExpressionChildRole,
+}
+
+impl CheckedExpressionChildEdge {
+    const fn new(child: ExprId, role: CheckedExpressionChildRole) -> Self {
+        Self { child, role }
+    }
+
+    pub const fn child(&self) -> ExprId {
+        self.child
+    }
+
+    pub(crate) const fn role(&self) -> &CheckedExpressionChildRole {
+        &self.role
+    }
+}
+
+/// Final edge fact and typed owner-level callable join.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpressionEdgeFact {
-    edges: Box<[(ExprId, CheckedExpressionChildRole)]>,
+    edges: Box<[CheckedExpressionChildEdge]>,
     record_fields: Box<[super::super::CheckedExpressionRecordField]>,
     callable: Option<CheckedCallableJoin>,
 }
 
 impl CheckedExpressionEdgeFact {
-    pub(super) fn try_new(
+    pub(super) fn seal(
         edges: Box<[(ExprId, CheckedExpressionChildRole)]>,
         record_fields: Box<[super::super::CheckedExpressionRecordField]>,
         callable: Option<CheckedCallableJoin>,
     ) -> Result<Self, CheckedChildEdgeError> {
         validate_record_field_plan(&edges, &record_fields)?;
+        let edges = edges
+            .into_iter()
+            .map(|(child, role)| CheckedExpressionChildEdge::new(child, role))
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         Ok(Self {
             edges,
             record_fields,
@@ -218,7 +272,7 @@ impl CheckedExpressionEdgeFact {
     }
 
     /// Returns the accepted ordered child edges.
-    pub(crate) fn edges(&self) -> &[(ExprId, CheckedExpressionChildRole)] {
+    pub(crate) fn edges(&self) -> &[CheckedExpressionChildEdge] {
         &self.edges
     }
 
@@ -226,6 +280,12 @@ impl CheckedExpressionEdgeFact {
     /// expressions retain an empty plan.
     pub fn record_fields(&self) -> &[super::super::CheckedExpressionRecordField] {
         &self.record_fields
+    }
+
+    /// Iterates the accepted owning expression children in semantic order.
+    /// Reference-only HIR relations and unselected candidate edges are absent.
+    pub fn child_expressions(&self) -> impl ExactSizeIterator<Item = ExprId> + '_ {
+        self.edges.iter().map(CheckedExpressionChildEdge::child)
     }
 
     /// Returns the accepted callable join when this owner is a Call.
@@ -332,6 +392,7 @@ impl CheckedExpressionResolution {
             Self::Select(_) => EXPRESSION_RESOLUTION_TAG_BASE + 3,
             Self::Nominal(_) => EXPRESSION_RESOLUTION_TAG_BASE + 4,
             Self::Variant(_) => EXPRESSION_RESOLUTION_TAG_BASE + 5,
+            Self::CompileTimeEnum(_) => EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_ENUM,
             Self::StageLook(_) => EXPRESSION_RESOLUTION_TAG_BASE + 6,
             Self::Effect(_) => EXPRESSION_RESOLUTION_TAG_BASE + 7,
             Self::Call => EXPRESSION_RESOLUTION_TAG_BASE + 8,
@@ -339,13 +400,14 @@ impl CheckedExpressionResolution {
             Self::Choice(_) => EXPRESSION_RESOLUTION_TAG_BASE + 10,
             Self::Try(_) => EXPRESSION_RESOLUTION_TAG_BASE + 11,
             Self::ImplicitCallable(_) => EXPRESSION_RESOLUTION_TAG_BASE + 12,
-            Self::ImplicitParameter { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 13,
+            Self::ImplicitParameter(_) => EXPRESSION_RESOLUTION_TAG_BASE + 13,
             Self::Pipe(_) => EXPRESSION_RESOLUTION_TAG_BASE + 14,
-            Self::PipeLeft { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 15,
+            Self::PipeLeft(_) => EXPRESSION_RESOLUTION_TAG_BASE + 15,
             Self::ViewCall(_) => EXPRESSION_RESOLUTION_TAG_BASE + 16,
-            Self::ViewCallee(_) => EXPRESSION_RESOLUTION_TAG_BASE + 17,
+            Self::CompileTimeCallee(_) => EXPRESSION_RESOLUTION_TAG_COMPILE_TIME_CALLEE,
             Self::StyleValue(_) => EXPRESSION_RESOLUTION_TAG_BASE + 18,
-            Self::StyleCallee(_) => EXPRESSION_RESOLUTION_TAG_BASE + 19,
+            Self::TypeValue(_) => EXPRESSION_RESOLUTION_TAG_TYPE_VALUE,
+            Self::CompileTimeScalar(_) => EXPRESSION_RESOLUTION_TAG_TEXT_PROXY_SCALAR,
             Self::DialogueLineReference(_) => EXPRESSION_RESOLUTION_TAG_BASE + 20,
             Self::DialogueLineCoordinate(_) => EXPRESSION_RESOLUTION_TAG_BASE + 21,
             Self::DialogueTextKeyCoordinate(_) => EXPRESSION_RESOLUTION_TAG_BASE + 22,
@@ -353,7 +415,11 @@ impl CheckedExpressionResolution {
             Self::CharacterDialogueReconfigure(_) => EXPRESSION_RESOLUTION_TAG_BASE + 24,
             Self::DialogueApplication { .. } => EXPRESSION_RESOLUTION_TAG_BASE + 25,
             Self::PostfixBracket(_) => EXPRESSION_RESOLUTION_TAG_BASE + 26,
-            Self::Closure(_) => EXPRESSION_RESOLUTION_TAG_END,
+            // Preserve the accepted pre-existing Closure tag while appending
+            // the attached-content family at the end of the range.
+            Self::Closure(_) => EXPRESSION_RESOLUTION_TAG_BASE + 27,
+            Self::ContentApplication(_) => EXPRESSION_RESOLUTION_TAG_CONTENT_APPLICATION,
+            Self::ViewFxApplication(_) => EXPRESSION_RESOLUTION_TAG_VIEW_FX_APPLICATION,
         }
     }
 }
@@ -406,9 +472,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::{
-        EXPRESSION_RESOLUTION_TAG_BASE, EXPRESSION_RESOLUTION_TAG_COUNT,
+        EXPRESSION_RESOLUTION_LIVE_TAGS, EXPRESSION_RESOLUTION_TAG_COUNT,
         EXPRESSION_RESOLUTION_TAG_END, PATTERN_RESOLUTION_TAG_BASE, PATTERN_RESOLUTION_TAG_COUNT,
-        PATTERN_RESOLUTION_TAG_END, REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG,
+        PATTERN_RESOLUTION_TAG_END, REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG,
+        REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG, REMOVED_LINE_PLAN_TIMED_CUE_ANCHOR_TAG,
         REMOVED_LINE_PLAN_TIMED_CUE_BODY_TAG, REMOVED_SELECT_RECORD_ELEMENT_TAG,
         REMOVED_SELECT_TUPLE_ELEMENT_TAG, SELECT_AGENT_FIELD_TAG, SELECT_DIALOGUE_VIEW_TAG,
         SELECT_FIELD_TAG, SELECT_METHOD_TAG, SELECT_PROGRESS_FIELD_TAG, VALUE_RESOLUTION_TAG_BASE,
@@ -425,21 +492,24 @@ mod tests {
 
     #[test]
     fn semantic_constructor_tag_layouts_are_exact_and_disjoint() {
-        let expression =
-            (EXPRESSION_RESOLUTION_TAG_BASE..=EXPRESSION_RESOLUTION_TAG_END).collect::<Vec<_>>();
+        let expression = EXPRESSION_RESOLUTION_LIVE_TAGS.to_vec();
         assert_eq!(
             expression.len(),
             usize::from(EXPRESSION_RESOLUTION_TAG_COUNT)
         );
         assert_eq!(expression[0], 0x0200);
-        assert_eq!(expression[26], 0x021A);
-        assert_eq!(expression[27], 0x021B);
+        assert_eq!(expression[16], 0x0210);
+        assert_eq!(expression[17], 0x0212);
+        assert_eq!(expression[18], 0x0214);
+        assert_eq!(expression[26], 0x021C);
+        assert_eq!(expression[27], 0x021D);
+        assert_eq!(expression[28], 0x021E);
+        assert_eq!(expression[29], 0x021F);
+        assert_eq!(expression[30], 0x0220);
         assert_unique(&expression);
-        assert_eq!(
-            EXPRESSION_RESOLUTION_TAG_END,
-            EXPRESSION_RESOLUTION_TAG_BASE + EXPRESSION_RESOLUTION_TAG_COUNT - 1
-        );
-        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x021B);
+        assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_VIEW_CALLEE_TAG));
+        assert!(!expression.contains(&REMOVED_EXPRESSION_RESOLUTION_STYLE_CALLEE_TAG));
+        assert_eq!(EXPRESSION_RESOLUTION_TAG_END, 0x0221);
 
         let value = (VALUE_RESOLUTION_TAG_BASE..=VALUE_RESOLUTION_TAG_END).collect::<Vec<_>>();
         assert_eq!(value.len(), usize::from(VALUE_RESOLUTION_TAG_COUNT));

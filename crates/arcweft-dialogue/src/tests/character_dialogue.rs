@@ -1,13 +1,13 @@
 use crate::{
-    CharacterDialogue, CharacterDialogueConfig, CharacterDialogueContentApplication,
-    CharacterDialogueContractIdentity, CharacterDialogueCustomFieldId,
-    CharacterDialogueCustomValue, CharacterDialogueHookValue, CharacterDialoguePatch,
-    CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
-    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeSchema,
-    CharacterDialogueStyleValue, CharacterDialogueType, CharacterDialogueTypedValue,
-    CharacterDialogueValueError, CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueContent,
-    DialogueLocaleId, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LinePlan,
-    PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,
+    CharacterDialogue, CharacterDialogueConfig, CharacterDialogueContractIdentity,
+    CharacterDialogueCustomFieldId, CharacterDialogueCustomValue, CharacterDialogueHookValue,
+    CharacterDialoguePatch, CharacterDialogueRichTextValue,
+    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
+    CharacterDialogueRuntimeSchema, CharacterDialogueStyleValue, CharacterDialogueType,
+    CharacterDialogueTypedValue, CharacterDialogueValueError, CharacterDialogueVoice,
+    CharacterDialogueVoiceId, DialogueLocaleId, FallbackStylePolicy, InlineFailurePolicy,
+    InlineFallback, PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath,
+    StructuredPatch,
 };
 use arcweft_character::{
     catalog::CharacterCatalog,
@@ -23,14 +23,11 @@ use arcweft_core::{
         RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
         RuntimeVariantIdentity,
     },
-    plan::RuntimeLineId,
     value::{
         MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordError, RuntimeNominalRecordValue,
         RuntimeSeq, RuntimeValue,
     },
 };
-use arcweft_id::TextKey;
-use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 use arcweft_view::{RustViewId, ViewDescriptor, ViewId, ViewRegistry, ViewSchemaId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -655,20 +652,6 @@ fn nominal_with_encoded_size(type_name: &str, target: usize) -> CharacterDialogu
     CharacterDialogueTypedValue::try_new(Some(type_id), layout, value).expect("typed value")
 }
 
-fn source_anchor() -> SourceAnchor {
-    let document = SourceDocument::try_new(
-        SourceDocumentId::try_new("character-dialogue-limit-test").expect("source id"),
-        SourceName::Memory,
-        "",
-    )
-    .expect("source");
-    SourceAnchor::from_span(
-        document
-            .span(SourceRange::new(0, 0))
-            .expect("empty source span"),
-    )
-}
-
 #[test]
 fn production_limits_have_the_exact_typed_contract_values() {
     let limits = PRODUCTION_CHARACTER_DIALOGUE_LIMITS;
@@ -688,7 +671,7 @@ fn production_limits_have_the_exact_typed_contract_values() {
     assert_eq!(limits.max_captured_values_per_function, 256_u16);
     assert_eq!(limits.max_defaults_entries, 4_096_u32);
     assert_eq!(
-        limits.max_line_id_bytes,
+        limits.max_public_id_bytes,
         arcweft_id::dialogue::MAX_DIALOGUE_ID_BYTES
     );
 }
@@ -909,54 +892,6 @@ fn dialogue_ids_enforce_their_field_table_byte_limits() {
         Err(CharacterDialogueValueError::Limit {
             limit: "look_id_bytes",
             maximum: 128,
-        })
-    ));
-}
-
-#[test]
-fn content_application_checks_complete_line_and_text_key_ids() {
-    let (dialogue, _, _, _) = fixture();
-    let exact_line = RuntimeLineId::canonical(&"l".repeat(252)).expect("line");
-    let exact_text = TextKey::try_new(format!("text.{}", "t".repeat(251))).expect("text key");
-    CharacterDialogueContentApplication::try_new(
-        dialogue.clone(),
-        exact_line,
-        exact_text,
-        DialogueContent::text("hello"),
-        LinePlan::default(),
-        source_anchor(),
-    )
-    .expect("256-byte line and text IDs");
-
-    let over_line = RuntimeLineId::canonical(&"l".repeat(253)).expect("line");
-    assert!(matches!(
-        CharacterDialogueContentApplication::try_new(
-            dialogue.clone(),
-            over_line,
-            TextKey::try_new("text.ok").expect("text key"),
-            DialogueContent::text("hello"),
-            LinePlan::default(),
-            source_anchor(),
-        ),
-        Err(CharacterDialogueValueError::Limit {
-            limit: "line_id_bytes",
-            maximum: 256,
-        })
-    ));
-
-    let over_text = TextKey::try_new(format!("text.{}", "t".repeat(252))).expect("text key");
-    assert!(matches!(
-        CharacterDialogueContentApplication::try_new(
-            dialogue,
-            RuntimeLineId::canonical("ok").expect("line"),
-            over_text,
-            DialogueContent::text("hello"),
-            LinePlan::default(),
-            source_anchor(),
-        ),
-        Err(CharacterDialogueValueError::Limit {
-            limit: "text_key_bytes",
-            maximum: 256,
         })
     ));
 }

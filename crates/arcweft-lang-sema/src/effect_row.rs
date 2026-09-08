@@ -358,12 +358,22 @@ impl EffectRow {
     }
 
     pub fn resolve(&self, substitutions: &EffectSubstitution) -> Result<EffectSet, EffectRowError> {
-        let resolved = self.resolve_partial(substitutions)?;
+        self.resolve_with(|variable| substitutions.get(variable), |_| Ok(()))
+    }
+
+    /// Resolves borrowed rows after the caller admits each row's visit. The
+    /// same traversal serves ordinary resolution and budgeted specialization.
+    pub(crate) fn resolve_with<'rows, E: From<EffectRowError>>(
+        &'rows self,
+        lookup: impl Fn(EffectVar) -> Option<&'rows EffectRow>,
+        visit: impl FnMut(&EffectRow) -> Result<(), E>,
+    ) -> Result<EffectSet, E> {
+        let resolved = self.resolve_partial_with(lookup, visit)?;
         match resolved.tail {
             EffectRowTail::Closed => Ok(resolved.concrete),
-            EffectRowTail::Variable(tail) => Err(EffectRowError::UnboundVariable {
+            EffectRowTail::Variable(tail) => Err(E::from(EffectRowError::UnboundVariable {
                 variable: tail.index(),
-            }),
+            })),
             EffectRowTail::Unknown => unreachable!("partial resolution rejects unknown rows"),
         }
     }
@@ -425,24 +435,33 @@ impl EffectRow {
         &self,
         substitutions: &EffectSubstitution,
     ) -> Result<EffectRow, EffectRowError> {
-        let mut concrete = self.concrete.clone();
-        let mut tail = self.tail;
+        self.resolve_partial_with(|variable| substitutions.get(variable), |_| Ok(()))
+    }
+
+    pub(crate) fn resolve_partial_with<'rows, E: From<EffectRowError>>(
+        &'rows self,
+        lookup: impl Fn(EffectVar) -> Option<&'rows EffectRow>,
+        mut visit: impl FnMut(&EffectRow) -> Result<(), E>,
+    ) -> Result<EffectRow, E> {
+        let mut concrete = EffectSet::new();
+        let mut current = self;
         let mut visited = std::collections::BTreeSet::new();
         loop {
-            match tail {
+            visit(current)?;
+            concrete.union_with(&current.concrete);
+            match current.tail {
                 EffectRowTail::Closed => return Ok(EffectRow::closed(concrete)),
-                EffectRowTail::Unknown => return Err(EffectRowError::UnknownRow),
+                EffectRowTail::Unknown => return Err(E::from(EffectRowError::UnknownRow)),
                 EffectRowTail::Variable(variable) => {
-                    let Some(bound) = substitutions.0.get(&variable) else {
+                    let Some(bound) = lookup(variable) else {
                         return Ok(EffectRow::open(concrete, variable));
                     };
                     if !visited.insert(variable) {
-                        return Err(EffectRowError::CyclicBinding {
+                        return Err(E::from(EffectRowError::CyclicBinding {
                             variable: variable.index(),
-                        });
+                        }));
                     }
-                    concrete.union_with(&bound.concrete);
-                    tail = bound.tail;
+                    current = bound;
                 }
             }
         }

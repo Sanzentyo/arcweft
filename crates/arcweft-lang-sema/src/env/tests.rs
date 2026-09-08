@@ -31,7 +31,7 @@ fn standard_env_contains_dialogue_fmt_builtin() {
         .iter()
         .find(|function| function.path == fmt)
         .expect("fmt has one typed standard callable record");
-    assert_eq!(function.schema.result(), &TypeKind::DisplayText);
+    assert_eq!(function.schema.value_type(), Some(&TypeKind::DisplayText));
 }
 
 #[test]

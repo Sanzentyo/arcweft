@@ -578,10 +578,10 @@ fn pratt_e14_through_e17_projections_retain_slots_forms_and_components() {
     assert!(matches!(
         projection(
             &missing_content,
-            SyntaxKind::DialogueContentApplicationExpression
+            SyntaxKind::AttachedContentApplicationExpression
         )
         .projection(),
-        ExpressionProjection::DialogueContentApplication(application)
+        ExpressionProjection::AttachedContentApplication(application)
             if matches!(application.content(), SyntaxDialogueContentProjection::Missing { .. })
     ));
 
@@ -636,6 +636,21 @@ fn pratt_e14_through_e17_projections_retain_slots_forms_and_components() {
 }
 
 #[test]
+fn content_interpolation_cannot_form_an_index_without_an_expression_target() {
+    let events = expression_events("speaker[#[value]]");
+    let projection = projection(&events, SyntaxKind::AttachedContentApplicationExpression);
+    assert!(matches!(
+        projection.projection(),
+        ExpressionProjection::AttachedContentApplication(application)
+            if matches!(application.content(), SyntaxDialogueContentProjection::Present(content) if !content.has_recovery())
+    ));
+    assert!(!events.iter().any(|event| matches!(
+        event,
+        SyntaxEvent::StartNode { kind, .. } if kind.is_missing_node() || kind.is_error_node()
+    )));
+}
+
+#[test]
 fn postfix_bracket_candidates_classify_without_source_name_heuristics() {
     assert!(matches!(
         projection(
@@ -656,10 +671,10 @@ fn postfix_bracket_candidates_classify_without_source_name_heuristics() {
     assert!(matches!(
         projection(
             &expression_events("alice[こんにちは。]"),
-            SyntaxKind::DialogueContentApplicationExpression
+            SyntaxKind::AttachedContentApplicationExpression
         )
         .projection(),
-        ExpressionProjection::DialogueContentApplication(application)
+        ExpressionProjection::AttachedContentApplication(application)
             if matches!(application.content(), SyntaxDialogueContentProjection::Present(_))
     ));
     let invalid_events = expression_events("items[,]");

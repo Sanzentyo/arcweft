@@ -1,9 +1,9 @@
-use arcweft_lang_hir::expr::HirCallExpr;
+use arcweft_lang_hir::expr::HirCallInvocation;
 
 fn requires_serialize<T: serde::Serialize>() {}
 fn requires_deserialize<T: serde::de::DeserializeOwned>() {}
 
 fn main() {
-    requires_serialize::<HirCallExpr>();
-    requires_deserialize::<HirCallExpr>();
+    requires_serialize::<HirCallInvocation>();
+    requires_deserialize::<HirCallInvocation>();
 }

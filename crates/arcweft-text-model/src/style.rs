@@ -8,7 +8,7 @@ use crate::{
 use arcweft_presentation::fx::FxApplication;
 use serde::{Deserialize, Serialize};
 
-/// Inline style span applied until the matching `StyleEnd`.
+/// One typed lexical modifier carried by a structural rich-text scope.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RichTextStyle {
@@ -26,10 +26,6 @@ pub enum RichTextStyle {
     },
     Size {
         milli_points: Milli,
-    },
-    /// Ruby annotation applied to the visible contents of this span.
-    Ruby {
-        annotation: String,
     },
     Speed {
         milli_cps: Milli,
@@ -50,23 +46,6 @@ pub enum RichTextStyle {
     Fx {
         application: FxApplication,
     },
-}
-
-/// Closed span identity used by typed end nodes.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RichTextSpanKind {
-    Emphasis,
-    Strong,
-    Style,
-    Color,
-    Font,
-    Size,
-    Ruby,
-    Layout,
-    Transform,
-    Object,
-    Fx,
 }
 
 /// Scalar presentation metadata applied to rich-text objects.
@@ -98,29 +77,6 @@ pub enum RichTextFontFamily {
     Cursive,
     Fantasy,
     Named { name: String },
-}
-
-impl RichTextStyle {
-    /// Typed span identity used to match the corresponding end node.
-    #[must_use]
-    pub const fn span_kind(&self) -> RichTextSpanKind {
-        match self {
-            Self::Em => RichTextSpanKind::Emphasis,
-            Self::Strong => RichTextSpanKind::Strong,
-            Self::Italic | Self::Oblique { .. } | Self::Presentation { .. } => {
-                RichTextSpanKind::Style
-            }
-            Self::Color { .. } => RichTextSpanKind::Color,
-            Self::Font { .. } => RichTextSpanKind::Font,
-            Self::Size { .. } => RichTextSpanKind::Size,
-            Self::Ruby { .. } => RichTextSpanKind::Ruby,
-            Self::Speed { .. } => RichTextSpanKind::Style,
-            Self::Layout { .. } => RichTextSpanKind::Layout,
-            Self::Transform { .. } => RichTextSpanKind::Transform,
-            Self::Object { .. } => RichTextSpanKind::Object,
-            Self::Fx { .. } => RichTextSpanKind::Fx,
-        }
-    }
 }
 
 /// Aggregates presentation metadata from active rich-text styles.
@@ -155,7 +111,6 @@ pub fn presentation_from_styles<'a>(
                 | RichTextStyle::Color { .. }
                 | RichTextStyle::Font { .. }
                 | RichTextStyle::Size { .. }
-                | RichTextStyle::Ruby { .. }
                 | RichTextStyle::Speed { .. } => {}
             }
             out

@@ -748,8 +748,16 @@ pub(super) fn required_name(
     owner: &SyntaxNodeHandle,
     lifetime: bool,
 ) -> Result<AttachedRequiredName, SyntaxAccessError> {
+    required_name_at(owner, SyntaxRole::Name, lifetime)
+}
+
+pub(super) fn required_name_at(
+    owner: &SyntaxNodeHandle,
+    role: SyntaxRole,
+    lifetime: bool,
+) -> Result<AttachedRequiredName, SyntaxAccessError> {
     let syntax = owner
-        .optional_unique_child(SyntaxRole::Name)?
+        .optional_unique_child(role)?
         .ok_or(SyntaxAccessError::InvalidItemProjection { id: owner.id() })?;
     let syntax = super::family::FamilyNode::<NameFamily>::new(syntax)?;
     match syntax.kind() {

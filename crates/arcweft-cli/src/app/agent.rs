@@ -26,7 +26,7 @@ use arcweft_agent_runner::{
     config::{AgentControllerRunConfig, AgentControllerRunReport, AgentRunnerConfig},
     policy::{RuntimeAgentCapability, RuntimeAgentPolicy},
     runner::AgentRunner,
-    session::{AgentSession, NoopRagService},
+    session::{AgentSession, DisabledRagService},
 };
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_compiler::{agent, agent_project};

@@ -102,6 +102,7 @@ impl TypeKind {
             Self::Result { ok, error } => {
                 ok.contains_dialogue_line_operation() || error.contains_dialogue_line_operation()
             }
+            Self::MetaType(inner) => inner.contains_dialogue_line_operation(),
             Self::Function {
                 params,
                 return_type,
@@ -120,7 +121,12 @@ impl TypeKind {
             Self::VariantPayload(payload) => {
                 variant_payload_contains(payload, TypeKind::contains_dialogue_line_operation)
             }
-            atomic_type_kind_pattern!(Self::Error(_)) => false,
+            atomic_type_kind_pattern!(Self::Error(_))
+            | Self::CompileTimeCallable(_)
+            | Self::CompileTimeScalar(_)
+            | Self::CompileTimeEnum(_)
+            | Self::CompileTimeFx(_) => false,
+            Self::FixedVector(vector) => vector.component().contains_dialogue_line_operation(),
         }
     }
 
@@ -157,6 +163,7 @@ impl TypeKind {
             Self::Result { ok, error } => {
                 ok.contains_nominal_poison() || error.contains_nominal_poison()
             }
+            Self::MetaType(inner) => inner.contains_nominal_poison(),
             Self::Function {
                 params,
                 return_type,
@@ -175,7 +182,12 @@ impl TypeKind {
             Self::VariantPayload(payload) => {
                 variant_payload_contains(payload, TypeKind::contains_nominal_poison)
             }
-            atomic_type_kind_pattern!() => false,
+            atomic_type_kind_pattern!()
+            | Self::CompileTimeCallable(_)
+            | Self::CompileTimeScalar(_)
+            | Self::CompileTimeEnum(_)
+            | Self::CompileTimeFx(_) => false,
+            Self::FixedVector(vector) => vector.component().contains_nominal_poison(),
         }
     }
 }
@@ -195,11 +207,6 @@ fn variant_payload_contains(
     predicate: impl Fn(&TypeKind) -> bool,
 ) -> bool {
     payload
-        .shape()
-        .tuple_fields()
-        .is_some_and(|fields| fields.iter().any(|field| predicate(field.ty())))
-        || payload
-            .shape()
-            .record_fields()
-            .is_some_and(|fields| fields.iter().any(|field| predicate(field.ty())))
+        .visit_types(&mut |ty| if predicate(ty) { Err(()) } else { Ok(()) })
+        .is_err()
 }

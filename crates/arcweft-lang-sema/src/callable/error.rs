@@ -11,7 +11,7 @@ use arcweft_source::SourceSpan;
 use thiserror::Error;
 
 use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
-use crate::types::{GenericConstParameterId, GenericTypeParameterId, TypeGenericUseError};
+use crate::types::{GenericConstReference, GenericTypeReference, TypeGenericUseError, TypeKind};
 
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
@@ -103,10 +103,12 @@ pub enum RustProvenanceError {
 pub enum CallableSchemaError {
     #[error(transparent)]
     GenericUse(#[from] TypeGenericUseError),
+    #[error("evaluated-effect schemas require a fixed effect row")]
+    EvaluatedEffectRequiresFixedRow,
     #[error("callable schema candidate type parameter {parameter:?} does not occur in the schema")]
-    MissingCandidateType { parameter: GenericTypeParameterId },
+    MissingCandidateType { parameter: GenericTypeReference },
     #[error("callable schema candidate const parameter {parameter:?} does not occur in the schema")]
-    MissingCandidateConst { parameter: GenericConstParameterId },
+    MissingCandidateConst { parameter: GenericConstReference },
     #[error("callable generic parameter issuer has an invalid owner arity")]
     InvalidCandidateIssuer,
     #[error("callable schema must contain an initial parameter group")]
@@ -122,6 +124,11 @@ pub enum CallableSchemaError {
     },
     #[error("invalid parameter group kind at {group:?}")]
     InvalidGroupKind { group: CallableGroupIndex },
+    #[error("attached content must belong to terminal group {expected:?}, found {actual:?}")]
+    InvalidAttachedContentGroup {
+        expected: CallableGroupIndex,
+        actual: CallableGroupIndex,
+    },
     #[error("non-contiguous parameter in {group:?}: expected {expected:?}, found {actual:?}")]
     NonContiguousParameter {
         group: CallableGroupIndex,
@@ -185,6 +192,12 @@ pub enum CallableSchemaError {
     },
 }
 
+impl From<crate::types::GenericScopeError> for CallableSchemaError {
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::GenericUse(TypeGenericUseError::Scope(error))
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CallableFamilyInvariantCode {
     InvalidArity,
@@ -197,6 +210,8 @@ pub enum CallableFamilyInvariantCode {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CallableCatalogError {
+    #[error(transparent)]
+    GenericScope(#[from] crate::types::GenericScopeError),
     #[error("callable ID and lookup key do not agree")]
     IdKeyMismatch,
     #[error("callable authority and provider do not agree")]
@@ -248,6 +263,12 @@ pub enum CallablePublicationError {
     InvalidRustProvenance(#[from] RustProvenanceError),
     #[error(transparent)]
     Limit(#[from] CallableBuildLimitError),
+}
+
+impl From<crate::types::GenericScopeError> for CallablePublicationError {
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::InvalidRecord(CallableCatalogError::GenericScope(error))
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -460,6 +481,7 @@ pub enum CallableDiagnosticCode {
     EnumConstructorExpectedType,
     VirtualPathRejected,
     CorruptCallableCatalog,
+    UnsupportedProjectParameterDefault,
     WorldMismatch,
     SourceIdentityMismatch,
     Cancelled,
@@ -515,6 +537,29 @@ pub enum CallableCatalogBuildError {
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
     ProjectIdentityMismatch { declaration: CallableDeclarationKey },
+    #[error(
+        "ordinary project callable {declaration:?} cannot default parameter {group:?}/{parameter:?} at {span:?}"
+    )]
+    UnsupportedProjectParameterDefault {
+        declaration: CallableDeclarationKey,
+        group: CallableGroupIndex,
+        parameter: CallableParameterIndex,
+        span: SourceSpan,
+    },
+    #[error("compile-time Fx declaration {declaration:?} cannot own attached content at {span:?}")]
+    ProjectAttachedContentOnFx {
+        declaration: CallableDeclarationKey,
+        span: SourceSpan,
+    },
+    #[error(
+        "attached-content declaration {declaration:?} at {span:?} must return {expected:?}, found {actual:?}"
+    )]
+    ProjectAttachedContentResultMismatch {
+        declaration: CallableDeclarationKey,
+        span: SourceSpan,
+        expected: Box<TypeKind>,
+        actual: Box<TypeKind>,
+    },
     #[error("project callable signature has invalid source evidence at {span:?}")]
     InvalidProjectSignatureSource { span: SourceSpan },
     #[error("extern capability signature does not match adapter host-call contract {path:?}")]
@@ -569,6 +614,8 @@ impl CallableCatalogBuildError {
             | Self::ProjectWorldPackageMismatch { .. }
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
+            | Self::ProjectAttachedContentOnFx { .. }
+            | Self::ProjectAttachedContentResultMismatch { .. }
             | Self::InvalidProjectSignatureSource { .. }
             | Self::HostCallContractMismatch { .. }
             | Self::ProjectSignatureResolutionInput { .. }
@@ -578,7 +625,46 @@ impl CallableCatalogBuildError {
             | Self::InvalidRecord(_)
             | Self::InvalidPublication(_)
             | Self::InvalidSchema(_) => CallableDiagnosticCode::CorruptCallableCatalog,
+            Self::UnsupportedProjectParameterDefault { .. } => {
+                CallableDiagnosticCode::UnsupportedProjectParameterDefault
+            }
         }
+    }
+
+    /// Exact authored source owned by a source-backed catalog rejection.
+    pub const fn primary_span(&self) -> Option<&SourceSpan> {
+        match self {
+            Self::UnsupportedProjectParameterDefault { span, .. }
+            | Self::ProjectAttachedContentOnFx { span, .. }
+            | Self::ProjectAttachedContentResultMismatch { span, .. }
+            | Self::InvalidProjectSignatureSource { span }
+            | Self::ProjectSignatureResolutionInput { span, .. }
+            | Self::ProjectSignatureResolutionIndex { span, .. } => Some(span),
+            Self::PublicationWorldMismatch { .. }
+            | Self::DuplicateTypedId { .. }
+            | Self::SameRankCollision { .. }
+            | Self::DuplicateProviderOverload { .. }
+            | Self::NonContiguousOverloads { .. }
+            | Self::ProjectBindingCollision { .. }
+            | Self::MissingProjectBindingType { .. }
+            | Self::ProjectWorldPackageMismatch { .. }
+            | Self::MissingProjectModuleSource { .. }
+            | Self::ProjectIdentityMismatch { .. }
+            | Self::HostCallContractMismatch { .. }
+            | Self::InvalidProjectSignatureTypeOutcome { .. }
+            | Self::AmbiguousRustExternBinding { .. }
+            | Self::InvalidRecord(_)
+            | Self::InvalidPublication(_)
+            | Self::InvalidSchema(_)
+            | Self::Limit(_)
+            | Self::WorkOverflow => None,
+        }
+    }
+}
+
+impl From<crate::types::GenericScopeError> for CallableCatalogBuildError {
+    fn from(error: crate::types::GenericScopeError) -> Self {
+        Self::InvalidRecord(CallableCatalogError::GenericScope(error))
     }
 }
 

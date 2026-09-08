@@ -113,7 +113,7 @@ pub(super) fn attached_composite_children(
     if let ExpressionProjection::Index(index) = projection {
         return attached_postfix_index_children(syntax, index, components);
     }
-    if let ExpressionProjection::DialogueContentApplication(application) = projection {
+    if let ExpressionProjection::AttachedContentApplication(application) = projection {
         return attached_dialogue_application_children(syntax, application, components);
     }
     if let ExpressionProjection::Record(fields) | ExpressionProjection::RecordLiteral(fields) =
@@ -367,19 +367,40 @@ fn collect_expression_roots(node: &SyntaxNodeHandle, expressions: &mut Vec<Synta
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the attached dialogue owner validates target, body, and every typed nested expression in one atomic projection"
+)]
 fn attached_dialogue_application_children(
     syntax: &SyntaxNodeHandle,
-    application: &crate::expressions::SyntaxDialogueApplicationProjection,
+    application: &crate::expressions::SyntaxAttachedContentApplicationProjection,
     components: &[crate::expressions::PendingExpressionComponent],
 ) -> Result<Box<[AttachedExpressionChild]>, SyntaxAccessError> {
     let targets = syntax.children_with_role(SyntaxRole::Target);
     let payload_role = match application.form() {
-        crate::expressions::SyntaxDialogueApplicationForm::Bracket { .. } => SyntaxRole::Payload,
-        crate::expressions::SyntaxDialogueApplicationForm::Colon => SyntaxRole::Content,
+        crate::expressions::SyntaxAttachedContentApplicationForm::Bracket { .. }
+        | crate::expressions::SyntaxAttachedContentApplicationForm::Hash => SyntaxRole::Payload,
+        crate::expressions::SyntaxAttachedContentApplicationForm::Colon => SyntaxRole::Content,
     };
     let payloads = syntax.children_with_role(payload_role);
-    let ([target], [payload]) = (targets.as_slice(), payloads.as_slice()) else {
+    let [target] = targets.as_slice() else {
         return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    let payload = match payloads.as_slice() {
+        [payload] => Some(payload),
+        [] if matches!(
+            (application.form(), application.content(),),
+            (
+                crate::expressions::SyntaxAttachedContentApplicationForm::Hash,
+                crate::expressions::SyntaxDialogueContentProjection::Missing {
+                    boundary: crate::expressions::SyntaxDialogueContentRecoveryBoundary::Inline { .. },
+                },
+            )
+        ) =>
+        {
+            None
+        }
+        _ => return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
     };
     let target_range = components
         .iter()
@@ -398,6 +419,10 @@ fn attached_dialogue_application_children(
         expression: FamilyNode::<ExpressionFamily>::new(target.clone())?,
         source: syntax.source_span_for_range(target_range),
     }];
+
+    let Some(payload) = payload else {
+        return Ok(children.into_boxed_slice());
+    };
 
     let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
         application.content()
@@ -478,6 +503,9 @@ fn dialogue_expression_owner(
     payload: &SyntaxNodeHandle,
     expression: &SyntaxNodeHandle,
 ) -> Option<AttachedCandidateDialogueOwner> {
+    if let SyntaxRole::DialogueNode(ordinal) = expression.role() {
+        return Some(AttachedCandidateDialogueOwner::Node { ordinal });
+    }
     let mut parent = expression.parent();
     while let Some(ancestor) = parent {
         if ancestor.id() == payload.id() {
@@ -486,9 +514,6 @@ fn dialogue_expression_owner(
         match ancestor.role() {
             SyntaxRole::DialogueNode(ordinal) => {
                 return Some(AttachedCandidateDialogueOwner::Node { ordinal });
-            }
-            SyntaxRole::RichTextTag(ordinal) => {
-                return Some(AttachedCandidateDialogueOwner::Tag { ordinal });
             }
             _ => parent = ancestor.parent(),
         }
@@ -1078,7 +1103,7 @@ fn semantic_child_role(projection: &ExpressionProjection, ordinal: u32) -> Optio
         ExpressionProjection::ArrayRepeat(_) if ordinal == 1 => Some(SyntaxRole::Element(1)),
         ExpressionProjection::Select(_)
         | ExpressionProjection::Index(_)
-        | ExpressionProjection::DialogueContentApplication(_)
+        | ExpressionProjection::AttachedContentApplication(_)
         | ExpressionProjection::PostfixBracket(_)
             if ordinal == 0 =>
         {
@@ -1149,7 +1174,7 @@ fn semantic_child_component(
         }
         ExpressionProjection::Select(_)
         | ExpressionProjection::Index(_)
-        | ExpressionProjection::DialogueContentApplication(_)
+        | ExpressionProjection::AttachedContentApplication(_)
         | ExpressionProjection::PostfixBracket(_)
             if ordinal == 0 =>
         {

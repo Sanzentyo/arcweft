@@ -1,9 +1,10 @@
 use crate::awbc_lower::frame::{FrameBuilder, FrameCaptureSlot};
-use crate::awbc_lower::inventory::{AwbcInventory, PendingAwbcClosure};
+use crate::awbc_lower::inventory::{AwbcInventory, AwbcLowerDiagnostic, PendingAwbcClosure};
 use crate::awbc_lower::pattern::{admitted_plan_type, admitted_variant_case_name, lower_pattern};
 use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFieldProjection,
+    AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcDialogueContentEffectBinding,
+    AwbcDialogueValueBinding, AwbcDialogueValueRole, AwbcEffectSetId, AwbcFieldProjection,
     AwbcFunction, AwbcFunctionFlag, AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction,
     AwbcIntrinsic, AwbcIntrinsicId, AwbcPattern, AwbcPatternId, AwbcPureHelperId, AwbcRegisterId,
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcTableRange, AwbcTerminator,
@@ -12,7 +13,8 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::entry::RuntimeCallableId;
 use arcweft_core::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimePattern};
 use arcweft_core::plan::{
-    RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimeReceiverMode,
+    RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
+    RuntimeReceiverMode,
 };
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm,
@@ -122,6 +124,63 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                     src: value,
                 });
                 self.lower(body)
+            }
+            RuntimeExprKind::DialogueContent {
+                template,
+                values,
+                effects,
+            } => {
+                let manifest = self
+                    .plan
+                    .dialogue_content_templates()
+                    .get(*template)
+                    .expect("admitted DialogueContent expression references a plan template");
+                let values = manifest
+                    .slots()
+                    .iter()
+                    .zip(values)
+                    .map(|(slot, value)| AwbcDialogueValueBinding {
+                        slot: slot.slot(),
+                        role: match slot.role() {
+                            arcweft_core::plan::RuntimeDialogueValueRole::Interpolation => {
+                                AwbcDialogueValueRole::Interpolation
+                            }
+                            arcweft_core::plan::RuntimeDialogueValueRole::Content => {
+                                AwbcDialogueValueRole::Content
+                            }
+                        },
+                        value: self.lower(value),
+                    })
+                    .collect();
+                let effects = effects
+                    .iter()
+                    .map(|effect| {
+                        let function = self
+                            .inventory
+                            .function_site_function(effect.function)
+                            .expect("admitted content callback has an AWBC function identity");
+                        AwbcDialogueContentEffectBinding {
+                            site: effect.site,
+                            function,
+                            captures: effect
+                                .captures
+                                .iter()
+                                .map(|capture| self.lower(capture))
+                                .collect(),
+                        }
+                    })
+                    .collect();
+                let destination = self
+                    .frame
+                    .temp(admitted_plan_type(self.inventory, self.plan, expr.ty()));
+                self.inventory
+                    .push_instruction(AwbcInstruction::MakeDialogueContent {
+                        destination,
+                        template: *template,
+                        values,
+                        effects,
+                    });
+                destination
             }
             RuntimeExprKind::Tuple(items) => {
                 let registers = items.iter().map(|item| self.lower(item)).collect();
@@ -256,6 +315,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 let field_type = admitted_plan_type(self.inventory, self.plan, expr.ty());
                 let dst = self.frame.temp(field_type);
                 match field {
+                    RuntimeFieldProjection::Nominal(field) => {
+                        self.inventory.push_instruction(AwbcInstruction::ProjectRecord {
+                            dst, target, ordinal: field.zero_based(),
+                        });
+                    }
                     RuntimeFieldProjection::OpaqueRecord { field, .. } => {
                         self.inventory.push_instruction(AwbcInstruction::ProjectField {
                             dst,
@@ -332,21 +396,11 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 self.lower(body)
             }
             RuntimeExprKind::Call { callee, args } => self.lower_call(expr.ty(), callee, args),
-            RuntimeExprKind::Function(site) => self.lower_function_site(*site, expr.ty()),
+            RuntimeExprKind::Function { site, captures } => {
+                self.lower_function_site(*site, captures, expr.ty())
+            }
             RuntimeExprKind::Apply { callee, args } => {
-                let callee = self.lower(callee);
-                let args = args
-                    .iter()
-                    .map(|arg| self.lower(arg.value()))
-                    .collect::<Vec<_>>();
-                let dst = self.frame.temp(admitted_plan_type(
-                    self.inventory,
-                    self.plan,
-                    expr.ty(),
-                ));
-                self.inventory
-                    .push_instruction(AwbcInstruction::ApplyFunction { dst, callee, args });
-                dst
+                self.lower_function_application(callee, args, expr.ty())
             }
             RuntimeExprKind::TraitCall {
                 callable,
@@ -538,50 +592,115 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
         }
     }
 
+    /// Evaluates source operands once, then assembles the admitted positional
+    /// ABI for the VM's function invocation instruction.
+    pub(super) fn lower_function_application(
+        &mut self,
+        callee: &RuntimeExpr,
+        args: &[arcweft_core::value::RuntimeCallArgument],
+        result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
+    ) -> AwbcRegisterId {
+        let callee = self.lower(callee);
+        let mut groups = Vec::with_capacity(args.len());
+        for argument in args {
+            let value = self.lower(argument.value());
+            let mut values = Vec::new();
+            match argument.mode() {
+                arcweft_core::value::RuntimeCallArgumentMode::Value => values.push(value),
+                arcweft_core::value::RuntimeCallArgumentMode::Spread => {
+                    match plan_type_projection(self.plan, argument.value().ty()) {
+                        RuntimePlanTypeProjection::Tuple(items) => {
+                            for (ordinal, item) in items.iter().enumerate() {
+                                let dst = self.frame.temp(admitted_plan_type(
+                                    self.inventory,
+                                    self.plan,
+                                    *item,
+                                ));
+                                self.inventory
+                                    .push_instruction(AwbcInstruction::ProjectTuple {
+                                        dst,
+                                        target: value,
+                                        ordinal: table_index(ordinal),
+                                    });
+                                values.push(dst);
+                            }
+                        }
+                        RuntimePlanTypeProjection::Array { item, length } => {
+                            let index_ty = self.inventory.intern_type(AwbcRuntimeTypeShape::UInt(
+                                AwbcUnsignedIntKind::USize,
+                            ));
+                            for index in 0..*length {
+                                let index_register = self.frame.temp(index_ty);
+                                let constant = self.inventory.constant_runtime_value_typed(
+                                    &arcweft_core::value::RuntimeValue::usize(index),
+                                    index_ty,
+                                );
+                                self.inventory.push_instruction(AwbcInstruction::LoadConst {
+                                    dst: index_register,
+                                    constant,
+                                });
+                                let dst = self.frame.temp(admitted_plan_type(
+                                    self.inventory,
+                                    self.plan,
+                                    *item,
+                                ));
+                                self.inventory
+                                    .push_instruction(AwbcInstruction::SequenceGet {
+                                        dst,
+                                        sequence: value,
+                                        index: index_register,
+                                    });
+                                values.push(dst);
+                            }
+                        }
+                        _ => unreachable!(
+                            "admitted function application spreads only tuples and fixed arrays"
+                        ),
+                    }
+                }
+            }
+            groups.push((argument.abi_position(), values));
+        }
+        groups.sort_by_key(|(position, _)| *position);
+        let args = groups.into_iter().flat_map(|(_, values)| values).collect();
+        let dst = self
+            .frame
+            .temp(admitted_plan_type(self.inventory, self.plan, result_type));
+        self.inventory
+            .push_instruction(AwbcInstruction::ApplyFunction { dst, callee, args });
+        dst
+    }
+
     fn lower_function_site(
         &mut self,
         site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
+        captures: &[RuntimeExpr],
         result_type: arcweft_core::runtime_id::RuntimePlanTypeId,
     ) -> AwbcRegisterId {
-        let Some(function_site) = self.plan.function_sites().get(site) else {
+        let function = self.prepare_function_site(site);
+        let function_site = self
+            .plan
+            .function_sites()
+            .get(site)
+            .expect("function site was checked by prepare_function_site");
+        let capture_inputs = function_site.capture_inputs().collect::<Vec<_>>();
+        if capture_inputs.len() != captures.len() {
             panic!(
-                "admitted function site {site} is absent from the RuntimePlan at {}",
+                "admitted function site {site} has {} capture inputs but function expression supplied {} captures at {}",
+                capture_inputs.len(),
+                captures.len(),
                 self.path
             );
-        };
-        let already_lowered = self.inventory.function_site_function(site).is_some();
-        let function = self.inventory.reserve_function_site_slot(site);
-        let captures = function_site
-            .captures()
-            .iter()
-            .map(|local| {
-                let register = self.frame.register_for_local(*local).unwrap_or_else(|| {
-                    panic!(
-                        "admitted function site {site} capture local {local} is absent from the AWBC frame at {}",
-                        self.path
-                    )
-                });
-                (*local, register)
-            })
-            .collect::<Vec<_>>();
-        if !already_lowered {
-            self.inventory.push_pending_closure(PendingAwbcClosure {
-                function,
-                params: function_site.params().into(),
-                captures: function_site.captures().into(),
-                body: function_site.body().clone(),
-                path: format!("{}.function.{site}", self.path),
-            });
         }
         let params = function_site
-            .params()
-            .iter()
-            .map(|local| local_name(self.inventory, *local))
+            .parameter_inputs()
+            .map(|input| self.inventory.local_name(input.input_local()))
             .collect();
-        let capture_names = captures
+        let capture_names = capture_inputs
             .iter()
-            .map(|(local, _)| local_name(self.inventory, *local))
+            .map(|input| self.inventory.local_name(input.input_local()))
             .collect();
+        let captures = captures.iter().map(|capture| self.lower(capture)).collect();
         let dst = self
             .frame
             .temp(admitted_plan_type(self.inventory, self.plan, result_type));
@@ -591,26 +710,55 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
                 function,
                 params,
                 capture_names,
-                captures: captures.iter().map(|(_, register)| *register).collect(),
+                captures,
             });
         dst
+    }
+
+    /// Reserves one plan function site and queues its body for normal AWBC
+    /// lowering. Outer capture expressions are retained by the Function
+    /// expression itself; the site owns only its synthetic input ABI rows.
+    pub(crate) fn prepare_function_site(
+        &mut self,
+        site: arcweft_core::runtime_id::RuntimeFunctionSiteId,
+    ) -> arcweft_core::awbc::schema::AwbcFunctionId {
+        let Some(function_site) = self.plan.function_sites().get(site) else {
+            panic!(
+                "admitted function site {site} is absent from the RuntimePlan at {}",
+                self.path
+            );
+        };
+        let already_lowered = self.inventory.function_site_function(site).is_some();
+        let function = self.inventory.reserve_function_site_slot(site);
+        if !already_lowered {
+            self.inventory
+                .push_pending_closure(PendingAwbcClosure::FunctionSite {
+                    function,
+                    inputs: function_site.inputs().to_vec().into_boxed_slice(),
+                    result: function_site.result(),
+                    body: function_site.body().clone(),
+                    path: format!("{}.function.{site}", self.path),
+                });
+        }
+        function
     }
 
     fn lower_value_control_expr(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
         let captures = self.control_expr_captures(expr);
         let function = self.inventory.reserve_function_slot();
-        self.inventory.push_pending_closure(PendingAwbcClosure {
-            function,
-            params: Box::new([]),
-            captures: captures.iter().map(|capture| capture.local).collect(),
-            body: expr.clone(),
-            path: format!("{}.control.{}", self.path, function.0),
-        });
+        self.inventory
+            .push_pending_closure(PendingAwbcClosure::Control {
+                function,
+                captures: captures.iter().map(|capture| capture.local).collect(),
+                result: expr.ty(),
+                body: RuntimeFunctionSiteBody::Expression(expr.clone()),
+                path: format!("{}.control.{}", self.path, function.0),
+            });
 
         let callee = self.frame.temp(self.inventory.dynamic_ty());
         let capture_names = captures
             .iter()
-            .map(|capture| local_name(self.inventory, capture.local))
+            .map(|capture| self.inventory.local_name(capture.local))
             .collect();
         self.inventory
             .push_instruction(AwbcInstruction::MakeFunction {
@@ -699,57 +847,132 @@ impl<'a, 'b, 'plan> AwbcExprLowerer<'a, 'b, 'plan> {
 
 pub(crate) fn lower_pending_closures(inventory: &mut AwbcInventory, plan: &RuntimePlan) {
     while let Some(closure) = inventory.pop_pending_closure() {
-        let mut frame = FrameBuilder::new();
-        for local in &closure.captures {
-            let name = local_name(inventory, *local);
-            frame.named_parameter(
-                *local,
-                admitted_plan_type(inventory, plan, local_type(plan, *local)),
-                name,
-            );
-        }
-        for local in &closure.params {
-            let name = local_name(inventory, *local);
-            frame.named_parameter(
-                *local,
-                admitted_plan_type(inventory, plan, local_type(plan, *local)),
-                name,
-            );
-        }
+        match closure {
+            PendingAwbcClosure::FunctionSite {
+                function,
+                inputs,
+                result,
+                body: RuntimeFunctionSiteBody::Executable(executable),
+                path,
+            } => {
+                super::flow::AwbcFlowLowerer::new(inventory, plan).lower_executable_function_site(
+                    function,
+                    &inputs,
+                    result,
+                    &executable,
+                    &path,
+                );
+            }
+            PendingAwbcClosure::FunctionSite {
+                function,
+                inputs,
+                result,
+                body: RuntimeFunctionSiteBody::Expression(expression),
+                path,
+            } => {
+                let mut frame = FrameBuilder::new();
+                for input in &inputs {
+                    let input_local = input.input_local();
+                    let name = inventory.local_name(input_local);
+                    frame.named_parameter(
+                        input_local,
+                        admitted_plan_type(inventory, plan, local_type(plan, input_local)),
+                        name,
+                    );
+                }
+                let mut body = ExprBodyBuilder::new(inventory, function);
+                for input in &inputs {
+                    let input_local = input.input_local();
+                    let Some(value) = frame.register_for_local(input_local) else {
+                        inventory.diagnostic(AwbcLowerDiagnostic::error(
+                            &path,
+                            format!(
+                                "function-site input `{input_local}` is not present in its AWBC frame"
+                            ),
+                        ));
+                        continue;
+                    };
+                    let pattern = lower_pattern(inventory, plan, &mut frame, input.pattern());
+                    inventory.push_instruction(AwbcInstruction::BindPattern {
+                        pattern,
+                        value,
+                        mode: AwbcBindMode::Declare,
+                    });
+                }
 
-        let mut body = ExprBodyBuilder::new(inventory, closure.function);
-        lower_closure_body(
-            inventory,
-            &mut frame,
-            plan,
-            &mut body,
-            &closure.body,
-            &closure.path,
-        );
-        let layout =
-            inventory.intern_frame_layout(format!("{}:frame", closure.path), frame.finish());
-        let block = body.block_start;
-        let block_len = table_range_len(block.0, inventory.program.blocks.len());
-        let params = closure
-            .captures
-            .iter()
-            .chain(closure.params.iter())
-            .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
-            .collect();
-        let result = admitted_plan_type(inventory, plan, closure.body.ty());
-        let signature = inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
-        inventory.replace_function(
-            closure.function,
-            AwbcFunction {
-                public_id: None,
-                kind: AwbcFunctionKind::Synthetic,
-                signature,
-                frame_layout: layout,
-                blocks: AwbcTableRange::new(block.0, block_len),
-                entry_block: block,
-                flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
-            },
-        );
+                lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
+                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let block = body.block_start;
+                let block_len = table_range_len(block.0, inventory.program.blocks.len());
+                let params = inputs
+                    .iter()
+                    .map(|input| {
+                        admitted_plan_type(inventory, plan, local_type(plan, input.input_local()))
+                    })
+                    .collect();
+                let result = admitted_plan_type(inventory, plan, result);
+                let signature =
+                    inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
+                inventory.replace_function(
+                    function,
+                    AwbcFunction {
+                        public_id: None,
+                        kind: AwbcFunctionKind::Ordinary,
+                        signature,
+                        frame_layout: layout,
+                        blocks: AwbcTableRange::new(block.0, block_len),
+                        entry_block: block,
+                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+                    },
+                );
+            }
+            PendingAwbcClosure::Control {
+                function,
+                captures,
+                result,
+                body: RuntimeFunctionSiteBody::Expression(expression),
+                path,
+            } => {
+                let mut frame = FrameBuilder::new();
+                for local in &captures {
+                    let name = inventory.local_name(*local);
+                    frame.named_parameter(
+                        *local,
+                        admitted_plan_type(inventory, plan, local_type(plan, *local)),
+                        name,
+                    );
+                }
+
+                let mut body = ExprBodyBuilder::new(inventory, function);
+                lower_closure_body(inventory, &mut frame, plan, &mut body, &expression, &path);
+                let layout = inventory.intern_frame_layout(format!("{path}:frame"), frame.finish());
+                let block = body.block_start;
+                let block_len = table_range_len(block.0, inventory.program.blocks.len());
+                let params = captures
+                    .iter()
+                    .map(|local| admitted_plan_type(inventory, plan, local_type(plan, *local)))
+                    .collect();
+                let result = admitted_plan_type(inventory, plan, result);
+                let signature =
+                    inventory.intern_signature(params, Some(result), AwbcEffectSetId(0));
+                inventory.replace_function(
+                    function,
+                    AwbcFunction {
+                        public_id: None,
+                        kind: AwbcFunctionKind::Synthetic,
+                        signature,
+                        frame_layout: layout,
+                        blocks: AwbcTableRange::new(block.0, block_len),
+                        entry_block: block,
+                        flags: AwbcFunctionFlags::empty().with(AwbcFunctionFlag::Deterministic),
+                    },
+                );
+            }
+            PendingAwbcClosure::Control {
+                body: RuntimeFunctionSiteBody::Executable(_),
+                ..
+            } => unreachable!("control-expression thunks cannot have executable bodies"),
+        }
     }
 }
 
@@ -761,13 +984,6 @@ fn local_type(
         || panic!("admitted RuntimePlan local {local} is absent"),
         arcweft_core::plan::RuntimeLocalDeclaration::ty,
     )
-}
-
-fn local_name(
-    inventory: &mut AwbcInventory,
-    local: arcweft_core::runtime_id::RuntimeLocalDeclarationId,
-) -> arcweft_core::awbc::schema::AwbcStringId {
-    inventory.intern_string(&format!("local.{local}"))
 }
 
 struct ExprBodyBuilder {

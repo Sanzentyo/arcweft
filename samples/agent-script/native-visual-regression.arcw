@@ -1,6 +1,5 @@
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
 }
 
 signal current_flow: Watch<Ref<Flow>>

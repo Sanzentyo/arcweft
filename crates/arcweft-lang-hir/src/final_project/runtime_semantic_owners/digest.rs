@@ -1,11 +1,11 @@
 use sha2::{Digest, Sha256};
 
 use super::{
-    BTreeSet, CallableDeclarationKey, HirModuleId, HirRuntimeEmissionMode,
-    HirRuntimeExecutableOwner, HirRuntimeReachabilityDigest, HirRuntimeReachabilityEdge,
-    HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind,
-    HirRuntimeReachabilitySite, HirSnapshotId, LocalId, ProjectSymbolRevision,
-    ProjectSymbolWorldId, StructuralOwners,
+    BTreeMap, BTreeSet, CallableDeclarationKey, ExprId, HirModuleId, HirRuntimeEmissionMode,
+    HirRuntimeExecutableOwner, HirRuntimeExecutableSemanticOwners, HirRuntimeReachabilityDigest,
+    HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
+    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
+    HirSnapshotId, LocalId, ProjectSymbolRevision, ProjectSymbolWorldId, StructuralOwners,
 };
 use crate::identity::HirTypedId;
 
@@ -21,50 +21,79 @@ pub(super) fn reachability_digest(
     roots: &[HirRuntimeReachabilityRoot],
     edges: &[HirRuntimeReachabilityEdge],
     executables: &BTreeSet<HirRuntimeExecutableOwner>,
+    executable_owners: &BTreeMap<HirRuntimeExecutableOwner, HirRuntimeExecutableSemanticOwners>,
     locals: &[LocalId],
     owners: &StructuralOwners,
-) -> HirRuntimeReachabilityDigest {
+    expression_type_owners: &BTreeSet<ExprId>,
+    expression_children: &BTreeMap<ExprId, Box<[ExprId]>>,
+) -> Result<HirRuntimeReachabilityDigest, HirRuntimeReachabilityError> {
     let mut hasher = Sha256::new();
     hasher.update(b"arcweft.runtime-reachability\0");
     hasher.update([1, mode_tag(mode)]);
-    digest_len(&mut hasher, module_snapshots.len());
+    digest_len(&mut hasher, module_snapshots.len())?;
     for (_, snapshot) in module_snapshots {
         hasher.update(snapshot.cache_fingerprint_input());
     }
-    digest_string(&mut hasher, symbol_world.package().as_str());
-    digest_string(&mut hasher, symbol_world.root_document().as_str());
-    digest_string(&mut hasher, symbol_world.profile());
+    digest_string(&mut hasher, symbol_world.package().as_str())?;
+    digest_string(&mut hasher, symbol_world.root_document().as_str())?;
+    digest_string(&mut hasher, symbol_world.profile())?;
     hasher.update(symbol_revision.as_source_set().as_bytes());
-    digest_len(&mut hasher, roots.len());
+    digest_len(&mut hasher, roots.len())?;
     for root in roots {
         hasher.update([root_kind_tag(root.kind)]);
         digest_executable(&mut hasher, &root.owner);
     }
-    digest_len(&mut hasher, edges.len());
+    digest_len(&mut hasher, edges.len())?;
     for edge in edges {
         digest_site(&mut hasher, edge.source);
         digest_edge_kind(&mut hasher, &edge.kind);
         digest_executable(&mut hasher, &edge.target);
     }
-    digest_len(&mut hasher, executables.len());
+    digest_len(&mut hasher, executables.len())?;
     for executable in executables {
         digest_executable(&mut hasher, executable);
     }
-    digest_typed_ids(&mut hasher, locals.iter().copied());
-    digest_typed_ids(&mut hasher, owners.expressions.iter().copied());
-    digest_typed_ids(&mut hasher, owners.statements.iter().copied());
-    digest_typed_ids(&mut hasher, owners.types.iter().copied());
-    digest_typed_ids(&mut hasher, owners.patterns.iter().copied());
-    digest_typed_ids(&mut hasher, owners.captures.iter().copied());
-    HirRuntimeReachabilityDigest(hasher.finalize().into())
+    digest_len(&mut hasher, executable_owners.len())?;
+    for (executable, owners) in executable_owners {
+        digest_executable(&mut hasher, executable);
+        digest_typed_ids(&mut hasher, owners.locals.iter().copied())?;
+        digest_typed_ids(&mut hasher, owners.expressions.iter().copied())?;
+        digest_typed_ids(&mut hasher, owners.expression_type_owners.iter().copied())?;
+        digest_len(&mut hasher, owners.expression_children.len())?;
+        for (owner, children) in &owners.expression_children {
+            hasher.update(owner.raw().cache_fingerprint_input());
+            digest_typed_ids(&mut hasher, children.iter().copied())?;
+        }
+        digest_typed_ids(&mut hasher, owners.statements.iter().copied())?;
+        digest_typed_ids(&mut hasher, owners.types.iter().copied())?;
+        digest_typed_ids(&mut hasher, owners.patterns.iter().copied())?;
+        digest_typed_ids(&mut hasher, owners.captures.iter().copied())?;
+    }
+    digest_typed_ids(&mut hasher, locals.iter().copied())?;
+    digest_typed_ids(&mut hasher, owners.expressions.iter().copied())?;
+    digest_typed_ids(&mut hasher, owners.statements.iter().copied())?;
+    digest_typed_ids(&mut hasher, owners.types.iter().copied())?;
+    digest_typed_ids(&mut hasher, owners.patterns.iter().copied())?;
+    digest_typed_ids(&mut hasher, owners.captures.iter().copied())?;
+    digest_typed_ids(&mut hasher, expression_type_owners.iter().copied())?;
+    digest_len(&mut hasher, expression_children.len())?;
+    for (owner, children) in expression_children {
+        hasher.update(owner.raw().cache_fingerprint_input());
+        digest_typed_ids(&mut hasher, children.iter().copied())?;
+    }
+    Ok(HirRuntimeReachabilityDigest(hasher.finalize().into()))
 }
 
-fn digest_typed_ids<T: HirTypedId>(hasher: &mut Sha256, ids: impl Iterator<Item = T>) {
+fn digest_typed_ids<T: HirTypedId>(
+    hasher: &mut Sha256,
+    ids: impl Iterator<Item = T>,
+) -> Result<(), HirRuntimeReachabilityError> {
     let ids = ids.collect::<Vec<_>>();
-    digest_len(hasher, ids.len());
+    digest_len(hasher, ids.len())?;
     for id in ids {
         hasher.update(id.raw().cache_fingerprint_input());
     }
+    Ok(())
 }
 
 fn digest_executable(hasher: &mut Sha256, owner: &HirRuntimeExecutableOwner) {
@@ -168,11 +197,15 @@ const fn root_kind_tag(kind: HirRuntimeReachabilityRootKind) -> u8 {
     }
 }
 
-fn digest_len(hasher: &mut Sha256, length: usize) {
-    hasher.update(u32::try_from(length).unwrap_or(u32::MAX).to_le_bytes());
+fn digest_len(hasher: &mut Sha256, length: usize) -> Result<(), HirRuntimeReachabilityError> {
+    let canonical_length = u64::try_from(length)
+        .map_err(|_| HirRuntimeReachabilityError::TranscriptLengthOverflow { actual: length })?;
+    hasher.update(canonical_length.to_le_bytes());
+    Ok(())
 }
 
-fn digest_string(hasher: &mut Sha256, value: &str) {
-    digest_len(hasher, value.len());
+fn digest_string(hasher: &mut Sha256, value: &str) -> Result<(), HirRuntimeReachabilityError> {
+    digest_len(hasher, value.len())?;
     hasher.update(value.as_bytes());
+    Ok(())
 }

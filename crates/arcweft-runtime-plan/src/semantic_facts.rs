@@ -34,7 +34,7 @@ use arcweft_core::plan::{
     RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode,
     RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
 };
-use arcweft_core::runtime_id::{RuntimeDialogueMarkId, RuntimeDialogueValueSlotId};
+use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
     RuntimeAgentField, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeOpaquePersistence,
@@ -44,16 +44,17 @@ use arcweft_core::value::{
 use arcweft_id::runtime_program::RuntimePureProgramId;
 use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_lang_hir::expr::{
-    HirAwaitBranchKind, HirCallArgument, HirCallExpr, HirChoiceCompactAction, HirChoiceItem,
+    HirAwaitBranchKind, HirCallArgument, HirCallInvocation, HirChoiceCompactAction, HirChoiceItem,
     HirExprKind, HirPlaceholderKind, HirRecordField,
 };
 use arcweft_lang_hir::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, StmtId, TypeId,
 };
-use arcweft_lang_hir::item::{HirImplMember, HirItemFamily, HirItemKind};
+use arcweft_lang_hir::item::{HirEntryMember, HirImplMember, HirItemFamily, HirItemKind};
 use arcweft_lang_hir::leaf::HirName;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
+use arcweft_lang_hir::project::AcceptedDialogueLineInventory;
 use arcweft_lang_hir::project::{
     HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
     HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
@@ -61,7 +62,10 @@ use arcweft_lang_hir::project::{
     HirRuntimeSemanticReachability,
 };
 use arcweft_lang_hir::scope::CaptureAccess;
-use arcweft_lang_hir::stmt::HirStmtKind;
+use arcweft_lang_hir::source_index::{
+    HirCallableSourceOwner, HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+};
+use arcweft_lang_hir::stmt::{HirStmtKind, HirTrigger};
 use arcweft_lang_hir::symbol::ImplMethodDeclarationId;
 use arcweft_lang_hir::symbol::{
     CallableDeclarationKey, CallableDeclarationOwner, nominal::ProjectNominalDeclarationId,
@@ -71,11 +75,36 @@ use thiserror::Error;
 
 use crate::assertion_identity::RuntimeAssertionMode;
 
+mod content;
 mod evaluated_effect;
+mod project_function;
+mod type_dependencies;
 
+pub use content::{
+    RuntimeContentFragmentFact, RuntimeContentFragmentFactError, RuntimeContentFragmentId,
+    RuntimeDialogueEffectCaptureFact, RuntimeDialogueEffectCaptureKey,
+    RuntimeDialogueEffectProgramFact, RuntimeDialogueEffectProgramKey, RuntimeDialogueMarkFact,
+    RuntimeDialogueMarkKey, RuntimeDialogueValueCaptureKey,
+};
 pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
     RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeLogLevel,
+};
+pub use project_function::{
+    RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
+    RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
+    RuntimeProjectAttachedDefaultFunctionFact, RuntimeProjectContinuationAbi,
+    RuntimeProjectFunctionBody, RuntimeProjectFunctionCallInput, RuntimeProjectFunctionCallOutcome,
+    RuntimeProjectFunctionCallPlan, RuntimeProjectFunctionExecution,
+    RuntimeProjectFunctionExpressionPayload, RuntimeProjectFunctionExpressionSemanticFact,
+    RuntimeProjectFunctionFactError, RuntimeProjectFunctionInstanceFact,
+    RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceSemanticFacts,
+    RuntimeProjectFunctionParameterAbi, RuntimeProjectFunctionParameterMaterialization,
+    RuntimeProjectFunctionParameterSource, RuntimeProjectFunctionPatternPayload,
+    RuntimeProjectFunctionPatternSemanticFact, RuntimeProjectFunctionRootFact,
+    RuntimeProjectFunctionRootRole, RuntimeProjectFunctionStatementPayload,
+    RuntimeProjectFunctionStatementSemanticFact, RuntimeProjectFunctionTypeOwner,
+    RuntimeProjectFunctionTypeProjection,
 };
 
 /// Stable semantic identity for a registered callable or value that is not
@@ -1106,20 +1135,29 @@ impl RuntimeSequenceKind {
 pub struct RuntimeProjectCallable {
     declaration: CallableDeclarationKey,
     owner: ItemId,
+    source_owner: HirCallableSourceOwner,
     runtime: RuntimeCallableId,
+    attached_content_abi: Option<RuntimeCallableAttachedContentAbi>,
 }
 
 impl RuntimeProjectCallable {
-    pub const fn new(
+    pub fn try_new(
         declaration: CallableDeclarationKey,
         owner: ItemId,
+        source_owner: HirCallableSourceOwner,
         runtime: RuntimeCallableId,
-    ) -> Self {
-        Self {
+        attached_content_abi: Option<RuntimeCallableAttachedContentAbi>,
+    ) -> Result<Self, RuntimeCallableAttachedContentAbiError> {
+        if let Some(attached) = &attached_content_abi {
+            attached.validate_owner(owner)?;
+        }
+        Ok(Self {
             declaration,
             owner,
+            source_owner,
             runtime,
-        }
+            attached_content_abi,
+        })
     }
 
     pub const fn declaration(&self) -> &CallableDeclarationKey {
@@ -1130,9 +1168,167 @@ impl RuntimeProjectCallable {
         self.owner
     }
 
+    pub const fn source_owner(&self) -> HirCallableSourceOwner {
+        self.source_owner
+    }
+
     pub const fn runtime(&self) -> &RuntimeCallableId {
         &self.runtime
     }
+
+    pub const fn attached_content_abi(&self) -> Option<&RuntimeCallableAttachedContentAbi> {
+        self.attached_content_abi.as_ref()
+    }
+}
+
+/// Exact declaration-side ABI for one callable-owned attached-content slot.
+///
+/// Generation-local HIR IDs are execution joins only. The checked default
+/// coordinate/digest remain the semantic authority, so helper lowering never
+/// adopts a call-site operand or reopens source/schema spelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCallableAttachedContentAbi {
+    group: arcweft_lang_sema::callable::CallableGroupIndex,
+    abi_position: u32,
+    presence: arcweft_lang_sema::callable::CallableParameterPresence,
+    binding: LocalId,
+    binding_ty: RuntimeNormalizedType,
+    abi_ty: RuntimeNormalizedType,
+    default: Option<RuntimeCallableAttachedContentDefault>,
+}
+
+impl RuntimeCallableAttachedContentAbi {
+    pub fn try_new(
+        group: arcweft_lang_sema::callable::CallableGroupIndex,
+        abi_position: u32,
+        presence: arcweft_lang_sema::callable::CallableParameterPresence,
+        binding: LocalId,
+        binding_ty: RuntimeNormalizedType,
+        abi_ty: RuntimeNormalizedType,
+        default: Option<RuntimeCallableAttachedContentDefault>,
+    ) -> Result<Self, RuntimeCallableAttachedContentAbiError> {
+        use arcweft_lang_sema::callable::CallableParameterPresence;
+
+        let valid = match presence {
+            CallableParameterPresence::Required => binding_ty == abi_ty && default.is_none(),
+            CallableParameterPresence::Optional => {
+                binding_ty == abi_ty
+                    && matches!(abi_ty.shape(), RuntimeTypeShape::Option { .. })
+                    && default.is_none()
+            }
+            CallableParameterPresence::Defaulted => {
+                matches!(
+                    abi_ty.shape(),
+                    RuntimeTypeShape::Option { item, .. } if item.as_ref() == &binding_ty
+                ) && default.is_some()
+            }
+        };
+        if !valid {
+            return Err(RuntimeCallableAttachedContentAbiError::InvalidPresenceShape);
+        }
+        Ok(Self {
+            group,
+            abi_position,
+            presence,
+            binding,
+            binding_ty,
+            abi_ty,
+            default,
+        })
+    }
+
+    fn validate_owner(&self, owner: ItemId) -> Result<(), RuntimeCallableAttachedContentAbiError> {
+        if self.binding.module() != owner.module()
+            || self
+                .default
+                .as_ref()
+                .is_some_and(|default| default.source().module() != owner.module())
+        {
+            return Err(RuntimeCallableAttachedContentAbiError::ForeignOwner);
+        }
+        Ok(())
+    }
+
+    pub const fn presence(&self) -> arcweft_lang_sema::callable::CallableParameterPresence {
+        self.presence
+    }
+
+    pub const fn group(&self) -> arcweft_lang_sema::callable::CallableGroupIndex {
+        self.group
+    }
+
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
+    }
+
+    pub const fn binding(&self) -> LocalId {
+        self.binding
+    }
+
+    pub const fn binding_ty(&self) -> &RuntimeNormalizedType {
+        &self.binding_ty
+    }
+
+    pub const fn abi_ty(&self) -> &RuntimeNormalizedType {
+        &self.abi_ty
+    }
+
+    pub const fn default(&self) -> Option<&RuntimeCallableAttachedContentDefault> {
+        self.default.as_ref()
+    }
+
+    pub(crate) fn append_runtime_plan_type_seeds(
+        &self,
+        seeds: &mut Vec<RuntimePlanTypeSeed>,
+    ) -> Result<(), RuntimeCheckedTypeProjectionError> {
+        self.binding_ty.append_runtime_plan_type_seeds(seeds)?;
+        self.abi_ty.append_runtime_plan_type_seeds(seeds)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeCallableAttachedContentDefault {
+    source: ExprId,
+    coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
+    digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+}
+
+impl RuntimeCallableAttachedContentDefault {
+    pub const fn new(
+        source: ExprId,
+        coordinate: arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate,
+        digest: arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest,
+    ) -> Self {
+        Self {
+            source,
+            coordinate,
+            digest,
+        }
+    }
+
+    pub const fn source(&self) -> ExprId {
+        self.source
+    }
+
+    pub const fn coordinate(
+        &self,
+    ) -> &arcweft_lang_sema::semantic_coordinate::StableCheckedValueCoordinate {
+        &self.coordinate
+    }
+
+    pub const fn digest(
+        &self,
+    ) -> arcweft_lang_sema::callable::CheckedAttachedContentDefaultExpressionDigest {
+        self.digest
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeCallableAttachedContentAbiError {
+    #[error("runtime callable attached-content presence/type/default rows are inconsistent")]
+    InvalidPresenceShape,
+    #[error("runtime callable attached-content binding or default belongs to another HIR owner")]
+    ForeignOwner,
 }
 
 /// Exact project nominal and its final-HIR owner item.
@@ -1348,11 +1544,26 @@ impl RuntimeTryCarrierFact {
 
 /// Exact lexical owner that receives one checked Try residual.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimeAcceptedDeclarationSemanticId([u8; 32]);
+
+impl RuntimeAcceptedDeclarationSemanticId {
+    pub const fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
+
+/// Exact lexical owner that receives one checked Try residual.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeTryBoundaryOwner {
     Infallible,
     CarrierBlock(ExprId),
-    FunctionSite(ExprId),
-    Callable(ItemId),
+    ExplicitFunctionSite(ExprId),
+    ImplicitFunctionSite(ExprId),
+    Callable(RuntimeAcceptedDeclarationSemanticId),
 }
 
 /// Generation-bound Try carrier and propagation-boundary fact.
@@ -2724,48 +2935,168 @@ impl RuntimeResolvedVariant {
 /// Typed failure while consuming one ABI-positioned runtime call operand list.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeResolvedCallError {
-    #[error("runtime call ABI position {actual} is not canonical position {expected}")]
-    NonCanonicalAbiPosition { expected: u32, actual: u32 },
+    #[error("runtime call ABI position {position} is outside operand count {operand_count}")]
+    AbiPositionOutOfRange { position: u32, operand_count: u32 },
+    #[error("runtime call repeats ABI position {position}")]
+    DuplicateAbiPosition { position: u32 },
+    #[error("runtime call omits ABI position {position}")]
+    MissingAbiPosition { position: u32 },
     #[error("runtime call contains duplicate operand origin")]
     DuplicateOperandOrigin,
+    #[error("runtime call physical operands are not in canonical source order")]
+    NonCanonicalSourceOrder,
     #[error("runtime call contains more than one receiver operand")]
     MultipleReceivers,
+    #[error("runtime attached-content ABI position {actual} is not the final position {expected}")]
+    NonTerminalAttachedContentPosition { expected: u32, actual: u32 },
+    #[error("runtime call attached-content operand does not match the selected callable interface")]
+    AttachedContentInterfaceMismatch,
+    #[error("ordinary project-function call dispatch disagrees with its checked call plan")]
+    ProjectFunctionPlanMismatch,
+    #[error("ordinary project-function call result disagrees with its checked call outcome")]
+    ProjectFunctionResultMismatch,
+    #[error(
+        "ordinary project-function call operands do not match its logical materialization plan"
+    )]
+    ProjectFunctionMaterializationMismatch,
+}
+
+/// Runtime attached-content value retained separately from ordinary authored
+/// arguments while participating in the same terminal call ABI transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RuntimeResolvedAttachedContent {
+    Required {
+        source: ExprId,
+        ty: RuntimeNormalizedType,
+    },
+    OptionalPresent {
+        source: ExprId,
+        ty: RuntimeNormalizedType,
+    },
+    OptionalOmitted {
+        ty: RuntimeNormalizedType,
+    },
+    DefaultedPresent {
+        source: ExprId,
+        ty: RuntimeNormalizedType,
+    },
+    DefaultedOmitted {
+        ty: RuntimeNormalizedType,
+    },
+}
+
+impl RuntimeResolvedAttachedContent {
+    pub const fn source(&self) -> Option<ExprId> {
+        match self {
+            Self::Required { source, .. }
+            | Self::OptionalPresent { source, .. }
+            | Self::DefaultedPresent { source, .. } => Some(*source),
+            Self::OptionalOmitted { .. } | Self::DefaultedOmitted { .. } => None,
+        }
+    }
+
+    /// Returns the exact final checked ABI type. Omitted attached content
+    /// retains this row so `None` can be lowered without reopening the callee
+    /// schema or reconstructing a standard nominal from source spelling.
+    pub const fn ty(&self) -> &RuntimeNormalizedType {
+        match self {
+            Self::Required { ty, .. }
+            | Self::OptionalPresent { ty, .. }
+            | Self::OptionalOmitted { ty }
+            | Self::DefaultedPresent { ty, .. }
+            | Self::DefaultedOmitted { ty } => ty,
+        }
+    }
+}
+
+/// Final ABI-positioned row for the one terminal attached-content operand.
+/// The call-site ABI position includes physical rest expansion; the distinct
+/// declaration-owned logical position remains on
+/// `RuntimeCallableAttachedContentAbi`. Its group is owned once by
+/// [`RuntimeResolvedCall::completed_group`].
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimePositionedAttachedContent {
+    abi_position: u32,
+    content: RuntimeResolvedAttachedContent,
+}
+
+impl RuntimePositionedAttachedContent {
+    pub const fn new(abi_position: u32, content: RuntimeResolvedAttachedContent) -> Self {
+        Self {
+            abi_position,
+            content,
+        }
+    }
+
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
+    }
+
+    pub const fn content(&self) -> &RuntimeResolvedAttachedContent {
+        &self.content
+    }
+
+    pub fn into_content(self) -> RuntimeResolvedAttachedContent {
+        self.content
+    }
 }
 
 /// One compiler-selected call dispatch for an exact final-HIR call expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedCall {
     dispatch: RuntimeResolvedCallDispatch,
+    completed_group: arcweft_lang_sema::callable::CallableGroupIndex,
+    /// Sole source-ordered physical operand row. Every member retains its
+    /// checked ABI destination; consumers evaluate this row once in order and
+    /// use the positions only to install the resulting values.
     operands: Box<[RuntimeResolvedCallOperand]>,
+    attached_content: Option<RuntimePositionedAttachedContent>,
+    project_function: Option<RuntimeProjectFunctionCallPlan>,
     result: RuntimeCallResultShape,
 }
 
 impl RuntimeResolvedCall {
-    /// Validates and consumes ABI positions, retaining operands in canonical
-    /// ABI order. Positions are deliberately not duplicated in the stored
-    /// operand authority after this boundary.
+    /// Validates the ABI-position permutation without changing source order.
     pub fn try_new(
         dispatch: RuntimeResolvedCallDispatch,
-        mut positioned_operands: Vec<RuntimePositionedCallOperand>,
+        completed_group: arcweft_lang_sema::callable::CallableGroupIndex,
+        operands: Vec<RuntimeResolvedCallOperand>,
+        positioned_attached_content: Option<RuntimePositionedAttachedContent>,
+        project_function: Option<RuntimeProjectFunctionCallPlan>,
         result: RuntimeCallResultShape,
     ) -> Result<Self, RuntimeResolvedCallError> {
-        positioned_operands.sort_by_key(RuntimePositionedCallOperand::abi_position);
+        let operand_count = u32::try_from(operands.len()).map_err(|_| {
+            RuntimeResolvedCallError::AbiPositionOutOfRange {
+                position: u32::MAX,
+                operand_count: u32::MAX,
+            }
+        })?;
+        let mut abi_positions = vec![false; operands.len()];
+        if operands
+            .windows(2)
+            .any(|pair| pair[0].origin() >= pair[1].origin())
+        {
+            return Err(RuntimeResolvedCallError::NonCanonicalSourceOrder);
+        }
         let mut origins = BTreeSet::new();
         let mut receivers = 0_u8;
-        for (expected, positioned) in positioned_operands.iter().enumerate() {
-            let expected = u32::try_from(expected).map_err(|_| {
-                RuntimeResolvedCallError::NonCanonicalAbiPosition {
-                    expected: u32::MAX,
-                    actual: positioned.abi_position(),
+        for operand in &operands {
+            let position = operand.abi_position();
+            let index = usize::try_from(position).map_err(|_| {
+                RuntimeResolvedCallError::AbiPositionOutOfRange {
+                    position,
+                    operand_count,
                 }
             })?;
-            if positioned.abi_position() != expected {
-                return Err(RuntimeResolvedCallError::NonCanonicalAbiPosition {
-                    expected,
-                    actual: positioned.abi_position(),
+            let Some(seen) = abi_positions.get_mut(index) else {
+                return Err(RuntimeResolvedCallError::AbiPositionOutOfRange {
+                    position,
+                    operand_count,
                 });
+            };
+            if std::mem::replace(seen, true) {
+                return Err(RuntimeResolvedCallError::DuplicateAbiPosition { position });
             }
-            let operand = positioned.operand();
             if !origins.insert(operand.origin().clone()) {
                 return Err(RuntimeResolvedCallError::DuplicateOperandOrigin);
             }
@@ -2776,12 +3107,156 @@ impl RuntimeResolvedCall {
         if receivers > 1 {
             return Err(RuntimeResolvedCallError::MultipleReceivers);
         }
+        if let Some(position) = abi_positions.iter().position(|seen| !seen) {
+            return Err(RuntimeResolvedCallError::MissingAbiPosition {
+                position: u32::try_from(position).map_err(|_| {
+                    RuntimeResolvedCallError::MissingAbiPosition { position: u32::MAX }
+                })?,
+            });
+        }
+        if let Some(positioned) = &positioned_attached_content {
+            let expected = u32::try_from(operands.len()).map_err(|_| {
+                RuntimeResolvedCallError::NonTerminalAttachedContentPosition {
+                    expected: u32::MAX,
+                    actual: positioned.abi_position(),
+                }
+            })?;
+            if positioned.abi_position() != expected {
+                return Err(
+                    RuntimeResolvedCallError::NonTerminalAttachedContentPosition {
+                        expected,
+                        actual: positioned.abi_position(),
+                    },
+                );
+            }
+        }
+        let direct_project_callable = dispatch.project_callable();
+        let project_function_matches = match (&dispatch, &project_function) {
+            (
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                    direct,
+                )),
+                Some(plan),
+            ) => {
+                direct == plan.callable()
+                    && matches!(plan.input(), RuntimeProjectFunctionCallInput::Direct)
+            }
+            (RuntimeResolvedCallDispatch::Value { callee }, Some(plan)) => matches!(
+                plan.input(),
+                RuntimeProjectFunctionCallInput::Continuation {
+                    callee: expected,
+                    ..
+                } if expected == callee
+            ),
+            (
+                RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                    _,
+                )),
+                None,
+            ) => true,
+            (_, None) => true,
+            (_, Some(_)) => false,
+        };
+        if !project_function_matches {
+            return Err(RuntimeResolvedCallError::ProjectFunctionPlanMismatch);
+        }
+        if let Some(plan) = &project_function {
+            let mut covered = vec![false; operands.len()];
+            for materialization in plan.current_group_materialization() {
+                let indices = materialization.operand_indices();
+                let expected_group =
+                    u32::try_from(materialization.group().get()).map_err(|_| {
+                        RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch
+                    })?;
+                let expected = RuntimeCallParameterCoordinate::new(
+                    expected_group,
+                    materialization.parameter(),
+                );
+                for index in indices {
+                    let index = usize::try_from(*index).map_err(|_| {
+                        RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch
+                    })?;
+                    let Some(operand) = operands.get(index) else {
+                        return Err(
+                            RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch,
+                        );
+                    };
+                    if covered[index] {
+                        return Err(
+                            RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch,
+                        );
+                    }
+                    covered[index] = true;
+                    let origin_matches = match materialization.kind() {
+                        arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => {
+                            matches!(operand.origin(), RuntimeResolvedCallOperandOrigin::Receiver)
+                        }
+                        arcweft_lang_hir::item::HirParameterKind::Fixed
+                        | arcweft_lang_hir::item::HirParameterKind::RestPositional => {
+                            matches!(
+                                operand.origin(),
+                                RuntimeResolvedCallOperandOrigin::Argument { .. }
+                            ) && operand.parameter() == Some(expected)
+                        }
+                    };
+                    if !origin_matches {
+                        return Err(
+                            RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch,
+                        );
+                    }
+                }
+            }
+            if covered.iter().any(|covered| !covered) {
+                return Err(RuntimeResolvedCallError::ProjectFunctionMaterializationMismatch);
+            }
+        }
+        if project_function.as_ref().is_some_and(|plan| {
+            !matches!(
+                (plan.outcome(), result),
+                (
+                    RuntimeProjectFunctionCallOutcome::Continue { .. },
+                    RuntimeCallResultShape::PartialFunction
+                ) | (
+                    RuntimeProjectFunctionCallOutcome::Invoke { .. },
+                    RuntimeCallResultShape::Value
+                )
+            )
+        }) {
+            return Err(RuntimeResolvedCallError::ProjectFunctionResultMismatch);
+        }
+        let project_attached = project_function
+            .as_ref()
+            .map(RuntimeProjectFunctionCallPlan::callable)
+            .or(direct_project_callable)
+            .and_then(RuntimeProjectCallable::attached_content_abi);
+        if project_function.is_some() || direct_project_callable.is_some() {
+            let interface_matches = match project_attached {
+                Some(interface) if completed_group.get() < interface.group().get() => {
+                    positioned_attached_content.is_none()
+                }
+                Some(interface) if completed_group == interface.group() => {
+                    positioned_attached_content
+                        .as_ref()
+                        .is_some_and(|positioned| {
+                            runtime_attached_content_matches_interface(
+                                positioned.content(),
+                                interface,
+                            )
+                        })
+                }
+                Some(_) => false,
+                None => positioned_attached_content.is_none(),
+            };
+            if !interface_matches {
+                return Err(RuntimeResolvedCallError::AttachedContentInterfaceMismatch);
+            }
+        }
         Ok(Self {
             dispatch,
-            operands: positioned_operands
-                .into_iter()
-                .map(RuntimePositionedCallOperand::into_operand)
-                .collect(),
+            completed_group,
+            operands: operands.into_boxed_slice(),
+            attached_content: positioned_attached_content,
+            project_function,
             result,
         })
     }
@@ -2794,9 +3269,90 @@ impl RuntimeResolvedCall {
         &self.operands
     }
 
+    /// Whether an authored callee expression is evaluated as a runtime value.
+    /// Static name/type selectors are not evaluated; a value callee or a
+    /// receiver retained in the checked source operand row is evaluated.
+    pub(crate) fn evaluates_callee(&self, expression: ExprId) -> bool {
+        matches!(self.dispatch(), RuntimeResolvedCallDispatch::Value { callee } if *callee == expression)
+            || self.operands().iter().any(|operand| {
+                operand.source() == RuntimeResolvedCallOperandSource::Expression(expression)
+            })
+    }
+
+    /// Derived ABI view. The stored row remains source-ordered; this iterator
+    /// performs no evaluation and allocates no parallel operand inventory.
+    pub fn abi_operands(&self) -> impl Iterator<Item = &RuntimeResolvedCallOperand> {
+        (0..self.operands.len()).filter_map(|position| {
+            let position = u32::try_from(position).ok()?;
+            self.operands
+                .iter()
+                .find(|operand| operand.abi_position() == position)
+        })
+    }
+
+    pub const fn completed_group(&self) -> arcweft_lang_sema::callable::CallableGroupIndex {
+        self.completed_group
+    }
+
+    pub const fn attached_content(&self) -> Option<&RuntimeResolvedAttachedContent> {
+        match &self.attached_content {
+            Some(attached) => Some(attached.content()),
+            None => None,
+        }
+    }
+
+    pub const fn positioned_attached_content(&self) -> Option<&RuntimePositionedAttachedContent> {
+        self.attached_content.as_ref()
+    }
+
+    pub const fn project_function(&self) -> Option<&RuntimeProjectFunctionCallPlan> {
+        self.project_function.as_ref()
+    }
+
     pub const fn result(&self) -> RuntimeCallResultShape {
         self.result
     }
+
+    /// Whether this target is represented by a structural expression payload
+    /// rather than the common positioned Call/Apply carrier. Such payloads
+    /// must consume the shared source-order ANF materialization before they
+    /// may interpret operands by semantic/ABI role.
+    pub const fn requires_specialized_operand_anf(&self) -> bool {
+        matches!(
+            self.dispatch,
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::Agent(_)
+                    | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
+                    | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
+                    | RuntimeResolvedStaticCallTarget::Variant(_)
+                    | RuntimeResolvedStaticCallTarget::Reduction(_)
+            )
+        )
+    }
+}
+
+fn runtime_attached_content_matches_interface(
+    content: &RuntimeResolvedAttachedContent,
+    interface: &RuntimeCallableAttachedContentAbi,
+) -> bool {
+    use arcweft_lang_sema::callable::CallableParameterPresence;
+
+    content.ty() == interface.abi_ty()
+        && matches!(
+            (interface.presence(), content),
+            (
+                CallableParameterPresence::Required,
+                RuntimeResolvedAttachedContent::Required { .. }
+            ) | (
+                CallableParameterPresence::Optional,
+                RuntimeResolvedAttachedContent::OptionalPresent { .. }
+                    | RuntimeResolvedAttachedContent::OptionalOmitted { .. }
+            ) | (
+                CallableParameterPresence::Defaulted,
+                RuntimeResolvedAttachedContent::DefaultedPresent { .. }
+                    | RuntimeResolvedAttachedContent::DefaultedOmitted { .. }
+            )
+        )
 }
 
 /// Closed dispatch authority. Static targets are exhaustive and never encode
@@ -2805,6 +3361,31 @@ impl RuntimeResolvedCall {
 pub enum RuntimeResolvedCallDispatch {
     Static(RuntimeResolvedStaticCallTarget),
     Value { callee: ExprId },
+}
+
+impl RuntimeResolvedCallDispatch {
+    pub const fn project_callable(&self) -> Option<&RuntimeProjectCallable> {
+        match self {
+            Self::Static(RuntimeResolvedStaticCallTarget::Declaration(callable)) => Some(callable),
+            Self::Static(RuntimeResolvedStaticCallTarget::Host(host)) => match host.owner() {
+                RuntimeResolvedHostCallOwner::ExternCapability(callable) => Some(callable),
+                RuntimeResolvedHostCallOwner::Agent(_) => None,
+            },
+            Self::Static(
+                RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::Agent(_)
+                | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
+                | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
+                | RuntimeResolvedStaticCallTarget::Variant(_)
+                | RuntimeResolvedStaticCallTarget::Reduction(_)
+                | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                | RuntimeResolvedStaticCallTarget::TraitMethod { .. }
+                | RuntimeResolvedStaticCallTarget::Registered(_)
+                | RuntimeResolvedStaticCallTarget::Line(_),
+            )
+            | Self::Value { .. } => None,
+        }
+    }
 }
 
 /// Closed runtime dispatch selected by the shared semantic resolver.
@@ -3105,6 +3686,7 @@ pub enum RuntimeResolvedSpreadContainer {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeResolvedCallOperand {
+    abi_position: u32,
     origin: RuntimeResolvedCallOperandOrigin,
     source: RuntimeResolvedCallOperandSource,
     ty: RuntimeNormalizedType,
@@ -3115,6 +3697,7 @@ pub struct RuntimeResolvedCallOperand {
 
 impl RuntimeResolvedCallOperand {
     pub fn new(
+        abi_position: u32,
         origin: RuntimeResolvedCallOperandOrigin,
         source: RuntimeResolvedCallOperandSource,
         ty: RuntimeNormalizedType,
@@ -3123,6 +3706,7 @@ impl RuntimeResolvedCallOperand {
         parameter: Option<RuntimeCallParameterCoordinate>,
     ) -> Self {
         Self {
+            abi_position,
             origin,
             source,
             ty,
@@ -3130,6 +3714,10 @@ impl RuntimeResolvedCallOperand {
             projection,
             parameter,
         }
+    }
+
+    pub const fn abi_position(&self) -> u32 {
+        self.abi_position
     }
 
     pub const fn origin(&self) -> &RuntimeResolvedCallOperandOrigin {
@@ -3153,30 +3741,6 @@ impl RuntimeResolvedCallOperand {
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimePositionedCallOperand {
-    abi_position: u32,
-    operand: RuntimeResolvedCallOperand,
-}
-
-impl RuntimePositionedCallOperand {
-    pub const fn new(abi_position: u32, operand: RuntimeResolvedCallOperand) -> Self {
-        Self {
-            abi_position,
-            operand,
-        }
-    }
-    pub const fn abi_position(&self) -> u32 {
-        self.abi_position
-    }
-    pub const fn operand(&self) -> &RuntimeResolvedCallOperand {
-        &self.operand
-    }
-    fn into_operand(self) -> RuntimeResolvedCallOperand {
-        self.operand
-    }
-}
-
 /// Whether a checked call produces its declared value or a partial function.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum RuntimeCallResultShape {
@@ -3197,18 +3761,18 @@ pub enum RuntimeAssertionAdmission {
 /// The compiler-to-runtime-plan staging boundary is the only constructor.
 /// Callers cannot manufacture or change the admitted trigger meaning after
 /// the single semantic-fact transaction has been sealed.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeTriggerAdmission {
     kind: RuntimeTriggerAdmissionKind,
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum RuntimeTriggerAdmissionKind {
     Input,
     Event,
     Signal,
     Timeout,
-    Mark(RuntimeDialogueMarkId),
+    Mark(RuntimeDialogueMarkFact),
     Select,
     Task,
     Scope,
@@ -3220,8 +3784,44 @@ impl RuntimeTriggerAdmission {
         Self { kind }
     }
 
-    pub(crate) const fn dialogue_mark(self) -> Option<RuntimeDialogueMarkId> {
-        match self.kind {
+    pub const fn input() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Input)
+    }
+
+    pub const fn event() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Event)
+    }
+
+    pub const fn signal() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Signal)
+    }
+
+    pub const fn timeout() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Timeout)
+    }
+
+    pub const fn mark(mark: RuntimeDialogueMarkFact) -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Mark(mark))
+    }
+
+    pub const fn select() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Select)
+    }
+
+    pub const fn task() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Task)
+    }
+
+    pub const fn scope() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Scope)
+    }
+
+    pub const fn expression() -> Self {
+        Self::new(RuntimeTriggerAdmissionKind::Expression)
+    }
+
+    pub const fn dialogue_mark(&self) -> Option<&RuntimeDialogueMarkFact> {
+        match &self.kind {
             RuntimeTriggerAdmissionKind::Mark(mark) => Some(mark),
             RuntimeTriggerAdmissionKind::Input
             | RuntimeTriggerAdmissionKind::Event
@@ -3247,22 +3847,13 @@ pub struct RuntimeCheckedCapture {
 pub struct RuntimeDialogueApplication {
     content: DialogueContentSpec,
     line_result: RuntimeNormalizedType,
-    values: Box<[RuntimeDialogueValueExpression]>,
-    effects: Box<[RuntimeDialogueEffectExpression]>,
 }
 
 impl RuntimeDialogueApplication {
-    pub fn new(
-        content: DialogueContentSpec,
-        line_result: RuntimeNormalizedType,
-        values: impl IntoIterator<Item = RuntimeDialogueValueExpression>,
-        effects: impl IntoIterator<Item = RuntimeDialogueEffectExpression>,
-    ) -> Self {
+    pub fn new(content: DialogueContentSpec, line_result: RuntimeNormalizedType) -> Self {
         Self {
             content,
             line_result,
-            values: values.into_iter().collect(),
-            effects: effects.into_iter().collect(),
         }
     }
 
@@ -3272,14 +3863,6 @@ impl RuntimeDialogueApplication {
 
     pub const fn line_result(&self) -> &RuntimeNormalizedType {
         &self.line_result
-    }
-
-    pub const fn values(&self) -> &[RuntimeDialogueValueExpression] {
-        &self.values
-    }
-
-    pub const fn effects(&self) -> &[RuntimeDialogueEffectExpression] {
-        &self.effects
     }
 }
 
@@ -3294,46 +3877,45 @@ pub enum RuntimeDialogueEffectTrigger {
     },
 }
 
-/// Accepted effectful expression lowered into the surrounding line task.
+/// Accepted authored expression supplying one document-local dialogue slot.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct RuntimeDialogueEffectExpression {
-    site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
-    trigger: RuntimeDialogueEffectTrigger,
-    operation: RuntimeEvaluatedEffectFact,
+pub struct RuntimeDialogueValueExpression {
+    slot: RuntimeDialogueValueSlotId,
+    role: RuntimeDialogueValueRole,
+    expression: ExprId,
+    ty: RuntimeNormalizedType,
 }
 
-impl RuntimeDialogueEffectExpression {
+impl RuntimeDialogueValueExpression {
     pub const fn new(
-        site: arcweft_core::runtime_id::RuntimeDialogueEffectSiteId,
-        trigger: RuntimeDialogueEffectTrigger,
-        operation: RuntimeEvaluatedEffectFact,
+        slot: RuntimeDialogueValueSlotId,
+        role: RuntimeDialogueValueRole,
+        expression: ExprId,
+        ty: RuntimeNormalizedType,
     ) -> Self {
         Self {
-            site,
-            trigger,
-            operation,
+            slot,
+            role,
+            expression,
+            ty,
         }
     }
 
-    pub const fn site(&self) -> arcweft_core::runtime_id::RuntimeDialogueEffectSiteId {
-        self.site
+    pub const fn slot(&self) -> RuntimeDialogueValueSlotId {
+        self.slot
     }
 
-    pub const fn trigger(&self) -> &RuntimeDialogueEffectTrigger {
-        &self.trigger
+    pub const fn role(&self) -> RuntimeDialogueValueRole {
+        self.role
     }
 
-    pub const fn operation(&self) -> &RuntimeEvaluatedEffectFact {
-        &self.operation
+    pub const fn expression(&self) -> ExprId {
+        self.expression
     }
-}
 
-/// Accepted authored expression supplying one document-local dialogue slot.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct RuntimeDialogueValueExpression {
-    pub slot: RuntimeDialogueValueSlotId,
-    pub role: RuntimeDialogueValueRole,
-    pub expression: ExprId,
+    pub const fn ty(&self) -> &RuntimeNormalizedType {
+        &self.ty
+    }
 }
 
 /// Trait authority selected by final semantic analysis for one executable
@@ -3538,7 +4120,12 @@ pub struct RuntimePlanSemanticFactInput {
     pipes: Vec<(ExprId, RuntimePipeFact)>,
     captures: Vec<RuntimeCheckedCapture>,
     pure_programs: Vec<RuntimePureProgramFact>,
+    project_function_instances: Vec<RuntimeProjectFunctionInstanceFact>,
+    root_closures: Vec<RuntimeClosureInstanceFact>,
+    project_function_roots: Vec<RuntimeProjectFunctionRootFact>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+    dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
+    dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
 }
 
@@ -3574,7 +4161,12 @@ impl RuntimePlanSemanticFactInput {
             pipes: Vec::new(),
             captures: Vec::new(),
             pure_programs: Vec::new(),
+            project_function_instances: Vec::new(),
+            root_closures: Vec::new(),
+            project_function_roots: Vec::new(),
             dialogue_applications: BTreeMap::new(),
+            dialogue_content_fragments: Vec::new(),
+            dialogue_lines: None,
             character_presentation_catalog: None,
         }
     }
@@ -3686,7 +4278,7 @@ impl RuntimePlanSemanticFactInput {
     pub fn push_mark_trigger(
         &mut self,
         owner: StmtId,
-        mark: RuntimeDialogueMarkId,
+        mark: RuntimeDialogueMarkFact,
     ) -> Result<(), RuntimeSemanticFactsError> {
         self.insert_trigger(owner, RuntimeTriggerAdmissionKind::Mark(mark))
     }
@@ -3765,22 +4357,52 @@ impl RuntimePlanSemanticFactInput {
         self.pure_programs.push(program);
     }
 
+    /// Stages one fully closed ordinary project-function instance. Equal keys
+    /// must carry equal facts; publication rejects conflicting projections.
+    pub fn push_project_function_instance(&mut self, instance: RuntimeProjectFunctionInstanceFact) {
+        self.project_function_instances.push(instance);
+    }
+
+    pub fn push_root_closure(&mut self, closure: RuntimeClosureInstanceFact) {
+        self.root_closures.push(closure);
+    }
+
+    pub fn push_project_function_root(&mut self, root: RuntimeProjectFunctionRootFact) {
+        self.project_function_roots.push(root);
+    }
+
     /// Stages the complete dialogue projection for the same single
     /// `RuntimePlanSemanticFacts::try_new` transaction as all other facts.
     pub fn attach_dialogue_projection(
         &mut self,
         catalog: Option<Arc<CharacterPresentationCatalogData>>,
         applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+        fragments: Vec<RuntimeContentFragmentFact>,
+        dialogue_lines: Arc<AcceptedDialogueLineInventory>,
     ) -> Result<(), RuntimeSemanticFactsError> {
-        if !self.dialogue_applications.is_empty() || self.character_presentation_catalog.is_some() {
+        if !self.dialogue_applications.is_empty()
+            || !self.dialogue_content_fragments.is_empty()
+            || self.dialogue_lines.is_some()
+            || self.character_presentation_catalog.is_some()
+        {
             return Err(RuntimeSemanticFactsError::DuplicateFact {
                 family: RuntimeSemanticFactFamily::DialogueApplication,
             });
         }
-        if applications.is_empty() != catalog.is_none() {
+        let mut has_instance_dialogue = false;
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.iter(),
+            self.root_closures.iter(),
+        ) {
+            semantics
+                .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
+        }
+        if (applications.is_empty() && !has_instance_dialogue) != catalog.is_none() {
             return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
         }
         self.dialogue_applications = applications;
+        self.dialogue_content_fragments = fragments;
+        self.dialogue_lines = Some(dialogue_lines);
         self.character_presentation_catalog = catalog;
         Ok(())
     }
@@ -3803,6 +4425,7 @@ pub struct RuntimePlanSemanticFacts {
     local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
     flows: BTreeMap<ItemId, FlowRuntimeId>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
+    expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
     expression_literals: BTreeMap<ExprId, RuntimeValue>,
     pattern_literals: BTreeMap<PatternId, RuntimeValue>,
@@ -3829,14 +4452,482 @@ pub struct RuntimePlanSemanticFacts {
     pipes: BTreeMap<ExprId, RuntimePipeFact>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
     pure_programs: BTreeMap<RuntimePureProgramId, RuntimePureProgramFact>,
+    project_function_instances:
+        BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceFact>,
+    root_closures: BTreeMap<ExprId, RuntimeClosureInstanceFact>,
+    project_function_roots:
+        BTreeMap<(ItemId, RuntimeProjectFunctionRootRole), RuntimeProjectFunctionRootFact>,
     dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+    dialogue_content_fragments: Vec<RuntimeContentFragmentFact>,
+    dialogue_lines: Option<Arc<AcceptedDialogueLineInventory>>,
     character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
+}
+
+/// Sole executable semantic-fact view selected before lowering one body.
+///
+/// A closed project-function instance never falls back to the global open
+/// catalog. Keeping the mode choice in this owner type prevents individual
+/// expression/pattern/flow helpers from drifting into family-specific lookup
+/// rules.
+#[derive(Clone, Copy)]
+pub enum RuntimeExecutableSemanticFactView<'facts> {
+    Global(&'facts RuntimePlanSemanticFacts),
+    ProjectInstance(&'facts RuntimeProjectFunctionInstanceSemanticFacts),
+}
+
+/// Exact lexical executable that owns one selected semantic-fact view.
+/// Nested closures retain their own closed key instead of being collapsed to
+/// the root project instance or reconstructed from a raw expression owner.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RuntimeExecutableSemanticScope<'facts> {
+    Global,
+    ProjectFunction(&'facts RuntimeProjectFunctionInstanceKey),
+    Closure(&'facts RuntimeClosureInstanceKey),
+}
+
+/// One lexical scope and the only semantic catalog valid while lowering it.
+#[derive(Clone, Copy)]
+pub struct RuntimeScopedExecutableSemanticFactView<'facts> {
+    scope: RuntimeExecutableSemanticScope<'facts>,
+    facts: RuntimeExecutableSemanticFactView<'facts>,
+}
+
+impl<'facts> RuntimeScopedExecutableSemanticFactView<'facts> {
+    pub const fn global(facts: &'facts RuntimePlanSemanticFacts) -> Self {
+        Self {
+            scope: RuntimeExecutableSemanticScope::Global,
+            facts: RuntimeExecutableSemanticFactView::Global(facts),
+        }
+    }
+
+    pub const fn project_function(
+        key: &'facts RuntimeProjectFunctionInstanceKey,
+        facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        Self {
+            scope: RuntimeExecutableSemanticScope::ProjectFunction(key),
+            facts: RuntimeExecutableSemanticFactView::ProjectInstance(facts),
+        }
+    }
+
+    pub const fn closure(
+        key: &'facts RuntimeClosureInstanceKey,
+        facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        Self {
+            scope: RuntimeExecutableSemanticScope::Closure(key),
+            facts: RuntimeExecutableSemanticFactView::ProjectInstance(facts),
+        }
+    }
+
+    pub const fn scope(self) -> RuntimeExecutableSemanticScope<'facts> {
+        self.scope
+    }
+
+    pub const fn facts(self) -> RuntimeExecutableSemanticFactView<'facts> {
+        self.facts
+    }
+
+    pub const fn is_project_instance(self) -> bool {
+        self.facts.is_project_instance()
+    }
+
+    pub fn expression_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
+        self.facts.expression_type(owner)
+    }
+
+    pub fn expression_children(self, owner: ExprId) -> Option<&'facts [ExprId]> {
+        self.facts.expression_children(owner)
+    }
+
+    pub fn expression_literal(self, owner: ExprId) -> Option<&'facts RuntimeValue> {
+        self.facts.expression_literal(owner)
+    }
+
+    pub fn expression_variant(self, owner: ExprId) -> Option<&'facts RuntimeResolvedVariant> {
+        self.facts.expression_variant(owner)
+    }
+
+    pub fn value(self, owner: ExprId) -> Option<&'facts RuntimeResolvedValue> {
+        self.facts.value(owner)
+    }
+
+    pub fn call(self, owner: ExprId) -> Option<&'facts RuntimeResolvedCall> {
+        self.facts.call(owner)
+    }
+
+    pub fn select(self, owner: ExprId) -> Option<&'facts RuntimeResolvedSelect> {
+        self.facts.select(owner)
+    }
+
+    pub fn nominal_record(self, owner: ExprId) -> Option<&'facts RuntimeRecordExpressionFact> {
+        self.facts.nominal_record(owner)
+    }
+
+    pub fn postfix_candidate(self, owner: ExprId) -> Option<ExprId> {
+        self.facts.postfix_candidate(owner)
+    }
+
+    pub fn implicit_callable(self, owner: ExprId) -> Option<&'facts RuntimeImplicitCallableFact> {
+        self.facts.implicit_callable(owner)
+    }
+
+    pub fn pipe(self, owner: ExprId) -> Option<&'facts RuntimePipeFact> {
+        self.facts.pipe(owner)
+    }
+
+    pub fn choice(self, owner: ExprId) -> Option<&'facts RuntimeChoiceFact> {
+        self.facts.choice(owner)
+    }
+
+    pub fn awaited(self, owner: ExprId) -> Option<&'facts RuntimeAwaitFact> {
+        self.facts.awaited(owner)
+    }
+
+    pub fn tried(self, owner: ExprId) -> Option<&'facts RuntimeTryFact> {
+        self.facts.tried(owner)
+    }
+
+    pub fn assignment(self, owner: StmtId) -> Option<&'facts RuntimeAssignmentFact> {
+        self.facts.assignment(owner)
+    }
+
+    pub fn evaluated_effect(self, owner: StmtId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
+        self.facts.evaluated_effect(owner)
+    }
+
+    pub fn iteration(self, owner: StmtId) -> Option<&'facts RuntimeIteratorFact> {
+        self.facts.iteration(owner)
+    }
+
+    pub fn assertion(self, owner: StmtId) -> Option<RuntimeAssertionAdmission> {
+        self.facts.assertion(owner)
+    }
+
+    pub fn trigger(self, owner: StmtId) -> Option<&'facts RuntimeTriggerAdmission> {
+        self.facts.trigger(owner)
+    }
+
+    pub fn local_type(self, owner: LocalId) -> Option<&'facts RuntimeNormalizedType> {
+        self.facts.local_type(owner)
+    }
+
+    pub fn dialogue_application(self, owner: ExprId) -> Option<&'facts RuntimeDialogueApplication> {
+        self.facts.dialogue_application(owner)
+    }
+
+    pub fn dialogue_content_fragment_for_source(
+        self,
+        source: ExprId,
+    ) -> Option<&'facts RuntimeContentFragmentFact> {
+        self.facts.dialogue_content_fragment_for_source(source)
+    }
+
+    pub fn closure_instance(self, owner: ExprId) -> Option<&'facts RuntimeClosureInstanceFact> {
+        self.facts.closure_instance(owner)
+    }
+}
+
+impl<'facts> RuntimeExecutableSemanticFactView<'facts> {
+    pub(crate) fn visit_runtime_expression_types(
+        self,
+        visitor: &mut impl FnMut(ExprId, &'facts RuntimeNormalizedType),
+    ) {
+        match self {
+            Self::Global(facts) => {
+                for (owner, ty) in &facts.expression_types {
+                    visitor(*owner, ty);
+                }
+            }
+            Self::ProjectInstance(facts) => {
+                for projection in facts.type_projection() {
+                    if let RuntimeProjectFunctionTypeProjection::Value {
+                        owner: RuntimeProjectFunctionTypeOwner::Expression(owner),
+                        ty,
+                    } = projection
+                    {
+                        visitor(*owner, ty);
+                    }
+                }
+            }
+        }
+    }
+
+    pub const fn global(facts: &'facts RuntimePlanSemanticFacts) -> Self {
+        Self::Global(facts)
+    }
+
+    pub const fn project_instance(
+        facts: &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ) -> Self {
+        Self::ProjectInstance(facts)
+    }
+
+    pub const fn is_project_instance(self) -> bool {
+        matches!(self, Self::ProjectInstance(_))
+    }
+
+    pub fn expression_type(self, owner: ExprId) -> Option<&'facts RuntimeNormalizedType> {
+        match self {
+            Self::Global(facts) => facts.expression_type(owner),
+            Self::ProjectInstance(facts) => facts.expression_type(owner),
+        }
+    }
+
+    pub fn pattern_type(self, owner: PatternId) -> Option<&'facts RuntimeNormalizedType> {
+        match self {
+            Self::Global(facts) => facts.pattern_type(owner),
+            Self::ProjectInstance(facts) => facts.pattern_type(owner),
+        }
+    }
+
+    pub fn local_type(self, owner: LocalId) -> Option<&'facts RuntimeNormalizedType> {
+        match self {
+            Self::Global(facts) => facts.local_type(owner),
+            Self::ProjectInstance(facts) => facts.local_type(owner),
+        }
+    }
+
+    pub fn ty(self, owner: TypeId) -> Option<&'facts RuntimeNormalizedType> {
+        match self {
+            Self::Global(facts) => facts.ty(owner),
+            Self::ProjectInstance(facts) => facts.source_type(owner),
+        }
+    }
+
+    /// Returns `None` only when `owner` is absent from the selected catalog.
+    /// A present leaf expression returns `Some(&[])`.
+    pub fn expression_children(self, owner: ExprId) -> Option<&'facts [ExprId]> {
+        match self {
+            Self::Global(facts) => facts
+                .expression_children
+                .get(&owner)
+                .map(|children| children.as_ref()),
+            Self::ProjectInstance(facts) => facts.expression_children(owner),
+        }
+    }
+
+    pub fn expression_literal(self, owner: ExprId) -> Option<&'facts RuntimeValue> {
+        match self {
+            Self::Global(facts) => facts.expression_literal(owner),
+            Self::ProjectInstance(facts) => facts.expression_literal(owner),
+        }
+    }
+
+    pub fn pattern_literal(self, owner: PatternId) -> Option<&'facts RuntimeValue> {
+        match self {
+            Self::Global(facts) => facts.pattern_literal(owner),
+            Self::ProjectInstance(facts) => facts.pattern_literal(owner),
+        }
+    }
+
+    pub fn pattern_item(self, owner: PatternId) -> Option<&'facts RuntimeProjectItem> {
+        match self {
+            Self::Global(facts) => facts.pattern_item(owner),
+            Self::ProjectInstance(facts) => facts.pattern_item(owner),
+        }
+    }
+
+    pub fn value(self, owner: ExprId) -> Option<&'facts RuntimeResolvedValue> {
+        match self {
+            Self::Global(facts) => facts.value(owner),
+            Self::ProjectInstance(facts) => facts.value(owner),
+        }
+    }
+
+    pub fn select(self, owner: ExprId) -> Option<&'facts RuntimeResolvedSelect> {
+        match self {
+            Self::Global(facts) => facts.select(owner),
+            Self::ProjectInstance(facts) => facts.select(owner),
+        }
+    }
+
+    pub fn nominal_record(self, owner: ExprId) -> Option<&'facts RuntimeRecordExpressionFact> {
+        match self {
+            Self::Global(facts) => facts.nominal_record(owner),
+            Self::ProjectInstance(facts) => facts.nominal_record(owner),
+        }
+    }
+
+    pub fn pattern_nominal_record(
+        self,
+        owner: PatternId,
+    ) -> Option<&'facts RuntimeRecordPatternFact> {
+        match self {
+            Self::Global(facts) => facts.pattern_nominal_record(owner),
+            Self::ProjectInstance(facts) => facts.pattern_nominal_record(owner),
+        }
+    }
+
+    pub fn expression_variant(self, owner: ExprId) -> Option<&'facts RuntimeResolvedVariant> {
+        match self {
+            Self::Global(facts) => facts.expression_variant(owner),
+            Self::ProjectInstance(facts) => facts.expression_variant(owner),
+        }
+    }
+
+    pub fn pattern_variant(self, owner: PatternId) -> Option<&'facts RuntimeResolvedVariant> {
+        match self {
+            Self::Global(facts) => facts.pattern_variant(owner),
+            Self::ProjectInstance(facts) => facts.pattern_variant(owner),
+        }
+    }
+
+    pub fn call(self, owner: ExprId) -> Option<&'facts RuntimeResolvedCall> {
+        match self {
+            Self::Global(facts) => facts.call(owner),
+            Self::ProjectInstance(facts) => facts.call(owner),
+        }
+    }
+
+    pub fn postfix_candidate(self, owner: ExprId) -> Option<ExprId> {
+        match self {
+            Self::Global(facts) => facts.postfix_candidate(owner),
+            Self::ProjectInstance(facts) => facts.postfix_candidate(owner),
+        }
+    }
+
+    pub fn iteration(self, owner: StmtId) -> Option<&'facts RuntimeIteratorFact> {
+        match self {
+            Self::Global(facts) => facts.iteration(owner),
+            Self::ProjectInstance(facts) => facts.iteration(owner),
+        }
+    }
+
+    pub fn assertion(self, owner: StmtId) -> Option<RuntimeAssertionAdmission> {
+        match self {
+            Self::Global(facts) => facts.assertion(owner),
+            Self::ProjectInstance(facts) => facts.assertion(owner),
+        }
+    }
+
+    pub fn trigger(self, owner: StmtId) -> Option<&'facts RuntimeTriggerAdmission> {
+        match self {
+            Self::Global(facts) => facts.trigger(owner),
+            Self::ProjectInstance(facts) => facts.trigger(owner),
+        }
+    }
+
+    pub fn assignment(self, owner: StmtId) -> Option<&'facts RuntimeAssignmentFact> {
+        match self {
+            Self::Global(facts) => facts.assignment(owner),
+            Self::ProjectInstance(facts) => facts.assignment(owner),
+        }
+    }
+
+    pub fn evaluated_effect(self, owner: StmtId) -> Option<&'facts RuntimeEvaluatedEffectFact> {
+        match self {
+            Self::Global(facts) => facts.evaluated_effect(owner),
+            Self::ProjectInstance(facts) => facts.evaluated_effect(owner),
+        }
+    }
+
+    pub fn awaited(self, owner: ExprId) -> Option<&'facts RuntimeAwaitFact> {
+        match self {
+            Self::Global(facts) => facts.awaited(owner),
+            Self::ProjectInstance(facts) => facts.awaited(owner),
+        }
+    }
+
+    pub fn choice(self, owner: ExprId) -> Option<&'facts RuntimeChoiceFact> {
+        match self {
+            Self::Global(facts) => facts.choice(owner),
+            Self::ProjectInstance(facts) => facts.choice(owner),
+        }
+    }
+
+    pub fn tried(self, owner: ExprId) -> Option<&'facts RuntimeTryFact> {
+        match self {
+            Self::Global(facts) => facts.tried(owner),
+            Self::ProjectInstance(facts) => facts.tried(owner),
+        }
+    }
+
+    pub fn implicit_callable(self, owner: ExprId) -> Option<&'facts RuntimeImplicitCallableFact> {
+        match self {
+            Self::Global(facts) => facts.implicit_callable(owner),
+            Self::ProjectInstance(facts) => facts.implicit_callable(owner),
+        }
+    }
+
+    pub fn pipe(self, owner: ExprId) -> Option<&'facts RuntimePipeFact> {
+        match self {
+            Self::Global(facts) => facts.pipe(owner),
+            Self::ProjectInstance(facts) => facts.pipe(owner),
+        }
+    }
+
+    pub fn capture(self, owner: CaptureId) -> Option<&'facts RuntimeCheckedCapture> {
+        match self {
+            Self::Global(facts) => facts.capture(owner),
+            Self::ProjectInstance(facts) => facts.capture(owner),
+        }
+    }
+
+    pub fn dialogue_application(self, owner: ExprId) -> Option<&'facts RuntimeDialogueApplication> {
+        match self {
+            Self::Global(facts) => facts.dialogue_application(owner),
+            Self::ProjectInstance(facts) => facts.dialogue_application(owner),
+        }
+    }
+
+    /// Selects a closed closure only from a closed project-instance catalog.
+    /// Returning `None` in global mode is intentional: ordinary global
+    /// closures use the generation-global FunctionSite authority instead.
+    pub fn closure_instance(self, owner: ExprId) -> Option<&'facts RuntimeClosureInstanceFact> {
+        match self {
+            Self::Global(facts) => facts.root_closure(owner),
+            Self::ProjectInstance(facts) => facts.closure_instance(owner),
+        }
+    }
+
+    pub fn dialogue_content_fragment_for_source(
+        self,
+        source: ExprId,
+    ) -> Option<&'facts RuntimeContentFragmentFact> {
+        match self {
+            Self::Global(facts) => facts.dialogue_content_fragment_for_source(source),
+            Self::ProjectInstance(facts) => facts.dialogue_content_fragment_for_source(source),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
 struct RuntimeSemanticOwnerSet<'a> {
     runtime: &'a HirRuntimeSemanticReachability<'a>,
     view_values: Option<&'a HirRuntimeSemanticReachability<'a>>,
+}
+
+/// Borrowed complete executable catalogs. Every consumer keeps the root's
+/// exact lexical scope while visiting its nested closure catalogs.
+fn instance_semantic_roots<'facts>(
+    functions: impl Iterator<Item = &'facts RuntimeProjectFunctionInstanceFact> + 'facts,
+    closures: impl Iterator<Item = &'facts RuntimeClosureInstanceFact> + 'facts,
+) -> impl Iterator<
+    Item = (
+        RuntimeScopedExecutableSemanticFactView<'facts>,
+        &'facts RuntimeProjectFunctionInstanceSemanticFacts,
+    ),
+> + 'facts {
+    functions
+        .map(|instance| {
+            (
+                RuntimeScopedExecutableSemanticFactView::project_function(
+                    instance.key(),
+                    instance.semantics(),
+                ),
+                instance.semantics(),
+            )
+        })
+        .chain(closures.map(|closure| {
+            (
+                RuntimeScopedExecutableSemanticFactView::closure(
+                    closure.key(),
+                    closure.semantics(),
+                ),
+                closure.semantics(),
+            )
+        }))
 }
 
 impl<'a> RuntimeSemanticOwnerSet<'a> {
@@ -3906,6 +4997,16 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
                 .is_some_and(|owners| owners.contains_runtime_owner(owner))
     }
 
+    fn executable_owners(
+        self,
+        owner: &HirRuntimeExecutableOwner,
+    ) -> Option<&'a arcweft_lang_hir::project::HirRuntimeExecutableSemanticOwners> {
+        self.runtime.executable_owners(owner).or_else(|| {
+            self.view_values
+                .and_then(|owners| owners.executable_owners(owner))
+        })
+    }
+
     fn locals(self) -> BTreeSet<LocalId> {
         self.runtime
             .locals()
@@ -3963,6 +5064,32 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
             );
         }
         Ok(owners)
+    }
+
+    fn selected_expression_children(
+        self,
+    ) -> Result<BTreeMap<ExprId, Box<[ExprId]>>, RuntimeSemanticFactsError> {
+        let mut children: BTreeMap<ExprId, Box<[ExprId]>> = BTreeMap::new();
+        // Each lexical partition owns the runtime child relation, including
+        // an empty row for a closure value whose body executes in another
+        // partition. The aggregate structural edge map omits those value rows.
+        for reachability in std::iter::once(self.runtime).chain(self.view_values) {
+            for executable in reachability.reachable_executables() {
+                let owners = reachability
+                    .executable_owners(executable)
+                    .ok_or(RuntimeSemanticFactsError::ReachabilityMismatch)?;
+                for owner in owners.expressions() {
+                    let row = owners.expression_children(owner);
+                    if children
+                        .insert(owner, Box::from(row))
+                        .is_some_and(|previous| previous.as_ref() != row)
+                    {
+                        return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
+                    }
+                }
+            }
+        }
+        Ok(children)
     }
 
     fn patterns(self) -> BTreeSet<PatternId> {
@@ -4047,7 +5174,6 @@ impl RuntimePlanSemanticFacts {
         {
             return Err(RuntimeSemanticFactsError::ReachabilityMismatch);
         }
-        let expected_local_declarations = runtime_owners.locals().into_iter().collect::<Vec<_>>();
         let modules = project
             .modules()
             .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -4057,11 +5183,123 @@ impl RuntimePlanSemanticFacts {
             .map(|(id, module)| (*id, module.snapshot_id()))
             .collect();
 
+        let project_function_instances = collect_unique(
+            input
+                .project_function_instances
+                .into_iter()
+                .map(|instance| (instance.key().clone(), instance)),
+            RuntimeSemanticFactFamily::ProjectFunctionInstance,
+        )?;
+        for instance in project_function_instances.values() {
+            validate_project_function_instance(&modules, runtime_owners, instance)?;
+        }
+        let root_closures = collect_unique(
+            input
+                .root_closures
+                .into_iter()
+                .map(|closure| (closure.owner(), closure)),
+            RuntimeSemanticFactFamily::ClosureInstance,
+        )?;
+        if root_closures
+            .values()
+            .any(|closure| closure.key().enclosing_instance().is_some())
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        let project_function_roots = collect_unique(
+            input
+                .project_function_roots
+                .into_iter()
+                .map(|root| ((root.entry(), root.role()), root)),
+            RuntimeSemanticFactFamily::ProjectFunctionRoot,
+        )?;
+        let mut root_instances_by_callable = BTreeMap::new();
+        for root in project_function_roots.values() {
+            validate_project_function_root(
+                &modules,
+                runtime_owners,
+                &project_function_instances,
+                root,
+            )?;
+            match root_instances_by_callable
+                .insert(root.instance().callable().clone(), root.instance().clone())
+            {
+                Some(previous) if previous != *root.instance() => {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionRoot);
+                }
+                Some(_) | None => {}
+            }
+        }
+        let mut instance_expression_owners = BTreeSet::new();
+        let mut instance_pattern_owners = BTreeSet::new();
+        let mut instance_local_owners = BTreeSet::new();
+        let mut instance_type_owners = BTreeSet::new();
+        let mut instance_capture_owners = BTreeSet::new();
+        let mut instance_statement_owners = BTreeSet::new();
+        for instance in project_function_instances.values() {
+            instance.visit_type_projections(&mut |projection| match projection.owner() {
+                RuntimeProjectFunctionTypeOwner::Expression(owner) => {
+                    instance_expression_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
+                    instance_pattern_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                    instance_local_owners.insert(owner);
+                }
+                RuntimeProjectFunctionTypeOwner::Type(owner) => {
+                    instance_type_owners.insert(owner);
+                }
+            });
+            instance.visit_captures(&mut |capture| {
+                instance_capture_owners.insert(capture.capture());
+            });
+            instance.visit_statement_owners(&mut |statement| {
+                instance_statement_owners.insert(statement);
+            });
+        }
+        for closure in root_closures.values() {
+            closure.semantics().visit_type_projections(
+                &mut |projection| match projection.owner() {
+                    RuntimeProjectFunctionTypeOwner::Expression(owner) => {
+                        instance_expression_owners.insert(owner);
+                    }
+                    RuntimeProjectFunctionTypeOwner::Pattern(owner) => {
+                        instance_pattern_owners.insert(owner);
+                    }
+                    RuntimeProjectFunctionTypeOwner::Local(owner) => {
+                        instance_local_owners.insert(owner);
+                    }
+                    RuntimeProjectFunctionTypeOwner::Type(owner) => {
+                        instance_type_owners.insert(owner);
+                    }
+                },
+            );
+            closure.semantics().visit_captures(&mut |capture| {
+                instance_capture_owners.insert(capture.capture());
+            });
+            closure
+                .semantics()
+                .visit_statement_owners(&mut |statement| {
+                    instance_statement_owners.insert(statement);
+                });
+        }
+        let expected_local_declarations = runtime_owners
+            .locals()
+            .into_iter()
+            .filter(|owner| !instance_local_owners.contains(owner))
+            .collect::<Vec<_>>();
+
         let expression_types = collect_unique(
             input.expression_types,
             RuntimeSemanticFactFamily::ExpressionType,
         )?;
         for (owner, ty) in &expression_types {
+            if instance_expression_owners.contains(owner) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::ExpressionType,
+                });
+            }
             resolve_expr(&modules, *owner)?;
             require_runtime_expression_owner(
                 runtime_owners,
@@ -4070,10 +5308,34 @@ impl RuntimePlanSemanticFacts {
             )?;
             validate_normalized_type(&modules, ty)?;
         }
+        let mut expression_children = runtime_owners.selected_expression_children()?;
+        expression_children.retain(|owner, _| !instance_expression_owners.contains(owner));
+        for (owner, children) in &expression_children {
+            require_runtime_expression_owner(
+                runtime_owners,
+                *owner,
+                RuntimeSemanticFactFamily::ExpressionChildren,
+            )?;
+            if !runtime_owners.contains_expression(*owner)
+                || children
+                    .iter()
+                    .any(|child| !runtime_owners.contains_expression(*child))
+            {
+                return Err(RuntimeSemanticFactsError::InactiveExpressionFact {
+                    expression: *owner,
+                    family: RuntimeSemanticFactFamily::ExpressionChildren,
+                });
+            }
+        }
 
         let pattern_types =
             collect_unique(input.pattern_types, RuntimeSemanticFactFamily::PatternType)?;
         for (owner, ty) in &pattern_types {
+            if instance_pattern_owners.contains(owner) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::PatternType,
+                });
+            }
             resolve_pattern(&modules, *owner)?;
             require_runtime_pattern_owner(
                 runtime_owners,
@@ -4320,6 +5582,11 @@ impl RuntimePlanSemanticFacts {
 
         let types = collect_unique(input.types, RuntimeSemanticFactFamily::Type)?;
         for (owner, ty) in &types {
+            if instance_type_owners.contains(owner) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::Type,
+                });
+            }
             let hir_type = module_for(&modules, owner.module())?
                 .resolve_type(*owner)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedType { ty: *owner })?;
@@ -4331,20 +5598,57 @@ impl RuntimePlanSemanticFacts {
         }
 
         let calls = collect_unique(input.calls, RuntimeSemanticFactFamily::Call)?;
+        let mut invoked_project_function_instances = project_function_roots
+            .values()
+            .map(|root| root.instance().clone())
+            .collect::<BTreeSet<_>>();
         for (expression, call) in &calls {
+            if instance_expression_owners.contains(expression) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::Call,
+                });
+            }
             let kind = resolve_expr(&modules, *expression)?;
             require_runtime_expression_owner(
                 runtime_owners,
                 *expression,
                 RuntimeSemanticFactFamily::Call,
             )?;
-            let HirExprKind::Call(hir_call) = kind else {
-                return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
-                    expression: *expression,
-                    expected: RuntimeSemanticFactFamily::Call,
-                });
+            let (hir_call, attached_body) = match kind {
+                HirExprKind::Call(hir_call) => (hir_call, None),
+                HirExprKind::AttachedContentApplication(application) => {
+                    let Some(invocation) = application.family().invocation() else {
+                        return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                            expression: *expression,
+                            expected: RuntimeSemanticFactFamily::Call,
+                        });
+                    };
+                    (invocation, Some(application.body_presence()))
+                }
+                _ => {
+                    return Err(RuntimeSemanticFactsError::WrongExpressionFamily {
+                        expression: *expression,
+                        expected: RuntimeSemanticFactFamily::Call,
+                    });
+                }
             };
-            validate_call(&modules, &expression_types, *expression, hir_call, call)?;
+            validate_call(
+                &modules,
+                &expression_types,
+                *expression,
+                hir_call,
+                attached_body,
+                call,
+            )?;
+            validate_project_function_call_materialization(&modules, call)?;
+            if let Some(instance) = validate_project_function_instance_reference(
+                *expression,
+                call,
+                expression_types.get(expression),
+                &project_function_instances,
+            )? {
+                invoked_project_function_instances.insert(instance);
+            }
             let executable = match call.dispatch() {
                 RuntimeResolvedCallDispatch::Static(
                     RuntimeResolvedStaticCallTarget::Declaration(callable),
@@ -4371,6 +5675,59 @@ impl RuntimePlanSemanticFacts {
             {
                 return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
             }
+        }
+        for instance in project_function_instances.values() {
+            let mut expression_types = BTreeMap::new();
+            instance.visit_type_projections(&mut |projection| {
+                if let (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) =
+                    (projection.owner(), projection.ty())
+                {
+                    expression_types.insert(owner, ty);
+                }
+            });
+            let mut closed_calls = Vec::new();
+            instance.visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
+            for (owner, call) in closed_calls {
+                if let Some(invoked) = validate_project_function_instance_reference(
+                    owner,
+                    call,
+                    expression_types.get(&owner).copied(),
+                    &project_function_instances,
+                )? {
+                    invoked_project_function_instances.insert(invoked);
+                }
+            }
+        }
+        for closure in root_closures.values() {
+            let mut closed_calls = Vec::new();
+            closure
+                .semantics()
+                .visit_calls(&mut |owner, call| closed_calls.push((owner, call)));
+            for (owner, call) in closed_calls {
+                let mut expected_type = None;
+                closure
+                    .semantics()
+                    .visit_type_projections(&mut |projection| {
+                        if projection.owner() == RuntimeProjectFunctionTypeOwner::Expression(owner)
+                        {
+                            expected_type = projection.ty();
+                        }
+                    });
+                if let Some(invoked) = validate_project_function_instance_reference(
+                    owner,
+                    call,
+                    expected_type,
+                    &project_function_instances,
+                )? {
+                    invoked_project_function_instances.insert(invoked);
+                }
+            }
+        }
+        if project_function_instances
+            .keys()
+            .any(|key| !invoked_project_function_instances.contains(key))
+        {
+            return Err(RuntimeSemanticFactsError::UnreferencedProjectFunctionInstance);
         }
 
         let choices = collect_unique(input.choices, RuntimeSemanticFactFamily::Choice)?;
@@ -4559,7 +5916,6 @@ impl RuntimePlanSemanticFacts {
             };
             if pipe.left() != fact.left()
                 || pipe.right() != fact.right()
-                || fact.placeholders().is_empty()
                 || !all_unique(fact.placeholders())
             {
                 return Err(RuntimeSemanticFactsError::InvalidPipeFact {
@@ -4591,10 +5947,17 @@ impl RuntimePlanSemanticFacts {
                     expression: *expression,
                 });
             };
-            let result_matches = implicit_callables.get(expression).map_or_else(
-                || expression_types.get(expression) == Some(fact.carrier().success()),
-                |callable| callable.result() == fact.carrier().success(),
-            );
+            let result_matches = match fact.boundary() {
+                RuntimeTryBoundaryOwner::ImplicitFunctionSite(boundary) => implicit_callables
+                    .get(&boundary)
+                    .is_some_and(|callable| callable.result() == fact.carrier().success()),
+                RuntimeTryBoundaryOwner::Infallible
+                | RuntimeTryBoundaryOwner::CarrierBlock(_)
+                | RuntimeTryBoundaryOwner::ExplicitFunctionSite(_)
+                | RuntimeTryBoundaryOwner::Callable(_) => {
+                    expression_types.get(expression) == Some(fact.carrier().success())
+                }
+            };
             if tried.operand() != fact.operand() || !result_matches {
                 return Err(RuntimeSemanticFactsError::InvalidTryFact {
                     expression: *expression,
@@ -4663,42 +6026,34 @@ impl RuntimePlanSemanticFacts {
                         });
                     }
                 }
-                RuntimeTryBoundaryOwner::FunctionSite(boundary) => {
+                RuntimeTryBoundaryOwner::ExplicitFunctionSite(boundary) => {
                     let kind = resolve_expr(&modules, boundary)?;
-                    let valid_owner = matches!(kind, HirExprKind::Closure(_))
-                        || implicit_callables.contains_key(&boundary);
-                    let boundary_result = implicit_callables.get(&boundary).map_or_else(
-                        || {
-                            expression_types
-                                .get(&boundary)
-                                .and_then(|ty| match ty.shape() {
-                                    RuntimeTypeShape::Function { result, .. } => {
-                                        Some(result.as_ref())
-                                    }
-                                    _ => None,
-                                })
-                        },
-                        |callable| Some(callable.result()),
-                    );
+                    let valid_owner = matches!(kind, HirExprKind::Closure(_));
+                    let boundary_result =
+                        expression_types
+                            .get(&boundary)
+                            .and_then(|ty| match ty.shape() {
+                                RuntimeTypeShape::Function { result, .. } => Some(result.as_ref()),
+                                _ => None,
+                            });
                     if !valid_owner || boundary_result != Some(fact.boundary_type()) {
                         return Err(RuntimeSemanticFactsError::InvalidTryFact {
                             expression: *expression,
                         });
                     }
                 }
-                RuntimeTryBoundaryOwner::Callable(boundary) => {
-                    let item = module_for(&modules, boundary.module())?
-                        .resolve_item(boundary)
-                        .map_err(|_| RuntimeSemanticFactsError::InvalidTryFact {
-                            expression: *expression,
-                        })?;
-                    let return_type = match item.kind() {
-                        HirItemKind::Function(function) => function.return_type(),
-                        HirItemKind::Flow(flow) => flow.result().authored_type(),
-                        _ => None,
-                    };
-                    if return_type.and_then(|owner| types.get(&owner)) != Some(fact.boundary_type())
+                RuntimeTryBoundaryOwner::ImplicitFunctionSite(boundary) => {
+                    if implicit_callables
+                        .get(&boundary)
+                        .is_none_or(|callable| callable.result() != fact.boundary_type())
                     {
+                        return Err(RuntimeSemanticFactsError::InvalidTryFact {
+                            expression: *expression,
+                        });
+                    }
+                }
+                RuntimeTryBoundaryOwner::Callable(boundary) => {
+                    if !boundary.as_bytes().iter().any(|byte| *byte != 0) {
                         return Err(RuntimeSemanticFactsError::InvalidTryFact {
                             expression: *expression,
                         });
@@ -4753,8 +6108,9 @@ impl RuntimePlanSemanticFacts {
             &postfix_candidates,
             &calls,
             &expression_types,
+            &instance_expression_owners,
         )?;
-        validate_complete_pattern_types(runtime_owners, &pattern_types)?;
+        validate_complete_pattern_types(runtime_owners, &pattern_types, &instance_pattern_owners)?;
 
         let trait_methods = collect_unique(
             input
@@ -4772,6 +6128,14 @@ impl RuntimePlanSemanticFacts {
         }
 
         let iterations = collect_unique(input.iterations, RuntimeSemanticFactFamily::Iteration)?;
+        if iterations
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::Iteration,
+            });
+        }
         for (statement, evidence) in &iterations {
             require_stmt_family(
                 &modules,
@@ -4805,6 +6169,14 @@ impl RuntimePlanSemanticFacts {
         }
 
         let assertions = collect_unique(input.assertions, RuntimeSemanticFactFamily::Assertion)?;
+        if assertions
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::Assertion,
+            });
+        }
         for statement in assertions.keys() {
             require_stmt_family(
                 &modules,
@@ -4820,6 +6192,7 @@ impl RuntimePlanSemanticFacts {
             .values()
             .flat_map(|module| module.statements().map(|(statement, _)| statement))
             .filter(|statement| runtime_owners.contains_statement(*statement))
+            .filter(|statement| !instance_statement_owners.contains(statement))
             .filter(|statement| {
                 matches!(
                     resolve_stmt(&modules, *statement),
@@ -4827,6 +6200,14 @@ impl RuntimePlanSemanticFacts {
                 )
             })
             .collect::<BTreeSet<_>>();
+        if triggers
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::Trigger,
+            });
+        }
         for statement in triggers.keys() {
             // HIR participates only in the reachable `On` owner-set check.
             // The checked trigger variant and payload were selected by the
@@ -4853,6 +6234,14 @@ impl RuntimePlanSemanticFacts {
             input.evaluated_effects,
             RuntimeSemanticFactFamily::EvaluatedEffect,
         )?;
+        if evaluated_effects
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::EvaluatedEffect,
+            });
+        }
         for (statement, effect) in &evaluated_effects {
             require_stmt_family(
                 &modules,
@@ -4875,6 +6264,7 @@ impl RuntimePlanSemanticFacts {
             .values()
             .flat_map(|module| module.statements().map(|(statement, _)| statement))
             .filter(|statement| runtime_owners.contains_statement(*statement))
+            .filter(|statement| !instance_statement_owners.contains(statement))
             .filter(|statement| {
                 matches!(
                     resolve_stmt(&modules, *statement),
@@ -4882,6 +6272,14 @@ impl RuntimePlanSemanticFacts {
                 )
             })
             .collect::<BTreeSet<_>>();
+        if assignments
+            .keys()
+            .any(|owner| instance_statement_owners.contains(owner))
+        {
+            return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                family: RuntimeSemanticFactFamily::Assignment,
+            });
+        }
         if let Some(statement) = expected_assignments
             .iter()
             .find(|statement| !assignments.contains_key(statement))
@@ -4912,6 +6310,11 @@ impl RuntimePlanSemanticFacts {
         let mut captures = BTreeMap::new();
         for checked in input.captures {
             let id = checked.capture();
+            if instance_capture_owners.contains(&id) {
+                return Err(RuntimeSemanticFactsError::InstanceOwnedGlobalFact {
+                    family: RuntimeSemanticFactFamily::Capture,
+                });
+            }
             let capture = module_for(&modules, id.module())?
                 .resolve_capture(id)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedCapture { capture: id })?;
@@ -4939,8 +6342,127 @@ impl RuntimePlanSemanticFacts {
             input.pure_programs,
         )?;
         let dialogue_applications = input.dialogue_applications;
+        let dialogue_content_fragments = input.dialogue_content_fragments;
+        let mut fragment_ids = BTreeSet::new();
+        let mut fragment_sources = BTreeSet::new();
+        let mut fragment_templates = BTreeSet::new();
+        for fragment in &dialogue_content_fragments {
+            if !fragment_ids.insert(fragment.id())
+                || !fragment_sources.insert(fragment.source())
+                || !fragment_templates.insert(fragment.template().id())
+            {
+                return Err(RuntimeSemanticFactsError::DuplicateContentFragment {
+                    expression: fragment.source(),
+                });
+            }
+            require_runtime_expression_owner(
+                runtime_owners,
+                fragment.source(),
+                RuntimeSemanticFactFamily::DialogueApplication,
+            )?;
+            for value in fragment.values() {
+                require_runtime_expression_owner(
+                    runtime_owners,
+                    value.expression(),
+                    RuntimeSemanticFactFamily::DialogueApplication,
+                )?;
+                validate_normalized_type(&modules, value.ty())?;
+                if expression_types.get(&value.expression()) != Some(value.ty()) {
+                    return Err(RuntimeSemanticFactsError::InvalidContentFragment {
+                        expression: fragment.source(),
+                    });
+                }
+            }
+            for effect in fragment.effects() {
+                if !evaluated_effect::validate_evaluated_effect_site(&modules, effect.operation())
+                    || !evaluated_effect::validate_evaluated_effect_operation(
+                        &modules,
+                        &expression_types,
+                        &calls,
+                        effect.operation().application_site(),
+                        effect.operation().effect(),
+                    )
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidContentFragment {
+                        expression: fragment.source(),
+                    });
+                }
+                for capture in effect.captures() {
+                    validate_normalized_type(&modules, capture.ty())?;
+                    if local_declarations.get(&capture.local()) != Some(capture.ty()) {
+                        return Err(RuntimeSemanticFactsError::InvalidContentFragment {
+                            expression: fragment.source(),
+                        });
+                    }
+                }
+            }
+        }
+        let mut global_mark_facts = BTreeMap::new();
+        for fragment in &dialogue_content_fragments {
+            for mark in fragment.marks() {
+                if global_mark_facts
+                    .insert(mark.coordinate().clone(), mark.key())
+                    .is_some()
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidContentFragment {
+                        expression: fragment.source(),
+                    });
+                }
+            }
+        }
+        for (statement, admission) in &triggers {
+            let hir = resolve_stmt(&modules, *statement)?;
+            match (hir, admission.dialogue_mark()) {
+                (
+                    HirStmtKind::On {
+                        trigger: HirTrigger::Mark(source),
+                        ..
+                    },
+                    Some(mark),
+                ) if source.ordinal() == mark.coordinate().ordinal()
+                    && global_mark_facts.get(mark.coordinate()) == Some(&mark.key()) => {}
+                (
+                    HirStmtKind::On {
+                        trigger: HirTrigger::Mark(_),
+                        ..
+                    },
+                    _,
+                )
+                | (_, Some(_)) => {
+                    return Err(RuntimeSemanticFactsError::InvalidTriggerFact {
+                        statement: *statement,
+                    });
+                }
+                (_, None) => {}
+            }
+        }
+        let mut duplicate_instance_template = None;
+        for (scope, semantics) in
+            instance_semantic_roots(project_function_instances.values(), root_closures.values())
+        {
+            semantics.visit_content_fragments(scope, &mut |_, fragment| {
+                if !fragment_templates.insert(fragment.template().id())
+                    && duplicate_instance_template.is_none()
+                {
+                    duplicate_instance_template = Some(fragment.source());
+                }
+            });
+        }
+        if let Some(expression) = duplicate_instance_template {
+            return Err(RuntimeSemanticFactsError::DuplicateContentFragment { expression });
+        }
+        let dialogue_lines = input.dialogue_lines;
         let character_presentation_catalog = input.character_presentation_catalog;
-        if dialogue_applications.is_empty() != character_presentation_catalog.is_none() {
+        let mut has_instance_dialogue = false;
+        for (scope, semantics) in
+            instance_semantic_roots(project_function_instances.values(), root_closures.values())
+        {
+            semantics
+                .visit_dialogue_applications(scope, &mut |_, _, _| has_instance_dialogue = true);
+        }
+        if (dialogue_applications.is_empty() && !has_instance_dialogue)
+            != character_presentation_catalog.is_none()
+        {
             return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
         }
 
@@ -4955,6 +6477,7 @@ impl RuntimePlanSemanticFacts {
             local_declarations,
             flows,
             expression_types,
+            expression_children,
             pattern_types,
             expression_literals,
             pattern_literals,
@@ -4981,19 +6504,64 @@ impl RuntimePlanSemanticFacts {
             pipes,
             captures,
             pure_programs,
+            project_function_instances,
+            root_closures,
+            project_function_roots,
             dialogue_applications,
+            dialogue_content_fragments,
+            dialogue_lines,
             character_presentation_catalog,
         };
+        for owner in facts.expression_types.keys() {
+            if matches!(resolve_expr(&modules, *owner)?, HirExprKind::Closure(_))
+                && !facts.is_pure_program_closure(*owner)
+                && !facts.root_closures.contains_key(owner)
+            {
+                return Err(RuntimeSemanticFactsError::MissingClosureInstance {
+                    expression: *owner,
+                });
+            }
+        }
+        for closure in facts.root_closures.values() {
+            let callable = RuntimeCallableId::from_checked_digest(
+                closure
+                    .key()
+                    .closure()
+                    .owner()
+                    .semantic_digest()
+                    .into_bytes(),
+            );
+            validate_closure_instance(
+                &modules,
+                runtime_owners,
+                None,
+                &callable,
+                RuntimeExecutableSemanticFactView::Global(&facts),
+                closure.owner(),
+                closure,
+            )?;
+        }
         if let Some(catalog) = facts.character_presentation_catalog.as_ref() {
             let dialogue_owners = RuntimeSemanticOwnerSet::runtime_only(runtime_owners.runtime);
             for (owner, application) in &facts.dialogue_applications {
                 facts.validate_dialogue_application(
-                    project,
                     &modules,
                     dialogue_owners,
                     catalog,
                     *owner,
                     application,
+                )?;
+            }
+            let lines = facts
+                .dialogue_lines
+                .as_deref()
+                .ok_or(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch)?;
+            for (_, semantics) in instance_semantic_roots(
+                facts.project_function_instances.values(),
+                facts.root_closures.values(),
+            ) {
+                validate_project_instance_dialogue_applications(
+                    &modules, catalog, lines, semantics,
                 )?;
             }
         }
@@ -5002,23 +6570,39 @@ impl RuntimePlanSemanticFacts {
 
     fn validate_dialogue_application(
         &self,
-        project: HirExecutableProjectView<'_>,
         modules: &BTreeMap<HirModuleId, &HirModule>,
         runtime_owners: RuntimeSemanticOwnerSet<'_>,
         catalog: &CharacterPresentationCatalogData,
         owner: ExprId,
         application: &RuntimeDialogueApplication,
     ) -> Result<(), RuntimeSemanticFactsError> {
+        let fragment = self
+            .dialogue_content_fragments
+            .iter()
+            .find(|fragment| fragment.template().id() == application.content().template_id())
+            .ok_or(RuntimeSemanticFactsError::DialogueTemplateMismatch { expression: owner })?;
         require_expr_family(
             modules,
             runtime_owners,
             owner,
             RuntimeSemanticFactFamily::DialogueApplication,
-            |kind| matches!(kind, HirExprKind::DialogueContentApplication(_)),
+            |kind| {
+                matches!(
+                    kind,
+                    HirExprKind::AttachedContentApplication(application)
+                        if matches!(
+                            application.family(),
+                            arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                                ..
+                            }
+                        )
+                )
+            },
         )?;
-        let accepted = project
-            .dialogue_lines()
-            .for_expr(owner)
+        let accepted = self
+            .dialogue_lines
+            .as_ref()
+            .and_then(|lines| lines.for_semantic_expr(owner))
             .ok_or(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner })?;
         let accepted_runtime_line = RuntimeLineId::from_source_entity_body(accepted.id().as_str())
             .map_err(|_| RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner })?;
@@ -5045,39 +6629,31 @@ impl RuntimePlanSemanticFacts {
                 expression: owner,
             });
         }
-        for (index, value) in application.values().iter().enumerate() {
+        for (index, value) in fragment.values().iter().enumerate() {
             let expected = RuntimeDialogueValueSlotId::from_zero_based(index).ok_or(
                 RuntimeSemanticFactsError::TooManyDialogueValueSlots { expression: owner },
             )?;
-            if value.slot != expected {
+            if value.slot() != expected {
                 return Err(RuntimeSemanticFactsError::NonCanonicalDialogueValueSlot {
                     expression: owner,
                     expected,
-                    actual: value.slot,
+                    actual: value.slot(),
                 });
             }
-            resolve_expr(modules, value.expression)?;
+            resolve_expr(modules, value.expression())?;
             require_runtime_expression_owner(
                 runtime_owners,
-                value.expression,
+                value.expression(),
                 RuntimeSemanticFactFamily::DialogueApplication,
             )?;
-            let ty = self.expression_type(value.expression).ok_or(
-                RuntimeSemanticFactsError::MissingDialogueValueType {
+            if self.expression_type(value.expression()) != Some(value.ty()) {
+                return Err(RuntimeSemanticFactsError::MissingDialogueValueType {
                     dialogue: owner,
-                    value: value.expression,
-                },
-            )?;
-            if value.role == RuntimeDialogueValueRole::Condition
-                && !matches!(ty.shape(), RuntimeTypeShape::Bool)
-            {
-                return Err(RuntimeSemanticFactsError::InvalidDialogueConditionType {
-                    dialogue: owner,
-                    condition: value.expression,
+                    value: value.expression(),
                 });
             }
         }
-        for (index, effect) in application.effects().iter().enumerate() {
+        for (index, effect) in fragment.effects().iter().enumerate() {
             let expected =
                 arcweft_core::runtime_id::RuntimeDialogueEffectSiteId::from_zero_based(index)
                     .ok_or(RuntimeSemanticFactsError::TooManyDialogueValueSlots {
@@ -5097,11 +6673,13 @@ impl RuntimePlanSemanticFacts {
             };
             if effect.site() != expected
                 || !trigger_valid
+                || !self.expression_reaches(owner, effect.operation().site_root())
+                || !evaluated_effect::validate_evaluated_effect_site(modules, effect.operation())
                 || !evaluated_effect::validate_evaluated_effect_operation(
                     modules,
                     &self.expression_types,
                     &self.calls,
-                    effect.operation().application(),
+                    effect.operation().application_site(),
                     effect.operation().effect(),
                 )
             {
@@ -5112,6 +6690,20 @@ impl RuntimePlanSemanticFacts {
             }
         }
         Ok(())
+    }
+
+    fn expression_reaches(&self, owner: ExprId, target: ExprId) -> bool {
+        let mut pending = self.expression_children(owner).to_vec();
+        let mut visited = BTreeSet::new();
+        while let Some(expression) = pending.pop() {
+            if expression == target {
+                return true;
+            }
+            if visited.insert(expression) {
+                pending.extend_from_slice(self.expression_children(expression));
+            }
+        }
+        false
     }
 
     /// Revalidates that the facts are consumed by the exact generation that
@@ -5196,7 +6788,8 @@ impl RuntimePlanSemanticFacts {
                 }),
             )
         };
-        self.nominal_records
+        let mut domains = self
+            .nominal_records
             .values()
             .map(|record| project(record.nominal()))
             .chain(
@@ -5204,17 +6797,77 @@ impl RuntimePlanSemanticFacts {
                     .values()
                     .filter_map(|record| record.nominal().map(&project)),
             )
-            .collect()
+            .collect::<Vec<_>>();
+        for (_, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+        ) {
+            semantics.visit_catalogs(&mut |catalog| {
+                domains.extend(catalog.expressions().iter().filter_map(|row| {
+                    catalog
+                        .nominal_record(row.owner())
+                        .map(|record| project(record.nominal()))
+                }));
+                domains.extend(catalog.patterns().iter().filter_map(|row| {
+                    catalog
+                        .pattern_nominal_record(row.owner())
+                        .and_then(RuntimeRecordPatternFact::nominal)
+                        .map(&project)
+                }));
+            });
+        }
+        domains
     }
 
     /// Complete non-Option/Result variant schemas. Repeated owners remain in
     /// the batch for exact builder-level conflict validation.
     pub fn runtime_plan_variant_domain_seeds(&self) -> Vec<RuntimeVariantDomainSeed> {
-        self.expression_variants
+        let mut domains = self
+            .expression_variants
             .values()
             .chain(self.pattern_variants.values())
+            .chain(
+                self.calls
+                    .values()
+                    .filter_map(|call| match call.dispatch() {
+                        RuntimeResolvedCallDispatch::Static(
+                            RuntimeResolvedStaticCallTarget::Variant(variant),
+                        ) => Some(variant),
+                        _ => None,
+                    }),
+            )
             .filter_map(|variant| variant.owner().runtime_plan_domain_seed())
-            .collect()
+            .collect::<Vec<_>>();
+        for (_, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+        ) {
+            semantics.visit_catalogs(&mut |catalog| {
+                for row in catalog.expressions() {
+                    let variant = match row.payload() {
+                        RuntimeProjectFunctionExpressionPayload::Variant(variant) => Some(variant),
+                        RuntimeProjectFunctionExpressionPayload::Call(call) => {
+                            match call.dispatch() {
+                                RuntimeResolvedCallDispatch::Static(
+                                    RuntimeResolvedStaticCallTarget::Variant(variant),
+                                ) => Some(variant),
+                                _ => None,
+                            }
+                        }
+                        _ => None,
+                    };
+                    domains.extend(
+                        variant.and_then(|variant| variant.owner().runtime_plan_domain_seed()),
+                    );
+                }
+                domains.extend(catalog.patterns().iter().filter_map(|row| {
+                    catalog
+                        .pattern_variant(row.owner())
+                        .and_then(|variant| variant.owner().runtime_plan_domain_seed())
+                }));
+            });
+        }
+        domains
     }
 
     fn all_normalized_type_roots(&self) -> Vec<&RuntimeNormalizedType> {
@@ -5224,68 +6877,42 @@ impl RuntimePlanSemanticFacts {
         roots.extend(self.pattern_types.values());
         roots.extend(self.types.values());
         roots.extend(self.captures.values().map(RuntimeCheckedCapture::ty));
+        for call in self.calls.values() {
+            call.append_normalized_types(&mut roots);
+        }
+        for value in self.values.values() {
+            value.append_normalized_types(&mut roots);
+        }
+        for instance in self.project_function_instances.values() {
+            instance.append_normalized_types(&mut roots);
+        }
+        for closure in self.root_closures.values() {
+            closure.append_normalized_types(&mut roots);
+        }
         roots.extend(
             self.dialogue_applications
                 .values()
                 .map(RuntimeDialogueApplication::line_result),
         );
-        for application in self.dialogue_applications.values() {
-            for effect in application.effects() {
-                let RuntimeDialogueEffectTrigger::Delay {
-                    duration_type,
-                    schedule_handle_type,
-                    ..
-                } = effect.trigger()
-                else {
-                    continue;
-                };
-                roots.extend([duration_type, schedule_handle_type]);
-            }
+        for fragment in &self.dialogue_content_fragments {
+            fragment.append_normalized_types(&mut roots);
         }
         for effect in self.evaluated_effects.values() {
             effect
                 .effect()
                 .visit_operand_types(&mut |ty| roots.push(ty));
         }
-        for application in self.dialogue_applications.values() {
-            for effect in application.effects() {
-                effect
-                    .operation()
-                    .effect()
-                    .visit_operand_types(&mut |ty| roots.push(ty));
-            }
-        }
         for record in self.nominal_records.values() {
-            roots.extend(
-                record
-                    .nominal()
-                    .fields()
-                    .iter()
-                    .map(RuntimeResolvedNominalRecordField::ty),
-            );
+            record.append_normalized_types(&mut roots);
         }
         for record in self.pattern_nominal_records.values() {
-            match (record.nominal(), record.structural()) {
-                (Some(nominal), None) => roots.extend(
-                    nominal
-                        .fields()
-                        .iter()
-                        .map(RuntimeResolvedNominalRecordField::ty),
-                ),
-                (None, Some(structural)) => roots.push(structural),
-                _ => unreachable!("record pattern fact has one exact owner"),
-            }
+            record.append_normalized_types(&mut roots);
         }
         for assignment in self.assignments.values() {
             roots.extend([assignment.field_type(), assignment.value_type()]);
         }
         for tried in self.tries.values() {
-            roots.extend([
-                tried.carrier_type(),
-                tried.carrier().success(),
-                tried.boundary_type(),
-            ]);
-            roots.extend(tried.carrier().residual());
+            tried.append_normalized_types(&mut roots);
         }
         for callable in self.implicit_callables.values() {
             roots.extend([callable.parameter(), callable.result()]);
@@ -5296,17 +6923,7 @@ impl RuntimePlanSemanticFacts {
                 .map(RuntimeTraitMethodFact::self_type),
         );
         for iteration in self.iterations.values() {
-            match iteration {
-                RuntimeIteratorFact::Builtin(builtin) => roots.extend([
-                    builtin.item(),
-                    builtin.iterator(),
-                    builtin.next_value(),
-                    builtin.step(),
-                ]),
-                RuntimeIteratorFact::Witness(witness) => {
-                    roots.extend([witness.item(), witness.iterator()]);
-                }
-            }
+            iteration.append_normalized_types(&mut roots);
         }
         for variant in self
             .expression_variants
@@ -5368,9 +6985,55 @@ impl RuntimePlanSemanticFacts {
         self.calls.iter().map(|(owner, call)| (*owner, call))
     }
 
+    pub fn project_function_instance(
+        &self,
+        key: &RuntimeProjectFunctionInstanceKey,
+    ) -> Option<&RuntimeProjectFunctionInstanceFact> {
+        self.project_function_instances.get(key)
+    }
+
+    pub fn project_function_instances(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &RuntimeProjectFunctionInstanceFact> {
+        self.project_function_instances.values()
+    }
+
+    pub fn root_closure(&self, owner: ExprId) -> Option<&RuntimeClosureInstanceFact> {
+        self.root_closures.get(&owner)
+    }
+
+    pub fn root_closures(&self) -> impl ExactSizeIterator<Item = &RuntimeClosureInstanceFact> {
+        self.root_closures.values()
+    }
+
+    pub fn project_function_roots(
+        &self,
+    ) -> impl ExactSizeIterator<Item = &RuntimeProjectFunctionRootFact> {
+        self.project_function_roots.values()
+    }
+
+    /// Returns the checked non-call ingress for one runtime callable. Multiple
+    /// Entry declarations may share the same row, but admission guarantees
+    /// that they all name the same closed instance key.
+    pub fn project_function_root_for_callable(
+        &self,
+        callable: &RuntimeCallableId,
+    ) -> Option<&RuntimeProjectFunctionRootFact> {
+        self.project_function_roots
+            .values()
+            .find(|root| root.instance().callable() == callable)
+    }
+
     /// Returns the sole checked candidate selected for one postfix root.
     pub fn postfix_candidate(&self, expression: ExprId) -> Option<ExprId> {
         self.postfix_candidates.get(&expression).copied()
+    }
+
+    /// Returns the accepted owning children retained for runtime lowering.
+    pub fn expression_children(&self, expression: ExprId) -> &[ExprId] {
+        self.expression_children
+            .get(&expression)
+            .map_or(&[], Box::as_ref)
     }
 
     pub fn iteration(&self, statement: StmtId) -> Option<&RuntimeIteratorFact> {
@@ -5385,8 +7048,8 @@ impl RuntimePlanSemanticFacts {
         self.assertions.get(&statement).copied()
     }
 
-    pub(crate) fn trigger(&self, statement: StmtId) -> Option<RuntimeTriggerAdmission> {
-        self.triggers.get(&statement).copied()
+    pub(crate) fn trigger(&self, statement: StmtId) -> Option<&RuntimeTriggerAdmission> {
+        self.triggers.get(&statement)
     }
 
     /// Returns the sole compiler-admitted writable place for an assignment.
@@ -5464,6 +7127,84 @@ impl RuntimePlanSemanticFacts {
         &self,
     ) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimeDialogueApplication)> {
         self.dialogue_applications.iter()
+    }
+
+    /// Visits every global or closed-instance dialogue application together
+    /// with its exact lexical semantic scope and catalog.
+    pub fn visit_dialogue_applications<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            ExprId,
+            &'facts RuntimeDialogueApplication,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for (owner, application) in &self.dialogue_applications {
+            visitor(global, *owner, application);
+        }
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+        ) {
+            semantics.visit_dialogue_applications(scope, visitor);
+        }
+    }
+
+    /// Generation-global immutable template rows. Use
+    /// [`Self::visit_dialogue_content_fragments`] for the complete plan-wide
+    /// catalog, including closed project instances and nested closures.
+    pub fn dialogue_content_fragments(&self) -> &[RuntimeContentFragmentFact] {
+        &self.dialogue_content_fragments
+    }
+
+    pub fn visit_dialogue_content_fragments<'facts>(
+        &'facts self,
+        visitor: &mut impl FnMut(
+            RuntimeScopedExecutableSemanticFactView<'facts>,
+            &'facts RuntimeContentFragmentFact,
+        ),
+    ) {
+        let global = RuntimeScopedExecutableSemanticFactView::global(self);
+        for fragment in &self.dialogue_content_fragments {
+            visitor(global, fragment);
+        }
+        for (scope, semantics) in instance_semantic_roots(
+            self.project_function_instances.values(),
+            self.root_closures.values(),
+        ) {
+            semantics.visit_content_fragments(scope, visitor);
+        }
+    }
+
+    pub fn dialogue_content_fragment(
+        &self,
+        template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
+    ) -> Option<&RuntimeContentFragmentFact> {
+        self.dialogue_content_fragments
+            .iter()
+            .find(|fragment| fragment.template().id() == template)
+            .or_else(|| {
+                instance_semantic_roots(
+                    self.project_function_instances.values(),
+                    self.root_closures.values(),
+                )
+                .find_map(|(_, semantics)| semantics.dialogue_content_fragment(template))
+            })
+    }
+
+    pub fn dialogue_content_fragment_for_source(
+        &self,
+        source: ExprId,
+    ) -> Option<&RuntimeContentFragmentFact> {
+        self.dialogue_content_fragments
+            .iter()
+            .find(|fragment| fragment.source() == source)
+    }
+
+    /// Accepted line identities supplied by the final semantic analysis.
+    pub fn dialogue_lines(&self) -> Option<&AcceptedDialogueLineInventory> {
+        self.dialogue_lines.as_deref()
     }
 
     pub const fn character_presentation_catalog(
@@ -5606,6 +7347,8 @@ pub enum RuntimeSemanticFactsError {
     MissingAssignmentFact { statement: StmtId },
     #[error("accepted runtime semantic facts omit a Trigger fact for {statement:?}")]
     MissingTriggerFact { statement: StmtId },
+    #[error("Trigger fact for {statement:?} does not match its checked runtime authority")]
+    InvalidTriggerFact { statement: StmtId },
     #[error("assignment fact for {statement:?} does not match its checked direct record field")]
     InvalidAssignmentFact { statement: StmtId },
     #[error("evaluated-effect fact for {statement:?} does not match its selected call")]
@@ -5640,6 +7383,8 @@ pub enum RuntimeSemanticFactsError {
     NonCanonicalLocalDeclarationOrder { expected: LocalId, actual: LocalId },
     #[error("runtime semantic fact references unresolved expression {expression:?}")]
     UnresolvedExpression { expression: ExprId },
+    #[error("accepted runtime semantic facts omit a complete closure instance for {expression:?}")]
+    MissingClosureInstance { expression: ExprId },
     #[error("runtime semantic fact references unresolved statement {statement:?}")]
     UnresolvedStatement { statement: StmtId },
     #[error(
@@ -5680,6 +7425,24 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("runtime semantic fact item {item:?} has incompatible HIR family {actual:?}")]
     WrongItemFamily { item: ItemId, actual: HirItemFamily },
+    #[error("runtime project callable does not match its exact final-HIR source owner")]
+    InvalidCallableSourceOwner,
+    #[error("runtime project callable attached-content ABI does not match final HIR")]
+    InvalidCallableAttachedContentAbi,
+    #[error("runtime project-function instance does not match its exact final-HIR function body")]
+    InvalidProjectFunctionInstance,
+    #[error("runtime project-function call {expression:?} has no exact closed instance fact")]
+    MissingProjectFunctionInstance { expression: ExprId },
+    #[error(
+        "runtime project-function instance is not referenced by any checked Invoke outcome or non-call root"
+    )]
+    UnreferencedProjectFunctionInstance,
+    #[error("runtime project-function non-call root does not match its checked HIR ingress")]
+    InvalidProjectFunctionRoot,
+    #[error("ordinary project-function call is missing its checked continuation/instance plan")]
+    MissingProjectFunctionCallPlan,
+    #[error("closed project-function instance owner was also published in global {family:?} facts")]
+    InstanceOwnedGlobalFact { family: RuntimeSemanticFactFamily },
     #[error("runtime nominal-record fact item {item:?} is not a struct")]
     WrongNominalRecordItemFamily { item: ItemId },
     #[error("runtime nominal-record layout catalog contains conflicting descriptors")]
@@ -5731,6 +7494,12 @@ pub enum RuntimeSemanticFactsError {
     DialogueCatalogPresenceMismatch,
     #[error("dialogue application {expression:?} does not match its accepted line identity")]
     DialogueLineMismatch { expression: ExprId },
+    #[error("dialogue application {expression:?} has no matching runtime content fragment")]
+    DialogueTemplateMismatch { expression: ExprId },
+    #[error("runtime content fragment source {expression:?} is duplicated")]
+    DuplicateContentFragment { expression: ExprId },
+    #[error("runtime content fragment source {expression:?} does not match its checked programs")]
+    InvalidContentFragment { expression: ExprId },
     #[error("dialogue application {expression:?} has too many value slots")]
     TooManyDialogueValueSlots { expression: ExprId },
     #[error(
@@ -5743,8 +7512,6 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("dialogue {dialogue:?} value expression {value:?} has no accepted type")]
     MissingDialogueValueType { dialogue: ExprId, value: ExprId },
-    #[error("dialogue {dialogue:?} condition {condition:?} is not Bool")]
-    InvalidDialogueConditionType { dialogue: ExprId, condition: ExprId },
     #[error("dialogue {dialogue:?} effect site {site:?} does not match its checked operation")]
     InvalidDialogueEffectSite {
         dialogue: ExprId,
@@ -5759,6 +7526,7 @@ pub enum RuntimeSemanticFactFamily {
     LocalDeclaration,
     FlowIdentity,
     ExpressionType,
+    ExpressionChildren,
     PatternType,
     ExpressionLiteral,
     PatternLiteral,
@@ -5785,6 +7553,9 @@ pub enum RuntimeSemanticFactFamily {
     Pipe,
     Capture,
     PureProgram,
+    ProjectFunctionInstance,
+    ClosureInstance,
+    ProjectFunctionRoot,
     DialogueApplication,
 }
 
@@ -5793,8 +7564,10 @@ fn validate_complete_expression_types(
     _postfix_candidates: &BTreeMap<ExprId, ExprId>,
     _calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
+    instance_owned: &BTreeSet<ExprId>,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    let accepted = runtime_owners.selected_expression_type_owners()?;
+    let mut accepted = runtime_owners.selected_expression_type_owners()?;
+    accepted.retain(|owner| !instance_owned.contains(owner));
 
     if let Some(expression) = accepted
         .iter()
@@ -5824,15 +7597,20 @@ fn validate_complete_expression_types(
 fn validate_complete_pattern_types(
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
     pattern_types: &BTreeMap<PatternId, RuntimeNormalizedType>,
+    instance_owned: &BTreeSet<PatternId>,
 ) -> Result<(), RuntimeSemanticFactsError> {
-    for pattern in runtime_owners.patterns() {
+    for pattern in runtime_owners
+        .patterns()
+        .into_iter()
+        .filter(|pattern| !instance_owned.contains(pattern))
+    {
         if !pattern_types.contains_key(&pattern) {
             return Err(RuntimeSemanticFactsError::MissingPatternType { pattern });
         }
     }
     if let Some(pattern) = pattern_types
         .keys()
-        .find(|owner| !runtime_owners.contains_pattern(**owner))
+        .find(|owner| !runtime_owners.contains_pattern(**owner) || instance_owned.contains(*owner))
     {
         return Err(RuntimeSemanticFactsError::InactivePatternFact {
             pattern: *pattern,
@@ -6450,9 +8228,70 @@ fn validate_call(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     expression: ExprId,
-    hir_call: &HirCallExpr,
+    hir_call: &HirCallInvocation,
+    attached_body: Option<arcweft_lang_hir::dialogue_application::HirAttachedContentBodyPresence>,
     call: &RuntimeResolvedCall,
 ) -> Result<(), RuntimeSemanticFactsError> {
+    use arcweft_lang_hir::dialogue_application::HirAttachedContentBodyPresence;
+
+    let attached_matches = match call.attached_content() {
+        Some(RuntimeResolvedAttachedContent::Required { source, ty }) => {
+            *source == expression
+                && expression_types.get(source) == Some(ty)
+                && attached_body == Some(HirAttachedContentBodyPresence::Present)
+        }
+        Some(RuntimeResolvedAttachedContent::OptionalPresent { source, ty })
+        | Some(RuntimeResolvedAttachedContent::DefaultedPresent { source, ty }) => {
+            *source == expression
+                && matches!(
+                    (ty.shape(), expression_types.get(source)),
+                    (RuntimeTypeShape::Option { item, .. }, Some(source_ty))
+                        if item.as_ref() == source_ty
+                )
+                && attached_body == Some(HirAttachedContentBodyPresence::Present)
+        }
+        Some(RuntimeResolvedAttachedContent::OptionalOmitted { ty })
+        | Some(RuntimeResolvedAttachedContent::DefaultedOmitted { ty }) => {
+            validate_normalized_type(modules, ty).is_ok()
+                && matches!(ty.shape(), RuntimeTypeShape::Option { .. })
+                && attached_body != Some(HirAttachedContentBodyPresence::Present)
+        }
+        None => attached_body != Some(HirAttachedContentBodyPresence::Present),
+    };
+    if !attached_matches {
+        return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition { expression });
+    }
+    if let Some(plan) = call.project_function() {
+        validate_callable(modules, plan.callable())?;
+        if let Some(function_type) = plan.input().function_type() {
+            validate_normalized_type(modules, function_type)?;
+            let Some(callee) = plan.input().callee() else {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            };
+            if expression_types.get(&callee) != Some(function_type) {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
+        if let Some(function_type) = plan.outcome().function_type() {
+            validate_normalized_type(modules, function_type)?;
+            if expression_types.get(&expression) != Some(function_type) {
+                return Err(RuntimeSemanticFactsError::InvalidRuntimeCallDisposition {
+                    expression,
+                });
+            }
+        }
+    } else if matches!(
+        call.dispatch(),
+        RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+            callable
+        )) if callable.declaration().owner() == CallableDeclarationOwner::Function
+    ) {
+        return Err(RuntimeSemanticFactsError::MissingProjectFunctionCallPlan);
+    }
     match call.dispatch() {
         RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
             callable,
@@ -6929,37 +8768,1248 @@ fn validate_callable(
     callable: &RuntimeProjectCallable,
 ) -> Result<(), RuntimeSemanticFactsError> {
     let item = resolve_item(modules, callable.owner())?;
-    let valid = matches!(
-        (callable.declaration().owner(), item.kind()),
-        (CallableDeclarationOwner::Function, HirItemKind::Function(_))
-            | (
-                CallableDeclarationOwner::ExternCapability,
-                HirItemKind::ExternCapability(_)
-            )
-            | (CallableDeclarationOwner::View, HirItemKind::View(_))
-            | (
-                CallableDeclarationOwner::Predicate,
-                HirItemKind::Predicate(_)
-            )
-            | (CallableDeclarationOwner::Proof, HirItemKind::Proof(_))
-            | (
-                CallableDeclarationOwner::TraitRequirement,
-                HirItemKind::Trait(_)
-            )
-            | (
-                CallableDeclarationOwner::TraitImplementation
-                    | CallableDeclarationOwner::InherentMethod,
-                HirItemKind::Impl(_)
-            )
+    let valid_family = matches!(
+        (
+            callable.declaration().owner(),
+            callable.source_owner(),
+            item.kind()
+        ),
+        (
+            CallableDeclarationOwner::Function,
+            HirCallableSourceOwner::Item,
+            HirItemKind::Function(_)
+        ) | (
+            CallableDeclarationOwner::ExternCapability,
+            HirCallableSourceOwner::ExternCapabilityFunction { .. },
+            HirItemKind::ExternCapability(_)
+        ) | (
+            CallableDeclarationOwner::View,
+            HirCallableSourceOwner::ViewItem,
+            HirItemKind::View(_)
+        ) | (
+            CallableDeclarationOwner::Predicate,
+            HirCallableSourceOwner::Item,
+            HirItemKind::Predicate(_)
+        ) | (
+            CallableDeclarationOwner::Proof,
+            HirCallableSourceOwner::Item,
+            HirItemKind::Proof(_)
+        ) | (
+            CallableDeclarationOwner::TraitRequirement,
+            HirCallableSourceOwner::TraitFunction { .. },
+            HirItemKind::Trait(_)
+        ) | (
+            CallableDeclarationOwner::TraitImplementation
+                | CallableDeclarationOwner::InherentMethod,
+            HirCallableSourceOwner::ImplFunction { .. },
+            HirItemKind::Impl(_)
+        )
     );
-    if valid {
-        Ok(())
-    } else {
-        Err(RuntimeSemanticFactsError::WrongItemFamily {
+    if !valid_family {
+        let valid_item_family = matches!(
+            (callable.declaration().owner(), item.kind()),
+            (CallableDeclarationOwner::Function, HirItemKind::Function(_))
+                | (
+                    CallableDeclarationOwner::ExternCapability,
+                    HirItemKind::ExternCapability(_)
+                )
+                | (CallableDeclarationOwner::View, HirItemKind::View(_))
+                | (
+                    CallableDeclarationOwner::Predicate,
+                    HirItemKind::Predicate(_)
+                )
+                | (CallableDeclarationOwner::Proof, HirItemKind::Proof(_))
+                | (
+                    CallableDeclarationOwner::TraitRequirement,
+                    HirItemKind::Trait(_)
+                )
+                | (
+                    CallableDeclarationOwner::TraitImplementation
+                        | CallableDeclarationOwner::InherentMethod,
+                    HirItemKind::Impl(_)
+                )
+        );
+        if valid_item_family {
+            return Err(RuntimeSemanticFactsError::InvalidCallableSourceOwner);
+        }
+        return Err(RuntimeSemanticFactsError::WrongItemFamily {
             item: callable.owner(),
             actual: item.kind().family(),
-        })
+        });
     }
+
+    let hir_attached = item
+        .kind()
+        .callable_attached_content_interface(callable.source_owner());
+    let attached_matches = match (callable.attached_content_abi(), hir_attached) {
+        (None, None) => true,
+        (Some(runtime), Some(hir_interface)) => {
+            use arcweft_lang_hir::item::HirAttachedContentPresence;
+            use arcweft_lang_sema::callable::CallableParameterPresence;
+
+            let hir = hir_interface.parameter();
+            runtime.binding() == hir.binding()
+                && u32::try_from(runtime.group().get()).ok() == Some(hir_interface.group())
+                && runtime.abi_position() == hir_interface.abi_position()
+                && match (runtime.presence(), hir.presence(), runtime.default()) {
+                    (
+                        CallableParameterPresence::Required,
+                        HirAttachedContentPresence::Required,
+                        None,
+                    )
+                    | (
+                        CallableParameterPresence::Optional,
+                        HirAttachedContentPresence::Optional,
+                        None,
+                    ) => true,
+                    (
+                        CallableParameterPresence::Defaulted,
+                        HirAttachedContentPresence::Defaulted { value },
+                        Some(default),
+                    ) => default.source() == value,
+                    _ => false,
+                }
+        }
+        (None, Some(_)) | (Some(_), None) => false,
+    };
+    if !attached_matches {
+        return Err(RuntimeSemanticFactsError::InvalidCallableAttachedContentAbi);
+    }
+    Ok(())
+}
+
+fn validate_project_function_instance(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    instance: &RuntimeProjectFunctionInstanceFact,
+) -> Result<(), RuntimeSemanticFactsError> {
+    validate_callable(modules, instance.callable())?;
+    if instance.key().callable() != instance.callable().runtime() {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let module = module_for(modules, instance.callable().owner().module())?;
+    let item = module
+        .resolve_item(instance.callable().owner())
+        .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    let HirItemKind::Function(function) = item.kind() else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    function
+        .parameter_groups()
+        .get(instance.key().group().get())
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    let expected_parameters = function
+        .parameter_groups()
+        .iter()
+        .enumerate()
+        .take(instance.key().group().get() + 1)
+        .flat_map(|(group, parameters)| {
+            parameters
+                .parameters()
+                .iter()
+                .enumerate()
+                .map(move |(parameter, row)| (group, parameter, row))
+        })
+        .collect::<Vec<_>>();
+    if expected_parameters.len() != instance.parameters().len()
+        || expected_parameters.iter().zip(instance.parameters()).any(
+            |((group, position, hir), runtime)| {
+                arcweft_lang_sema::callable::CallableGroupIndex::try_from_usize(*group).ok()
+                    != Some(runtime.group())
+                    || u32::try_from(*position).ok() != Some(runtime.parameter())
+                    || hir.pattern() != runtime.pattern()
+                    || hir.ty() != runtime.source_type()
+                    || hir.kind() != runtime.kind()
+                    || hir.locals() != runtime.bindings()
+            },
+        )
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let arcweft_lang_hir::item::HirFunctionBody::Block {
+        scope,
+        statements,
+        tail,
+    } = function.body()
+    else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    if instance.body().scope() != *scope
+        || instance.body().statements() != statements.as_ref()
+        || instance.body().tail() != *tail
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    validate_normalized_type(modules, instance.function_type())?;
+    for parameter in instance.parameters() {
+        validate_normalized_type(modules, parameter.abi_ty())?;
+        validate_normalized_type(modules, parameter.binding_ty())?;
+    }
+    for projection in instance.type_projection() {
+        if let Some(ty) = projection.ty() {
+            validate_normalized_type(modules, ty)?;
+        }
+    }
+    if let Some(default) = instance.attached_default() {
+        validate_normalized_type(modules, default.result())?;
+        if default.source().module() != instance.callable().owner().module()
+            || !runtime_owners
+                .executable_owners(&HirRuntimeExecutableOwner::Item(
+                    instance.callable().owner(),
+                ))
+                .is_some_and(|owners| owners.expressions().any(|owner| owner == default.source()))
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        for capture in default.captures() {
+            validate_normalized_type(modules, capture.binding_ty())?;
+            if !capture
+                .used_locals()
+                .iter()
+                .all(|local| capture.bindings().contains(local))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+            }
+        }
+    }
+
+    let exact_owners = runtime_owners
+        .executable_owners(&HirRuntimeExecutableOwner::Item(
+            instance.callable().owner(),
+        ))
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    if instance.semantics().partition().reachability() != runtime_owners.runtime.identity()
+        || instance.semantics().partition().executable()
+            != &HirRuntimeExecutableOwner::Item(instance.callable().owner())
+        || instance.semantics().expressions().iter().any(|fact| {
+            !exact_owners
+                .expressions()
+                .any(|owner| owner == fact.owner())
+        })
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    if !exact_owners
+        .expressions()
+        .any(|owner| owner == instance.body().tail())
+        || instance
+            .body()
+            .statements()
+            .iter()
+            .any(|statement| !exact_owners.statements().any(|owner| owner == *statement))
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let expected_type_owners = exact_owners
+        .expressions()
+        .map(RuntimeProjectFunctionTypeOwner::Expression)
+        .chain(
+            exact_owners
+                .patterns()
+                .map(RuntimeProjectFunctionTypeOwner::Pattern),
+        )
+        .chain(
+            exact_owners
+                .locals()
+                .map(RuntimeProjectFunctionTypeOwner::Local),
+        )
+        .chain(
+            exact_owners
+                .types()
+                .map(RuntimeProjectFunctionTypeOwner::Type),
+        )
+        .collect::<BTreeSet<_>>();
+    let actual_type_owners = instance
+        .type_projection()
+        .iter()
+        .map(RuntimeProjectFunctionTypeProjection::owner)
+        .collect::<BTreeSet<_>>();
+    if expected_type_owners != actual_type_owners {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let projected_types = instance
+        .type_projection()
+        .iter()
+        .filter_map(|projection| projection.ty().map(|ty| (projection.owner(), ty)))
+        .collect::<BTreeMap<_, _>>();
+    let instance_expression_types = instance
+        .type_projection()
+        .iter()
+        .filter_map(|projection| match (projection.owner(), projection.ty()) {
+            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => {
+                Some((owner, ty.clone()))
+            }
+            (RuntimeProjectFunctionTypeOwner::Expression(_), None)
+            | (RuntimeProjectFunctionTypeOwner::Pattern(_), _)
+            | (RuntimeProjectFunctionTypeOwner::Local(_), _)
+            | (RuntimeProjectFunctionTypeOwner::Type(_), _) => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    for projection in instance.semantics().expressions() {
+        let RuntimeProjectFunctionExpressionPayload::Call(call) = projection.payload() else {
+            continue;
+        };
+        let expression = projection.owner();
+        let kind = resolve_expr(modules, expression)?;
+        let (hir_call, attached_body) = match kind {
+            HirExprKind::Call(hir_call) => (hir_call, None),
+            HirExprKind::AttachedContentApplication(application) => {
+                let Some(invocation) = application.family().invocation() else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                (invocation, Some(application.body_presence()))
+            }
+            _ => return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance),
+        };
+        validate_call(
+            modules,
+            &instance_expression_types,
+            expression,
+            hir_call,
+            attached_body,
+            call,
+        )?;
+        validate_project_function_call_materialization(modules, call)?;
+        let executable = match call.dispatch() {
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::Declaration(
+                callable,
+            )) => Some(HirRuntimeExecutableOwner::Item(callable.owner())),
+            RuntimeResolvedCallDispatch::Static(RuntimeResolvedStaticCallTarget::TraitMethod {
+                method,
+                ..
+            }) => Some(HirRuntimeExecutableOwner::ImplMethod(method.clone())),
+            RuntimeResolvedCallDispatch::Static(
+                RuntimeResolvedStaticCallTarget::Intrinsic(_)
+                | RuntimeResolvedStaticCallTarget::Agent(_)
+                | RuntimeResolvedStaticCallTarget::AgentProbeComparison(_)
+                | RuntimeResolvedStaticCallTarget::AgentDiagnosticsHasError
+                | RuntimeResolvedStaticCallTarget::Variant(_)
+                | RuntimeResolvedStaticCallTarget::Reduction(_)
+                | RuntimeResolvedStaticCallTarget::StandardMap(_)
+                | RuntimeResolvedStaticCallTarget::Line(_)
+                | RuntimeResolvedStaticCallTarget::Registered(_)
+                | RuntimeResolvedStaticCallTarget::Host(_),
+            )
+            | RuntimeResolvedCallDispatch::Value { .. } => None,
+        };
+        if let Some(owner) = executable
+            && !runtime_owners.contains_runtime_owner(&owner)
+        {
+            return Err(RuntimeSemanticFactsError::OwnerOutsideReachability { owner });
+        }
+    }
+    if !projected_types.contains_key(&RuntimeProjectFunctionTypeOwner::Expression(
+        instance.body().tail(),
+    )) || instance.parameters().iter().any(|parameter| {
+        projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(
+            parameter.pattern(),
+        )) != Some(&parameter.binding_ty())
+            || projected_types.get(&RuntimeProjectFunctionTypeOwner::Type(
+                parameter.source_type(),
+            )) != Some(&parameter.abi_ty())
+    }) {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    if let Some(default) = instance.attached_default()
+        && (projected_types.get(&RuntimeProjectFunctionTypeOwner::Expression(
+            default.source(),
+        )) != Some(&default.result())
+            || default.captures().iter().any(|capture| {
+                projected_types.get(&RuntimeProjectFunctionTypeOwner::Pattern(capture.pattern()))
+                    != Some(&capture.binding_ty())
+                    || capture.used_locals().iter().any(|local| {
+                        !projected_types
+                            .contains_key(&RuntimeProjectFunctionTypeOwner::Local(*local))
+                    })
+            }))
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    validate_project_function_semantic_catalog(
+        modules,
+        runtime_owners,
+        Some(instance.key()),
+        instance.callable().runtime(),
+        instance.semantics(),
+        None,
+    )?;
+    Ok(())
+}
+
+fn validate_project_function_root(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    instances: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceFact>,
+    root: &RuntimeProjectFunctionRootFact,
+) -> Result<(), RuntimeSemanticFactsError> {
+    if !runtime_owners.contains_runtime_owner(&HirRuntimeExecutableOwner::Item(root.entry())) {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionRoot);
+    }
+    let module = module_for(modules, root.entry().module())?;
+    let item = module
+        .resolve_item(root.entry())
+        .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionRoot)?;
+    let HirItemKind::Entry(entry) = item.kind() else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionRoot);
+    };
+    if entry.has_structural_recovery()
+        || instances.get(root.instance()).is_none_or(|instance| {
+            instance.key() != root.instance()
+                || instance.callable().runtime() != root.instance().callable()
+        })
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionRoot);
+    }
+    let matching_members = entry
+        .members()
+        .iter()
+        .filter(|member| match (root.role(), member) {
+            (
+                RuntimeProjectFunctionRootRole::EntryInitializer,
+                HirEntryMember::Initializer(binding),
+            )
+            | (RuntimeProjectFunctionRootRole::EntryReducer, HirEntryMember::Reducer(binding))
+            | (
+                RuntimeProjectFunctionRootRole::EntryController,
+                HirEntryMember::Controller(binding),
+            ) => !binding.has_recovery(),
+            _ => false,
+        })
+        .count();
+    if matching_members != 1 {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionRoot);
+    }
+    Ok(())
+}
+
+fn validate_project_function_semantic_catalog(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    parent_key: Option<&RuntimeProjectFunctionInstanceKey>,
+    callable: &RuntimeCallableId,
+    semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+    outer: Option<RuntimeExecutableSemanticFactView<'_>>,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let partition = semantics.partition();
+    if partition.reachability() != runtime_owners.runtime.identity() {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let exact = runtime_owners
+        .executable_owners(partition.executable())
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    if partition
+        .expressions()
+        .iter()
+        .map(|row| row.owner())
+        .ne(exact.expressions())
+        || partition
+            .patterns()
+            .iter()
+            .map(|row| row.owner())
+            .ne(exact.patterns())
+        || partition
+            .statements()
+            .iter()
+            .map(|row| row.owner())
+            .ne(exact.statements())
+        || partition.locals().iter().copied().ne(exact.locals())
+        || partition.types().iter().copied().ne(exact.types())
+        || partition.captures().iter().copied().ne(exact.captures())
+        || partition
+            .expressions()
+            .iter()
+            .any(|row| row.children() != exact.expression_children(row.owner()))
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+
+    let expression_types = semantics
+        .type_projection()
+        .iter()
+        .filter_map(|projection| match (projection.owner(), projection.ty()) {
+            (RuntimeProjectFunctionTypeOwner::Expression(owner), Some(ty)) => {
+                Some((owner, ty.clone()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let pattern_types = semantics
+        .type_projection()
+        .iter()
+        .filter_map(|projection| match (projection.owner(), projection.ty()) {
+            (RuntimeProjectFunctionTypeOwner::Pattern(owner), Some(ty)) => {
+                Some((owner, ty.clone()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let local_types = semantics
+        .type_projection()
+        .iter()
+        .filter_map(|projection| match (projection.owner(), projection.ty()) {
+            (RuntimeProjectFunctionTypeOwner::Local(owner), Some(ty)) => Some((owner, ty.clone())),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let calls = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::Call(call) => {
+                Some((row.owner(), call.clone()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let values = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::Value(value) => {
+                Some((row.owner(), value.clone()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    let selects = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::Select(select) => {
+                Some((row.owner(), select.clone()))
+            }
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    for projection in semantics.type_projection() {
+        if let Some(ty) = projection.ty() {
+            validate_normalized_type(modules, ty)?;
+        }
+    }
+    for capture in semantics.captures() {
+        validate_normalized_type(modules, capture.ty())?;
+    }
+
+    for row in semantics.expressions() {
+        let owner = row.owner();
+        let hir = resolve_expr(modules, owner)?;
+        match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::Structural
+            | RuntimeProjectFunctionExpressionPayload::Consumed => {}
+            RuntimeProjectFunctionExpressionPayload::Literal(_) => {
+                if !matches!(
+                    hir,
+                    HirExprKind::Literal(_) | HirExprKind::NumericBracketSequence(_)
+                ) || !expression_types.contains_key(&owner)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::Value(value) => {
+                if !matches!(
+                    hir,
+                    HirExprKind::Path(_)
+                        | HirExprKind::EntityReference(_)
+                        | HirExprKind::ShortVariant(_)
+                ) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_resolved_value(modules, runtime_owners, value)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Select(select) => {
+                if !matches!(hir, HirExprKind::Select(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_select(modules, select)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::NominalRecord(record) => {
+                if !matches!(hir, HirExprKind::Record(_) | HirExprKind::RecordLiteral(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_record_expression_fact(modules, owner, record)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Variant(variant) => {
+                if !matches!(hir, HirExprKind::ShortVariant(_) | HirExprKind::Path(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_variant(modules, variant)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Call(call) => {
+                let (hir_call, attached_body) = match hir {
+                    HirExprKind::Call(hir_call) => (hir_call, None),
+                    HirExprKind::AttachedContentApplication(application) => {
+                        let Some(invocation) = application.family().invocation() else {
+                            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                        };
+                        (invocation, Some(application.body_presence()))
+                    }
+                    _ => return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance),
+                };
+                validate_call(
+                    modules,
+                    &expression_types,
+                    owner,
+                    hir_call,
+                    attached_body,
+                    call,
+                )?;
+                validate_project_function_call_materialization(modules, call)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::PostfixCandidate(candidate) => {
+                let HirExprKind::PostfixBracket(postfix) = hir else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                let arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                    index,
+                    dialogue,
+                } = postfix.candidates()
+                else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if candidate != index && candidate != dialogue {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::Await(fact) => {
+                let HirExprKind::Await(awaited) = hir else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if awaited.operand() != fact.operand()
+                    || fact.observers().len() != awaited.branches().len()
+                    || !matches!(
+                        expression_types
+                            .get(&fact.operand())
+                            .map(RuntimeNormalizedType::shape),
+                        Some(RuntimeTypeShape::Need(_))
+                    )
+                    || awaited
+                        .branches()
+                        .iter()
+                        .zip(fact.observers())
+                        .any(|(authored, checked)| {
+                            authored.pattern() != Some(checked.pattern())
+                                || !matches!(
+                                    pattern_types
+                                        .get(&checked.pattern())
+                                        .map(RuntimeNormalizedType::shape),
+                                    Some(RuntimeTypeShape::Progress)
+                                )
+                        })
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::Choice(fact) => {
+                let HirExprKind::Choice(choice) = hir else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if fact.option_ids().len() != choice.body().items().len() {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                for goto in fact.gotos() {
+                    validate_project_item(modules, goto.target())?;
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::Try(fact) => {
+                let HirExprKind::Try(tried) = hir else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if tried.operand() != fact.operand()
+                    || expression_types.get(&fact.operand()) != Some(fact.carrier_type())
+                    || !try_boundary_type_matches(fact)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::ImplicitCallable {
+                callable: fact,
+                tried,
+                pipe,
+            } => {
+                let Some(RuntimeTypeShape::Function { parameters, result }) = expression_types
+                    .get(&owner)
+                    .map(RuntimeNormalizedType::shape)
+                else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if parameters.len() != 1
+                    || parameters.first() != Some(fact.parameter())
+                    || result.as_ref() != fact.result()
+                    || fact.placeholders().is_empty()
+                    || fact
+                        .captures()
+                        .iter()
+                        .any(|capture| !local_types.contains_key(capture))
+                    || tried
+                        .as_ref()
+                        .is_some_and(|tried| !try_boundary_type_matches(tried))
+                    || pipe.as_ref().is_some_and(|pipe| {
+                        pipe.placeholders().is_empty()
+                            || !row.children().contains(&pipe.left())
+                            || !row.children().contains(&pipe.right())
+                    })
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::Pipe(pipe) => {
+                let HirExprKind::Pipe(hir) = hir else {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                };
+                if hir.left() != pipe.left()
+                    || hir.right() != pipe.right()
+                    || pipe.placeholders().is_empty()
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionExpressionPayload::DialogueApplication {
+                application,
+                fragments,
+            } => {
+                let root = fragments.iter().find(|fragment| fragment.source() == owner);
+                if !matches!(hir, HirExprKind::AttachedContentApplication(_))
+                    || root.is_none_or(|fragment| {
+                        fragment.template().id() != application.content().template_id()
+                            || fragment.template().digest()
+                                != application.content().template_digest()
+                    })
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_normalized_type(modules, application.line_result())?;
+                validate_project_instance_fragments(modules, semantics, fragments)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::ContentApplication { fragments } => {
+                if !matches!(hir, HirExprKind::AttachedContentApplication(_))
+                    || fragments.iter().any(|fragment| fragment.source() != owner)
+                {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_project_instance_fragments(modules, semantics, fragments)?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
+                validate_closure_instance(
+                    modules,
+                    runtime_owners,
+                    parent_key,
+                    callable,
+                    RuntimeExecutableSemanticFactView::ProjectInstance(semantics),
+                    owner,
+                    closure,
+                )?;
+            }
+        }
+    }
+
+    for row in semantics.patterns() {
+        let hir = resolve_pattern(modules, row.owner())?;
+        match row.payload() {
+            RuntimeProjectFunctionPatternPayload::Structural => {}
+            RuntimeProjectFunctionPatternPayload::Literal(_) => {
+                if !matches!(hir, HirPatternKind::Literal(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+            RuntimeProjectFunctionPatternPayload::Entity(item) => {
+                if !matches!(hir, HirPatternKind::EntityReference(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_project_item(modules, item)?;
+            }
+            RuntimeProjectFunctionPatternPayload::NominalRecord(record) => {
+                if !matches!(hir, HirPatternKind::Record { .. }) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_record_pattern_fact(modules, row.owner(), record)?;
+            }
+            RuntimeProjectFunctionPatternPayload::Variant(variant) => {
+                if !matches!(hir, HirPatternKind::Variant(_)) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_variant(modules, variant)?;
+            }
+            RuntimeProjectFunctionPatternPayload::TypedBinding => {
+                if !matches!(hir, HirPatternKind::TypedBinding { .. }) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+            }
+        }
+    }
+
+    let mark_facts = semantics
+        .expressions()
+        .iter()
+        .flat_map(|row| match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::DialogueApplication { fragments, .. }
+            | RuntimeProjectFunctionExpressionPayload::ContentApplication { fragments } => {
+                fragments.as_ref()
+            }
+            _ => &[],
+        })
+        .flat_map(RuntimeContentFragmentFact::marks)
+        .map(|mark| (mark.coordinate().clone(), mark.key()))
+        .collect::<BTreeMap<_, _>>();
+    for row in semantics.statements() {
+        match row.payload() {
+            RuntimeProjectFunctionStatementPayload::Assignment(fact) => {
+                validate_assignment(
+                    modules,
+                    &local_types,
+                    &expression_types,
+                    &values,
+                    &selects,
+                    row.owner(),
+                    fact,
+                )?;
+            }
+            RuntimeProjectFunctionStatementPayload::EvaluatedEffect(fact) => {
+                evaluated_effect::validate_evaluated_effect(
+                    modules,
+                    &expression_types,
+                    &calls,
+                    row.owner(),
+                    fact,
+                )?;
+            }
+            RuntimeProjectFunctionStatementPayload::Iteration(fact) => match fact {
+                RuntimeIteratorFact::Builtin(fact) => {
+                    for ty in [fact.item(), fact.iterator(), fact.next_value(), fact.step()] {
+                        validate_normalized_type(modules, ty)?;
+                    }
+                }
+                RuntimeIteratorFact::Witness(fact) => {
+                    validate_normalized_type(modules, fact.item())?;
+                    validate_normalized_type(modules, fact.iterator())?;
+                }
+            },
+            RuntimeProjectFunctionStatementPayload::Trigger(admission) => {
+                let hir = resolve_stmt(modules, row.owner())?;
+                match (hir, admission.dialogue_mark()) {
+                    (
+                        HirStmtKind::On {
+                            trigger: HirTrigger::Mark(source),
+                            ..
+                        },
+                        Some(mark),
+                    ) if source.ordinal() == mark.coordinate().ordinal()
+                        && mark_facts.get(mark.coordinate()) == Some(&mark.key()) => {}
+                    (
+                        HirStmtKind::On {
+                            trigger: HirTrigger::Mark(_),
+                            ..
+                        },
+                        _,
+                    )
+                    | (_, Some(_)) => {
+                        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                    }
+                    (_, None) => {}
+                }
+            }
+            RuntimeProjectFunctionStatementPayload::Structural
+            | RuntimeProjectFunctionStatementPayload::Assertion(_)
+            | RuntimeProjectFunctionStatementPayload::Defer
+            | RuntimeProjectFunctionStatementPayload::ControlTransfer
+            | RuntimeProjectFunctionStatementPayload::UnsafeAudit
+            | RuntimeProjectFunctionStatementPayload::Select
+            | RuntimeProjectFunctionStatementPayload::SourceLocale
+            | RuntimeProjectFunctionStatementPayload::Scope
+            | RuntimeProjectFunctionStatementPayload::Include
+            | RuntimeProjectFunctionStatementPayload::Suspension
+            | RuntimeProjectFunctionStatementPayload::Yield => {}
+        }
+    }
+    if outer.is_some_and(|outer| {
+        semantics
+            .captures()
+            .iter()
+            .any(|capture| outer.capture(capture.capture()).is_some())
+    }) {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    Ok(())
+}
+
+fn validate_project_instance_fragments(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+    fragments: &[RuntimeContentFragmentFact],
+) -> Result<(), RuntimeSemanticFactsError> {
+    let mut sources = BTreeSet::new();
+    let mut ids = BTreeSet::new();
+    let expression_types = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| {
+            semantics
+                .expression_type(row.owner())
+                .cloned()
+                .map(|ty| (row.owner(), ty))
+        })
+        .collect::<BTreeMap<_, _>>();
+    let calls = semantics
+        .expressions()
+        .iter()
+        .filter_map(|row| {
+            semantics
+                .call(row.owner())
+                .cloned()
+                .map(|call| (row.owner(), call))
+        })
+        .collect::<BTreeMap<_, _>>();
+    for fragment in fragments {
+        if !sources.insert(fragment.source())
+            || !ids.insert(fragment.id())
+            || semantics.expression(fragment.source()).is_none()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        for value in fragment.values() {
+            if semantics.expression_type(value.expression()) != Some(value.ty()) {
+                return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+            }
+            validate_normalized_type(modules, value.ty())?;
+        }
+        for effect in fragment.effects() {
+            let trigger_valid = match effect.trigger() {
+                RuntimeDialogueEffectTrigger::Content => true,
+                RuntimeDialogueEffectTrigger::Delay {
+                    duration_type,
+                    schedule_handle_type,
+                    ..
+                } => {
+                    matches!(duration_type.shape(), RuntimeTypeShape::Duration)
+                        && validate_normalized_type(modules, duration_type).is_ok()
+                        && validate_normalized_type(modules, schedule_handle_type).is_ok()
+                }
+            };
+            if !trigger_valid
+                || semantics
+                    .expression(effect.operation().site_root())
+                    .is_none()
+                || !evaluated_effect::validate_evaluated_effect_site(modules, effect.operation())
+                || !evaluated_effect::validate_evaluated_effect_operation(
+                    modules,
+                    &expression_types,
+                    &calls,
+                    effect.operation().application_site(),
+                    effect.operation().effect(),
+                )
+            {
+                return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+            }
+            for capture in effect.captures() {
+                if semantics.local_type(capture.local()) != Some(capture.ty()) {
+                    return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+                }
+                validate_normalized_type(modules, capture.ty())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_project_instance_dialogue_applications(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    catalog: &CharacterPresentationCatalogData,
+    lines: &AcceptedDialogueLineInventory,
+    semantics: &RuntimeProjectFunctionInstanceSemanticFacts,
+) -> Result<(), RuntimeSemanticFactsError> {
+    for row in semantics.expressions() {
+        match row.payload() {
+            RuntimeProjectFunctionExpressionPayload::DialogueApplication {
+                application,
+                fragments,
+            } => {
+                let owner = row.owner();
+                let fragment = fragments
+                    .iter()
+                    .find(|fragment| fragment.source() == owner)
+                    .ok_or(RuntimeSemanticFactsError::DialogueTemplateMismatch {
+                        expression: owner,
+                    })?;
+                let accepted = lines
+                    .for_semantic_expr(owner)
+                    .ok_or(RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner })?;
+                let runtime_line = RuntimeLineId::from_source_entity_body(accepted.id().as_str())
+                    .map_err(|_| {
+                    RuntimeSemanticFactsError::DialogueLineMismatch { expression: owner }
+                })?;
+                if fragment.template().id() != application.content().template_id()
+                    || fragment.template().digest() != application.content().template_digest()
+                    || &runtime_line != application.content().line()
+                    || accepted.text_key().as_str() != application.content().text_key().as_str()
+                    || application.content().character().semantic_digest()
+                        != catalog.semantic_digest()
+                    || application.content().character().locale_policy_digest()
+                        != catalog.locale_policy_digest()
+                {
+                    return Err(RuntimeSemanticFactsError::DialogueTemplateMismatch {
+                        expression: owner,
+                    });
+                }
+                if let arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence::Exact(
+                    character,
+                ) = application.content().character().target()
+                    && catalog.record(character).is_err()
+                {
+                    return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
+                        expression: owner,
+                    });
+                }
+                validate_normalized_type(modules, application.line_result())?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Closure(closure) => {
+                validate_project_instance_dialogue_applications(
+                    modules,
+                    catalog,
+                    lines,
+                    closure.semantics(),
+                )?;
+            }
+            RuntimeProjectFunctionExpressionPayload::Structural
+            | RuntimeProjectFunctionExpressionPayload::Consumed
+            | RuntimeProjectFunctionExpressionPayload::Literal(_)
+            | RuntimeProjectFunctionExpressionPayload::Value(_)
+            | RuntimeProjectFunctionExpressionPayload::Select(_)
+            | RuntimeProjectFunctionExpressionPayload::NominalRecord(_)
+            | RuntimeProjectFunctionExpressionPayload::Variant(_)
+            | RuntimeProjectFunctionExpressionPayload::Call(_)
+            | RuntimeProjectFunctionExpressionPayload::PostfixCandidate(_)
+            | RuntimeProjectFunctionExpressionPayload::Await(_)
+            | RuntimeProjectFunctionExpressionPayload::Choice(_)
+            | RuntimeProjectFunctionExpressionPayload::Try(_)
+            | RuntimeProjectFunctionExpressionPayload::ImplicitCallable { .. }
+            | RuntimeProjectFunctionExpressionPayload::Pipe(_)
+            | RuntimeProjectFunctionExpressionPayload::ContentApplication { .. } => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_closure_instance(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    runtime_owners: RuntimeSemanticOwnerSet<'_>,
+    parent_key: Option<&RuntimeProjectFunctionInstanceKey>,
+    callable: &RuntimeCallableId,
+    outer: RuntimeExecutableSemanticFactView<'_>,
+    owner: ExprId,
+    closure: &RuntimeClosureInstanceFact,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let arcweft_lang_sema::callable::CheckedCallableContext::Project {
+        world, revision, ..
+    } = closure.key().closure().owner().context()
+    else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    if world != runtime_owners.runtime.identity().symbol_world()
+        || *revision != runtime_owners.runtime.identity().symbol_revision()
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let HirExprKind::Closure(hir) = resolve_expr(modules, owner)? else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    let module = module_for(modules, owner.module())?;
+    let source = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Expr {
+                owner,
+                role: HirExprSourceRole::Whole,
+            },
+        )
+        .ok()
+        .and_then(|lookup| match lookup.presence() {
+            HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span),
+            HirSourcePresence::Present(HirSourceSite::Insertion(_))
+            | HirSourcePresence::AbsentOptional => None,
+        })
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    if closure.owner() != owner
+        || closure.key().enclosing_instance() != parent_key
+        || closure.key().closure().expression() != source
+        || RuntimeCallableId::from_checked_digest(
+            closure
+                .key()
+                .closure()
+                .owner()
+                .semantic_digest()
+                .into_bytes(),
+        ) != *callable
+        || closure.scope() != hir.scope()
+        || closure.body() != hir.body()
+        || closure.parameters().len() != hir.parameters().len()
+        || closure.captures().len() != hir.captures().len()
+        || outer.expression_type(owner) != Some(closure.function_type())
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    for (position, (runtime, hir)) in closure
+        .parameters()
+        .iter()
+        .zip(hir.parameters())
+        .enumerate()
+    {
+        if u32::try_from(position).ok() != Some(runtime.position())
+            || runtime.pattern() != hir.pattern()
+            || closure.semantics().pattern_type(hir.pattern()) != Some(runtime.ty())
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+    }
+    for (position, (runtime, capture)) in closure.captures().iter().zip(hir.captures()).enumerate()
+    {
+        let checked = module
+            .resolve_capture(*capture)
+            .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+        if u32::try_from(position).ok() != Some(runtime.position())
+            || runtime.capture() != *capture
+            || runtime.source() != checked.local()
+            || outer.local_type(runtime.source()) != Some(runtime.ty())
+            || closure
+                .semantics()
+                .capture(runtime.capture())
+                .is_none_or(|capture| capture.ty() != runtime.ty())
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+    }
+    validate_project_function_semantic_catalog(
+        modules,
+        runtime_owners,
+        parent_key,
+        callable,
+        closure.semantics(),
+        Some(outer),
+    )
+}
+
+fn validate_project_function_call_materialization(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    call: &RuntimeResolvedCall,
+) -> Result<(), RuntimeSemanticFactsError> {
+    let Some(plan) = call.project_function() else {
+        return Ok(());
+    };
+    let module = module_for(modules, plan.callable().owner().module())?;
+    let item = module
+        .resolve_item(plan.callable().owner())
+        .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    let HirItemKind::Function(function) = item.kind() else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    let group = function
+        .parameter_groups()
+        .get(call.completed_group().get())
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
+    if group.parameters().len() != plan.current_group_materialization().len() {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    for (parameter_index, (hir, runtime)) in group
+        .parameters()
+        .iter()
+        .zip(plan.current_group_materialization())
+        .enumerate()
+    {
+        if runtime.group() != call.completed_group()
+            || u32::try_from(parameter_index).ok() != Some(runtime.parameter())
+            || runtime.kind() != hir.kind()
+            || hir.default().is_some()
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        if runtime
+            .operand_indices()
+            .windows(2)
+            .any(|pair| pair[0] >= pair[1])
+        {
+            return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+        }
+        validate_normalized_type(modules, runtime.abi_ty())?;
+        validate_normalized_type(modules, runtime.binding_ty())?;
+    }
+    Ok(())
+}
+
+fn validate_project_function_instance_reference(
+    expression: ExprId,
+    call: &RuntimeResolvedCall,
+    expression_type: Option<&RuntimeNormalizedType>,
+    instances: &BTreeMap<RuntimeProjectFunctionInstanceKey, RuntimeProjectFunctionInstanceFact>,
+) -> Result<Option<RuntimeProjectFunctionInstanceKey>, RuntimeSemanticFactsError> {
+    let Some(plan) = call.project_function() else {
+        return Ok(None);
+    };
+    let Some(instance) = plan.outcome().instance() else {
+        return Ok(None);
+    };
+    let Some(fact) = instances.get(instance) else {
+        return Err(RuntimeSemanticFactsError::MissingProjectFunctionInstance { expression });
+    };
+    if fact.callable() != plan.callable()
+        || plan
+            .input()
+            .function_type()
+            .is_some_and(|function_type| function_type != fact.function_type())
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let input_prefix_types = plan
+        .input()
+        .continuation_abi()
+        .map_or(&[][..], RuntimeProjectContinuationAbi::prefix_types);
+    let instance_prefix_types = fact
+        .parameters()
+        .iter()
+        .filter_map(|parameter| {
+            matches!(
+                parameter.source(),
+                RuntimeProjectFunctionParameterSource::ContinuationPrefix { .. }
+            )
+            .then_some(parameter.binding_ty())
+        })
+        .collect::<Vec<_>>();
+    let instance_current_group_parameters = fact
+        .parameters()
+        .iter()
+        .filter_map(|parameter| {
+            matches!(
+                parameter.source(),
+                RuntimeProjectFunctionParameterSource::CurrentGroup { .. }
+            )
+            .then_some(parameter)
+        })
+        .collect::<Vec<_>>();
+    if input_prefix_types.len() != instance_prefix_types.len()
+        || input_prefix_types
+            .iter()
+            .zip(instance_prefix_types)
+            .any(|(actual, expected)| actual != expected)
+        || plan.current_group_materialization().len() != instance_current_group_parameters.len()
+        || plan
+            .current_group_materialization()
+            .iter()
+            .zip(instance_current_group_parameters)
+            .any(|(actual, expected)| {
+                actual.group() != expected.group()
+                    || actual.parameter() != expected.parameter()
+                    || actual.kind() != expected.kind()
+                    || actual.abi_ty() != expected.abi_ty()
+                    || actual.binding_ty() != expected.binding_ty()
+            })
+    {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    let RuntimeTypeShape::Function { result, .. } = fact.function_type().shape() else {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    };
+    if expression_type != Some(result.as_ref()) {
+        return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
+    }
+    Ok(Some(instance.clone()))
 }
 
 fn normalized_tuple_payload_matches(

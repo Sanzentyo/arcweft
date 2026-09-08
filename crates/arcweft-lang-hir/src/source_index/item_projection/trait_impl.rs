@@ -3,12 +3,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::{
-    AttachedAttributeValue, AttachedCallableParameterKind, AttachedCallableReturn,
-    AttachedFunctionBody, AttachedGenericParameterGroup, AttachedImplAssociatedType,
-    AttachedImplDeclaration, AttachedImplFunction, AttachedImplMember, AttachedItemPrefix,
-    AttachedMethodParameter, AttachedMethodParameterGroup, AttachedMethodReceiverKind,
-    AttachedRequiredName, AttachedTraitAssociatedType, AttachedTraitDeclaration,
-    AttachedTraitFunction, AttachedTraitMember, AttachedTypeFamily, AttachedWhereClause,
+    AttachedAttributeValue, AttachedCallableContentParameter, AttachedCallableParameterKind,
+    AttachedCallableReturn, AttachedFunctionBody, AttachedGenericParameterGroup,
+    AttachedImplAssociatedType, AttachedImplDeclaration, AttachedImplFunction, AttachedImplMember,
+    AttachedItemPrefix, AttachedMethodParameter, AttachedMethodParameterGroup,
+    AttachedMethodReceiverKind, AttachedRequiredName, AttachedTraitAssociatedType,
+    AttachedTraitDeclaration, AttachedTraitFunction, AttachedTraitMember, AttachedTypeFamily,
+    AttachedWhereClause,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
@@ -17,17 +18,18 @@ use crate::identity::{
     ExprId, ItemId, LocalGeneration, LocalId, ScopeId, SyntheticOwner, SyntheticRole,
 };
 use crate::item::{
-    HirDeclarationMemberArena, HirFunctionBody, HirGenericParameter, HirImplAssociatedType,
-    HirImplFunction, HirImplMember, HirItem, HirItemIssue, HirItemKind, HirMethodParameter,
-    HirMethodParameterGroup, HirMethodReceiverKind, HirParameterKind, HirRequiredName,
-    HirTraitAssociatedType, HirTraitFunction, HirTraitMember, HirWherePredicate,
+    HirCallableAttachedContentParameter, HirDeclarationMemberArena, HirFunctionBody,
+    HirGenericParameter, HirImplAssociatedType, HirImplFunction, HirImplMember, HirItem,
+    HirItemIssue, HirItemKind, HirMethodParameter, HirMethodParameterGroup, HirMethodReceiverKind,
+    HirParameterKind, HirRequiredName, HirTraitAssociatedType, HirTraitFunction, HirTraitMember,
+    HirWherePredicate,
 };
 use crate::leaf::HirName;
 use crate::scope::HirPatternBindingPolicy;
 use crate::slot::{HirOrigin, SlotSnapshot};
 
 use super::callable::{
-    item_callable_scope_matches, item_owned_callable_scopes_are_exact,
+    attached_content_matches, item_callable_scope_matches, item_owned_callable_scopes_are_exact,
     scope_children_are_exact_in_source_order, scope_locals_are_exact,
 };
 use super::{
@@ -415,6 +417,7 @@ struct MethodAttachment<'a> {
     name: &'a AttachedRequiredName,
     generics: Option<&'a AttachedGenericParameterGroup>,
     parameter_groups: &'a [AttachedMethodParameterGroup],
+    attached_content: Option<&'a AttachedCallableContentParameter>,
     parameter_shape_recovery: bool,
     where_clauses: &'a [AttachedWhereClause],
     authored_return: Option<&'a AttachedCallableReturn>,
@@ -431,6 +434,7 @@ impl<'a> From<&'a AttachedTraitFunction> for MethodAttachment<'a> {
             name: value.name(),
             generics: value.generics(),
             parameter_groups: value.parameter_groups(),
+            attached_content: value.attached_content(),
             parameter_shape_recovery: value.has_parameter_shape_recovery(),
             where_clauses: value.where_clauses(),
             authored_return: value.authored_return(),
@@ -449,6 +453,7 @@ impl<'a> From<&'a AttachedImplFunction> for MethodAttachment<'a> {
             name: value.name(),
             generics: value.generics(),
             parameter_groups: value.parameter_groups(),
+            attached_content: value.attached_content(),
             parameter_shape_recovery: value.has_parameter_shape_recovery(),
             where_clauses: value.where_clauses(),
             authored_return: value.authored_return(),
@@ -463,6 +468,7 @@ struct MethodRetention<'a> {
     name: &'a HirRequiredName,
     generic_parameters: &'a [HirGenericParameter],
     parameter_groups: &'a [HirMethodParameterGroup],
+    attached_content: Option<HirCallableAttachedContentParameter>,
     where_predicates: &'a [HirWherePredicate],
     return_type: Option<crate::identity::TypeId>,
     callable_scope: ScopeId,
@@ -476,6 +482,7 @@ impl<'a> From<&'a HirTraitFunction> for MethodRetention<'a> {
             name: value.name(),
             generic_parameters: value.generic_parameters(),
             parameter_groups: value.parameter_groups(),
+            attached_content: value.attached_content(),
             where_predicates: value.where_predicates(),
             return_type: value.return_type(),
             callable_scope: value.callable_scope(),
@@ -491,6 +498,7 @@ impl<'a> From<&'a HirImplFunction> for MethodRetention<'a> {
             name: value.name(),
             generic_parameters: value.generic_parameters(),
             parameter_groups: value.parameter_groups(),
+            attached_content: value.attached_content(),
             where_predicates: value.where_predicates(),
             return_type: value.return_type(),
             callable_scope: value.callable_scope(),
@@ -552,7 +560,20 @@ fn method_matches(
         arenas,
         &block_arenas,
     )?;
+    let attached_content = attached_content_matches(
+        attached.attached_content,
+        retained.attached_content,
+        retained.callable_scope,
+        slots,
+        arenas,
+    )?;
+    if let Some(binding) = retained.attached_content.map(|attached| attached.binding()) {
+        let mut locals = parameter.locals.into_vec();
+        locals.push(binding);
+        parameter.locals = locals.into_boxed_slice();
+    }
     parameter.recovered |= attached.parameter_shape_recovery;
+    parameter.recovered |= attached_content.recovered;
     let (return_missing, return_recovered) = method_return_matches(
         attached.authored_return,
         retained.return_type,

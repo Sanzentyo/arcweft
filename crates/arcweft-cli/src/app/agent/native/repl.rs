@@ -1431,11 +1431,10 @@ fn agent_repl_display_type(
             let Some(expression) = compiled.semantic_analysis.expression(owner) else {
                 continue;
             };
-            let candidate = (
-                range.end(),
-                range.end() - range.start(),
-                format!("{:?}", expression.ty()),
-            );
+            let Some(ty) = expression.value_type() else {
+                continue;
+            };
+            let candidate = (range.end(), range.end() - range.start(), format!("{ty:?}"));
             if selected
                 .as_ref()
                 .is_none_or(|current: &(usize, usize, String)| {

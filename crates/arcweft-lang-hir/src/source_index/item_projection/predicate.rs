@@ -100,6 +100,7 @@ pub(super) fn payload_matches(
         slots,
         arenas,
         &block_arenas,
+        None,
     ) else {
         return false;
     };

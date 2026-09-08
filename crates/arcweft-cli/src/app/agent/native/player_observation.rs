@@ -452,7 +452,6 @@ fn prepare_player_runtime_frame(
                 fit: PlayerFrameFit::raw(),
                 image_time_millis: visual_time_millis,
                 visual_time_millis,
-                dialogue_reveal_complete: false,
                 preferences: RenderPreferences::default(),
             },
         )
@@ -767,7 +766,7 @@ fn player_observed_objects(
             step,
             usize::try_from(dialogue.id().get()).unwrap_or(usize::MAX),
             usize::try_from(entry.id().get()).unwrap_or(usize::MAX),
-            stage.to_frame(),
+            stage.projection(),
             &prepared.frame,
             viewport,
         )?;

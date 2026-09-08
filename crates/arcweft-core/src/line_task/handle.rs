@@ -82,14 +82,11 @@ impl RuntimeLineHandleSite {
             return Err(LineRuntimeError::WrongOpaqueProducer);
         }
         let valid_shape = match kind {
-            RuntimeLineHandleSiteKind::StageActor => {
+            RuntimeLineHandleSiteKind::StageActor | RuntimeLineHandleSiteKind::StageLookCue => {
                 character.is_some() && scheduled_child.is_none()
             }
             RuntimeLineHandleSiteKind::ScheduledCue => {
                 character.is_none() && scheduled_child.is_some()
-            }
-            RuntimeLineHandleSiteKind::StageLookCue => {
-                character.is_some() && scheduled_child.is_none()
             }
             RuntimeLineHandleSiteKind::Voice => character.is_none() && scheduled_child.is_none(),
         };
@@ -454,6 +451,12 @@ pub(crate) enum RuntimeDialogueTerminalKind {
     Abandoned,
 }
 
+impl<T: Clone> Default for RuntimeDialogueActivationState<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Clone> RuntimeDialogueActivationState<T> {
     #[must_use]
     pub fn new() -> Self {
@@ -549,7 +552,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     }
                 };
                 let mut expected_tokens = std::collections::BTreeSet::new();
-                for capture in captures.iter() {
+                for capture in captures {
                     for handle in capture
                         .value
                         .affine_line_handles()
@@ -576,11 +579,11 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     .ledger
                     .leases()
                     .values()
-                    .filter_map(|lease| {
-                        (lease.owner()
-                            == &RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone()))
-                            .then(|| lease.token().clone())
+                    .filter(|lease| {
+                        lease.owner()
+                            == &RuntimeHandleOwnerSlot::ChildScope(scheduled.work().clone())
                     })
+                    .map(|lease| lease.token().clone())
                     .collect::<std::collections::BTreeSet<_>>();
                 if matches!(
                     &scheduled.custody,
@@ -678,10 +681,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             .ledger
             .leases()
             .values()
-            .filter_map(|lease| {
-                matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_))
-                    .then(|| lease.token().clone())
-            })
+            .filter(|lease| matches!(lease.owner(), RuntimeHandleOwnerSlot::DialogueResult(_)))
+            .map(|lease| lease.token().clone())
             .collect::<std::collections::BTreeSet<_>>();
         if ledger_result_tokens != result_tokens {
             return Err(LineRuntimeError::InvalidRestoredResultState);
@@ -727,9 +728,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                 return Err(LineRuntimeError::InvalidRestoredScheduledState);
             }
             let (expects_ready, expects_lane) = match (&scheduled.state, &scheduled.custody) {
-                (RuntimeScheduledState::Armed, RuntimeScheduledCaptureCustody::Packet(_)) => {
-                    (false, false)
-                }
+                (RuntimeScheduledState::Armed, RuntimeScheduledCaptureCustody::Packet(_))
+                | (
+                    RuntimeScheduledState::Completed
+                    | RuntimeScheduledState::Cancelled
+                    | RuntimeScheduledState::Failed,
+                    RuntimeScheduledCaptureCustody::LineScope(_),
+                ) => (false, false),
                 (RuntimeScheduledState::Running, RuntimeScheduledCaptureCustody::Packet(_)) => {
                     (true, false)
                 }
@@ -737,12 +742,6 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                     RuntimeScheduledState::Running | RuntimeScheduledState::Cancelling,
                     RuntimeScheduledCaptureCustody::ChildFiber(_),
                 ) => (false, true),
-                (
-                    RuntimeScheduledState::Completed
-                    | RuntimeScheduledState::Cancelled
-                    | RuntimeScheduledState::Failed,
-                    RuntimeScheduledCaptureCustody::LineScope(_),
-                ) => (false, false),
                 _ => return Err(LineRuntimeError::InvalidRestoredScheduledState),
             };
             if ready.contains(scheduled.token()) != expects_ready
@@ -810,13 +809,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     ) -> Vec<(LineTaskWorkTag, RuntimeLineHandleToken)> {
         self.scheduled
             .iter()
-            .filter_map(|scheduled| {
+            .filter(|scheduled| {
                 matches!(
                     &scheduled.custody,
                     RuntimeScheduledCaptureCustody::ChildFiber(_)
                 )
-                .then(|| (scheduled.work().clone(), scheduled.token().clone()))
             })
+            .map(|scheduled| (scheduled.work().clone(), scheduled.token().clone()))
             .collect()
     }
 
@@ -912,7 +911,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         }
         self.ledger = ledger;
         self.scheduled = scheduled;
-        due.sort_by(|left, right| left.cmp(right));
+        due.sort();
         Ok(due.into_iter().map(|(_, token, _)| token).collect())
     }
 
@@ -960,7 +959,9 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             RuntimeScheduledState::Failed => {
                 (RuntimeScheduledState::Failed, RuntimeScheduledState::Failed)
             }
-            _ => return Err(LineRuntimeError::InvalidScheduledWorkState),
+            RuntimeScheduledState::Armed => {
+                return Err(LineRuntimeError::InvalidScheduledWorkState);
+            }
         };
         packet.require_line_scope()?;
         if expected != terminal {
@@ -1043,7 +1044,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
             {
                 let retired = issued
                     .iter()
-                    .filter_map(|(id, prior)| {
+                    .filter(|(_, prior)| {
                         matches!(
                             prior,
                             crate::presentation::RuntimeLineHostCommand::Stage(
@@ -1053,8 +1054,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                                 }
                             ) if prior_cue == cue
                         )
-                        .then(|| id.clone())
                     })
+                    .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
                 for id in retired {
                     if let Some(command) = issued.remove(&id) {
@@ -1117,7 +1118,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
     }
 
     /// Closes child custody by moving only declared surviving capture tokens
-    /// back to LineScope and dropping every other live token before the child
+    /// back to `LineScope` and dropping every other live token before the child
     /// carrier disappears.
     pub(crate) fn finish_child_scope(
         &mut self,
@@ -1193,7 +1194,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let commands = self
             .superseded_commands
             .iter()
-            .filter_map(|(id, command)| {
+            .filter(|(_, command)| {
                 matches!(
                     command,
                     crate::presentation::RuntimeLineHostCommand::Stage(
@@ -1203,8 +1204,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                         }
                     ) if prior == cue
                 )
-                .then(|| id.clone())
             })
+            .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         for command in commands {
             let _ = self.resolve_superseded(&command);
@@ -1215,7 +1216,7 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let commands = self
             .issued_commands
             .iter()
-            .filter_map(|(id, command)| {
+            .filter(|(_, command)| {
                 matches!(
                     command,
                     crate::presentation::RuntimeLineHostCommand::Stage(
@@ -1225,8 +1226,8 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
                         }
                     ) if pending == cue
                 )
-                .then(|| id.clone())
             })
+            .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
         for command in commands {
             if self.issued_commands.remove(&command).is_some() {
@@ -1494,13 +1495,13 @@ impl<T: Clone> RuntimeDialogueActivationState<T> {
         let unstarted = candidate
             .scheduled
             .iter()
-            .filter_map(|scheduled| {
+            .filter(|scheduled| {
                 matches!(
                     &scheduled.custody,
                     RuntimeScheduledCaptureCustody::Packet(_)
                 )
-                .then(|| scheduled.token().clone())
             })
+            .map(|scheduled| scheduled.token().clone())
             .collect::<Vec<_>>();
         for token in unstarted {
             candidate.complete_unstarted_scheduled(&LineTaskScheduledCompletion::new(
@@ -1710,7 +1711,7 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
     ) -> Result<Self, crate::value::AwbcRuntimeValueSnapshotError> {
         state
             .validate_custody()
-            .map_err(scheduled_custody_snapshot_error)?;
+            .map_err(|error| scheduled_custody_snapshot_error(&error))?;
         Ok(Self {
             token: state.token.clone(),
             child: state.child,
@@ -1733,7 +1734,7 @@ impl AwbcRuntimeScheduledLineTaskSnapshot {
             custody,
             self.state,
         )
-        .map_err(scheduled_custody_snapshot_error)
+        .map_err(|error| scheduled_custody_snapshot_error(&error))
     }
 }
 
@@ -1799,7 +1800,7 @@ fn live_local_bindings(
 }
 
 fn scheduled_custody_snapshot_error(
-    error: LineRuntimeError,
+    error: &LineRuntimeError,
 ) -> crate::value::AwbcRuntimeValueSnapshotError {
     crate::value::AwbcRuntimeValueSnapshotError::Message {
         message: error.to_string(),
@@ -2427,8 +2428,9 @@ impl RuntimeLineHandleLedger {
         let state = match &resource {
             RuntimeHandleResource::StageActor(_) => RuntimeHandleLeaseState::Allocating,
             RuntimeHandleResource::Cue(cue) => match cue.origin() {
-                RuntimeCueOrigin::Scheduled { .. } => RuntimeHandleLeaseState::Pending,
-                RuntimeCueOrigin::StageLook => RuntimeHandleLeaseState::Pending,
+                RuntimeCueOrigin::Scheduled { .. } | RuntimeCueOrigin::StageLook => {
+                    RuntimeHandleLeaseState::Pending
+                }
             },
             RuntimeHandleResource::Voice(_) => RuntimeHandleLeaseState::Active,
         };
@@ -2511,10 +2513,10 @@ impl RuntimeLineHandleLedger {
                     lease.state = RuntimeHandleLeaseState::Cancelling;
                 }
                 (RuntimeCueOrigin::Scheduled { .. }, RuntimeHandleLeaseState::Pending) => {
-                    lease.state = RuntimeHandleLeaseState::Cancelled
+                    lease.state = RuntimeHandleLeaseState::Cancelled;
                 }
                 (RuntimeCueOrigin::Scheduled { .. }, RuntimeHandleLeaseState::Running) => {
-                    lease.state = RuntimeHandleLeaseState::Cancelling
+                    lease.state = RuntimeHandleLeaseState::Cancelling;
                 }
                 (_, RuntimeHandleLeaseState::Completed | RuntimeHandleLeaseState::Cancelled) => {
                     lease.state = RuntimeHandleLeaseState::Released;
@@ -2609,7 +2611,7 @@ impl RuntimeLineHandleLedger {
         u32::try_from(count).map_err(|_| LineRuntimeError::HandleIssuanceOverflow)
     }
 
-    #[must_use]
+    #[must_use = "decode the runtime line-handle token from the opaque value"]
     pub fn token_from_value(
         value: &RuntimeValue,
     ) -> Result<RuntimeLineHandleToken, LineRuntimeError> {
@@ -2628,12 +2630,7 @@ fn owner_transition_is_legal(
     matches!(
         (source, destination),
         (
-            RuntimeHandleOwnerSlot::LineScope,
-            RuntimeHandleOwnerSlot::ActivationLocal(_)
-                | RuntimeHandleOwnerSlot::ChildScope(_)
-                | RuntimeHandleOwnerSlot::DialogueResult(_)
-        ) | (
-            RuntimeHandleOwnerSlot::ActivationLocal(_),
+            RuntimeHandleOwnerSlot::LineScope | RuntimeHandleOwnerSlot::ActivationLocal(_),
             RuntimeHandleOwnerSlot::ActivationLocal(_)
                 | RuntimeHandleOwnerSlot::ChildScope(_)
                 | RuntimeHandleOwnerSlot::DialogueResult(_)
@@ -2641,10 +2638,7 @@ fn owner_transition_is_legal(
             RuntimeHandleOwnerSlot::ChildScope(_),
             RuntimeHandleOwnerSlot::LineScope
         ) | (
-            RuntimeHandleOwnerSlot::DialogueResult(_),
-            RuntimeHandleOwnerSlot::ParentFiber(_)
-        ) | (
-            RuntimeHandleOwnerSlot::ParentFiber(_),
+            RuntimeHandleOwnerSlot::DialogueResult(_) | RuntimeHandleOwnerSlot::ParentFiber(_),
             RuntimeHandleOwnerSlot::ParentFiber(_)
         )
     )
@@ -2684,10 +2678,9 @@ const fn lease_transition_is_legal(
                 | RuntimeHandleLeaseState::Released
                 | RuntimeHandleLeaseState::Failed
         ) | (
-            RuntimeHandleLeaseState::Completed | RuntimeHandleLeaseState::Cancelled,
-            RuntimeHandleLeaseState::Released
-        ) | (
-            RuntimeHandleLeaseState::Failed,
+            RuntimeHandleLeaseState::Completed
+                | RuntimeHandleLeaseState::Cancelled
+                | RuntimeHandleLeaseState::Failed,
             RuntimeHandleLeaseState::Released
         )
     )
@@ -2722,7 +2715,7 @@ pub struct RuntimeScheduledLineTask {
 }
 
 impl RuntimeScheduledLineTask {
-    #[must_use]
+    #[must_use = "construct a validated scheduled line task"]
     pub fn new(
         token: RuntimeLineHandleToken,
         child: RuntimeLineTaskNodeId,

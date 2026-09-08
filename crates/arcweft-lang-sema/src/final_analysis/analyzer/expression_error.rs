@@ -117,6 +117,13 @@ impl Eq for PhysicalCallAttemptId {}
 pub(crate) struct AnalyzerExpressionContext<'a> {
     authority: AnalyzerExpressionFactAuthority<'a>,
     frames: Rc<CallFrameStack>,
+    consumer: AnalyzerExpressionConsumer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum AnalyzerExpressionConsumer {
+    Ordinary,
+    ViewFxProducer,
 }
 
 impl<'a> AnalyzerExpressionContext<'a> {
@@ -124,6 +131,7 @@ impl<'a> AnalyzerExpressionContext<'a> {
         Self {
             authority: AnalyzerExpressionFactAuthority::Published,
             frames,
+            consumer: AnalyzerExpressionConsumer::Ordinary,
         }
     }
 
@@ -134,6 +142,7 @@ impl<'a> AnalyzerExpressionContext<'a> {
         Self {
             authority: AnalyzerExpressionFactAuthority::Candidate(authority),
             frames,
+            consumer: AnalyzerExpressionConsumer::Ordinary,
         }
     }
 
@@ -159,7 +168,20 @@ impl<'a> AnalyzerExpressionContext<'a> {
             AnalyzerExpressionFactAuthority::Published => authority,
             AnalyzerExpressionFactAuthority::Candidate(existing) => existing.reborrow(),
         };
-        AnalyzerExpressionContext::candidate(authority, Rc::clone(&self.frames))
+        AnalyzerExpressionContext {
+            authority: AnalyzerExpressionFactAuthority::Candidate(authority),
+            frames: Rc::clone(&self.frames),
+            consumer: self.consumer,
+        }
+    }
+
+    pub(super) const fn consumer(&self) -> AnalyzerExpressionConsumer {
+        self.consumer
+    }
+
+    pub(super) const fn with_consumer(mut self, consumer: AnalyzerExpressionConsumer) -> Self {
+        self.consumer = consumer;
+        self
     }
 
     pub(super) fn enter_call(
@@ -711,6 +733,12 @@ pub(super) enum AnalyzerExpressionError {
         owner: ExprId,
         failure: CallAnalysisFailure,
     },
+}
+
+impl From<crate::final_analysis::CheckedVariantOwnerError> for AnalyzerExpressionError {
+    fn from(error: crate::final_analysis::CheckedVariantOwnerError) -> Self {
+        Self::fatal(error.into())
+    }
 }
 
 impl AnalyzerExpressionError {

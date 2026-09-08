@@ -1,20 +1,22 @@
+mod dialogue_action;
 mod dialogue_surface;
-mod rich_text_tag;
 
 pub(crate) use dialogue_surface::{
-    ScannedDialogueRuby, ScannedDialogueSurface, ScannedDialogueSurfaceKind, ScannedDialogueText,
-    ScannedInlineStyle, ScannedInlineStyleKind, scan_dialogue_surface,
+    ScannedContentApplicationBody, ScannedContentApplicationCallee, ScannedDialogueRuby,
+    ScannedDialogueSurface, ScannedDialogueSurfaceKind, scan_dialogue_surface,
 };
 
-pub use rich_text_tag::{
-    MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS,
-    MAX_RICH_TEXT_TAG_BODY_BYTES, MAX_RICH_TEXT_TAG_KEY_BYTES, MAX_RICH_TEXT_TAG_VALUE_BYTES,
-    RichTextArgumentIssue,
+pub use dialogue_action::{
+    MAX_DIALOGUE_ACTION_ARGUMENTS, MAX_DIALOGUE_ACTION_ARGUMENTS_TOTAL,
+    MAX_DIALOGUE_ACTION_HEAD_BYTES, MAX_DIALOGUE_ACTION_KEY_BYTES, MAX_DIALOGUE_ACTION_VALUE_BYTES,
+    MAX_DIALOGUE_POINT_ACTIONS, RichTextArgumentIssue,
 };
-pub(crate) use rich_text_tag::{
-    ScannedTagArgValue, ScannedTagArgument, ScannedTagArgumentParts, ScannedTagArguments,
-    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arg_value_if_valid,
-    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
+pub(crate) use dialogue_action::{
+    ScannedDialogueActionArgument, ScannedDialogueActionArgumentParts,
+    ScannedDialogueActionArgumentValue, ScannedDialogueActionArguments,
+    find_dialogue_bracket_boundary, is_dialogue_action_whitespace,
+    scan_dialogue_action_argument_value_if_valid, scan_dialogue_action_arguments,
+    trim_dialogue_action_whitespace, utf8_boundary_at_or_before,
 };
 
 use crate::ast::common::TextRange;
@@ -31,36 +33,36 @@ pub struct DialogueTextDiagnostic {
 /// Stable syntax diagnostic identity for dialogue-text parsing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DialogueTextDiagnosticCode {
-    RichTextAttributeUnterminatedQuote,
-    RichTextAttributeInvalidEscape,
-    RichTextAttributeEmptyKey,
-    RichTextAttributeInvalidKey,
-    RichTextAttributeMissingValue,
-    RichTextTagBodyTooLong,
-    RichTextAttributeTooMany,
-    RichTextAttributeKeyTooLong,
-    RichTextAttributeValueTooLong,
-    RichTextContentTagLimit,
-    RichTextContentArgumentLimit,
+    DialogueActionArgumentUnterminatedQuote,
+    DialogueActionArgumentInvalidEscape,
+    DialogueActionArgumentEmptyKey,
+    DialogueActionArgumentInvalidKey,
+    DialogueActionArgumentMissingValue,
+    DialogueActionHeadTooLong,
+    DialogueActionArgumentTooMany,
+    DialogueActionArgumentKeyTooLong,
+    DialogueActionArgumentValueTooLong,
+    DialoguePointActionLimit,
+    DialogueActionArgumentLimit,
 }
 
 impl DialogueTextDiagnosticCode {
     /// Stable diagnostic code used by compiler and tooling layers.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::RichTextAttributeUnterminatedQuote => {
-                "syntax.rich_text.attribute.unterminated_quote"
+            Self::DialogueActionArgumentUnterminatedQuote => {
+                "syntax.rich_text.argument.unterminated_quote"
             }
-            Self::RichTextAttributeInvalidEscape => "syntax.rich_text.attribute.invalid_escape",
-            Self::RichTextAttributeEmptyKey => "syntax.rich_text.attribute.empty_key",
-            Self::RichTextAttributeInvalidKey => "syntax.rich_text.attribute.invalid_key",
-            Self::RichTextAttributeMissingValue => "syntax.rich_text.attribute.missing_value",
-            Self::RichTextTagBodyTooLong => "syntax.rich_text.tag.body_too_long",
-            Self::RichTextAttributeTooMany => "syntax.rich_text.attribute.too_many",
-            Self::RichTextAttributeKeyTooLong => "syntax.rich_text.attribute.key_too_long",
-            Self::RichTextAttributeValueTooLong => "syntax.rich_text.attribute.value_too_long",
-            Self::RichTextContentTagLimit => "syntax.rich_text.content.tag_limit",
-            Self::RichTextContentArgumentLimit => "syntax.rich_text.content.argument_limit",
+            Self::DialogueActionArgumentInvalidEscape => "syntax.rich_text.argument.invalid_escape",
+            Self::DialogueActionArgumentEmptyKey => "syntax.rich_text.argument.empty_key",
+            Self::DialogueActionArgumentInvalidKey => "syntax.rich_text.argument.invalid_key",
+            Self::DialogueActionArgumentMissingValue => "syntax.rich_text.argument.missing_value",
+            Self::DialogueActionHeadTooLong => "syntax.rich_text.point_action.head_too_long",
+            Self::DialogueActionArgumentTooMany => "syntax.rich_text.argument.too_many",
+            Self::DialogueActionArgumentKeyTooLong => "syntax.rich_text.argument.key_too_long",
+            Self::DialogueActionArgumentValueTooLong => "syntax.rich_text.argument.value_too_long",
+            Self::DialoguePointActionLimit => "syntax.rich_text.content.point_action_limit",
+            Self::DialogueActionArgumentLimit => "syntax.rich_text.content.argument_limit",
         }
     }
 }
@@ -103,17 +105,17 @@ impl DialogueTextDiagnostic {
 
 #[cfg(test)]
 mod tests {
-    use super::find_dialogue_tag_boundary_before;
+    use super::find_dialogue_bracket_boundary;
 
     #[test]
-    fn quoted_closing_brackets_do_not_end_dialogue_tags() {
-        let source = "[effect .warning note=\"contains ] safely\"]text[/effect]";
+    fn quoted_closing_brackets_do_not_end_dialogue_bracket_heads() {
+        let source = "[signal .warning note=\"contains ] safely\"]text";
         let boundary =
-            find_dialogue_tag_boundary_before(source, 0, source.len()).expect("tag boundary");
+            find_dialogue_bracket_boundary(source, 0, source.len()).expect("point-action boundary");
         assert_eq!(&source[boundary.close()..boundary.end()], "]");
         assert_eq!(
             &source[..boundary.end()],
-            "[effect .warning note=\"contains ] safely\"]"
+            "[signal .warning note=\"contains ] safely\"]"
         );
         assert_eq!(boundary.unterminated_quote_start(), None);
     }

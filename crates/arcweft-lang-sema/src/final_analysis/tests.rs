@@ -31,7 +31,8 @@ use arcweft_lang_hir::{
     },
     proof_return::HirProofReturnSemanticFactSet,
     source_index::{
-        HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
+        HirExprSourceRole, HirPatternSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+        HirStmtSourceRole,
     },
     stmt::{HirStatementChild, HirStatementChildRole, HirStmtKind, HirUnsafeAuditIdentity},
     symbol::{
@@ -61,30 +62,44 @@ use super::{
     CallAnalysisOutcome, CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
     CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
     CheckedCallableJoinError, CheckedCharacterDialogueTarget, CheckedDropFade,
-    CheckedDropInvocation, CheckedEvaluatedEffectOperation, CheckedExplicitDropPolicy,
-    CheckedExpression, CheckedExpressionEdgeError, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedMatchLimits, CheckedPatchOperation, CheckedPattern,
-    CheckedPatternResolution, CheckedSelectResolution, CheckedStatementPayload,
-    CheckedSuspensionRole, CheckedSuspensionStatement, CheckedTryBoundary, CheckedTryCarrier,
-    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalCallSealLocation,
+    CheckedDropInvocation, CheckedEvaluatedEffectOperation, CheckedExecutableControlRole,
+    CheckedExplicitDropPolicy, CheckedExpression, CheckedExpressionChildEdge,
+    CheckedExpressionEdgeError, CheckedExpressionResolution, CheckedFunctionExecution,
+    CheckedImplicitCallableBody, CheckedItem, CheckedItemRole, CheckedIteration,
+    CheckedIteratorFamily, CheckedMatchLimits, CheckedOrdinaryFunctionEmission,
+    CheckedPatchOperation, CheckedPattern, CheckedPatternResolution, CheckedPipeLeftOccurrence,
+    CheckedSelectResolution, CheckedStatementPayload, CheckedSuspensionRole,
+    CheckedSuspensionStatement, CheckedTryBoundaryOwner, CheckedTryCarrier, CheckedTryFunctionSite,
+    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwnerKind, FinalCallSealLocation,
     FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
     FinalSemanticAnalysisInput, FinalSemanticCatalogs, PhysicalArgumentEvaluationKind,
     PostfixBracketResolution, PreparedExecutableIngressSeal, PreparedStatementPayload,
     RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/callable_values.rs"]
+mod callable_values;
+#[path = "tests/compile_time_scalars.rs"]
+mod compile_time_scalars;
+#[path = "tests/content_callables.rs"]
+mod content_callables;
 #[path = "tests/dialogue_mark_authority.rs"]
 mod dialogue_mark_authority;
 #[path = "tests/evaluated_effects.rs"]
 mod evaluated_effects;
 #[path = "tests/executable_ingress.rs"]
 mod executable_ingress;
+#[path = "tests/generic_calls.rs"]
+mod generic_calls;
+#[path = "tests/higher_order_effects.rs"]
+mod higher_order_effects;
 #[path = "tests/match_coverage.rs"]
 mod match_coverage;
 #[path = "tests/statement_contextual.rs"]
 mod statement_contextual;
 #[path = "tests/statement_producers.rs"]
 mod statement_producers;
+#[path = "tests/text_proxy.rs"]
+mod text_proxy;
 use crate::{
     CheckedNeedProducerAdmissionError,
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -148,10 +163,10 @@ use crate::{
     },
 };
 
-pub(super) struct Fixture {
-    pub(super) project: HirProject,
-    pub(super) symbols: Arc<ProjectSymbolTable>,
-    pub(super) registered: RegisteredSemanticWorld,
+pub(crate) struct Fixture {
+    pub(crate) project: HirProject,
+    pub(crate) symbols: Arc<ProjectSymbolTable>,
+    pub(crate) registered: RegisteredSemanticWorld,
     root_document: Arc<SourceDocument>,
 }
 
@@ -180,7 +195,7 @@ fn parse(id: &str, path: &str, source: &str) -> (Arc<SourceDocument>, ParsedSour
     (document, parsed)
 }
 
-pub(super) fn fixture(root_source: &str, child_source: Option<&str>) -> Fixture {
+pub(crate) fn fixture(root_source: &str, child_source: Option<&str>) -> Fixture {
     fixture_with_environment_inputs(root_source, child_source, Vec::new())
 }
 
@@ -258,6 +273,28 @@ fn fixture_with_all_registration_inputs_and_base(
     external_rows: Vec<ExternalRegistrationFact>,
     base: TypeCheckEnv,
 ) -> Fixture {
+    try_fixture_with_all_registration_inputs_and_base(
+        root_source,
+        child_source,
+        environment_rows,
+        character_rows,
+        external_rows,
+        base,
+    )
+    .expect("registered semantic world")
+}
+
+fn try_fixture_with_all_registration_inputs_and_base(
+    root_source: &str,
+    child_source: Option<&str>,
+    environment_rows: Vec<(
+        Arc<SourceDocument>,
+        SourceBackedEnvironmentRegistrationInput,
+    )>,
+    character_rows: Vec<(Arc<SourceDocument>, SourceBackedCharacterCatalog)>,
+    external_rows: Vec<ExternalRegistrationFact>,
+    base: TypeCheckEnv,
+) -> Result<Fixture, crate::registration::CharacterRegistrationReport> {
     let package = CallablePackageId::try_new("final-analysis-tests").expect("package");
     let root_path = CanonicalModulePath::crate_root();
     let mut database = HirDatabase::try_new().expect("HIR database");
@@ -339,14 +376,29 @@ fn fixture_with_all_registration_inputs_and_base(
         project.view(),
         &facts,
         None,
-    ))
-    .expect("registered semantic world");
+    ))?;
     let symbols = Arc::clone(&registered.symbols);
-    Fixture {
+    Ok(Fixture {
         project,
         symbols,
         registered,
         root_document,
+    })
+}
+
+fn fixture_registration_error(
+    root_source: &str,
+) -> crate::registration::CharacterRegistrationReport {
+    match try_fixture_with_all_registration_inputs_and_base(
+        root_source,
+        None,
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        TypeCheckEnv::standard(),
+    ) {
+        Ok(_) => panic!("fixture must be rejected during semantic registration"),
+        Err(report) => report,
     }
 }
 
@@ -734,12 +786,15 @@ fn typed_overload_fixture_with_catalog_limits(
         HashMap::new(),
         by_id,
     );
-    let replacement = Arc::new(RegisteredCallableCatalog::new(
-        accepted.nominal_world().clone(),
-        accepted.project().clone(),
-        environment,
-        accepted.nominal_resolutions().clone(),
-    ));
+    let replacement = Arc::new(
+        RegisteredCallableCatalog::try_new(
+            accepted.nominal_world().clone(),
+            accepted.project().clone(),
+            environment,
+            accepted.nominal_resolutions().clone(),
+        )
+        .expect("canonical replacement catalog"),
+    );
     let registered = registered.with_callable_catalog_for_test(replacement);
     Fixture {
         project,
@@ -802,12 +857,13 @@ fn typed_overload_entry(
         )
         .expect("test callable schema"),
     );
-    let environment_id = EnvironmentCallableId::new(
+    let environment_id = EnvironmentCallableId::try_new(
         owner.clone(),
         EnvironmentCallableKind::Function,
         key.clone(),
         CallableOverloadIndex::try_from_usize(ordinal).expect("overload index"),
-    );
+    )
+    .expect("canonical environment identity");
     let record = Arc::new(
         CallableRecord::try_new(
             CallableCandidateId::Environment(environment_id.clone()),
@@ -891,7 +947,7 @@ fn checked_callables(
     .expect("checked callable catalog")
 }
 
-pub(super) fn analyze(
+pub(crate) fn analyze(
     fixture: &Fixture,
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
@@ -966,7 +1022,7 @@ fn checked_unsafe_audit_owns_identity_and_uses_checked_reason_child() {
         })
         .expect("unsafe reason child");
     let checked_reason = report.expression(reason).expect("checked unsafe reason");
-    assert_eq!(checked_reason.ty(), &TypeKind::String);
+    assert_eq!(checked_reason.value_type(), Some(&TypeKind::String));
     assert!(checked_reason.effects().is_empty());
 }
 
@@ -977,7 +1033,7 @@ fn checked_unsafe_audit_owns_identity_and_uses_checked_reason_child() {
 )]
 fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
     let fixture = character_nominal_fixture(concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "flow line_handles() -> String {\n",
         "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
         "    with:\n",
@@ -1013,8 +1069,10 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         .map(|(_, call)| call)
         .expect("exact stage acquire call");
     assert_eq!(
-        selected_application(acquire).result().ty(),
-        &TypeKind::StageActorHandle(StageActorHandleType::Exact(character.clone()))
+        selected_application(acquire).result().value_type(),
+        Some(&TypeKind::StageActorHandle(StageActorHandleType::Exact(
+            character.clone()
+        )))
     );
     let look = report
         .calls()
@@ -1027,14 +1085,14 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
         .map(|(_, call)| call)
         .expect("exact stage look call");
     assert_eq!(
-        selected_application(look).result().ty(),
-        &TypeKind::CueHandle
+        selected_application(look).result().value_type(),
+        Some(&TypeKind::CueHandle)
     );
     assert!(report.calls().any(|(_, call)| {
         call.selected_application().is_some_and(|application| {
             application.core().candidates().selected().id()
                 == &CallableCandidateId::LineContextMethod(LineContextMethodId::VoiceHandle)
-                && application.result().ty() == &TypeKind::VoiceHandle
+                && application.result().value_type() == Some(&TypeKind::VoiceHandle)
         })
     }));
     assert_eq!(
@@ -1055,7 +1113,7 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
             matches!(
                 application.core().candidates().selected().id(),
                 CallableCandidateId::CapacityMethod(_)
-            ) && application.result().ty() == &TypeKind::VoiceHandle
+            ) && application.result().value_type() == Some(&TypeKind::VoiceHandle)
         })
     }));
     let module = fixture
@@ -1067,11 +1125,18 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
     let dialogue_owner = module
         .expressions()
         .find_map(|(owner, expression)| {
-            matches!(
-                expression.kind(),
-                HirExprKind::DialogueContentApplication(_)
-            )
-            .then_some(owner)
+            let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+                return None;
+            };
+            let arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                target: _,
+                plan: _,
+                coordinates: _,
+            } = application.family()
+            else {
+                return None;
+            };
+            Some(owner)
         })
         .expect("typed Dialogue application owner");
     assert_dialogue_application_result_authority(
@@ -1095,11 +1160,16 @@ fn assert_dialogue_application_result_authority(
         .expect("Dialogue application expression fact");
     let call = report.call(owner).expect("Dialogue application call fact");
     let application = selected_application(call);
-    assert_eq!(expression.ty(), expected);
-    assert_eq!(application.result().ty(), expected);
+    assert_eq!(expression.value_type(), Some(expected));
+    assert_eq!(application.result().value_type(), Some(expected));
     assert_eq!(
-        application.core().candidates().selected().schema().result(),
-        expected
+        application
+            .core()
+            .candidates()
+            .selected()
+            .schema()
+            .value_type(),
+        Some(expected)
     );
 }
 
@@ -1107,19 +1177,26 @@ fn assert_dialogue_application_edges(report: &FinalSemanticAnalysis, module: &Hi
     let (dialogue_owner, _) = module
         .expressions()
         .find(|(_, expression)| {
+            let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+                return false;
+            };
             matches!(
-                expression.kind(),
-                HirExprKind::DialogueContentApplication(_)
+                application.family(),
+                arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                    target: _,
+                    plan: _,
+                    coordinates: _,
+                }
             )
         })
-        .expect("DialogueContentApplication owner");
+        .expect("AttachedContentApplication owner");
     let dialogue_edges = report
         .checked_child_edges(dialogue_owner)
         .expect("Dialogue line-plan child edges have checked evidence");
     assert!(
         dialogue_edges
             .iter()
-            .all(|(_, role)| matches!(role, CheckedExpressionChildRole::DialogueTarget))
+            .all(|edge| matches!(edge.role(), CheckedExpressionChildRole::DialogueTarget))
     );
 }
 
@@ -1166,7 +1243,7 @@ flow done() -> String {
             _ => None,
         })
         .expect("one checked Choice expression");
-    assert_eq!(choice.0.ty(), &TypeKind::Never);
+    assert_eq!(choice.0.value_type(), Some(&TypeKind::Never));
     assert_eq!(
         choice.1.public_id().map(arcweft_id::PublicId::as_str),
         Some("choice.main.dream.first")
@@ -1386,9 +1463,16 @@ fn set_expression_effect(
         .expect("checked expression fixture");
     let effects = EffectSet::from_labels([effect]).expect("effect fixture");
     let complete = fact.complete().expect("complete expression fixture");
-    *fact = CheckedExpression::new(
-        complete.ty().clone(),
-        complete.type_selection(),
+    let ty = complete
+        .value_type()
+        .cloned()
+        .expect("value expression fixture");
+    let type_selection = complete
+        .type_selection()
+        .expect("value expression selection fixture");
+    *fact = CheckedExpression::value(
+        ty,
+        type_selection,
         effects.clone(),
         complete.resolution().clone(),
     )
@@ -1540,7 +1624,7 @@ fn push_complete_expression_facts(module: &HirModule, input: &mut FinalSemanticA
         };
         input.push_expression(
             id,
-            CheckedExpression::new(
+            CheckedExpression::value(
                 ty,
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
@@ -1933,16 +2017,7 @@ fn multi_module_report_is_complete_generation_bound_and_exactly_accounted() {
         .modules()
         .map(|(_, module)| module.items().len())
         .sum::<usize>();
-    let input = complete_input(&fixture);
-    let (topology, checked_callables) = checked_callables(&fixture, &input);
-    let report = FinalSemanticAnalysis::try_new(
-        executable,
-        &fixture.symbols,
-        topology,
-        Arc::clone(&checked_callables),
-        input,
-    )
-    .expect("complete semantic generation");
+    let report = analyze(&fixture).expect("complete semantic generation");
 
     assert_eq!(
         report.work().expression_facts(),
@@ -1955,7 +2030,6 @@ fn multi_module_report_is_complete_generation_bound_and_exactly_accounted() {
     assert_eq!(report.work().call_facts(), 0);
     assert_eq!(report.work().resolver_invocations(), 0);
     assert_eq!(report.call_diagnostics().count(), 0);
-    assert!(Arc::ptr_eq(report.checked_callables(), &checked_callables));
     let declaration = fixture
         .symbols
         .callable_symbols()
@@ -2009,8 +2083,8 @@ fn nested(need: Need<Result<i64, String>>) -> Result<i64, String> {
     }));
     assert!(report.expressions().any(|(_, expression)| {
         matches!(
-            expression.ty(),
-            TypeKind::Result { ok, error }
+            expression.value_type(),
+            Some(TypeKind::Result { ok, error })
                 if **ok == TypeKind::I64 && **error == TypeKind::String
         ) && expression
             .effects()
@@ -2031,23 +2105,45 @@ fn nested(need: Need<Result<i64, String>>) -> Result<i64, String> {
     );
     let report = analyze(&fixture).expect("Try of Await final analysis");
     assert!(report.expressions().any(|(_, expression)| {
-        expression.ty() == &TypeKind::I64
+        expression.value_type() == Some(&TypeKind::I64)
             && expression
                 .effects()
                 .iter()
                 .any(|effect| effect.as_str() == "control.suspend")
     }));
-    assert!(report.expressions().any(|(_, expression)| {
-        matches!(
-            expression.resolution(),
+    let (try_owner, tried) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
             CheckedExpressionResolution::Try(tried)
                 if matches!(tried.carrier(), CheckedTryCarrier::Result {
                     success: TypeKind::I64,
                     residual,
                 } if matches!(residual.as_ref(), TypeKind::String))
-                    && matches!(tried.boundary(), CheckedTryBoundary::Callable(_))
-        )
-    }));
+                    && matches!(
+                        tried.boundary().owner(),
+                        CheckedTryBoundaryOwner::Callable(_)
+                    ) =>
+            {
+                Some((owner, tried))
+            }
+            _ => None,
+        })
+        .expect("checked Try fact");
+    let operand = tried.operand();
+    let operand_fact = report
+        .expression(operand.lookup_owner())
+        .expect("checked Try operand fact");
+    assert_eq!(operand.value_type(), operand_fact.value_type().unwrap());
+    assert_eq!(
+        report
+            .checked_expression_edge_fact(try_owner)
+            .expect("checked Try child edges")
+            .edges()
+            .iter()
+            .filter(|edge| edge.child() == operand.lookup_owner())
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -2085,7 +2181,7 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
     let operand = report
         .expression(awaited.operand())
         .expect("Await operand has one checked expression");
-    let TypeKind::Need(result) = operand.ty() else {
+    let TypeKind::Need(result) = operand.value_type().expect("Await operand value") else {
         panic!("load_bg result is one unary Need")
     };
     let TypeKind::Result { ok, error } = result.as_ref() else {
@@ -2304,9 +2400,11 @@ pub(super) fn project_nominal_expression_type(
 ) -> TypeKind {
     report
         .expressions()
-        .find_map(|(_, expression)| match expression.ty() {
-            TypeKind::ProjectNominal(nominal) if nominal.declaration().name().as_str() == name => {
-                Some(expression.ty().clone())
+        .find_map(|(_, expression)| match expression.value_type() {
+            Some(TypeKind::ProjectNominal(nominal))
+                if nominal.declaration().name().as_str() == name =>
+            {
+                Some(expression.value_type()?.clone())
             }
             _ => None,
         })
@@ -2686,7 +2784,7 @@ fn observe(need: Need<i64>) -> i64 {
         else {
             return None;
         };
-        Some((*field, expression.ty().clone()))
+        Some((*field, expression.value_type()?.clone()))
     });
     assert_eq!(
         fields.next(),
@@ -2731,14 +2829,17 @@ fn prefix_try_uses_the_checked_implicit_callable_as_its_propagation_boundary() {
             )
         })
         .expect("checked implicit callable");
-    assert_eq!(callable.ty(), &callback);
+    assert_eq!(callable.value_type(), Some(&callback));
     let CheckedExpressionResolution::ImplicitCallable(callable) = callable.resolution() else {
         unreachable!("matched above")
     };
     assert!(matches!(
-        callable.body_resolution(),
-        CheckedExpressionResolution::Try(tried)
-            if matches!(tried.boundary(), CheckedTryBoundary::FunctionSite(_))
+        callable.body(),
+        CheckedImplicitCallableBody::Try(tried)
+            if matches!(
+                tried.boundary().owner(),
+                CheckedTryBoundaryOwner::FunctionSite(CheckedTryFunctionSite::Implicit { .. })
+            )
     ));
 }
 
@@ -2753,25 +2854,210 @@ fn pipeline(input: Result<i64, String>) -> Result<i64, String> {
         None,
     );
     let report = analyze(&fixture).expect("checked pipe Try analysis");
-    let (owner, pipe) = report
+    let pipe = report
         .expressions()
-        .find_map(|(owner, expression)| match expression.resolution() {
-            CheckedExpressionResolution::Pipe(pipe) => Some((owner, pipe)),
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some(pipe),
             _ => None,
         })
         .expect("checked pipe fact");
-    assert_eq!(pipe.placeholders().len(), 1);
+    assert_eq!(pipe.occurrences().len(), 1);
     assert!(matches!(
         report
-            .expression(pipe.placeholders()[0])
+            .expression(pipe.occurrences()[0].lookup_expression())
             .expect("pipe-left placeholder fact")
             .resolution(),
-        CheckedExpressionResolution::PipeLeft { pipe } if *pipe == owner
+        CheckedExpressionResolution::PipeLeft(pipe_left)
+            if pipe_left.binding_identity() == pipe.binding_identity()
+                && pipe_left.occurrence_ordinal() == 0
+                && pipe_left.value_type() == pipe.value_type()
     ));
     assert!(!report.expressions().any(|(_, expression)| matches!(
         expression.resolution(),
         CheckedExpressionResolution::ImplicitCallable(_)
     )));
+}
+
+#[test]
+fn pipe_left_occurrences_keep_source_order_and_nearest_nested_binding() {
+    let fixture = fixture(
+        r"
+fn add(left: i64, right: i64) -> i64 { left + right }
+
+fn nested(input: i64) -> i64 {
+    input |> (input |> add(^, 1i64))
+}
+
+fn repeated(input: i64) -> i64 {
+    input |> add(^, ^)
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("nested and repeated pipe analysis");
+    let mut pipes = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some(pipe),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    pipes.sort_by_key(|pipe| pipe.occurrences().len());
+    assert_eq!(pipes.len(), 3);
+    assert_eq!(pipes[0].occurrences().len(), 0);
+    assert_eq!(pipes[1].occurrences().len(), 1);
+    assert_eq!(pipes[2].occurrences().len(), 2);
+    assert_eq!(
+        pipes[2]
+            .occurrences()
+            .iter()
+            .map(CheckedPipeLeftOccurrence::ordinal)
+            .collect::<Vec<_>>(),
+        vec![0, 1]
+    );
+    assert_ne!(
+        pipes[2].occurrences()[0].coordinate(),
+        pipes[2].occurrences()[1].coordinate()
+    );
+    assert_ne!(pipes[1].binding_identity(), pipes[2].binding_identity());
+}
+
+#[test]
+fn pipe_left_nested_lhs_inherits_outer_and_closure_requires_saved_binding() {
+    let nested = fixture(
+        r#"
+fn add(left: i64, right: i64) -> i64 { left + right }
+
+fn nested(input: i64) -> i64 {
+    input |> (^ |> add(^, 1i64))
+}
+"#,
+        None,
+    );
+    let report = analyze(&nested).expect("nested pipe analysis");
+    let pipe_entries = report
+        .expressions()
+        .filter_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some((owner, pipe)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let (outer_owner, outer_pipe) = pipe_entries
+        .iter()
+        .find(|(_, pipe)| {
+            pipe_entries
+                .iter()
+                .any(|(child_owner, _)| *child_owner == pipe.lookup_right())
+        })
+        .copied()
+        .expect("outer pipe with nested RHS pipe");
+    let inner_owner = outer_pipe.lookup_right();
+    let inner_pipe = pipe_entries
+        .iter()
+        .find_map(|(owner, pipe)| (*owner == inner_owner).then_some(*pipe))
+        .expect("nested pipe");
+    let expression_uses = report
+        .hir_topology()
+        .module(outer_owner.module())
+        .expect("nested module topology")
+        .expression_uses();
+    let nested_left = inner_pipe.lookup_left();
+    assert_eq!(
+        expression_uses.pipe_left_owner(nested_left),
+        Ok(Some(outer_owner)),
+        "nested LHS inherits the enclosing pipe owner"
+    );
+    assert!(
+        outer_pipe
+            .occurrences()
+            .iter()
+            .any(|occurrence| occurrence.lookup_expression() == nested_left)
+    );
+    assert!(
+        inner_pipe
+            .occurrences()
+            .iter()
+            .all(|occurrence| occurrence.lookup_expression() != nested_left)
+    );
+    let mut pipes = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some(pipe),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    pipes.sort_by_key(|pipe| pipe.occurrences().len());
+    assert_eq!(pipes.len(), 2);
+    assert_eq!(pipes[0].occurrences().len(), 1, "inner RHS owns its ^");
+    assert_eq!(
+        pipes[1].occurrences().len(),
+        1,
+        "inner LHS inherits outer ^"
+    );
+    assert_ne!(
+        pipes[0].occurrences()[0].lookup_expression(),
+        pipes[1].occurrences()[0].lookup_expression()
+    );
+
+    let closure_cut = fixture(
+        r#"
+fn closure_cut(input: i64) -> i64 {
+    input |> (|value: i64| value + ^)(1i64)
+}
+"#,
+        None,
+    );
+    assert!(
+        analyze(&closure_cut).is_err(),
+        "^ inside an explicit closure cannot capture the enclosing pipe"
+    );
+
+    let saved_binding = fixture(
+        r#"
+fn saved_binding(input: i64) -> i64 {
+    let saved = input
+    input |> (|value: i64| value + saved)(1i64)
+}
+"#,
+        None,
+    );
+    analyze(&saved_binding).expect("explicit saved binding remains valid");
+}
+
+#[test]
+fn pipe_binding_identity_is_owner_and_left_type_bound() {
+    let fixture = fixture(
+        r"
+fn identity_i64(value: i64) -> i64 { value }
+fn identity_bool(value: bool) -> bool { value }
+
+fn first(input: i64) -> i64 { input |> identity_i64(^) }
+fn second(input: i64) -> i64 { input |> identity_i64(^) }
+fn bool_value(input: bool) -> bool { input |> identity_bool(^) }
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("pipe identity analysis");
+    let identities = report
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Pipe(pipe) => Some(pipe),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(identities.len(), 3);
+    assert_ne!(
+        identities[0].binding_identity(),
+        identities[1].binding_identity()
+    );
+    assert_ne!(
+        identities[0].binding_identity(),
+        identities[2].binding_identity()
+    );
+    assert_ne!(
+        identities[1].binding_identity(),
+        identities[2].binding_identity()
+    );
 }
 
 #[test]
@@ -2804,19 +3090,19 @@ fn retain_option(input: Option<i64>) -> Option<i64> {
         .collect::<Vec<_>>();
     assert_eq!(boundaries.len(), 2);
     assert!(
-        boundaries
-            .iter()
-            .all(|boundary| matches!(boundary, CheckedTryBoundary::CarrierBlock(_)))
+        boundaries.iter().all(|boundary| {
+            matches!(boundary.owner(), CheckedTryBoundaryOwner::CarrierBlock(_))
+        })
     );
     assert!(report.expressions().any(|(_, expression)| {
         matches!(
-            expression.ty(),
-            TypeKind::Result { ok, error }
+            expression.value_type(),
+            Some(TypeKind::Result { ok, error })
                 if **ok == TypeKind::I64 && **error == TypeKind::String
         )
     }));
     assert!(report.expressions().any(|(_, expression)| {
-        matches!(expression.ty(), TypeKind::Option(item) if **item == TypeKind::I64)
+        matches!(expression.value_type(), Some(TypeKind::Option(item)) if **item == TypeKind::I64)
     }));
 }
 
@@ -2833,14 +3119,14 @@ fn selected() -> Option<i64> {
     let report = analyze(&fixture).expect("Option carrier block final analysis");
     assert!(report.expressions().any(|(_, expression)| {
         matches!(
-            expression.ty(),
-            TypeKind::Option(value) if **value == TypeKind::I64
+            expression.value_type(),
+            Some(TypeKind::Option(value)) if **value == TypeKind::I64
         )
     }));
     assert!(
         !report
             .expressions()
-            .any(|(_, expression)| matches!(expression.ty(), TypeKind::Need(_)))
+            .any(|(_, expression)| matches!(expression.value_type(), Some(TypeKind::Need(_))))
     );
 }
 
@@ -2995,6 +3281,13 @@ fn root() {
             matches!(expression.kind(), HirExprKind::Closure(_)).then_some(owner)
         })
         .expect("closure expression");
+    let Some(TypeKind::Function { effects, .. }) = report
+        .expression(closure_owner)
+        .and_then(|checked| checked.result().value_type())
+    else {
+        panic!("the closure value keeps its function type");
+    };
+    assert_eq!(effects.concrete().to_labels(), ["fs.read"]);
     let closure_source = module
         .source_site(
             module.provenance().source_identity(),
@@ -3017,6 +3310,15 @@ fn root() {
             .concrete()
             .to_labels(),
         ["fs.read"]
+    );
+    assert_eq!(
+        report
+            .checked_callables()
+            .closure_execution_at_source(closure_source)
+            .expect("source-indexed checked closure execution")
+            .control(),
+        CheckedExecutableControlRole::FlowRequired,
+        "a closure containing a project call requires the same Flow control family as an ordinary function"
     );
 }
 
@@ -3279,7 +3581,12 @@ fn checked_callable_join_uses_the_current_catalog_row_and_digest() {
         .checked_id()
         .expect("project call has a checked callable ID");
     assert_eq!(join.digest(), Some(id.semantic_digest()));
-    assert_ne!(join.semantic_digest().as_bytes(), &[0; 32]);
+    assert_ne!(
+        join.semantic_digest()
+            .expect("closed checked join")
+            .as_bytes(),
+        &[0; 32]
+    );
 }
 
 #[test]
@@ -3292,7 +3599,12 @@ fn intrinsic_callable_join_keeps_typed_candidate_authority_without_a_catalog_row
         .expect("typed intrinsic joins without fabricating a checked catalog row");
     assert!(join.checked_id().is_none());
     assert!(join.digest().is_none());
-    assert_ne!(join.semantic_digest().as_bytes(), &[0; 32]);
+    assert_ne!(
+        join.semantic_digest()
+            .expect("closed checked join")
+            .as_bytes(),
+        &[0; 32]
+    );
 }
 
 #[test]
@@ -3331,13 +3643,16 @@ fn checked_child_edges_preserve_hir_order_and_role_ordinals() {
         .checked_child_edges(owner)
         .expect("tuple children have checked facts");
     assert_eq!(
-        checked.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        checked
+            .iter()
+            .map(CheckedExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
         expected
     );
     assert_eq!(
         checked
             .iter()
-            .map(|(_, role)| role.semantic_tag())
+            .map(|edge| edge.role().semantic_tag())
             .collect::<Vec<_>>(),
         [0x1000, 0x1000]
     );
@@ -3371,12 +3686,15 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
         .checked_expression_edge_fact(owner)
         .expect("record field fact");
     assert_eq!(
-        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        edges
+            .iter()
+            .map(CheckedExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
         expected
     );
     let accepted_ordinals = edges
         .iter()
-        .map(|(_, role)| match role {
+        .map(|edge| match edge.role() {
             CheckedExpressionChildRole::RecordField {
                 source_ordinal,
                 accepted_field,
@@ -3406,45 +3724,21 @@ fn checked_match_reference(
         .expect("Match reference belongs to the exact accepted module snapshot")
 }
 
-#[test]
-fn checked_match_reference_rejects_a_foreign_snapshot_before_transcription() {
-    let source = concat!(
-        "fn root(flag: bool) -> i64 {\n",
-        "    match flag {\n",
-        "        true => 1i64\n",
-        "        false => 2i64\n",
-        "    }\n",
-        "}\n",
-    );
-    let fixture = fixture(source, None);
-    let report = analyze(&fixture).expect("checked Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
-    let module = project
-        .module(&CanonicalModulePath::crate_root())
-        .expect("root HIR module");
-    let owner = module
-        .expressions()
-        .find_map(|(owner, expression)| {
-            matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
-        })
-        .expect("Match expression");
-    let foreign = self::fixture(source, None);
-    let foreign_project = foreign.project.executable_view().expect("foreign HIR");
-    let foreign_snapshot = foreign_project
-        .module(&CanonicalModulePath::crate_root())
-        .expect("foreign root HIR module")
-        .snapshot_id();
-    let stale = super::CheckedMatchRef::new(foreign_snapshot, owner);
-
-    assert_eq!(
-        report.build_checked_match_for_ref(
+fn checked_match_product(
+    report: &FinalSemanticAnalysis,
+    project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    module: &HirModule,
+    symbols: &ProjectSymbolTable,
+    owner: arcweft_lang_hir::identity::ExprId,
+) -> super::semantic_transcript::CheckedMatch {
+    report
+        .build_checked_match_for_ref(
             project,
-            &fixture.symbols,
-            stale,
-            CheckedMatchLimits::PRODUCTION,
-        ),
-        Err(SemanticTranscriptError::StaleMatchReference)
-    );
+            symbols,
+            checked_match_reference(report, module, symbols, owner),
+            super::CheckedMatchLimits::PRODUCTION,
+        )
+        .expect("generic Match semantic product")
 }
 
 #[test]
@@ -3486,27 +3780,29 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
         .checked_child_edges(owner)
         .expect("Match child edges have complete checked evidence");
     assert_eq!(
-        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        edges
+            .iter()
+            .map(CheckedExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
         expression.kind().direct_expression_children()
     );
     assert!(
         edges
             .iter()
-            .any(|(_, role)| matches!(role, CheckedExpressionChildRole::Guard { arm: 0 }))
+            .any(|edge| matches!(edge.role(), CheckedExpressionChildRole::Guard { arm: 0 }))
     );
     assert!(
         edges
             .iter()
-            .any(|(_, role)| matches!(role, CheckedExpressionChildRole::ArmValue { arm: 1 }))
+            .any(|edge| matches!(edge.role(), CheckedExpressionChildRole::ArmValue { arm: 1 }))
     );
-    let product = report
-        .build_checked_match_for_ref(
-            fixture.project.executable_view().expect("executable HIR"),
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            super::CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("generic Match semantic product");
+    let product = checked_match_product(
+        &report,
+        fixture.project.executable_view().expect("executable HIR"),
+        module,
+        &fixture.symbols,
+        owner,
+    );
     assert_eq!(product.arms().len(), 2);
     assert!(product.coverage().exhaustive());
     assert_ne!(product.semantic_digest().as_bytes(), &[0; 32]);
@@ -3537,14 +3833,7 @@ fn checked_match_semantic_path_crosses_the_typed_statement_root() {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("statement initializer Match");
-    let product = report
-        .build_checked_match_for_ref(
-            project,
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            super::CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("statement-origin path is HIR-owned and semantically enriched");
+    let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
     assert!(product.coverage().exhaustive());
     assert_eq!(product.arms().len(), 2);
 }
@@ -3573,14 +3862,7 @@ fn root(value: Option<i64>) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("Option Match expression");
-    let product = report
-        .build_checked_match_for_ref(
-            project,
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("Option Match semantic product");
+    let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
     assert!(product.coverage().exhaustive());
     assert!(product.coverage().unreachable().is_empty());
     let some = product.arms().first().expect("Some arm");
@@ -3665,14 +3947,7 @@ fn root(flag: bool, ready: bool) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("guarded Match expression");
-    let product = report
-        .build_checked_match_for_ref(
-            project,
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("guarded Match semantic product");
+    let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
     assert!(product.coverage().exhaustive());
     let unreachable = product.coverage().unreachable();
     assert_eq!(unreachable.len(), 1);
@@ -3957,7 +4232,7 @@ fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
 #[test]
 fn semantic_coordinate_index_issues_output_target_with_affine_application_owner() {
     let fixture = character_nominal_fixture(concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "flow line() -> String {\n",
         "    let (_, cue) = akane(voice=auto)[聞いて。[p]]\n",
         "    with:\n",
@@ -4102,8 +4377,10 @@ fn root(route: Route) -> i64 {
     let semantic_type = report
         .expression(authored_match.scrutinee())
         .expect("checked enum scrutinee")
-        .ty()
-        .semantic_identity_digest();
+        .value_type()
+        .expect("enum scrutinee value")
+        .semantic_identity_digest()
+        .expect("stable fixture type");
     let definition = report
         .project_nominal_semantic(semantic_type)
         .expect("layout-free project nominal semantics");
@@ -4119,14 +4396,7 @@ fn root(route: Route) -> i64 {
             cases[ordinal].semantic_id()
         );
     }
-    let product = report
-        .build_checked_match_for_ref(
-            project,
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("project enum Match semantic product");
+    let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
     assert!(product.coverage().exhaustive());
     assert_ne!(product.coverage().domain_digest().as_bytes(), &[0; 32]);
     assert_ne!(
@@ -4150,14 +4420,7 @@ fn checked_match_transcript_changes_when_source_arm_order_changes() {
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("Match expression");
-        let product = report
-            .build_checked_match_for_ref(
-                project,
-                &fixture.symbols,
-                checked_match_reference(&report, module, &fixture.symbols, owner),
-                CheckedMatchLimits::PRODUCTION,
-            )
-            .expect("ordered Match semantic product");
+        let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
         *product.semantic_digest().as_bytes()
     };
 
@@ -4213,14 +4476,7 @@ fn root(flag: bool) -> i64 {{
                 matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
             })
             .expect("Match expression");
-        let product = report
-            .build_checked_match_for_ref(
-                project,
-                &fixture.symbols,
-                checked_match_reference(&report, module, &fixture.symbols, owner),
-                CheckedMatchLimits::PRODUCTION,
-            )
-            .expect("call-contract Match semantic product");
+        let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
         *product.semantic_digest().as_bytes()
     };
 
@@ -4251,14 +4507,7 @@ fn root(pair: (bool, bool)) -> i64 {
             matches!(expression.kind(), HirExprKind::Match(_)).then_some(owner)
         })
         .expect("tuple Match expression");
-    let product = report
-        .build_checked_match_for_ref(
-            project,
-            &fixture.symbols,
-            checked_match_reference(&report, module, &fixture.symbols, owner),
-            CheckedMatchLimits::PRODUCTION,
-        )
-        .expect("tuple coverage uses the generic product matrix");
+    let product = checked_match_product(&report, project, module, &fixture.symbols, owner);
     assert!(product.coverage().exhaustive());
 }
 
@@ -4358,13 +4607,16 @@ flow done() -> String {
         .checked_child_edges(owner)
         .expect("Choice nested path edges have accepted evidence");
     assert_eq!(
-        edges.iter().map(|(child, _)| *child).collect::<Vec<_>>(),
+        edges
+            .iter()
+            .map(CheckedExpressionChildEdge::child)
+            .collect::<Vec<_>>(),
         expression.kind().direct_expression_children()
     );
 }
 
 #[test]
-fn missing_checker_owned_choice_path_evidence_rejects_only_the_edge_fact() {
+fn missing_checker_owned_choice_path_evidence_rejects_publication() {
     let fixture = fixture(
         r#"
 flow main {
@@ -4397,38 +4649,31 @@ flow done() -> String {
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
     let complete = checked.complete().expect("complete Choice fixture");
-    *checked = CheckedExpression::new(
-        complete.ty().clone(),
-        complete.type_selection(),
+    let ty = complete
+        .value_type()
+        .cloned()
+        .expect("Choice value fixture");
+    let type_selection = complete.type_selection().expect("Choice selection fixture");
+    *checked = CheckedExpression::value(
+        ty,
+        type_selection,
         complete.effects().clone(),
         complete.resolution().clone(),
     )
     .into();
-    let report = FinalSemanticAnalysis::try_new(
+    let error = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
         Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
         input,
     )
-    .expect("missing nested evidence remains a recoverable owner fact");
-    assert_eq!(
-        report.checked_child_edges(owner),
-        Err(super::CheckedExpressionEdgeError::Child(
-            super::CheckedChildEdgeError::MissingNestedPath,
-        ))
-    );
-    assert!(report.checked_expression_edge_fact(owner).is_err());
-    assert_eq!(
-        report.checked_callable_join(owner),
-        Err(super::CheckedExpressionEdgeError::Child(
-            super::CheckedChildEdgeError::MissingNestedPath,
-        ))
-    );
+    .expect_err("missing nested evidence must reject atomic publication");
+    assert_eq!(error, FinalSemanticAnalysisError::WrongPayloadFamily);
 }
 
 #[test]
-fn checker_nested_path_error_is_retained_as_the_publication_edge_error() {
+fn checker_nested_path_error_rejects_publication() {
     let fixture = fixture(
         r#"
 flow main {
@@ -4461,28 +4706,28 @@ flow done() -> String {
         .find(|(candidate, _)| *candidate == owner)
         .expect("checked Choice input fact");
     let complete = checked.complete().expect("complete Choice fixture");
-    *checked = CheckedExpression::new(
-        complete.ty().clone(),
-        complete.type_selection(),
+    let ty = complete
+        .value_type()
+        .cloned()
+        .expect("Choice value fixture");
+    let type_selection = complete.type_selection().expect("Choice selection fixture");
+    *checked = CheckedExpression::value(
+        ty,
+        type_selection,
         complete.effects().clone(),
         complete.resolution().clone(),
     )
     .with_nested_path_evidence(Err(super::CheckedChildEdgeError::StaleNestedPath))
     .into();
-    let report = FinalSemanticAnalysis::try_new(
+    let error = FinalSemanticAnalysis::try_new(
         fixture.project.executable_view().expect("executable HIR"),
         &fixture.symbols,
         Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
         input,
     )
-    .expect("checker error remains a recoverable owner fact");
-    assert_eq!(
-        report.checked_child_edges(owner),
-        Err(super::CheckedExpressionEdgeError::Child(
-            super::CheckedChildEdgeError::StaleNestedPath,
-        ))
-    );
+    .expect_err("checker-owned nested-path errors must reject atomic publication");
+    assert_eq!(error, FinalSemanticAnalysisError::WrongPayloadFamily);
 }
 
 #[test]
@@ -4499,7 +4744,10 @@ fn production_analyzer_routes_capacity_through_typed_associated_authority() {
         CallableCandidateId::CapacityMethod(_)
     ));
     assert_eq!(considered.len(), 1);
-    assert_eq!(selected_application(call).result().ty(), &TypeKind::String);
+    assert_eq!(
+        selected_application(call).result().value_type(),
+        Some(&TypeKind::String)
+    );
     assert_eq!(selected_execution_arguments(call).len(), 1);
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
@@ -4563,7 +4811,10 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
             signature.origin(),
             crate::callable::SignatureOrigin::Language { .. }
         ));
-        assert_eq!(signature.result(), selected.schema().result());
+        assert_eq!(
+            signature.result().value_type(),
+            selected.schema().value_type()
+        );
         assert_eq!(
             signature.effects(),
             selected
@@ -4707,7 +4958,7 @@ fn signature_query_observes_deadline_at_each_bounded_control_boundary() {
 #[test]
 fn character_nominal_show_checker_signature_primary_and_schema_equal() {
     const SOURCE: &str = concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "fn caller() { show(@character.akane, look = .normal); }\n",
     );
     let fixture = character_nominal_fixture(SOURCE);
@@ -4751,14 +5002,16 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
     );
     assert_eq!(
         look.character_nominal(),
-        expected_look.semantic_identity_digest()
+        expected_look
+            .semantic_identity_digest()
+            .expect("stable fixture type")
     );
     assert_eq!(look.diagnostic_name().as_str(), "normal");
     assert_ne!(look.look().as_bytes(), &[0; 32]);
     assert!(report.expressions().all(|(_, expression)| !matches!(
         expression.resolution(),
         CheckedExpressionResolution::Variant(variant)
-            if matches!(variant.owner(), CheckedVariantOwner::CharacterNominal { nominal, .. }
+            if matches!(variant.owner().kind(), CheckedVariantOwnerKind::CharacterNominal { nominal, .. }
                 if nominal.family() == crate::types::CharacterNominalFamily::Look)
     )));
     assert_character_signature_projection(&fixture, &report, SOURCE, selected, &expected_look);
@@ -4767,7 +5020,7 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
 #[test]
 fn character_stage_look_rejects_names_absent_from_the_exact_registered_manifest() {
     let fixture = character_nominal_fixture(concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "fn caller() { show(@character.akane, look = .missing); }\n",
     ));
 
@@ -4778,15 +5031,27 @@ fn character_stage_look_rejects_names_absent_from_the_exact_registered_manifest(
 }
 
 #[test]
-fn character_any_show_rejects_reserved_look_instead_of_open_supply() {
+fn character_any_show_rejects_reserved_look_instead_of_open_named_supply() {
     let fixture = fixture(
         "fn supply(speaker: Ref<Character>) { show(speaker, look = 1i64); }\n",
         None,
     );
     let report = analyze(&fixture).expect("Character-Any call keeps rejected evidence");
-    let (_, call) = report.calls().next().expect("one Show call");
+    let (owner, call) = report.calls().next().expect("one Show call");
     assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
     assert!(call.selected_application().is_none());
+    let expression = report
+        .expression(owner)
+        .expect("diagnostic call expression");
+    assert_eq!(
+        expression.result(),
+        &super::CheckedExpressionResult::Unavailable
+    );
+    assert!(expression.value_type().is_none());
+    assert_eq!(
+        expression.execution_plan().value(),
+        super::CheckedRuntimeValueDisposition::Omit
+    );
 }
 
 #[test]
@@ -4795,16 +5060,20 @@ fn character_any_show_rejects_reserved_look_clear() {
         "fn clear(speaker: Ref<Character>) { show(speaker, look = None); }\n",
         None,
     );
-    assert!(matches!(
-        analyze(&fixture),
-        Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
-    ));
+    let result = analyze(&fixture);
+    assert!(
+        matches!(
+            result,
+            Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
+        ),
+        "unexpected result: {result:?}"
+    );
 }
 
 #[test]
 fn character_dialogue_exact_target_supplies_the_manifest_look_type() {
     const SOURCE: &str = concat!(
-        "pub character @character.akane Akane as akane {}\n",
+        "pub character akane {}\n",
         "fn configure() { let dialogue = akane(look = .normal) }\n",
     );
     let fixture = character_nominal_fixture(SOURCE);
@@ -4849,8 +5118,18 @@ fn external_character_entity_reference_retains_registered_owner_without_hir_item
         })
         .expect("checked external Character item");
     let expected = CharacterId::try_new("character.akane").expect("Character ID");
-    assert_eq!(checked.ty(), &TypeKind::entity_ref(EntityKind::Character));
-    assert_eq!(item.value_type(), checked.ty().semantic_identity_digest());
+    assert_eq!(
+        checked.value_type(),
+        Some(&TypeKind::entity_ref(EntityKind::Character))
+    );
+    assert_eq!(
+        item.value_type(),
+        checked
+            .value_type()
+            .expect("Character expression value")
+            .semantic_identity_digest()
+            .expect("stable fixture type")
+    );
     assert!(item.has_valid_semantic_identity());
     assert_ne!(item.semantic_id().as_bytes(), &[0; 32]);
     assert_eq!(item.public_id().as_str(), expected.as_str());
@@ -4913,7 +5192,10 @@ fn assert_character_signature_projection(
         signature.origin(),
         crate::callable::SignatureOrigin::Language { .. }
     ));
-    assert_eq!(signature.result(), selected.schema().result());
+    assert_eq!(
+        signature.result().value_type(),
+        selected.schema().value_type()
+    );
     let [group] = signature.groups() else {
         panic!("one Character presentation group")
     };
@@ -5074,14 +5356,19 @@ fn assert_index_postfix_transaction(fixture: &Fixture) {
     let edges = report
         .checked_child_edges(owner)
         .expect("selected postfix edge graph");
-    assert!(edges.iter().any(|(child, role)| {
-        *child == *index && matches!(role, CheckedExpressionChildRole::PostfixIndexCandidate)
+    assert!(edges.iter().any(|edge| {
+        edge.child() == *index
+            && matches!(
+                edge.role(),
+                CheckedExpressionChildRole::PostfixIndexCandidate
+            )
     }));
-    assert!(
-        !edges.iter().any(|(_, role)| {
-            matches!(role, CheckedExpressionChildRole::PostfixDialogueCandidate)
-        })
-    );
+    assert!(!edges.iter().any(|edge| {
+        matches!(
+            edge.role(),
+            CheckedExpressionChildRole::PostfixDialogueCandidate
+        )
+    }));
 }
 
 #[test]
@@ -5208,7 +5495,10 @@ fn t_lim_12_007_candidate_boundary_probes_each_of_256_candidates_once() {
     let considered = selected_candidates(call);
 
     assert_eq!(considered.len(), candidate_count);
-    assert_eq!(selected_application(call).result().ty(), &TypeKind::I64);
+    assert_eq!(
+        selected_application(call).result().value_type(),
+        Some(&TypeKind::I64)
+    );
     assert_eq!(call.accounting().logical_argument_checks(), 1);
     assert_eq!(call.accounting().resolver_invocations(), 1);
     assert_eq!(
@@ -5362,6 +5652,15 @@ fn ambiguous_call_retains_complete_considered_set_beyond_the_tied_subset() {
     };
     let candidates = evidence.candidates();
     let considered = evidence.considered();
+    let expression = report
+        .expression(call.expression())
+        .expect("ambiguous expression");
+    assert_eq!(
+        expression.result(),
+        &super::CheckedExpressionResult::Unavailable
+    );
+    assert!(expression.value_type().is_none());
+    assert!(expression.type_selection().is_none());
 
     assert_eq!(candidates.len(), 2);
     assert_eq!(considered.len(), 3);
@@ -5436,16 +5735,19 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
             match (actual, expected) {
                 (
                     TypeKind::Function {
+                        binder: actual_binder,
                         params: actual_params,
                         return_type: actual_return,
                         effects: actual_effects,
                     },
                     TypeKind::Function {
+                        binder: expected_binder,
                         params: expected_params,
                         return_type: expected_return,
                         effects: expected_effects,
                     },
                 ) => {
+                    assert_eq!(actual_binder, expected_binder);
                     assert_eq!(actual_params, expected_params);
                     assert_eq!(actual_return, expected_return);
                     assert_eq!(actual_effects.concrete(), expected_effects.concrete());
@@ -5467,20 +5769,24 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
         let published = report
             .expression(primary_owner)
             .expect("primary contextual projection is published")
-            .ty();
+            .value_type()
+            .expect("primary contextual projection value");
         match (published, primary_expected) {
             (
                 TypeKind::Function {
+                    binder: published_binder,
                     params: published_params,
                     return_type: published_return,
                     effects: published_effects,
                 },
                 TypeKind::Function {
+                    binder: expected_binder,
                     params: expected_params,
                     return_type: expected_return,
                     effects: expected_effects,
                 },
             ) => {
+                assert_eq!(published_binder, expected_binder);
                 assert_eq!(published_params, expected_params);
                 assert_eq!(published_return, expected_return);
                 assert_eq!(published_effects.concrete(), expected_effects.concrete());
@@ -5540,10 +5846,12 @@ fn patterned(value: DataFormat) -> bool {
         assert_eq!(variant.selected().diagnostic_name(), Some("Json"));
         assert_eq!(variant.owner(), expression_variants[0].owner());
     }
-    let CheckedVariantOwner::BuiltinClosed { nominal, cases, .. } = expression_variants[0].owner()
+    let CheckedVariantOwnerKind::BuiltinClosed { nominal, .. } =
+        expression_variants[0].owner().kind()
     else {
         panic!("DataFormat must use the generic closed environment owner")
     };
+    let cases = expression_variants[0].owner().cases();
     assert_eq!(nominal.as_str(), "DataFormat");
     assert_eq!(
         cases
@@ -5604,39 +5912,134 @@ fn root() {
     let scalar = report
         .expression(initializers[0])
         .expect("scalar initializer fact");
-    assert_eq!(scalar.ty(), &TypeKind::I32);
+    assert_eq!(scalar.value_type(), Some(&TypeKind::I32));
     assert_eq!(
         scalar.type_selection(),
-        CheckedTypeSelection::DefaultNumericFallback
+        Some(CheckedTypeSelection::DefaultNumericFallback)
     );
 
     let values = report
         .expression(initializers[1])
         .expect("numeric sequence initializer fact");
-    assert_eq!(values.ty(), &TypeKind::Vec(Box::new(TypeKind::I32)));
+    assert_eq!(
+        values.value_type(),
+        Some(&TypeKind::Vec(Box::new(TypeKind::I32)))
+    );
     assert_eq!(
         values.type_selection(),
-        CheckedTypeSelection::DefaultNumericFallback
+        Some(CheckedTypeSelection::DefaultNumericFallback)
     );
 
     assert_eq!(
         report
             .expression(initializers[2])
             .expect("partial placeholder initializer fact")
-            .ty(),
-        &TypeKind::function_with_effects(
+            .value_type(),
+        Some(&TypeKind::function_with_effects(
             [TypeKind::I64],
             TypeKind::Bool,
             EffectRow::closed(EffectSet::new()),
-        )
+        ))
     );
     assert_eq!(
         report
             .expression(initializers[3])
             .expect("zero-argument closure initializer fact")
-            .ty(),
-        &TypeKind::function_with_effects([], TypeKind::I32, EffectRow::closed(EffectSet::new()))
+            .value_type(),
+        Some(&TypeKind::function_with_effects(
+            [],
+            TypeKind::I32,
+            EffectRow::closed(EffectSet::new())
+        ))
     );
+}
+
+#[test]
+fn flow_closure_initializer_retains_final_type_and_numeric_fallback_authority() {
+    let fixture = fixture(
+        r"
+flow @flow.closure_numeric_fallback closure_numeric_fallback {
+    let fallback = || 1
+}
+",
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .modules()
+        .next()
+        .expect("root module")
+        .1;
+    let (pattern, initializer) = module
+        .statements()
+        .find_map(|(_, statement)| match statement.kind() {
+            HirStmtKind::Let {
+                pattern,
+                initializer,
+                ..
+            } => Some((*pattern, *initializer)),
+            _ => None,
+        })
+        .expect("Flow closure let statement");
+    for query in [
+        HirSourceQuery::Pattern {
+            owner: pattern,
+            role: HirPatternSourceRole::Whole,
+        },
+        HirSourceQuery::Expr {
+            owner: initializer,
+            role: HirExprSourceRole::Whole,
+        },
+    ] {
+        assert!(matches!(
+            module
+                .source_site(module.provenance().source_identity(), query)
+                .expect("source lookup")
+                .presence(),
+            HirSourcePresence::Present(HirSourceSite::Span(_))
+        ));
+    }
+    let closure_body = match module
+        .resolve_expr(initializer)
+        .expect("closure initializer")
+        .kind()
+    {
+        HirExprKind::Closure(closure) => closure.body(),
+        other => panic!("expected closure initializer, got {other:?}"),
+    };
+
+    let report = analyze(&fixture).expect("final Flow closure analysis");
+    assert_eq!(
+        report
+            .expression(initializer)
+            .expect("closure initializer fact")
+            .value_type(),
+        Some(&TypeKind::function_with_effects(
+            [],
+            TypeKind::I32,
+            EffectRow::closed(EffectSet::new()),
+        ))
+    );
+    let body = report
+        .expression(closure_body)
+        .expect("closure body numeric fact");
+    assert!(
+        matches!(body.resolution(), CheckedExpressionResolution::Literal(_)),
+        "runtime Flow closure bodies retain the checked literal carrier: {:?}",
+        body.resolution()
+    );
+    assert_eq!(body.value_type(), Some(&TypeKind::I32));
+    assert_eq!(
+        body.type_selection(),
+        Some(CheckedTypeSelection::DefaultNumericFallback)
+    );
+    assert!(report.diagnostics().iter().any(|diagnostic| {
+        diagnostic
+            .code()
+            .is_some_and(|code| code.as_str() == "sema.numeric.fallback_in_inferred_closure")
+    }));
 }
 
 #[test]
@@ -5682,7 +6085,9 @@ flow @flow.numeric_inlays numeric_inlays {
     assert_eq!(binding.annotation(), &TypeKind::U64);
     assert_eq!(
         binding.annotation_digest(),
-        TypeKind::U64.semantic_identity_digest()
+        TypeKind::U64
+            .semantic_identity_digest()
+            .expect("stable fixture type")
     );
 }
 
@@ -5719,11 +6124,14 @@ effects {}
         })
         .expect("function tail");
     assert_eq!(
-        report.expression(tail).expect("function tail fact").ty(),
-        &TypeKind::Result {
+        report
+            .expression(tail)
+            .expect("function tail fact")
+            .value_type(),
+        Some(&TypeKind::Result {
             ok: Box::new(TypeKind::Unit),
             error: Box::new(crate::env::nominal::standard_agent_error_type()),
-        }
+        })
     );
 }
 
@@ -5763,6 +6171,15 @@ fn ordinary_function_effect_contract_preserves_omitted_empty_and_nonempty_states
         ["debug.record", "fs.read"]
     );
 
+    assert_eq!(
+        inferred.ordinary_function_emission(),
+        Some(CheckedOrdinaryFunctionEmission::ExpressionFunctionSite)
+    );
+    assert_eq!(
+        bounded.ordinary_function_emission(),
+        Some(CheckedOrdinaryFunctionEmission::ExecutableFunctionSite)
+    );
+
     let bounded_owner = function_owner(&fixture, "bounded");
     let module = fixture
         .project
@@ -5789,6 +6206,37 @@ fn ordinary_function_effect_contract_preserves_omitted_empty_and_nonempty_states
             CheckedExpressionResolution::Effect(effect) if effect.as_str() == expected
         ));
     }
+}
+
+#[test]
+fn pure_project_call_requires_executable_function_control() {
+    let fixture = fixture(
+        r"
+fn helper(value: i64) -> i64 { value }
+fn outer(value: i64) -> i64 { helper(value) }
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("pure project-call control analysis");
+    let helper = checked_function_facts(&report, &fixture, "helper");
+    let outer = checked_function_facts(&report, &fixture, "outer");
+
+    assert_eq!(
+        helper.control(),
+        CheckedExecutableControlRole::ExpressionCompatible
+    );
+    assert_eq!(
+        helper.ordinary_function_emission(),
+        Some(CheckedOrdinaryFunctionEmission::ExpressionFunctionSite)
+    );
+    assert_eq!(outer.suspension(), CheckedSuspensionRole::NonSuspending);
+    assert!(outer.exposed_row().concrete().is_empty());
+    assert_eq!(outer.control(), CheckedExecutableControlRole::FlowRequired);
+    assert_eq!(
+        outer.ordinary_function_emission(),
+        Some(CheckedOrdinaryFunctionEmission::ExecutableFunctionSite),
+        "ProjectCall is a Flow control transfer even when its target is pure and non-suspending"
+    );
 }
 
 #[test]
@@ -5826,7 +6274,8 @@ flow root {
             report
                 .expression(*owner)
                 .expect("synthetic fact")
-                .ty()
+                .value_type()
+                .expect("synthetic value")
                 .clone()
         })
         .collect::<Vec<_>>();
@@ -5844,7 +6293,7 @@ flow root {
 fn dialogue_content_application_resolves_exact_character_item() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 flow @flow.root root {
     alice[Hello[p]]
@@ -5885,18 +6334,26 @@ flow @flow.root root {
                 return None;
             }
             let expression = module.resolve_expr(owner).ok()?;
-            let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
                 return None;
             };
-            Some((owner, application.target()))
+            let arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+                target,
+                plan: _,
+                coordinates: _,
+            } = application.family()
+            else {
+                return None;
+            };
+            Some((owner, *target))
         })
         .expect("dialogue application expression");
     let checked = report
         .expression(application)
         .expect("dialogue application fact");
     assert_eq!(
-        checked.ty(),
-        &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
+        checked.value_type(),
+        Some(&TypeKind::DialogueLine(Box::new(TypeKind::Unit)))
     );
     assert_dialogue_application_result_authority(
         &report,
@@ -5919,15 +6376,19 @@ flow @flow.root root {
     let edges = report
         .checked_child_edges(postfix_owner)
         .expect("selected Dialogue postfix edges");
-    assert!(edges.iter().any(|(child, role)| {
-        *child == application
-            && matches!(role, CheckedExpressionChildRole::PostfixDialogueCandidate)
+    assert!(edges.iter().any(|edge| {
+        edge.child() == application
+            && matches!(
+                edge.role(),
+                CheckedExpressionChildRole::PostfixDialogueCandidate
+            )
     }));
-    assert!(
-        !edges
-            .iter()
-            .any(|(_, role)| { matches!(role, CheckedExpressionChildRole::PostfixIndexCandidate) })
-    );
+    assert!(!edges.iter().any(|edge| {
+        matches!(
+            edge.role(),
+            CheckedExpressionChildRole::PostfixIndexCandidate
+        )
+    }));
     assert!(report.expression(rejected_index).is_none());
     let dormant_content_target = module
         .expressions()
@@ -5967,13 +6428,13 @@ flow @flow.root root {
 }
 
 #[test]
-fn dialogue_line_reference_uses_accepted_project_inventory() {
+fn dialogue_line_reference_uses_selected_project_inventory() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice[前[strong]強調[/strong]後];
+    alice[前#strong()[強調]後];
 }
 
 fn reference() {
@@ -5982,18 +6443,8 @@ fn reference() {
 ",
         None,
     );
-    let analysis = analyze(&fixture).unwrap_or_else(|error| {
-        panic!(
-            "typed dialogue-line reference analysis: {error:?}; accepted={:?}",
-            fixture
-                .project
-                .dialogue_lines()
-                .records()
-                .iter()
-                .map(|line| line.id().as_str())
-                .collect::<Vec<_>>()
-        )
-    });
+    let analysis = analyze(&fixture)
+        .unwrap_or_else(|error| panic!("typed dialogue-line reference analysis: {error:?}"));
     let (expression, target) = analysis
         .expressions()
         .find_map(|(owner, checked)| {
@@ -6037,7 +6488,7 @@ fn reference() {
 }
 
 #[test]
-fn dialogue_line_reference_rejects_target_outside_accepted_inventory() {
+fn dialogue_line_reference_rejects_target_outside_selected_inventory() {
     let fixture = fixture(
         r"
 fn reference() {
@@ -6048,7 +6499,7 @@ fn reference() {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
+        Err(FinalSemanticAnalysisError::WrongPayloadFamily)
     ));
 }
 
@@ -6056,13 +6507,13 @@ fn reference() {
 fn dialogue_configuration_coordinates_are_typed_semantic_metadata() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
     alice(
         id = @say.story.greeting,
         text_key = @text.story.greeting,
-    )[前[strong]強調[/strong]後];
+    )[前#strong()[強調]後];
 }
 ",
         None,
@@ -6092,7 +6543,7 @@ fn opening() {
 fn character_dialogue_patch_retains_typed_fields_in_source_order() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 flow @flow.root root {
     alice(source_locale = "ja-JP", inline_error = None)[Hello[p]]
@@ -6175,7 +6626,7 @@ flow @flow.root root {
 fn character_dialogue_application_only_coordinates_are_rejected_in_reusable_calls() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn configure() {
     let configured = alice(id = "not-an-application-coordinate")
@@ -6209,7 +6660,7 @@ fn configure() {
 fn character_dialogue_inline_failure_aliases_share_one_semantic_coordinate() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 flow @flow.root root {
     alice(inline_error = None, inline_fallback = None)[Hello[p]]
@@ -6250,7 +6701,7 @@ flow @flow.root root {
 fn character_dialogue_unknown_custom_field_has_typed_diagnostic() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn configure() {
     let configured = alice(mood = "quiet")
@@ -6288,7 +6739,7 @@ fn configure() {
 fn character_dialogue_custom_field_resolves_through_accepted_world_registry() {
     let (fixture, field) = custom_dialogue_field_fixture(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 flow @flow.root root {
     alice(mood = "quiet")[Hello[p]]
@@ -6421,7 +6872,7 @@ fn custom_dialogue_field_fixture(
 fn character_dialogue_custom_field_type_mismatch_has_typed_diagnostic() {
     let (fixture, field) = custom_dialogue_field_fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn configure() {
     let configured = alice(mood = 7)
@@ -6466,7 +6917,7 @@ fn configure() {
 fn character_dialogue_non_clearable_custom_field_has_typed_diagnostic() {
     let (fixture, field) = custom_dialogue_field_fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 flow @flow.root root {
     alice(mood = None)[Hello[p]]
@@ -6507,10 +6958,10 @@ flow @flow.root root {
 fn coordinate_free_dialogue_call_is_typed_configuration_metadata() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice()[前[strong]強調[/strong]後];
+    alice()[前#strong()[強調]後];
 }
 ",
         None,
@@ -6526,8 +6977,8 @@ fn opening() {
 fn character_dialogue_flows_through_branch_reconfigure_collection_and_capture() {
     let fixture = fixture(
         r#"
-pub character @character.alice Alice as alice {}
-pub character @character.bob Bob as bob {}
+pub character alice {}
+pub character bob {}
 
 fn configure(condition: bool) {
     let dialogue = if condition { alice() } else { bob() }
@@ -6545,6 +6996,13 @@ fn configure(condition: bool) {
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
     let analysis = analyze(&fixture).expect("CharacterDialogue value-flow matrix");
+    for (owner, call) in analysis.calls() {
+        assert!(
+            call.selected_application().is_some(),
+            "call {owner:?}: {:?}",
+            call.diagnostics()
+        );
+    }
     let local_type = |name: &str| {
         analysis.locals().find_map(|(owner, binding)| {
             module
@@ -6586,7 +7044,7 @@ fn configure(condition: bool) {
 fn character_dialogue_is_an_authored_parameter_return_and_alias_type() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 type Dialogue = CharacterDialogue
 
@@ -6625,7 +7083,7 @@ fn configure() {
 fn generic_identity_preserves_exact_character_dialogue_type() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn identity<T>(value: T) -> T {
     value
@@ -6793,13 +7251,13 @@ fn identity<T>(value: GenericProject<T>) -> GenericProject<T> { value }
 
 #[test]
 fn dialogue_content_signature_help_uses_the_shared_application_schema() {
-    const SOURCE: &str = r"
-pub character @character.alice Alice as alice {}
+    const SOURCE: &str = r#"
+pub character alice {}
 
 fn opening() {
-    alice()[前[strong]強調[/strong]後];
+    alice()[前#strong()[強調]後#ruby("reading")[漢字]];
 }
-";
+"#;
     let fixture = fixture(SOURCE, None);
     let analysis = analyze(&fixture).expect("typed dialogue application analysis");
     let module = fixture
@@ -6845,16 +7303,83 @@ fn opening() {
         Some(&TypeKind::Named("DialogueContent".to_owned()))
     );
     assert_eq!(
-        signature.result(),
-        &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
+        signature.result().value_type(),
+        Some(&TypeKind::DialogueLine(Box::new(TypeKind::Unit)))
     );
+
+    let head_offset = SOURCE.find("strong").expect("strong head") + 2;
+    let head = query_signature(
+        SignatureQuery::production(
+            &fixture.registered,
+            &fixture.root_document,
+            module,
+            &analysis,
+            head_offset,
+            SignatureQueryControl::new(&cancellation, None),
+        )
+        .expect("generation-bound head signature query"),
+    )
+    .expect("content-call head signature help");
+    let SignatureQueryOutcome::Help(head) = head else {
+        panic!("content-call head must select the inner callable")
+    };
+    assert_eq!(head.surface(), SemanticSignatureSurface::Parenthesized);
+    let [signature] = head.signatures() else {
+        panic!("one inner Strong content signature")
+    };
+    let CallableCandidateId::Content(operation) = signature.candidate() else {
+        panic!("inner content head must retain its typed content identity")
+    };
+    assert_eq!(
+        operation.definition(),
+        Some(arcweft_presentation::rich_text::PresentationContentCallableDefinitionId::Strong,)
+    );
+    assert!(matches!(
+        signature.result(),
+        crate::callable::CallableResultSchema::ContentEmission(result) if result == operation
+    ));
+
+    let inner_offset = SOURCE.find("reading").expect("ruby argument") + 2;
+    let inner = query_signature(
+        SignatureQuery::production(
+            &fixture.registered,
+            &fixture.root_document,
+            module,
+            &analysis,
+            inner_offset,
+            SignatureQueryControl::new(&cancellation, None),
+        )
+        .expect("generation-bound inner signature query"),
+    )
+    .expect("content-call head/argument signature help");
+    let SignatureQueryOutcome::Help(inner) = inner else {
+        panic!("content-call argument must select the inner callable")
+    };
+    assert_eq!(inner.surface(), SemanticSignatureSurface::Parenthesized);
+    let active = inner.active_parameter().expect("ruby reading parameter");
+    assert_eq!(active.group(), CallableGroupIndex::ZERO);
+    assert_eq!(active.parameter().get(), 0);
+    let [signature] = inner.signatures() else {
+        panic!("one inner Ruby content signature")
+    };
+    let CallableCandidateId::Content(operation) = signature.candidate() else {
+        panic!("inner content call must retain its typed content identity")
+    };
+    assert_eq!(
+        operation.definition(),
+        Some(arcweft_presentation::rich_text::PresentationContentCallableDefinitionId::Ruby,)
+    );
+    assert!(matches!(
+        signature.result(),
+        crate::callable::CallableResultSchema::ContentEmission(result) if result == operation
+    ));
 }
 
 #[test]
 fn dialogue_line_operation_cannot_escape_into_a_local_binding() {
     let fixture = fixture(
         r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
     let escaped = alice[Hello[p]]
@@ -6903,7 +7428,10 @@ entry agent @entry.agent.main {
             Some((checked, entry))
         })
         .expect("exact Entry reference fact");
-    assert_eq!(checked.ty(), &TypeKind::entity_ref(EntityKind::Entry));
+    assert_eq!(
+        checked.value_type(),
+        Some(&TypeKind::entity_ref(EntityKind::Entry))
+    );
     assert_eq!(entry.diagnostic_public_id().as_str(), "entry.agent.main");
     let module = fixture
         .project
@@ -6926,7 +7454,7 @@ entry agent @entry.agent.main {
 #[test]
 fn generic_substitutions_are_candidate_local_and_specialize_result() {
     let generic = |owner| {
-        TypeKind::GenericParam(GenericTypeParameterId::new(
+        TypeKind::generic_parameter(GenericTypeParameterId::new(
             GenericParameterOwnerId::AcceptedNominal(generic_test_owner(owner)),
             0,
         ))
@@ -6971,7 +7499,7 @@ fn generic_substitutions_are_candidate_local_and_specialize_result() {
     for (entry, expected_parameter) in choose.as_slice().iter().zip(expected_parameters) {
         let rows = entry.primary().schema().generic_inventory().types();
         assert_eq!(rows.len(), 1, "one generic candidate row");
-        assert_eq!(rows[0].parameter(), &expected_parameter);
+        assert_eq!(rows[0].parameter(), &expected_parameter.into());
         assert!(
             rows.iter()
                 .all(|row| { row.role() == crate::callable::CallableSchemaGenericRole::Candidate })
@@ -6992,14 +7520,29 @@ fn generic_substitutions_are_candidate_local_and_specialize_result() {
         .filter(|evaluation| evaluation.call_expression() == call.expression())
         .collect::<Vec<_>>();
     assert_eq!(physical.len(), 4);
-    assert_eq!(physical[0].expected(), &CandidateExpectedType::Exact(first));
+    // The operational trace records the live hint used by each probe. Each
+    // candidate opens its declaration into a distinct inference reference.
+    let CandidateExpectedType::Exact(TypeKind::GenericParam(first_opened)) = physical[0].expected()
+    else {
+        panic!("first candidate must probe under its own open parameter");
+    };
+    let CandidateExpectedType::Exact(TypeKind::GenericParam(second_opened)) =
+        physical[2].expected()
+    else {
+        panic!("second candidate must probe under its own open parameter");
+    };
+    assert!(matches!(
+        first_opened,
+        crate::types::GenericTypeReference::Inference(_)
+    ));
+    assert!(matches!(
+        second_opened,
+        crate::types::GenericTypeReference::Inference(_)
+    ));
+    assert_ne!(first_opened, second_opened);
     assert_eq!(
         physical[1].expected(),
         &CandidateExpectedType::Exact(TypeKind::I64)
-    );
-    assert_eq!(
-        physical[2].expected(),
-        &CandidateExpectedType::Exact(second)
     );
     assert_eq!(
         physical[3].expected(),
@@ -7326,7 +7869,7 @@ fn production_analyzer_routes_string_preserving_value_methods_through_capacity_f
     assert!(calls.iter().all(|facts| {
         facts
             .selected_application()
-            .is_some_and(|application| application.result().ty() == &TypeKind::String)
+            .is_some_and(|application| application.result().value_type() == Some(&TypeKind::String))
     }));
 }
 
@@ -7346,7 +7889,10 @@ fn production_analyzer_routes_single_string_preserving_value_method() {
                 CallableCandidateId::CapacityMethod(_)
             ) && application.core().candidates().candidates().len() == 1
     ));
-    assert_eq!(selected_application(call).result().ty(), &TypeKind::String);
+    assert_eq!(
+        selected_application(call).result().value_type(),
+        Some(&TypeKind::String)
+    );
 }
 
 #[test]
@@ -7441,7 +7987,10 @@ fn data_last_extension_receiver_consumes_the_final_receiver_group() {
         crate::callable::ResolvedCallableBaseInstantiation::Extension { group, parameter, .. }
             if group.get() == 1 && parameter.get() == 0
     ));
-    assert_eq!(selected_application(facts).result().ty(), &TypeKind::String);
+    assert_eq!(
+        selected_application(facts).result().value_type(),
+        Some(&TypeKind::String)
+    );
     assert!(matches!(
         selected_application(facts).result(),
         crate::callable::CheckedCallResult::Value(_)
@@ -7653,11 +8202,13 @@ entry agent @entry.agent.main { controller = composite_wait }
         })
         .expect("typed signal probe call");
     assert_eq!(
-        selected_application(signal).result().ty(),
-        &TypeKind::Probe(Box::new(TypeKind::Bool))
+        selected_application(signal).result().value_type(),
+        Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
     );
     assert_eq!(
-        report.expression(signal_owner).map(CheckedExpression::ty),
+        report
+            .expression(signal_owner)
+            .and_then(CheckedExpression::value_type),
         Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
     );
     let (metric_owner, metric) = report
@@ -7670,11 +8221,13 @@ entry agent @entry.agent.main { controller = composite_wait }
         })
         .expect("typed metric probe call");
     assert_eq!(
-        selected_application(metric).result().ty(),
-        &TypeKind::Probe(Box::new(TypeKind::U64))
+        selected_application(metric).result().value_type(),
+        Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
     );
     assert_eq!(
-        report.expression(metric_owner).map(CheckedExpression::ty),
+        report
+            .expression(metric_owner)
+            .and_then(CheckedExpression::value_type),
         Some(&TypeKind::Probe(Box::new(TypeKind::U64)))
     );
 }
@@ -7709,8 +8262,8 @@ entry agent @entry.agent.main { controller = local_wait }
         })
         .expect("selected signal call");
     assert_eq!(
-        selected_application(signal).result().ty(),
-        &TypeKind::Probe(Box::new(TypeKind::Bool))
+        selected_application(signal).result().value_type(),
+        Some(&TypeKind::Probe(Box::new(TypeKind::Bool)))
     );
     let exists = report
         .calls()
@@ -7723,11 +8276,14 @@ entry agent @entry.agent.main { controller = local_wait }
         })
         .expect("selected exists call");
     assert_eq!(
-        selected_application(exists).result().ty(),
-        &TypeKind::Predicate
+        selected_application(exists).result().value_type(),
+        Some(&TypeKind::Predicate)
     );
     assert!(report.expressions().all(|(_, expression)| {
-        crate::types::TypeGenericUseCollector::collect(expression.ty()).is_ok_and(|inventory| {
+        crate::types::TypeGenericUseCollector::collect(
+            expression.value_type().expect("value expression"),
+        )
+        .is_ok_and(|inventory| {
             inventory.types().iter().all(|parameter| {
                 parameter.owner()
                     != &GenericParameterOwnerId::LanguageIntrinsic(
@@ -7776,7 +8332,9 @@ entry agent @entry.agent.main { controller = run_smoke }
         })
         .expect("accepted field expression");
     assert_eq!(
-        report.expression(accepted).map(CheckedExpression::ty),
+        report
+            .expression(accepted)
+            .and_then(CheckedExpression::value_type),
         Some(&TypeKind::Bool)
     );
 }
@@ -7805,8 +8363,8 @@ entry agent @entry.agent.main { controller = inspect }
         })
         .expect("typed diagnostics method call");
     assert_eq!(
-        selected_application(call).result().ty(),
-        &TypeKind::Predicate
+        selected_application(call).result().value_type(),
+        Some(&TypeKind::Predicate)
     );
 
     let module = fixture
@@ -7836,7 +8394,7 @@ entry agent @entry.agent.main { controller = inspect }
     assert_eq!(
         report
             .expression(select.target())
-            .map(CheckedExpression::ty),
+            .and_then(CheckedExpression::value_type),
         Some(&TypeKind::AgentBuiltin(AgentBuiltinType::Diagnostics))
     );
 }
@@ -8038,16 +8596,7 @@ effects { }
 #[test]
 fn report_rejects_a_foreign_hir_or_symbol_generation() {
     let accepted = fixture("fn root() {}\n", None);
-    let input = complete_input(&accepted);
-    let (topology, checked_callables) = checked_callables(&accepted, &input);
-    let report = FinalSemanticAnalysis::try_new(
-        accepted.project.executable_view().expect("accepted HIR"),
-        &accepted.symbols,
-        topology,
-        checked_callables,
-        input,
-    )
-    .expect("accepted report");
+    let report = analyze(&accepted).expect("accepted report");
     let foreign = fixture("fn other() {}\n", None);
 
     assert!(matches!(
@@ -8106,7 +8655,7 @@ fn project_index_preserves_same_named_module_scoped_flows() {
 
 #[test]
 fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
-    let fixture = fixture("view Main(count: u32 = 1) {\n    Text(count)\n}\n", None);
+    let fixture = fixture("view Main(count: u32) {\n    Text(count)\n}\n", None);
     let analysis = analyze(&fixture).expect("View checked callable analysis");
     let symbol = fixture
         .symbols
@@ -8117,7 +8666,10 @@ fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
         .checked_callables()
         .project_callable(symbol.declaration())
         .expect("View checked callable facts");
-    assert_eq!(facts.record().schema().result(), &TypeKind::ViewValue);
+    assert_eq!(
+        facts.record().schema().value_type(),
+        Some(&TypeKind::ViewValue)
+    );
     assert_eq!(facts.record().schema().groups().len(), 1);
     assert_eq!(facts.record().schema().groups()[0].parameters().len(), 1);
 
@@ -8212,8 +8764,11 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
         .expect("typed on_click application");
 
     assert_eq!(
-        analysis.expression(owner).expect("modifier result").ty(),
-        &TypeKind::ViewValue
+        analysis
+            .expression(owner)
+            .expect("modifier result")
+            .value_type(),
+        Some(&TypeKind::ViewValue)
     );
     assert!(matches!(
         analysis
@@ -8223,9 +8778,209 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
         CheckedExpressionResolution::Select(CheckedSelectResolution::Method(_))
     ));
     assert_eq!(
-        analysis.expression(handler).expect("handler closure").ty(),
-        ViewModifierId::OnActivate.signature().params()[0].ty()
+        analysis
+            .expression(handler)
+            .expect("handler closure")
+            .value_type(),
+        Some(ViewModifierId::OnActivate.signature().params()[0].ty())
     );
+}
+
+#[test]
+fn view_fx_seals_direct_and_repeated_parameter_reads_into_checked_programs() {
+    let fixture = fixture(
+        r#"
+view Main(speed: f32) {
+    Text("direct").fx(wave(speed = speed))
+    Text("sum").fx(wave(speed = speed + speed))
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("checked View Fx analysis");
+    let mut applications = analysis
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::ViewFxApplication(application) => Some(application),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    applications.sort_by_key(|application| application.ordinal());
+    assert_eq!(applications.len(), 2);
+
+    fn program(
+        application: &crate::final_analysis::CheckedViewFxApplication,
+    ) -> &crate::final_analysis::CheckedViewValueProgram {
+        application
+            .arguments()
+            .iter()
+            .find_map(|argument| match argument.decision() {
+                crate::final_analysis::CheckedFxBindingDecision::Explicit(
+                    crate::final_analysis::CheckedViewFxBinding::Reactive(program),
+                ) => Some(program),
+                _ => None,
+            })
+            .expect("speed is retained as one reactive binding")
+    }
+    let direct = program(applications[0]);
+    let repeated = program(applications[1]);
+    assert_eq!(direct.inputs().len(), 1);
+    assert_eq!(repeated.inputs().len(), 1);
+    assert_eq!(
+        direct.inputs()[0].parameter(),
+        arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap()
+    );
+    assert_eq!(
+        repeated.inputs()[0].parameter(),
+        arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap()
+    );
+    assert!(matches!(
+        direct.program().instructions(),
+        [
+            arcweft_presentation::fx::ValueInstruction::LoadParameter { parameter },
+            arcweft_presentation::fx::ValueInstruction::Return,
+        ] if parameter.slot().get() == 0
+    ));
+    assert!(matches!(
+        repeated.program().instructions(),
+        [
+            arcweft_presentation::fx::ValueInstruction::LoadParameter { parameter: left },
+            arcweft_presentation::fx::ValueInstruction::LoadParameter { parameter: right },
+            arcweft_presentation::fx::ValueInstruction::Add,
+            arcweft_presentation::fx::ValueInstruction::Return,
+        ] if left.slot().get() == 0 && right.slot().get() == 0
+    ));
+}
+
+#[test]
+fn view_fx_seals_reactive_project_producer_after_definition_catalog_phase() {
+    let fixture = fixture(
+        r#"
+#[fx]
+fn tint(accent: Color) -> Fx {
+    Fx.text(color = accent)
+}
+view Main(accent: Color) {
+    Text("project").fx(tint(accent = accent))
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("checked project View Fx analysis");
+    let application = analysis
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::ViewFxApplication(application) => Some(application),
+            _ => None,
+        })
+        .expect("checked project View Fx application");
+    assert!(matches!(
+        application.definition(),
+        crate::final_analysis::CheckedFxDefinitionRef::Project { .. }
+    ));
+    let reactive = application
+        .arguments()
+        .iter()
+        .find_map(|argument| match argument.decision() {
+            crate::final_analysis::CheckedFxBindingDecision::Explicit(
+                crate::final_analysis::CheckedViewFxBinding::Reactive(program),
+            ) => Some(program),
+            _ => None,
+        })
+        .expect("project Fx parameter is reactive");
+    assert!(matches!(
+        reactive.inputs(),
+        [input]
+            if input.parameter()
+                == arcweft_view::ViewParameterCoordinate::try_from_index(0).unwrap()
+                && input.value_type() == arcweft_presentation::fx::FxRuntimeType::Color
+    ));
+}
+
+#[test]
+fn fx_payload_edges_are_typed_without_dropping_content_children() {
+    let fixture = fixture(
+        r#"
+pub character alice {}
+
+fn opening() {
+    alice[#fx(wave(amplitude=1px))[#strong()[text]]];
+}
+
+view Main(speed: f32) {
+    Text("direct").fx(wave(speed = speed))
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("typed Fx payload edge dispositions");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+
+    let content_owner = module
+        .expressions()
+        .find_map(|(owner, expression)| {
+            if !matches!(expression.kind(), HirExprKind::AttachedContentApplication(_)) {
+                return None;
+            }
+            let application = analysis.call(owner)?.selected_application()?;
+            matches!(
+                application.result().content_emission(),
+                Some(crate::callable::ContentCallableIdentity::Language {
+                    definition:
+                        arcweft_presentation::rich_text::PresentationContentCallableDefinitionId::Fx,
+                    ..
+                })
+            )
+            .then_some(owner)
+        })
+        .expect("attached Fx content owner");
+    let content_edges = analysis
+        .checked_expression_edge_fact(content_owner)
+        .expect("attached Fx edge fact");
+    assert!(!content_edges.edges().is_empty());
+    assert!(content_edges.edges().iter().any(|edge| {
+        matches!(
+            edge.role(),
+            CheckedExpressionChildRole::Argument { ordinal: 0 }
+        )
+    }));
+    assert!(content_edges.edges().iter().any(|edge| {
+        matches!(
+            edge.role(),
+            CheckedExpressionChildRole::AttachedContentApplication { .. }
+        )
+    }));
+
+    let view_owner = analysis
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::ViewFxApplication(_)
+            )
+            .then_some(owner)
+        })
+        .expect("View Fx application owner");
+    let view_edges = analysis
+        .checked_expression_edge_fact(view_owner)
+        .expect("View Fx edge fact");
+    assert!(
+        view_edges
+            .edges()
+            .iter()
+            .any(|edge| { matches!(edge.role(), CheckedExpressionChildRole::Callee) })
+    );
+    assert!(view_edges.edges().iter().any(|edge| {
+        matches!(
+            edge.role(),
+            CheckedExpressionChildRole::Argument { ordinal: 0 }
+        )
+    }));
 }
 
 #[test]
@@ -8236,8 +8991,7 @@ fn registered_on_click_rejects_a_non_action_handler() {
     );
     assert!(matches!(
         analyze(&fixture),
-        Err(FinalSemanticAnalysisError::CheckedCallableJoin(error))
-            if error.as_ref() == &CheckedCallableJoinError::NotSelected
+        Err(FinalSemanticAnalysisError::CallResolutionFailed { .. })
     ));
 }
 

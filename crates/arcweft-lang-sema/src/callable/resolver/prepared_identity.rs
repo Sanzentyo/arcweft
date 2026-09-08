@@ -12,17 +12,18 @@ use arcweft_lang_hir::{
     scope::CaptureAccess,
 };
 
-use crate::types::{CharacterDialogueCharacterType, TypeKind};
+use crate::types::CharacterDialogueCharacterType;
 
 use super::super::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallConstraintInvariant, CallableCandidateId,
     CallableFamily, CapacityMethodId, CheckedCapacityMethodIdentity,
     CheckedDialogueCallableIdentity, CheckedDomainMethodIdentity, CheckedLanguageCallableIdentity,
-    CollectionMethodId, DialogueCallableId, DomainMethodId, DropCallableId, EnumVariantSignatureId,
-    FunctionValueOrdinal, FunctionValueSignatureId, FxCallableSignatureId, IntegerMethodId,
-    LanguageCallableFamily, LineContextMethodId, LineScheduleCallableId, OptionConstructorKind,
-    PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
-    ResolvedCallableBaseInstantiation, ResultConstructorKind, StageMethodId,
+    CollectionMethodId, ContentCallableIdentity, DialogueCallableId, DomainMethodId,
+    DropCallableId, EnumVariantSignatureId, FunctionValueOrdinal, FunctionValueSignatureId,
+    FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
+    LineScheduleCallableId, OptionConstructorKind, PresentationCallableId,
+    PresentationHandleMethodId, PromotionCallableId, ResolvedCallableBaseInstantiation,
+    ResultConstructorKind, StageMethodId,
 };
 use super::{
     AcceptedEnumVariantCase, PreparedFunctionValueOriginEvidence,
@@ -35,12 +36,8 @@ use crate::callable::CheckedCallableId;
 /// family must add its stable prepared projection at the same time.
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum PreparedLanguageCallableIdentity {
-    Fx(FxCallableSignatureId),
-    EnumConstructor {
-        signature: EnumVariantSignatureId,
-        case_ordinal: u32,
-        expected: TypeKind,
-    },
+    FxConstructor(FxSourceConstructor),
+    EnumConstructor(EnumVariantSignatureId),
     Result(ResultConstructorKind),
     Option(OptionConstructorKind),
     Builtin(BuiltinCallableId),
@@ -50,6 +47,7 @@ pub(crate) enum PreparedLanguageCallableIdentity {
         operation: DialogueCallableId,
         callee: PreparedDialogueCalleeIdentity,
     },
+    Content(ContentCallableIdentity),
     Collection(CollectionMethodId),
     PresentationHandle(PresentationHandleMethodId),
     Integer(IntegerMethodId),
@@ -74,31 +72,24 @@ impl PreparedLanguageCallableIdentity {
         instantiation: &ResolvedCallableBaseInstantiation,
     ) -> Result<CheckedLanguageCallableIdentity, CallConstraintInvariant> {
         let checked = match (self, candidate, family) {
-            (Self::Fx(id), CallableCandidateId::Fx(candidate), CallableFamily::Fx)
-                if &id == candidate =>
-            {
-                CheckedLanguageCallableIdentity::Fx(id)
-            }
             (
-                Self::EnumConstructor {
-                    signature,
-                    case_ordinal,
-                    expected,
-                },
+                Self::FxConstructor(id),
+                CallableCandidateId::FxConstructor(candidate),
+                CallableFamily::FxConstructor,
+            ) if &id == candidate => CheckedLanguageCallableIdentity::FxConstructor(id),
+            (
+                Self::EnumConstructor(signature),
                 CallableCandidateId::EnumVariant(candidate),
                 CallableFamily::EnumConstructor,
             ) if &signature == candidate
-                && candidate.owner() == expected.semantic_identity_digest()
-                && candidate.case() == case_ordinal
                 && matches!(
                     instantiation,
-                    ResolvedCallableBaseInstantiation::ExpectedEnum { expected: sealed }
-                        if sealed == &expected
+                    ResolvedCallableBaseInstantiation::EnumConstructor
                 ) =>
             {
                 CheckedLanguageCallableIdentity::EnumConstructor {
-                    owner: expected.semantic_identity_digest(),
-                    case: case_ordinal,
+                    owner: signature.owner(),
+                    case: signature.case(),
                 }
             }
             (
@@ -134,6 +125,11 @@ impl PreparedLanguageCallableIdentity {
                 CheckedDialogueCallableIdentity::seal(operation, callee)?,
             ),
             (
+                Self::Content(identity),
+                CallableCandidateId::Content(candidate),
+                CallableFamily::Content,
+            ) if &identity == candidate => CheckedLanguageCallableIdentity::Content(identity),
+            (
                 Self::Collection(id),
                 CallableCandidateId::CollectionMethod(candidate),
                 CallableFamily::CollectionMethod,
@@ -153,7 +149,7 @@ impl PreparedLanguageCallableIdentity {
                 CallableCandidateId::DomainMethod(candidate),
                 CallableFamily::DomainMethod,
             ) if &id == candidate => {
-                CheckedLanguageCallableIdentity::Domain(checked_domain_method(id))
+                CheckedLanguageCallableIdentity::Domain(id.into_checked_identity()?)
             }
             (
                 Self::Capacity(id),
@@ -193,26 +189,32 @@ impl PreparedLanguageCallableIdentity {
     }
 }
 
-fn checked_domain_method(id: DomainMethodId) -> CheckedDomainMethodIdentity {
-    match id {
-        DomainMethodId::FxSampleOrdinalPhase => CheckedDomainMethodIdentity::FxSampleOrdinalPhase,
-        DomainMethodId::ObservedObjectRequireRole => {
-            CheckedDomainMethodIdentity::ObservedObjectRequireRole
-        }
-        DomainMethodId::MapGet { key, value } => CheckedDomainMethodIdentity::MapGet {
-            key: key.semantic_identity_digest(),
-            value: value.semantic_identity_digest(),
-        },
-        DomainMethodId::ProbeCompare { value, operation } => {
-            CheckedDomainMethodIdentity::ProbeCompare {
-                value: value.semantic_identity_digest(),
-                operation: operation.operator(),
+impl DomainMethodId {
+    fn into_checked_identity(self) -> Result<CheckedDomainMethodIdentity, CallConstraintInvariant> {
+        Ok(match self {
+            DomainMethodId::FxSampleOrdinalPhase => {
+                CheckedDomainMethodIdentity::FxSampleOrdinalPhase
             }
-        }
-        DomainMethodId::DiagnosticsHasError => CheckedDomainMethodIdentity::DiagnosticsHasError,
-        DomainMethodId::RagContextPackSummary => CheckedDomainMethodIdentity::RagContextPackSummary,
-        DomainMethodId::Context => CheckedDomainMethodIdentity::Context,
-        DomainMethodId::WithContext => CheckedDomainMethodIdentity::WithContext,
+            DomainMethodId::ObservedObjectRequireRole => {
+                CheckedDomainMethodIdentity::ObservedObjectRequireRole
+            }
+            DomainMethodId::MapGet { key, value } => CheckedDomainMethodIdentity::MapGet {
+                key: key.semantic_identity_digest()?,
+                value: value.semantic_identity_digest()?,
+            },
+            DomainMethodId::ProbeCompare { value, operation } => {
+                CheckedDomainMethodIdentity::ProbeCompare {
+                    value: value.semantic_identity_digest()?,
+                    operation: operation.operator(),
+                }
+            }
+            DomainMethodId::DiagnosticsHasError => CheckedDomainMethodIdentity::DiagnosticsHasError,
+            DomainMethodId::RagContextPackSummary => {
+                CheckedDomainMethodIdentity::RagContextPackSummary
+            }
+            DomainMethodId::Context => CheckedDomainMethodIdentity::Context,
+            DomainMethodId::WithContext => CheckedDomainMethodIdentity::WithContext,
+        })
     }
 }
 
@@ -327,22 +329,18 @@ fn language_identity(
     dialogue: Option<PreparedDialogueCalleeIdentity>,
 ) -> Option<PreparedResolvedCallableIdentity> {
     let identity = match (id, family) {
-        (CallableCandidateId::Fx(id), LanguageCallableFamily::Fx) => {
-            PreparedLanguageCallableIdentity::Fx(*id)
+        (CallableCandidateId::FxConstructor(id), LanguageCallableFamily::FxConstructor) => {
+            PreparedLanguageCallableIdentity::FxConstructor(*id)
         }
         (CallableCandidateId::EnumVariant(id), LanguageCallableFamily::EnumConstructor) => {
             let seed = enum_seed?;
-            let super::CallableInstantiation::ExpectedEnum { expected } = instantiation else {
+            let super::CallableInstantiation::EnumConstructor = instantiation else {
                 return None;
             };
-            if seed.id() != id || seed.expected() != expected {
+            if seed.id() != id {
                 return None;
             }
-            PreparedLanguageCallableIdentity::EnumConstructor {
-                signature: id.clone(),
-                case_ordinal: seed.case_ordinal(),
-                expected: expected.clone(),
-            }
+            PreparedLanguageCallableIdentity::EnumConstructor(id.clone())
         }
         (CallableCandidateId::Result(id), LanguageCallableFamily::ResultConstructor) => {
             PreparedLanguageCallableIdentity::Result(*id)
@@ -364,6 +362,9 @@ fn language_identity(
                 operation: *id,
                 callee: dialogue?,
             }
+        }
+        (CallableCandidateId::Content(identity), LanguageCallableFamily::Content) => {
+            PreparedLanguageCallableIdentity::Content(*identity)
         }
         (CallableCandidateId::CollectionMethod(id), LanguageCallableFamily::CollectionMethod) => {
             PreparedLanguageCallableIdentity::Collection(*id)
@@ -487,5 +488,27 @@ mod tests {
         };
         assert_eq!(actual_module, module);
         assert_eq!(actual_path, path);
+    }
+
+    #[test]
+    fn content_candidate_maps_to_checked_content_identity_and_family() {
+        let definition =
+            arcweft_presentation::rich_text::PresentationContentCallableDefinitionId::Strong;
+        let id = ContentCallableIdentity::language(
+            definition,
+            arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG
+                .get(definition)
+                .expect("Strong content row")
+                .schema_digest(),
+        );
+        let candidate = CallableCandidateId::Content(id);
+        let checked = PreparedLanguageCallableIdentity::Content(id)
+            .into_checked(
+                &candidate,
+                CallableFamily::Content,
+                &ResolvedCallableBaseInstantiation::None,
+            )
+            .expect("content candidate and family must share one checked identity");
+        assert_eq!(checked, CheckedLanguageCallableIdentity::Content(id));
     }
 }

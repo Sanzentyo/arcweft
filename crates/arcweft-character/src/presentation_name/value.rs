@@ -134,6 +134,13 @@ impl CharacterDisplayNameValue {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Returns the validated user-authored text bytes for semantic
+    /// presentation transcripts.
+    #[must_use]
+    pub fn canonical_text_bytes(&self) -> &[u8] {
+        self.0.as_bytes()
+    }
 }
 
 impl CharacterDisplayNameKey {
@@ -160,6 +167,12 @@ impl CharacterDisplayNameKey {
     #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+
+    /// Returns the owner-issued bytes of this generated text-key identity.
+    #[must_use]
+    pub fn canonical_identity_bytes(&self) -> &[u8] {
+        self.0.canonical_identity_bytes()
     }
 }
 
@@ -249,7 +262,7 @@ fn generate_key(
     locale: Option<&CharacterNameLocale>,
     suffix: &'static str,
 ) -> Result<CharacterDisplayNameKey, CharacterDisplayNameKeyError> {
-    let character_bytes = character.as_str().as_bytes();
+    let character_bytes = character.canonical_identity_bytes();
     if character_bytes.len() > MAX_CHARACTER_ID_BYTES {
         return Err(CharacterDisplayNameKeyError::CharacterIdTooLong {
             bytes: character_bytes.len(),
@@ -261,7 +274,11 @@ fn generate_key(
         DISPLAY_NAME_KEY_PREFIX.len()
             + character_bytes.len().saturating_mul(2)
             + locale.map_or(0, |value| {
-                value.locale_tag().as_str().len().saturating_mul(2)
+                value
+                    .locale_tag()
+                    .canonical_identity_bytes()
+                    .len()
+                    .saturating_mul(2)
             })
             + suffix.len()
             + 2,
@@ -272,7 +289,7 @@ fn generate_key(
     if let Some(locale) = locale {
         value.push_str(suffix);
         value.push('.');
-        push_lower_hex(&mut value, locale.locale_tag().as_str().as_bytes());
+        push_lower_hex(&mut value, locale.locale_tag().canonical_identity_bytes());
     } else {
         value.push_str(suffix);
     }

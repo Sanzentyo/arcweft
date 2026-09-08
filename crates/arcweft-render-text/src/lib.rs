@@ -8,7 +8,10 @@ pub mod resolved_document;
 
 mod resolve_frame;
 
-pub use resolve_frame::{LineDisplayError, RuntimeLineContext, resolve_frame};
+pub use resolve_frame::{
+    LineDisplayError, RuntimeLineContext, resolve_frame, resolve_frame_with_template,
+    resolve_materialized_frame,
+};
 pub use resolved_document::{
     LanguageTag, ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
     ResolvedTextStyle, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,

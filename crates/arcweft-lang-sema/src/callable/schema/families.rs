@@ -7,23 +7,27 @@ use crate::{
     effects::EffectSet,
     env::{
         RegisteredTypeCheckEnv,
-        nominal::{AcceptedNominalCatalog, standard_agent_error_type, standard_reduction_record},
+        nominal::{
+            AcceptedNominalCatalog, standard_agent_error_type, standard_nominal_id,
+            standard_reduction_record,
+        },
     },
     types::{
-        CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, GenericConstParameterId,
-        GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner, MapKind,
-        TypeKind,
+        CharacterDialogueCharacterType, CharacterDialogueType, CompileTimeFxType, EntityKind,
+        FixedVectorType, GenericConstParameterId, GenericParameterOwnerId, GenericTypeParameterId,
+        LanguageIntrinsicGenericOwner, MapKind, TypeKind,
     },
 };
 use arcweft_character::id::CharacterId;
 use arcweft_lang_syntax::reference::BorrowKind;
 
 use super::{
-    CallableArgumentPolicy, CallableEffectSchema, CallableEvaluatedEffect,
-    CallableExtensionReceiver, CallableGenericParameterIssuer, CallableGroupKind,
-    CallableParameter, CallableParameterAdmission, CallableParameterConsumer,
+    CallableArgumentPolicy, CallableAttachedContentParameter, CallableEffectSchema,
+    CallableEvaluatedEffect, CallableExtensionReceiver, CallableGenericParameterIssuer,
+    CallableGroupKind, CallableParameter, CallableParameterAdmission, CallableParameterConsumer,
     CallableParameterGroup, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterValueRule, CallableSignatureSchema, CallableValidator, SpreadArgumentPolicy,
+    CallableParameterValueRule, CallableResultSchema, CallableSchemaDependency,
+    CallableSignatureSchema, CallableValidator, ContentCallableIdentity, SpreadArgumentPolicy,
     UnknownNamedArgumentPolicy,
 };
 use crate::callable::PromotionCallableId;
@@ -31,12 +35,24 @@ use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
     DialogueCallableId, DialogueCallableResultContext, DialogueCalleeIdentity,
-    DialogueSchemaContext, DomainMethodId, FloatWidth, FxCallableSignatureId, IntegerMethodId,
+    DialogueSchemaContext, DomainMethodId, FloatWidth, FxSourceConstructor, IntegerMethodId,
     LineContextMethodId, LineScheduleCallableId, MathCallableId, OptionConstructorKind,
     PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy, PresentationCallableId,
     PresentationHandleMethodId, ReductionConstructorKind, ResolvedCharacterOwner,
     ResultConstructorKind, StageMethodId, StandardMapFamily, StdFloatCallableId, StdFloatOperation,
     VectorDimensions,
+};
+use crate::registration::{CompileTimeScalarTypeRoleId, RegisteredCompileTimeScalarTypes};
+use arcweft_presentation::fx::{
+    FxEnumDomain, FxRuntimeType, FxSelectorDomain, FxSourceParameterPassing, FxSourceParameterType,
+    FxStaticType,
+};
+use arcweft_presentation::rich_text::{
+    PresentationContentCallableDefinitionId, PresentationContentCallableParameterSpec,
+};
+use arcweft_rich_text_schema::{
+    RichTextCallableParameterPassing, RichTextCallableParameterPresence,
+    RichTextEnumValueConstraint, RichTextValueKind,
 };
 
 pub(in crate::callable) fn dialogue_schema(
@@ -178,6 +194,131 @@ pub(in crate::callable) fn dialogue_schema(
         policy,
         CallableValidator::Dialogue(id),
     ))
+}
+
+/// Projects one presentation-owned content row into the sema callable
+/// schema. The presentation catalog remains the sole authority for row
+/// identity, parameter order, body policy, enum constraints, and digest;
+/// this function only translates its typed descriptors into callable-layer
+/// admissions.
+pub(crate) fn presentation_content_schema(
+    definition: PresentationContentCallableDefinitionId,
+    scalars: &RegisteredCompileTimeScalarTypes,
+) -> Result<CallableSignatureSchema, CallableSchemaError> {
+    let catalog = arcweft_presentation::rich_text::PRESENTATION_CONTENT_CALLABLE_CATALOG;
+    let row = catalog
+        .get(definition)
+        .ok_or(CallableSchemaError::FamilyInvariant {
+            family: crate::callable::CallableFamily::Content,
+            code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+        })?;
+    let parameters = row
+        .parameters()
+        .iter()
+        .enumerate()
+        .map(|(index, spec)| {
+            let index = CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                CallableSchemaError::ParameterLimit {
+                    actual: row.parameters().len(),
+                    limit: PRODUCTION_CALLABLE_LIMITS.max_parameters_per_callable(),
+                }
+            })?;
+            let admission =
+                CallableParameterAdmission::checked(content_parameter_type(spec, scalars)?);
+            let passing = match spec.passing {
+                RichTextCallableParameterPassing::PositionalOnly => {
+                    CallableParameterPassing::PositionalOnly
+                }
+                RichTextCallableParameterPassing::NamedOnly => CallableParameterPassing::NamedOnly,
+            };
+            let presence = match spec.presence {
+                RichTextCallableParameterPresence::Required => CallableParameterPresence::Required,
+                RichTextCallableParameterPresence::Optional => CallableParameterPresence::Optional,
+                RichTextCallableParameterPresence::Defaulted(_) => {
+                    CallableParameterPresence::Defaulted
+                }
+                RichTextCallableParameterPresence::Conditional { .. } => {
+                    CallableParameterPresence::Optional
+                }
+            };
+            CallableParameter::try_new(
+                index,
+                Some(CallableName::try_new(spec.source_name).map_err(|_| {
+                    CallableSchemaError::MissingParameterName {
+                        group: crate::callable::CallableGroupIndex::ZERO,
+                        parameter: index,
+                    }
+                })?),
+                admission,
+                passing,
+                presence,
+                None,
+                None,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let group = CallableParameterGroup::try_new(
+        crate::callable::CallableGroupIndex::ZERO,
+        CallableGroupKind::Initial,
+        parameters,
+        &PRODUCTION_CALLABLE_LIMITS,
+    )?;
+    let identity = ContentCallableIdentity::language(definition, row.schema_digest());
+    let attached_content = CallableAttachedContentParameter::from_presentation_row(row);
+    CallableSignatureSchema::try_new_with_dependency(
+        vec![group],
+        CallableResultSchema::ContentEmission(identity),
+        CallableEffectSchema::fixed(EffectRow::closed(EffectSet::new())),
+        closed(),
+        CallableValidator::Content(identity),
+        Some(attached_content),
+        CallableSchemaDependency::presentation_content(definition, row.schema_digest()),
+        CallableGenericParameterIssuer::empty(),
+        &PRODUCTION_CALLABLE_LIMITS,
+    )
+}
+
+fn content_parameter_type(
+    spec: &PresentationContentCallableParameterSpec,
+    scalars: &RegisteredCompileTimeScalarTypes,
+) -> Result<TypeKind, CallableSchemaError> {
+    let scalar = |role| scalars.type_for(role).clone();
+    let ty = match spec.kind {
+        RichTextValueKind::Bool => scalar(CompileTimeScalarTypeRoleId::Bool),
+        RichTextValueKind::Int => scalar(CompileTimeScalarTypeRoleId::Int),
+        RichTextValueKind::FixedMilli => scalar(CompileTimeScalarTypeRoleId::Milli),
+        RichTextValueKind::Ratio => scalar(CompileTimeScalarTypeRoleId::Ratio),
+        RichTextValueKind::Length => scalar(CompileTimeScalarTypeRoleId::Length),
+        RichTextValueKind::Angle => scalar(CompileTimeScalarTypeRoleId::Angle),
+        RichTextValueKind::Duration => scalar(CompileTimeScalarTypeRoleId::Duration),
+        RichTextValueKind::ClosedEnum(domain) => match spec.enum_constraint {
+            RichTextEnumValueConstraint::Exact(variant) => {
+                TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::exact(domain, variant))
+            }
+            RichTextEnumValueConstraint::All => {
+                TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::any(domain))
+            }
+            RichTextEnumValueConstraint::Allowed(variants) => TypeKind::CompileTimeEnum(
+                crate::types::CompileTimeEnumType::allowed(domain, variants),
+            ),
+        },
+        RichTextValueKind::Selector(arcweft_rich_text_schema::SelectorKind::PublicId)
+        | RichTextValueKind::PublicId => scalar(CompileTimeScalarTypeRoleId::PublicId),
+        RichTextValueKind::Text => scalar(CompileTimeScalarTypeRoleId::Text),
+        RichTextValueKind::Color => scalar(CompileTimeScalarTypeRoleId::Color),
+        RichTextValueKind::Vec2 => {
+            TypeKind::FixedVector(FixedVectorType::new(VectorDimensions::Two, TypeKind::F32))
+        }
+        RichTextValueKind::Seed32 => TypeKind::U32,
+        RichTextValueKind::Fx => TypeKind::CompileTimeFx(CompileTimeFxType::Abstract),
+        RichTextValueKind::Selector(_) => {
+            return Err(CallableSchemaError::FamilyInvariant {
+                family: crate::callable::CallableFamily::Content,
+                code: crate::callable::CallableFamilyInvariantCode::InvalidParameterType,
+            });
+        }
+    };
+    Ok(ty)
 }
 
 fn character_dialogue_patch_parameters(
@@ -417,7 +558,8 @@ impl BuiltinCallableId {
                 Self::Fail => CallableEvaluatedEffect::Fail,
                 Self::Bail => CallableEvaluatedEffect::Bail,
                 _ => unreachable!("grouped builtin identity is exhaustive"),
-            }),
+            })
+            .expect("fixed intrinsic schema was sealed before attaching its evaluated effect"),
             Self::Ensure => schema(
                 vec![
                     parameter(
@@ -440,8 +582,12 @@ impl BuiltinCallableId {
                 closed(),
                 validator,
             )
-            .with_evaluated_effect(CallableEvaluatedEffect::Ensure),
-            Self::Rgb => homogeneous(1, &TypeKind::String, named("Color"), validator),
+            .with_evaluated_effect(CallableEvaluatedEffect::Ensure)
+            .expect("fixed ensure schema was sealed before attaching its evaluated effect"),
+            // `rgb` produces the registered compile-time `Color` scalar.  Its
+            // result therefore cannot be represented by this world-free
+            // schema; callers must use `world_signature_schema` below.
+            Self::Rgb => return None,
             Self::Sin | Self::Cos => homogeneous(1, &TypeKind::F32, TypeKind::F32, validator),
             Self::Vector { dimensions } => {
                 let arity = match dimensions {
@@ -452,7 +598,7 @@ impl BuiltinCallableId {
                 homogeneous(
                     arity,
                     &TypeKind::F32,
-                    named(&format!("Vec{arity}")),
+                    TypeKind::FixedVector(FixedVectorType::new(*dimensions, TypeKind::F32)),
                     validator,
                 )
             }
@@ -471,12 +617,36 @@ impl BuiltinCallableId {
                 vec![unchecked(0, "event", CallableParameterPresence::Required)],
                 TypeKind::Unit,
                 &[],
-                open_supply(),
+                open_named_supply(),
                 validator,
             )
-            .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent),
+            .with_evaluated_effect(CallableEvaluatedEffect::EmitEvent)
+            .expect("fixed event schema was sealed before attaching its evaluated effect"),
             Self::Reduction(_) => return None,
         })
+    }
+
+    /// Returns a builtin schema after joining the accepted semantic world.
+    ///
+    /// `rgb` is intentionally the only currently world-dependent builtin:
+    /// its result is the exact registered `Color` scalar row rather than a
+    /// display-name `Named("Color")` placeholder.  Other builtins retain
+    /// their closed schemas.
+    pub(crate) fn world_signature_schema(
+        &self,
+        scalars: &crate::registration::RegisteredCompileTimeScalarTypes,
+    ) -> Option<CallableSignatureSchema> {
+        if matches!(self, Self::Rgb) {
+            return Some(homogeneous(
+                1,
+                &TypeKind::String,
+                scalars
+                    .type_for(crate::registration::CompileTimeScalarTypeRoleId::Color)
+                    .clone(),
+                CallableValidator::Builtin(self.clone()),
+            ));
+        }
+        self.closed_signature_schema()
     }
 }
 
@@ -667,11 +837,11 @@ impl StandardMapFamily {
             Self::Array => (
                 TypeKind::Array {
                     item: Box::new(input.clone()),
-                    len: crate::types::ArrayLength::Generic(length.clone()),
+                    len: crate::types::ArrayLength::generic_parameter(length.clone()),
                 },
                 TypeKind::Array {
                     item: Box::new(output.clone()),
-                    len: crate::types::ArrayLength::Generic(length),
+                    len: crate::types::ArrayLength::generic_parameter(length),
                 },
             ),
             Self::Slice => (
@@ -972,72 +1142,130 @@ fn context_result(receiver: &TypeKind) -> Option<TypeKind> {
     }
 }
 
-impl FxCallableSignatureId {
-    pub fn signature_schema(self) -> CallableSignatureSchema {
-        let validator = CallableValidator::Fx(self);
-        let fx = named("Fx");
-        match self {
-            Self::Conditional => schema(
-                vec![
-                    required_named(0, "condition", TypeKind::Bool),
-                    required_named(1, "then", fx.clone()),
-                    required_named(2, "else", fx.clone()),
-                ],
-                fx,
-                &[],
-                closed(),
-                validator,
-            ),
-            Self::Stack => schema(
-                vec![parameter(
-                    0,
-                    Some("graphs"),
-                    CallableParameterAdmission::checked(TypeKind::Vec(Box::new(fx.clone()))),
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
-                )],
-                fx,
-                &[],
-                closed(),
-                validator,
-            ),
-            Self::Shader => schema(
-                vec![parameter(
-                    0,
-                    Some("resource"),
-                    CallableParameterAdmission::unchecked_supply(),
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Optional,
-                )],
-                fx,
-                &[],
-                open_supply(),
-                validator,
-            ),
-            Self::Transform => schema(
-                vec![parameter(
-                    0,
-                    Some("sample"),
-                    CallableParameterAdmission::checked(TypeKind::function(
-                        [named("FxSampleContext")],
-                        named("Transform2D"),
-                    )),
-                    CallableParameterPassing::NamedOnly,
-                    CallableParameterPresence::Optional,
-                )],
-                fx,
-                &[],
-                open_supply(),
-                validator,
-            ),
-            Self::Style
-            | Self::Text
-            | Self::Color
-            | Self::Mask
-            | Self::Filter
-            | Self::Transition => schema(Vec::new(), fx, &[], open_supply(), validator),
+/// Projects the presentation owner's closed source-constructor schema into
+/// the common callable schema.  Constructor identity, parameter order,
+/// passing, presence, and static value domains are read from the owner row;
+/// this layer only translates those typed descriptors into sema types.
+pub(crate) fn fx_callable_schema(
+    constructor: FxSourceConstructor,
+    scalars: &RegisteredCompileTimeScalarTypes,
+    nominal_catalog: &AcceptedNominalCatalog,
+) -> Result<CallableSignatureSchema, CallableSchemaError> {
+    let parameters = constructor
+        .parameter_schema()
+        .iter()
+        .enumerate()
+        .map(|(index, spec)| {
+            let index = CallableParameterIndex::try_from_usize(index).map_err(|_| {
+                CallableSchemaError::ParameterLimit {
+                    actual: constructor.parameter_schema().len(),
+                    limit: PRODUCTION_CALLABLE_LIMITS.max_parameters_per_callable(),
+                }
+            })?;
+            let ty = match spec.value_type() {
+                FxSourceParameterType::Static(value_type) => {
+                    fx_static_type(value_type, scalars, nominal_catalog)?
+                }
+                FxSourceParameterType::Fx => TypeKind::CompileTimeFx(CompileTimeFxType::Abstract),
+                FxSourceParameterType::FxList => TypeKind::Vec(Box::new(TypeKind::CompileTimeFx(
+                    CompileTimeFxType::Abstract,
+                ))),
+                FxSourceParameterType::TransitionKind => fx_static_type(
+                    FxStaticType::Selector(FxSelectorDomain::TransitionKind),
+                    scalars,
+                    nominal_catalog,
+                )?,
+                FxSourceParameterType::TransitionEasing => fx_static_type(
+                    FxStaticType::Selector(FxSelectorDomain::TransitionEasing),
+                    scalars,
+                    nominal_catalog,
+                )?,
+            };
+            let passing = match spec.passing() {
+                FxSourceParameterPassing::PositionalOnly => {
+                    CallableParameterPassing::PositionalOnly
+                }
+                FxSourceParameterPassing::NamedOnly => CallableParameterPassing::NamedOnly,
+            };
+            let presence = match spec.presence() {
+                arcweft_presentation::fx::FxSourceParameterPresence::Required => {
+                    CallableParameterPresence::Required
+                }
+                arcweft_presentation::fx::FxSourceParameterPresence::Optional => {
+                    CallableParameterPresence::Optional
+                }
+            };
+            CallableParameter::try_new(
+                index,
+                Some(CallableName::try_new(spec.source_name()).map_err(|_| {
+                    CallableSchemaError::MissingParameterName {
+                        group: crate::callable::CallableGroupIndex::ZERO,
+                        parameter: index,
+                    }
+                })?),
+                CallableParameterAdmission::checked(ty),
+                passing,
+                presence,
+                None,
+                None,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(schema(
+        parameters,
+        TypeKind::CompileTimeFx(CompileTimeFxType::Constructor(constructor)),
+        &[],
+        closed(),
+        CallableValidator::FxConstructor(constructor),
+    ))
+}
+
+fn fx_static_type(
+    static_type: FxStaticType,
+    scalars: &RegisteredCompileTimeScalarTypes,
+    nominal_catalog: &AcceptedNominalCatalog,
+) -> Result<TypeKind, CallableSchemaError> {
+    let scalar = |role| scalars.type_for(role).clone();
+    let invalid = || CallableSchemaError::FamilyInvariant {
+        family: crate::callable::CallableFamily::FxConstructor,
+        code: crate::callable::CallableFamilyInvariantCode::InvalidParameterType,
+    };
+    Ok(match static_type {
+        FxStaticType::Runtime(runtime) => match runtime {
+            FxRuntimeType::Bool => scalar(CompileTimeScalarTypeRoleId::Bool),
+            FxRuntimeType::I32 => scalar(CompileTimeScalarTypeRoleId::Int),
+            FxRuntimeType::U32 => TypeKind::U32,
+            FxRuntimeType::F32 => TypeKind::F32,
+            FxRuntimeType::Length => scalar(CompileTimeScalarTypeRoleId::Length),
+            FxRuntimeType::Angle => scalar(CompileTimeScalarTypeRoleId::Angle),
+            FxRuntimeType::Seconds => scalar(CompileTimeScalarTypeRoleId::Duration),
+            FxRuntimeType::Color => scalar(CompileTimeScalarTypeRoleId::Color),
+            FxRuntimeType::Vec2 => {
+                TypeKind::FixedVector(FixedVectorType::new(VectorDimensions::Two, TypeKind::F32))
+            }
+            FxRuntimeType::Transform2D => {
+                let id = standard_nominal_id("Transform2D");
+                let record = nominal_catalog
+                    .exact(id.canonical_path())
+                    .ok_or_else(invalid)?;
+                record.try_instantiate([]).map_err(|_| invalid())?
+            }
+        },
+        FxStaticType::Resource => scalar(CompileTimeScalarTypeRoleId::PublicId),
+        FxStaticType::Selector(_) | FxStaticType::FontFamily => {
+            scalar(CompileTimeScalarTypeRoleId::Text)
         }
-    }
+        FxStaticType::Target => TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::any(
+            FxEnumDomain::Target.domain_id(),
+        )),
+        FxStaticType::Phase => TypeKind::CompileTimeEnum(crate::types::CompileTimeEnumType::any(
+            FxEnumDomain::Phase.domain_id(),
+        )),
+        FxStaticType::ShaderStage => TypeKind::CompileTimeEnum(
+            crate::types::CompileTimeEnumType::any(FxEnumDomain::ShaderStage.domain_id()),
+        ),
+        FxStaticType::UniformRecord => return Err(invalid()),
+    })
 }
 
 impl AgentIntrinsicSignatureId {
@@ -1359,7 +1587,7 @@ pub(in crate::callable) fn presentation_schema(
     let (parameters, policy) = match id {
         PresentationCallableId::View
         | PresentationCallableId::Menu
-        | PresentationCallableId::Overlay => (view_parameters(id), open_supply()),
+        | PresentationCallableId::Overlay => (view_parameters(id), open_named_supply()),
         PresentationCallableId::Background => (
             vec![
                 required_positional(0, "asset", TypeKind::entity_ref(EntityKind::Asset)),
@@ -1370,7 +1598,7 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 5, "fit"),
                 optional_presentation_named(id, 6, "opacity"),
             ],
-            open_supply(),
+            open_named_supply(),
         ),
         PresentationCallableId::Image => (
             vec![
@@ -1402,7 +1630,7 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 19, "owner"),
                 optional_presentation_named(id, 20, "drop"),
             ],
-            open_supply(),
+            open_named_supply(),
         ),
         PresentationCallableId::PlayerViewport => (
             vec![
@@ -1410,14 +1638,18 @@ pub(in crate::callable) fn presentation_schema(
                 optional_presentation_named(id, 1, "height"),
                 optional_presentation_named(id, 2, "fit"),
             ],
-            open_supply(),
+            open_named_supply(),
         ),
-        PresentationCallableId::Show => (character_parameters(id, character, true), open_supply()),
-        PresentationCallableId::RefShow | PresentationCallableId::Hide => {
-            (character_parameters(id, character, false), open_supply())
-        }
+        PresentationCallableId::Show => (
+            character_parameters(id, character, true),
+            open_named_supply(),
+        ),
+        PresentationCallableId::RefShow | PresentationCallableId::Hide => (
+            character_parameters(id, character, false),
+            open_named_supply(),
+        ),
         PresentationCallableId::RefBackground | PresentationCallableId::ClearBackground => {
-            (background_reference_parameters(id), open_supply())
+            (background_reference_parameters(id), open_named_supply())
         }
     };
     let reserved_open_names = match (id, character.is_some()) {
@@ -1508,7 +1740,7 @@ fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSigna
         EntityKind::Metric => LanguageIntrinsicGenericOwner::AgentMetric,
         _ => unreachable!("probe schemas are only published for signal and metric references"),
     };
-    let value = TypeKind::GenericParam(GenericTypeParameterId::new(
+    let value = TypeKind::generic_parameter(GenericTypeParameterId::new(
         GenericParameterOwnerId::LanguageIntrinsic(owner),
         0,
     ));
@@ -1538,7 +1770,7 @@ fn named(name: &str) -> TypeKind {
 }
 
 fn generic(owner: GenericParameterOwnerId, ordinal: u16) -> TypeKind {
-    TypeKind::GenericParam(GenericTypeParameterId::new(owner, ordinal))
+    TypeKind::generic_parameter(GenericTypeParameterId::new(owner, ordinal))
 }
 
 fn homogeneous(
@@ -1683,16 +1915,6 @@ fn required_positional(index: usize, name: &str, ty: TypeKind) -> CallableParame
     )
 }
 
-fn required_named(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
-    parameter(
-        index,
-        Some(name),
-        CallableParameterAdmission::checked(ty),
-        CallableParameterPassing::NamedOnly,
-        CallableParameterPresence::Required,
-    )
-}
-
 fn optional(index: usize, name: &str, ty: TypeKind) -> CallableParameter {
     parameter(
         index,
@@ -1827,7 +2049,7 @@ const fn closed() -> CallableArgumentPolicy {
     )
 }
 
-const fn open_supply() -> CallableArgumentPolicy {
+const fn open_named_supply() -> CallableArgumentPolicy {
     CallableArgumentPolicy::new(
         UnknownNamedArgumentPolicy::OpenSupply,
         SpreadArgumentPolicy::Reject,
@@ -2007,7 +2229,10 @@ mod tests {
             panic!("Reduction.unchanged must accept an elided shared state borrow")
         };
         assert!(matches!(inner.as_ref(), TypeKind::GenericParam(_)));
-        let TypeKind::AcceptedNominal(reduction) = schema.result() else {
+        let TypeKind::AcceptedNominal(reduction) = schema
+            .value_type()
+            .expect("Reduction.unchanged publishes a value result")
+        else {
             panic!("Reduction.unchanged must return the accepted Reduction owner")
         };
         assert_eq!(reduction.arguments(), [inner.as_ref().clone()]);
@@ -2038,7 +2263,9 @@ mod tests {
                 panic!("probe schema must accept one typed entity reference")
             };
             assert_eq!(entity.kind(), &kind);
-            let Some(TypeKind::GenericParam(parameter)) = entity.value() else {
+            let Some(TypeKind::GenericParam(crate::types::GenericTypeReference::Free(parameter))) =
+                entity.value()
+            else {
                 panic!("probe entity reference must retain its payload parameter")
             };
             assert_eq!(
@@ -2047,8 +2274,10 @@ mod tests {
             );
             assert_eq!(parameter.ordinal(), 0);
             assert_eq!(
-                schema.result(),
-                &TypeKind::Probe(Box::new(TypeKind::GenericParam(parameter.clone())))
+                schema.value_type(),
+                Some(&TypeKind::Probe(Box::new(TypeKind::generic_parameter(
+                    parameter.clone(),
+                ))))
             );
         }
     }
@@ -2056,10 +2285,13 @@ mod tests {
     #[test]
     fn constructors_are_context_free_generic_schemas() {
         let option = OptionConstructorKind::Some.signature_schema();
-        let TypeKind::Option(item) = option.result() else {
+        let TypeKind::Option(item) = option.value_type().expect("Some publishes a value result")
+        else {
             panic!("Some must publish an Option result")
         };
-        let TypeKind::GenericParam(option_item) = item.as_ref() else {
+        let TypeKind::GenericParam(crate::types::GenericTypeReference::Free(option_item)) =
+            item.as_ref()
+        else {
             panic!("Some must publish a generic item")
         };
         assert_eq!(
@@ -2079,13 +2311,17 @@ mod tests {
             (ResultConstructorKind::Err, 1_u16),
         ] {
             let schema = kind.signature_schema();
-            let TypeKind::Result { ok, error } = schema.result() else {
+            let TypeKind::Result { ok, error } = schema
+                .value_type()
+                .expect("Result constructor publishes a value result")
+            else {
                 panic!("Result constructor must publish a Result result")
             };
             let payload = schema.groups()[0].parameters()[0]
                 .declared_type()
                 .expect("Result payload is checked");
-            let TypeKind::GenericParam(payload) = payload else {
+            let TypeKind::GenericParam(crate::types::GenericTypeReference::Free(payload)) = payload
+            else {
                 panic!("Result payload must be generic")
             };
             assert_eq!(payload.ordinal(), ordinal);
@@ -2097,17 +2333,24 @@ mod tests {
             );
             assert!(matches!(ok.as_ref(), TypeKind::GenericParam(_)));
             assert!(matches!(error.as_ref(), TypeKind::GenericParam(_)));
-            assert!(!schema.result().source_label().contains("_"));
+            assert!(
+                !schema
+                    .value_type()
+                    .expect("Result constructor publishes a value result")
+                    .source_label()
+                    .contains("_")
+            );
         }
     }
 
     #[test]
     fn standard_map_and_fx_exists_reject_untyped_receiver_fallbacks() {
         let map = StandardMapFamily::Vec.signature_schema();
-        let TypeKind::Vec(item) = map.result() else {
+        let TypeKind::Vec(item) = map.value_type().expect("map publishes a value result") else {
             panic!("map preserves the concrete collection constructor")
         };
-        let TypeKind::GenericParam(item) = item.as_ref() else {
+        let TypeKind::GenericParam(crate::types::GenericTypeReference::Free(item)) = item.as_ref()
+        else {
             panic!("map result item is generic")
         };
         assert_eq!(
@@ -2124,7 +2367,7 @@ mod tests {
             panic!("map callback must be a function")
         };
         assert!(
-            matches!(params.as_slice(), [TypeKind::GenericParam(input)] if input.ordinal() == 0)
+            matches!(params.as_slice(), [TypeKind::GenericParam(crate::types::GenericTypeReference::Free(input))] if input.ordinal() == 0)
         );
         assert_eq!(
             map.extension_receiver(),
@@ -2141,7 +2384,8 @@ mod tests {
         else {
             panic!("exists must retain its generic probe payload")
         };
-        let TypeKind::GenericParam(item) = item.as_ref() else {
+        let TypeKind::GenericParam(crate::types::GenericTypeReference::Free(item)) = item.as_ref()
+        else {
             panic!("exists payload is generic")
         };
         assert_eq!(
@@ -2174,10 +2418,14 @@ mod tests {
             else {
                 panic!("mapping must be a typed function")
             };
-            let [TypeKind::GenericParam(input)] = params.as_slice() else {
+            let [TypeKind::GenericParam(crate::types::GenericTypeReference::Free(input))] =
+                params.as_slice()
+            else {
                 panic!("mapping has one generic input")
             };
-            let TypeKind::GenericParam(output) = return_type.as_ref() else {
+            let TypeKind::GenericParam(crate::types::GenericTypeReference::Free(output)) =
+                return_type.as_ref()
+            else {
                 panic!("mapping has one generic output")
             };
             assert_eq!(input.ordinal(), 0);
@@ -2193,17 +2441,27 @@ mod tests {
             let receiver = schema
                 .extension_receiver_type()
                 .expect("standard map has one typed receiver");
-            match (family, receiver, schema.result()) {
+            match (
+                family,
+                receiver,
+                schema.value_type().expect("map publishes a value result"),
+            ) {
                 (StandardMapFamily::Vec, TypeKind::Vec(source), TypeKind::Vec(result))
                 | (StandardMapFamily::Seq, TypeKind::Seq(source), TypeKind::Seq(result))
                 | (StandardMapFamily::Option, TypeKind::Option(source), TypeKind::Option(result))
                 | (StandardMapFamily::Need, TypeKind::Need(source), TypeKind::Need(result)) => {
-                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
-                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source.as_ref(), &TypeKind::generic_parameter(input.clone()));
+                    assert_eq!(
+                        result.as_ref(),
+                        &TypeKind::generic_parameter(output.clone())
+                    );
                 }
                 (StandardMapFamily::Slice, TypeKind::Slice(source), TypeKind::Vec(result)) => {
-                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
-                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source.as_ref(), &TypeKind::generic_parameter(input.clone()));
+                    assert_eq!(
+                        result.as_ref(),
+                        &TypeKind::generic_parameter(output.clone())
+                    );
                 }
                 (
                     StandardMapFamily::Array,
@@ -2216,8 +2474,11 @@ mod tests {
                         len: result_len,
                     },
                 ) => {
-                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
-                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source.as_ref(), &TypeKind::generic_parameter(input.clone()));
+                    assert_eq!(
+                        result.as_ref(),
+                        &TypeKind::generic_parameter(output.clone())
+                    );
                     assert_eq!(source_len, result_len);
                 }
                 (
@@ -2253,12 +2514,15 @@ mod tests {
                         error: result_error,
                     },
                 ) => {
-                    assert_eq!(source.as_ref(), &TypeKind::GenericParam(input.clone()));
-                    assert_eq!(result.as_ref(), &TypeKind::GenericParam(output.clone()));
+                    assert_eq!(source.as_ref(), &TypeKind::generic_parameter(input.clone()));
+                    assert_eq!(
+                        result.as_ref(),
+                        &TypeKind::generic_parameter(output.clone())
+                    );
                     assert_eq!(source_error, result_error);
                     assert!(matches!(
                         source_error.as_ref(),
-                        TypeKind::GenericParam(error)
+                        TypeKind::GenericParam(crate::types::GenericTypeReference::Free(error))
                             if error.ordinal() == 2 && error.owner() == input.owner()
                     ));
                 }

@@ -241,8 +241,6 @@ impl<'a> AttachedCandidateGraph<'a> {
 pub enum AttachedCandidateDialogueOwner {
     /// One Dialogue content node identified by its typed content ordinal.
     Node { ordinal: u32 },
-    /// One `RichText` tag identified by its typed content tag ordinal.
-    Tag { ordinal: u32 },
 }
 
 /// One typed Dialogue expression slot bound to a candidate graph node.
@@ -255,7 +253,7 @@ pub struct AttachedCandidateDialogueExpression<'a> {
 }
 
 impl<'a> AttachedCandidateDialogueExpression<'a> {
-    /// Content-local Dialogue node or tag identity.
+    /// Content-local Dialogue node identity.
     pub const fn owner(&self) -> AttachedCandidateDialogueOwner {
         self.owner
     }
@@ -289,41 +287,52 @@ fn dialogue_expression_specs(
 ) -> Vec<CandidateDialogueExpressionSpec> {
     let mut specs = Vec::new();
     for (ordinal, node) in content.nodes().iter().enumerate() {
-        let crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) = node else {
-            continue;
+        let (slot, part) = match node {
+            crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) => (
+                slot,
+                crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
+            ),
+            crate::expressions::SyntaxDialogueNodeProjection::ContentApplication(slot) => (
+                slot,
+                crate::expressions::SyntaxDialogueNodeSourcePart::Expression,
+            ),
+            _ => continue,
         };
         let ordinal =
             u32::try_from(ordinal).expect("Dialogue node counts are bounded by syntax limits");
         specs.push(CandidateDialogueExpressionSpec {
             owner: AttachedCandidateDialogueOwner::Node { ordinal },
             slot: *slot,
-            component_role: ExpressionComponentRole::DialogueNode {
-                ordinal,
-                part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
+            component_role: ExpressionComponentRole::DialogueNode { ordinal, part },
+            syntax_role: match node {
+                crate::expressions::SyntaxDialogueNodeProjection::ContentApplication(_) => {
+                    SyntaxRole::DialogueNode(ordinal)
+                }
+                _ => SyntaxRole::Operand,
             },
-            syntax_role: SyntaxRole::Operand,
         });
     }
-    for (ordinal, tag) in content.tags().iter().enumerate() {
-        let (slot, syntax_role) = match tag.payload() {
-            crate::expressions::SyntaxRichTextTagPayloadProjection::FxCall(slot)
-            | crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(slot) => {
-                (*slot, SyntaxRole::Operand)
-            }
-            crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(slot) => {
-                (*slot, SyntaxRole::Condition)
-            }
-            crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-            | crate::expressions::SyntaxRichTextTagPayloadProjection::None => continue,
-        };
+    for (ordinal, node) in content.nodes().iter().enumerate() {
         let ordinal =
-            u32::try_from(ordinal).expect("Rich-text tag counts are bounded by syntax limits");
+            u32::try_from(ordinal).expect("Dialogue node counts are bounded by syntax limits");
+        let (slot, syntax_role) = match node {
+            crate::expressions::SyntaxDialogueNodeProjection::PointAction(action) => {
+                match action.payload() {
+                    crate::expressions::SyntaxDialoguePointActionPayload::Call(slot)
+                    | crate::expressions::SyntaxDialoguePointActionPayload::TimedCue(slot) => {
+                        (slot, SyntaxRole::Operand)
+                    }
+                    crate::expressions::SyntaxDialoguePointActionPayload::None => continue,
+                }
+            }
+            _ => continue,
+        };
         specs.push(CandidateDialogueExpressionSpec {
-            owner: AttachedCandidateDialogueOwner::Tag { ordinal },
+            owner: AttachedCandidateDialogueOwner::Node { ordinal },
             slot,
-            component_role: ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
+            component_role: ExpressionComponentRole::DialoguePointAction {
+                ordinal,
+                part: crate::expressions::SyntaxDialoguePointActionSourcePart::Payload,
             },
             syntax_role,
         });
@@ -763,9 +772,6 @@ impl<'a> AttachedCandidateNode<'a> {
                 SyntaxRole::DialogueNode(ordinal) => {
                     return Some(AttachedCandidateDialogueOwner::Node { ordinal });
                 }
-                SyntaxRole::RichTextTag(ordinal) => {
-                    return Some(AttachedCandidateDialogueOwner::Tag { ordinal });
-                }
                 _ => parent = ancestor.parent(),
             }
         }
@@ -1054,7 +1060,7 @@ fn candidate_semantic_child_specs(
                 SyntaxRole::Argument(0),
             ),
         ],
-        ExpressionProjection::DialogueContentApplication(application) => {
+        ExpressionProjection::AttachedContentApplication(application) => {
             candidate_dialogue_child_specs(owner, application, builder, nodes)
         }
         ExpressionProjection::Pipe([left, right])
@@ -1294,7 +1300,7 @@ fn candidate_call_child_specs(
 
 fn candidate_dialogue_child_specs(
     owner: AttachedCandidateNode<'_>,
-    application: &crate::expressions::SyntaxDialogueApplicationProjection,
+    application: &crate::expressions::SyntaxAttachedContentApplicationProjection,
     builder: CandidateSemanticSpecBuilder<'_>,
     nodes: &[AttachedCandidateNode<'_>],
 ) -> Vec<CandidateSemanticChildSpec> {

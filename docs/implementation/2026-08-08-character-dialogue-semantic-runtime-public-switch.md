@@ -28,7 +28,7 @@ success path.
   compares the synthetic HIR `Unit` tail with that result type.
 - Compiler lowering consumes the final semantic facts to construct the
   CharacterDialogue value, reconfiguration patch, content application, and
-  typed line metadata. It does not re-read source text or revive `.say`, the
+  typed line metadata. It does not re-read source text or revive the former builder, the
   removed colon helper, speaker presets, or a fallback call resolver.
 - Runtime-plan/AWBC preserve the nominal CharacterDialogue value and its typed
   tuple/sequence/custom-field payloads. Bundle construction has checked,

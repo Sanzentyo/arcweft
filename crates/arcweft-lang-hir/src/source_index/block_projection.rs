@@ -1580,7 +1580,7 @@ fn enclosing_dialogue_content<'arena>(
         let payload = arenas.scopes.resolve_prepared(slots, scope).ok()?;
         if let HirScopeOwner::Expr(owner) = *payload.owner() {
             let expression = arenas.expressions.resolve_prepared(slots, owner).ok()?;
-            if let HirExprKind::DialogueContentApplication(application) = expression.kind() {
+            if let HirExprKind::AttachedContentApplication(application) = expression.kind() {
                 return Some(application.content());
             }
         }

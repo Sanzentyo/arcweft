@@ -19,7 +19,7 @@ pub(super) fn semantic_digest(
     for record in records {
         put_bytes(
             &mut hasher,
-            record.character().as_str().as_bytes(),
+            record.character().canonical_identity_bytes(),
             "semantic Character ID bytes",
         )?;
         hasher.update(&[match record.role() {
@@ -31,7 +31,10 @@ pub(super) fn semantic_digest(
             hasher.update(&[1]);
             put_bytes(
                 &mut hasher,
-                source_locale.locale().locale_tag().as_str().as_bytes(),
+                source_locale
+                    .locale()
+                    .locale_tag()
+                    .canonical_identity_bytes(),
                 "semantic source locale bytes",
             )?;
         } else {
@@ -47,7 +50,7 @@ pub(super) fn semantic_digest(
         for localized in record.localized() {
             put_bytes(
                 &mut hasher,
-                localized.locale().locale_tag().as_str().as_bytes(),
+                localized.locale().locale_tag().canonical_identity_bytes(),
                 "semantic localized locale bytes",
             )?;
             put_required_entry(&mut hasher, localized.entry(), "semantic localized entry")?;
@@ -57,12 +60,12 @@ pub(super) fn semantic_digest(
             hasher.update(&[1]);
             put_bytes(
                 &mut hasher,
-                declaration.key().as_str().as_bytes(),
+                declaration.key().canonical_identity_bytes(),
                 "semantic declaration key bytes",
             )?;
             put_bytes(
                 &mut hasher,
-                declaration.value().as_str().as_bytes(),
+                declaration.value().canonical_text_bytes(),
                 "semantic declaration value bytes",
             )?;
         } else {
@@ -82,7 +85,10 @@ pub(super) fn locale_policy_digest(
     hasher.update(LOCALE_POLICY_DIGEST_DOMAIN);
     put_bytes(
         &mut hasher,
-        policy.default_active().locale_tag().as_str().as_bytes(),
+        policy
+            .default_active()
+            .locale_tag()
+            .canonical_identity_bytes(),
         "locale-policy default active bytes",
     )?;
     put_u32(
@@ -93,7 +99,7 @@ pub(super) fn locale_policy_digest(
     for fallback in policy.fallbacks() {
         put_bytes(
             &mut hasher,
-            fallback.locale().locale_tag().as_str().as_bytes(),
+            fallback.locale().locale_tag().canonical_identity_bytes(),
             "locale-policy fallback bytes",
         )?;
     }
@@ -124,8 +130,8 @@ fn put_required_entry(
     match entry {
         CharacterDisplayNameEntry::Visible { key, value } => {
             hasher.update(&[1]);
-            put_bytes(hasher, key.as_str().as_bytes(), operation)?;
-            put_bytes(hasher, value.as_str().as_bytes(), operation)
+            put_bytes(hasher, key.canonical_identity_bytes(), operation)?;
+            put_bytes(hasher, value.canonical_text_bytes(), operation)
         }
         CharacterDisplayNameEntry::Hidden => {
             hasher.update(&[2]);

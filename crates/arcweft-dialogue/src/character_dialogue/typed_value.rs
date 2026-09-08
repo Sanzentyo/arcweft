@@ -304,6 +304,10 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
             }
             Ok(())
         }
+        RuntimeValue::ProjectContinuation(_) => Err(CharacterDialogueValueError::Field {
+            field: "runtime_value",
+            reason: "project continuations are session-only and cannot be dialogue data".to_owned(),
+        }),
         RuntimeValue::Variant {
             payload: Some(payload),
             ..
@@ -417,6 +421,13 @@ fn count_structured_leaves(
             payload: Some(payload),
             ..
         } => count_structured_leaves(payload, depth, leaves)?,
+        RuntimeValue::ProjectContinuation(_) => {
+            return Err(CharacterDialogueValueError::Field {
+                field: "structured_value",
+                reason: "project continuation is session-only and cannot be dialogue data"
+                    .to_owned(),
+            });
+        }
         RuntimeValue::Function(_)
         | RuntimeValue::Iterator(_)
         | RuntimeValue::Agent(_)

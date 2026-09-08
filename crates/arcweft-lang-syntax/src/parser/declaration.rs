@@ -598,6 +598,61 @@ pub(super) fn emit_retained_declaration_header<T>(
     family_tail
 }
 
+/// Emits the canonical Character header.
+///
+/// A generated Character may carry its complete public identity without a
+/// second authored name.  The final ID component is retained as the typed
+/// declaration name, while any tokens that follow it are handled by the
+/// ordinary declaration-header recovery owned by the Character parser.
+pub(super) fn emit_character_declaration_header<T>(
+    parser: &mut DocumentParser<'_, '_>,
+    emit_family_tail: impl FnOnce(&mut DocumentParser<'_, '_>) -> T,
+) -> T {
+    let family = DeclarationIdentityFamily::Character;
+    let owner = parser.start_projected_owner(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
+    emit_outer_prefixes(parser);
+    parser.bump_trivia();
+    emit_visibility(parser);
+    parser.bump_trivia();
+
+    let keyword_range = parser
+        .current()
+        .filter(|token| parser.text_of(*token) == family.prefix())
+        .map_or_else(
+            || SourceRange::new(parser.current_offset(), parser.current_offset()),
+            LexToken::range,
+        );
+    if parser.at(family.prefix()) {
+        parser.bump();
+    }
+    parser.bump_trivia();
+    let public_id = emit_declaration_public_id(parser, family, keyword_range);
+    parser.bump_trivia();
+    let name = match &public_id {
+        PendingDeclarationPublicId::Explicit { value, source } => value
+            .last_segment()
+            .and_then(|segment| SyntaxName::try_new(segment).ok())
+            .map_or_else(
+                || emit_declaration_name(parser, family.prefix()),
+                |value| PendingDeclarationName::Derived {
+                    value,
+                    source: *source,
+                },
+            ),
+        PendingDeclarationPublicId::Derived | PendingDeclarationPublicId::Recovered { .. } => {
+            emit_declaration_name(parser, family.prefix())
+        }
+    };
+    parser.bump_trivia();
+    let family_tail = emit_family_tail(parser);
+    parser.set_declaration_header_projection(
+        owner,
+        PendingDeclarationHeaderProjection::new(public_id, name),
+    );
+    parser.finish();
+    family_tail
+}
+
 pub(super) fn emit_metric_declaration_header(
     parser: &mut DocumentParser<'_, '_>,
     emit_kind: impl FnOnce(&mut DocumentParser<'_, '_>),
@@ -1085,6 +1140,154 @@ pub(super) fn emit_fixed_parameters_until(
     parser.finish();
     emit_close_delimiter(parser, SyntaxKind::CloseParenNode, ")", missing_close_code);
     parser.finish();
+}
+
+/// Emits the one dedicated trailing attached-content parameter owned by a
+/// callable signature. It is deliberately separate from parenthesized
+/// parameters: the bracket is a declaration-level ABI/body slot, not an
+/// ordinary value parameter.
+pub(super) fn emit_attached_content_parameter_until(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+) {
+    if !parser.at("[") || parser.cursor() >= end {
+        return;
+    }
+
+    parser.start(
+        SyntaxKind::AttachedContentParameter,
+        SyntaxRole::AttachedContentParameter,
+    );
+    parser.start(SyntaxKind::OpenBracketNode, SyntaxRole::AttachedContentOpen);
+    parser.bump();
+    parser.finish();
+
+    let close = find_matching_close_before(parser, parser.cursor(), end, "[");
+    let content_end = close.unwrap_or_else(|| {
+        find_top_level_boundary(
+            parser,
+            parser.cursor(),
+            end,
+            &[
+                "->",
+                "where",
+                "requires",
+                "ensures",
+                "invariant",
+                "assume",
+                "reads",
+                "effects",
+                "modifies",
+                "decreases",
+                "{",
+            ],
+        )
+    });
+
+    parser.bump_trivia_before(content_end);
+    emit_attached_content_binding(parser, content_end);
+    parser.bump_trivia_before(content_end);
+
+    if parser.at("?") && parser.cursor() < content_end {
+        parser.start(
+            SyntaxKind::QuestionMarkNode,
+            SyntaxRole::AttachedContentQuestion,
+        );
+        parser.bump();
+        parser.finish();
+        parser.bump_trivia_before(content_end);
+    }
+
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ColonNode,
+        SyntaxRole::AttachedContentColon,
+        ":",
+        "syntax.attached_content.missing_colon",
+        "attached content parameter requires `:` before its role",
+    );
+    parser.bump_trivia_before(content_end);
+    emit_attached_content_role(parser, content_end);
+    parser.bump_trivia_before(content_end);
+
+    if parser.at("=") && parser.cursor() < content_end {
+        emit_required_punctuation(
+            parser,
+            SyntaxKind::EqualsNode,
+            SyntaxRole::AttachedContentEquals,
+            "=",
+            "syntax.attached_content.missing_equals",
+            "attached content default requires `=`",
+        );
+        parser.bump_trivia_before(content_end);
+        emit_expression(parser, content_end, SyntaxRole::AttachedContentDefault);
+    }
+    parser.bump_trivia_before(content_end);
+
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::CloseBracketNode,
+        SyntaxRole::AttachedContentClose,
+        "]",
+        "syntax.attached_content.missing_close",
+        "attached content parameter requires closing `]`",
+    );
+    parser.finish();
+}
+
+fn emit_attached_content_binding(parser: &mut DocumentParser<'_, '_>, end: usize) {
+    if parser.cursor() < end && parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        parser.start(
+            SyntaxKind::NameDefinition,
+            SyntaxRole::AttachedContentBinding,
+        );
+        parser.bump();
+        parser.finish();
+        return;
+    }
+
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::MissingName, SyntaxRole::AttachedContentBinding);
+    parser.push(SyntaxEvent::MissingToken {
+        expected: expected(SyntaxKind::IdentifierToken),
+        at,
+    });
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.attached_content.missing_binding",
+        SourceRange::new(at, at),
+        "attached content parameter requires one simple binding name",
+    )));
+}
+
+fn emit_attached_content_role(parser: &mut DocumentParser<'_, '_>, end: usize) {
+    parser.start(
+        SyntaxKind::AttachedContentRole,
+        SyntaxRole::AttachedContentRole,
+    );
+    let at = parser.current_offset();
+    let role = (parser.cursor() < end)
+        .then(|| parser.current_text())
+        .flatten();
+    if parser.cursor() < end && parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        parser.bump();
+    } else {
+        parser.push(SyntaxEvent::MissingToken {
+            expected: expected(SyntaxKind::IdentifierToken),
+            at,
+        });
+    }
+    parser.finish();
+    if !matches!(
+        role,
+        Some("InlineContent" | "RichContent" | "DialogueContent")
+    ) {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.attached_content.invalid_role",
+            SourceRange::new(at, parser.current_offset()),
+            "attached content role must be `InlineContent`, `RichContent`, or `DialogueContent`",
+        )));
+    }
 }
 
 pub(super) fn fixed_parameter_group_end(parser: &DocumentParser<'_, '_>) -> usize {

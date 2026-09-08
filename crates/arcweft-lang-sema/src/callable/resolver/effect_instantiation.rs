@@ -42,6 +42,7 @@ pub(crate) enum CallableEffectTypeEdge {
     NominalArgument(u32),
     TupleElement(u32),
     ChoiceAlternative(u32),
+    PayloadChild(u32),
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -169,12 +170,14 @@ impl PreparedCallableEffectInstantiation {
                 )?;
             }
         }
-        builder.scan_type(
-            CallableEffectPositionRoot::Result,
-            CallableGenericFirstUse::Result,
-            schema.result(),
-            &mut Vec::new(),
-        )?;
+        if let Some(result) = schema.value_type() {
+            builder.scan_type(
+                CallableEffectPositionRoot::Result,
+                CallableGenericFirstUse::Result,
+                result,
+                &mut Vec::new(),
+            )?;
+        }
 
         if builder
             .positions
@@ -299,7 +302,9 @@ impl PreparedCallableEffectInstantiation {
     ) -> Result<TypeKind, CallConstraintInvariant> {
         self.project_type(
             CallableEffectPositionRoot::Result,
-            schema.result(),
+            schema
+                .value_type()
+                .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?,
             &mut Vec::new(),
         )
     }
@@ -629,7 +634,9 @@ impl CheckedCallableEffectInstantiation {
     ) -> Result<TypeKind, CallConstraintInvariant> {
         self.project_type(
             CallableEffectPositionRoot::Result,
-            schema.result(),
+            schema
+                .value_type()
+                .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?,
             &mut Vec::new(),
         )
     }
@@ -817,6 +824,19 @@ fn typed_children(
     shape: TypeConstraintShape<'_>,
 ) -> Result<Vec<(CallableEffectTypeEdge, &TypeKind)>, CallConstraintInvariant> {
     let rows = match shape {
+        TypeConstraintShape::Payload(_) => shape
+            .children()
+            .enumerate()
+            .map(|(index, child)| {
+                Ok((
+                    CallableEffectTypeEdge::PayloadChild(
+                        u32::try_from(index)
+                            .map_err(|_| CallConstraintInvariant::MalformedSchemaInventory)?,
+                    ),
+                    child,
+                ))
+            })
+            .collect::<Result<Vec<_>, CallConstraintInvariant>>()?,
         TypeConstraintShape::Leaf(_)
         | TypeConstraintShape::Never
         | TypeConstraintShape::Generic(_) => Vec::new(),
@@ -852,7 +872,7 @@ fn typed_children(
                 .iter()
                 .enumerate()
                 .map(|(index, parameter)| {
-                    Ok((
+                    Ok::<_, CallConstraintInvariant>((
                         CallableEffectTypeEdge::FunctionParameter(
                             u32::try_from(index)
                                 .map_err(|_| CallConstraintInvariant::MalformedSchemaInventory)?,

@@ -1,6 +1,8 @@
 use crate::awbc::fiber::FiberState;
 use crate::awbc::schema::{AwbcEntryId, AwbcFunctionId, AwbcProgram, AwbcStreamPlanId};
-use crate::awbc::vm::{VmError, VmExit, VmHost, VmStepOptions, step_with_host};
+use crate::awbc::vm::{
+    VmError, VmExecutionContext, VmExit, VmHost, VmStepOptions, step_with_host_context,
+};
 use crate::pure::{RuntimeCallBackend, RuntimeCompactPureHelper};
 use crate::step::{
     RuntimeStepInput, RuntimeStepOutput, input_event_text_payload, input_event_trigger_name,
@@ -11,6 +13,7 @@ use crate::value::RuntimeValue;
 pub(super) struct ProductVmHost<'a, B> {
     pub(super) backend: &'a mut B,
     pub(super) fallback_stats: &'a mut crate::step::RuntimePureCallStats,
+    pub(super) context: VmExecutionContext,
 }
 
 impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
@@ -59,7 +62,7 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
         self.fallback_stats.pure_calls = self.fallback_stats.pure_calls.saturating_add(1);
         self.fallback_stats.vm_calls = self.fallback_stats.vm_calls.saturating_add(1);
         self.fallback_stats.fallbacks = self.fallback_stats.fallbacks.saturating_add(1);
-        run_function_with_host(program, record.function, args, self)
+        run_function_with_host(program, record.function, args, self.context, self)
     }
 }
 
@@ -70,17 +73,20 @@ pub(super) fn run_function(
     backend: &mut impl RuntimeCallBackend,
     fallback_stats: &mut crate::step::RuntimePureCallStats,
 ) -> Result<RuntimeValue, VmError> {
+    let context = context_for_program(program)?;
     let mut host = ProductVmHost {
         backend,
         fallback_stats,
+        context,
     };
-    run_function_with_host(program, function, args, &mut host)
+    run_function_with_host(program, function, args, context, &mut host)
 }
 
 fn run_function_with_host(
     program: &AwbcProgram,
     function: AwbcFunctionId,
     args: &[RuntimeValue],
+    context: VmExecutionContext,
     host: &mut impl VmHost,
 ) -> Result<RuntimeValue, VmError> {
     let mut fiber = FiberState::for_function(program, AwbcEntryId(0), function, 0, 1_000_000)?;
@@ -88,12 +94,13 @@ fn run_function_with_host(
         .active_frame_mut()?
         .bind_positional_arguments(program, args)?;
     loop {
-        let output = step_with_host(
+        let output = step_with_host_context(
             program,
             &mut fiber,
             VmStepOptions {
                 max_instructions: 1024,
             },
+            &context,
             host,
         )?;
         match output.exit {
@@ -121,6 +128,17 @@ fn run_function_with_host(
             }
         }
     }
+}
+
+fn context_for_program(program: &AwbcProgram) -> Result<VmExecutionContext, VmError> {
+    let encoded = program
+        .encode_canonical()
+        .map_err(|error| VmError::Runtime(error.to_string()))?;
+    let artifact = crate::effect::RuntimeArtifactFingerprint::try_from_bytes(
+        *blake3::hash(&encoded).as_bytes(),
+    )
+    .map_err(|error| VmError::Runtime(error.to_string()))?;
+    Ok(VmExecutionContext::new(artifact))
 }
 
 pub(super) fn stream_id_for(program: &AwbcProgram, stream: AwbcStreamPlanId) -> StreamRuntimeId {

@@ -244,7 +244,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
                                 HirRuntimeCallCalleeDisposition::Static
                             },
                         },
-                        HirExprKind::DialogueContentApplication(_) => {
+                        HirExprKind::AttachedContentApplication(_) => {
                             HirRuntimeExpressionProjection::Structural {
                                 value: HirRuntimeValueRetention::Omit,
                             }

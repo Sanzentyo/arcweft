@@ -4,9 +4,12 @@ use std::{collections::HashMap, sync::Arc};
 
 use arcweft_id::dialogue::DialogueLineId;
 use arcweft_lang_hir::{
+    dialogue_application::HirAttachedContentApplicationFamily,
     expr::HirExprKind,
     module::HirModule,
-    project::{AcceptedDialogueLine, HirPackageModuleKey, HirProject},
+    project::{
+        AcceptedDialogueLine, AcceptedDialogueLineInventory, HirPackageModuleKey, HirProject,
+    },
     source_index::{
         HirExprSourceRole, HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
@@ -41,7 +44,14 @@ pub(crate) fn definition(
     let project = accepted.project();
     let hir = project.hir_project();
     let index = executable.semantic_index();
-    let cursor = symbol_at(project, hir, index, document, offset)?;
+    let cursor = symbol_at(
+        project,
+        hir,
+        executable.final_analysis().dialogue_lines(),
+        index,
+        document,
+        offset,
+    )?;
     Some(GotoDefinitionResponse::Scalar(location(
         project,
         declaration_source(cursor.line),
@@ -58,7 +68,14 @@ pub(crate) fn references(
     let project = accepted.project();
     let hir = project.hir_project();
     let index = executable.semantic_index();
-    let cursor = symbol_at(project, hir, index, document, offset)?;
+    let cursor = symbol_at(
+        project,
+        hir,
+        executable.final_analysis().dialogue_lines(),
+        index,
+        document,
+        offset,
+    )?;
     let mut locations = vec![location(project, declaration_source(cursor.line))?];
     locations.extend(
         index
@@ -88,7 +105,14 @@ pub(crate) fn prepare_rename(
     let project = accepted.project();
     let hir = project.hir_project();
     let index = executable.semantic_index();
-    let cursor = symbol_at(project, hir, index, document, offset)?;
+    let cursor = symbol_at(
+        project,
+        hir,
+        executable.final_analysis().dialogue_lines(),
+        index,
+        document,
+        offset,
+    )?;
     if cursor.line.source().id_coordinate_span().is_none() {
         return Some(PrepareRenameResponse::DefaultBehavior {
             default_behavior: true,
@@ -118,7 +142,8 @@ pub(crate) fn rename(
     let project = accepted.project();
     let hir = project.hir_project();
     let index = executable.semantic_index();
-    let cursor = symbol_at(project, hir, index, document, offset)?;
+    let lines = executable.final_analysis().dialogue_lines();
+    let cursor = symbol_at(project, hir, lines, index, document, offset)?;
     let replacement = DialogueLineId::try_new(new_name.to_owned()).ok()?;
     if matches!(
         cursor.line.text_key_origin(),
@@ -127,7 +152,7 @@ pub(crate) fn rename(
     {
         return None;
     }
-    if replacement != *cursor.line.id() && hir.dialogue_lines().get(&replacement).is_some() {
+    if replacement != *cursor.line.id() && lines.get(&replacement).is_some() {
         return None;
     }
 
@@ -187,6 +212,7 @@ fn exact_environment(
 fn symbol_at<'a>(
     project: &AcceptedProjectSnapshot,
     hir: &'a HirProject,
+    lines: &'a AcceptedDialogueLineInventory,
     index: &'a ProjectSemanticIndex,
     document: &DocumentSnapshot,
     offset: usize,
@@ -196,7 +222,7 @@ fn symbol_at<'a>(
         .by_uri(document.uri())?
         .document()
         .identity();
-    hir.dialogue_lines()
+    lines
         .records()
         .iter()
         .filter_map(|line| {
@@ -216,7 +242,7 @@ fn symbol_at<'a>(
                         return None;
                     }
                     Some(DialogueLineCursor {
-                        line: hir.dialogue_lines().get(reference.target())?,
+                        line: lines.get(reference.target())?,
                         source,
                     })
                 }),
@@ -244,7 +270,7 @@ fn generated_anchor<'project>(
             present_span(
                 module,
                 source.application_span().source(),
-                source.application(),
+                source.source_application(),
                 role,
             )
         })
@@ -301,17 +327,22 @@ fn push_generated_id_materialization(
     let module = hir
         .module_by_key(&HirPackageModuleKey::from(source.module()))?
         .module();
-    let application = module.resolve_expr(source.application()).ok()?;
-    let HirExprKind::DialogueContentApplication(application) = application.kind() else {
+    let application = module.resolve_expr(source.semantic_application()).ok()?;
+    let HirExprKind::AttachedContentApplication(application) = application.kind() else {
         return None;
     };
-    let target = module.resolve_expr(application.target()).ok()?;
+    let HirAttachedContentApplicationFamily::DialogueLine { target, .. } = application.family()
+    else {
+        return None;
+    };
+    let target_id = *target;
+    let target = module.resolve_expr(target_id).ok()?;
     let (identity, offset, text) = if let HirExprKind::Call(call) = target.kind() {
         if call.arguments().is_empty() {
             let site = present_site(
                 module,
                 source.application_span().source(),
-                application.target(),
+                target_id,
                 HirExprSourceRole::CallArgumentListEmptyInsertion,
             )?;
             (
@@ -323,13 +354,13 @@ fn push_generated_id_materialization(
             let close = present_site(
                 module,
                 source.application_span().source(),
-                application.target(),
+                target_id,
                 HirExprSourceRole::CallArgumentListClose,
             )?;
             let has_trailing_separator = present_site(
                 module,
                 source.application_span().source(),
-                application.target(),
+                target_id,
                 HirExprSourceRole::CallArgumentTrailingSeparator,
             )
             .is_some();
@@ -347,7 +378,7 @@ fn push_generated_id_materialization(
         let target = present_span(
             module,
             source.application_span().source(),
-            source.application(),
+            source.source_application(),
             HirExprSourceRole::Target,
         )?;
         (

@@ -1,11 +1,5 @@
 pub character alice {
-    display_name = "Alice"
-    default_voice = auto
-    dialogue_style {
-        font = "MS Mincho"
-        text_color = "#d9f2ff"
-        text_size = 30
-    }
+    display = "Alice"
 }
 
 entry cli @entry.vertical_jlreq_preset_normal_golden {
@@ -13,8 +7,8 @@ entry cli @entry.vertical_jlreq_preset_normal_golden {
 }
 
 flow vertical_jlreq_preset_normal_golden() -> String {
-    alice.say(id=@say.vertical_jlreq_preset_normal_golden.001, voice=auto)[
-        [.vertical_rl jlreq=normal][font "MS Mincho"]天地。」人山川海。『火水木[/font][/][p]
+    alice(id=@say.vertical_jlreq_preset_normal_golden.001, voice=auto)[
+        #layout(.vertical_rl, jlreq=.normal)[#font("MS Mincho")[天地。」人山川海。『火水木]][p]
     ]
 
     return "vertical_jlreq_preset_normal_golden"

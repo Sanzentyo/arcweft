@@ -203,12 +203,7 @@ fn agent_observe_json_reports_rich_text_display_objects() {
     let path = temp_arcw(
         "agent-observe-rich-text",
         r##"
-character alice {
-    dialogue_style {
-        font = serif
-        text_color = rgb("#202122")
-    }
-}
+pub character alice { display = "Alice" }
 
 flow main {
     let player = "Aoi"
@@ -253,20 +248,18 @@ fn agent_hit_test_reports_depth_sorted_rich_text_proxy() {
     let path = temp_arcw(
         "agent-hit-test-rich-text-proxy",
         r#"
-#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+#[text_proxy(role="keyword", hit_test=true, depth=4px, channel="choice")]
 pub struct KeywordHit {
     channel: String
 }
 
-#[text_proxy(kind="hover", default_hit=true, depth=7, layer=view)]
-pub struct HoverHit {
-    layer: String
-}
+#[text_proxy(role="hover", hit_test=true, depth=7px, layer="view")]
+pub struct HoverHit {}
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [object .hotspot type=KeywordHit][object .hover type=HoverHit]Hit[/object][/object][p]
+    alice: #object(id = @.hotspot, type = KeywordHit)[#object(id = @.hover, type = HoverHit)[Hit]][p]
 }
 
 entry cli @entry.main {
@@ -415,63 +408,24 @@ fn assert_text_proxy_field(region: &serde_json::Value, name: &str, value: &str) 
 }
 
 #[test]
-fn agent_observe_infers_text_proxy_struct_shorthand() {
-    let path = inferred_text_proxy_struct_shorthand_source();
-    let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("agent")
-        .arg("observe")
-        .arg(&path)
-        .arg("--json")
-        .arg("--mode")
-        .arg("drain")
-        .arg("--steps")
-        .arg("4")
-        .arg("--max-ops")
-        .arg("64")
-        .output()
-        .expect("arcw agent observe runs inferred proxy source");
-    assert!(
-        observe.status.success(),
-        "agent observe for inferred proxy should succeed, stderr: {}",
-        String::from_utf8_lossy(&observe.stderr)
-    );
-    let observe_json: serde_json::Value =
-        serde_json::from_slice(&observe.stdout).expect("observe output is JSON");
-    assert_inferred_text_proxy_struct_shorthand_observe(&path, &observe_json);
-    let hover = find_rich_text_proxy_object(&observe_json, "HoverHit", "Hit");
-
-    let hit_json = hit_test_center_of_observed_object(&path, hover);
-    fs::remove_file(&path).expect("remove temp inferred proxy source");
-
-    assert_eq!(hit_json["status"], "ok");
-    assert_eq!(hit_json["top_object_id"], hover["id"]);
-    assert_eq!(hit_json["hits"][0]["role"], "rich_text_proxy");
-    assert_eq!(hit_json["hits"][0]["region"]["kind"], "text_object_proxy");
-    assert_eq!(hit_json["hits"][0]["region"]["proxy_id"], "HoverHit");
-    assert_eq!(hit_json["hits"][0]["region"]["proxy_type"], "HoverHit");
-    assert_text_proxy_declaration(
-        &hit_json["hits"][0]["region"]["proxy_declaration"],
-        "HoverHit",
-    );
-    assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "view");
-    assert_text_proxy_field(&hit_json["hits"][0]["region"], "tone", "alert");
-    assert_eq!(hit_json["hits"][0]["depth"], 7000);
-}
-
-#[test]
-fn agent_observe_infers_rich_text_proxy_struct_attribute_family() {
+fn agent_observe_reports_explicit_rich_text_proxy_struct_metadata() {
     let path = temp_arcw(
-        "agent-observe-inferred-rich-text-proxy-attribute-family",
+        "agent-observe-explicit-rich-text-proxy",
         r#"
-#[rich_text_proxy(kind="quest", default_hit=true, depth=6, layer=hud, channel=quest)]
+#[rich_text_proxy(role="quest", hit_test=true, depth=6px, layer="hud", channel="quest")]
 pub struct QuestHit {
-    channel: String
+    channel: String,
+    state: String
 }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.QuestHit state=active]Quest[/][p]
+    alice: #object(id = @.quest, type = QuestHit, state = "active")[Quest][p]
+}
+
+entry cli @entry.main {
+    goto @flow.main
 }
 "#,
     );
@@ -479,6 +433,8 @@ flow main {
         .arg("agent")
         .arg("observe")
         .arg(&path)
+        .arg("--entry")
+        .arg("entry.main")
         .arg("--json")
         .arg("--mode")
         .arg("drain")
@@ -487,10 +443,10 @@ flow main {
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent observe runs rich_text_proxy source");
+        .expect("arcw agent observe runs explicit rich-text proxy source");
     assert!(
         observe.status.success(),
-        "agent observe for rich_text_proxy should succeed, stderr: {}",
+        "agent observe for explicit rich-text proxy should succeed, stderr: {}",
         String::from_utf8_lossy(&observe.stderr)
     );
     let observe_json: serde_json::Value =
@@ -530,7 +486,7 @@ flow main {
     assert_agent_presentation_tree_filters_rich_text_proxy_struct(&path);
 
     let hit_json = hit_test_center_of_observed_object(&path, proxy);
-    fs::remove_file(&path).expect("remove temp rich_text_proxy source");
+    fs::remove_file(&path).expect("remove temp explicit rich-text proxy source");
 
     assert_eq!(hit_json["status"], "ok");
     assert_eq!(hit_json["top_object_id"], proxy["id"]);
@@ -594,13 +550,13 @@ fn assert_agent_presentation_tree_filters_rich_text_proxy_struct(path: &Path) {
 fn agent_observe_reports_text_presentation_z_index_depth() {
     let path = temp_arcw(
         "agent-observe-rich-text-z-index-depth",
-        r"
-character alice {}
+        r#"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]Depth|[夢](ゆめ)[r][/][/][/][/] plain[p]
+    alice: #style(.layer, layer=@.hud)[#style(.z_index, z_index=7)[#style(.opacity, opacity=0.5)[Depth|[夢](ゆめ)[r]]]] plain[p]
 }
-",
+"#,
     );
     let observe = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")
@@ -846,131 +802,6 @@ fn assert_agent_observe_object_image_metadata_carries_object_layer(
     fs::remove_dir_all(&dir).expect("remove temp rich-text object metadata dir");
 }
 
-fn inferred_text_proxy_struct_shorthand_source() -> PathBuf {
-    temp_arcw(
-        "agent-observe-inferred-rich-text-proxy",
-        r#"
-#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
-pub struct KeywordHit {
-    channel: String
-}
-
-#[text_proxy(kind="hover", default_hit=true, depth=7, layer=view)]
-pub struct HoverHit {
-    layer: String
-}
-
-character alice {}
-
-flow main {
-    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]Hit[/][/][.sparkle amp=2px]FX[/][p]
-}
-"#,
-    )
-}
-
-fn assert_inferred_text_proxy_struct_shorthand_observe(
-    path: &Path,
-    observe_json: &serde_json::Value,
-) {
-    let dialogue_view = find_dialogue_view_object(observe_json);
-    assert!(rich_text_text_run_has_object_proxy(
-        dialogue_view,
-        |proxy| proxy["id"] == "hotspot"
-            && proxy["type_name"] == "KeywordHit"
-            && proxy["declaration"]["struct_name"] == "KeywordHit"
-            && proxy["declaration"]["attribute"] == "text_proxy"
-            && proxy["role"] == "keyword"
-            && proxy["depth"] == 4000
-            && proxy["hit_test"] == true
-            && proxy["params"]["channel"]["value"] == "inventory",
-    ));
-    assert!(rich_text_text_run_has_object_proxy(
-        dialogue_view,
-        |proxy| proxy["id"] == "HoverHit"
-            && proxy["type_name"] == "HoverHit"
-            && proxy["declaration"]["struct_name"] == "HoverHit"
-            && proxy["declaration"]["attribute"] == "text_proxy"
-            && proxy["role"] == "hover"
-            && proxy["layer"] == "view"
-            && proxy["depth"] == 7000
-            && proxy["hit_test"] == true
-            && proxy["params"]["tone"]["value"] == "alert",
-    ));
-    assert!(rich_text_text_run_has_effect(dialogue_view, "sparkle"));
-
-    assert_inferred_text_proxy_presentation_tree_indexes(path, observe_json);
-
-    let hover = find_rich_text_proxy_object(observe_json, "HoverHit", "Hit");
-    assert_eq!(hover["role"], "rich_text_proxy");
-    assert_eq!(hover["rich_text_ref"]["kind"], "text_object_proxy");
-    assert_eq!(hover["rich_text_ref"]["object_layer"], "view");
-    assert_eq!(hover["rich_text_ref"]["object_depth"], 7000);
-    let hover_uri = rich_text_object_capture_uri(hover, "object_id", "application/octet-stream");
-    let hover_width = hover["bbox"]["width"]
-        .as_u64()
-        .expect("inferred proxy bbox width");
-    let hover_height = hover["bbox"]["height"]
-        .as_u64()
-        .expect("inferred proxy bbox height");
-    assert_agent_read_uri_object_id_image_matches_object_color(
-        path,
-        hover_uri,
-        hover,
-        hover_width,
-        hover_height,
-    );
-}
-
-fn assert_inferred_text_proxy_presentation_tree_indexes(
-    path: &Path,
-    observe_json: &serde_json::Value,
-) {
-    let proxy_type_nodes = observe_json["presentation_tree"]["nodes"]
-        .as_array()
-        .expect("presentation tree nodes are reported")
-        .iter()
-        .filter(|node| rich_text_proxy_tree_node_indexes_keyword_hit(node))
-        .count();
-    assert!(
-        proxy_type_nodes >= 2,
-        "presentation tree should index KeywordHit on run and proxy objects: {observe_json}"
-    );
-
-    let proxy_type_tree = read_agent_presentation_tree_resource(
-        path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_type=KeywordHit",
-        "proxy-type",
-    );
-    assert!(presentation_tree_has_object_proxy(
-        &proxy_type_tree,
-        |proxy| { proxy["type_name"] == "KeywordHit" }
-    ));
-
-    let proxy_param_tree = read_agent_presentation_tree_resource(
-        path,
-        "arcweft://session/cli/frame/0/presentation-tree.json?proxy_param.channel=inventory",
-        "proxy-param",
-    );
-    assert!(presentation_tree_has_object_proxy(
-        &proxy_param_tree,
-        |proxy| { proxy["params"]["channel"]["value"] == "inventory" }
-    ));
-}
-
-fn rich_text_proxy_tree_node_indexes_keyword_hit(node: &serde_json::Value) -> bool {
-    node["object_proxies"].as_array().is_some_and(|proxies| {
-        proxies.iter().any(|proxy| {
-            proxy["id"] == "hotspot"
-                && proxy["type_name"] == "KeywordHit"
-                && proxy["role"] == "keyword"
-                && proxy["declaration"]["struct_name"] == "KeywordHit"
-                && proxy["declaration"]["attribute"] == "text_proxy"
-                && proxy["params"]["channel"]["value"] == "inventory"
-        })
-    })
-}
-
 fn read_agent_presentation_tree_resource(
     path: &Path,
     uri: &str,
@@ -1036,11 +867,11 @@ fn hit_test_center_of_observed_object(
         .arg("--max-ops")
         .arg("64")
         .output()
-        .expect("arcw agent hit-test runs inferred rich text source");
+        .expect("arcw agent hit-test runs rich text source");
 
     assert!(
         hit_test.status.success(),
-        "agent hit-test for inferred proxy should succeed, stderr: {}",
+        "agent hit-test for rich text object should succeed, stderr: {}",
         String::from_utf8_lossy(&hit_test.stderr)
     );
     serde_json::from_slice(&hit_test.stdout).expect("hit-test output is JSON")
@@ -1051,15 +882,15 @@ fn agent_hit_test_capture_time_follows_animated_text_proxy_bounds() {
     let path = temp_arcw(
         "agent-hit-test-animated-rich-text-proxy",
         r#"
-#[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
+#[text_proxy(role="keyword", hit_test=true, depth=4px, channel="choice")]
 pub struct KeywordHit {
     channel: String
 }
 
-character alice {}
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [object .hotspot type=KeywordHit][.wave amp=60px dir=0,1 target=run]Hit[/][/object][p]
+    alice: #object(id = @.hotspot, type = KeywordHit)[#fx(wave(amplitude=60px, direction=vec2(0.0, 1.0), target=.content))[Hit]][p]
 }
 "#,
     );
@@ -1304,13 +1135,13 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
 fn agent_observe_json_reports_rich_text_reset_controls_and_host_markers() {
     let path = temp_arcw(
         "agent-observe-rich-text-controls",
-        r"
-character alice {}
+        r##"
+pub character alice { display = "Alice" }
 
 flow main {
-    alice: [color red]Hot[reset]Cool[w 500ms][mark .sync][clear][voice auto][p]
+    alice: #color(rgb("#ff0000"))[Hot][reset]Cool[w 500ms][mark @.sync][clear][voice auto][p]
 }
-",
+"##,
     );
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("agent")

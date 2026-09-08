@@ -183,7 +183,7 @@ impl SourceContext<'_> {
             GenericContext::Input(scope) => scope.binding(&name).map(|binding| {
                 (
                     binding.id().clone(),
-                    TypeKind::GenericParam(binding.id().clone()),
+                    TypeKind::generic_parameter(binding.id().clone()),
                 )
             }),
             GenericContext::Alias(bindings) => bindings

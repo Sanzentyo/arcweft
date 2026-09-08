@@ -1672,10 +1672,6 @@ pub(in crate::app) fn debug_project_readback_json(
     let graph_summary_symbol_id = graph
         .and_then(|value| value.get("summary_symbol_id"))
         .and_then(serde_json::Value::as_str);
-    let graph_has_project_summary = graph
-        .and_then(|value| value.get("has_project_summary"))
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false);
     let project_summary = graph
         .and_then(|value| value.get("project_summary"))
         .filter(|value| !value.is_null())
@@ -1686,7 +1682,6 @@ pub(in crate::app) fn debug_project_readback_json(
         "graph_symbol_count": graph_symbol_count,
         "graph_edge_count": graph_edge_count,
         "graph_summary_symbol_id": graph_summary_symbol_id,
-        "graph_has_project_summary": graph_has_project_summary,
         "graph_symbol_kind_counts": graph_symbol_kind_counts,
         "graph_edge_kind_counts": graph_edge_kind_counts,
         "project_summary": project_summary,

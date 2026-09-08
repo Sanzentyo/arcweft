@@ -7,7 +7,7 @@ use arcweft_core::plan::RuntimeLineId;
 use arcweft_core::runtime_id::DialogueActivationId;
 use arcweft_core::step::RuntimeDialogueContentEventKind;
 use arcweft_core::time::LogicalDuration;
-use arcweft_presentation::fx::{FxApplication, FxInstanceId};
+use arcweft_presentation::fx::{FxApplication, FxInstanceIdentity, FxInstanceOwnerKey};
 use arcweft_text_model::{LineDisplayFrame, LineDisplayStage};
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
@@ -335,22 +335,29 @@ impl DialogueEntryState {
 
     /// Derives stage-independent identity for one Fx application in this occurrence.
     #[must_use]
-    pub fn fx_instance_id(
+    pub fn fx_instance_identity(
         &self,
         dialogue: DialoguePresentationId,
         application: &FxApplication,
-    ) -> FxInstanceId {
-        let dialogue = format!("presentation.{}", dialogue.get());
-        let entry = format!("entry.{}", self.id.get());
-        let occurrence = format!("occurrence.{}", self.instance.get());
-        let line = self.frame.line.canonical_label();
-        application.derive_instance_id([
-            "dialogue",
-            line.as_str(),
-            dialogue.as_str(),
-            entry.as_str(),
-            occurrence.as_str(),
-        ])
+    ) -> FxInstanceIdentity {
+        let mut canonical = Vec::new();
+        canonical.push(1);
+        canonical.extend_from_slice(&dialogue.get().to_le_bytes());
+        canonical.extend_from_slice(&self.id.get().to_le_bytes());
+        canonical.extend_from_slice(&self.instance.get().to_le_bytes());
+        let path_len = u64::try_from(self.frame.line.path().segments().len())
+            .expect("a runtime line path length fits the canonical owner key");
+        canonical.extend_from_slice(&path_len.to_le_bytes());
+        for segment in self.frame.line.path().segments() {
+            let bytes = segment.as_str().as_bytes();
+            let length = u64::try_from(bytes.len())
+                .expect("a runtime line path segment length fits the canonical owner key");
+            canonical.extend_from_slice(&length.to_le_bytes());
+            canonical.extend_from_slice(bytes);
+        }
+        application.instance_identity(FxInstanceOwnerKey::from_dialogue_canonical_bytes(
+            &canonical,
+        ))
     }
 
     #[must_use]

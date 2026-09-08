@@ -72,7 +72,8 @@ impl FxApplicationResolver for DialogueFxResolver<'_> {
         let instance_id = self
             .context
             .entry
-            .fx_instance_id(self.context.dialogue.id(), application);
+            .fx_instance_identity(self.context.dialogue.id(), application)
+            .instance();
         let context = FxDiagnosticContext {
             definition: Some(application.definition().clone()),
             instance: Some(instance_id),
@@ -100,7 +101,7 @@ impl FxApplicationResolver for DialogueFxResolver<'_> {
             ))
         })?;
         let runtime_time = instance
-            .activation_logical_time
+            .activation_logical_time()
             .try_advance_millis(self.stage_elapsed_millis)
             .map_err(|error| {
                 Box::new(FxDiagnostic::error(
@@ -158,8 +159,6 @@ pub(super) struct RuntimeViewTextRequest<'a> {
     pub(super) scene: &'a RenderScene,
     pub(super) presentation: &'a BundlePresentationSnapshot,
     pub(super) fx_definitions: &'a FxDefinitions,
-    pub(super) visual_time_millis: u64,
-    pub(super) latest_reveal_complete: bool,
     pub(super) styles: &'a ResolvedViewStyleFrame,
     pub(super) geometry: &'a ViewCommittedGeometryFrame,
     pub(super) content: Option<ContentRect>,
@@ -170,9 +169,7 @@ struct TextValuePreparationContext<'a> {
     dialogue: Option<DialogueTextContext<'a>>,
     fx_definitions: &'a FxDefinitions,
     presentation: &'a BundlePresentationSnapshot,
-    visual_time_millis: u64,
     latest_dialogue_instance: Option<DialogueInstanceId>,
-    latest_reveal_complete: bool,
 }
 
 struct RuntimeViewTextPreparer<'a, 'request> {
@@ -359,9 +356,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                 dialogue,
                 fx_definitions: self.request.fx_definitions,
                 presentation: self.request.presentation,
-                visual_time_millis: self.request.visual_time_millis,
                 latest_dialogue_instance: self.latest_dialogue_instance,
-                latest_reveal_complete: self.request.latest_reveal_complete,
             },
         )?;
         self.record_prepared_target(PreparedTargetRecord {
@@ -560,7 +555,7 @@ fn push_display_frame(
         context: dialogue,
         definitions: context.fx_definitions,
         runtime: &context.presentation.fx,
-        stage_elapsed_millis: context.visual_time_millis,
+        stage_elapsed_millis: dialogue.entry.reveal_elapsed().as_nanos() / 1_000_000,
     };
     let result = shared.push_prepared_rich_text_stage(
         frame,
@@ -573,9 +568,9 @@ fn push_display_frame(
                 request.size.height,
             ),
             default_style: style,
-            visual_time_millis: context.visual_time_millis,
+            reveal_elapsed: dialogue.entry.reveal_elapsed().into(),
             reveal_complete: context.latest_dialogue_instance != Some(dialogue.entry.instance())
-                || context.latest_reveal_complete,
+                || dialogue.entry.reveal_is_complete(),
         },
         &fx_resolver,
     )?;

@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use arcweft_compiler::{
+    lower::{RuntimeEmissionMode, project_runtime_reachability, project_runtime_semantic_facts},
     project::{
         AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
         ProjectCompilationSession, ProjectCompileError, compile_project,
@@ -10,13 +11,19 @@ use arcweft_compiler::{
 use arcweft_core::{
     effect::{RuntimeDropPolicyExpr, RuntimeDropPolicyKind, RuntimeEffectExpr},
     line_task::{LineTaskGroup, LineTaskNode, LineTaskTrigger},
-    plan::FlowOp,
+    plan::{
+        FlowOp, RuntimeDialogueContentEffectTrigger, RuntimeDialogueContentPlan,
+        RuntimeFunctionSiteBody, RuntimePlan,
+    },
     runtime_id::{RuntimeDialogueMarkId, RuntimeLineTaskNodeId},
     time::LogicalDuration,
     value::{RuntimeExprKind, RuntimeValue},
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
-use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+use arcweft_lang_sema::{
+    env::TypeCheckEnv, final_analysis::CheckedExpressionResolution,
+    registration::ProjectRegistrationFacts,
+};
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
     incremental::{ParsedSource, SyntaxDatabase},
@@ -30,6 +37,28 @@ use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceName, SourceSetRevision, identity::SourceSnapshotId,
 };
+use arcweft_text_model::{
+    RichTextNode, RichTextObjectProxy, RichTextStyle, RichTextTextProxyFieldKind,
+    RichTextTextProxyScalar,
+};
+
+fn object_proxy(compiled: &CompiledProject) -> &RichTextObjectProxy {
+    fn find_object_proxy(nodes: &[RichTextNode]) -> Option<&RichTextObjectProxy> {
+        nodes.iter().find_map(|node| match node {
+            RichTextNode::Scope { style, body } => match style.as_ref() {
+                RichTextStyle::Object { proxy } => Some(proxy),
+                _ => find_object_proxy(body),
+            },
+            RichTextNode::Ruby { body, .. } => find_object_proxy(body),
+            _ => None,
+        })
+    }
+
+    let [template] = compiled.runtime_plan().dialogue_content_catalog.templates() else {
+        panic!("one dialogue content template")
+    };
+    find_object_proxy(&template.content().nodes).expect("compiler emits one object style")
+}
 
 #[test]
 fn evaluated_effect_operands_reach_awbc_from_final_checked_sources() {
@@ -102,14 +131,13 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
-fn dialogue_content_and_delay_effects_reach_the_line_task_graph_and_awbc() {
+fn dialogue_content_callbacks_and_delays_reach_their_exact_runtime_owners_and_awbc() {
     let compiled = compile_attached_dialogue_project(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice { display = "Alice" }
 
 flow main() -> Unit {
-    alice(id = @say.shared):
-        Hello [call log.info("content")] [at 120ms call=log.info("delay")]
+    alice[Hello [call log.info("content")] [at 120ms call=log.info("delay")]]
 }
 
 entry cli @entry.main { goto @flow.main }
@@ -121,18 +149,21 @@ entry cli @entry.main { goto @flow.main }
         panic!("fixture publishes one dialogue content plan")
     };
     assert_eq!(content.effect_site_count().get(), 2);
-    let group = runtime_plan
+    assert_dialogue_effect_sites(&runtime_plan.plan, content, 2);
+    let manifest = runtime_plan
         .plan
-        .line_task_groups()
-        .get(
-            content
-                .line_task_group()
-                .expect("dialogue effects publish a line-task group")
-                .index(),
-        )
-        .expect("dialogue content references its exact line-task group");
-    let (content_trigger, scheduled_trigger, logs) = count_line_task_effects(group, group.root());
-    assert_eq!((content_trigger, scheduled_trigger, logs), (1, 1, 2));
+        .dialogue_content()
+        .template(content.template())
+        .expect("dialogue template manifest");
+    assert!(matches!(
+        manifest.effects()[0].trigger(),
+        RuntimeDialogueContentEffectTrigger::Content
+    ));
+    assert!(matches!(
+        manifest.effects()[1].trigger(),
+        RuntimeDialogueContentEffectTrigger::Delay { duration }
+            if duration == LogicalDuration::from_nanos(120_000_000)
+    ));
 
     AwbcLowerer::new(
         &runtime_plan.plan,
@@ -144,10 +175,280 @@ entry cli @entry.main { goto @flow.main }
 }
 
 #[test]
+fn nested_modifier_effects_use_the_body_content_effect_plan() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice[#strong()[nested [call log.info("modifier-content")] [at 120ms call=log.info("modifier-delay")]]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("nested modifier effects compile from the body-local effect plan");
+    let [content] = compiled.runtime_plan().plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan")
+    };
+    assert_dialogue_effect_sites(&compiled.runtime_plan().plan, content, 2);
+    assert_eq!(
+        dialogue_effect_triggers(&compiled.runtime_plan().plan, content),
+        [
+            RuntimeDialogueContentEffectTrigger::Content,
+            RuntimeDialogueContentEffectTrigger::Delay {
+                duration: LogicalDuration::from_nanos(120_000_000),
+            },
+        ]
+    );
+}
+
+#[test]
+fn nested_fx_effects_use_the_body_content_effect_plan() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice[#fx(shake(amplitude=1px))[nested [call log.info("fx-content")] [at 120ms call=log.info("fx-delay")]]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("nested Fx effects compile from the body-local effect plan");
+    let [content] = compiled.runtime_plan().plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan")
+    };
+    assert_dialogue_effect_sites(&compiled.runtime_plan().plan, content, 2);
+    assert_eq!(
+        dialogue_effect_triggers(&compiled.runtime_plan().plan, content),
+        [
+            RuntimeDialogueContentEffectTrigger::Content,
+            RuntimeDialogueContentEffectTrigger::Delay {
+                duration: LogicalDuration::from_nanos(120_000_000),
+            },
+        ]
+    );
+}
+
+#[test]
+fn parent_and_nested_effect_ordinals_remain_local_before_runtime_rebasing() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice[root [call log.info("root-content")] #strong()[nested [call log.info("nested-content")] [at 60ms call=log.info("nested-delay")]] [at 120ms call=log.info("root-delay")]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("parent and nested effect plans rebase from distinct local ordinal domains");
+    let [content] = compiled.runtime_plan().plan.dialogue_content().rows() else {
+        panic!("one dialogue content plan")
+    };
+    assert_eq!(content.effect_site_count().get(), 4);
+    assert_dialogue_effect_sites(&compiled.runtime_plan().plan, content, 4);
+    assert_eq!(
+        dialogue_effect_triggers(&compiled.runtime_plan().plan, content),
+        [
+            RuntimeDialogueContentEffectTrigger::Content,
+            RuntimeDialogueContentEffectTrigger::Content,
+            RuntimeDialogueContentEffectTrigger::Delay {
+                duration: LogicalDuration::from_nanos(60_000_000),
+            },
+            RuntimeDialogueContentEffectTrigger::Delay {
+                duration: LogicalDuration::from_nanos(120_000_000),
+            },
+        ]
+    );
+}
+
+#[test]
+fn explicit_typed_text_proxy_materializes_only_from_final_sema_authority() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+#[text_proxy(role = "keyword", hit_test = true, channel = "fallback")]
+pub struct KeywordHit {
+    channel: String
+    weight: Option<i64>
+}
+
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice[#object(id = @.hotspot, type = KeywordHit, weight = 3)[typed]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("explicit typed text proxy compiles from final sema authority");
+    let proxy = object_proxy(&compiled);
+    assert_eq!(proxy.id, "hotspot");
+    assert_eq!(proxy.role.as_deref(), Some("keyword"));
+    assert!(proxy.hit_test);
+    let declaration = proxy.declaration.as_ref().expect("typed provenance");
+    assert_eq!(declaration.struct_name, "KeywordHit");
+    assert_eq!(declaration.attribute, "text_proxy");
+    assert_eq!(proxy.type_name.as_deref(), Some("KeywordHit"));
+    let schema = proxy.schema.as_ref().expect("typed schema DTO");
+    assert_eq!(schema.id, "KeywordHit");
+    assert_eq!(schema.declaration.struct_name, "KeywordHit");
+    assert_eq!(schema.declaration.attribute, "text_proxy");
+    assert_eq!(schema.fields.len(), 2);
+    assert_eq!(schema.fields[0].id, 0);
+    assert_eq!(schema.fields[0].name, "channel");
+    assert!(matches!(
+        schema.fields[0].kind,
+        RichTextTextProxyFieldKind::Text
+    ));
+    assert!(!schema.fields[0].optional);
+    assert!(matches!(
+        &schema.fields[0].default,
+        Some(RichTextTextProxyScalar::Text { value }) if value == "fallback"
+    ));
+    assert_eq!(schema.fields[1].id, 1);
+    assert_eq!(schema.fields[1].name, "weight");
+    assert!(matches!(
+        schema.fields[1].kind,
+        RichTextTextProxyFieldKind::Int
+    ));
+    assert!(schema.fields[1].optional);
+    assert!(schema.fields[1].default.is_none());
+    assert_eq!(proxy.fields[0].id, 0);
+    assert_eq!(proxy.fields[0].name, "channel");
+    assert!(matches!(
+        proxy.fields[0].value,
+        RichTextTextProxyScalar::Text { ref value } if value == "fallback"
+    ));
+    assert_eq!(proxy.fields[1].id, 1);
+    assert_eq!(proxy.fields[1].name, "weight");
+    assert!(matches!(
+        proxy.fields[1].value,
+        RichTextTextProxyScalar::Int { value: 3 }
+    ));
+
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("compiled project has executable HIR");
+    let runtime_owners = project_runtime_reachability(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        compiled.checked_entries(),
+        RuntimeEmissionMode::CheckAll,
+    )
+    .expect("Object runtime reachability");
+    let runtime_facts = project_runtime_semantic_facts(
+        executable,
+        compiled.project_symbols(),
+        compiled.registered_world(),
+        compiled.final_analysis(),
+        &runtime_owners,
+        Some((
+            compiled.dialogue_profile().presentation(),
+            compiled.dialogue_profile().revision(),
+        )),
+        None,
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
+    )
+    .expect("Object runtime semantic facts")
+    .0;
+    let object_owner = compiled
+        .final_analysis()
+        .expressions()
+        .find_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::ContentApplication(_)
+            )
+            .then_some(owner)
+        })
+        .expect("checked Object application owner");
+    assert!(
+        runtime_owners.contains_expression(object_owner),
+        "Object remains structurally reachable for body traversal"
+    );
+    assert!(
+        !runtime_owners
+            .selected_expression_type_owners()
+            .expect("Object runtime type owner inventory")
+            .contains(&object_owner)
+    );
+    assert!(runtime_facts.expression_type(object_owner).is_none());
+    assert!(
+        runtime_facts
+            .calls()
+            .all(|(owner, _)| owner != object_owner)
+    );
+}
+
+#[test]
+fn typed_text_proxy_schema_preserves_enum_defaults_order_and_optional_fields() {
+    let compiled = compile_attached_dialogue_project(
+        r#"
+enum KeywordKind {
+    Plain
+    Emphasis
+}
+
+#[text_proxy(role = "keyword", kind = .Plain)]
+pub struct KeywordHit {
+    kind: KeywordKind
+    note: Option<String>
+}
+
+pub character alice { display = "Alice" }
+
+flow main() -> Unit {
+    alice[#object(id = @.hotspot, type = KeywordHit, kind = .Emphasis)[enum]]
+}
+
+entry cli @entry.main { goto @flow.main }
+"#,
+    )
+    .expect("enum-backed text proxy compiles at the object boundary");
+    let proxy = object_proxy(&compiled);
+    let schema = proxy.schema.as_ref().expect("typed schema DTO");
+    assert_eq!(schema.id, "KeywordHit");
+    assert_eq!(proxy.type_name.as_deref(), Some(schema.id.as_str()));
+    assert_eq!(schema.fields.len(), 2);
+    assert_eq!(schema.fields[0].id, 0);
+    assert_eq!(schema.fields[0].name, "kind");
+    assert!(!schema.fields[0].optional);
+    assert!(matches!(
+        &schema.fields[0].kind,
+        RichTextTextProxyFieldKind::ClosedEnum { enum_id, variants }
+            if enum_id == "KeywordKind" && variants == &["Plain", "Emphasis"]
+    ));
+    assert!(matches!(
+        &schema.fields[0].default,
+        Some(RichTextTextProxyScalar::ClosedEnum { enum_id, variant })
+            if enum_id == "KeywordKind" && *variant == 0
+    ));
+    assert_eq!(schema.fields[1].id, 1);
+    assert_eq!(schema.fields[1].name, "note");
+    assert!(schema.fields[1].optional);
+    assert!(schema.fields[1].default.is_none());
+    assert_eq!(proxy.fields.len(), 1);
+    assert_eq!(proxy.fields[0].id, 0);
+    assert_eq!(proxy.fields[0].name, "kind");
+    assert!(matches!(
+        &proxy.fields[0].value,
+        RichTextTextProxyScalar::ClosedEnum { enum_id, variant }
+            if enum_id == "KeywordKind" && *variant == 1
+    ));
+}
+
+#[test]
 fn dialogue_mark_projection_is_content_ordered_and_uses_the_exact_checked_trigger() {
     let compiled = compile_attached_dialogue_project(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice { display = "Alice" }
 
 flow main() -> Unit {
     alice[before [mark @.first] middle [mark @.second] after] with {
@@ -202,7 +503,7 @@ entry cli @entry.main { goto @flow.main }
 fn dialogue_mark_projection_keeps_equal_local_names_content_qualified() {
     let compiled = compile_attached_dialogue_project(
         r#"
-pub character @character.alice Alice as alice {}
+pub character alice { display = "Alice" }
 
 flow main() -> Unit {
     alice[first [mark @.same] end] with {
@@ -276,55 +577,45 @@ fn collect_mark_triggers(
     }
 }
 
-fn count_line_task_effects(
-    group: &LineTaskGroup,
-    node_id: RuntimeLineTaskNodeId,
-) -> (usize, usize, usize) {
-    let node = group
-        .node(node_id)
-        .expect("line-task child scope references a sealed node");
-    match node {
-        LineTaskNode::Sequence(children) | LineTaskNode::Start(children) => children
-            .iter()
-            .map(|child| count_line_task_effects(group, *child))
-            .fold((0, 0, 0), sum_line_task_effect_counts),
-        LineTaskNode::Parallel { children, .. } => children
-            .iter()
-            .map(|child| count_line_task_effects(group, *child))
-            .fold((0, 0, 0), sum_line_task_effect_counts),
-        LineTaskNode::Child { trigger, scope, .. } => {
-            let (content, scheduled, logs) = count_line_task_effects(group, *scope);
-            match trigger {
-                LineTaskTrigger::ContentEffect(_) => (content + 1, scheduled, logs),
-                LineTaskTrigger::Scheduled(_) => (content, scheduled + 1, logs),
-                LineTaskTrigger::Immediate | LineTaskTrigger::Mark(_) => (content, scheduled, logs),
-            }
-        }
-        LineTaskNode::Action(operations) => (
-            0,
-            0,
-            operations
-                .iter()
-                .filter(|operation| {
-                    matches!(
-                        operation,
-                        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Log { .. })
-                    )
-                })
-                .count(),
-        ),
+fn assert_dialogue_effect_sites(
+    plan: &RuntimePlan,
+    content: &RuntimeDialogueContentPlan,
+    expected: usize,
+) {
+    assert_eq!(content.effect_sites().len(), expected);
+    let manifest = plan
+        .dialogue_content()
+        .template(content.template())
+        .expect("dialogue template manifest");
+    assert_eq!(manifest.effects().len(), expected);
+    for (index, effect) in content.effect_sites().iter().enumerate() {
+        let declared = &manifest.effects()[index];
+        assert_eq!(effect.site().index(), index);
+        assert_eq!(declared.site(), effect.site());
+        let function = plan
+            .function_sites()
+            .get(effect.function())
+            .expect("dialogue callback function site");
+        assert!(function.parameter_inputs().next().is_none());
+        let RuntimeFunctionSiteBody::Executable(body) = function.body() else {
+            panic!("dialogue effect site must reference an executable function site");
+        };
+        assert!(!body.effects().is_empty());
+        assert!(!body.ops().is_empty());
     }
 }
 
-fn sum_line_task_effect_counts(
-    (content_left, scheduled_left, logs_left): (usize, usize, usize),
-    (content_right, scheduled_right, logs_right): (usize, usize, usize),
-) -> (usize, usize, usize) {
-    (
-        content_left + content_right,
-        scheduled_left + scheduled_right,
-        logs_left + logs_right,
-    )
+fn dialogue_effect_triggers(
+    plan: &RuntimePlan,
+    content: &RuntimeDialogueContentPlan,
+) -> Vec<RuntimeDialogueContentEffectTrigger> {
+    plan.dialogue_content()
+        .template(content.template())
+        .expect("dialogue template manifest")
+        .effects()
+        .iter()
+        .map(|effect| effect.trigger())
+        .collect()
 }
 
 #[allow(

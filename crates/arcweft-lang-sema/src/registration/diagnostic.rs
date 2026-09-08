@@ -25,7 +25,8 @@ use crate::{
 use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
-        CharacterInventoryDigest, CharacterInventoryRevision, RegisteredExternalOwner,
+        CharacterInventoryDigest, CharacterInventoryRevision,
+        CompileTimeScalarTypeRegistrationError, RegisteredExternalOwner,
         RegisteredExternalOwnerKind, StatementIngressRegistrationError,
     },
     source_index::{CharacterDefinitionIndexBuildError, CharacterDefinitionIndexCode},
@@ -51,9 +52,11 @@ pub enum CharacterRegistrationCode {
     SourceDigestCollision,
     Project(ProjectSymbolDiagnosticCode),
     CallableCatalog(CallableDiagnosticCode),
+    GenericScope,
     CharacterDialogueCustomFields,
     AcceptedNominalCatalog,
     StatementIngress,
+    CompileTimeScalarTypes,
     ExternalUnknown,
     ExternalDuplicate,
     ExternalConflict,
@@ -71,6 +74,7 @@ pub enum CharacterRegistrationCode {
 impl CharacterRegistrationCode {
     pub const fn as_str(self) -> &'static str {
         match self {
+            Self::GenericScope => "aw.environment.generic_scope",
             Self::InvalidDocumentId => "aw.character.source.invalid_document_id",
             Self::SourceRange => "aw.character.source.range",
             Self::ManifestBytesLimit => "aw.character.manifest.bytes_limit",
@@ -88,12 +92,16 @@ impl CharacterRegistrationCode {
             Self::StaleSource => "aw.character.registration.stale_source",
             Self::SourceDigestCollision => "aw.character.source.digest_collision",
             Self::Project(code) => code.as_str(),
+            Self::CallableCatalog(CallableDiagnosticCode::UnsupportedProjectParameterDefault) => {
+                "aw.callable.parameter_default.unsupported"
+            }
             Self::CallableCatalog(_) => "aw.callable.catalog.registration",
             Self::CharacterDialogueCustomFields => {
                 "aw.character_dialogue.custom_fields.registration"
             }
             Self::AcceptedNominalCatalog => "aw.nominal.catalog.registration",
             Self::StatementIngress => "aw.statement_ingress.registration",
+            Self::CompileTimeScalarTypes => "aw.compile_time.scalar_types.registration",
             Self::ExternalUnknown => "aw.character.registration.external_unknown",
             Self::ExternalDuplicate => "aw.character.registration.external_duplicate",
             Self::ExternalConflict => "aw.character.registration.external_conflict",
@@ -124,6 +132,9 @@ pub enum RequiredCharacterToken {
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum CharacterRegistrationDiagnosticKind {
+    GenericScope {
+        error: crate::types::GenericScopeError,
+    },
     InvalidDocumentId {
         value: String,
         reason: SourceDocumentIdError,
@@ -199,6 +210,9 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     StatementIngress {
         error: StatementIngressRegistrationError,
+    },
+    CompileTimeScalarTypes {
+        error: CompileTimeScalarTypeRegistrationError,
     },
     ExternalUnknown {
         declaration: ExternalDeclarationId,
@@ -318,6 +332,9 @@ impl CharacterRegistrationDiagnosticKind {
             CharacterRegistrationDiagnosticKind::ProjectSymbol { error } => {
                 CharacterRegistrationCode::Project(error.code())
             }
+            CharacterRegistrationDiagnosticKind::GenericScope { .. } => {
+                CharacterRegistrationCode::GenericScope
+            }
             CharacterRegistrationDiagnosticKind::CallableCatalog { code } => {
                 CharacterRegistrationCode::CallableCatalog(*code)
             }
@@ -329,6 +346,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::StatementIngress { .. } => {
                 CharacterRegistrationCode::StatementIngress
+            }
+            CharacterRegistrationDiagnosticKind::CompileTimeScalarTypes { .. } => {
+                CharacterRegistrationCode::CompileTimeScalarTypes
             }
             CharacterRegistrationDiagnosticKind::ExternalUnknown { .. } => {
                 CharacterRegistrationCode::ExternalUnknown

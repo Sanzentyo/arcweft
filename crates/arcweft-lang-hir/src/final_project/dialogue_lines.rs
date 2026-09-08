@@ -5,13 +5,17 @@ use arcweft_id::dialogue::{DialogueLineId, DialogueTextKey};
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
 
+use super::HirSelectedExpressionGraph;
 use crate::identity::ExprId;
+use crate::leaf::HirIdRef;
 use crate::line_identity::{
-    DialogueLineCollisionSite, DialogueLineDiagnostic, DialogueLineIdOrigin,
-    DialogueLineSourceOrder, DialogueTextKeyOrigin, HirDialogueLineCandidate,
-    HirDialogueLineSourceOwner, HirDialogueNamedScope,
+    DialogueIdentityCoordinateKind, DialogueLineCollisionSite, DialogueLineDiagnostic,
+    DialogueLineIdOrigin, DialogueLineSourceOrder, DialogueTextKeyOrigin, HirDialogueLineCandidate,
+    HirDialogueLineSite, HirDialogueLineSiteTopology, HirDialogueLineSourceOwner,
+    HirDialogueNamedScope, InvalidCoordinateReason,
 };
 use crate::lowering::HirModuleKey;
+use crate::module::HirModule;
 
 use super::HirProjectModule;
 
@@ -50,7 +54,9 @@ impl DialogueLineIndex {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcceptedDialogueLineSource {
     module: HirModuleKey,
-    application: ExprId,
+    source_application: ExprId,
+    semantic_application: ExprId,
+    topology: HirDialogueLineSiteTopology,
     owner: HirDialogueLineSourceOwner,
     named_scopes: Arc<[HirDialogueNamedScope]>,
     source_order: DialogueLineSourceOrder,
@@ -64,8 +70,16 @@ impl AcceptedDialogueLineSource {
         &self.module
     }
 
-    pub const fn application(&self) -> ExprId {
-        self.application
+    pub const fn source_application(&self) -> ExprId {
+        self.source_application
+    }
+
+    pub const fn semantic_application(&self) -> ExprId {
+        self.semantic_application
+    }
+
+    pub const fn topology(&self) -> HirDialogueLineSiteTopology {
+        self.topology
     }
 
     pub const fn owner(&self) -> &HirDialogueLineSourceOwner {
@@ -130,7 +144,8 @@ impl AcceptedDialogueLine {
 pub struct AcceptedDialogueLineInventory {
     records: Arc<[AcceptedDialogueLine]>,
     by_id: BTreeMap<DialogueLineId, DialogueLineIndex>,
-    by_expr: BTreeMap<ExprId, DialogueLineIndex>,
+    by_source_expr: BTreeMap<ExprId, DialogueLineIndex>,
+    by_semantic_expr: BTreeMap<ExprId, DialogueLineIndex>,
     source_order: Arc<[DialogueLineIndex]>,
     cache_fingerprint: DialogueLineInventoryFingerprint,
 }
@@ -142,7 +157,8 @@ impl AcceptedDialogueLineInventory {
             cache_fingerprint: fingerprint_inventory(&records),
             records,
             by_id: BTreeMap::new(),
-            by_expr: BTreeMap::new(),
+            by_source_expr: BTreeMap::new(),
+            by_semantic_expr: BTreeMap::new(),
             source_order: Arc::from([]),
         }
     }
@@ -157,8 +173,14 @@ impl AcceptedDialogueLineInventory {
             .map(|index| &self.records[index.offset()])
     }
 
-    pub fn for_expr(&self, expr: ExprId) -> Option<&AcceptedDialogueLine> {
-        self.by_expr
+    pub fn for_source_expr(&self, expr: ExprId) -> Option<&AcceptedDialogueLine> {
+        self.by_source_expr
+            .get(&expr)
+            .map(|index| &self.records[index.offset()])
+    }
+
+    pub fn for_semantic_expr(&self, expr: ExprId) -> Option<&AcceptedDialogueLine> {
+        self.by_semantic_expr
             .get(&expr)
             .map(|index| &self.records[index.offset()])
     }
@@ -188,6 +210,16 @@ impl DialogueLineProjectRejection {
     }
 }
 
+/// Failure returned by the post-selection dialogue-line seal. The HIR
+/// project itself remains unchanged on either branch.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum DialogueLineProjectError {
+    #[error(transparent)]
+    Rejected(#[from] DialogueLineProjectRejection),
+    #[error(transparent)]
+    Fatal(#[from] DialogueLineProjectFatal),
+}
+
 /// Fatal dialogue-line transaction failure that cannot claim complete diagnostics.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum DialogueLineProjectFatal {
@@ -214,14 +246,21 @@ pub enum DialogueLineProjectFatal {
     DuplicateExpression { expression: ExprId },
     #[error("dialogue line inventory index does not fit its fixed index type")]
     IndexOverflow,
+    #[error("selected dialogue-line site topology is inconsistent for {expression:?}")]
+    SelectionTopologyMismatch { expression: ExprId },
+    #[error(transparent)]
+    Build(#[from] crate::line_identity::DialogueLineBuildFatal),
 }
 
-pub(crate) fn accept_dialogue_lines<'module>(
+/// Materializes and accepts only dialogue sites whose semantic application is
+/// present in the sealed selected-expression graph.
+pub(crate) fn accept_selected_dialogue_lines<'module>(
     modules: impl Iterator<Item = &'module HirProjectModule>,
-) -> Result<AcceptedDialogueLineInventory, super::HirProjectBuildError> {
+    selected: &HirSelectedExpressionGraph,
+) -> Result<AcceptedDialogueLineInventory, DialogueLineProjectError> {
     let mut transaction = DialogueLineAcceptanceTransaction::new();
     for module in modules {
-        transaction.accept_module(module)?;
+        transaction.accept_module(module, selected)?;
     }
     transaction.finish()
 }
@@ -232,6 +271,226 @@ struct DialogueLineAcceptanceTransaction {
     collisions: Vec<DialogueLineDiagnostic>,
     work: u32,
     candidate_count: usize,
+}
+
+fn validate_selected_site(
+    module: &HirModule,
+    site: &HirDialogueLineSite,
+    selected: &HirSelectedExpressionGraph,
+) -> Result<(), DialogueLineProjectFatal> {
+    if !selected.contains_expression(site.semantic_application()) {
+        return Ok(());
+    }
+    match site.topology() {
+        HirDialogueLineSiteTopology::Direct => {
+            if site.source_application() != site.semantic_application() {
+                return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                });
+            }
+        }
+        HirDialogueLineSiteTopology::OuterPostfixBracket { index_candidate } => {
+            let outer = module
+                .resolve_expr(site.source_application())
+                .map_err(|_| DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                })?;
+            let crate::expr::HirExprKind::PostfixBracket(postfix) = outer.kind() else {
+                return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                });
+            };
+            let crate::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+                index,
+                dialogue,
+            } = postfix.candidates()
+            else {
+                return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                });
+            };
+            if *index != index_candidate || *dialogue != site.semantic_application() {
+                return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                });
+            }
+            let has_dialogue_edge = selected
+                .expression_edges(site.source_application())
+                .iter()
+                .any(|edge| {
+                    matches!(
+                        edge,
+                        crate::project::HirExpressionEvaluationEdge::Expression {
+                            role: crate::expr::HirExpressionChildRole::PostfixDialogueCandidate,
+                            child,
+                            ..
+                        } if *child == site.semantic_application()
+                    )
+                });
+            if !has_dialogue_edge {
+                return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                    expression: site.source_application(),
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn coordinate_reference(
+    module: &HirModule,
+    site: &HirDialogueLineSite,
+    kind: crate::dialogue_application::HirDialogueCoordinateKind,
+) -> Result<CoordinateEvidence, DialogueLineProjectFatal> {
+    let expression = module
+        .resolve_expr(site.semantic_application())
+        .map_err(|_| DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: site.semantic_application(),
+        })?;
+    let crate::expr::HirExprKind::AttachedContentApplication(application) = expression.kind()
+    else {
+        return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: site.semantic_application(),
+        });
+    };
+    let crate::dialogue_application::HirAttachedContentApplicationFamily::DialogueLine {
+        coordinates,
+        ..
+    } = application.family()
+    else {
+        return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: site.semantic_application(),
+        });
+    };
+    let mut matches = coordinates
+        .iter()
+        .filter(|coordinate| coordinate.kind() == kind);
+    let Some(first) = matches.next() else {
+        return Ok(CoordinateEvidence::Absent);
+    };
+    if matches.next().is_some() {
+        let Some(duplicate) = coordinates
+            .iter()
+            .filter(|coordinate| coordinate.kind() == kind)
+            .nth(1)
+        else {
+            return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+                expression: site.semantic_application(),
+            });
+        };
+        return Ok(CoordinateEvidence::Invalid(
+            DialogueLineDiagnostic::DuplicateLineIdentityCoordinate {
+                coordinate: coordinate_kind(kind),
+                first: whole_expression_span(module, first.value())?,
+                duplicate: whole_expression_span(module, duplicate.value())?,
+            },
+        ));
+    }
+    let value = module.dialogue_coordinate_value(first).map_err(|_| {
+        DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: first.value(),
+        }
+    })?;
+    let span = whole_expression_span(module, first.value())?;
+    match value {
+        crate::dialogue_application::HirDialogueCoordinateValueRef::IdRef(reference) => {
+            Ok(CoordinateEvidence::Resolved(reference))
+        }
+        crate::dialogue_application::HirDialogueCoordinateValueRef::Error(_) => {
+            Ok(CoordinateEvidence::Recovered)
+        }
+        crate::dialogue_application::HirDialogueCoordinateValueRef::Runtime(_) => Ok(
+            CoordinateEvidence::Invalid(DialogueLineDiagnostic::InvalidLineIdentityCoordinate {
+                coordinate: coordinate_kind(kind),
+                reason: InvalidCoordinateReason::RuntimeExpression,
+                span,
+            }),
+        ),
+    }
+}
+
+enum CoordinateEvidence {
+    Absent,
+    Resolved(HirIdRef),
+    Recovered,
+    Invalid(DialogueLineDiagnostic),
+}
+
+impl CoordinateEvidence {
+    const fn reference(&self) -> Option<&HirIdRef> {
+        match self {
+            Self::Resolved(reference) => Some(reference),
+            Self::Absent | Self::Recovered | Self::Invalid(_) => None,
+        }
+    }
+
+    const fn is_recovered(&self) -> bool {
+        matches!(self, Self::Recovered)
+    }
+
+    fn diagnostic(&self) -> Option<&DialogueLineDiagnostic> {
+        match self {
+            Self::Invalid(diagnostic) => Some(diagnostic),
+            Self::Absent | Self::Resolved(_) | Self::Recovered => None,
+        }
+    }
+}
+
+const fn coordinate_kind(
+    kind: crate::dialogue_application::HirDialogueCoordinateKind,
+) -> DialogueIdentityCoordinateKind {
+    match kind {
+        crate::dialogue_application::HirDialogueCoordinateKind::Id => {
+            DialogueIdentityCoordinateKind::LineId
+        }
+        crate::dialogue_application::HirDialogueCoordinateKind::TextKey => {
+            DialogueIdentityCoordinateKind::TextKey
+        }
+    }
+}
+
+fn whole_expression_span(
+    module: &HirModule,
+    owner: ExprId,
+) -> Result<SourceSpan, DialogueLineProjectFatal> {
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            crate::source_index::HirSourceQuery::Expr {
+                owner,
+                role: crate::source_index::HirExprSourceRole::Whole,
+            },
+        )
+        .map_err(|_| DialogueLineProjectFatal::SelectionTopologyMismatch { expression: owner })?;
+    match lookup.presence() {
+        crate::source_index::HirSourcePresence::Present(
+            crate::source_index::HirSourceSite::Span(span),
+        ) => Ok(span.clone()),
+        crate::source_index::HirSourcePresence::Present(
+            crate::source_index::HirSourceSite::Insertion(_),
+        )
+        | crate::source_index::HirSourcePresence::AbsentOptional => {
+            Err(DialogueLineProjectFatal::SelectionTopologyMismatch { expression: owner })
+        }
+    }
+}
+
+fn dialogue_application_has_recovery(
+    module: &HirModule,
+    site: &HirDialogueLineSite,
+) -> Result<bool, DialogueLineProjectFatal> {
+    let expression = module
+        .resolve_expr(site.semantic_application())
+        .map_err(|_| DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: site.semantic_application(),
+        })?;
+    let crate::expr::HirExprKind::AttachedContentApplication(application) = expression.kind()
+    else {
+        return Err(DialogueLineProjectFatal::SelectionTopologyMismatch {
+            expression: site.semantic_application(),
+        });
+    };
+    Ok(application.has_recovery())
 }
 
 impl DialogueLineAcceptanceTransaction {
@@ -248,8 +507,9 @@ impl DialogueLineAcceptanceTransaction {
     fn accept_module(
         &mut self,
         module: &HirProjectModule,
-    ) -> Result<(), super::HirProjectBuildError> {
-        let inventory = module.module().dialogue_line_candidates();
+        selected: &HirSelectedExpressionGraph,
+    ) -> Result<(), DialogueLineProjectError> {
+        let inventory = module.module().dialogue_line_sites();
         if inventory.module() != module.module().key() {
             return Err(DialogueLineProjectFatal::SourceIdentityMismatch {
                 module: Box::new(module.module().key().clone()),
@@ -259,21 +519,47 @@ impl DialogueLineAcceptanceTransaction {
             .into());
         }
 
-        let mut candidates = inventory.records().iter().collect::<Vec<_>>();
-        candidates.sort_by_key(|candidate| candidate_source_key(candidate));
-        if inventory
-            .records()
-            .iter()
-            .zip(candidates.iter().copied())
-            .any(|(original, sorted)| !core::ptr::eq(original, sorted))
+        let mut builder = crate::line_identity::builder::HirDialogueLineCandidateBuilder::new(
+            module.module().key(),
+        );
+        for site in inventory
+            .source_ordered()
+            .filter(|site| selected.contains_expression(site.semantic_application()))
         {
-            return Err(DialogueLineProjectFatal::InvalidSourceOrder {
-                module: module.module().key().clone(),
+            validate_selected_site(module.module(), site, selected)?;
+            if dialogue_application_has_recovery(module.module(), site)? {
+                builder.skip(site).map_err(DialogueLineProjectFatal::from)?;
+                continue;
             }
-            .into());
+            let id = coordinate_reference(
+                module.module(),
+                site,
+                crate::dialogue_application::HirDialogueCoordinateKind::Id,
+            )?;
+            let text_key = coordinate_reference(
+                module.module(),
+                site,
+                crate::dialogue_application::HirDialogueCoordinateKind::TextKey,
+            )?;
+            if let Some(diagnostic) = id.diagnostic().or_else(|| text_key.diagnostic()) {
+                builder
+                    .reject(site, diagnostic.clone())
+                    .map_err(DialogueLineProjectFatal::from)?;
+                continue;
+            }
+            if id.is_recovered() || text_key.is_recovered() {
+                builder.skip(site).map_err(DialogueLineProjectFatal::from)?;
+                continue;
+            }
+            builder
+                .push(site.clone(), id.reference(), text_key.reference())
+                .map_err(DialogueLineProjectFatal::from)?;
         }
-
-        for candidate in candidates {
+        let (candidates, diagnostics) = builder.finish();
+        for diagnostic in diagnostics.iter().cloned() {
+            self.push_collision(diagnostic)?;
+        }
+        for candidate in &candidates {
             self.accept_candidate(module, candidate)?;
         }
         Ok(())
@@ -283,7 +569,7 @@ impl DialogueLineAcceptanceTransaction {
         &mut self,
         module: &HirProjectModule,
         candidate: &HirDialogueLineCandidate,
-    ) -> Result<(), super::HirProjectBuildError> {
+    ) -> Result<(), DialogueLineProjectError> {
         self.candidate_count = self
             .candidate_count
             .checked_add(1)
@@ -307,17 +593,19 @@ impl DialogueLineAcceptanceTransaction {
             }
             .into());
         }
-        if site.application().module() != module.module().module_id() {
+        if site.source_application().module() != module.module().module_id()
+            || site.semantic_application().module() != module.module().module_id()
+        {
             return Err(DialogueLineProjectFatal::ForeignExpression {
                 module: Box::new(module_key.clone()),
-                expression: site.application(),
+                expression: site.source_application(),
             }
             .into());
         }
 
         let collision_site = DialogueLineCollisionSite::new(
             module_key.clone(),
-            site.application(),
+            site.source_application(),
             site.source_order(),
             site.id_coordinate_span()
                 .unwrap_or(site.application_span())
@@ -341,9 +629,11 @@ impl DialogueLineAcceptanceTransaction {
             text_key_origin: candidate.text_key_origin(),
             source: AcceptedDialogueLineSource {
                 module: module_key.clone(),
-                application: site.application(),
+                source_application: site.source_application(),
+                semantic_application: site.semantic_application(),
+                topology: site.topology(),
                 owner: site.owner().clone(),
-                named_scopes: Arc::clone(site.named_scopes()),
+                named_scopes: Arc::from(site.named_scopes()),
                 source_order: site.source_order(),
                 application_span: site.application_span().clone(),
                 id_coordinate_span: site.id_coordinate_span().cloned(),
@@ -389,16 +679,15 @@ impl DialogueLineAcceptanceTransaction {
         Ok(())
     }
 
-    fn finish(mut self) -> Result<AcceptedDialogueLineInventory, super::HirProjectBuildError> {
+    fn finish(mut self) -> Result<AcceptedDialogueLineInventory, DialogueLineProjectError> {
         if !self.collisions.is_empty() {
             self.collisions
                 .sort_by(DialogueLineDiagnostic::compare_for_publication);
             self.collisions.dedup();
-            return Err(super::HirProjectBuildError::DialogueLines(
-                DialogueLineProjectRejection {
-                    diagnostics: Arc::from(self.collisions),
-                },
-            ));
+            return Err(DialogueLineProjectRejection {
+                diagnostics: Arc::from(self.collisions),
+            }
+            .into());
         }
         if self.accepted.is_empty() {
             return Ok(AcceptedDialogueLineInventory::empty());
@@ -407,7 +696,12 @@ impl DialogueLineAcceptanceTransaction {
         let source_exprs = self
             .accepted
             .iter()
-            .map(|record| record.source().application())
+            .map(|record| record.source().source_application())
+            .collect::<Vec<_>>();
+        let semantic_exprs = self
+            .accepted
+            .iter()
+            .map(|record| record.source().semantic_application())
             .collect::<Vec<_>>();
         self.accepted.sort_by(|left, right| {
             left.id().cmp(right.id()).then_with(|| {
@@ -416,18 +710,28 @@ impl DialogueLineAcceptanceTransaction {
         });
 
         let mut by_id = BTreeMap::new();
-        let mut by_expr = BTreeMap::new();
+        let mut by_source_expr = BTreeMap::new();
+        let mut by_semantic_expr = BTreeMap::new();
         for (offset, record) in self.accepted.iter().enumerate() {
             let index = DialogueLineIndex::try_from_offset(offset)?;
             if by_id.insert(record.id().clone(), index).is_some() {
                 return Err(DialogueLineProjectFatal::IndexOverflow.into());
             }
-            if by_expr
-                .insert(record.source().application(), index)
+            if by_source_expr
+                .insert(record.source().source_application(), index)
                 .is_some()
             {
                 return Err(DialogueLineProjectFatal::DuplicateExpression {
-                    expression: record.source().application(),
+                    expression: record.source().source_application(),
+                }
+                .into());
+            }
+            if by_semantic_expr
+                .insert(record.source().semantic_application(), index)
+                .is_some()
+            {
+                return Err(DialogueLineProjectFatal::DuplicateExpression {
+                    expression: record.source().semantic_application(),
                 }
                 .into());
             }
@@ -435,7 +739,7 @@ impl DialogueLineAcceptanceTransaction {
         let source_order = source_exprs
             .into_iter()
             .map(|expression| {
-                by_expr
+                by_source_expr
                     .get(&expression)
                     .copied()
                     .ok_or(DialogueLineProjectFatal::DuplicateExpression { expression })
@@ -443,11 +747,13 @@ impl DialogueLineAcceptanceTransaction {
             .collect::<Result<Vec<_>, _>>()?;
 
         let records = Arc::from(self.accepted);
+        let _semantic_exprs = semantic_exprs;
         Ok(AcceptedDialogueLineInventory {
             cache_fingerprint: fingerprint_inventory(&records),
             records,
             by_id,
-            by_expr,
+            by_source_expr,
+            by_semantic_expr,
             source_order: Arc::from(source_order),
         })
     }
@@ -501,7 +807,15 @@ impl InventoryFingerprintEncoder {
             self.string(segment.as_str());
         }
         self.source_identity(module.source());
-        self.bytes(&source.application().cache_fingerprint_input());
+        self.bytes(&source.source_application().cache_fingerprint_input());
+        self.bytes(&source.semantic_application().cache_fingerprint_input());
+        match source.topology() {
+            HirDialogueLineSiteTopology::Direct => self.u8(0),
+            HirDialogueLineSiteTopology::OuterPostfixBracket { index_candidate } => {
+                self.u8(1);
+                self.bytes(&index_candidate.cache_fingerprint_input());
+            }
+        }
         self.owner(source.owner());
         self.usize(source.named_scopes().len());
         for scope in source.named_scopes() {
@@ -587,18 +901,6 @@ impl InventoryFingerprintEncoder {
     }
 }
 
-fn candidate_source_key(
-    candidate: &HirDialogueLineCandidate,
-) -> (usize, usize, DialogueLineSourceOrder, ExprId) {
-    let site = candidate.site();
-    (
-        site.application_span().range().start(),
-        site.application_span().range().end(),
-        site.source_order(),
-        site.application(),
-    )
-}
-
 fn accepted_source_key(
     source: &AcceptedDialogueLineSource,
 ) -> (&HirModuleKey, usize, usize, DialogueLineSourceOrder, ExprId) {
@@ -607,6 +909,6 @@ fn accepted_source_key(
         source.application_span().range().start(),
         source.application_span().range().end(),
         source.source_order(),
-        source.application(),
+        source.source_application(),
     )
 }

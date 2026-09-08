@@ -1,11 +1,9 @@
 pub character alice {
     display = "Alice"
-    default_voice = auto
 }
 
 pub character narrator {
     display = "Narrator"
-    default_voice = auto
 }
 
 pub style side_dialogue {
@@ -74,11 +72,11 @@ effects { signal.write, metric.write }
     signal.set(@signal.current_flow, @flow.opening)
     metric.set(@metric.opening_lines, 1i32)
 
-    narrator.say(id=@say.opening.narrator.001, voice=auto)[
+    narrator(id=@say.opening.narrator.001, voice=auto)[
         雨の音だけが、古い駅舎に残っていた。[p]
     ]
 
-    let alice2 = alice(face=.smile, voice=auto, view=@view.SideDialogue)
+    let alice2 = alice(look=.smile, voice=auto, view=@view.SideDialogue)
     alice2:
         おはよう。[p]
 
@@ -88,7 +86,7 @@ effects { signal.write, metric.write }
         @flow.quiet_intro
     }
 
-    alice.say(id=@say.opening.alice.001, voice=auto, look=.smile)[
+    alice(id=@say.opening.alice.001, voice=auto, look=.smile)[
         今日は少しだけ、|[変な夢](へんなゆめ)を見たんだ。[p]
     ]
     with:

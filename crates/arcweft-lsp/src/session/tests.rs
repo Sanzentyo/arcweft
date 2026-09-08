@@ -154,17 +154,17 @@ source = "src/main.arcw"
 #[test]
 fn dialogue_line_navigation_and_explicit_rename_share_typed_project_facts() {
     let source = r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
     alice(
         id = @say.story.greeting,
         text_key = @text.story.fixed,
-    )[前[strong]強調[/strong]後];
+    )[前#strong()[強調]後];
 }
 
 fn other() {
-    alice(id = @say.story.other)[別[strong]行[/strong]];
+    alice(id = @say.story.other)[別#strong()[行]];
 }
 
 fn reference() {
@@ -246,10 +246,10 @@ fn reference() {
 #[test]
 fn generated_dialogue_line_rename_materializes_immediate_id_coordinate() {
     let source = r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice()[前[strong]生成[/strong]後];
+    alice()[前#strong()[生成]後];
 }
 ";
     let (_project, session, uri) =
@@ -263,7 +263,13 @@ fn opening() {
         "generated dialogue-line project must be executable: {:?}",
         profile.diagnostics()
     );
-    let [line] = accepted.project().hir_project().dialogue_lines().records() else {
+    let [line] = accepted
+        .executable()
+        .expect("accepted executable")
+        .final_analysis()
+        .dialogue_lines()
+        .records()
+    else {
         panic!("one generated dialogue line")
     };
     assert!(line.source().id_coordinate_span().is_none());
@@ -309,8 +315,9 @@ fn opening() {
         .accepted_environment()
         .expect("materialized project is accepted");
     let [line] = materialized_project
-        .project()
-        .hir_project()
+        .executable()
+        .expect("materialized executable")
+        .final_analysis()
         .dialogue_lines()
         .records()
     else {
@@ -326,10 +333,10 @@ fn opening() {
 #[test]
 fn generated_dialogue_line_rename_uses_typed_call_and_target_insertion_sites() {
     let call_source = r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice(text_key = @text.story.fixed)[前[strong]生成[/strong]後];
+    alice(text_key = @text.story.fixed)[前#strong()[生成]後];
 }
 ";
     let (_project, call_session, call_uri) =
@@ -367,10 +374,10 @@ fn opening() {
     assert_eq!(call_edit.range.start, call_edit.range.end);
 
     let path_source = r"
-pub character @character.alice Alice as alice {}
+pub character alice {}
 
 fn opening() {
-    alice[前[strong]生成[/strong]後];
+    alice[前#strong()[生成]後];
 }
 ";
     let (_project, path_session, path_uri) =
@@ -399,6 +406,57 @@ fn opening() {
     let path_edit = path_edits.pop().expect("one path edit");
     assert_eq!(path_edit.new_text, "(id = @say.story.path_materialized)");
     assert_eq!(path_edit.range.start, path_edit.range.end);
+}
+
+#[test]
+fn synthetic_dialogue_line_rename_uses_outer_source_site_and_semantic_candidate() {
+    let source = r"
+pub character alice {}
+
+fn opening() {
+    alice[Hello[p]];
+}
+";
+    let (_project, session, uri) =
+        accepted_dialogue_project_session("synthetic-dialogue-line-rename", source);
+    let profile = session.profile_for_uri(&uri);
+    let accepted = profile
+        .accepted_environment()
+        .expect("synthetic dialogue project is accepted");
+    let executable = accepted.executable().unwrap_or_else(|| {
+        panic!(
+            "synthetic executable diagnostics: {:?}",
+            profile.diagnostics()
+        )
+    });
+    let [line] = executable.final_analysis().dialogue_lines().records() else {
+        panic!("one synthetic dialogue line")
+    };
+    assert!(matches!(
+        line.source().topology(),
+        arcweft_lang_hir::line_identity::HirDialogueLineSiteTopology::OuterPostfixBracket { .. }
+    ));
+    assert_ne!(
+        line.source().source_application(),
+        line.source().semantic_application()
+    );
+    let document = session.documents.get(&uri).expect("open source document");
+    let offset = source.find("alice[").expect("synthetic source site") + 5;
+    let edit = crate::features::dialogue_lines::rename(
+        profile,
+        &session.documents,
+        document,
+        offset,
+        "say.fn.opening.renamed",
+    )
+    .expect("synthetic generated line materialization edit");
+    let edits = edit
+        .changes
+        .expect("workspace changes")
+        .remove(&uri)
+        .expect("source edit");
+    assert_eq!(edits.len(), 1);
+    assert_eq!(edits[0].new_text, "(id = @say.fn.opening.renamed)");
 }
 
 #[test]
@@ -1542,23 +1600,23 @@ fallbacks = []
     );
     let root_source = r"use crate.side.child_helper
 
-pub character @character.root_speaker Root as root_speaker {}
+pub character root_speaker {}
 
 test @test.root_dialogue scenario {
-    root_speaker[Hello[p]]
+    root_speaker(id = @say.root_dialogue)[Hello[p]]
 }
 ";
     project.write("src/main.arcw", root_source);
     let child_source = r"mod crate.side
 
-pub character @character.child_speaker Child as child_speaker {}
+pub character child_speaker {}
 
 pub fn child_helper() -> Unit {
     ()
 }
 
 test @test.child_dialogue scenario {
-    child_speaker[Hello[p]]
+    child_speaker(id = @say.child_dialogue)[Hello[p]]
 }
 ";
     project.write("src/side.arcw", child_source);
@@ -1583,7 +1641,7 @@ test @test.child_dialogue scenario {
         profile.diagnostics()
     );
 
-    let hover = hover_text(&mut session, uri, child_source, "child_speaker[");
+    let hover = hover_text(&mut session, uri, child_source, "child_speaker(");
     assert!(
         hover.contains("CharacterDialogue content application"),
         "{hover}"

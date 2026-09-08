@@ -27,6 +27,7 @@ pub enum RuntimeValuePathSegment {
     ReductionState,
     ReductionCommandPayload(u32),
     AgentEmbeddedValue(u32),
+    ProjectContinuationPrefix(u32),
 }
 
 /// Failure to construct or resolve a canonical runtime-value path.
@@ -104,6 +105,7 @@ impl RuntimeValuePathSegment {
             Self::ReductionState => 11,
             Self::ReductionCommandPayload(_) => 12,
             Self::AgentEmbeddedValue(_) => 13,
+            Self::ProjectContinuationPrefix(_) => 14,
         }
     }
 }
@@ -113,8 +115,18 @@ impl Ord for RuntimeValuePathSegment {
         self.canonical_tag()
             .cmp(&other.canonical_tag())
             .then_with(|| match (self, other) {
-                (Self::TupleElement(left), Self::TupleElement(right))
-                | (Self::TupleColumn(left), Self::TupleColumn(right)) => left.cmp(right),
+                (
+                    Self::TupleElement(left)
+                    | Self::TupleColumn(left)
+                    | Self::ReductionCommandPayload(left)
+                    | Self::AgentEmbeddedValue(left)
+                    | Self::ProjectContinuationPrefix(left),
+                    Self::TupleElement(right)
+                    | Self::TupleColumn(right)
+                    | Self::ReductionCommandPayload(right)
+                    | Self::AgentEmbeddedValue(right)
+                    | Self::ProjectContinuationPrefix(right),
+                ) => left.cmp(right),
                 (Self::SequenceElement(left), Self::SequenceElement(right))
                 | (Self::IteratorRemainder(left), Self::IteratorRemainder(right)) => {
                     left.cmp(right)
@@ -125,10 +137,6 @@ impl Ord for RuntimeValuePathSegment {
                     left.cmp(right)
                 }
                 (Self::FunctionCapture(left), Self::FunctionCapture(right)) => left.cmp(right),
-                (
-                    Self::ReductionCommandPayload(left) | Self::AgentEmbeddedValue(left),
-                    Self::ReductionCommandPayload(right) | Self::AgentEmbeddedValue(right),
-                ) => left.cmp(right),
                 _ => Ordering::Equal,
             })
     }
@@ -169,6 +177,7 @@ enum HumanPathSegmentRef {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
+    ProjectContinuationPrefix { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -188,6 +197,7 @@ enum HumanPathSegment {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
+    ProjectContinuationPrefix { index: u32 },
 }
 
 #[derive(Serialize)]
@@ -207,6 +217,7 @@ enum NonHumanPathSegmentRef {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
+    ProjectContinuationPrefix { index: u32 },
 }
 
 #[derive(Deserialize)]
@@ -226,6 +237,7 @@ enum NonHumanPathSegment {
     ReductionState,
     ReductionCommandPayload { index: u32 },
     AgentEmbeddedValue { index: u32 },
+    ProjectContinuationPrefix { index: u32 },
 }
 
 fn parse_canonical_u64<E: serde::de::Error>(value: &str) -> Result<u64, E> {
@@ -269,6 +281,9 @@ impl Serialize for RuntimeValuePathSegment {
                 Self::AgentEmbeddedValue(index) => {
                     NonHumanPathSegmentRef::AgentEmbeddedValue { index }
                 }
+                Self::ProjectContinuationPrefix(index) => {
+                    NonHumanPathSegmentRef::ProjectContinuationPrefix { index }
+                }
             };
             return segment.serialize(serializer);
         }
@@ -293,6 +308,9 @@ impl Serialize for RuntimeValuePathSegment {
                 HumanPathSegmentRef::ReductionCommandPayload { index }
             }
             Self::AgentEmbeddedValue(index) => HumanPathSegmentRef::AgentEmbeddedValue { index },
+            Self::ProjectContinuationPrefix(index) => {
+                HumanPathSegmentRef::ProjectContinuationPrefix { index }
+            }
         };
         human.serialize(serializer)
     }
@@ -325,6 +343,9 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 NonHumanPathSegment::AgentEmbeddedValue { index } => {
                     Self::AgentEmbeddedValue(index)
                 }
+                NonHumanPathSegment::ProjectContinuationPrefix { index } => {
+                    Self::ProjectContinuationPrefix(index)
+                }
             });
         }
         Ok(match HumanPathSegment::deserialize(deserializer)? {
@@ -348,6 +369,9 @@ impl<'de> Deserialize<'de> for RuntimeValuePathSegment {
                 Self::ReductionCommandPayload(index)
             }
             HumanPathSegment::AgentEmbeddedValue { index } => Self::AgentEmbeddedValue(index),
+            HumanPathSegment::ProjectContinuationPrefix { index } => {
+                Self::ProjectContinuationPrefix(index)
+            }
         })
     }
 }

@@ -3,8 +3,9 @@
 use arcweft_source::SourceDocumentIdentity;
 
 use crate::expr::{
-    HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallExpr, HirCallTypeApplication,
-    HirCallTypeApplicationTerminator, HirCallTypeArgumentOrdinal, HirExprKind,
+    HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallInvocation,
+    HirCallTypeApplication, HirCallTypeApplicationTerminator, HirCallTypeArgumentOrdinal,
+    HirExprKind,
 };
 use crate::identity::ExprId;
 use crate::module::HirModule;
@@ -175,7 +176,7 @@ impl HirModule {
     }
 }
 
-fn resolved_call(module: &HirModule, owner: ExprId) -> &HirCallExpr {
+fn resolved_call(module: &HirModule, owner: ExprId) -> &HirCallInvocation {
     let expression = module
         .resolve_expr(owner)
         .expect("successful Call source query validated the expression owner");

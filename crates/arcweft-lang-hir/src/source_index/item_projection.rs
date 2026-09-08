@@ -8,13 +8,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::{
     AttachedActionDeclaration, AttachedAttributeValue, AttachedCharacterBody,
-    AttachedCharacterDeclaration, AttachedCharacterDisplayNameMember, AttachedCharacterInitializer,
-    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
-    AttachedDeclarationPublicIdIssue, AttachedEnumBody, AttachedExpressionNode,
-    AttachedGenericParameter, AttachedItemPrefix, AttachedNominalDeclaration,
-    AttachedOuterAttribute, AttachedRequiredName, AttachedRetainedHeader, AttachedRetainedName,
-    AttachedSignalDeclaration, AttachedStructBody, AttachedTypeAliasDeclaration,
-    AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
+    AttachedCharacterDeclaration, AttachedCharacterDisplayMember, AttachedCharacterInitializer,
+    AttachedCharacterMember, AttachedDeclarationPublicId, AttachedDeclarationPublicIdIssue,
+    AttachedEnumBody, AttachedExpressionNode, AttachedGenericParameter, AttachedItemPrefix,
+    AttachedNominalDeclaration, AttachedOuterAttribute, AttachedRequiredName,
+    AttachedRetainedHeader, AttachedRetainedName, AttachedSignalDeclaration, AttachedStructBody,
+    AttachedTypeAliasDeclaration, AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
 };
 use arcweft_lang_syntax::expressions::{
     SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection, SyntaxRequiredTokenState,
@@ -31,20 +30,19 @@ use super::pattern_projection::{BindingLocalValidation, binding_locals_match};
 use super::{HirSourceIndex, HirSourceSite};
 use crate::arena::ArenaSnapshot;
 use crate::expr::{
-    HirCallArgument, HirCallChildPoison, HirCallExpr, HirCallValue, HirExpr, HirRecoveredName,
-    HirRequiredTokenState,
+    HirCallArgument, HirCallChildPoison, HirCallInvocation, HirCallValue, HirExpr,
+    HirRecoveredName, HirRequiredTokenState,
 };
 use crate::identity::{
     ExprId, HirTypedId, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,
 };
 use crate::item::{
-    HirActionDeclaration, HirCharacterAssignmentState, HirCharacterSurfaceAlias,
-    HirDeclarationMember, HirDeclarationMemberArena, HirDeclarationMemberId,
-    HirDeclarationMemberIndex, HirDeclarationMemberIssue, HirDeclarationMemberKind,
-    HirDeclarationMemberPoisonState, HirEnumItem, HirGenericParameter, HirItem, HirItemIssue,
-    HirItemKind, HirItemPoisonState, HirPublicIdOrigin, HirRequiredName, HirRetainedName,
-    HirRetainedPublicId, HirRetainedPublicIdIssue, HirStructItem, HirTypeAliasItem,
-    HirWherePredicate,
+    HirActionDeclaration, HirCharacterAssignmentState, HirDeclarationMember,
+    HirDeclarationMemberArena, HirDeclarationMemberId, HirDeclarationMemberIndex,
+    HirDeclarationMemberIssue, HirDeclarationMemberKind, HirDeclarationMemberPoisonState,
+    HirEnumItem, HirGenericParameter, HirItem, HirItemIssue, HirItemKind, HirItemPoisonState,
+    HirPublicIdOrigin, HirRequiredName, HirRetainedName, HirRetainedPublicId,
+    HirRetainedPublicIdIssue, HirStructItem, HirTypeAliasItem, HirWherePredicate,
 };
 use crate::leaf::HirName;
 use crate::pattern::HirPattern;
@@ -585,7 +583,7 @@ fn retained_attribute_projection<'a>(
         child_states.push(child_state);
     }
 
-    if !HirCallExpr::argument_issues(&arguments, &child_states)
+    if !HirCallInvocation::argument_issues(&arguments, &child_states)
         .map_err(|_| ())?
         .is_empty()
     {
@@ -1213,9 +1211,11 @@ fn retained_header_matches(
     attached: &AttachedRetainedHeader,
 ) -> bool {
     let name_matches = match (retained.name(), attached.name()) {
-        (HirRetainedName::Resolved(retained), AttachedRetainedName::Resolved { value, .. }) => {
-            retained.as_str() == value.as_str()
-        }
+        (
+            HirRetainedName::Resolved(retained),
+            AttachedRetainedName::Resolved { value, .. }
+            | AttachedRetainedName::Derived { value, .. },
+        ) => retained.as_str() == value.as_str(),
         (HirRetainedName::Missing, AttachedRetainedName::Missing { .. })
         | (HirRetainedName::Invalid, AttachedRetainedName::Invalid { .. }) => true,
         _ => false,
@@ -1228,11 +1228,23 @@ fn retained_header_matches(
                     ..
                 },
                 AttachedDeclarationPublicId::Derived,
-            ) if matches!(attached.name(), AttachedRetainedName::Resolved { .. }) => true,
+            ) if matches!(
+                attached.name(),
+                AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. }
+            ) =>
+            {
+                true
+            }
             (
                 HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName),
                 AttachedDeclarationPublicId::Derived,
-            ) if !matches!(attached.name(), AttachedRetainedName::Resolved { .. }) => true,
+            ) if !matches!(
+                attached.name(),
+                AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. }
+            ) =>
+            {
+                true
+            }
             (
                 HirRetainedPublicId::Resolved {
                     value: retained,
@@ -1275,38 +1287,13 @@ fn character_payload_matches(
     };
     item_prefix_matches(item, attached.prefix(), slots)
         && retained_header_matches(character.header(), attached.header())
-        && surface_alias_matches(character.surface_alias(), attached.surface_alias())
-        && character_members_match(
-            owner,
-            character.display_name(),
-            item,
-            members,
-            attached,
-            slots,
-        )
+        && character_members_match(owner, character.display(), item, members, attached, slots)
         && item.state() == &character_item_state(attached, members, item.prefix(), slots)
-}
-
-fn surface_alias_matches(
-    retained: &HirCharacterSurfaceAlias,
-    attached: &AttachedCharacterSurfaceAlias,
-) -> bool {
-    match (retained, attached) {
-        (HirCharacterSurfaceAlias::Absent, AttachedCharacterSurfaceAlias::Absent)
-        | (HirCharacterSurfaceAlias::Missing, AttachedCharacterSurfaceAlias::Missing { .. }) => {
-            true
-        }
-        (
-            HirCharacterSurfaceAlias::Resolved(retained),
-            AttachedCharacterSurfaceAlias::Resolved { value, .. },
-        ) => retained.as_str() == value.as_str(),
-        _ => false,
-    }
 }
 
 fn character_members_match(
     owner: ItemId,
-    display_name: Option<HirDeclarationMemberId>,
+    display: Option<HirDeclarationMemberId>,
     item: &HirItem,
     members: Option<&HirDeclarationMemberArena>,
     attached: &AttachedCharacterDeclaration,
@@ -1314,7 +1301,7 @@ fn character_members_match(
 ) -> bool {
     let attached_members = attached.body().members();
     if attached_members.is_empty() {
-        return item.members().is_empty() && members.is_none() && display_name.is_none();
+        return item.members().is_empty() && members.is_none() && display.is_none();
     }
     let Some(members) = members else {
         return false;
@@ -1326,7 +1313,7 @@ fn character_members_match(
     {
         return false;
     }
-    let mut first_display_name = None;
+    let mut first_display = None;
     for (position, (retained, attached)) in
         members.members().iter().zip(attached_members).enumerate()
     {
@@ -1342,10 +1329,10 @@ fn character_members_match(
         }
         match (retained.kind(), attached) {
             (
-                HirDeclarationMemberKind::CharacterDisplayName(display),
-                AttachedCharacterMember::DisplayName(attached),
+                HirDeclarationMemberKind::CharacterDisplay(display),
+                AttachedCharacterMember::Display(attached),
             ) => {
-                first_display_name.get_or_insert(expected);
+                first_display.get_or_insert(expected);
                 let expected_assignment = if attached.assignment().is_missing() {
                     HirCharacterAssignmentState::Missing
                 } else {
@@ -1376,12 +1363,12 @@ fn character_members_match(
             _ => return false,
         }
     }
-    display_name == first_display_name
+    display == first_display
 }
 
 fn character_member_state_matches(
     retained: &HirDeclarationMember,
-    attached: &AttachedCharacterDisplayNameMember,
+    attached: &AttachedCharacterDisplayMember,
     slots: &SlotSnapshot,
 ) -> bool {
     if attached.is_duplicate() {
@@ -1394,7 +1381,7 @@ fn character_member_state_matches(
                 HirDeclarationMemberIssue::MissingAssignment,
             );
     }
-    let HirDeclarationMemberKind::CharacterDisplayName(display) = retained.kind() else {
+    let HirDeclarationMemberKind::CharacterDisplay(display) = retained.kind() else {
         return false;
     };
     let Some(initializer) = display.initializer() else {
@@ -1429,13 +1416,6 @@ fn character_item_state(
                     .then_some(HirItemIssue::MalformedHeader)
             })
             .or_else(|| {
-                matches!(
-                    attached.surface_alias(),
-                    AttachedCharacterSurfaceAlias::Missing { .. }
-                )
-                .then_some(HirItemIssue::MissingName)
-            })
-            .or_else(|| {
                 matches!(attached.body(), AttachedCharacterBody::Missing(_))
                     .then_some(HirItemIssue::MissingBody)
             })
@@ -1460,7 +1440,7 @@ fn retained_header_item_issue(attached: &AttachedRetainedHeader) -> Option<HirIt
     match attached.name() {
         AttachedRetainedName::Missing { .. } => Some(HirItemIssue::MissingName),
         AttachedRetainedName::Invalid { .. } => Some(HirItemIssue::MalformedHeader),
-        AttachedRetainedName::Resolved { .. } => None,
+        AttachedRetainedName::Resolved { .. } | AttachedRetainedName::Derived { .. } => None,
     }
     .or_else(|| {
         matches!(

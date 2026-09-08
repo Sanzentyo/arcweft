@@ -57,7 +57,7 @@ impl<'a> FinalSemanticAnalysisControl<'a> {
         self
     }
 
-    pub(super) fn check(self) -> Result<(), FinalSemanticAnalysisError> {
+    pub(crate) fn check(self) -> Result<(), FinalSemanticAnalysisError> {
         if self.cancellation.load(Ordering::Acquire) {
             Err(FinalSemanticAnalysisError::Cancelled)
         } else {

@@ -573,8 +573,10 @@ fn runtime_plan_consumes_project_view_without_flattening() {
         &runtime_owners,
         None,
         None,
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
-    .expect("runtime facts project from the accepted project view");
+    .expect("runtime facts project from the accepted project view")
+    .0;
     let entry_input = RuntimeEntryLoweringInput::empty(executable);
     let lowered = lower_runtime_plan_with_stats(executable, &runtime_facts, &entry_input)
         .expect("runtime plan lowers from the accepted project view");
@@ -676,11 +678,20 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         &runtime_owners,
         None,
         None,
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
-    .expect("accepted types project through the compiler boundary");
+    .expect("accepted types project through the compiler boundary")
+    .0;
     let expression_type_owners = runtime_owners
         .selected_expression_type_owners()
         .expect("accepted runtime expression type owners");
+    let mut instance_catalogs = Vec::new();
+    for instance in runtime_facts.project_function_instances() {
+        instance_catalogs.push(instance.semantics());
+    }
+    for closure in runtime_facts.root_closures() {
+        instance_catalogs.push(closure.semantics());
+    }
 
     let mut saw_bool_local = false;
     let mut saw_presentation_local = false;
@@ -688,14 +699,37 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         if !runtime_owners.contains_local(owner) {
             saw_presentation_local = true;
             assert!(runtime_facts.local_type(owner).is_none());
+            assert!(
+                instance_catalogs
+                    .iter()
+                    .all(|catalog| catalog.local_type(owner).is_none())
+            );
             continue;
         }
-        let projected = runtime_facts
+        let projections = runtime_facts
             .local_type(owner)
-            .expect("every runtime-domain local retains one runtime type fact");
+            .into_iter()
+            .chain(
+                instance_catalogs
+                    .iter()
+                    .filter_map(|catalog| catalog.local_type(owner)),
+            )
+            .collect::<Vec<_>>();
+        let [projected] = projections.as_slice() else {
+            panic!(
+                "each local in this monomorphic fixture has exactly one global or instance owner: {owner:?}, count {}",
+                projections.len()
+            );
+        };
         assert_eq!(
             projected.identity(),
-            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+            RuntimeSemanticTypeId::from_bytes(
+                *checked
+                    .ty()
+                    .semantic_identity_digest()
+                    .expect("closed checked fixture type")
+                    .as_bytes()
+            )
         );
         if matches!(
             (checked.ty(), projected.shape()),
@@ -712,16 +746,41 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         if !expression_type_owners.contains(&owner) {
             saw_presentation_expression |= !runtime_owners.contains_expression(owner);
             assert!(runtime_facts.expression_type(owner).is_none());
+            assert!(
+                instance_catalogs
+                    .iter()
+                    .all(|catalog| catalog.expression_type(owner).is_none())
+            );
             continue;
         }
-        let projected = runtime_facts
+        let projections = runtime_facts
             .expression_type(owner)
-            .expect("every selected runtime expression retains one runtime type fact");
+            .into_iter()
+            .chain(
+                instance_catalogs
+                    .iter()
+                    .filter_map(|catalog| catalog.expression_type(owner)),
+            )
+            .collect::<Vec<_>>();
+        let [projected] = projections.as_slice() else {
+            panic!(
+                "each expression in this monomorphic fixture has exactly one global or instance owner: {owner:?}, count {}",
+                projections.len()
+            );
+        };
+        let checked_type = checked
+            .value_type()
+            .expect("every selected runtime expression is value-producing");
         assert_eq!(
             projected.identity(),
-            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+            RuntimeSemanticTypeId::from_bytes(
+                *checked_type
+                    .semantic_identity_digest()
+                    .expect("closed checked fixture type")
+                    .as_bytes(),
+            )
         );
-        match (checked.ty(), projected.shape()) {
+        match (checked_type, projected.shape()) {
             (TypeKind::Bool, RuntimeTypeShape::Bool) => saw_bool_expression = true,
             (TypeKind::I64, RuntimeTypeShape::Signed(_)) => saw_i64_expression = true,
             _ => {}
@@ -734,14 +793,37 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         if !runtime_owners.contains_pattern(owner) {
             saw_presentation_pattern = true;
             assert!(runtime_facts.pattern_type(owner).is_none());
+            assert!(
+                instance_catalogs
+                    .iter()
+                    .all(|catalog| catalog.pattern_type(owner).is_none())
+            );
             continue;
         }
-        let projected = runtime_facts
+        let projections = runtime_facts
             .pattern_type(owner)
-            .expect("every runtime-domain pattern retains one runtime type fact");
+            .into_iter()
+            .chain(
+                instance_catalogs
+                    .iter()
+                    .filter_map(|catalog| catalog.pattern_type(owner)),
+            )
+            .collect::<Vec<_>>();
+        let [projected] = projections.as_slice() else {
+            panic!(
+                "each pattern in this monomorphic fixture has exactly one global or instance owner: {owner:?}, count {}",
+                projections.len()
+            );
+        };
         assert_eq!(
             projected.identity(),
-            RuntimeSemanticTypeId::from_bytes(*checked.ty().semantic_identity_digest().as_bytes())
+            RuntimeSemanticTypeId::from_bytes(
+                *checked
+                    .ty()
+                    .semantic_identity_digest()
+                    .expect("closed checked fixture type")
+                    .as_bytes()
+            )
         );
         if matches!(
             (checked.ty(), projected.shape()),
@@ -756,14 +838,36 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         if !runtime_owners.contains_type(owner) {
             saw_presentation_type = true;
             assert!(runtime_facts.ty(owner).is_none());
+            assert!(
+                instance_catalogs
+                    .iter()
+                    .all(|catalog| catalog.source_type(owner).is_none())
+            );
             continue;
         }
-        let projected = runtime_facts
+        let projections = runtime_facts
             .ty(owner)
-            .expect("every runtime-domain authored type retains one runtime type fact");
+            .into_iter()
+            .chain(
+                instance_catalogs
+                    .iter()
+                    .filter_map(|catalog| catalog.source_type(owner)),
+            )
+            .collect::<Vec<_>>();
+        let [projected] = projections.as_slice() else {
+            panic!(
+                "each source type in this monomorphic fixture has exactly one global or instance owner: {owner:?}, count {}",
+                projections.len()
+            );
+        };
         assert_eq!(
             projected.identity(),
-            RuntimeSemanticTypeId::from_bytes(*checked.semantic_identity_digest().as_bytes())
+            RuntimeSemanticTypeId::from_bytes(
+                *checked
+                    .semantic_identity_digest()
+                    .expect("closed checked fixture type")
+                    .as_bytes()
+            )
         );
     }
 
@@ -841,8 +945,10 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         &runtime_owners,
         None,
         None,
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
-    .expect("assignment projects through the compiler boundary");
+    .expect("assignment projects through the compiler boundary")
+    .0;
     assert!(runtime.assignment(statement).is_none());
     assert!(!runtime_owners.contains_statement(statement));
     assert_eq!(checked.place().field_type(), &TypeKind::Bool);
@@ -884,12 +990,20 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         &runtime_owners,
         None,
         None,
+        &arcweft_compiler::lower::ProjectInstantiationControl::default(),
     )
-    .expect("project enum cases project from accepted semantic types");
+    .expect("project enum cases project from accepted semantic types")
+    .0;
     let selected = executable
         .modules()
         .flat_map(|(_, module)| module.expressions())
-        .filter_map(|(owner, _)| runtime_facts.expression_variant(owner))
+        .flat_map(|(owner, _)| {
+            runtime_facts.expression_variant(owner).into_iter().chain(
+                runtime_facts
+                    .project_function_instances()
+                    .filter_map(move |instance| instance.semantics().expression_variant(owner)),
+            )
+        })
         .find(|variant| variant.selected_name() == Ok("Unit"))
         .expect("unit expression retains its selected project variant fact");
 
@@ -1000,6 +1114,59 @@ fn lowered_hir_cache_hit_remains_read_only() {
     hit.registered_environment()
         .verify_character_inventory(hit.project_symbols())
         .expect("hit path produced a complete registered world");
+}
+
+#[test]
+fn failed_instance_projection_preserves_the_prior_accepted_generation() {
+    use arcweft_compiler::lower::{ProjectInstantiationControl, ProjectInstantiationLimits};
+    let (project, facts) = fixture(
+        "fn identity<T>(value: T) -> T { let nested = [[[1i64]]]; value }\nflow main() -> i64 { return identity(42i64) }\n",
+        "instance-limit-rollback",
+    );
+    let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
+    let accepted_context = context(TypeCheckEnv::standard(), facts);
+    let first = session
+        .compile(&project, &accepted_context, &mut cache)
+        .expect("accepted generation");
+    let first_hash = first.program_hash().clone();
+    let first_hir = Arc::clone(first.hir_project());
+    for limits in [
+        ProjectInstantiationLimits::new(0, 0, 100_000, 128, 100_000),
+        ProjectInstantiationLimits::new(100, 100, 1, 128, 100_000),
+        ProjectInstantiationLimits::new(100, 100, 100_000, 2, 100_000),
+    ] {
+        cache.reset_activity();
+        let limited = accepted_context
+            .clone()
+            .with_instantiation_control(ProjectInstantiationControl::default().with_limits(limits));
+        let error = session
+            .compile(&project, &limited, &mut cache)
+            .expect_err("failed discovery or body projection must not publish a generation");
+        assert_eq!(error.stage(), "runtime-plan-lower");
+        assert!(
+            error.diagnostics().iter().any(|diagnostic| diagnostic
+                .diagnostic()
+                .code()
+                .is_some_and(|code| code.as_str() == "compiler.project_instantiation.limit")),
+            "{error:?}"
+        );
+        assert_eq!(cache.stores, 0);
+        first
+            .final_analysis()
+            .validate_generation(
+                first_hir.executable_view().expect("prior executable lease"),
+                first.project_symbols(),
+            )
+            .expect("prior semantic generation remains valid");
+        assert_eq!(first.program_hash(), &first_hash);
+        let recovered = session
+            .compile(&project, &accepted_context, &mut cache)
+            .expect("the next normal compile still uses the accepted generation");
+        assert_eq!(recovered.program_hash(), &first_hash);
+        assert!(Arc::ptr_eq(recovered.hir_project(), &first_hir));
+        assert_eq!(cache.stores, 0);
+    }
 }
 
 #[test]

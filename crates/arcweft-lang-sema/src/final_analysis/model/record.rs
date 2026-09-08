@@ -8,7 +8,7 @@ use arcweft_lang_hir::{
 use std::collections::BTreeSet;
 
 use crate::{
-    env::nominal::{AcceptedEnvironmentRecordIdentity, AcceptedNominalId},
+    env::nominal::{AcceptedEnvironmentRecord, AcceptedNominalId},
     record_field::CheckedRecordFieldSemanticId,
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
@@ -222,17 +222,17 @@ pub enum CheckedRecordPatternOwner {
         field_count: u32,
     },
     Environment {
-        record: AcceptedEnvironmentRecordIdentity,
+        record: AcceptedEnvironmentRecord,
     },
     VariantPayload {
-        payload: crate::types::VariantPayloadType,
+        payload: crate::types::CheckedVariantPayload,
         semantic_type: SemanticTypeDigest,
         field_count: u32,
     },
 }
 
 impl CheckedRecordPatternOwner {
-    pub const fn semantic_type(&self) -> SemanticTypeDigest {
+    pub fn semantic_type(&self) -> SemanticTypeDigest {
         match self {
             Self::Project { semantic_type, .. } => *semantic_type,
             Self::Environment { record } => record.semantic_type(),
@@ -261,14 +261,13 @@ impl CheckedRecordPatternOwner {
         }
     }
 
-    pub(crate) const fn environment(record: AcceptedEnvironmentRecordIdentity) -> Self {
+    pub(crate) const fn environment(record: AcceptedEnvironmentRecord) -> Self {
         Self::Environment { record }
     }
 
-    pub(crate) fn variant_payload(payload: crate::types::VariantPayloadType) -> Option<Self> {
+    pub(crate) fn variant_payload(payload: crate::types::CheckedVariantPayload) -> Option<Self> {
         let field_count = u32::try_from(payload.shape().record_fields()?.len()).ok()?;
-        let semantic_type =
-            TypeKind::VariantPayload(Box::new(payload.clone())).semantic_identity_digest();
+        let semantic_type = payload.semantic_type();
         Some(Self::VariantPayload {
             payload,
             semantic_type,
@@ -374,16 +373,16 @@ pub struct CheckedRecordPatternField {
 }
 
 impl CheckedRecordPatternField {
-    pub(crate) fn new(
+    pub(crate) fn try_new(
         source_ordinal: u32,
         declaration_ordinal: u32,
         runtime_field: Option<RuntimeRecordFieldId>,
         semantic_id: CheckedRecordFieldSemanticId,
         field_type: TypeKind,
         source: CheckedRecordPatternSource,
-    ) -> Self {
-        let field_type_digest = field_type.semantic_identity_digest();
-        Self {
+    ) -> Result<Self, crate::types::GenericScopeError> {
+        let field_type_digest = field_type.semantic_identity_digest()?;
+        Ok(Self {
             source_ordinal,
             declaration_ordinal,
             runtime_field,
@@ -391,7 +390,7 @@ impl CheckedRecordPatternField {
             field_type,
             field_type_digest,
             source,
-        }
+        })
     }
 
     pub const fn source_ordinal(&self) -> u32 {
@@ -482,7 +481,8 @@ impl CheckedRecordPattern {
                 || !valid_owner_field
                 || !declaration_ordinals.insert(field.declaration_ordinal())
                 || !semantic_ids.insert(field.semantic_id())
-                || field.field_type_digest() != field.field_type().semantic_identity_digest()
+                || field.field_type_digest()
+                    != field.field_type().semantic_identity_digest().ok()?
             {
                 return None;
             }
@@ -537,7 +537,7 @@ impl CheckedRecordPattern {
             CheckedRecordPatternOwner::Project { nominal, .. } => nominal.visit_types(visitor)?,
             CheckedRecordPatternOwner::Environment { .. } => {}
             CheckedRecordPatternOwner::VariantPayload { payload, .. } => {
-                visitor(&TypeKind::VariantPayload(Box::new(payload.clone())))?;
+                visitor(&TypeKind::VariantPayload(Box::new(payload.to_type())))?;
             }
         }
         for field in self.fields() {
