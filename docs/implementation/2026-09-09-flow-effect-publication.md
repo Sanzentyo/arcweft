@@ -92,8 +92,10 @@ origin through the same prepared graph restored the full diagnostic trace and
 the 760/7 baseline without reintroducing the deleted reader.
 
 Compiler and runtime-plan compile-fail mismatches retain the intended rejection
-codes and names: Rust 1.98.1 prints different underline/annotation placement.
-Those expected-output updates are an independent fixture cut. Core's public
+codes and names. The compiler output changes underline/annotation placement;
+runtime-plan changes a similar-name suggestion. The
+[subsequent fixture cut](2026-09-09-ui-diagnostic-format.md) updates those expected
+outputs and records the workspace retry. Core's public
 boundary suite passes. Later workspace targets and the CLI workspace recipe
 commands were not run after the compiler API failure.
 

@@ -7,7 +7,7 @@ error[E0432]: unresolved import `arcweft_runtime_plan::semantic_facts::RuntimeDi
 help: a similar name exists in the module
   |
 2 -     RuntimeDialogueApplication, RuntimeDialogueMarkHandler,
-2 +     RuntimeDialogueApplication, RuntimeDialogueMarkId,
+2 +     RuntimeDialogueApplication, RuntimeDialogueMarkFact,
   |
 
 error[E0609]: no field `mark_handlers` on type `&RuntimeDialogueApplication`

@@ -2,12 +2,16 @@ error[E0432]: unresolved imports `arcweft_compiler::error::ValidateHirError`, `a
   --> tests/ui/removed_zero_consumer_compiler_facades.rs:2:5
    |
  2 |     error::ValidateHirError,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^ no `ValidateHirError` in `error`
+   |     ^^^^^^^----------------
+   |            |
+   |            no `ValidateHirError` in `error`
  3 |     hir::{
    |     ^^^ could not find `hir` in `arcweft_compiler`
 ...
  7 |     link::missing_entry_names,
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^ no `missing_entry_names` in `link`
+   |     ^^^^^^-------------------
+   |           |
+   |           no `missing_entry_names` in `link`
  8 |     lower::{
  9 |         lower_source_pure_helper_candidate, lower_source_runtime_plan_with_options,
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_source_runtime_plan_with_options` in `lower`
