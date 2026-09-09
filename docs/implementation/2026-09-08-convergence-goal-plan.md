@@ -245,3 +245,9 @@ MCP スクリプトは型検証を通過したが、CLI の観測レスポンス
 生成コントローラIDの読み戻しを修正した。ソース・バンドル実行、トレース再生、
 MCP の4テストが通過した。残る callable 18件に加え、Try の Agent型投影と
 ネイティブ観測テストの HIR公開失敗を記録し、後続工程を含む goal は継続する。
+
+[正規化された variant の選択の記録](2026-09-09-normalized-variant-selection.md)
+では、Try のケース選択から限定的な型への変換を削除し、payload の型IDと
+組み込みケースの構造を直接検証するようにした。runtime-plan の64テスト、
+関連 compiler 22テスト、resource/attach/checkpoint の実行と MCP 4テストが通った。
+callable 18件、capture の失敗とネイティブ HIR公開失敗、後続工程は未完のまま保持する。

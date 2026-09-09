@@ -410,6 +410,13 @@ Record pattern fields store layout ordinals, not names. A match arm is
 `{ pattern, guard: Option<AwbcFunctionId>, target: AwbcBlockId }`; guards are
 pure `(scrutinee) -> bool` functions.
 
+Synthetic Try cases select their payloads from the normalized type and the
+core builtin case schema. Result/Option tuple payloads retain the exact declared
+item identities, including unselected cases. This selection does not require
+the payload to fit the smaller checked-value projection used by other runtime
+contracts; Agent, range and function payloads still use their admitted plan
+types. The aggregate type inventory validates each identity's full definition.
+
 ### 5.2 Intrinsics, host calls, tasks, and effects
 
 Host-call signatures retain the preflighted RuntimePlan type identities of every

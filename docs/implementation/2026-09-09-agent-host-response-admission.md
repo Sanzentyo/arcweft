@@ -114,6 +114,11 @@ Both expression and Flow Try lowering consume this selection through
 owning boundary rather than add a Resource-specific exception. No change to
 those sources is included in this cut.
 
+The subsequent [normalized variant selection repair](2026-09-09-normalized-variant-selection.md)
+removes that restricted projection, retains exact payload identities, and
+passes the resource/attach/checkpoint execution test. It separately records
+the remaining capture failure; resource success is not capture success.
+
 ## Ownership review
 
 The inspected base plus these working changes is the source pin. There is no

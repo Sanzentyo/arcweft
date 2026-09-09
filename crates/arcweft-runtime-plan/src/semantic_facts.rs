@@ -400,9 +400,9 @@ pub struct RuntimeNormalizedType {
 
 /// One exact case selected directly from a normalized runtime variant type.
 ///
-/// This borrowed view keeps the normalized payload and the core checked owner
-/// reconciled. Synthetic lowering paths therefore cannot substitute a raw
-/// item type for the case's structural payload type.
+/// This borrowed view retains the exact normalized payload under the core
+/// builtin case schema. Synthetic lowering paths cannot substitute a raw
+/// item type for the case's structural payload type or erase its identity.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct RuntimeNormalizedVariantSelection<'a> {
     owner: &'a RuntimeNormalizedType,
@@ -448,10 +448,13 @@ impl RuntimeNormalizedVariantSelection<'_> {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum RuntimeNormalizedVariantSelectionError {
-    #[error(transparent)]
-    CheckedType(#[from] RuntimeCheckedTypeProjectionError),
     #[error("normalized type {owner:?} is not a closed runtime variant owner")]
     InvalidOwner { owner: RuntimeSemanticTypeId },
+    #[error("normalized variant type {owner:?} disagrees with the {builtin:?} case schema")]
+    InvalidCaseSchema {
+        owner: RuntimeSemanticTypeId,
+        builtin: RuntimeBuiltinVariantIdentity,
+    },
     #[error("normalized variant type {owner:?} has {count} cases, exceeding u32 ordinals")]
     CaseCountOverflow {
         owner: RuntimeSemanticTypeId,
@@ -463,7 +466,7 @@ pub(crate) enum RuntimeNormalizedVariantSelectionError {
         ordinal: u32,
         case_count: u32,
     },
-    #[error("normalized variant type {owner:?} case {ordinal} disagrees with its checked payload")]
+    #[error("normalized variant type {owner:?} case {ordinal} disagrees with its declared payload")]
     PayloadMismatch {
         owner: RuntimeSemanticTypeId,
         ordinal: u32,
@@ -500,45 +503,77 @@ impl RuntimeNormalizedType {
         &self,
         ordinal: u32,
     ) -> Result<RuntimeNormalizedVariantSelection<'_>, RuntimeNormalizedVariantSelectionError> {
-        let (case_count, payload) = match self.shape() {
+        match self.shape() {
             RuntimeTypeShape::Result {
+                value,
+                error,
                 value_payload,
                 error_payload,
-                ..
-            } => (
-                2,
-                match ordinal {
-                    0 => Some(value_payload.as_ref()),
-                    1 => Some(error_payload.as_ref()),
-                    _ => None,
-                },
-            ),
-            RuntimeTypeShape::Option { some_payload, .. } => (
-                2,
-                match ordinal {
-                    0 => Some(some_payload.as_ref()),
-                    _ => None,
-                },
-            ),
-            RuntimeTypeShape::BuiltinVariant { cases, .. } => {
-                let case_count = u32::try_from(cases.len()).map_err(|_| {
-                    RuntimeNormalizedVariantSelectionError::CaseCountOverflow {
-                        owner: self.identity(),
-                        count: cases.len(),
-                    }
-                })?;
-                let payload = usize::try_from(ordinal)
-                    .ok()
-                    .and_then(|ordinal| cases.get(ordinal))
-                    .and_then(Option::as_ref);
-                (case_count, payload)
+            } => {
+                self.validate_unary_case_payload(0, value, value_payload)?;
+                self.validate_unary_case_payload(1, error, error_payload)?;
+                self.select_builtin_case(
+                    RuntimeBuiltinVariantIdentity::Result,
+                    ordinal,
+                    [Some(value_payload.as_ref()), Some(error_payload.as_ref())].into_iter(),
+                )
             }
-            _ => {
-                return Err(RuntimeNormalizedVariantSelectionError::InvalidOwner {
-                    owner: self.identity(),
-                });
+            RuntimeTypeShape::Option { item, some_payload } => {
+                self.validate_unary_case_payload(0, item, some_payload)?;
+                self.select_builtin_case(
+                    RuntimeBuiltinVariantIdentity::Option,
+                    ordinal,
+                    [Some(some_payload.as_ref()), None].into_iter(),
+                )
             }
-        };
+            RuntimeTypeShape::BuiltinVariant { owner, cases } => {
+                self.select_builtin_case(*owner, ordinal, cases.iter().map(Option::as_ref))
+            }
+            _ => Err(RuntimeNormalizedVariantSelectionError::InvalidOwner {
+                owner: self.identity(),
+            }),
+        }
+    }
+
+    fn validate_unary_case_payload(
+        &self,
+        ordinal: u32,
+        item: &Self,
+        payload: &Self,
+    ) -> Result<(), RuntimeNormalizedVariantSelectionError> {
+        // The aggregate type inventory owns each identity's definition. A
+        // unary case must reference that exact item, not an equal checked shape.
+        if matches!(payload.shape(), RuntimeTypeShape::Tuple(items)
+            if matches!(items.as_ref(), [actual] if actual.identity() == item.identity()))
+        {
+            Ok(())
+        } else {
+            Err(RuntimeNormalizedVariantSelectionError::PayloadMismatch {
+                owner: self.identity(),
+                ordinal,
+            })
+        }
+    }
+
+    fn select_builtin_case<'a>(
+        &'a self,
+        builtin: RuntimeBuiltinVariantIdentity,
+        ordinal: u32,
+        cases: impl ExactSizeIterator<Item = Option<&'a Self>>,
+    ) -> Result<RuntimeNormalizedVariantSelection<'a>, RuntimeNormalizedVariantSelectionError> {
+        let schemas = builtin.cases();
+        let case_count = u32::try_from(cases.len()).map_err(|_| {
+            RuntimeNormalizedVariantSelectionError::CaseCountOverflow {
+                owner: self.identity(),
+                count: cases.len(),
+            }
+        })?;
+        if cases.len() != schemas.len() {
+            return Err(RuntimeNormalizedVariantSelectionError::InvalidCaseSchema {
+                owner: self.identity(),
+                builtin,
+            });
+        }
         if ordinal >= case_count {
             return Err(RuntimeNormalizedVariantSelectionError::CaseOrdinal {
                 owner: self.identity(),
@@ -546,27 +581,22 @@ impl RuntimeNormalizedType {
                 case_count,
             });
         }
-        let checked = self.checked_type()?;
-        let checked_case = checked.variant_case(ordinal).ok_or(
-            RuntimeNormalizedVariantSelectionError::CaseOrdinal {
-                owner: self.identity(),
-                ordinal,
-                case_count,
-            },
-        )?;
-        let checked_payload = payload
-            .map(RuntimeNormalizedType::checked_type)
-            .transpose()?;
-        if checked_case.payload.as_deref() != checked_payload.as_ref() {
-            return Err(RuntimeNormalizedVariantSelectionError::PayloadMismatch {
-                owner: self.identity(),
-                ordinal,
-            });
+        let mut selected = None;
+        for ((index, payload), schema) in cases.enumerate().zip(schemas) {
+            if schema.has_payload() != payload.is_some() {
+                return Err(RuntimeNormalizedVariantSelectionError::InvalidCaseSchema {
+                    owner: self.identity(),
+                    builtin,
+                });
+            }
+            if u32::try_from(index).ok() == Some(ordinal) {
+                selected = payload;
+            }
         }
         Ok(RuntimeNormalizedVariantSelection {
             owner: self,
             ordinal,
-            payload,
+            payload: selected,
         })
     }
 
@@ -10378,3 +10408,7 @@ fn validate_trait_method(
 #[cfg(test)]
 #[path = "semantic_facts/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "semantic_facts/variant_selection_tests.rs"]
+mod variant_selection_tests;
