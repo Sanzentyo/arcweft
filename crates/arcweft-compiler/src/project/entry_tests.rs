@@ -818,16 +818,52 @@ entry agent @entry.agent.controller {
             .entries()
             .any(|entry| entry.id().public_id().as_str() == "entry.agent.controller")
     );
-    let controller = compiled
+    let entry = compiled
         .runtime_plan()
         .plan
-        .flows()
+        .entries()
         .iter()
-        .find(|flow| flow.id.canonical_label().contains("controller"))
-        .expect("selected controller flow");
-    let request = run_controller_to_host_call(&compiled.runtime_plan().plan, &controller.id);
+        .find(|entry| entry.id.public_label().as_str() == "entry.agent.controller")
+        .expect("exact selected Agent entry");
+    let RuntimeEntryTarget::Controller(controller) = &entry.target else {
+        panic!("selected Agent entry retains its exact controller");
+    };
+    let request = run_controller_to_host_call(&compiled.runtime_plan().plan, controller);
     assert_eq!(request.operation, "observe");
     assert!(request.args.is_empty());
+
+    let awbc = arcweft_runtime_plan::awbc_lower::AwbcLowerer::for_entry(
+        &compiled.runtime_plan().plan,
+        &compiled.runtime_plan().dialogue_content_catalog,
+        "agent_intrinsic.arcw",
+        &entry.id,
+    )
+    .lower()
+    .expect("the host result retains its admitted type through verified AWBC");
+    let mut fiber = arcweft_core::awbc::fiber::FiberState::for_entry(
+        &awbc.program,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+        1,
+        4096,
+    )
+    .expect("selected Agent AWBC entry starts");
+    let output = arcweft_core::awbc::vm::step(
+        &awbc.program,
+        &mut fiber,
+        arcweft_core::awbc::vm::VmStepOptions::default(),
+    )
+    .expect("AWBC controller reaches its host boundary");
+    let arcweft_core::awbc::vm::VmExit::Suspended(
+        arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall { call, args, .. },
+    ) = output.exit
+    else {
+        panic!("Agent AWBC must suspend for its observe call");
+    };
+    assert_eq!(
+        awbc.program.strings[awbc.program.host_calls[call.index()].operation.index()],
+        "observe"
+    );
+    assert!(args.is_empty());
 }
 
 #[test]

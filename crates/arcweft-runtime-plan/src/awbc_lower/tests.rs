@@ -720,6 +720,134 @@ fn discarded_host_call_result_still_has_an_awbc_destination() {
 }
 
 #[test]
+fn host_signature_preserves_every_admitted_operand_and_result_identity() {
+    for mode in [RuntimeHostCallMode::Immediate, RuntimeHostCallMode::Suspend] {
+        let main = flow_id("main");
+        let plan = build_plan(
+            [(
+                main.clone(),
+                vec![
+                    RuntimeFlowOpSeed::HostCall {
+                        binding: None,
+                        target: RuntimeHostCallTargetSeed {
+                            public_id: "test.notify".to_owned(),
+                            capability: "test".to_owned(),
+                            operation: "notify".to_owned(),
+                            contract: None,
+                            args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                                string_expr("message"),
+                            )],
+                            result: type_id(2),
+                            mode,
+                            deterministic: false,
+                        },
+                    },
+                    RuntimeFlowOpSeed::ReturnExpr(unit_expr()),
+                ],
+            )],
+            [flow_entry("main", main)],
+        );
+        let report = lower_plan(&plan);
+        let [host] = report.program.host_calls.as_slice() else {
+            panic!("one exact host call");
+        };
+        let signature = &report.program.signatures[host.signature.index()];
+        let [parameter] = signature.params.as_slice() else {
+            panic!("one materialized host operand");
+        };
+        let result = signature.result.expect("host result type");
+        assert_eq!(
+            report.program.runtime_types[parameter.index()].semantic_identity(),
+            type_id(1)
+        );
+        assert_eq!(
+            report.program.runtime_types[result.index()].semantic_identity(),
+            type_id(2)
+        );
+        let encoded = report.program.encode_canonical().expect("host ABI encodes");
+        let decoded = AwbcProgram::decode_canonical(
+            &encoded,
+            arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+        )
+        .expect("host ABI decodes");
+        assert_eq!(decoded, report.program);
+        decoded
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect("decoded host ABI verifies");
+    }
+}
+
+#[test]
+fn host_descriptor_interning_preserves_distinct_call_site_values() {
+    let main = flow_id("main");
+    let mut ops = ["first", "second"]
+        .into_iter()
+        .map(|message| RuntimeFlowOpSeed::HostCall {
+            binding: None,
+            target: RuntimeHostCallTargetSeed {
+                public_id: "test.notify".to_owned(),
+                capability: "test".to_owned(),
+                operation: "notify".to_owned(),
+                contract: None,
+                args: vec![arcweft_core::plan::RuntimeHostArgumentSeed::Positional(
+                    string_expr(message),
+                )],
+                result: type_id(2),
+                mode: RuntimeHostCallMode::Suspend,
+                deterministic: false,
+            },
+        })
+        .collect::<Vec<_>>();
+    ops.push(RuntimeFlowOpSeed::ReturnExpr(unit_expr()));
+    let report = lower_plan(&build_plan(
+        [(main.clone(), ops)],
+        [flow_entry("main", main)],
+    ));
+    assert_eq!(
+        report.program.host_calls.len(),
+        1,
+        "equal host ABIs share one descriptor"
+    );
+    let mut fiber = FiberState::for_entry(&report.program, AwbcEntryId(0), 1, 1024).expect("entry");
+    for message in ["first", "second"] {
+        let output =
+            vm::step(&report.program, &mut fiber, VmStepOptions::default()).expect("host step");
+        let VmExit::Suspended(arcweft_core::awbc::fiber::FiberSuspensionReason::HostCall {
+            call,
+            args,
+            destination,
+        }) = output.exit
+        else {
+            panic!("one suspended host call")
+        };
+        assert_eq!(call.index(), 0);
+        assert_eq!(args, [RuntimeValue::String(message.to_owned())]);
+        let resume = fiber
+            .suspension
+            .as_ref()
+            .and_then(arcweft_core::awbc::fiber::FiberSuspension::declared_resume)
+            .expect("host resume");
+        fiber
+            .active_frame_mut()
+            .expect("active host frame")
+            .set_register(
+                destination.expect("host result register"),
+                RuntimeValue::Unit,
+            )
+            .expect("host response");
+        fiber
+            .resume_at(&report.program, resume)
+            .expect("resume exact host site");
+    }
+    assert_eq!(
+        vm::step(&report.program, &mut fiber, VmStepOptions::default())
+            .expect("return step")
+            .exit,
+        VmExit::Returned(Some(RuntimeValue::Unit))
+    );
+}
+
+#[test]
 fn loop_break_paths_initialize_one_typed_result_before_binding() {
     let main = flow_id("main");
     let mut builder = RuntimePlanBuilder::new();

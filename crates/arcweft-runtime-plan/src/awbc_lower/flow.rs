@@ -1153,8 +1153,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                 });
             }
             FlowOp::HostCall { binding, target } => {
-                let Some((call, result_type)) = self.inventory.intern_host_call(target, self.plan)
-                else {
+                let Some((call, result_type)) = self.inventory.intern_host_call(target) else {
                     return;
                 };
                 let args = target

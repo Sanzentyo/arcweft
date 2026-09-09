@@ -412,6 +412,15 @@ pure `(scrutinee) -> bool` functions.
 
 ### 5.2 Intrinsics, host calls, tasks, and effects
 
+Host-call signatures retain the preflighted RuntimePlan type identities of every
+materialized argument expression and the result, including nested identities.
+The host-call lowerer does not reconstruct those types from a checked shape or
+replace known argument types with `Dynamic`. Structural inspection of a type
+does not authorize creation of a second program type with a different identity.
+Host descriptors are interned by their complete typed row, including the
+signature and argument naming/spread metadata. Evaluated values belong to the
+call instructions, so different values can share the same descriptor.
+
 ```rust
 struct AwbcIntrinsic {
     public_id: AwbcStringId,

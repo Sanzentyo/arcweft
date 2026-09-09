@@ -2287,7 +2287,7 @@ pub struct AwbcIntrinsic {
     pub revision: u32,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcHostCall {
     pub public_id: AwbcStringId,
     pub capability: AwbcStringId,
@@ -2349,7 +2349,7 @@ awbc_u8_enum! {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct AwbcHostArgument {
     pub name: Option<AwbcStringId>,
     pub spread: bool,

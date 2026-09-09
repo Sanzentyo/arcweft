@@ -108,6 +108,12 @@ boundary must be investigated through the
 [active callable request](../reviews/requests/2026-09-08-aw-ah-009.4.2.1.1.1-function-scheme-specialization-and-callable-value-execution.md);
 the verifier's type check remains intact.
 
+The subsequent [host-call type repair](2026-09-09-host-call-type-authority.md)
+identifies and removes result-type identity erasure and preserves typed host
+arguments. The Agent script then passes AWBC verification and reaches a
+separate CLI observation-response admission failure. This is later evidence,
+not a rewrite of the failed MCP result recorded above.
+
 The seven sema failures remain the three contextual constructor cases and four
 application-specific inferred callback-row cases. The broader known callable
 execution failures and retained View/task-plan, nominal C1–C6, and

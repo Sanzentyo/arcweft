@@ -144,7 +144,7 @@ pub struct AwbcInventory {
     effects: BTreeMap<String, AwbcEffectPlanId>,
     audio_commands: BTreeMap<String, AwbcAudioCommandId>,
     tasks: BTreeMap<String, AwbcTaskPlanId>,
-    host_calls: BTreeMap<String, AwbcHostCallId>,
+    host_calls: BTreeMap<AwbcHostCall, AwbcHostCallId>,
     streams: BTreeMap<StreamRuntimeId, AwbcStreamPlanId>,
     choices: BTreeMap<String, AwbcChoiceId>,
     flow_functions: BTreeMap<FlowRuntimeId, AwbcFunctionId>,
@@ -1596,52 +1596,35 @@ impl AwbcInventory {
         })
     }
 
-    pub fn intern_host_call(
+    pub(crate) fn intern_host_call(
         &mut self,
         target: &RuntimeHostCallTarget,
-        plan: &RuntimePlan,
     ) -> Option<(AwbcHostCallId, AwbcTypeId)> {
-        let checked_result = match plan.checked_type(target.result) {
-            Ok(Some(result)) => result,
-            Ok(None) => {
+        let Some(result_type) = self.plan_type(target.result) else {
+            self.diagnostic(AwbcLowerDiagnostic::error(
+                "host_call.result",
+                format!(
+                    "host call `{}` result was not admitted by AWBC type preflight",
+                    target.public_id
+                ),
+            ));
+            return None;
+        };
+        let mut params = Vec::with_capacity(target.args.len());
+        for (index, argument) in target.args.iter().enumerate() {
+            let Some(ty) = self.plan_type(argument.value().ty()) else {
                 self.diagnostic(AwbcLowerDiagnostic::error(
-                    "host_call.result",
+                    format!("host_call.argument.{index}"),
                     format!(
-                        "host call `{}` result is outside the checked AWBC type image",
+                        "host call `{}` argument was not admitted by AWBC type preflight",
                         target.public_id
                     ),
                 ));
                 return None;
-            }
-            Err(error) => {
-                self.diagnostic(AwbcLowerDiagnostic::error(
-                    "host_call.result",
-                    error.to_string(),
-                ));
-                return None;
-            }
-        };
-        let result_type = intern_runtime_type(self, &checked_result);
-        let key = format!(
-            "host_call:{}:{}:{}:{:?}:{:?}:{}:{}:{}",
-            target.public_id,
-            target.capability,
-            target.operation,
-            target.contract,
-            target.args,
-            result_type.0,
-            target.mode as u8,
-            target.deterministic
-        );
-        if let Some(id) = self.host_calls.get(&key).copied() {
-            return Some((id, result_type));
+            };
+            params.push(ty);
         }
-        let id = AwbcHostCallId(table_index(self.program.host_calls.len()));
-        let signature = self.intern_signature(
-            vec![self.dynamic_ty(); target.args.len()],
-            Some(result_type),
-            AwbcEffectSetId(0),
-        );
+        let signature = self.intern_signature(params, Some(result_type), AwbcEffectSetId(0));
         let mode = match target.mode {
             RuntimeHostCallMode::Immediate => AwbcHostCallMode::Immediate,
             RuntimeHostCallMode::Suspend => AwbcHostCallMode::Suspend,
@@ -1650,7 +1633,7 @@ impl AwbcInventory {
         let capability = self.intern_string(&target.capability);
         let operation = self.intern_string(&target.operation);
         let arguments = self.intern_host_arguments(&target.args);
-        self.program.host_calls.push(AwbcHostCall {
+        let descriptor = AwbcHostCall {
             public_id,
             capability,
             operation,
@@ -1659,8 +1642,13 @@ impl AwbcInventory {
             mode,
             deterministic: target.deterministic,
             arguments,
-        });
-        self.host_calls.insert(key, id);
+        };
+        if let Some(id) = self.host_calls.get(&descriptor).copied() {
+            return Some((id, result_type));
+        }
+        let id = AwbcHostCallId(table_index(self.program.host_calls.len()));
+        self.program.host_calls.push(descriptor.clone());
+        self.host_calls.insert(descriptor, id);
         Some((id, result_type))
     }
 
