@@ -11,10 +11,10 @@ use crate::types::{AuthoredTypeRef, TypeRefNodePath};
 
 use super::{
     PatternBindingSite, PatternNodePath, PatternNodeStep, PatternPathRoot, PatternPathSyntax,
-    PatternRecordFieldShape, PatternRecordFieldSyntax, PatternSequenceRestSyntax,
-    PatternSyntaxKind, PatternSyntaxNode, PatternUnqualifiedVariantForm, PatternVariantHead,
-    PatternVariantHeadSyntax, PatternVariantPayloadSyntax, collect_binding_sites,
-    mark_or_binding_mismatches,
+    PatternRecordFieldShape, PatternRecordFieldSyntax, PatternRecoveryIssue,
+    PatternSequenceRestSyntax, PatternSyntaxKind, PatternSyntaxNode, PatternUnqualifiedVariantForm,
+    PatternVariantHead, PatternVariantHeadSyntax, PatternVariantPayloadSyntax,
+    collect_binding_sites, mark_or_binding_mismatches,
 };
 
 /// Source component shared by every literal Pattern family.
@@ -72,15 +72,24 @@ pub enum PatternComponentRole {
     VariantHead(VariantPatternHeadPart),
     VariantName,
     VariantPayload(VariantPatternPayloadPart),
-    Element { ordinal: u32 },
+    Element {
+        ordinal: u32,
+    },
     RecordPathRoot,
-    RecordPathSegment { ordinal: u32 },
-    PatternField { field: u32, part: PatternFieldPart },
+    RecordPathSegment {
+        ordinal: u32,
+    },
+    PatternField {
+        field: u32,
+        part: PatternFieldPart,
+    },
     SequenceRest(PatternRestPart),
     WholeBindingName,
     NestedPattern,
     TypedBindingColon,
     TypedBindingType,
+    /// Significant input remaining after the complete semantic Pattern.
+    TrailingInput,
     Recovery,
 }
 
@@ -522,6 +531,14 @@ fn collect_expected_components(
     output: &mut BTreeSet<(PatternNodePath, PatternComponentRole)>,
 ) -> Result<(), PatternSourceMapError> {
     insert(output, path, PatternComponentRole::Whole);
+    if value
+        .state()
+        .issues()
+        .iter()
+        .any(|issue| matches!(issue, PatternRecoveryIssue::UnexpectedTrailingInput { .. }))
+    {
+        insert(output, path, PatternComponentRole::TrailingInput);
+    }
     match value.kind() {
         PatternSyntaxKind::Binding(_) => insert(output, path, PatternComponentRole::Name),
         PatternSyntaxKind::MutableBinding(_) => {

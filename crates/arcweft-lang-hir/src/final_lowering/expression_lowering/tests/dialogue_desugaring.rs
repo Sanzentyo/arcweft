@@ -5,6 +5,7 @@ use crate::leaf::{HirPath, HirPathRoot, HirPathValue, HirStringLiteral};
 #[test]
 fn ruby_desugaring_is_admitted_in_direct_nested_and_candidate_content() {
     for (source, ambiguous, status) in [
+        ("alice()[|[夢](ゆめ)]", true, HirModuleStatus::Recovered),
         ("alice()[Before |[夢](ゆめ)]", false, HirModuleStatus::Clean),
         (
             "alice()[Before #strong()[｜夢《ゆめ》]]",

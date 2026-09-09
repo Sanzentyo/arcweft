@@ -509,7 +509,12 @@ impl HirModule {
                 arenas.locals(),
                 arenas.patterns(),
             )
-            || !source_components.validates_attached_patterns(parsed, &slots, arenas.patterns())
+            || !source_components.validates_attached_patterns(
+                parsed,
+                &slots,
+                arenas.patterns(),
+                arenas.types(),
+            )
             || !source_components.validates_attached_types(
                 parsed,
                 &slots,

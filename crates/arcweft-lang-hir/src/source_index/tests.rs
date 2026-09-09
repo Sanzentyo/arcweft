@@ -645,6 +645,7 @@ fn frozen_typed_binding_pattern(
     ParsedSource,
     Arc<SlotSnapshot>,
     ArenaSnapshot<HirPattern, PatternId>,
+    ArenaSnapshot<HirType, TypeId>,
     HirSourceIndex,
 ) {
     let (parsed, attached) = parsed_pattern(document_id, "binding: Vec");
@@ -770,7 +771,7 @@ fn frozen_typed_binding_pattern(
     let source_index = source_index
         .commit()
         .expect("typed-binding Pattern source-index commit");
-    let _types = types
+    let types = types
         .into_snapshot(&mut slots)
         .expect("typed-binding Type snapshot");
     let patterns = patterns
@@ -784,6 +785,7 @@ fn frozen_typed_binding_pattern(
         parsed,
         Arc::clone(prepared.snapshot()),
         patterns,
+        types,
         source_index,
     )
 }
@@ -2291,7 +2293,12 @@ fn attached_pattern_projector_owns_required_name_and_exact_syntax_rows() {
     };
 
     assert!(index.validates_prepared(&slots, parsed.document().identity(),));
-    assert!(index.validates_attached_patterns(&parsed, &slots, &patterns));
+    assert!(index.validates_attached_patterns(
+        &parsed,
+        &slots,
+        &patterns,
+        &ArenaSnapshot::empty(&slots)
+    ));
     assert_eq!(
         index.requirement(&query),
         Some(HirSourceRequirement::Required)
@@ -2596,15 +2603,15 @@ fn sequence_rest_manifest_distinguishes_all_semantic_presence_states() {
 
 #[test]
 fn typed_binding_freeze_requires_the_exact_attached_type_child() {
-    let (parsed, slots, patterns, index) =
+    let (parsed, slots, patterns, types, index) =
         frozen_typed_binding_pattern("pattern-typed-child", true);
     assert!(index.validates_prepared(&slots, parsed.document().identity(),));
-    assert!(index.validates_attached_patterns(&parsed, &slots, &patterns));
+    assert!(index.validates_attached_patterns(&parsed, &slots, &patterns, &types));
 
-    let (parsed, slots, patterns, index) =
+    let (parsed, slots, patterns, types, index) =
         frozen_typed_binding_pattern("pattern-typed-child-substitution", false);
     assert!(index.validates_prepared(&slots, parsed.document().identity(),));
-    assert!(!index.validates_attached_patterns(&parsed, &slots, &patterns));
+    assert!(!index.validates_attached_patterns(&parsed, &slots, &patterns, &types));
 }
 
 #[test]
@@ -2616,7 +2623,12 @@ fn pattern_freeze_rejects_a_semantic_family_substituted_under_valid_source_rows(
     );
 
     assert!(index.validates_prepared(&slots, parsed.document().identity(),));
-    assert!(!index.validates_attached_patterns(&parsed, &slots, &patterns));
+    assert!(!index.validates_attached_patterns(
+        &parsed,
+        &slots,
+        &patterns,
+        &ArenaSnapshot::empty(&slots)
+    ));
 }
 
 #[test]

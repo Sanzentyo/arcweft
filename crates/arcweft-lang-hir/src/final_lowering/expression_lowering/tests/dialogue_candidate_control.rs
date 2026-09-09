@@ -116,6 +116,43 @@ fn closure_candidate_uses_shared_pattern_type_scope_and_local_arenas() {
 }
 
 #[test]
+fn closure_pattern_trailing_input_publishes_in_ordinary_and_candidate_owners() {
+    for (source, candidate, token_count) in [
+        ("items[|[夢](ゆめ)]", true, 3),
+        ("items[|[value] trailing| 0]", true, 1),
+        ("|[value] trailing| 0", false, 1),
+        ("|_ trailing| 0", false, 1),
+    ] {
+        let parsed = parsed_source("closure-pattern-trailing-input", &[source.into()]);
+        let (module, owners, _) = lower_and_publish(&parsed);
+        assert_eq!(module.status(), HirModuleStatus::Recovered, "{source}");
+        let closure_id = if candidate {
+            index_candidate(&module, owners[0]).1.index()
+        } else {
+            owners[0]
+        };
+        let HirExprKind::Closure(closure) = expression(&module, closure_id).kind() else {
+            panic!("fixture retains its Closure payload: {source}");
+        };
+        let [parameter] = closure.parameters() else {
+            panic!("one closure parameter");
+        };
+        let pattern = module
+            .arenas()
+            .patterns()
+            .resolve(module.slots(), parameter.pattern())
+            .unwrap();
+        assert_eq!(
+            pattern.state(),
+            &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidPattern(
+                crate::pattern::HirPatternRecoveryIssue::UnexpectedTrailingInput { token_count },
+            ))
+        );
+        assert!(expression(&module, closure_id).state().is_poisoned());
+    }
+}
+
+#[test]
 fn closure_candidate_defers_capture_identity_until_source_order_is_known() {
     let parsed = parsed_source(
         "dialogue-candidate-closure-captures",

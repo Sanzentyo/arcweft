@@ -6,9 +6,10 @@ use arcweft_source::SourceRange;
 
 use super::cursor::DocumentParser;
 use super::lexer::{LexToken, LiteralLexemePart, typed_entity_reference, typed_literal};
-use super::shadow_recovery::{find_matching_close, first_significant, token_text};
+use super::shadow_recovery::{bump_until, find_matching_close, first_significant, token_text};
 use super::type_ref::EmittedTypeProjection;
 use crate::ast::symbol_path::ProjectSymbolSegment;
+use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::id_ref::SyntaxIdRefSyntax;
 use crate::literal::{SyntaxLiteralSyntax, SyntaxLiteralValue};
@@ -100,6 +101,38 @@ impl PatternProjectionTransaction {
     ) {
         self.components
             .push(PatternComponentSource::new(owner.clone(), role, range));
+    }
+
+    /// Closes the assigned Pattern region before its enclosing grammar resumes.
+    /// Unconsumed significant tokens belong to this Pattern's recovery, even
+    /// when its semantic family already consumed a closing delimiter.
+    pub(super) fn finish_node(
+        &mut self,
+        parser: &mut DocumentParser<'_, '_>,
+        end: usize,
+        path: &PatternNodePath,
+        mut value: PatternSyntaxNode,
+    ) -> PatternSyntaxNode {
+        let trailing_count = (parser.cursor()..end)
+            .filter_map(|index| parser.token_at(index))
+            .filter(|token| !is_trivia(token.kind()))
+            .count();
+        if trailing_count != 0 {
+            let range = significant_range(parser, parser.cursor(), end);
+            self.component(path, PatternComponentRole::TrailingInput, range);
+            value.recover([PatternRecoveryIssue::UnexpectedTrailingInput {
+                token_count: u32::try_from(trailing_count)
+                    .expect("grammar token limits fit Pattern recovery counts"),
+            }]);
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.pattern.unexpected_trailing_input",
+                range,
+                "unexpected input after a complete pattern",
+            )));
+        }
+        bump_until(parser, end);
+        parser.finish();
+        value
     }
 
     pub(super) fn type_child(

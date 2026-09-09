@@ -14,6 +14,109 @@ use crate::patterns::{
 };
 
 #[test]
+fn pattern_trailing_input_retains_recovery_for_every_completed_family() {
+    for (prefix, kind) in [
+        ("[value]", SyntaxKind::SequencePattern),
+        ("(value,)", SyntaxKind::TuplePattern),
+        ("Point { value }", SyntaxKind::RecordPattern),
+        (".Some(value)", SyntaxKind::VariantPattern),
+        (".Named { value }", SyntaxKind::VariantPattern),
+        ("_", SyntaxKind::WildcardPattern),
+        ("42", SyntaxKind::LiteralPattern),
+        ("true", SyntaxKind::LiteralPattern),
+        ("\"value\"", SyntaxKind::LiteralPattern),
+        ("@choice.opening.listen", SyntaxKind::EntityReferencePattern),
+    ] {
+        let valid_events = pattern_events(prefix);
+        let valid = projection(&valid_events, kind);
+        assert!(
+            valid
+                .authored()
+                .value_at(valid.path())
+                .unwrap()
+                .state()
+                .is_valid()
+        );
+        assert!(
+            valid
+                .authored()
+                .source()
+                .component_at(valid.path(), PatternComponentRole::TrailingInput)
+                .is_none()
+        );
+        let source = format!("{prefix} /* gap */ trailing /* end */");
+        let events = pattern_events(&source);
+        let projection = projection(&events, kind);
+        let value = projection.authored().value_at(projection.path()).unwrap();
+        assert_eq!(
+            value.state().issues(),
+            [PatternRecoveryIssue::UnexpectedTrailingInput { token_count: 1 }]
+        );
+        assert!(
+            !value.state().is_valid(),
+            "accepted trailing input: {source}"
+        );
+        let recovery = projection
+            .authored()
+            .source()
+            .component_at(projection.path(), PatternComponentRole::TrailingInput)
+            .expect("trailing input has an exact recovery component");
+        assert_eq!(&source[recovery.start()..recovery.end()], "trailing");
+        assert!(events.iter().any(|event| matches!(
+            event,
+            SyntaxEvent::Diagnostic(diagnostic) if diagnostic.range() == *recovery
+        )));
+    }
+}
+
+#[test]
+fn nested_pattern_trailing_input_keeps_its_own_source_component() {
+    for (source, path) in [
+        (
+            "([value] trailing, kept)",
+            PatternNodePath::root().child(PatternNodeStep::Element(0)),
+        ),
+        (
+            "whole [value] trailing",
+            PatternNodePath::root().child(PatternNodeStep::NestedPattern),
+        ),
+        (
+            "Point { field: [value] trailing }",
+            PatternNodePath::root().child(PatternNodeStep::RecordField(0)),
+        ),
+        (
+            "[value] trailing | [value]",
+            PatternNodePath::root().child(PatternNodeStep::Element(0)),
+        ),
+    ] {
+        let events = pattern_events(source);
+        let child = projection(&events, SyntaxKind::SequencePattern);
+        assert_eq!(child.path(), &path);
+        let value = child
+            .authored()
+            .value_at(&path)
+            .expect("nested Pattern value");
+        assert_eq!(
+            value.state().issues(),
+            [PatternRecoveryIssue::UnexpectedTrailingInput { token_count: 1 }]
+        );
+        let source_map = child.authored().source();
+        let recovery = source_map
+            .component_at(&path, PatternComponentRole::TrailingInput)
+            .unwrap();
+        assert_eq!(&source[recovery.start()..recovery.end()], "trailing");
+        assert!(
+            source_map
+                .component_at(
+                    &PatternNodePath::root(),
+                    PatternComponentRole::TrailingInput
+                )
+                .is_none()
+        );
+    }
+}
+
+#[test]
 fn contextual_choice_keyword_is_an_ordinary_binding_pattern() {
     let events = pattern_events("choice");
     let binding = projection(&events, SyntaxKind::BindingPattern);

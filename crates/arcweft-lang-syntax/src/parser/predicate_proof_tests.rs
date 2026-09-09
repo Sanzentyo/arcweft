@@ -310,7 +310,7 @@ fn predicate_proof_complete_header_grammar_matrix() {
 
 #[test]
 fn canonical_multiline_contract_header_and_block_form_one_declaration() {
-    let source = "pub predicate ordered<T>(pair: (T, T), cmp: Comparator<T>)\nwhere T: Ord\nrequires cmp.is_total()\nensures result\n{\n    let (left, right): (T, T) = pair\n    cmp.compare(left, right) <= 0\n}\nproof next() = ()\n";
+    let source = "pub predicate ordered<T>(pair: (T, T), cmp: Comparator<T>)\nwhere T: Ord\nrequires cmp.is_total()\nensures result\n{\n    let (left: T, right: T) = pair\n    cmp.compare(left, right) <= 0\n}\nproof next() = ()\n";
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
@@ -345,6 +345,10 @@ fn canonical_multiline_contract_header_and_block_form_one_declaration() {
     }
     assert!(!kinds.contains(&SyntaxKind::ErrorItem));
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(
+        green_kind_count(built.green(), SyntaxKind::TypedBindingPattern),
+        2
+    );
     assert_eq!(green_kind_count(built.green(), SyntaxKind::LogicalLine), 6);
     assert_eq!(built.green().to_string(), source);
 }

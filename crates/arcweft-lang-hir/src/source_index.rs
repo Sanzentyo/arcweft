@@ -591,6 +591,8 @@ pub enum HirPatternSourceRole {
     NestedPattern,
     TypedBindingColon,
     TypedBindingType,
+    /// Significant input remaining after the complete semantic Pattern.
+    TrailingInput,
     Recovery,
 }
 

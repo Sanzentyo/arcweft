@@ -1133,7 +1133,7 @@ pub(crate) fn projected_pattern_state<R: crate::pattern::HirPatternResolver + ?S
     resolver: &R,
 ) -> HirPoisonState {
     let inferred = kind.inferred_state(scope, resolver);
-    let override_issue = source.issues().iter().find_map(container_recovery_issue);
+    let override_issue = source.issues().iter().find_map(source_recovery_issue);
     match (&inferred, override_issue) {
         (
             HirPoisonState::Clean
@@ -1267,8 +1267,13 @@ const fn variant_payload_issue(
     }
 }
 
-fn container_recovery_issue(issue: &PatternRecoveryIssue) -> Option<HirPatternRecoveryIssue> {
+fn source_recovery_issue(issue: &PatternRecoveryIssue) -> Option<HirPatternRecoveryIssue> {
     match issue {
+        PatternRecoveryIssue::UnexpectedTrailingInput { token_count } => {
+            Some(HirPatternRecoveryIssue::UnexpectedTrailingInput {
+                token_count: *token_count,
+            })
+        }
         PatternRecoveryIssue::MissingCloseDelimiter => {
             Some(HirPatternRecoveryIssue::MissingCloseDelimiter)
         }

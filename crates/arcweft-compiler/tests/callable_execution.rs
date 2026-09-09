@@ -5,6 +5,31 @@ use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 #[path = "support/execution.rs"]
 mod execution;
 use execution::{assert_awbc_return, assert_native_return};
+
+#[test]
+fn ordinary_closure_parameters_reject_trailing_input() {
+    for pattern in [
+        "_ trailing",
+        "[value] trailing",
+        "(value,) trailing",
+        "42 trailing",
+    ] {
+        let source = format!(
+            "flow main() -> Unit {{ let invalid = |{pattern}| 0; }}\nentry cli @entry.main {{ goto @flow.main }}\n",
+        );
+        let error = compile_source(&source).expect_err("malformed closure pattern cannot compile");
+        let diagnostic = error
+            .project()
+            .diagnostics()
+            .iter()
+            .filter_map(|diagnostic| diagnostic.syntax_diagnostic())
+            .find(|diagnostic| diagnostic.code() == "syntax.pattern.unexpected_trailing_input")
+            .expect("compiler retains the exact Pattern grammar diagnostic");
+        let range = diagnostic.primary().range();
+        assert_eq!(&source[range.start()..range.end()], "trailing", "{pattern}");
+    }
+}
+
 macro_rules! callable_case {
     ($name:ident, $source:literal, $expected:expr, $label:literal) => {
         mod $name {

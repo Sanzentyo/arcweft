@@ -87,13 +87,14 @@ pub(super) fn emit_method_receiver_pattern(
     parser.bump();
     parser.finish();
     bump_until(parser, end);
-    parser.finish();
 
     let binding = PatternBindingSyntax::Resolved(
         SyntaxName::try_new("self").expect("`self` is a structurally valid binding name"),
     );
-    transaction.finish(
+    let value = transaction.finish_node(
         parser,
+        end,
+        &root,
         PatternSyntaxNode::new(
             if mutable_binding {
                 PatternSyntaxKind::MutableBinding(binding)
@@ -103,6 +104,7 @@ pub(super) fn emit_method_receiver_pattern(
             PatternSyntaxState::Valid,
         ),
     );
+    transaction.finish(parser, value);
 }
 
 fn emit_pattern_node(
@@ -124,6 +126,19 @@ fn emit_pattern_node(
         );
     }
 
+    let value = emit_pattern_value(parser, end, role, transaction, path);
+    transaction.finish_node(parser, end, path, value)
+}
+
+/// Emits one family's payload, leaving its Pattern node open for the shared
+/// bounded completion in `emit_pattern_node`.
+fn emit_pattern_value(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+    transaction: &mut PatternProjectionTransaction,
+    path: &PatternNodePath,
+) -> PatternSyntaxNode {
     if boundary(parser, parser.cursor(), end, &["|"]).is_some() {
         return emit_or_pattern(parser, end, role, transaction, path);
     }
@@ -221,7 +236,6 @@ fn emit_or_pattern(
             break;
         }
     }
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Or(alternatives.into_boxed_slice()),
         PatternSyntaxState::from_issues(issues),
@@ -237,10 +251,15 @@ fn emit_missing_pattern_node(
 ) -> PatternSyntaxNode {
     transaction.start_node(parser, SyntaxKind::MissingPattern, role, path, source);
     transaction.component(path, PatternComponentRole::Recovery, source);
-    parser.finish();
-    PatternSyntaxNode::new(
-        PatternSyntaxKind::Error,
-        PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::MissingPattern]),
+    let end = parser.cursor();
+    transaction.finish_node(
+        parser,
+        end,
+        path,
+        PatternSyntaxNode::new(
+            PatternSyntaxKind::Error,
+            PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::MissingPattern]),
+        ),
     )
 }
 
@@ -281,7 +300,6 @@ fn emit_whole_binding_pattern(
         transaction,
         &path.child(PatternNodeStep::NestedPattern),
     );
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::WholeBinding {
             binding,
@@ -311,7 +329,7 @@ fn emit_variant_pattern(
         .min(end);
     start_pattern(
         parser,
-        node_end,
+        end,
         SyntaxKind::VariantPattern,
         role,
         transaction,
@@ -338,7 +356,6 @@ fn emit_variant_pattern(
     if let PatternVariantPayloadSyntax::Recovered { issue, .. } = &payload {
         issues.push(PatternRecoveryIssue::VariantPayload(issue.clone()));
     }
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Variant(PatternVariantSyntax::new(head, name, payload)),
         PatternSyntaxState::from_issues(issues),
@@ -372,7 +389,6 @@ fn emit_record_pattern(
         bump_until(parser, open);
     }
     let fields = emit_record_fields(parser, end, transaction, path);
-    parser.finish();
     let mut issues = fields.issues;
     if fields.missing_close {
         issues.push(PatternRecoveryIssue::MissingCloseDelimiter);
@@ -414,7 +430,6 @@ fn emit_variant_tuple_payload(
         ")",
         "syntax.pattern.missing_variant_close",
     );
-    parser.finish();
     let child = PatternSyntaxNode::new(
         PatternSyntaxKind::Tuple(elements.into_boxed_slice()),
         PatternSyntaxState::from_issues(
@@ -424,6 +439,7 @@ fn emit_variant_tuple_payload(
                 .collect(),
         ),
     );
+    let child = transaction.finish_node(parser, end, &path, child);
     if missing_close {
         PatternVariantPayloadSyntax::Recovered {
             value: Some(Box::new(child)),
@@ -456,7 +472,6 @@ fn emit_variant_record_payload(
         &path,
     );
     let fields = emit_record_fields(parser, end, transaction, &path);
-    parser.finish();
     let mut issues = fields.issues;
     if fields.missing_close {
         issues.push(PatternRecoveryIssue::MissingCloseDelimiter);
@@ -468,6 +483,7 @@ fn emit_variant_record_payload(
         )),
         PatternSyntaxState::from_issues(issues),
     );
+    let child = transaction.finish_node(parser, end, &path, child);
     if fields.missing_close {
         PatternVariantPayloadSyntax::Recovered {
             value: Some(Box::new(child)),
@@ -513,7 +529,6 @@ fn emit_tuple_pattern(
         ")",
         "syntax.pattern.missing_tuple_close",
     );
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Tuple(elements.into_boxed_slice()),
         PatternSyntaxState::from_issues(
@@ -606,7 +621,6 @@ fn emit_sequence_pattern(
         "]",
         "syntax.pattern.missing_sequence_close",
     );
-    parser.finish();
     if missing_close {
         issues.push(PatternRecoveryIssue::MissingCloseDelimiter);
     }
@@ -906,7 +920,6 @@ fn emit_binding_pattern(
     parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
     bump_until(parser, end);
     parser.finish();
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Binding(binding),
         PatternSyntaxState::from_issues(issues),
@@ -941,7 +954,6 @@ fn emit_mutable_binding_pattern(
     let (binding, issues) = binding_syntax(parser, parser.cursor(), end);
     parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
     bump_until(parser, end);
-    parser.finish();
     parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::MutableBinding(binding),
@@ -988,7 +1000,6 @@ fn emit_invalid_rest_pattern(
         bump_until(parser, end);
         parser.finish();
     }
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Error,
         PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::UnexpectedPattern]),
@@ -1010,8 +1021,7 @@ fn emit_discard_pattern(
         transaction,
         path,
     );
-    bump_until(parser, end);
-    parser.finish();
+    parser.bump();
     PatternSyntaxNode::valid(PatternSyntaxKind::Discard)
 }
 
@@ -1032,8 +1042,7 @@ fn emit_literal_pattern(
         path,
     );
     let (literal, issues) = project_literal(parser, transaction, path, token);
-    bump_until(parser, end);
-    parser.finish();
+    parser.bump();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Literal(literal),
         PatternSyntaxState::from_issues(issues),
@@ -1059,8 +1068,7 @@ fn emit_entity_reference_pattern(
         path,
     );
     let (reference, issues) = project_id_ref(parser, transaction, path, token);
-    bump_until(parser, end);
-    parser.finish();
+    parser.bump();
     PatternSyntaxNode::new(
         PatternSyntaxKind::EntityReference(reference),
         PatternSyntaxState::from_issues(issues),
@@ -1088,7 +1096,6 @@ fn emit_error_pattern(
         significant_range(parser, parser.cursor(), end),
     );
     bump_until(parser, end);
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::Error,
         PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::UnexpectedPattern]),
@@ -1139,7 +1146,6 @@ fn emit_typed_binding_pattern(
         issues.push(PatternRecoveryIssue::InvalidType);
     }
     transaction.type_child(path, &projection);
-    parser.finish();
     PatternSyntaxNode::new(
         PatternSyntaxKind::TypedBinding(binding),
         PatternSyntaxState::from_issues(issues),

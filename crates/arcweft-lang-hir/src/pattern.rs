@@ -371,6 +371,9 @@ impl HirPatternKind {
         matches!(
             (self, issue),
             (
+                _,
+                HirPatternRecoveryIssue::UnexpectedTrailingInput { token_count: 1.. }
+            ) | (
                 Self::Tuple { .. } | Self::Record { .. } | Self::BracketSequence { .. },
                 HirPatternRecoveryIssue::MissingCloseDelimiter,
             ) | (
@@ -600,6 +603,9 @@ pub enum HirPatternChildRole {
 /// the first issue. Child records retain their own more specific poison state.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirPatternRecoveryIssue {
+    UnexpectedTrailingInput {
+        token_count: u32,
+    },
     Binding(HirPatternBindingIssue),
     EntityReference(HirIdRefIssue),
     RecordPath(HirPatternRecordPathIssue),

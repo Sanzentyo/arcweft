@@ -2,6 +2,13 @@
 
 Arcweft has one pattern language used by `match`, `if let`, `while let`, `let ... else`, destructuring `let`, and some function parameters.
 
+A pattern consumes the complete region assigned to it by its enclosing grammar.
+Significant input after a completed pattern is an error, including after a
+closing tuple, record, variant-payload, or sequence delimiter. Recovery retains
+the recognized pattern family and children, together with the exact trailing
+input span; it does not discard that input or move it into the enclosing node.
+The typed source and HIR projections preserve this recovery state.
+
 ## Basic patterns
 
 ```arcw

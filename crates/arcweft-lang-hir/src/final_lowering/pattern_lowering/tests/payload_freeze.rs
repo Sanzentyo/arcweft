@@ -7,6 +7,72 @@ use crate::pattern::{
     HirPatternSequenceRestIssue,
 };
 
+#[test]
+fn pattern_trailing_input_state_cannot_be_erased_or_substituted_at_publication() {
+    for source in [
+        "_ trailing",
+        "42 trailing",
+        "[] trailing",
+        "() trailing",
+        "{} trailing",
+        ".Some(_) trailing",
+    ] {
+        for state in [
+            HirPoisonState::Clean,
+            HirPoisonState::Poisoned(HirRecoveryIssue::InvalidPattern(
+                HirPatternRecoveryIssue::UnexpectedTrailingInput { token_count: 2 },
+            )),
+        ] {
+            let parsed = parsed_source("trailing-input-state-substitution", &[source]);
+            let attached = attached_patterns(&parsed);
+            let key = module_key(&parsed);
+            let mut database = HirDatabase::try_new().unwrap();
+            let mut transaction = stage(&database, &parsed);
+            let scope = allocate_module_scope(&mut transaction, &parsed);
+            let owner = transaction
+                .lower_attached_pattern(&attached[0], scope)
+                .unwrap();
+            close_pattern_scope_members(&mut transaction, scope, &[owner]);
+            let kind = {
+                let (slots, arenas) = transaction.storage_mut();
+                arenas
+                    .patterns()
+                    .resolve_staged(slots, owner)
+                    .unwrap()
+                    .kind()
+                    .clone()
+            };
+            let erases_recovery = matches!(state, HirPoisonState::Clean);
+            let replacement = HirPattern::try_new(kind, scope, state, &transaction).unwrap();
+            let revision = {
+                let (slots, arenas) = transaction.storage_mut();
+                arenas
+                    .patterns()
+                    .revise_finalized(slots, owner, replacement)
+            };
+            if erases_recovery {
+                assert!(
+                    revision.is_err(),
+                    "recovery erasure must fail at the slot boundary"
+                );
+                assert!(database.current(&key).is_none());
+                continue;
+            }
+            revision.expect("same-poison substitution reaches source validation");
+            assert!(
+                matches!(
+                    transaction.finish(&mut database),
+                    Err(HirLowerFailure::Invariant(
+                        HirInvariantFailure::InvalidSourceIndex,
+                    ))
+                ),
+                "published altered source recovery: {source}"
+            );
+            assert!(database.current(&key).is_none());
+        }
+    }
+}
+
 fn assert_same_family_payload_substitution_rejected(
     document_id: &str,
     source: &str,

@@ -6,7 +6,7 @@ use super::source::PatternSourceMapError;
 use super::{
     PatternBindingSyntax, PatternNodePath, PatternNodeStep, PatternOrBindingIssue,
     PatternRecordFieldSyntax, PatternRecoveryIssue, PatternSyntaxKind, PatternSyntaxNode,
-    PatternSyntaxState, PatternVariantPayloadSyntax,
+    PatternVariantPayloadSyntax,
 };
 
 /// Semantic kind of one binding in authored preorder.
@@ -93,22 +93,7 @@ pub(crate) fn mark_or_binding_mismatches(
         PatternSyntaxKind::Or(alternatives) => or_binding_issues(alternatives)?,
         _ => Vec::new(),
     };
-    if !issues.is_empty() {
-        let additions = issues
-            .into_iter()
-            .map(PatternRecoveryIssue::OrBindings)
-            .collect::<Vec<_>>();
-        match &mut value.state {
-            PatternSyntaxState::Valid => {
-                value.state = PatternSyntaxState::Recovered(additions.into_boxed_slice());
-            }
-            PatternSyntaxState::Recovered(existing) => {
-                let mut combined = existing.to_vec();
-                combined.extend(additions);
-                *existing = combined.into_boxed_slice();
-            }
-        }
-    }
+    value.recover(issues.into_iter().map(PatternRecoveryIssue::OrBindings));
     Ok(())
 }
 

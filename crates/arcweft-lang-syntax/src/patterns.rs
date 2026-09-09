@@ -272,6 +272,9 @@ pub enum PatternSyntaxState {
 pub enum PatternRecoveryIssue {
     MissingPattern,
     UnexpectedPattern,
+    UnexpectedTrailingInput {
+        token_count: u32,
+    },
     Binding(PatternBindingIssue),
     Literal(SyntaxLiteralIssue),
     EntityReference(SyntaxIdRefIssue),
@@ -602,6 +605,15 @@ impl PatternSyntaxNode {
 
     pub(crate) fn valid(kind: PatternSyntaxKind) -> Self {
         Self::new(kind, PatternSyntaxState::Valid)
+    }
+
+    pub(crate) fn recover(&mut self, issues: impl IntoIterator<Item = PatternRecoveryIssue>) {
+        let mut combined = match std::mem::replace(&mut self.state, PatternSyntaxState::Valid) {
+            PatternSyntaxState::Valid => Vec::new(),
+            PatternSyntaxState::Recovered(existing) => existing.into_vec(),
+        };
+        combined.extend(issues);
+        self.state = PatternSyntaxState::from_issues(combined);
     }
 
     pub const fn kind(&self) -> &PatternSyntaxKind {

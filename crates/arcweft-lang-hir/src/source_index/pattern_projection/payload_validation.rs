@@ -7,13 +7,13 @@ use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::patterns::{
     PatternBindingSite, PatternBindingSiteKind, PatternBindingSyntax, PatternNameSyntax,
     PatternPathIssue, PatternRecordFieldSyntax, PatternSequenceRestIssue,
-    PatternSequenceRestSyntax, PatternSyntaxKind, PatternSyntaxState,
-    PatternUnqualifiedVariantForm, PatternVariantHead, PatternVariantHeadSyntax,
-    PatternVariantPayloadIssue, PatternVariantPayloadSyntax,
+    PatternSequenceRestSyntax, PatternSyntaxKind, PatternUnqualifiedVariantForm,
+    PatternVariantHead, PatternVariantHeadSyntax, PatternVariantPayloadIssue,
+    PatternVariantPayloadSyntax,
 };
 
 use crate::arena::ArenaSnapshot;
-use crate::expr::{HirPoisonState, HirRecoveryIssue};
+use crate::expr::HirPoisonState;
 use crate::final_lowering::name_projection::{name, name_issue};
 use crate::final_lowering::pattern_lowering::binding_plan::{
     RecordFieldDisposition, binding_issue, classify_record_fields,
@@ -23,12 +23,13 @@ use crate::final_lowering::pattern_lowering::projected_pattern_state;
 use crate::identity::{LocalId, PatternId, ScopeId, SyntheticOwner, SyntheticRole, TypeId};
 use crate::pattern::{
     HirGenericPatternIssue, HirPattern, HirPatternBinding, HirPatternField, HirPatternKind,
-    HirPatternRecoveryIssue, HirPatternResolver, HirPatternSequenceRest,
-    HirPatternSequenceRestIssue, HirUnqualifiedVariantForm, HirVariantPatternHead,
-    HirVariantPatternHeadIssue, HirVariantPatternHeadValue, HirVariantPatternName,
-    HirVariantPatternNameIssue, HirVariantPatternPayload, HirVariantPatternPayloadIssue,
+    HirPatternResolver, HirPatternSequenceRest, HirPatternSequenceRestIssue,
+    HirUnqualifiedVariantForm, HirVariantPatternHead, HirVariantPatternHeadIssue,
+    HirVariantPatternHeadValue, HirVariantPatternName, HirVariantPatternNameIssue,
+    HirVariantPatternPayload, HirVariantPatternPayloadIssue,
 };
 use crate::slot::{HirOrigin, SlotSnapshot};
+use crate::type_ref::HirType;
 
 struct PatternRoot {
     owner: PatternId,
@@ -39,6 +40,7 @@ pub(super) struct PatternPayloadValidation<'a> {
     parsed: &'a ParsedSource,
     slots: &'a SlotSnapshot,
     patterns: &'a ArenaSnapshot<HirPattern, PatternId>,
+    types: &'a ArenaSnapshot<HirType, TypeId>,
     roots: Box<[PatternRoot]>,
 }
 
@@ -47,6 +49,7 @@ impl<'a> PatternPayloadValidation<'a> {
         parsed: &'a ParsedSource,
         slots: &'a SlotSnapshot,
         patterns: &'a ArenaSnapshot<HirPattern, PatternId>,
+        types: &'a ArenaSnapshot<HirType, TypeId>,
     ) -> Option<Self> {
         let mut roots = Vec::new();
         for (owner, _) in patterns.try_iter_prepared(slots).ok()? {
@@ -74,6 +77,7 @@ impl<'a> PatternPayloadValidation<'a> {
             parsed,
             slots,
             patterns,
+            types,
             roots: roots.into_boxed_slice(),
         })
     }
@@ -85,7 +89,8 @@ impl<'a> PatternPayloadValidation<'a> {
         attached: &AttachedPatternNode,
     ) -> bool {
         pattern_kind_matches(self, payload.kind(), attached)
-            && pattern_state_matches(self, payload, attached)
+            && projected_pattern_state(payload.kind(), attached.state(), payload.scope(), self)
+                == *payload.state()
     }
 
     fn root_owner(&self, attached: &AttachedPatternNode) -> Option<PatternId> {
@@ -496,54 +501,7 @@ fn recovered_sequence_rest(issues: &[PatternSequenceRestIssue]) -> HirPatternSeq
         .unwrap_or(HirPatternSequenceRest::Unbound)
 }
 
-fn pattern_state_matches(
-    validation: &PatternPayloadValidation<'_>,
-    payload: &HirPattern,
-    attached: &AttachedPatternNode,
-) -> bool {
-    if !has_container_recovery(attached.state()) && !is_container_recovery(payload.state()) {
-        return true;
-    }
-    let resolver = PatternStateResolver {
-        slots: validation.slots,
-        patterns: validation.patterns,
-    };
-    projected_pattern_state(payload.kind(), attached.state(), payload.scope(), &resolver)
-        == *payload.state()
-}
-
-fn has_container_recovery(state: &PatternSyntaxState) -> bool {
-    state.issues().iter().any(|issue| {
-        matches!(
-            issue,
-            arcweft_lang_syntax::patterns::PatternRecoveryIssue::MissingCloseDelimiter
-                | arcweft_lang_syntax::patterns::PatternRecoveryIssue::MissingOrAlternative { .. }
-                | arcweft_lang_syntax::patterns::PatternRecoveryIssue::SequenceRest(
-                    PatternSequenceRestIssue::MultipleRest { .. }
-                )
-        )
-    })
-}
-
-fn is_container_recovery(state: &HirPoisonState) -> bool {
-    matches!(
-        state,
-        HirPoisonState::Poisoned(HirRecoveryIssue::InvalidPattern(
-            HirPatternRecoveryIssue::MissingCloseDelimiter
-                | HirPatternRecoveryIssue::MissingOrAlternative { .. }
-                | HirPatternRecoveryIssue::SequenceRest(
-                    HirPatternSequenceRestIssue::MultipleRest { .. }
-                )
-        ))
-    )
-}
-
-struct PatternStateResolver<'a> {
-    slots: &'a SlotSnapshot,
-    patterns: &'a ArenaSnapshot<HirPattern, PatternId>,
-}
-
-impl HirPatternResolver for PatternStateResolver<'_> {
+impl HirPatternResolver for PatternPayloadValidation<'_> {
     fn scope_is_live(&self, _: ScopeId) -> bool {
         true
     }
@@ -552,8 +510,12 @@ impl HirPatternResolver for PatternStateResolver<'_> {
         true
     }
 
-    fn resolve_type_state(&self, _: ScopeId, _: TypeId) -> Option<&HirPoisonState> {
-        None
+    fn resolve_type_state(&self, scope: ScopeId, ty: TypeId) -> Option<&HirPoisonState> {
+        self.types
+            .resolve_prepared(self.slots, ty)
+            .ok()
+            .filter(|ty| ty.scope() == scope)
+            .map(HirType::state)
     }
 
     fn resolve_pattern(&self, scope: ScopeId, pattern: PatternId) -> Option<&HirPattern> {

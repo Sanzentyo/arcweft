@@ -48,6 +48,32 @@ fn candidate_closure_view_preserves_parameter_pattern_type_and_body_relations() 
 }
 
 #[test]
+fn candidate_closure_pattern_trailing_input_preserves_exact_ownership() {
+    with_index_primary("items[|[夢](ゆめ)]", |primary| {
+        let closure = primary
+            .closure_view()
+            .expect("recovered Closure retains a complete typed view");
+        let [parameter] = closure.parameters() else {
+            panic!("one recovered candidate Closure parameter");
+        };
+        let pattern = parameter.pattern();
+        assert!(!pattern.state().is_valid());
+        assert_eq!(
+            parameter
+                .component(SyntaxClosureParameterPart::Pattern)
+                .expect("parameter Pattern source")
+                .range(),
+            pattern.whole_source_span().range()
+        );
+        assert!(pattern.children().is_some());
+        assert!(matches!(
+            closure.body(),
+            AttachedCandidateExpressionChild::Missing { ordinal: 0, .. }
+        ));
+    });
+}
+
+#[test]
 fn candidate_if_let_view_distinguishes_missing_then_from_authored_else() {
     with_index_primary("items[if let value = source else fallback]", |primary| {
         let if_let = primary.if_let_view().expect("typed candidate IfLet view");

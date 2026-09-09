@@ -31,6 +31,67 @@ use crate::source_index::{
     HirSourceQueryError, HirSourceSite, HirVariantPatternHeadSourcePart,
 };
 
+#[test]
+fn pattern_trailing_input_publishes_exact_recovered_source_and_semantic_families() {
+    for source in [
+        "[value] trailing",
+        "(value,) trailing",
+        "Point { value } trailing",
+        ".Some(value) trailing",
+        ".Named { value } trailing",
+        "_ trailing",
+        "42 trailing",
+        "true trailing",
+        "\"value\" trailing",
+        "@choice.opening.listen trailing",
+    ] {
+        let parsed = parsed_source("pattern-trailing-input", &[source]);
+        let (module, owners, attached) = lower_and_publish(&parsed);
+        let value = pattern(&module, owners[0]);
+        assert_eq!(module.status(), HirModuleStatus::Recovered, "{source}");
+        assert_eq!(hir_family(value.kind()), attached[0].family(), "{source}");
+        assert_eq!(
+            value.state(),
+            &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidPattern(
+                HirPatternRecoveryIssue::UnexpectedTrailingInput { token_count: 1 },
+            )),
+            "{source}"
+        );
+        assert_attached_site(
+            &module,
+            &parsed,
+            owners[0],
+            &attached[0],
+            PatternComponentRole::TrailingInput,
+            HirPatternSourceRole::TrailingInput,
+            HirSourceOwnerStatus::Poisoned,
+        );
+    }
+}
+
+#[test]
+fn nested_pattern_trailing_input_poison_reaches_its_parent() {
+    for source in [
+        "([value] trailing, kept)",
+        "whole [value] trailing",
+        "Point { field: [value] trailing }",
+        "[value] trailing | [value]",
+    ] {
+        let parsed = parsed_source("nested-pattern-trailing-input", &[source]);
+        let (module, owners, _) = lower_and_publish(&parsed);
+        assert_eq!(module.status(), HirModuleStatus::Recovered, "{source}");
+        assert!(
+            matches!(
+                pattern(&module, owners[0]).state(),
+                HirPoisonState::Poisoned(HirRecoveryIssue::InvalidPattern(
+                    HirPatternRecoveryIssue::RecoveredChild { .. },
+                ))
+            ),
+            "{source}"
+        );
+    }
+}
+
 #[derive(Clone, Copy)]
 struct FamilyCase {
     name: &'static str,

@@ -28,6 +28,7 @@ use crate::pattern::{
 };
 use crate::scope::{HirLocal, HirPatternBindingPolicy};
 use crate::slot::{HirOrigin, SlotSnapshot};
+use crate::type_ref::HirType;
 
 use self::payload_validation::PatternPayloadValidation;
 use super::control_projection::ExpectedLocal;
@@ -113,6 +114,7 @@ impl From<PatternComponentRole> for HirPatternSourceRole {
             PatternComponentRole::NestedPattern => Self::NestedPattern,
             PatternComponentRole::TypedBindingColon => Self::TypedBindingColon,
             PatternComponentRole::TypedBindingType => Self::TypedBindingType,
+            PatternComponentRole::TrailingInput => Self::TrailingInput,
             PatternComponentRole::Recovery => Self::Recovery,
         }
     }
@@ -210,12 +212,14 @@ impl HirSourceIndex {
         parsed: &ParsedSource,
         slots: &SlotSnapshot,
         patterns: &ArenaSnapshot<crate::pattern::HirPattern, PatternId>,
+        types: &ArenaSnapshot<HirType, TypeId>,
     ) -> bool {
         let Ok(entries) = patterns.try_iter_prepared(slots) else {
             return false;
         };
         let entries = entries.collect::<Vec<_>>();
-        let Some(payload_validation) = PatternPayloadValidation::new(parsed, slots, patterns)
+        let Some(payload_validation) =
+            PatternPayloadValidation::new(parsed, slots, patterns, types)
         else {
             return false;
         };
@@ -650,6 +654,7 @@ fn pattern_requirements(
     use HirSourceRequirement::{Optional, Required};
 
     let mut requirements = BTreeMap::new();
+    add_pattern_requirement(&mut requirements, Role::TrailingInput, Optional);
     match payload {
         HirPatternKind::Binding(_) => {
             add_pattern_requirement(&mut requirements, Role::Name, Required);
@@ -1042,7 +1047,10 @@ impl HirPatternKind {
         owner: PatternId,
         role: HirPatternSourceRole,
     ) -> Result<(), HirSourceQueryError> {
-        if role == HirPatternSourceRole::Whole {
+        if matches!(
+            role,
+            HirPatternSourceRole::Whole | HirPatternSourceRole::TrailingInput
+        ) {
             return Ok(());
         }
         match self {
