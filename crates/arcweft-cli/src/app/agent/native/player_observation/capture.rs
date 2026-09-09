@@ -2,7 +2,8 @@
 
 use super::{
     AgentImageFrameStore, AgentObservedObject, ExitCode, HitRect, NativeAgentRuntimeState,
-    PlayerPreparedFrame, PreparedFrame, agent_object_id_color, agent_view_prepared_text_root_id,
+    PlayerPreparedFrame, PreparedFrame, PreparedTextObservationOwner,
+    PreparedTextOwnerSelectionError, agent_object_id_color,
 };
 use arcweft_agent_protocol::rich_text::{AgentRichTextElementKind, AgentRichTextElementRef};
 use arcweft_glyphon::{PreparedGlyph, PreparedGlyphSource, PreparedTextItem};
@@ -17,12 +18,11 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 enum PlayerTextCaptureSelectionError {
-    #[error("rich-text object `{object_id}` has no matching prepared-text owner")]
-    MissingOwner { object_id: String },
-    #[error("rich-text object `{object_id}` matches {owner_count} prepared-text owners")]
-    AmbiguousOwner {
+    #[error("rich-text object `{object_id}`: {source}")]
+    Owner {
         object_id: String,
-        owner_count: usize,
+        #[source]
+        source: PreparedTextOwnerSelectionError,
     },
     #[error("rich-text object `{object_id}` references missing prepared-text item {text_index}")]
     MissingPreparedTextItem { object_id: String, text_index: u32 },
@@ -219,26 +219,14 @@ fn player_prepared_text_owner<'a>(
     prepared: &'a PreparedFrame,
     object: &AgentObservedObject,
 ) -> Result<&'a PreparedTextOwner, PlayerTextCaptureSelectionError> {
-    let owners = prepared
-        .prepared_text_owners()
-        .iter()
-        .filter(|owner| player_object_belongs_to_text_owner(object, owner))
-        .collect::<Vec<_>>();
-    let owner = match owners.as_slice() {
-        [owner] => *owner,
-        [] => {
-            return Err(PlayerTextCaptureSelectionError::MissingOwner {
-                object_id: object.id.clone(),
-            });
-        }
-        _ => {
-            return Err(PlayerTextCaptureSelectionError::AmbiguousOwner {
-                object_id: object.id.clone(),
-                owner_count: owners.len(),
-            });
-        }
-    };
-    Ok(owner)
+    PreparedTextObservationOwner::select(prepared.prepared_text_owners(), |owner| {
+        owner.contains_object(&object.id)
+    })
+    .map(|owner| owner.prepared())
+    .map_err(|source| PlayerTextCaptureSelectionError::Owner {
+        object_id: object.id.clone(),
+        source,
+    })
 }
 
 fn player_local_text_range(
@@ -337,8 +325,12 @@ fn player_capture_region_order(
         .prepared_text_owners()
         .iter()
         .enumerate()
-        .find(|(_, owner)| player_object_belongs_to_text_owner(object, owner))
+        .filter_map(|(index, owner)| {
+            PreparedTextObservationOwner::new(owner).map(|owner| (index, owner))
+        })
+        .find(|(_, owner)| owner.contains_object(&object.id))
     {
+        let owner = owner.prepared();
         let phase = match owner.kind {
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => 1,
             arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => 3,
@@ -356,31 +348,6 @@ fn player_capture_region_order(
         .position(|node| node.target().id().as_str() == object.id)
         .unwrap_or(source_index);
     (2, semantic_index, 0, source_index)
-}
-
-fn player_object_belongs_to_text_owner(
-    object: &AgentObservedObject,
-    owner: &arcweft_render_wgpu::geometry::PreparedTextOwner,
-) -> bool {
-    match owner.kind {
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::DialogueView {
-            dialogue,
-            entry,
-            ..
-        } => {
-            let root = format!("object.dialogue.{dialogue}.{entry}");
-            object.id == root || object.id.starts_with(&format!("{root}."))
-        }
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::View { .. } => {
-            let Some(root) = agent_view_prepared_text_root_id(owner) else {
-                return false;
-            };
-            object.id == root || object.id.starts_with(&format!("{root}."))
-        }
-        arcweft_render_wgpu::geometry::PreparedTextOwnerKind::Control => {
-            object.id == owner.semantic_id.as_str()
-        }
-    }
 }
 
 fn player_text_element_paint_order(

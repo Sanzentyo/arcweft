@@ -306,7 +306,6 @@ use player_observation::{
 };
 use prepared_text_observation::{
     agent_dialogue_prepared_text_objects, agent_view_prepared_text_objects,
-    agent_view_prepared_text_root_id,
 };
 use repl::agent_repl_command;
 use runtime_observation::{

@@ -10,12 +10,13 @@ pub(in super::super) fn agent_view_prepared_text_objects(
     prepared
         .prepared_text_owners()
         .iter()
-        .filter(|owner| matches!(owner.kind, PreparedTextOwnerKind::View { .. }))
+        .filter_map(PreparedTextObservationOwner::new)
+        .filter(|owner| matches!(owner.prepared().kind, PreparedTextOwnerKind::View { .. }))
         .filter_map(|owner| {
             prepared
                 .text
-                .get(owner.text)
-                .and_then(|item| view_text_objects(step, owner, item, viewport))
+                .get(owner.prepared().text)
+                .and_then(|item| view_text_objects(step, &owner, item, viewport))
         })
         .flatten()
         .collect()
@@ -23,14 +24,14 @@ pub(in super::super) fn agent_view_prepared_text_objects(
 
 fn view_text_objects(
     step: usize,
-    owner: &PreparedTextOwner,
+    owner: &PreparedTextObservationOwner<'_>,
     item: &PreparedTextItem,
     viewport: &AgentViewport,
 ) -> Option<Vec<AgentObservedObject>> {
     let root = view_text_root(step, owner, item, viewport)?;
     let context = ViewProjection {
         step,
-        owner,
+        owner: owner.prepared(),
         item,
         viewport,
         root: &root,
@@ -45,12 +46,13 @@ fn view_text_objects(
 
 fn view_text_root(
     step: usize,
-    owner: &PreparedTextOwner,
+    owner: &PreparedTextObservationOwner<'_>,
     item: &PreparedTextItem,
     viewport: &AgentViewport,
 ) -> Option<AgentObservedObject> {
+    let root_id = owner.root_id().to_owned();
+    let owner = owner.prepared();
     let bbox = agent_bbox_from_hit_rect(owner.object_bounds, viewport)?;
-    let root_id = agent_view_prepared_text_root_id(owner)?;
     let parent_id = owner.parent_id.as_ref().map(ToString::to_string);
     let source = AgentCaptureSourceIdentity::Object {
         id: root_id.clone(),
@@ -455,10 +457,14 @@ mod tests {
 
     #[test]
     fn prepared_view_text_root_identity_includes_mount_occurrence() {
-        let first = agent_view_prepared_text_root_id(&owner("view.shared.text", 17))
-            .expect("View owner has root");
-        let second = agent_view_prepared_text_root_id(&owner("view.shared.text", 18))
-            .expect("View owner has root");
+        let first = PreparedTextObservationOwner::new(&owner("view.shared.text", 17))
+            .expect("View owner has root")
+            .root_id()
+            .to_owned();
+        let second = PreparedTextObservationOwner::new(&owner("view.shared.text", 18))
+            .expect("View owner has root")
+            .root_id()
+            .to_owned();
 
         assert_ne!(first, second);
         assert!(first.ends_with(".mount.17"));
@@ -467,10 +473,14 @@ mod tests {
 
     #[test]
     fn prepared_view_text_root_identity_encodes_semantic_ids_injectively() {
-        let slash =
-            agent_view_prepared_text_root_id(&owner("view/text", 17)).expect("View owner has root");
-        let underscore =
-            agent_view_prepared_text_root_id(&owner("view_text", 17)).expect("View owner has root");
+        let slash = PreparedTextObservationOwner::new(&owner("view/text", 17))
+            .expect("View owner has root")
+            .root_id()
+            .to_owned();
+        let underscore = PreparedTextObservationOwner::new(&owner("view_text", 17))
+            .expect("View owner has root")
+            .root_id()
+            .to_owned();
 
         assert_ne!(slash, underscore);
         assert!(slash.contains("view%2Ftext"));

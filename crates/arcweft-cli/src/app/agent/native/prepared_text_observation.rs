@@ -1,7 +1,9 @@
 //! Agent objects projected from the same prepared layout used for rendering.
 
+mod owner;
 mod view;
 
+pub(super) use owner::{PreparedTextObservationOwner, PreparedTextOwnerSelectionError};
 pub(super) use view::agent_view_prepared_text_objects;
 
 use super::image_mapping::{
@@ -19,16 +21,6 @@ use arcweft_text_model::{
     RichTextTextRun, RichTextTextSource,
 };
 
-pub(super) fn agent_view_prepared_text_root_id(owner: &PreparedTextOwner) -> Option<String> {
-    let PreparedTextOwnerKind::View { mount } = owner.kind else {
-        return None;
-    };
-    Some(format!(
-        "object.text.{}.mount.{mount}",
-        agent_uri_component(owner.semantic_id.as_str())
-    ))
-}
-
 pub(super) fn agent_dialogue_prepared_text_objects(
     capture_step: usize,
     dialogue: usize,
@@ -37,25 +29,27 @@ pub(super) fn agent_dialogue_prepared_text_objects(
     prepared: &PreparedFrame,
     viewport: &AgentViewport,
 ) -> Result<Vec<AgentObservedObject>, ExitCode> {
-    let Some(owner) = prepared.prepared_text_owners().iter().find(|owner| {
+    let owner = PreparedTextObservationOwner::select(prepared.prepared_text_owners(), |owner| {
         matches!(
-            owner.kind,
+            owner.prepared().kind,
             PreparedTextOwnerKind::DialogueView {
                 dialogue: owner_dialogue,
                 entry: owner_entry,
-                role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
                 ..
             } if owner_dialogue == u64::try_from(dialogue).unwrap_or(u64::MAX)
                 && owner_entry == u64::try_from(entry).unwrap_or(u64::MAX)
         )
-    }) else {
-        eprintln!("error: dialogue frame is missing its prepared-text owner");
-        return Err(ExitCode::FAILURE);
-    };
-    let Some(item) = prepared.text.get(owner.text) else {
+    })
+    .map_err(|error| {
+        eprintln!(
+            "error: dialogue {dialogue} entry {entry} prepared-text selection failed: {error}"
+        );
+        ExitCode::FAILURE
+    })?;
+    let Some(item) = prepared.text.get(owner.prepared().text) else {
         eprintln!(
             "error: dialogue prepared-text owner references missing item {}",
-            owner.text.index()
+            owner.prepared().text.index()
         );
         return Err(ExitCode::FAILURE);
     };
@@ -67,22 +61,14 @@ pub(super) fn agent_dialogue_prepared_text_objects(
                 && state.entry == u64::try_from(entry).unwrap_or(u64::MAX)
         })
         .map(|state| format!("view.mount.{}", state.mount));
-    let dialogue_object = dialogue_view_object(
-        capture_step,
-        dialogue,
-        entry,
-        frame,
-        owner,
-        parent_id,
-        viewport,
-    )?;
+    let dialogue_object = dialogue_view_object(capture_step, frame, &owner, parent_id, viewport)?;
     let mut objects = vec![dialogue_object.clone()];
     objects.extend(dialogue_children(
         capture_step,
         dialogue,
         entry,
         &dialogue_object,
-        owner,
+        owner.prepared(),
         item,
         viewport,
     ));
@@ -92,18 +78,17 @@ pub(super) fn agent_dialogue_prepared_text_objects(
 
 fn dialogue_view_object(
     capture_step: usize,
-    dialogue: usize,
-    entry: usize,
     frame: LineDisplayStageProjection,
-    owner: &PreparedTextOwner,
+    owner: &PreparedTextObservationOwner<'_>,
     parent_id: Option<String>,
     viewport: &AgentViewport,
 ) -> Result<AgentObservedObject, ExitCode> {
-    let bbox = agent_bbox_from_hit_rect(owner.object_bounds, viewport).ok_or_else(|| {
-        eprintln!("error: dialogue prepared-text owner has empty viewport geometry");
-        ExitCode::FAILURE
-    })?;
-    let object_id = format!("object.dialogue.{dialogue}.{entry}");
+    let bbox =
+        agent_bbox_from_hit_rect(owner.prepared().object_bounds, viewport).ok_or_else(|| {
+            eprintln!("error: dialogue prepared-text owner has empty viewport geometry");
+            ExitCode::FAILURE
+        })?;
+    let object_id = owner.root_id().to_owned();
     let source = AgentCaptureSourceIdentity::Object {
         id: object_id.clone(),
         parent_id: parent_id.clone(),

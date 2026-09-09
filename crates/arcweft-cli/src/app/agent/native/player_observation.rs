@@ -3,6 +3,9 @@ mod capture;
 use super::image_mapping::{
     agent_image_geometry_from_render_quad, agent_object_capture_refs_with_source,
 };
+use super::prepared_text_observation::{
+    PreparedTextObservationOwner, PreparedTextOwnerSelectionError,
+};
 use super::{
     AgentImageFrameStore, AgentObservationState, AgentObserveOptions, ExitCode,
     NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge, agent_action_targets,
@@ -13,9 +16,8 @@ use super::{
     agent_observe_effective_steps, agent_observe_layout_scene_graph,
     agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_scroll_regions,
     agent_observed_views, agent_observed_virtual_lists, agent_overlay_svg,
-    agent_view_prepared_text_objects, agent_view_prepared_text_root_id,
-    dedupe_agent_action_targets, hash_hex, native_host_policy_for_selection, report_path,
-    resolve_source_selection,
+    agent_view_prepared_text_objects, dedupe_agent_action_targets, hash_hex,
+    native_host_policy_for_selection, report_path, resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
