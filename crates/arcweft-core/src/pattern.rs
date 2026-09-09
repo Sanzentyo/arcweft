@@ -7,7 +7,8 @@ use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::value::{
     RuntimeEntityReference, RuntimeLocalBinding, RuntimeNominalRecordValue,
     RuntimeOpaquePersistence, RuntimeOpaqueValue, RuntimeOpaqueValueClass, RuntimeOpaqueValueError,
-    RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
+    RuntimePayload, RuntimeRecordFieldId, RuntimeSeq, RuntimeSignedIntWidth,
+    RuntimeUnsignedIntWidth, RuntimeValue,
 };
 pub use arcweft_id::RuntimeSemanticTypeId;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -780,6 +781,30 @@ pub enum RuntimeCheckedType {
 }
 
 impl RuntimeCheckedType {
+    /// Admits a complete value against this exact checked payload contract.
+    pub fn try_payload(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
+        if self.accepts_value(&value) {
+            Ok(RuntimePayload::new(value))
+        } else {
+            Err("runtime payload does not satisfy its checked type".to_owned())
+        }
+    }
+
+    /// Constructs and admits a domain result. Transport failures do not pass
+    /// through this value boundary; the caller owns their control outcome.
+    pub fn try_result_payload(
+        &self,
+        value: Result<RuntimeValue, RuntimeValue>,
+    ) -> Result<RuntimePayload, String> {
+        if !matches!(self, Self::Result { .. }) {
+            return Err("checked payload contract is not a Result type".to_owned());
+        }
+        self.try_payload(match value {
+            Ok(value) => RuntimeValue::result_ok(value),
+            Err(value) => RuntimeValue::result_err(value),
+        })
+    }
+
     pub fn try_record(
         fields: impl IntoIterator<Item = (RuntimeRecordFieldId, String, RuntimeCheckedType)>,
     ) -> Result<Self, RuntimeCheckedRecordTypeError> {

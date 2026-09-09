@@ -293,7 +293,7 @@ pub(super) fn agent_script_build_report(
     let bytes = compiled
         .artifact
         .bundle
-        .to_json_bytes()
+        .to_format_bytes(arcweft_bundle::BundleFormat::Awfb)
         .map_err(|error| error.to_string())?;
     write_agent_bundle(&options.output, &bytes)?;
     Ok(AgentScriptBuildReport {
@@ -2060,6 +2060,7 @@ impl CliAgentSession {
                 "source": "arcw agent script run",
                 "deterministic_cli_session": true,
                 "state": agent_values_to_json(&self.states),
+                "objects": [],
             }),
         }
     }

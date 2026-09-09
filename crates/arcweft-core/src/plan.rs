@@ -727,7 +727,10 @@ impl FlowRuntimeId {
         public_id: &str,
     ) -> Result<Self, RuntimeIdError> {
         let path = RuntimeIdPath::from_runtime_contract_str(RuntimeIdFamily::Flow, identity)?;
-        let public_label = Self::from_source_entity_body(public_id)?.public_label;
+        // The contract stores diagnostic text separately from its identity.
+        // Generated controller labels are valid runtime labels even though
+        // their reserved segments cannot be authored as source Flow names.
+        let public_label = RuntimePublicLabel::new(public_id);
         Ok(Self { path, public_label })
     }
 

@@ -257,28 +257,28 @@ impl AgentHostRequestAdmissionError {
     }
 }
 
-/// Stable category for a rejected controller task outcome carrier.
+/// Stable category for a rejected controller result carrier.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AgentControllerOutcomeAdmissionErrorKind {
-    ResultContractRejected,
+    TypeContractRejected,
 }
 
-/// Failure while wrapping one admitted host response in its checked task result.
+/// Failure while admitting one host response against its checked outcome type.
 #[derive(Debug, Error)]
 #[error(
-    "Agent controller task `{task_id}` response failed checked result admission at `{path}`: {detail}"
+    "Agent controller request `{request_id}` response failed checked outcome admission at `{path}`: {detail}"
 )]
 pub struct AgentControllerOutcomeAdmissionError {
-    task_id: String,
+    request_id: String,
     path: &'static str,
     detail: String,
 }
 
 impl AgentControllerOutcomeAdmissionError {
-    pub(crate) fn result_contract_rejected(task_id: impl Into<String>, detail: String) -> Self {
+    pub(crate) fn contract_rejected(request_id: impl Into<String>, detail: String) -> Self {
         Self {
-            task_id: task_id.into(),
-            path: "task.outcome.result.ok",
+            request_id: request_id.into(),
+            path: "controller.outcome",
             detail,
         }
     }
@@ -286,13 +286,13 @@ impl AgentControllerOutcomeAdmissionError {
     /// Returns the stable rejection category.
     #[must_use]
     pub const fn kind(&self) -> AgentControllerOutcomeAdmissionErrorKind {
-        AgentControllerOutcomeAdmissionErrorKind::ResultContractRejected
+        AgentControllerOutcomeAdmissionErrorKind::TypeContractRejected
     }
 
-    /// Returns the controller task identity.
+    /// Returns the controller task or host-call request identity.
     #[must_use]
-    pub fn task_id(&self) -> &str {
-        &self.task_id
+    pub fn request_id(&self) -> &str {
+        &self.request_id
     }
 
     /// Returns the stable carrier path at which admission failed.

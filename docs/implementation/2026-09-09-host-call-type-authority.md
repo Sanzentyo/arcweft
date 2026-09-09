@@ -78,6 +78,11 @@ the admitted host type or strict response validator must not be weakened.
 This cut establishes verified Agent host-call execution, not successful MCP
 trace completion. No validation was externally blocked.
 
+The subsequent [Agent host response and bundle repair](2026-09-09-agent-host-response-admission.md)
+completes the source/bundle/trace smoke and passes all four MCP tests. It also
+records the separately remaining Try projection and native HIR publication
+failures; the preceding failed results remain historical evidence.
+
 ## Ownership review
 
 The source pin is the inspected base plus this cut's working changes. No Cargo

@@ -3299,27 +3299,31 @@ fn dialogue_content_effect_manifest_and_instruction_codec_round_trip() {
 }
 
 #[test]
-fn canonical_codec_round_trips_checked_flow_identity_and_public_label() {
-    let mut program = minimal_program();
-    let flow = FlowRuntimeId::from_checked_declaration_digest([0xa5; 32], "flow.opening")
+fn canonical_codec_round_trips_checked_and_controller_flow_identities_and_labels() {
+    let checked = FlowRuntimeId::from_checked_declaration_digest([0xa5; 32], "flow.opening")
         .expect("accepted Flow public label");
-    program.flow_bindings[0].flow = flow.clone();
-    program.flow_executables[0].metadata.flow = flow.clone();
-
-    let encoded = program.encode_canonical().expect("encode checked Flow ID");
-    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
-        .expect("decode checked Flow ID");
-
-    assert_eq!(decoded.flow_executables[0].metadata.flow, flow);
-    assert_eq!(
-        decoded.flow_executables[0]
-            .metadata
-            .flow
-            .public_label()
-            .as_str(),
-        "flow.opening"
+    let controller = FlowRuntimeId::for_agent_controller_callable(
+        &crate::entry::RuntimeCallableId::from_checked_digest([0x5a; 32]),
     );
-    assert_eq!(decoded, program);
+    assert!(FlowRuntimeId::from_source_entity_body(controller.public_label().as_str()).is_err());
+    for flow in [checked, controller] {
+        let public_label = flow.public_label();
+        assert!(FlowRuntimeId::canonical(&flow.canonical_label()).is_err());
+        let mut program = minimal_program();
+        program.flow_bindings[0].flow = flow.clone();
+        program.flow_executables[0].metadata.flow = flow.clone();
+
+        let encoded = program.encode_canonical().expect("encode runtime Flow ID");
+        let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+            .expect("decode runtime Flow ID independently of its public label");
+
+        assert_eq!(decoded.flow_executables[0].metadata.flow, flow);
+        assert_eq!(
+            decoded.flow_executables[0].metadata.flow.public_label(),
+            public_label
+        );
+        assert_eq!(decoded, program);
+    }
 }
 
 #[test]

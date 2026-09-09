@@ -161,6 +161,11 @@ pub struct RuntimeHostCallRequest {
 }
 
 /// Host-supplied outcome for a previously emitted host call request.
+///
+/// A successful transport outcome carries the complete declared result value.
+/// For a `Result<T, E>` signature, the payload contains the language Result
+/// variant, including its payload; transport `Ok` alone does not wrap `T`.
+/// Transport `Err` represents an infrastructure/control failure.
 #[derive(Clone, Debug, PartialEq)]
 pub struct RuntimeHostCallResult {
     pub id: RuntimeHostCallId,

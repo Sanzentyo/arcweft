@@ -421,6 +421,20 @@ Host descriptors are interned by their complete typed row, including the
 signature and argument naming/spread metadata. Evaluated values belong to the
 call instructions, so different values can share the same descriptor.
 
+A successful host transport response supplies the complete value declared by
+that signature. For a result type `Result<T, E>`, that value includes its
+`Ok`/`Err` variant; transport success alone is not the language-level `Ok`.
+Checked payload construction belongs to `RuntimeCheckedType` and is shared by
+task outcome contracts and Agent host response admission. The Agent adapter
+selects result wrapping from the declared type before validation. Infallible
+results such as Unit are admitted directly; a rejected Result payload is an
+error. Infrastructure failures remain host control outcomes.
+
+Flow runtime contracts retain an identity path and a separate public label.
+Product decoding validates the identity through the runtime ID owner and
+preserves the label as text. A generated controller's label is not reparsed as
+an authored Flow name, and a label does not reconstruct a checked identity.
+
 ```rust
 struct AwbcIntrinsic {
     public_id: AwbcStringId,

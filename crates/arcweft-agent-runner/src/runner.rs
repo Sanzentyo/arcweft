@@ -595,7 +595,7 @@ where
                     .try_result_ok(response.value().clone())
                     .map_err(|detail| {
                         AgentRunError::InvalidControllerOutcome(
-                            AgentControllerOutcomeAdmissionError::result_contract_rejected(
+                            AgentControllerOutcomeAdmissionError::contract_rejected(
                                 task.id.0.clone(),
                                 detail,
                             ),
@@ -616,10 +616,25 @@ where
                     .map_err(AgentRunError::InvalidControllerRequest)?;
                 let host_report =
                     self.handle_controller_host_request(request, budget, &mut budget_tracker)?;
+                let payload = runtime_payload_from_response(&host_report.response)
+                    .map_err(AgentRunError::InvalidHostResponse)?;
+                let response = match &call.result {
+                    result @ arcweft_core::pattern::RuntimeCheckedType::Result { .. } => {
+                        result.try_result_payload(Ok(payload.into_value()))
+                    }
+                    direct => direct.try_payload(payload.into_value()),
+                }
+                .map_err(|detail| {
+                    AgentRunError::InvalidControllerOutcome(
+                        AgentControllerOutcomeAdmissionError::contract_rejected(
+                            call.id.0.clone(),
+                            detail,
+                        ),
+                    )
+                })?;
                 host_call_results.push(RuntimeHostCallResult {
                     id: call.id.clone(),
-                    outcome: Ok(runtime_payload_from_response(&host_report.response)
-                        .map_err(AgentRunError::InvalidHostResponse)?),
+                    outcome: Ok(response),
                 });
                 report.host_calls += 1;
                 report.responses.push(host_report.response);

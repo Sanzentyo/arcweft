@@ -116,6 +116,42 @@ fn agent_script_run_json_executes_cli_session_smoke() {
 }
 
 #[test]
+fn agent_script_run_admits_infallible_host_result() {
+    let path = workspace_path(&format!(
+        "target/codex-agent-script-run-test/infallible-{}.awfagent",
+        std::process::id()
+    ));
+    fs::create_dir_all(path.parent().expect("script directory")).expect("create script directory");
+    fs::write(
+        &path,
+        r#"
+fn run() -> Result<Unit, AgentError> effects { debug.record } {
+    checkpoint("complete")
+    return Ok(())
+}
+entry agent @entry.agent.main { controller = run }
+"#,
+    )
+    .expect("write infallible host call source");
+    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
+        .args(["agent", "script", "run"])
+        .arg(&path)
+        .arg("--json")
+        .output()
+        .expect("execute infallible host call");
+    assert!(
+        output.status.success(),
+        "infallible host call should complete\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("run report");
+    assert_eq!(report["ok"], true);
+    assert_eq!(report["host_calls"], 1);
+    assert_eq!(report["responses"], serde_json::json!([{ "kind": "unit" }]));
+}
+
+#[test]
 fn agent_script_run_persists_debug_session_and_script_run() {
     let trace_path = workspace_path(&format!(
         "target/codex-agent-script-run-test/debug-db-trace-{}.arcwx",
@@ -2106,12 +2142,18 @@ fn assert_agent_script_build(bundle_path: &Path) {
         serde_json::from_slice(&build_output.stdout).expect("build output is JSON");
     assert_eq!(build_json["ok"], true);
     assert_eq!(build_json["bundle_kind"], "agent_controller");
-    assert_eq!(build_json["agent_id"], "agent.cli.run_smoke");
-    let bundle_json: serde_json::Value =
-        serde_json::from_slice(&fs::read(bundle_path).expect("build writes .awfb bundle"))
-            .expect("bundle is JSON");
-    assert_eq!(bundle_json["bundle_kind"], "agent_controller");
-    assert_eq!(bundle_json["agent"]["agent_id"], "agent.cli.run_smoke");
+    assert_eq!(build_json["entry_id"], "entry.agent.main");
+    let bundle = arcweft_bundle::ArcweftBundle::from_product_path_slice(
+        bundle_path,
+        &fs::read(bundle_path).expect("build writes .awfb bundle"),
+    )
+    .expect("bundle passes typed codec admission");
+    let agent = bundle.agent.expect("selected Agent manifest");
+    assert_eq!(agent.entry_id.as_str(), "entry.agent.main");
+    assert_eq!(
+        build_json["controller_id"].as_str().expect("checked controller identity"),
+        agent.controller_id.as_str()
+    );
 }
 
 fn assert_agent_script_bundle_run(bundle_path: &Path, trace_path: &Path) {
@@ -2138,6 +2180,10 @@ fn assert_agent_script_bundle_run(bundle_path: &Path, trace_path: &Path) {
     assert_eq!(bundle_run_json["host_calls"], 1);
     assert_eq!(bundle_run_json["trace_records"], 5);
     assert_eq!(bundle_run_json["responses"][0]["kind"], "observation");
+    assert_eq!(
+        bundle_run_json["responses"][0]["response"]["payload"]["objects"],
+        serde_json::json!([])
+    );
 }
 
 fn assert_agent_script_source_run_trace(trace_path: &Path) {
@@ -2164,6 +2210,10 @@ fn assert_agent_script_source_run_trace(trace_path: &Path) {
     assert_eq!(json["host_calls"], 1);
     assert_eq!(json["trace_records"], 5);
     assert_eq!(json["responses"][0]["kind"], "observation");
+    assert_eq!(
+        json["responses"][0]["response"]["payload"]["objects"],
+        serde_json::json!([])
+    );
     let trace: serde_json::Value = serde_json::from_slice(
         &fs::read(trace_path).expect("agent script run writes .arcwx trace"),
     )

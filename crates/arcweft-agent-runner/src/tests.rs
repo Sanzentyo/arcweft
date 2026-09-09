@@ -471,7 +471,7 @@ fn response_payload_type(response_ty: u8) -> u8 {
     }
 }
 
-fn await_response_binding_pattern(
+fn response_result_binding_pattern(
     result_ty: u8,
     response_ty: u8,
     local: arcweft_core::plan::RuntimeLocalSeedId,
@@ -1219,7 +1219,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(await_response_binding_pattern(
+                    binding: Some(response_result_binding_pattern(
                         CAPTURE_RESULT_TY,
                         CAPTURE_REFERENCE_TY,
                         shot.clone(),
@@ -1283,7 +1283,7 @@ fn read_resource_binding_program() -> AwbcProgram {
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(await_response_binding_pattern(
+                    binding: Some(response_result_binding_pattern(
                         RESOURCE_RESULT_TY,
                         RESOURCE_TY,
                         resource.clone(),
@@ -1367,7 +1367,7 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
-                    binding: Some(await_response_binding_pattern(
+                    binding: Some(response_result_binding_pattern(
                         response_result_ty,
                         response_ty,
                         response.clone(),
@@ -1424,14 +1424,18 @@ fn direct_observe_program() -> AwbcProgram {
             arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::HostCall {
-                    binding: Some(response_binding_pattern(OBSERVATION_TY, observation)),
+                    binding: Some(response_result_binding_pattern(
+                        OBSERVATION_RESULT_TY,
+                        OBSERVATION_TY,
+                        observation,
+                    )),
                     target: RuntimeHostCallTargetSeed {
                         public_id: "agent.observe".to_owned(),
                         capability: "agent".to_owned(),
                         operation: "observe".to_owned(),
                         contract: None,
                         args: Vec::new(),
-                        result: controller_type(OBSERVATION_TY),
+                        result: controller_type(OBSERVATION_RESULT_TY),
                         mode: RuntimeHostCallMode::Suspend,
                         deterministic: false,
                     },

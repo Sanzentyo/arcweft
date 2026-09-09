@@ -406,35 +406,15 @@ impl TaskOutcomeContract {
     }
 
     pub fn try_payload(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        if self.payload.accepts_value(&value) {
-            Ok(RuntimePayload::new(value))
-        } else {
-            Err("host task payload does not satisfy its checked outcome contract".to_owned())
-        }
+        self.payload.try_payload(value)
     }
 
     pub fn try_result_ok(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        let RuntimeCheckedType::Result { ok, .. } = &self.payload else {
-            return Err("host task outcome is not an admitted Result payload".to_owned());
-        };
-        if !ok.accepts_value(&value) {
-            return Err(
-                "host task Result::Ok payload does not satisfy its checked type".to_owned(),
-            );
-        }
-        self.try_payload(RuntimeValue::result_ok(value))
+        self.payload.try_result_payload(Ok(value))
     }
 
     pub fn try_result_err(&self, value: RuntimeValue) -> Result<RuntimePayload, String> {
-        let RuntimeCheckedType::Result { error, .. } = &self.payload else {
-            return Err("host task outcome is not an admitted Result payload".to_owned());
-        };
-        if !error.accepts_value(&value) {
-            return Err(
-                "host task Result::Err payload does not satisfy its checked type".to_owned(),
-            );
-        }
-        self.try_payload(RuntimeValue::result_err(value))
+        self.payload.try_result_payload(Err(value))
     }
 
     #[must_use]

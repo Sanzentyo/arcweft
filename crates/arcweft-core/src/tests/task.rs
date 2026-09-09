@@ -50,6 +50,13 @@ fn task_outcome_contract_owns_one_exact_ready_payload() {
             ..
         }
     ));
+    assert!(fallible.try_result_ok(RuntimeValue::Bool(true)).is_err());
+    assert!(fallible.try_result_err(RuntimeValue::Bool(false)).is_err());
+    assert!(
+        fallible
+            .try_payload(RuntimeValue::String("unwrapped".to_owned()))
+            .is_err()
+    );
 }
 
 #[test]
