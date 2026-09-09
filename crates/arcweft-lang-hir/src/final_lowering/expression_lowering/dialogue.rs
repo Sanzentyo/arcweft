@@ -35,15 +35,12 @@ use crate::dialogue_application::{
     HirTextFragment,
 };
 use crate::expr::{
-    HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison,
-    HirCallChildStates, HirCallInvocation, HirCallValue, HirExpr, HirExprKind,
-    HirExpressionRecoveryIssue, HirGenericExprIssue, HirPoisonState, HirRecoveryIssue,
+    HirCallArgument, HirCallCallee, HirCallInvocation, HirExprKind, HirExpressionRecoveryIssue,
+    HirGenericExprIssue, HirRecoveryIssue,
 };
 use crate::final_lowering::id_ref_projection;
 use crate::identity::{ExprId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
-use crate::leaf::{
-    HirLiteral, HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue, HirStringLiteral,
-};
+use crate::leaf::{HirPathRoot, HirPathSegment, HirPathValue};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{HirExprSourceRole, expression_component_role};
 use crate::type_ref::{HirType, HirTypeKind};
@@ -852,128 +849,42 @@ impl StagedHirModuleTransaction<'_> {
         base: &str,
         ruby: &str,
     ) -> Result<ExprId, HirLowerFailure> {
-        let ordinal = node.ordinal();
-        let source_site = self
-            .slots
-            .resolve_staged(owner)
-            .map_err(HirLowerFailure::from)?
-            .source_site()
-            .clone();
-        let target = self.allocate_ruby_expression(
+        let recipe = crate::dialogue_application::ruby::HirRubyDesugaring::new(
             owner,
+            node.ordinal(),
             scope,
-            SyntheticRole::DialogueRubyTarget,
-            ordinal,
-            source_site.clone(),
-            HirExprKind::Path(HirPathValue::Resolved(
-                HirPath::try_new(
-                    HirPathRoot::ImplicitCrate,
-                    Box::new([HirPathSegment::Identifier(
-                        HirName::try_new("ruby".into())
-                            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-                    )]),
+            base,
+            ruby,
+        );
+        let source_site = self.slots.resolve_staged(owner)?.source_site().clone();
+        let reservations = recipe
+            .keys()?
+            .into_iter()
+            .map(|key| {
+                self.arenas.expressions().reserve_synthetic(
+                    &mut self.slots,
+                    key,
+                    source_site.clone(),
                 )
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-            )),
-        )?;
-        let reading = self.allocate_ruby_expression(
-            owner,
-            scope,
-            SyntheticRole::DialogueRubyReading,
-            ordinal,
-            source_site.clone(),
-            HirExprKind::Literal(HirLiteral::String(HirStringLiteral::Value(ruby.into()))),
-        )?;
-        let key = SyntheticKey::try_new(
-            SyntheticOwner::Expr(owner),
-            SyntheticRole::DialogueRubyApplication,
-            ordinal,
-        )
-        .map_err(|_| HirInvariantFailure::InvalidSlotCommit)?;
-        let reservation = self.arenas.expressions().reserve_synthetic(
-            &mut self.slots,
-            key,
-            source_site.clone(),
-        )?;
-        let application_id = reservation.id();
-        if !reservation.is_first_touch() {
-            return self.validate_reused_content_application(
-                application_id,
-                scope,
-                HirAttachedContentApplicationFamilyKind::ContentCall,
-            );
-        }
-        let content_id = HirDialogueContentId::new(application_id);
-        let content_node_id = HirDialogueNodeId::try_new(content_id, 0)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let content = HirDialogueContent::try_new(
-            content_id,
-            Box::new([HirDialogueNode::new(
-                content_node_id,
-                HirDialogueNodeKind::Text(HirTextFragment::new(base.into())),
-            )]),
-            Box::new([]),
-        )
-        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let (invocation, invocation_state) = HirCallInvocation::try_new(
-            HirCallCallee::value(target),
-            crate::expr::HirCallTypeApplication::absent(),
-            Box::new([HirCallArgument::Positional {
-                value: HirCallValue::Present { value: reading },
-            }]),
-            HirCallArgumentListTerminator::Closed,
-            HirCallChildStates::new(HirCallChildPoison::Clean, &[HirCallChildPoison::Clean], &[]),
-            true,
-        )
-        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let family = HirAttachedContentApplicationFamily::ContentCall {
-            invocation,
-            evidence: HirContentCallSemanticEvidence::None,
-        };
-        let application = HirAttachedContentApplication::try_new_with_body_presence(
-            application_id,
-            content,
-            family,
-            crate::dialogue_application::HirAttachedContentBodyPresence::Present,
-        )
-        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let payload = HirExpr::try_new(
-            scope,
-            HirExprKind::AttachedContentApplication(application),
-            invocation_state,
-        )
-        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        self.arenas
-            .expressions()
-            .finalize(&mut self.slots, reservation, payload)
-            .map_err(HirLowerFailure::from)
-    }
-
-    fn allocate_ruby_expression(
-        &mut self,
-        owner: ExprId,
-        scope: ScopeId,
-        role: SyntheticRole,
-        ordinal: u32,
-        source_site: crate::source_index::HirSourceSite,
-        kind: HirExprKind,
-    ) -> Result<ExprId, HirLowerFailure> {
-        let key = SyntheticKey::try_new(SyntheticOwner::Expr(owner), role, ordinal)
-            .map_err(|_| HirInvariantFailure::InvalidSlotCommit)?;
-        let reservation =
-            self.arenas
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        let ids = std::array::from_fn(|index| reservations[index].id());
+        let payloads = recipe.payloads(ids)?;
+        for (reservation, payload) in reservations.into_iter().zip(payloads) {
+            if reservation.is_first_touch() {
+                self.arenas
+                    .expressions()
+                    .finalize(&mut self.slots, reservation, payload)?;
+            } else if self
+                .arenas
                 .expressions()
-                .reserve_synthetic(&mut self.slots, key, source_site)?;
-        let id = reservation.id();
-        if !reservation.is_first_touch() {
-            return self.validate_reused_expression(id, scope);
+                .resolve_staged(&self.slots, reservation.id())?
+                != &payload
+            {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+            }
         }
-        let payload = HirExpr::try_new(scope, kind, HirPoisonState::Clean)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        self.arenas
-            .expressions()
-            .finalize(&mut self.slots, reservation, payload)
-            .map_err(HirLowerFailure::from)
+        Ok(ids[2])
     }
 }
 

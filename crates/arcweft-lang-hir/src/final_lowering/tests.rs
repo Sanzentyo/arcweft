@@ -25,6 +25,8 @@ use super::{HirDatabase, StagedHirModuleTransaction};
 
 #[path = "tests/closure_calls.rs"]
 mod closure_calls;
+#[path = "tests/dialogue_sources.rs"]
+mod dialogue_sources;
 
 fn parsed_revisions(document_id: &str) -> (ParsedSource, ParsedSource) {
     parsed_revisions_with_source(document_id, "")

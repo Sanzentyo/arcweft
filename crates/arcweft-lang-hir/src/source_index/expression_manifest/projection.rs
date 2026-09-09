@@ -5,8 +5,10 @@ use std::collections::BTreeSet;
 use arcweft_lang_syntax::attachment::{AttachedExpressionChild, AttachedExpressionNode};
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionProjection, SyntaxBinaryOperator, SyntaxBorrowKind,
-    SyntaxPlaceholderKind, SyntaxPostfixBracketProjection, SyntaxPostfixCandidateFailureKind,
-    SyntaxRecordField, SyntaxSelectedMember, SyntaxUnaryOperator,
+    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+    SyntaxDialoguePointActionPayload, SyntaxPlaceholderKind, SyntaxPostfixBracketProjection,
+    SyntaxPostfixCandidateFailureKind, SyntaxRecordField, SyntaxSelectedMember,
+    SyntaxUnaryOperator,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
@@ -746,29 +748,25 @@ fn dialogue_application_children_match(
         }
     }
 
-    let expected_nested = application
-        .content()
-        .nodes()
-        .iter()
-        .filter(|node| {
-            matches!(
-                node.kind(),
-                HirDialogueNodeKind::Interpolation(_) | HirDialogueNodeKind::ContentApplication(_)
-            )
-        })
-        .count()
-        + application
-            .content()
+    let ExpressionProjection::AttachedContentApplication(source) = attached.projection() else {
+        return false;
+    };
+    let expected_nested = match source.content() {
+        SyntaxDialogueContentProjection::Present(content) => content
             .nodes()
             .iter()
-            .filter(|node| {
-                matches!(
-                    node.kind(),
-                    HirDialogueNodeKind::PointAction(action)
-                        if action.payload().expression().is_some()
-                )
+            .filter(|node| match node {
+                SyntaxDialogueNodeProjection::Interpolation(_)
+                | SyntaxDialogueNodeProjection::ContentApplication(_) => true,
+                SyntaxDialogueNodeProjection::PointAction(action) => {
+                    !matches!(action.payload(), SyntaxDialoguePointActionPayload::None)
+                }
+                _ => false,
             })
-            .count();
+            .count(),
+        SyntaxDialogueContentProjection::Missing { .. }
+        | SyntaxDialogueContentProjection::RawLiteral(_) => 0,
+    };
     if attached.children().len() != expected_nested + 1 {
         return false;
     }

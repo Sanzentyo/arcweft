@@ -16,6 +16,7 @@ use crate::module::HirModule;
 
 mod content;
 mod rich_text;
+pub(crate) mod ruby;
 
 pub use self::content::{
     HirDialogueContent, HirDialogueContentError, HirDialogueContentId, HirDialogueIssue,

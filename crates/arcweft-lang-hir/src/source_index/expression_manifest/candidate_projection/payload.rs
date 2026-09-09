@@ -112,7 +112,19 @@ pub(super) fn dialogue_content_matches(
     expected: &SyntaxDialogueContentProjection,
     node_values: &BTreeMap<u32, ExprId>,
     _action_values: &BTreeMap<u32, ExprId>,
+    slots: &SlotSnapshot,
+    expressions: &ArenaSnapshot<HirExpr, ExprId>,
+    desugared: &mut BTreeSet<ExprId>,
 ) -> bool {
+    let Some(generated) = super::super::desugaring::dialogue_desugared_expressions(
+        slots,
+        expressions,
+        actual,
+        expected,
+    ) else {
+        return false;
+    };
+    desugared.extend(generated);
     match expected {
         SyntaxDialogueContentProjection::Missing { .. } => {
             actual.nodes().is_empty()

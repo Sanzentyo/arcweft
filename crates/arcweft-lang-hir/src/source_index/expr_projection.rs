@@ -753,11 +753,15 @@ fn validate_dialogue_application_role(
                     part,
                     HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Interpolation
                 ),
+                // Desugaring preserves authored source roles in the manifest
+                // while the semantic node remains one content application.
+                // The manifest restricts queries to that node's actual roles.
                 HirDialogueNodeKind::ContentApplication(_) => matches!(
                     part,
                     HirDialogueNodeSourcePart::Whole
                         | HirDialogueNodeSourcePart::Hash
                         | HirDialogueNodeSourcePart::Expression
+                        | HirDialogueNodeSourcePart::Ruby
                 ),
                 HirDialogueNodeKind::PointAction(_) => matches!(
                     part,

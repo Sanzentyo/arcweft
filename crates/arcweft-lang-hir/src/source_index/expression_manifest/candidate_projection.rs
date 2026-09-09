@@ -90,12 +90,18 @@ struct CandidateTypeChild {
 #[derive(Default)]
 struct CandidateExpectedDescendants {
     expressions: BTreeSet<ExprId>,
+    desugared: BTreeSet<ExprId>,
     statements: BTreeSet<StmtId>,
     types: BTreeSet<TypeId>,
     patterns: BTreeSet<PatternId>,
     scopes: BTreeSet<ScopeId>,
     locals: BTreeSet<LocalId>,
     scope_children: BTreeMap<ScopeId, Vec<ScopeId>>,
+}
+
+pub(super) struct CandidateExpressionAdmission {
+    pub(super) expressions: BTreeSet<ExprId>,
+    pub(super) desugared: BTreeSet<ExprId>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -116,7 +122,7 @@ pub(super) fn validate_candidate_expressions(
     patterns: &ArenaSnapshot<HirPattern, PatternId>,
     local_resolver: &crate::module::HirLocalResolver<'_>,
     retained_style_expressions: &BTreeSet<ExprId>,
-) -> Option<BTreeSet<ExprId>> {
+) -> Option<CandidateExpressionAdmission> {
     let type_expectations = candidate_type_expectations(parsed, slots, retained_style_expressions)?;
     let mut expected = CandidateExpectedDescendants::default();
     for outer in slots.prepared_live_ids::<ExprId>() {
@@ -226,7 +232,10 @@ pub(super) fn validate_candidate_expressions(
         }
     }
     candidate_descendant_slots_match(slots, scopes, &expected)?;
-    Some(expected.expressions)
+    Some(CandidateExpressionAdmission {
+        expressions: expected.expressions,
+        desugared: expected.desugared,
+    })
 }
 
 #[allow(
@@ -526,8 +535,15 @@ impl<'a> CandidateValidationCursor<'a> {
         ) {
             return None;
         }
-        let content_matches =
-            dialogue_content_matches(application.content(), content, &node_values, &action_values);
+        let content_matches = dialogue_content_matches(
+            application.content(),
+            content,
+            &node_values,
+            &action_values,
+            self.slots,
+            self.expressions,
+            &mut self.expected.desugared,
+        );
         let (application_target, plan, coordinates) = match application.family() {
             HirAttachedContentApplicationFamily::DialogueLine {
                 target,
@@ -800,6 +816,9 @@ impl<'a> CandidateValidationCursor<'a> {
                     expected.content(),
                     &node_values,
                     &action_values,
+                    self.slots,
+                    self.expressions,
+                    &mut self.expected.desugared,
                 );
                 let coordinates_match = dialogue_coordinates_match(
                     coordinates,

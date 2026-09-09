@@ -2,6 +2,7 @@
 
 mod call;
 pub(in crate::source_index) mod candidate_projection;
+mod desugaring;
 mod dialogue_projection;
 pub(super) mod leaf;
 pub(super) mod projection;
@@ -364,7 +365,10 @@ impl HirSourceIndex {
         else {
             return false;
         };
-        let Some(candidate_expressions) = candidate_projection::validate_candidate_expressions(
+        let Some(candidate_projection::CandidateExpressionAdmission {
+            expressions: candidate_expressions,
+            mut desugared,
+        }) = candidate_projection::validate_candidate_expressions(
             self,
             &expression_rows,
             parsed,
@@ -377,7 +381,8 @@ impl HirSourceIndex {
             patterns,
             &local_resolver,
             &retained_style_expressions,
-        ) else {
+        )
+        else {
             return false;
         };
         if !entries.iter().all(|(owner, payload)| {
@@ -388,6 +393,21 @@ impl HirSourceIndex {
             let valid = match metadata.origin() {
                 HirOrigin::Source(source) => match parsed.attached_expression(source.syntax()) {
                     Ok(attached) => {
+                        if let (
+                            HirExprKind::AttachedContentApplication(application),
+                            ExpressionProjection::AttachedContentApplication(source),
+                        ) = (payload.kind(), attached.projection())
+                        {
+                            let Some(generated) = desugaring::dialogue_desugared_expressions(
+                                slots,
+                                expressions,
+                                application.content(),
+                                source.content(),
+                            ) else {
+                                return false;
+                            };
+                            desugared.extend(generated);
+                        }
                         self.syntax_owners
                             .get(&SyntheticOwner::Expr(owner))
                             .is_some_and(|syntax| *syntax == attached.id())
@@ -450,9 +470,10 @@ impl HirSourceIndex {
             return false;
         }
 
-        entries.iter().all(|(child, _)| {
-            expr_recovery_operand_is_referenced(parsed, slots, expressions, *child)
-        })
+        desugaring::desugared_expression_slots_match(slots, &desugared)
+            && entries.iter().all(|(child, _)| {
+                expr_recovery_operand_is_referenced(parsed, slots, expressions, *child)
+            })
     }
 }
 
