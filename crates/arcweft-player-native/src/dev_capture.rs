@@ -152,8 +152,7 @@ pub fn capture_bundle_frame(
                 style_palettes: session.view_style_palettes(),
                 viewport,
                 fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
-                image_time_millis: visual_time_millis,
-                visual_time_millis,
+                time: arcweft_player_scene::frame::PlayerFrameTime::runtime(visual_time_millis),
                 preferences: RenderPreferences::default(),
             },
         )?;
@@ -436,8 +435,9 @@ mod tests {
                     viewport: capture_viewport(NativePlayerCaptureRequest::new(640, 360, 8))
                         .expect("viewport converts"),
                     fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
-                    image_time_millis: u64::from(CAPTURE_STEP_MILLIS),
-                    visual_time_millis: u64::from(CAPTURE_STEP_MILLIS),
+                    time: arcweft_player_scene::frame::PlayerFrameTime::runtime(u64::from(
+                        CAPTURE_STEP_MILLIS,
+                    )),
                     preferences: RenderPreferences::default(),
                 },
             )

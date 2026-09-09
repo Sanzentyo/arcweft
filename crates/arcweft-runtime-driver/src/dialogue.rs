@@ -278,6 +278,15 @@ impl DialogueEntryState {
         self.reveal_evaluation()
             .is_some_and(|reveal| reveal.is_complete())
     }
+
+    /// Semantic completion retained independently of an elapsed-time sample.
+    #[must_use]
+    pub const fn reveal_policy(&self) -> arcweft_text_model::DialogueRevealPolicy {
+        arcweft_text_model::DialogueRevealPolicy {
+            complete_stage: self.reveal_complete,
+            instant_characters: false,
+        }
+    }
     #[must_use]
     pub const fn id(&self) -> DialogueEntryId {
         self.id
@@ -313,10 +322,7 @@ impl DialogueEntryState {
             &stage.text_runs(),
             &stage.controls(),
             stage.reveal_start(),
-            arcweft_text_model::DialogueRevealPolicy {
-                complete_stage: self.reveal_complete,
-                instant_characters: false,
-            },
+            self.reveal_policy(),
             self.reveal_elapsed.into(),
         ))
     }

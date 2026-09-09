@@ -727,8 +727,7 @@ fn prepare_web_player_frame(
                 style_palettes: state.session.view_style_palettes(),
                 viewport,
                 fit: state.frame_fit,
-                image_time_millis: host_millis,
-                visual_time_millis: host_millis,
+                time: arcweft_player_scene::frame::PlayerFrameTime::runtime(host_millis),
                 preferences: RenderPreferences::default(),
             },
         )

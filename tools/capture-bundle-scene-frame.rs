@@ -12,6 +12,7 @@ arcweft-bundle = { path = "../crates/arcweft-bundle" }
 arcweft-player-scene = { path = "../crates/arcweft-player-scene" }
 arcweft-render-wgpu = { path = "../crates/arcweft-render-wgpu" }
 arcweft-runtime-driver = { path = "../crates/arcweft-runtime-driver" }
+arcweft-text-model = { path = "../crates/arcweft-text-model" }
 png = "0.18.1"
 pollster = "0.4.0"
 wgpu = { version = "29.0.3", default-features = false, features = ["std", "wgsl", "dx12", "metal", "vulkan"] }
@@ -205,26 +206,31 @@ fn prepare_frame(
     }
     let mut input = InputController::default();
     let style_environment = session.presentation_environment();
-    planner
-        .prepare(
-            &mut input,
-            PlayerFrameRequest {
-                presentation: &presentation,
-                style_program: session.view_style_program(),
-                style_environment: &style_environment,
-                style_palettes: session.view_style_palettes(),
-                fx_definitions: &bundle.fx_definitions,
-                images: &images,
-                viewport,
-                fit: PlayerFrameFit::raw(),
-                image_time_millis: args.visual_time_millis,
-                visual_time_millis: args.visual_time_millis,
-                dialogue_reveal_complete: true,
-                preferences: RenderPreferences::default(),
-            },
-        )
-        .map(|prepared| prepared.frame)
-        .map_err(|error| error.to_string().into())
+    let candidate = planner.prepare_candidate(
+        &input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            style_program: session.view_style_program(),
+            style_environment: &style_environment,
+            style_palettes: session.view_style_palettes(),
+            fx_definitions: &bundle.fx_definitions,
+            images: &images,
+            viewport,
+            fit: PlayerFrameFit::raw(),
+            time: arcweft_player_scene::frame::PlayerFrameTime::sample_millis(
+                args.visual_time_millis,
+                arcweft_text_model::DialogueRevealPolicy {
+                    complete_stage: true,
+                    instant_characters: false,
+                },
+            )?,
+            preferences: RenderPreferences::default(),
+        },
+    )?;
+    let (prepared, ()) = planner
+        .publication_guard()
+        .publish_with(candidate, &mut input, |_| ())?;
+    Ok(prepared.frame)
 }
 
 fn required_value(iter: &mut impl Iterator<Item = String>, option: &str) -> Result<String, String> {

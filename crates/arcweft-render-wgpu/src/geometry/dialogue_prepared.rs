@@ -446,8 +446,8 @@ pub(super) fn prepare_stage(
         &controls,
         stage.reveal_start(),
         DialogueRevealPolicy {
-            complete_stage: request.reveal_complete,
-            instant_characters: reduce_motion,
+            instant_characters: request.reveal_policy.instant_characters || reduce_motion,
+            ..request.reveal_policy
         },
         request.reveal_elapsed,
     );

@@ -71,6 +71,15 @@ the frame was observed with an explicit `capture_time` or step-derived visual
 time, so subsequent capture or URI readback can reproduce the same animation
 state.
 
+Frame preparation distinguishes live playback from a visual sample. Live
+playback uses each dialogue stage's retained logical elapsed time. A sample
+evaluates reveal and Fx at the requested stage-local elapsed time while keeping
+the runtime snapshot unchanged; image and View animation use that same visual
+sample time. Explicit semantic reveal completion remains effective during a
+sample. An active entry is not completed merely because another dialogue
+presentation has a newer entry. History completion is local to its own
+dialogue presentation.
+
 ---
 
 ## Coordinate spaces

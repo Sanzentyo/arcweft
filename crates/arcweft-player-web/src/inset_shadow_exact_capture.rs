@@ -209,8 +209,7 @@ fn exact_player_frame() -> Result<(PreparedFrame, ExactPlayerCaptureStats), Stri
             style_palettes: &SystemPaletteSet::ENGINE_DEFAULT,
             viewport,
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -300,6 +299,7 @@ fn exact_presentation() -> Result<(BundlePresentationSnapshot, ViewStyleProgram)
             .collect(),
         text: Vec::new(),
         fx: Vec::new(),
+        events: Vec::new(),
         style_nodes: nodes,
     };
     Ok((

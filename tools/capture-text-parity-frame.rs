@@ -169,29 +169,28 @@ fn prepare_text_parity_frame(
     }
     let mut input = InputController::default();
     let style_environment = session.presentation_environment();
-    planner
-        .prepare(
-            &mut input,
-            PlayerFrameRequest {
-                presentation: &presentation,
-                style_program: session.view_style_program(),
-                style_environment: &style_environment,
-                style_palettes: session.view_style_palettes(),
-                fx_definitions: &bundle.fx_definitions,
-                images: &images,
-                viewport,
-                fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
-                image_time_millis: visual_time_millis,
-                visual_time_millis,
-                dialogue_reveal_complete: false,
-                preferences: RenderPreferences::default(),
-            },
-        )
-        .map(|prepared| PreparedTextParityFrame {
-            frame: prepared.frame,
-            logical_clock,
-        })
-        .map_err(|error| error.to_string().into())
+    let candidate = planner.prepare_candidate(
+        &input,
+        PlayerFrameRequest {
+            presentation: &presentation,
+            style_program: session.view_style_program(),
+            style_environment: &style_environment,
+            style_palettes: session.view_style_palettes(),
+            fx_definitions: &bundle.fx_definitions,
+            images: &images,
+            viewport,
+            fit: PlayerFrameFit::design_1280x720(ScalePolicy::Contain),
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(visual_time_millis),
+            preferences: RenderPreferences::default(),
+        },
+    )?;
+    let (prepared, ()) = planner
+        .publication_guard()
+        .publish_with(candidate, &mut input, |_| ())?;
+    Ok(PreparedTextParityFrame {
+        frame: prepared.frame,
+        logical_clock,
+    })
 }
 
 struct PreparedTextParityFrame {

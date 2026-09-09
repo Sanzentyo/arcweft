@@ -24,6 +24,8 @@ pub struct WebGpuParityFrameOptions {
 #[derive(Debug, Error)]
 pub enum WebGpuParityFrameError {
     #[error(transparent)]
+    FrameTime(#[from] arcweft_player_scene::frame::PlayerFrameTimeError),
+    #[error(transparent)]
     Session(#[from] BundleSessionError),
     #[error(transparent)]
     Clock(#[from] RuntimeClockError),
@@ -226,8 +228,10 @@ pub fn prepare_bundle_parity_frame(
         style_palettes: session.view_style_palettes(),
         viewport: options.viewport,
         fit: PlayerFrameFit::raw(),
-        image_time_millis: options.visual_time_millis,
-        visual_time_millis: options.visual_time_millis,
+        time: arcweft_player_scene::frame::PlayerFrameTime::sample_millis(
+            options.visual_time_millis,
+            arcweft_text_model::DialogueRevealPolicy::default(),
+        )?,
         preferences: RenderPreferences::default(),
     };
     let mut input = InputController::default();

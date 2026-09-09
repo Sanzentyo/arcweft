@@ -33,10 +33,12 @@ use thiserror::Error;
 
 mod focus_navigation;
 mod surfaces;
+mod time;
 mod view_geometry;
 mod view_style;
 mod view_text;
 
+pub use time::{PlayerFrameTime, PlayerFrameTimeError};
 pub use view_geometry::{
     ViewCommittedGeometryFrame, ViewGeometryConversionError, ViewGeometryConversionField,
     ViewGeometryFailure, ViewGeometryFailureCode, ViewGeometryFailureField,
@@ -56,8 +58,7 @@ pub struct PlayerFrameRequest<'a> {
     pub style_palettes: &'a SystemPaletteSet,
     pub viewport: RenderViewport,
     pub fit: PlayerFrameFit,
-    pub image_time_millis: u64,
-    pub visual_time_millis: u64,
+    pub time: PlayerFrameTime,
     pub preferences: RenderPreferences,
 }
 
@@ -434,11 +435,11 @@ fn resolve_player_scene(
         focus_navigation: render_focus_navigation(&request.presentation.focus_navigation)?,
         images: request.images.render_images(
             &resources.images,
-            request.image_time_millis,
+            request.time.visual_millis(),
             request.viewport,
         )?,
         viewport: request.viewport,
-        visual_time_millis: request.visual_time_millis,
+        visual_time_millis: request.time.visual_millis(),
         preferences: request.preferences,
         interaction: input.visual_state(),
         choice_scroll: input.choice_scroll(),
@@ -450,7 +451,7 @@ fn resolve_player_scene(
                     input,
                     region,
                     &resources.geometry,
-                    request.visual_time_millis,
+                    request.time.visual_millis(),
                     request.preferences.reduce_motion,
                 )
                 .transpose()
@@ -905,6 +906,7 @@ fn prepare_mapped_frame(
             styles: &resolved.styles,
             geometry: &resolved.geometry,
             content: content_rect,
+            time: request.time,
         },
     )?;
     surfaces::push_runtime_view_scene(

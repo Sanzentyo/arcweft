@@ -674,7 +674,10 @@ fn prepare(
         reveal_elapsed: arcweft_text_model::DialogueRevealElapsed::from_nanos(
             visual_time_millis * 1_000_000,
         ),
-        reveal_complete,
+        reveal_policy: DialogueRevealPolicy {
+            complete_stage: reveal_complete,
+            instant_characters: false,
+        },
     };
     let (item, complete, diagnostics, _) = prepare_stage(
         &mut engine,

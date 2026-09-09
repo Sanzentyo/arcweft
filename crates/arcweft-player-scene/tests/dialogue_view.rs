@@ -16,7 +16,10 @@ use arcweft_core::{
 use arcweft_dialogue::InlineFailurePolicy;
 use arcweft_id::TextKey;
 use arcweft_player_scene::{
-    frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerPreparedFrame},
+    frame::{
+        PlayerFrameFit, PlayerFramePlanner, PlayerFrameRequest, PlayerFrameTime,
+        PlayerPreparedFrame,
+    },
     images::BundleImageCatalog,
     input::{InputController, InputPointerModifiers},
 };
@@ -34,8 +37,8 @@ use arcweft_runtime_driver::{
 use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
-    LineDisplayFrame, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
-    RichTextStyle, RichTextWritingMode,
+    DialogueRevealPolicy, LineDisplayFrame, RichTextDocument, RichTextInlineDirection,
+    RichTextLayout, RichTextNode, RichTextStyle, RichTextWritingMode,
 };
 use std::{collections::BTreeMap, sync::Arc};
 
@@ -190,6 +193,114 @@ fn standard_dialogue_view_pointer_activation_emits_its_exact_typed_handler_route
     assert!(!outcome.dialogue_progress.advances());
 }
 
+#[test]
+fn sampled_reveal_is_reversible_and_preserves_runtime_state_and_layout() {
+    let presentation = vertical_ruby_dialogue_view();
+    let original = presentation.clone();
+    let hidden = prepare_at(
+        &presentation,
+        PlayerFrameTime::sample_millis(0, DialogueRevealPolicy::default()).unwrap(),
+    );
+    let shown = prepare_at(
+        &presentation,
+        PlayerFrameTime::sample_millis(60_000, DialogueRevealPolicy::default()).unwrap(),
+    );
+    let hidden_again = prepare_at(
+        &presentation,
+        PlayerFrameTime::sample_millis(0, DialogueRevealPolicy::default()).unwrap(),
+    );
+    let runtime = prepare_at(&presentation, PlayerFrameTime::runtime(60_000));
+    let complete = prepare_at(
+        &presentation,
+        PlayerFrameTime::sample_millis(
+            0,
+            DialogueRevealPolicy {
+                complete_stage: true,
+                instant_characters: false,
+            },
+        )
+        .unwrap(),
+    );
+
+    assert_eq!(content_glyph_visibility(&hidden), (0, 0));
+    assert_eq!(content_glyph_visibility(&hidden_again), (0, 0));
+    assert_eq!(content_glyph_visibility(&runtime), (0, 0));
+    let visible = content_glyph_visibility(&shown);
+    assert!(
+        visible.0 > 0 && visible.1 > 0,
+        "both Ruby base and annotation must be revealed"
+    );
+    assert_eq!(content_glyph_visibility(&complete), visible);
+    let layouts = |frame: &PlayerPreparedFrame| {
+        frame
+            .frame
+            .text
+            .iter()
+            .map(|(_, item)| item.layout.clone())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(layouts(&hidden), layouts(&shown));
+    assert_eq!(layouts(&hidden), layouts(&hidden_again));
+    assert!(
+        presentation == original,
+        "visual sampling must not advance the runtime"
+    );
+}
+
+#[test]
+fn unrelated_newer_dialogue_does_not_complete_a_rendered_active_entry() {
+    let mut presentation = vertical_ruby_dialogue_view();
+    let activation = DialogueActivationId::new(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x63; 32]).unwrap(),
+        RuntimePersistentFiberId::from_allocated(2),
+        serde_json::from_value::<RuntimeDialogueContentPlanId>(serde_json::json!(1)).unwrap(),
+        0,
+    );
+    // The frame has no visual output for this other presentation. Its runtime
+    // presence must not change the reveal state of the mounted active entry.
+    presentation
+        .dialogue
+        .apply_operations(&[DialoguePresentationOperation::append(
+            activation,
+            DialogueViewDefinition::new(arcweft_view::ViewId::try_new("view.other").unwrap()),
+            vertical_ruby_frame(&RuntimeLineId::from_runtime_line_value("say.other").unwrap()),
+        )])
+        .unwrap();
+    assert_eq!(
+        presentation
+            .dialogue
+            .iter()
+            .filter(|dialogue| dialogue.active_entry().is_some())
+            .count(),
+        2
+    );
+    assert_eq!(content_glyph_visibility(&prepare(&presentation)), (0, 0));
+}
+
+fn content_glyph_visibility(prepared: &PlayerPreparedFrame) -> (usize, usize) {
+    let owner = prepared
+        .frame
+        .prepared_text_owners()
+        .iter()
+        .find(|owner| {
+            matches!(
+                owner.kind,
+                PreparedTextOwnerKind::DialogueView {
+                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
+                    ..
+                }
+            )
+        })
+        .unwrap();
+    let item = prepared.frame.text.get(owner.text).unwrap();
+    let (body, ruby) = item.paint.glyphs.split_at(item.layout.glyphs.len());
+    assert!(!body.is_empty() && !ruby.is_empty());
+    (
+        body.iter().filter(|paint| paint.visible).count(),
+        ruby.iter().filter(|paint| paint.visible).count(),
+    )
+}
+
 fn vertical_ruby_dialogue_view() -> BundlePresentationSnapshot {
     let line = RuntimeLineId::from_runtime_line_value("say.vertical_ruby").expect("line id");
     let frame = vertical_ruby_frame(&line);
@@ -338,6 +449,13 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
 }
 
 fn prepare(presentation: &BundlePresentationSnapshot) -> PlayerPreparedFrame {
+    prepare_at(presentation, PlayerFrameTime::runtime(0))
+}
+
+fn prepare_at(
+    presentation: &BundlePresentationSnapshot,
+    time: PlayerFrameTime,
+) -> PlayerPreparedFrame {
     let images = BundleImageCatalog::empty();
     let mut input = InputController::default();
     let style = dialogue_style();
@@ -359,8 +477,7 @@ fn prepare(presentation: &BundlePresentationSnapshot) -> PlayerPreparedFrame {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time,
             preferences: RenderPreferences::default(),
         },
     )

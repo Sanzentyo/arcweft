@@ -192,8 +192,7 @@ fn product_only_surface_is_not_treated_as_retained_geometry() {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -238,8 +237,7 @@ fn product_only_scroll_region_is_not_treated_as_retained_geometry() {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -279,8 +277,7 @@ fn selectable_runtime_text_block_drag_adds_selection_rectangles() {
             scale_factor: 1.0,
         },
         fit: PlayerFrameFit::raw(),
-        image_time_millis: 0,
-        visual_time_millis: 0,
+        time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
         preferences: RenderPreferences::default(),
     };
 
@@ -369,8 +366,7 @@ fn product_only_hidden_scroll_region_is_not_retained_geometry() {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -415,8 +411,7 @@ fn product_only_horizontal_scroll_region_is_not_retained_geometry() {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -469,8 +464,7 @@ fn retained_text_ignores_unretained_product_scroll_metadata() {
             scale_factor: 1.0,
         },
         fit: PlayerFrameFit::raw(),
-        image_time_millis: 0,
-        visual_time_millis: 0,
+        time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
         preferences: RenderPreferences::default(),
     };
 
@@ -521,8 +515,7 @@ fn registered_player_planner_prepares_runtime_text_in_canonical_batch() {
                     scale_factor: 2.0,
                 },
                 fit: PlayerFrameFit::raw(),
-                image_time_millis: 0,
-                visual_time_millis: 0,
+                time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
                 preferences: RenderPreferences::default(),
             },
         )
@@ -591,8 +584,7 @@ fn mounted_view_rich_text_preserves_vertical_ruby_in_prepared_painter_order() {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )
@@ -707,8 +699,7 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         },
     )

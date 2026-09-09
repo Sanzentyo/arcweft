@@ -2,7 +2,8 @@
 
 use super::view_style::ResolvedViewStyleFrame;
 use super::{
-    PlayerFrameError, ViewCommittedGeometryFrame, ViewGeometryProductKind, ViewGeometryTargetKey,
+    PlayerFrameError, PlayerFrameTime, ViewCommittedGeometryFrame, ViewGeometryProductKind,
+    ViewGeometryTargetKey,
 };
 use crate::input::InputController;
 use arcweft_bundle::fx_definitions::FxDefinitions;
@@ -31,7 +32,7 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewMountOutput, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
 use arcweft_runtime_driver::{
-    dialogue::{DialogueEntryState, DialogueInstanceId, DialoguePresentation},
+    dialogue::{DialogueEntryState, DialoguePresentation},
     display::BundlePresentationSnapshot,
     presentation_handles::PresentationHandleId,
 };
@@ -162,6 +163,7 @@ pub(super) struct RuntimeViewTextRequest<'a> {
     pub(super) styles: &'a ResolvedViewStyleFrame,
     pub(super) geometry: &'a ViewCommittedGeometryFrame,
     pub(super) content: Option<ContentRect>,
+    pub(super) time: PlayerFrameTime,
 }
 
 #[derive(Clone, Copy)]
@@ -169,14 +171,13 @@ struct TextValuePreparationContext<'a> {
     dialogue: Option<DialogueTextContext<'a>>,
     fx_definitions: &'a FxDefinitions,
     presentation: &'a BundlePresentationSnapshot,
-    latest_dialogue_instance: Option<DialogueInstanceId>,
+    time: PlayerFrameTime,
 }
 
 struct RuntimeViewTextPreparer<'a, 'request> {
     shared: &'a mut SharedFramePlanContext,
     frame: &'a mut PreparedFrame,
     request: RuntimeViewTextRequest<'request>,
-    latest_dialogue_instance: Option<DialogueInstanceId>,
     prepared: Vec<PreparedMountedViewText>,
     dialogue_states: BTreeMap<PresentationHandleId, DialoguePreparedState>,
 }
@@ -195,16 +196,10 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         frame: &'a mut PreparedFrame,
         request: RuntimeViewTextRequest<'request>,
     ) -> Self {
-        let latest_dialogue_instance = request
-            .presentation
-            .dialogue
-            .latest_active()
-            .map(|(_, entry)| entry.instance());
         Self {
             shared,
             frame,
             request,
-            latest_dialogue_instance,
             prepared: Vec::new(),
             dialogue_states: BTreeMap::new(),
         }
@@ -356,7 +351,7 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
                 dialogue,
                 fx_definitions: self.request.fx_definitions,
                 presentation: self.request.presentation,
-                latest_dialogue_instance: self.latest_dialogue_instance,
+                time: self.request.time,
             },
         )?;
         self.record_prepared_target(PreparedTargetRecord {
@@ -551,11 +546,17 @@ fn push_display_frame(
             reveal_complete: None,
         });
     };
+    let elapsed = context
+        .time
+        .dialogue_elapsed(dialogue.entry.reveal_elapsed().into());
+    let active = dialogue.dialogue.active_entry_id() == Some(dialogue.entry.id());
+    let mut reveal_policy = context.time.dialogue_policy(dialogue.entry.reveal_policy());
+    reveal_policy.complete_stage |= !active;
     let fx_resolver = DialogueFxResolver {
         context: dialogue,
         definitions: context.fx_definitions,
         runtime: &context.presentation.fx,
-        stage_elapsed_millis: dialogue.entry.reveal_elapsed().as_nanos() / 1_000_000,
+        stage_elapsed_millis: elapsed.as_nanos() / 1_000_000,
     };
     let result = shared.push_prepared_rich_text_stage(
         frame,
@@ -568,9 +569,8 @@ fn push_display_frame(
                 request.size.height,
             ),
             default_style: style,
-            reveal_elapsed: dialogue.entry.reveal_elapsed().into(),
-            reveal_complete: context.latest_dialogue_instance != Some(dialogue.entry.instance())
-                || dialogue.entry.reveal_is_complete(),
+            reveal_elapsed: elapsed,
+            reveal_policy,
         },
         &fx_resolver,
     )?;

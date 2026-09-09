@@ -44,8 +44,7 @@ impl FrameFixture {
                 scale_factor: 1.0,
             },
             fit: PlayerFrameFit::raw(),
-            image_time_millis: 0,
-            visual_time_millis: 0,
+            time: arcweft_player_scene::frame::PlayerFrameTime::runtime(0),
             preferences: RenderPreferences::default(),
         }
     }

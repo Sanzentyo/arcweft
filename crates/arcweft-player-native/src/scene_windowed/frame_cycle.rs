@@ -339,8 +339,7 @@ impl NativeSceneState {
                 style_palettes: session.view_style_palettes(),
                 viewport,
                 fit: self.frame_fit,
-                image_time_millis: elapsed,
-                visual_time_millis: elapsed,
+                time: arcweft_player_scene::frame::PlayerFrameTime::runtime(elapsed),
                 preferences: RenderPreferences::default(),
             },
         )?)

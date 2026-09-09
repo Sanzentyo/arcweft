@@ -417,7 +417,7 @@ pub struct PreparedRichTextStageRequest {
     pub bounds: HitRect,
     pub default_style: ResolvedTextStyle,
     pub reveal_elapsed: arcweft_text_model::DialogueRevealElapsed,
-    pub reveal_complete: bool,
+    pub reveal_policy: arcweft_text_model::DialogueRevealPolicy,
 }
 
 /// Canonical prepared item and reveal result for one `RichText` display stage.

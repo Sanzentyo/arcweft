@@ -433,6 +433,14 @@ fn prepare_player_runtime_frame(
     let visual_time_millis = u64::from(agent_capture_time_millis(
         agent_observe_capture_time_seconds(options),
     ));
+    let time = arcweft_player_scene::frame::PlayerFrameTime::sample_millis(
+        visual_time_millis,
+        arcweft_text_model::DialogueRevealPolicy::default(),
+    )
+    .map_err(|error| {
+        eprintln!("error: player-backed observe sample time failed: {error}");
+        ExitCode::FAILURE
+    })?;
     let fonts = PlayerFontSet::bundled_default();
     let mut planner = PlayerFramePlannerState::new();
     fonts.register_with_planner(&mut planner).map_err(|error| {
@@ -452,8 +460,7 @@ fn prepare_player_runtime_frame(
                 style_palettes: runtime.session.view_style_palettes(),
                 viewport: player_observe_viewport(options),
                 fit: PlayerFrameFit::raw(),
-                image_time_millis: visual_time_millis,
-                visual_time_millis,
+                time,
                 preferences: RenderPreferences::default(),
             },
         )
