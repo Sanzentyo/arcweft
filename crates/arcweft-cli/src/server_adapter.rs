@@ -400,7 +400,7 @@ mod tests {
         LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
     use arcweft_core::plan::{
-        FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimePlanBuilder,
+        FlowRuntimeId, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed, RuntimePlanBuilder,
     };
 
     struct SessionTestAssertionProjector;
@@ -544,6 +544,12 @@ mod tests {
     fn plan_with_flow(id: &str, ops: Vec<RuntimeFlowOpSeed>) -> RuntimePlan {
         let id = FlowRuntimeId::from_runtime_target_value(id).expect("flow runtime id");
         let mut builder = RuntimePlanBuilder::new();
+        builder
+            .push_flow_schema(RuntimeFlowSchema {
+                flow: id.clone(),
+                parameters: Vec::new(),
+            })
+            .expect("typed flow schema is admitted");
         builder
             .push_flow_seed(RuntimeFlowSeed::new(
                 id,

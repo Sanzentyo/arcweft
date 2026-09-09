@@ -280,3 +280,8 @@ capture・attach・デバッグ記録の CLI テストが成功した。意味�
 MCP の４テストは通ったが、画像取得の最終ルビ画像は有効ピクセルがゼロになる。
 CLI 全体で新たに確認した HTTP adapter の３件はテスト用 Flow schema の不足で
 失敗しており、描画マスクとともに修正を続ける。goal 全体は引き続き未完である。
+
+[HTTP adapter の Flow fixture の記録](2026-09-09-http-flow-fixtures.md)では、
+テスト用の実行計画に必須の Flow schema を登録した。３件の HTTP テストと
+CLI ライブラリ全166件が通過した。本文の表示時間の受け渡し、残る callable
+および全後続工程は引き続き必須であり、goal の完了条件は変更しない。
