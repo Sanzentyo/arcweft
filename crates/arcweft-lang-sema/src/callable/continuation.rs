@@ -405,6 +405,9 @@ struct PreparedCallContinuation<P> {
     prefix: P,
 }
 
+// Graphs and extracted deltas own boxed nodes. Candidate payloads can be large;
+// moving a node between maps must not copy that payload through BTree insertion
+// frames on the source analyzer's stack. References remain issuer/node IDs.
 struct PreparedCallNode<P, U> {
     site: CheckedCallSite,
     dependencies: Box<[PreparedCallContinuationRef]>,
@@ -432,7 +435,7 @@ pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
     touched_nodes: BTreeSet<PreparedCallNodeId>,
     touched_sites: BTreeSet<CheckedCallSite>,
     baseline_nodes: BTreeSet<PreparedCallNodeId>,
-    nodes: BTreeMap<PreparedCallNodeId, PreparedCallNode<P, U>>,
+    nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
 }
 
 impl<P, U> PreparedCallGraphDelta<P, U> {
@@ -787,7 +790,7 @@ pub(crate) struct PreparedCallGraph<P, U = ()> {
     next_delta: u64,
     active_deltas: Vec<PreparedCallGraphActiveDelta>,
     sites: BTreeMap<CheckedCallSite, PreparedCallNodeId>,
-    nodes: BTreeMap<PreparedCallNodeId, PreparedCallNode<P, U>>,
+    nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
 }
 
 pub(crate) struct PreparedCallGraphSelectedNode<'a, P> {
@@ -1602,7 +1605,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             };
             self.nodes.insert(
                 node,
-                PreparedCallNode {
+                Box::new(PreparedCallNode {
                     site,
                     dependencies,
                     payload: PreparedCallNodePayload::SelectedContinuation(
@@ -1611,20 +1614,20 @@ impl<P, U> PreparedCallGraph<P, U> {
                             prefix,
                         },
                     ),
-                },
+                }),
             );
             Some(PreparedCallContinuationRef(coordinate))
         } else {
             self.nodes.insert(
                 node,
-                PreparedCallNode {
+                Box::new(PreparedCallNode {
                     site,
                     dependencies,
                     payload: PreparedCallNodePayload::SelectedValue {
                         prefix,
                         result: result.clone(),
                     },
-                },
+                }),
             );
             None
         };
@@ -1715,11 +1718,11 @@ impl<P, U> PreparedCallGraph<P, U> {
         let node = self.allocate_node()?;
         self.nodes.insert(
             node,
-            PreparedCallNode {
+            Box::new(PreparedCallNode {
                 site,
                 dependencies,
                 payload: PreparedCallNodePayload::Unselected(value),
-            },
+            }),
         );
         self.sites.insert(site, node);
         if self.record_insert(node, site).is_err() {
