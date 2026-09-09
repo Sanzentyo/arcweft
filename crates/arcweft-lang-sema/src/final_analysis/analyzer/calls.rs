@@ -1677,7 +1677,7 @@ impl Analyzer<'_, '_, '_> {
                     value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
                     projection,
                 } => PreparedCandidateOutcome::Accepted {
-                    transaction: SealedAcceptedCandidate::seal(transaction, *projection),
+                    transaction: SealedAcceptedCandidate::seal(transaction, projection),
                     rank,
                 },
                 CandidateFactTransactionOutcome::Extracted {
@@ -1693,7 +1693,7 @@ impl Analyzer<'_, '_, '_> {
                     candidate,
                     result,
                     evidence,
-                    projection: *projection,
+                    projection,
                     branch,
                 },
                 CandidateFactTransactionOutcome::Committed(_)
@@ -1833,7 +1833,7 @@ impl Analyzer<'_, '_, '_> {
             CandidateFactTransactionOutcome::Extracted {
                 value: (ran, rank),
                 projection,
-            } => (ran, rank, *projection),
+            } => (ran, rank, projection),
             CandidateFactTransactionOutcome::Committed(_)
             | CandidateFactTransactionOutcome::RolledBack(_) => {
                 return Err(AnalyzerExpressionError::fact(
@@ -2120,7 +2120,7 @@ impl Analyzer<'_, '_, '_> {
                     this.facts
                         .publish_new_expression(
                             type_expression,
-                            crate::final_analysis::PreparedExpressionFact::ProjectNominalTypeValue(
+                            crate::final_analysis::PreparedExpressionFact::from(
                                 type_value.clone(),
                             ),
                         )
@@ -2168,7 +2168,7 @@ impl Analyzer<'_, '_, '_> {
             CandidateFactTransactionOutcome::Extracted {
                 value: (ran, rank),
                 projection,
-            } => (ran, rank, *projection),
+            } => (ran, rank, projection),
             CandidateFactTransactionOutcome::RolledBack { .. }
             | CandidateFactTransactionOutcome::Committed(_) => {
                 return Err(AnalyzerExpressionError::rejected(owner));
@@ -2327,7 +2327,7 @@ impl Analyzer<'_, '_, '_> {
                 CandidateFactTransactionOutcome::Extracted {
                     value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
                     projection,
-                } => (transaction, *projection, rank),
+                } => (transaction, projection, rank),
                 CandidateFactTransactionOutcome::RolledBack(
                     PreparedCandidateRunOutcome::Rejected { .. },
                 ) => {
@@ -4047,7 +4047,7 @@ impl Analyzer<'_, '_, '_> {
             .and_then(|(receiver, _)| self.facts.expressions().get(receiver))
             .map_or_else(EffectSet::new, |receiver| receiver.effects().clone());
         let prepared = if let Some((_, name)) = method_callee {
-            super::PreparedExpressionFact::Method(
+            super::PreparedExpressionFact::from(
                 crate::final_analysis::PreparedMethodExpression::new(
                     super::PreparedExpressionShell::value(
                         ty,

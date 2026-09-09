@@ -1906,7 +1906,7 @@ fn seal_prepared_expression(
             let (shell, scalar, original) = prepared.into_parts();
             let (original, record_fields) = seal_prepared_expression(
                 owner,
-                *original,
+                original,
                 context,
                 project_nominals,
                 sealed_record,
@@ -1917,7 +1917,7 @@ fn seal_prepared_expression(
             let prepared =
                 super::PreparedCompileTimeScalarExpression::try_new(shell, scalar, original)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-            Ok((PreparedExpressionFact::CompileTimeScalar(prepared), None))
+            Ok((PreparedExpressionFact::from(prepared), None))
         }
         PreparedExpressionFact::Variant(prepared) => {
             let (shell, owner, selected_ordinal) = prepared.into_parts();

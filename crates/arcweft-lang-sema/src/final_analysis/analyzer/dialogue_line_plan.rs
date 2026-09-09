@@ -898,7 +898,7 @@ impl Analyzer<'_, '_, '_> {
         self.facts
             .publish_checked_content(owner, rich_text_check)
             .map_err(AnalyzerExpressionError::fact)?;
-        Ok(PreparedExpressionFact::DialogueApplication(prepared))
+        Ok(PreparedExpressionFact::from(prepared))
     }
 
     /// Checks a `#call(args)[body]` wrapper as one ordinary call-site
@@ -1072,7 +1072,7 @@ impl Analyzer<'_, '_, '_> {
             self.facts
                 .publish_checked_content(owner, rich_text_check)
                 .map_err(AnalyzerExpressionError::fact)?;
-            return Ok(PreparedExpressionFact::ContentApplication(prepared));
+            return Ok(PreparedExpressionFact::from(prepared));
         }
         let expected_dialogue_content = self
             .catalogs
@@ -1172,7 +1172,7 @@ impl Analyzer<'_, '_, '_> {
                     .publish_checked_content(owner, rich_text_check)
                     .map_err(AnalyzerExpressionError::fact)?;
             }
-            return Ok(PreparedExpressionFact::ContentApplication(prepared));
+            return Ok(PreparedExpressionFact::from(prepared));
         }
 
         if is_call && checked.value_type() != Some(&expected_dialogue_content) {
@@ -1213,7 +1213,7 @@ impl Analyzer<'_, '_, '_> {
                 .publish_checked_content(owner, rich_text_check)
                 .map_err(AnalyzerExpressionError::fact)?;
         }
-        Ok(PreparedExpressionFact::ContentApplication(prepared))
+        Ok(PreparedExpressionFact::from(prepared))
     }
 
     fn prepare_rich_text_effect_plan(

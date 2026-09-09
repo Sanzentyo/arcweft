@@ -29,7 +29,7 @@ struct CandidateFactIssuer;
 pub(super) struct TakenDialogueApplication {
     owner: ExprId,
     site: CheckedCallSite,
-    application: PreparedDialogueApplication,
+    application: Box<PreparedDialogueApplication>,
     content: PreparedCheckedRichTextCheck,
 }
 
@@ -37,7 +37,7 @@ impl TakenDialogueApplication {
     pub(super) fn into_parts(
         self,
     ) -> (
-        PreparedDialogueApplication,
+        Box<PreparedDialogueApplication>,
         PreparedCheckedRichTextCheck,
         DialogueApplicationReplacementProof,
     ) {
@@ -57,7 +57,7 @@ impl TakenDialogueApplication {
 pub(super) struct TakenContentApplication {
     owner: ExprId,
     site: CheckedCallSite,
-    application: PreparedContentApplication,
+    application: Box<PreparedContentApplication>,
     content: Option<PreparedCheckedRichTextCheck>,
 }
 
@@ -65,7 +65,7 @@ impl TakenContentApplication {
     pub(super) fn into_parts(
         self,
     ) -> (
-        PreparedContentApplication,
+        Box<PreparedContentApplication>,
         Option<PreparedCheckedRichTextCheck>,
         ContentApplicationReplacementProof,
     ) {
@@ -271,7 +271,7 @@ pub(super) type ImplicitCaptureUseKey = (ExprId, ExprId);
 #[derive(Debug)]
 pub(super) struct CandidateProjectionApplyFailure {
     violation: CandidateFactTransactionViolation,
-    projection: Box<CandidateSemanticProjection>,
+    projection: CandidateSemanticProjection,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -288,7 +288,7 @@ impl CandidateProjectionApplyFailure {
         CandidateFactTransactionViolation,
         CandidateSemanticProjection,
     ) {
-        (self.violation, *self.projection)
+        (self.violation, self.projection)
     }
 }
 
@@ -331,7 +331,13 @@ struct CandidateProjectionAuthority {
 /// applying a primary projection transfers ownership rather than cloning a
 /// second copy of the candidate state. Non-primary attempts are explicitly
 /// validated and discarded.
+/// The complete payload stays heap-owned during callback return, replay,
+/// application failure and final transfer; those paths carry the same owner.
 pub(super) struct CandidateSemanticProjection {
+    data: Box<CandidateSemanticProjectionData>,
+}
+
+struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
     locals: BTreeMap<LocalId, Option<TypeKind>>,
@@ -345,6 +351,14 @@ pub(super) struct CandidateSemanticProjection {
     implicit_capture_uses: BTreeMap<ImplicitCaptureUseKey, Option<LocalId>>,
     implicit_capture_use_order: Box<[ImplicitCaptureUseKey]>,
     physical_candidate_argument_evaluations: PhysicalCandidateEvaluationTranscript,
+}
+
+impl From<CandidateSemanticProjectionData> for CandidateSemanticProjection {
+    fn from(data: CandidateSemanticProjectionData) -> Self {
+        Self {
+            data: Box::new(data),
+        }
+    }
 }
 
 /// One root candidate transaction's operational evaluation transcript.
@@ -448,7 +462,7 @@ pub(super) enum CandidateFactTransactionOutcome<T> {
     RolledBack(T),
     Extracted {
         value: T,
-        projection: Box<CandidateSemanticProjection>,
+        projection: CandidateSemanticProjection,
     },
 }
 
@@ -466,7 +480,7 @@ impl<T> CandidateFactTransactionOutcome<T> {
         self,
     ) -> Result<(T, CandidateSemanticProjection), CandidateFactTransactionViolation> {
         match self {
-            Self::Extracted { value, projection } => Ok((value, *projection)),
+            Self::Extracted { value, projection } => Ok((value, projection)),
             Self::Committed(_) | Self::RolledBack(_) => {
                 Err(CandidateFactTransactionViolation::UnrecoverableLedger)
             }
@@ -478,16 +492,22 @@ impl std::fmt::Debug for CandidateSemanticProjection {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("CandidateSemanticProjection")
-            .field("epoch", &self.authority.epoch)
-            .field("locals", &self.locals.len())
-            .field("patterns", &self.patterns.len())
-            .field("expressions", &self.expressions.len())
-            .field("checked_content", &self.checked_content.len())
-            .field("iterations", &self.iterations.len())
-            .field("implicit_capture_uses", &self.implicit_capture_uses.len())
+            .field("epoch", &self.data.authority.epoch)
+            .field("locals", &self.data.locals.len())
+            .field("patterns", &self.data.patterns.len())
+            .field("expressions", &self.data.expressions.len())
+            .field("checked_content", &self.data.checked_content.len())
+            .field("iterations", &self.data.iterations.len())
+            .field(
+                "implicit_capture_uses",
+                &self.data.implicit_capture_uses.len(),
+            )
             .field(
                 "physical_candidate_argument_evaluations",
-                &self.physical_candidate_argument_evaluations.row_count(),
+                &self
+                    .data
+                    .physical_candidate_argument_evaluations
+                    .row_count(),
             )
             .field("graph_delta", &"sealed")
             .finish()
@@ -524,8 +544,8 @@ impl CandidateSemanticProjection {
         if let Some(mismatch) = self.semantic_replay_mismatch(other) {
             return Some(mismatch);
         }
-        if self.physical_candidate_argument_evaluations
-            != other.physical_candidate_argument_evaluations
+        if self.data.physical_candidate_argument_evaluations
+            != other.data.physical_candidate_argument_evaluations
         {
             return Some(CandidateSemanticReplayMismatch::PhysicalCandidateEvaluations);
         }
@@ -536,33 +556,37 @@ impl CandidateSemanticProjection {
         &self,
         other: &Self,
     ) -> Option<CandidateSemanticReplayMismatch> {
-        if !Arc::ptr_eq(&self.authority.issuer, &other.authority.issuer)
-            || self.authority.epoch != other.authority.epoch
+        if !Arc::ptr_eq(&self.data.authority.issuer, &other.data.authority.issuer)
+            || self.data.authority.epoch != other.data.authority.epoch
         {
             return Some(CandidateSemanticReplayMismatch::Authority);
         }
-        if let Some(mismatch) = self.graph_delta.replay_mismatch(&other.graph_delta) {
+        if let Some(mismatch) = self
+            .data
+            .graph_delta
+            .replay_mismatch(&other.data.graph_delta)
+        {
             return Some(CandidateSemanticReplayMismatch::PreparedGraph(mismatch));
         }
-        if self.locals != other.locals {
+        if self.data.locals != other.data.locals {
             return Some(CandidateSemanticReplayMismatch::Locals);
         }
-        if self.patterns != other.patterns {
+        if self.data.patterns != other.data.patterns {
             return Some(CandidateSemanticReplayMismatch::Patterns);
         }
-        if self.expressions != other.expressions {
+        if self.data.expressions != other.data.expressions {
             return Some(CandidateSemanticReplayMismatch::Expressions);
         }
-        if self.checked_content != other.checked_content {
+        if self.data.checked_content != other.data.checked_content {
             return Some(CandidateSemanticReplayMismatch::CheckedContent);
         }
-        if self.iterations != other.iterations {
+        if self.data.iterations != other.data.iterations {
             return Some(CandidateSemanticReplayMismatch::Iterations);
         }
-        if self.implicit_capture_uses != other.implicit_capture_uses {
+        if self.data.implicit_capture_uses != other.data.implicit_capture_uses {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
         }
-        if self.implicit_capture_use_order != other.implicit_capture_use_order {
+        if self.data.implicit_capture_use_order != other.data.implicit_capture_use_order {
             return Some(CandidateSemanticReplayMismatch::ImplicitCaptureUses);
         }
         None
@@ -590,7 +614,7 @@ enum SemanticFactMutation {
     },
     Expression {
         owner: ExprId,
-        previous: Option<Box<PreparedExpressionFact>>,
+        previous: Option<PreparedExpressionFact>,
     },
     CheckedContent {
         content: arcweft_lang_hir::dialogue_application::HirDialogueContentId,
@@ -1512,7 +1536,7 @@ impl SemanticFactState {
             .into_boxed_slice();
         self.implicit_capture_use_order
             .retain(|key| !implicit_capture_use_order.contains(key));
-        let projection = CandidateSemanticProjection {
+        let projection = CandidateSemanticProjection::from(CandidateSemanticProjectionData {
             authority: CandidateProjectionAuthority {
                 issuer: Arc::clone(&self.issuer),
                 epoch: self.epoch,
@@ -1550,7 +1574,7 @@ impl SemanticFactState {
                 .collect(),
             implicit_capture_use_order,
             physical_candidate_argument_evaluations,
-        };
+        });
         self.rollback_journal(journal_start);
         if self.candidate_checkpoints.is_empty() {
             self.candidate_journal.clear();
@@ -1579,9 +1603,9 @@ impl SemanticFactState {
                 && active.journal_start == target.checkpoint.journal_start
         }) {
             Some(CandidateFactTransactionViolation::NonLifoCheckpoint)
-        } else if !Arc::ptr_eq(&self.issuer, &projection.authority.issuer) {
+        } else if !Arc::ptr_eq(&self.issuer, &projection.data.authority.issuer) {
             Some(CandidateFactTransactionViolation::ForeignProjection)
-        } else if projection.authority.epoch != target.checkpoint.epoch {
+        } else if projection.data.authority.epoch != target.checkpoint.epoch {
             Some(CandidateFactTransactionViolation::ProjectionAuthorityMismatch)
         } else if self.prepared_calls.is_none() {
             Some(CandidateFactTransactionViolation::PreparedCallGraph(
@@ -1593,18 +1617,19 @@ impl SemanticFactState {
         if let Some(violation) = violation {
             return Err(CandidateProjectionApplyFailure {
                 violation,
-                projection: Box::new(projection),
+                projection,
             });
         }
-        if let Err(violation) =
-            self.preflight_projection_call_graph(&projection.graph_delta, &projection.expressions)
-        {
+        if let Err(violation) = self.preflight_projection_call_graph(
+            &projection.data.graph_delta,
+            &projection.data.expressions,
+        ) {
             return Err(CandidateProjectionApplyFailure {
                 violation,
-                projection: Box::new(projection),
+                projection,
             });
         }
-        let CandidateSemanticProjection {
+        let CandidateSemanticProjectionData {
             authority,
             graph_delta,
             locals,
@@ -1615,7 +1640,7 @@ impl SemanticFactState {
             implicit_capture_uses,
             implicit_capture_use_order,
             physical_candidate_argument_evaluations,
-        } = projection;
+        } = *projection.data;
         if let Some((key, existing, proposed)) =
             implicit_capture_uses.iter().find_map(|(key, value)| {
                 let local = (*value)?;
@@ -1634,7 +1659,7 @@ impl SemanticFactState {
                     existing,
                     proposed,
                 },
-                projection: Box::new(CandidateSemanticProjection {
+                projection: CandidateSemanticProjection::from(CandidateSemanticProjectionData {
                     authority,
                     graph_delta,
                     locals,
@@ -1661,18 +1686,20 @@ impl SemanticFactState {
                     violation: CandidateFactTransactionViolation::PreparedCallGraph(
                         violation.into(),
                     ),
-                    projection: Box::new(CandidateSemanticProjection {
-                        authority,
-                        graph_delta,
-                        locals,
-                        patterns,
-                        expressions,
-                        checked_content,
-                        iterations,
-                        implicit_capture_uses,
-                        implicit_capture_use_order,
-                        physical_candidate_argument_evaluations,
-                    }),
+                    projection: CandidateSemanticProjection::from(
+                        CandidateSemanticProjectionData {
+                            authority,
+                            graph_delta,
+                            locals,
+                            patterns,
+                            expressions,
+                            checked_content,
+                            iterations,
+                            implicit_capture_uses,
+                            implicit_capture_use_order,
+                            physical_candidate_argument_evaluations,
+                        },
+                    ),
                 });
             }
         }
@@ -1701,14 +1728,14 @@ impl SemanticFactState {
         projection: CandidateSemanticProjection,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
-        if !Arc::ptr_eq(&self.issuer, &projection.authority.issuer) {
+        if !Arc::ptr_eq(&self.issuer, &projection.data.authority.issuer) {
             return Err(CandidateFactTransactionViolation::ForeignProjection);
         }
-        if projection.authority.epoch != self.epoch {
+        if projection.data.authority.epoch != self.epoch {
             return Err(CandidateFactTransactionViolation::ProjectionAuthorityMismatch);
         }
         self.prepared_calls()?
-            .validate_delta(&projection.graph_delta)
+            .validate_delta(&projection.data.graph_delta)
             .map_err(|violation| {
                 CandidateFactTransactionViolation::PreparedCallGraph(violation.into())
             })?;
@@ -2045,10 +2072,7 @@ impl SemanticFactState {
         let previous = self.expressions.insert(owner, value);
         if !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::Expression {
-                    owner,
-                    previous: previous.map(Box::new),
-                });
+                .push(SemanticFactMutation::Expression { owner, previous });
         }
     }
 
@@ -2056,10 +2080,7 @@ impl SemanticFactState {
         let previous = self.expressions.remove(&owner);
         if previous.is_some() && !self.candidate_checkpoints.is_empty() {
             self.candidate_journal
-                .push(SemanticFactMutation::Expression {
-                    owner,
-                    previous: previous.map(Box::new),
-                });
+                .push(SemanticFactMutation::Expression { owner, previous });
         }
     }
 
@@ -2248,11 +2269,7 @@ impl SemanticFactState {
                     );
                 }
                 SemanticFactMutation::Expression { owner, previous } => {
-                    restore_map_entry(
-                        &mut self.expressions,
-                        owner,
-                        previous.map(|previous| *previous),
-                    );
+                    restore_map_entry(&mut self.expressions, owner, previous);
                 }
                 SemanticFactMutation::CheckedContent { content, previous } => {
                     if self
@@ -2513,10 +2530,9 @@ impl<'project, 'catalog, 'control> super::Analyzer<'project, 'catalog, 'control>
             }
             CandidateFactTransactionAction::Extract(value) => {
                 match self.facts.extract_and_rollback(checkpoint) {
-                    Ok(projection) => Ok(CandidateFactTransactionOutcome::Extracted {
-                        value,
-                        projection: Box::new(projection),
-                    }),
+                    Ok(projection) => {
+                        Ok(CandidateFactTransactionOutcome::Extracted { value, projection })
+                    }
                     Err(failure) => Err(AnalyzerExpressionError::fact(
                         self.facts.abort_after_close_failure(failure),
                     )),

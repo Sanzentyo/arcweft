@@ -2260,7 +2260,12 @@ pub(crate) struct PreparedCallConstraintSet {
 
 /// One fully solved call transaction before the enclosing fact projection is
 /// attached.  The runner owns this value until the candidate role is sealed.
+/// Its payload stays heap-owned across nested source callbacks and selection.
 pub(crate) struct RanCandidateTransaction {
+    data: Box<RanCandidateTransactionData>,
+}
+
+struct RanCandidateTransactionData {
     candidate: Arc<PreparedResolvedCallable>,
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
@@ -2275,6 +2280,10 @@ pub(crate) struct RanCandidateTransaction {
 /// selected callable, completed group, and projected result; the remaining
 /// fields are evidence needed for replay and publication.
 pub(crate) struct PreparedCallApplicationTransaction {
+    data: Box<PreparedCallApplicationTransactionData>,
+}
+
+struct PreparedCallApplicationTransactionData {
     application: PreparedCallableApplication,
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
@@ -2301,8 +2310,9 @@ impl PreparedCallArgumentSemanticProjection {
 
 impl RanCandidateTransaction {
     pub(crate) fn declared_exact_argument_matches(&self) -> usize {
-        let mapping = self.inputs.mapping();
-        self.solved
+        let mapping = self.data.inputs.mapping();
+        self.data
+            .solved
             .closed_sources
             .iter()
             .filter(|source| {
@@ -2323,7 +2333,8 @@ impl RanCandidateTransaction {
     }
 
     pub(crate) fn exact_argument_matches(&self) -> usize {
-        self.solved
+        self.data
+            .solved
             .closed_sources
             .iter()
             .filter(|source| {
@@ -2341,7 +2352,7 @@ impl RanCandidateTransaction {
     pub(crate) fn into_prepared_application(
         self,
     ) -> Result<PreparedCallApplicationTransaction, CallConstraintInvariant> {
-        let Self {
+        let RanCandidateTransactionData {
             candidate,
             consumer,
             callee_inputs,
@@ -2349,7 +2360,7 @@ impl RanCandidateTransaction {
             current_group,
             result,
             solved,
-        } = self;
+        } = *self.data;
         let crate::types::constraints::SolvedCandidate {
             solution,
             sealed_branch,
@@ -2363,32 +2374,34 @@ impl RanCandidateTransaction {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         Ok(PreparedCallApplicationTransaction {
-            application,
-            consumer,
-            callee_inputs,
-            inputs,
-            sealed_branch,
-            closed_sources,
-            projections,
+            data: Box::new(PreparedCallApplicationTransactionData {
+                application,
+                consumer,
+                callee_inputs,
+                inputs,
+                sealed_branch,
+                closed_sources,
+                projections,
+            }),
         })
     }
 }
 
 impl PreparedCallApplicationTransaction {
     pub(crate) fn candidate(&self) -> &PreparedResolvedCallable {
-        self.application.selected()
+        self.data.application.selected()
     }
 
     pub(crate) fn selected_shared(&self) -> &Arc<PreparedResolvedCallable> {
-        self.application.selected_shared()
+        self.data.application.selected_shared()
     }
 
     pub(crate) fn current_group(&self) -> CallableGroupIndex {
-        self.application.completed_group()
+        self.data.application.completed_group()
     }
 
     pub(crate) fn result(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        self.application.result_schema()
+        self.data.application.result_schema()
     }
 
     /// Project one authored scalar argument from the selected mapper/lower
@@ -2400,7 +2413,7 @@ impl PreparedCallApplicationTransaction {
         argument: HirCallArgumentOrdinal,
         expression: ExprId,
     ) -> Result<PreparedCallArgumentSemanticProjection, CallConstraintInvariant> {
-        let mapping = self.inputs.mapping();
+        let mapping = self.data.inputs.mapping();
         let mapped = mapping
             .arguments()
             .get(usize::from(argument.get()))
@@ -2412,7 +2425,8 @@ impl PreparedCallApplicationTransaction {
             return Err(CallConstraintInvariant::MalformedMapperSeal);
         }
         let dialogue_patch_coordinate = slot.coordinate().filter(|coordinate| {
-            self.application
+            self.data
+                .application
                 .selected()
                 .schema()
                 .group(coordinate.group())
@@ -2440,6 +2454,7 @@ impl PreparedCallApplicationTransaction {
             },
         );
         let closed = self
+            .data
             .closed_sources
             .iter()
             .find(|closed| closed.source().same_argument_identity(source))
@@ -2453,6 +2468,7 @@ impl PreparedCallApplicationTransaction {
             }
             Some(coordinate) => {
                 let parameter = self
+                    .data
                     .application
                     .selected()
                     .schema()
@@ -2490,28 +2506,29 @@ impl PreparedCallApplicationTransaction {
     }
 
     pub(crate) fn replay_mismatch(&self, other: &Self) -> Option<CallConstraintInvariant> {
-        if !self.application.replay_eq(&other.application) {
+        if !self.data.application.replay_eq(&other.data.application) {
             return Some(CallConstraintInvariant::ReplayApplicationMismatch);
         }
-        if self.consumer != other.consumer {
+        if self.data.consumer != other.data.consumer {
             return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
         }
-        if self.callee_inputs != other.callee_inputs {
+        if self.data.callee_inputs != other.data.callee_inputs {
             return Some(CallConstraintInvariant::ReplayCalleeInputsMismatch);
         }
-        if self.inputs != other.inputs {
+        if self.data.inputs != other.data.inputs {
             return Some(CallConstraintInvariant::ReplayArgumentMappingMismatch);
         }
         if let Some(mismatch) = self
+            .data
             .sealed_branch
-            .semantic_replay_mismatch(&other.sealed_branch)
+            .semantic_replay_mismatch(&other.data.sealed_branch)
         {
             return Some(mismatch);
         }
-        if self.closed_sources != other.closed_sources {
+        if self.data.closed_sources != other.data.closed_sources {
             return Some(CallConstraintInvariant::ReplayClosedSourcesMismatch);
         }
-        if self.projections != other.projections {
+        if self.data.projections != other.data.projections {
             return Some(CallConstraintInvariant::ReplayProjectionMismatch);
         }
         None
@@ -2529,13 +2546,13 @@ impl PreparedCallApplicationTransaction {
         Box<[KeyedConstraintProjection<AnalyzerCallProjection>]>,
     ) {
         (
-            self.application,
-            self.consumer,
-            self.callee_inputs,
-            self.inputs,
-            self.sealed_branch,
-            self.closed_sources,
-            self.projections,
+            self.data.application,
+            self.data.consumer,
+            self.data.callee_inputs,
+            self.data.inputs,
+            self.data.sealed_branch,
+            self.data.closed_sources,
+            self.data.projections,
         )
     }
 }
@@ -2567,7 +2584,7 @@ impl SealedAcceptedCandidate {
 
 impl RanCandidateTransaction {
     pub(crate) fn result(&self) -> &CallableResultSchema {
-        &self.result
+        &self.data.result
     }
 
     /// Consume a completed lower transaction for deterministic unselected
@@ -2582,13 +2599,13 @@ impl RanCandidateTransaction {
         CallableResultSchema,
         AnalyzerCallSealedBranch,
     ) {
-        let Self {
+        let RanCandidateTransactionData {
             candidate,
             current_group,
             result,
             solved,
             ..
-        } = self;
+        } = *self.data;
         (candidate, current_group, result, solved.sealed_branch)
     }
 }
@@ -4429,13 +4446,15 @@ pub(crate) fn run_prepared_candidate(
             })?,
     };
     Ok(RanCandidateTransaction {
-        candidate,
-        consumer,
-        callee_inputs,
-        inputs,
-        current_group,
-        result,
-        solved,
+        data: Box::new(RanCandidateTransactionData {
+            candidate,
+            consumer,
+            callee_inputs,
+            inputs,
+            current_group,
+            result,
+            solved,
+        }),
     })
 }
 

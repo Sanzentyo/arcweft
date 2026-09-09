@@ -520,7 +520,7 @@ impl Analyzer<'_, '_, '_> {
                 .map_err(FinalSemanticAnalysisError::from)?;
             let (prepared, content, replacement) = taken.into_parts();
             let sealed = self.seal_dialogue_application(
-                prepared,
+                *prepared,
                 content,
                 coordinates,
                 structural_edges,
@@ -1295,7 +1295,7 @@ impl Analyzer<'_, '_, '_> {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
         let (sealed, insertion) = self.seal_content_application(
-            prepared,
+            *prepared,
             content,
             coordinates,
             structural_edges,

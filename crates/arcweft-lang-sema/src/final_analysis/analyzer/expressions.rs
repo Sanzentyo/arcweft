@@ -615,7 +615,7 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner).into());
             }
             (
-                PreparedImplicitCallableBody::owner_bound(PreparedOwnerBoundExpression::new(
+                PreparedImplicitCallableBody::from(PreparedOwnerBoundExpression::new(
                     PreparedExpressionShell::value(
                         parameter.clone(),
                         CheckedTypeSelection::Expected,
@@ -629,7 +629,7 @@ impl Analyzer<'_, '_, '_> {
         } else {
             enum BodySeed {
                 Complete(CheckedExpression),
-                OwnerBound(PreparedOwnerBoundExpression),
+                OwnerBound(Box<PreparedOwnerBoundExpression>),
             }
 
             self.implicit_callable_stack
@@ -705,8 +705,8 @@ impl Analyzer<'_, '_, '_> {
                 BodySeed::OwnerBound(body) => body.effects().clone(),
             };
             let body = match body {
-                BodySeed::Complete(body) => PreparedImplicitCallableBody::complete(body),
-                BodySeed::OwnerBound(body) => PreparedImplicitCallableBody::owner_bound(body),
+                BodySeed::Complete(body) => PreparedImplicitCallableBody::Complete(body),
+                BodySeed::OwnerBound(body) => PreparedImplicitCallableBody::OwnerBound(body),
             };
             (body, result, effects)
         };
@@ -721,7 +721,7 @@ impl Analyzer<'_, '_, '_> {
         {
             return Err(AnalyzerExpressionError::rejected(owner).into());
         }
-        Ok(PreparedExpressionFact::OwnerBound(
+        Ok(PreparedExpressionFact::from(
             PreparedOwnerBoundExpression::new(
                 PreparedExpressionShell::value(
                     ty,
@@ -931,7 +931,7 @@ impl Analyzer<'_, '_, '_> {
                     ),
                     PreparedOwnerBoundResolution::pipe_left(context.owner),
                 );
-                Ok(Some(PreparedExpressionFact::OwnerBound(prepared)))
+                Ok(Some(PreparedExpressionFact::from(prepared)))
             }
             HirExprKind::Placeholder(HirPlaceholderKind::PartialApplication) => {
                 let context = self
@@ -957,7 +957,7 @@ impl Analyzer<'_, '_, '_> {
                         context.parameter.clone(),
                     ),
                 );
-                Ok(Some(PreparedExpressionFact::OwnerBound(prepared)))
+                Ok(Some(PreparedExpressionFact::from(prepared)))
             }
             HirExprKind::AttachedContentApplication(application) => self
                 .prepare_dialogue_content_application(
@@ -1067,7 +1067,7 @@ impl Analyzer<'_, '_, '_> {
         }) {
             return Err(AnalyzerExpressionError::rejected(owner));
         }
-        Ok(PreparedExpressionFact::OwnerBound(
+        Ok(PreparedExpressionFact::from(
             PreparedOwnerBoundExpression::new(
                 PreparedExpressionShell::value(
                     carrier.success().clone(),
@@ -1095,7 +1095,7 @@ impl Analyzer<'_, '_, '_> {
             self.check_project_record_fields(context, owner, declaration, fields, expectation)?;
         let nominal =
             checked_project_nominal(declaration, &ty).map_err(AnalyzerExpressionError::fatal)?;
-        Ok(PreparedExpressionFact::ProjectRecord(
+        Ok(PreparedExpressionFact::from(
             crate::final_analysis::PreparedProjectRecordExpression::new(
                 super::PreparedExpressionShell::value(ty, type_selection, EffectSet::new()),
                 nominal,
@@ -1158,7 +1158,7 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         }
-        Ok(PreparedExpressionFact::Entry(prepared))
+        Ok(PreparedExpressionFact::from(prepared))
     }
 
     fn prepare_project_variant_owner(
@@ -1358,7 +1358,7 @@ impl Analyzer<'_, '_, '_> {
         .ok_or_else(|| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
         })?;
-        Ok(PreparedExpressionFact::Variant(prepared))
+        Ok(PreparedExpressionFact::from(prepared))
     }
 
     fn check_leaf_expression_kind(
@@ -2504,7 +2504,7 @@ impl Analyzer<'_, '_, '_> {
         })?;
         let mut effects = left.effects().clone();
         effects.union_with(right.effects());
-        Ok(PreparedExpressionFact::OwnerBound(
+        Ok(PreparedExpressionFact::from(
             PreparedOwnerBoundExpression::new(
                 PreparedExpressionShell::value(right_type, right_selection, effects),
                 PreparedOwnerBoundResolution::pipe(
@@ -2966,7 +2966,7 @@ impl Analyzer<'_, '_, '_> {
                     let nominal = checked_project_nominal(&declaration, target_type)
                         .map_err(AnalyzerExpressionError::fatal)?;
                     let ty = substitutions.apply(declared_ty);
-                    return Ok(PreparedExpressionFact::ProjectField(
+                    return Ok(PreparedExpressionFact::from(
                         crate::final_analysis::PreparedProjectFieldExpression::new(
                             crate::final_analysis::PreparedExpressionShell::value(
                                 ty.clone(),
@@ -3309,7 +3309,7 @@ impl Analyzer<'_, '_, '_> {
                     variant_owner,
                     ordinal,
                 )
-                .map(PreparedExpressionFact::Variant)
+                .map(PreparedExpressionFact::from)
                 .ok_or_else(|| {
                     AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidNominalOwner)
                 })

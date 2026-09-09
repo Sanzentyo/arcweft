@@ -2189,8 +2189,15 @@ impl CheckedExpressionExecutionPlan {
 }
 
 /// Closed checked fact for one live expression.
+/// The fact owns its payload on the heap so evaluator and transaction frames
+/// move one owner instead of retaining every checked atom on the native stack.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExpression {
+    data: Box<CheckedExpressionData>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct CheckedExpressionData {
     result: CheckedExpressionResult,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
@@ -2202,15 +2209,17 @@ pub struct CheckedExpression {
 impl CheckedExpression {
     pub(crate) fn unavailable_call() -> Self {
         Self {
-            result: CheckedExpressionResult::Unavailable,
-            effects: EffectSet::new(),
-            resolution: CheckedExpressionResolution::Call,
-            execution: CheckedExpressionExecutionPlan::structural(
-                CheckedRuntimeValueDisposition::Omit,
-                CheckedStructuralExecutionReason::RejectedCall,
-            ),
-            match_fact: None,
-            nested_path_evidence: None,
+            data: Box::new(CheckedExpressionData {
+                result: CheckedExpressionResult::Unavailable,
+                effects: EffectSet::new(),
+                resolution: CheckedExpressionResolution::Call,
+                execution: CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Omit,
+                    CheckedStructuralExecutionReason::RejectedCall,
+                ),
+                match_fact: None,
+                nested_path_evidence: None,
+            }),
         }
     }
 
@@ -2221,18 +2230,20 @@ impl CheckedExpression {
         resolution: CheckedExpressionResolution,
     ) -> Self {
         Self {
-            result: CheckedExpressionResult::Value(CheckedTypedExpressionResult::new(
-                ty,
-                type_selection,
-            )),
-            effects,
-            resolution,
-            execution: CheckedExpressionExecutionPlan::structural(
-                CheckedRuntimeValueDisposition::Retain,
-                CheckedStructuralExecutionReason::Value,
-            ),
-            match_fact: None,
-            nested_path_evidence: None,
+            data: Box::new(CheckedExpressionData {
+                result: CheckedExpressionResult::Value(CheckedTypedExpressionResult::new(
+                    ty,
+                    type_selection,
+                )),
+                effects,
+                resolution,
+                execution: CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Retain,
+                    CheckedStructuralExecutionReason::Value,
+                ),
+                match_fact: None,
+                nested_path_evidence: None,
+            }),
         }
     }
 
@@ -2242,30 +2253,32 @@ impl CheckedExpression {
         resolution: CheckedExpressionResolution,
     ) -> Self {
         Self {
-            result: CheckedExpressionResult::NonValue(
-                CheckedNonValueExpressionResult::ContentEmission(callable),
-            ),
-            effects,
-            resolution,
-            execution: CheckedExpressionExecutionPlan::structural(
-                CheckedRuntimeValueDisposition::Omit,
-                CheckedStructuralExecutionReason::ContentEmission,
-            ),
-            match_fact: None,
-            nested_path_evidence: None,
+            data: Box::new(CheckedExpressionData {
+                result: CheckedExpressionResult::NonValue(
+                    CheckedNonValueExpressionResult::ContentEmission(callable),
+                ),
+                effects,
+                resolution,
+                execution: CheckedExpressionExecutionPlan::structural(
+                    CheckedRuntimeValueDisposition::Omit,
+                    CheckedStructuralExecutionReason::ContentEmission,
+                ),
+                match_fact: None,
+                nested_path_evidence: None,
+            }),
         }
     }
 
     pub const fn result(&self) -> &CheckedExpressionResult {
-        &self.result
+        &self.data.result
     }
 
     pub const fn value_type(&self) -> Option<&TypeKind> {
-        self.result.value_type()
+        self.data.result.value_type()
     }
 
     pub const fn type_selection(&self) -> Option<CheckedTypeSelection> {
-        self.result.type_selection()
+        self.data.result.type_selection()
     }
 
     pub(crate) fn required_type_selection(
@@ -2277,14 +2290,14 @@ impl CheckedExpression {
     }
 
     pub const fn effects(&self) -> &EffectSet {
-        &self.effects
+        &self.data.effects
     }
 
     /// Replaces the analyzer's prepared effect row with the completed
     /// bottom-up execution fold while preserving every other checked atom.
     #[must_use]
     pub(crate) fn with_completed_effects(mut self, effects: EffectSet) -> Self {
-        self.effects = effects;
+        self.data.effects = effects;
         self
     }
 
@@ -2292,24 +2305,24 @@ impl CheckedExpression {
     /// checked result, effects, nested Match payload, and path evidence.
     #[must_use]
     pub(crate) fn with_resolution(mut self, resolution: CheckedExpressionResolution) -> Self {
-        self.resolution = resolution;
+        self.data.resolution = resolution;
         self
     }
 
     pub const fn resolution(&self) -> &CheckedExpressionResolution {
-        &self.resolution
+        &self.data.resolution
     }
 
     /// Final sema-owned execution authority for this expression.
     pub const fn execution_plan(&self) -> &CheckedExpressionExecutionPlan {
-        &self.execution
+        &self.data.execution
     }
 
     /// Replaces only the execution plan after all call/content/effect seals
     /// are available, retaining the expression's checked semantic payload.
     #[must_use]
     pub(crate) fn with_execution_plan(mut self, execution: CheckedExpressionExecutionPlan) -> Self {
-        self.execution = execution;
+        self.data.execution = execution;
         self
     }
 
@@ -2334,7 +2347,7 @@ impl CheckedExpression {
     /// the source-backed postfix owner.
     #[must_use]
     pub(crate) const fn selected_postfix_candidate(&self) -> Option<ExprId> {
-        match self.resolution {
+        match self.data.resolution {
             CheckedExpressionResolution::PostfixBracket(resolution) => Some(resolution.candidate()),
             _ => None,
         }
@@ -2343,20 +2356,20 @@ impl CheckedExpression {
     /// Adds the checker-owned ordinary Match evidence to this expression.
     #[must_use]
     pub(crate) fn with_match_fact(mut self, fact: CheckedMatchFact) -> Self {
-        self.match_fact = Some(fact);
+        self.data.match_fact = Some(fact);
         self
     }
 
     /// Returns the exact checked Match evidence, when this owner is a Match.
     pub const fn match_fact(&self) -> Option<&CheckedMatchFact> {
-        self.match_fact.as_ref()
+        self.data.match_fact.as_ref()
     }
 
     /// Returns accepted path-keyed nested child evidence for this owner.
     pub fn nested_path_evidence(
         &self,
     ) -> Option<&Result<NestedPathEvidence, super::CheckedChildEdgeError>> {
-        self.nested_path_evidence.as_ref()
+        self.data.nested_path_evidence.as_ref()
     }
 
     #[must_use]
@@ -2364,7 +2377,7 @@ impl CheckedExpression {
         mut self,
         evidence: Result<NestedPathEvidence, super::CheckedChildEdgeError>,
     ) -> Self {
-        self.nested_path_evidence = Some(evidence);
+        self.data.nested_path_evidence = Some(evidence);
         self
     }
 
@@ -2375,7 +2388,7 @@ impl CheckedExpression {
         if let Some(ty) = self.value_type() {
             visitor(ty)?;
         }
-        self.resolution.visit_types(visitor)
+        self.data.resolution.visit_types(visitor)
     }
 }
 

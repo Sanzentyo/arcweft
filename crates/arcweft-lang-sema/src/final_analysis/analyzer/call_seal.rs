@@ -1256,11 +1256,11 @@ impl SealedSelectedCall {
             if updated.shell().value_type() != self.application.result().value_type() {
                 return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
             }
-            return Ok(Some((callee, PreparedExpressionFact::Variant(updated))));
+            return Ok(Some((callee, PreparedExpressionFact::from(updated))));
         }
         let ty = selected_callable_type(&self.application, checked_callables)?;
         let updated = match previous {
-            PreparedExpressionFact::Method(prepared) => PreparedExpressionFact::Method(
+            PreparedExpressionFact::Method(prepared) => PreparedExpressionFact::from(
                 prepared
                     .with_type(ty)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
@@ -1274,10 +1274,10 @@ impl SealedSelectedCall {
             .into(),
             PreparedExpressionFact::CompileTimeScalar(prepared) => {
                 let (shell, scalar, original) = prepared.into_parts();
-                let PreparedExpressionFact::Complete(previous) = *original else {
+                let PreparedExpressionFact::Complete(previous) = original else {
                     return Err(FinalSemanticAnalysisError::UnsealedPreparedC2Owner);
                 };
-                PreparedExpressionFact::CompileTimeScalar(
+                PreparedExpressionFact::from(
                     crate::final_analysis::PreparedCompileTimeScalarExpression::try_new(
                         shell,
                         scalar,
@@ -1849,7 +1849,7 @@ impl super::Analyzer<'_, '_, '_> {
                                     update.effects,
                                     resolution,
                                 );
-                                PreparedExpressionFact::CompileTimeScalar(
+                                PreparedExpressionFact::from(
                                     crate::final_analysis::PreparedCompileTimeScalarExpression::try_new(
                                         shell,
                                         scalar,

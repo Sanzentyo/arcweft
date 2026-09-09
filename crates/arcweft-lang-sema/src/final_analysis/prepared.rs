@@ -202,16 +202,12 @@ pub(crate) enum PreparedOwnerBoundResolution {
 /// atomic owner-bound seal after callable and pipe identities are issued.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedImplicitCallableBody {
-    Complete(Box<CheckedExpression>),
+    Complete(CheckedExpression),
     OwnerBound(Box<PreparedOwnerBoundExpression>),
 }
 
-impl PreparedImplicitCallableBody {
-    pub(crate) fn complete(body: CheckedExpression) -> Self {
-        Self::Complete(Box::new(body))
-    }
-
-    pub(crate) fn owner_bound(body: PreparedOwnerBoundExpression) -> Self {
+impl From<PreparedOwnerBoundExpression> for PreparedImplicitCallableBody {
+    fn from(body: PreparedOwnerBoundExpression) -> Self {
         Self::OwnerBound(Box::new(body))
     }
 }
@@ -826,7 +822,7 @@ impl PreparedProjectRecordExpression {
 pub(crate) struct PreparedCompileTimeScalarExpression {
     shell: PreparedExpressionShell,
     value: CheckedCompileTimeScalar,
-    original: Box<PreparedExpressionFact>,
+    original: PreparedExpressionFact,
 }
 
 impl PreparedCompileTimeScalarExpression {
@@ -844,7 +840,7 @@ impl PreparedCompileTimeScalarExpression {
         Some(Self {
             shell,
             value,
-            original: Box::new(original),
+            original,
         })
     }
 
@@ -865,7 +861,7 @@ impl PreparedCompileTimeScalarExpression {
     ) -> (
         PreparedExpressionShell,
         CheckedCompileTimeScalar,
-        Box<PreparedExpressionFact>,
+        PreparedExpressionFact,
     ) {
         (self.shell, self.value, self.original)
     }
@@ -873,24 +869,87 @@ impl PreparedCompileTimeScalarExpression {
 
 /// Analyzer-owned expression fact. Only `Complete` may enter the published
 /// report; every other row is consumed by the private project seal.
+/// Each variant owns a heap payload. `Complete` already owns that allocation
+/// through `CheckedExpression`; prepared payloads retain independent
+/// ownership across evaluation, candidate transactions and final sealing.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum PreparedExpressionFact {
     Complete(CheckedExpression),
-    OwnerBound(PreparedOwnerBoundExpression),
-    CompileTimeScalar(PreparedCompileTimeScalarExpression),
-    DialogueApplication(PreparedDialogueApplication),
-    ContentApplication(PreparedContentApplication),
-    Method(PreparedMethodExpression),
-    Entry(PreparedEntryExpression),
-    Variant(PreparedVariantExpression),
-    ProjectField(PreparedProjectFieldExpression),
-    ProjectRecord(PreparedProjectRecordExpression),
-    ProjectNominalTypeValue(PreparedProjectNominalTypeValueExpression),
+    OwnerBound(Box<PreparedOwnerBoundExpression>),
+    CompileTimeScalar(Box<PreparedCompileTimeScalarExpression>),
+    DialogueApplication(Box<PreparedDialogueApplication>),
+    ContentApplication(Box<PreparedContentApplication>),
+    Method(Box<PreparedMethodExpression>),
+    Entry(Box<PreparedEntryExpression>),
+    Variant(Box<PreparedVariantExpression>),
+    ProjectField(Box<PreparedProjectFieldExpression>),
+    ProjectRecord(Box<PreparedProjectRecordExpression>),
+    ProjectNominalTypeValue(Box<PreparedProjectNominalTypeValueExpression>),
 }
 
 impl From<CheckedExpression> for PreparedExpressionFact {
     fn from(value: CheckedExpression) -> Self {
         Self::Complete(value)
+    }
+}
+
+impl From<PreparedOwnerBoundExpression> for PreparedExpressionFact {
+    fn from(value: PreparedOwnerBoundExpression) -> Self {
+        Self::OwnerBound(Box::new(value))
+    }
+}
+
+impl From<PreparedCompileTimeScalarExpression> for PreparedExpressionFact {
+    fn from(value: PreparedCompileTimeScalarExpression) -> Self {
+        Self::CompileTimeScalar(Box::new(value))
+    }
+}
+
+impl From<PreparedDialogueApplication> for PreparedExpressionFact {
+    fn from(value: PreparedDialogueApplication) -> Self {
+        Self::DialogueApplication(Box::new(value))
+    }
+}
+
+impl From<PreparedContentApplication> for PreparedExpressionFact {
+    fn from(value: PreparedContentApplication) -> Self {
+        Self::ContentApplication(Box::new(value))
+    }
+}
+
+impl From<PreparedMethodExpression> for PreparedExpressionFact {
+    fn from(value: PreparedMethodExpression) -> Self {
+        Self::Method(Box::new(value))
+    }
+}
+
+impl From<PreparedEntryExpression> for PreparedExpressionFact {
+    fn from(value: PreparedEntryExpression) -> Self {
+        Self::Entry(Box::new(value))
+    }
+}
+
+impl From<PreparedVariantExpression> for PreparedExpressionFact {
+    fn from(value: PreparedVariantExpression) -> Self {
+        Self::Variant(Box::new(value))
+    }
+}
+
+impl From<PreparedProjectFieldExpression> for PreparedExpressionFact {
+    fn from(value: PreparedProjectFieldExpression) -> Self {
+        Self::ProjectField(Box::new(value))
+    }
+}
+
+impl From<PreparedProjectRecordExpression> for PreparedExpressionFact {
+    fn from(value: PreparedProjectRecordExpression) -> Self {
+        Self::ProjectRecord(Box::new(value))
+    }
+}
+
+impl From<PreparedProjectNominalTypeValueExpression> for PreparedExpressionFact {
+    fn from(value: PreparedProjectNominalTypeValueExpression) -> Self {
+        Self::ProjectNominalTypeValue(Box::new(value))
     }
 }
 
@@ -1049,15 +1108,13 @@ impl PreparedExpressionFact {
             Self::CompileTimeScalar(value) => {
                 let (shell, scalar, original) = value.into_parts();
                 let Some((ty, type_selection, effects)) = shell.clone().into_value_parts() else {
-                    return Err(Self::CompileTimeScalar(
-                        PreparedCompileTimeScalarExpression {
-                            shell,
-                            value: scalar,
-                            original,
-                        },
-                    ));
+                    return Err(Self::from(PreparedCompileTimeScalarExpression {
+                        shell,
+                        value: scalar,
+                        original,
+                    }));
                 };
-                match (*original).into_complete() {
+                match original.into_complete() {
                     Ok(complete) => {
                         let resolution = CheckedExpressionResolution::CompileTimeScalar(
                             super::CheckedCompileTimeScalarExpression::new(
@@ -1072,13 +1129,11 @@ impl PreparedExpressionFact {
                             resolution,
                         ))
                     }
-                    Err(original) => Err(Self::CompileTimeScalar(
-                        PreparedCompileTimeScalarExpression {
-                            shell,
-                            value: scalar,
-                            original: Box::new(original),
-                        },
-                    )),
+                    Err(original) => Err(Self::from(PreparedCompileTimeScalarExpression {
+                        shell,
+                        value: scalar,
+                        original,
+                    })),
                 }
             }
             Self::DialogueApplication(value) => Err(Self::DialogueApplication(value)),

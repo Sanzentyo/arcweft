@@ -58,7 +58,7 @@ impl Analyzer<'_, '_, '_> {
         );
         let prepared = PreparedCompileTimeScalarExpression::try_new(shell, scalar, fact)
             .ok_or_else(|| AnalyzerExpressionError::rejected(owner))?;
-        let fact = PreparedExpressionFact::CompileTimeScalar(prepared);
+        let fact = PreparedExpressionFact::from(prepared);
         self.facts
             .replace_existing_expression(owner, fact.clone())
             .map_err(|_| {
@@ -322,7 +322,7 @@ impl Analyzer<'_, '_, '_> {
                                 this.facts
                                     .replace_existing_expression(
                                         expression,
-                                        PreparedExpressionFact::CompileTimeScalar(prepared),
+                                        PreparedExpressionFact::from(prepared),
                                     )
                                     .map_err(|_| {
                                         AnalyzerExpressionError::fact(
