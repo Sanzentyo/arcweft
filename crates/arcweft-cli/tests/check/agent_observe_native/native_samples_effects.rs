@@ -4930,29 +4930,41 @@ fn opaque_pixel_count(bytes: &[u8]) -> usize {
 }
 
 fn assert_typed_typewriter_fx_application(presentation: &serde_json::Value) {
-    let applications = presentation["fx"]
-        .as_array()
-        .expect("rich-text presentation exposes typed Fx applications");
+    use arcweft_presentation::fx::{
+        BuiltinFxActiveAbiParameterSet, BuiltinFxArgument, BuiltinFxCallableRowId,
+        BuiltinFxParameterId, BuiltinFxSpecialization, FiniteF32, FxApplication,
+        FxDefinitionArgumentValue, FxRuntimeValue, FxTarget, build_builtin_fx_definition,
+    };
+
+    let applications: Vec<FxApplication> = serde_json::from_value(presentation["fx"].clone())
+        .expect("observed Fx applications follow the typed wire contract");
     let [application] = applications.as_slice() else {
         panic!("expected one typewriter Fx application: {presentation}");
     };
-    assert_eq!(
-        application["definition"]["package"], "arcweft.builtin",
-        "{application}"
-    );
-    assert!(
-        application["definition"]["function"]
-            .as_str()
-            .is_some_and(|function| function.starts_with("rich_text.typewriter.")),
-        "{application}"
-    );
-    assert!(
-        application["parameters"]
-            .as_array()
-            .is_some_and(Vec::is_empty),
-        "{application}"
-    );
-    assert_eq!(application["authored_ordinal"], 0, "{application}");
+    let specialization = BuiltinFxSpecialization::try_new(
+        BuiltinFxCallableRowId::TypewriterGlyphMask,
+        FxTarget::Content,
+        None,
+        BuiltinFxActiveAbiParameterSet::from_parameters([
+            BuiltinFxParameterId::CharactersPerSecond,
+            BuiltinFxParameterId::Delay,
+            BuiltinFxParameterId::Cursor,
+        ]),
+    )
+    .expect("typewriter fixture specialization");
+    let definition = build_builtin_fx_definition(specialization)
+        .expect("canonical typewriter definition");
+    let expected = definition
+        .bind_application(
+            [BuiltinFxArgument::new(
+                BuiltinFxParameterId::CharactersPerSecond,
+                FxDefinitionArgumentValue::Runtime(FxRuntimeValue::F32(FiniteF32::ONE)),
+            )],
+            0,
+            application.source_range(),
+        )
+        .expect("fixture rate and builtin defaults bind through the canonical ABI");
+    assert_eq!(application, &expected);
 }
 
 #[test]
