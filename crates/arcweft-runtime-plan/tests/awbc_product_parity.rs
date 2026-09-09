@@ -355,6 +355,7 @@ fn standard_map_awbc_plan() -> (Arc<RuntimePlan>, Vec<AwbcStandardMapCase>) {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                 unit_ty,
                 RuntimeExprSeedKind::Value(RuntimeValue::Unit),
@@ -426,6 +427,7 @@ fn plan_with_return(value: &str) -> RuntimePlan {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ReturnExpr(string(value))],
         ))
         .expect("flow admits");
@@ -461,6 +463,7 @@ fn plan_with_await_observer() -> RuntimePlan {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {

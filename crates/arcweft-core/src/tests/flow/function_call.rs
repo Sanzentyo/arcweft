@@ -39,14 +39,14 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
             }]),
             result: string,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         })
         .expect("callback site reserves");
     builder
         .define_function_site_seed(
             &site,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
-                effects: RuntimeFunctionEffectSet::empty(),
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
                 ops: Box::new([
                     RuntimeFlowOpSeed::Await {
                         binding: None,
@@ -79,6 +79,7 @@ fn executable_function_value_retains_captures_and_return_binding_across_await() 
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ApplyFunction {
                     callee: RuntimeExprSeed::new(

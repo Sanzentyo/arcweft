@@ -7,9 +7,9 @@ use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
     pattern::RuntimeSemanticTypeId,
     plan::{
-        FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeExprSeed,
-        RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSchema,
-        RuntimeFlowSeed, RuntimeFunctionEffectSet, RuntimeFunctionExecutableBodySeed,
+        FlowEvent, RuntimeAwaitPendingObserverSeed, RuntimeAwaitTargetSeed, RuntimeEffectSet,
+        RuntimeExecutableBodySeed, RuntimeExprSeed, RuntimeExprSeedKind,
+        RuntimeFieldProjectionSeed, RuntimeFlowOpSeed, RuntimeFlowSchema, RuntimeFlowSeed,
         RuntimeFunctionInputBindingSeed, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
         RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed,
         RuntimeHostTaskRequestTemplateSeed, RuntimeLocalDeclarationSeed,
@@ -114,6 +114,7 @@ fn native_flow_returns_a_typed_scalar_value() {
     let plan = finish_plan([RuntimeFlowSeed::new(
         entry.clone(),
         [],
+        crate::plan::RuntimeEffectSet::empty(),
         vec![RuntimeFlowOpSeed::ReturnExpr(string_value("ready"))],
     )]);
     let mut engine = Engine::for_flow(plan, &entry).expect("entry flow exists");
@@ -137,11 +138,13 @@ fn native_goto_selects_the_targeted_typed_flow() {
         RuntimeFlowSeed::new(
             opening.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Goto(ending.clone())],
         ),
         RuntimeFlowSeed::new(
             ending.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ReturnExpr(string_value("finished"))],
         ),
     ]);
@@ -190,7 +193,7 @@ fn native_project_call_direct_continue_publishes_one_catalog_site() {
     builder
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
-            [],
+            [], crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
@@ -289,6 +292,7 @@ fn native_project_call_defaulted_omitted_rejoins_target_through_catalog_site() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
@@ -398,6 +402,7 @@ fn native_project_call_rest_materialization_accepts_empty_and_source_ordered_val
             .push_flow_seed(RuntimeFlowSeed::new(
                 entry.clone(),
                 [],
+                crate::plan::RuntimeEffectSet::empty(),
                 vec![
                     RuntimeFlowOpSeed::ProjectCall {
                         plan: RuntimeProjectCallPlanSeed {
@@ -565,6 +570,7 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Let {
                     pattern: RuntimePatternSeed::new(
@@ -646,14 +652,14 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
             inputs: Box::new([]),
             result: string,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         })
         .expect("executable target site reserves");
     builder
         .define_function_site_seed(
             &target_site,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
-                effects: RuntimeFunctionEffectSet::empty(),
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
                 ops: Box::new([RuntimeFlowOpSeed::Return("target".to_owned())]),
             }),
         )
@@ -665,6 +671,7 @@ fn native_project_call_executable_target_explicit_return_rejoins_catalog_site() 
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::ProjectCall {
                     plan: RuntimeProjectCallPlanSeed {
@@ -719,14 +726,14 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
             inputs: Box::new([]),
             result: unit,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         })
         .expect("goto target site reserves");
     builder
         .define_function_site_seed(
             &target_site,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
-                effects: RuntimeFunctionEffectSet::empty(),
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
                 ops: Box::new([RuntimeFlowOpSeed::Goto(target.clone())]),
             }),
         )
@@ -741,6 +748,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
                     input: RuntimeProjectCallInputSeed::Direct,
@@ -760,6 +768,7 @@ fn native_project_call_target_goto_unwinds_the_catalog_return_boundary() {
         .push_flow_seed(RuntimeFlowSeed::new(
             target.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Return("goto-done".to_owned())],
         ))
         .expect("goto target flow admits");
@@ -806,14 +815,14 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
             inputs: Box::new([]),
             result: unit,
             body_kind: RuntimeFunctionSiteBodyKind::Executable,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         })
         .expect("fallthrough target site reserves");
     builder
         .define_function_site_seed(
             &target_site,
-            RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
-                effects: RuntimeFunctionEffectSet::empty(),
+            RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
+                effects: RuntimeEffectSet::empty(),
                 ops: Box::new([]),
             }),
         )
@@ -825,6 +834,7 @@ fn native_project_call_executable_target_fallthrough_fails_closed() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ProjectCall {
                 plan: RuntimeProjectCallPlanSeed {
                     input: RuntimeProjectCallInputSeed::Direct,
@@ -876,6 +886,7 @@ fn native_if_uses_the_admitted_bool_condition() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::If {
                 condition: RuntimeExprSeed::new(
                     bool_type,
@@ -922,6 +933,7 @@ fn await_progress_runs_only_the_first_matching_observer() {
         .push_flow_seed(RuntimeFlowSeed::new(
             entry.clone(),
             [],
+            crate::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {

@@ -213,6 +213,7 @@ fn custom_echo_bundle() -> ArcweftBundle {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
                     binding: None,

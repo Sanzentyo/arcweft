@@ -12,7 +12,7 @@ impl RuntimePlan {
     /// This is a whole-plan inventory, not a path-sensitive execution trace.
     pub fn visit_flow_ops(&self, visitor: &mut impl FnMut(&FlowOp)) {
         for flow in self.flows() {
-            visit_ops(&flow.ops, visitor);
+            visit_ops(flow.body().ops(), visitor);
         }
         for site in self.function_sites().iter() {
             if let RuntimeFunctionSiteBody::Executable(body) = site.body() {

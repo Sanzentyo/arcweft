@@ -156,6 +156,13 @@ with:
 
 `out` gives a line result. `return` leaves the flow. `goto` is flow-transition sugar.
 
+Both static and dynamic `goto` end the current Flow and unwind its call frames.
+The target starts in its own effect scope; its effects do not become effects of
+the transferring Flow. Evaluating the target and arguments still belongs to the
+current scope. The target's body, argument contract, and entry capabilities
+remain checked. Returning calls, including ordinary function calls made by a
+Flow, require the callee's exposed effects to be covered by the caller's scope.
+
 `out` is only valid for line-plan, cue-block, and content-scope outputs. These scopes may also be labeled:
 
 ```arcw

@@ -177,7 +177,10 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
     }
     input.push_flow(
         flow_owner,
-        FlowRuntimeId::canonical("checks").expect("runtime flow identity"),
+        arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::new(
+            FlowRuntimeId::canonical("checks").expect("runtime flow identity"),
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+        ),
     );
     input.push_expression_literal(condition, RuntimeValue::Bool(false));
     input.push_assertion(
@@ -244,7 +247,8 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
     )
     .expect("runtime plan");
     let guard = report.plan.flows()[0]
-        .ops
+        .body()
+        .ops()
         .iter()
         .find_map(|operation| match operation {
             FlowOp::EvaluatedEffect(arcweft_core::effect::RuntimeEffectExpr::Assert {

@@ -34,7 +34,7 @@ fn source_iterator_witness_lowers_trait_methods_and_for_evidence() {
     let evidence = plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .find_map(|op| match op {
             FlowOp::For { evidence, .. } => Some(evidence),
             _ => None,
@@ -64,7 +64,7 @@ fn source_iterator_identity_witness_executes_on_verified_awbc() {
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .find_map(|op| match op {
             FlowOp::For { evidence, .. } => Some(evidence),
             _ => None,

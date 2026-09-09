@@ -93,7 +93,12 @@ fn build_plan(
             .push_flow_schema(flow_schema(&id))
             .expect("test flow schema admits");
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(id, [], ops))
+            .push_flow_seed(RuntimeFlowSeed::new(
+                id,
+                [],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops,
+            ))
             .expect("test flow admits");
     }
     let mut executable_flows = Vec::new();
@@ -264,6 +269,7 @@ fn option_and_result_awbc_patterns_use_exact_tuple_payload_edges() {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Let {
                     pattern: option_pattern,
@@ -498,6 +504,7 @@ fn invalid_local_seeds_cannot_produce_an_awbc_plan() {
         flow_builder.push_flow_seed(RuntimeFlowSeed::new(
             flow_id("invalid_plan"),
             [foreign.clone()],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Noop],
         )),
         Err(RuntimePlanBuildError::ForeignLocalSeed)
@@ -738,6 +745,7 @@ fn loop_break_paths_initialize_one_typed_result_before_binding() {
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Loop {
                     result: Some(RuntimePatternSeed::new(
@@ -823,6 +831,7 @@ fn nested_loops_bind_the_nearest_break_result() {
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Loop {
                     result: Some(binding(outer_result.clone())),
@@ -966,6 +975,7 @@ fn await_observers_lower_to_progress_dispatch_and_rewait_backedge() {
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::Await {
                 binding: None,
                 target: RuntimeAwaitTargetSeed {

@@ -28,14 +28,12 @@ use crate::value::{
 };
 use arcweft_id::runtime_program::RuntimePureProgramId;
 
-use super::super::function_sites::{
-    RuntimeFunctionEffectSet, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
-};
+use super::super::function_sites::{RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind};
 
 use super::super::{
-    FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
-    RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType,
-    RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
+    FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeEffectSet,
+    RuntimeLineId, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
+    RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
 };
 
 #[derive(Debug)]
@@ -65,7 +63,7 @@ impl RuntimeLocalDeclarationSeed {
 pub struct RuntimeFlowSeed {
     id: FlowRuntimeId,
     params: Box<[RuntimeLocalSeedId]>,
-    ops: Vec<RuntimeFlowOpSeed>,
+    body: RuntimeExecutableBodySeed,
 }
 
 /// Construction-only stream transform declaration.
@@ -365,12 +363,16 @@ impl RuntimeFlowSeed {
     pub fn new(
         id: FlowRuntimeId,
         params: impl IntoIterator<Item = RuntimeLocalSeedId>,
+        effects: RuntimeEffectSet,
         ops: Vec<RuntimeFlowOpSeed>,
     ) -> Self {
         Self {
             id,
             params: params.into_iter().collect::<Vec<_>>().into_boxed_slice(),
-            ops,
+            body: RuntimeExecutableBodySeed {
+                effects,
+                ops: ops.into_boxed_slice(),
+            },
         }
     }
 
@@ -384,9 +386,9 @@ impl RuntimeFlowSeed {
     ) -> (
         FlowRuntimeId,
         Box<[RuntimeLocalSeedId]>,
-        Vec<RuntimeFlowOpSeed>,
+        RuntimeExecutableBodySeed,
     ) {
-        (self.id, self.params, self.ops)
+        (self.id, self.params, self.body)
     }
 }
 
@@ -1447,7 +1449,7 @@ pub struct RuntimeFunctionSiteSeedId {
     inputs: Box<[RuntimePlanTypeId]>,
     result: RuntimePlanTypeId,
     body_kind: RuntimeFunctionSiteBodyKind,
-    effects: RuntimeFunctionEffectSet,
+    effects: RuntimeEffectSet,
 }
 
 impl RuntimeFunctionSiteSeedId {
@@ -1458,7 +1460,7 @@ impl RuntimeFunctionSiteSeedId {
         inputs: Box<[RuntimePlanTypeId]>,
         result: RuntimePlanTypeId,
         body_kind: RuntimeFunctionSiteBodyKind,
-        effects: RuntimeFunctionEffectSet,
+        effects: RuntimeEffectSet,
     ) -> Self {
         Self {
             issuer: Arc::clone(issuer),
@@ -1480,7 +1482,7 @@ impl RuntimeFunctionSiteSeedId {
         &[RuntimePlanTypeId],
         RuntimePlanTypeId,
         RuntimeFunctionSiteBodyKind,
-        &RuntimeFunctionEffectSet,
+        &RuntimeEffectSet,
     )> {
         Arc::ptr_eq(&self.issuer, issuer).then_some((
             self.site,
@@ -1699,14 +1701,14 @@ pub struct RuntimeTraitMethodDeclarationSeed {
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeFunctionSiteBodySeed {
     Expression(RuntimeExprSeed),
-    Executable(RuntimeFunctionExecutableBodySeed),
+    Executable(RuntimeExecutableBodySeed),
 }
 
-/// Construction-only executable function-site body.  The operation sequence
-/// is lowered by the aggregate builder through its ordinary flow-op lowerer.
+/// Construction-only body shared by Flow roots and function sites. The
+/// aggregate builder admits the closed effects and operations together.
 #[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeFunctionExecutableBodySeed {
-    pub effects: RuntimeFunctionEffectSet,
+pub struct RuntimeExecutableBodySeed {
+    pub effects: RuntimeEffectSet,
     pub ops: Box<[RuntimeFlowOpSeed]>,
 }
 
@@ -1731,7 +1733,7 @@ pub struct RuntimeFunctionSiteDeclarationSeed {
     pub inputs: Box<[RuntimeFunctionInputBindingSeed]>,
     pub result: RuntimeSemanticTypeId,
     pub body_kind: RuntimeFunctionSiteBodyKind,
-    pub effects: RuntimeFunctionEffectSet,
+    pub effects: RuntimeEffectSet,
 }
 
 /// Zero-based field coordinate in one accepted record domain.

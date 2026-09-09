@@ -1,3 +1,4 @@
+use super::RuntimeFlowFact;
 use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_core::entry::{RuntimeCallableId, RuntimeNominalTypeId, TypeLayoutHash};
@@ -1225,10 +1226,19 @@ fn checked_flow_identity_uses_the_qualified_item_owner() {
     let owner = flow_item(&project);
     let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
     let mut input = complete_type_input(&project);
-    input.push_flow(owner, identity.clone());
+    input.push_flow(
+        owner,
+        RuntimeFlowFact::new(
+            identity.clone(),
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+        ),
+    );
 
     let facts = runtime_facts(&project, input).expect("Flow identity fact");
-    assert_eq!(facts.flow(owner), Some(&identity));
+    assert_eq!(
+        facts.flow(owner).map(RuntimeFlowFact::identity),
+        Some(&identity)
+    );
 }
 
 #[test]

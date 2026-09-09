@@ -789,9 +789,18 @@ Required phases are:
 8. **Opcode typing:** construction/projection/operator types, sequence element
    compatibility, helper/intrinsic/function/host/task arity and results,
    return signature, dynamic-target type and function flag.
-9. **Effects/capabilities:** callee required effect set is a subset of caller’s
-   declared set; host/task/effect capability is allowed; host-call signature and
-   mode match catalog/digest; pure helpers and guards have no undeclared effects.
+9. **Effects/capabilities:** returning calls require the callee's effect set to
+   be covered by the caller's declared set, using the canonical `EffectId`
+   coverage rule (including scoped effects). Effect table members must be
+   canonical effect identities. Flow roots and structured function bodies retain
+   their closed effects through runtime-plan and AWBC signature publication.
+   An authored bound retains its scopes and unused members; an omitted bound
+   exposes inferred body effects, including implicit suspension when used.
+   Static and dynamic `goto` change the active Flow scope instead of imposing a
+   returning-call effect subset check. Static transfers still verify the exact
+   Flow target and argument ABI. Every target body and host/task/effect capability
+   is checked; host-call signature and mode match catalog/digest; pure helpers
+   and guards have no undeclared effects.
 10. **Entrypoints:** entry signature equals function/route target signature;
     route bindings reference parameter slots and compatible adapter value types.
 11. **Line/choice/stream:** table kind/function kind compatibility, valid

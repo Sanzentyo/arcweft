@@ -1,6 +1,7 @@
 mod construction;
 mod dialogue_content;
 pub mod entry_inventory;
+mod executable_body;
 mod flow_ops;
 mod function_sites;
 pub mod generation_contract;
@@ -23,9 +24,9 @@ pub use construction::{
     RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
     RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
-    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionExecutableBodySeed, RuntimeFunctionInputBindingSeed,
+    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
     RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
@@ -50,8 +51,8 @@ pub use dialogue_content::{
     RuntimeDialogueEffectSite, RuntimeDialogueMark, RuntimeDialogueValueRole,
     RuntimeDialogueValueSite,
 };
+pub use executable_body::{RuntimeEffectSet, RuntimeEffectSetError, RuntimeExecutableBody};
 pub use function_sites::{
-    RuntimeFunctionEffectSet, RuntimeFunctionEffectSetError, RuntimeFunctionExecutableBody,
     RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSite,
     RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
     RuntimeFunctionSiteTable,
@@ -673,7 +674,14 @@ pub struct RuntimeLineId {
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
     pub params: Box<[RuntimeLocalDeclarationId]>,
-    pub ops: Vec<FlowOp>,
+    body: RuntimeExecutableBody,
+}
+
+impl RuntimeFlow {
+    #[must_use]
+    pub const fn body(&self) -> &RuntimeExecutableBody {
+        &self.body
+    }
 }
 
 impl FlowRuntimeId {

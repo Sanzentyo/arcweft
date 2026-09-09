@@ -178,7 +178,7 @@ impl AotProgram {
                 stats
             });
         for flow in &plan.flows {
-            stats.record_ops(&flow.ops);
+            stats.record_ops(flow.body().ops());
         }
         Self { flows, stats }
     }
@@ -199,20 +199,21 @@ impl AotProgram {
 impl AotFlowBlock {
     fn from_runtime_flow(flow: &RuntimeFlow) -> Self {
         let linear_ops = flow
-            .ops
+            .body()
+            .ops()
             .iter()
             .take_while(|op| aot_linear_supported_op(op))
             .filter_map(AotLinearOp::from_flow_op)
             .collect::<Vec<_>>();
         let linear_prefix_ops = linear_ops.len();
-        let dispatch = if linear_prefix_ops == flow.ops.len() {
+        let dispatch = if linear_prefix_ops == flow.body().ops().len() {
             AotDispatchShape::Linear
         } else {
             AotDispatchShape::Mixed
         };
         Self {
             id: flow.id.clone(),
-            ops: flow.ops.len(),
+            ops: flow.body().ops().len(),
             linear_prefix_ops,
             dispatch,
             linear_ops,

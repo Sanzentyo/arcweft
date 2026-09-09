@@ -225,3 +225,10 @@ goal 全体の完了は区別し、既知の失敗と検証の実際の状態を
 厳密な catalog join と program に結び付いた復元を含む C1-C6 は未完である。
 これは早期の不足調査の結果であり、callable の優先順位と scheduler 前の
 nominal 実装完了条件を変更しない。
+
+[Flow の効果公開の記録](2026-09-09-flow-effect-publication.md)では、解析済みの
+効果を Flow と関数が共有する実行本体へ渡し、AWBC の署名まで保持するようにした。
+明示された範囲、未使用の許可、部分適用の効果、および Flow 遷移のスコープを
+native/AWBC で検証した。Agent REPL の失敗は解消したが、MCP のトレース生成は
+その先の pattern binding の型不整合で失敗する。既存の sema 7件、残る callable
+実行、後続工程は必須のまま保持し、goal 全体の完了とは区別する。

@@ -380,7 +380,7 @@ fn assertion_profiles(project: &CompiledProject) -> Vec<RuntimeAssertionProfile>
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .filter_map(|operation| match operation {
             FlowOp::EvaluatedEffect(arcweft_core::effect::RuntimeEffectExpr::Assert {
                 profile,
@@ -397,7 +397,7 @@ fn assertion_guards(project: &CompiledProject) -> Vec<RuntimeAssertionGuardId> {
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .filter_map(|operation| match operation {
             FlowOp::EvaluatedEffect(arcweft_core::effect::RuntimeEffectExpr::Assert {
                 guard,

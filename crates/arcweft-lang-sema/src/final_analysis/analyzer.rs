@@ -670,10 +670,22 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .staged_callables
             .take()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        let (mut checked_callables, prepared_effects, item_suspensions, executable_suspensions) =
-            self.finish_checked_callables(staged, &input, &selected_expressions)?;
+        let (
+            mut checked_callables,
+            mut closed_flow_effects,
+            item_suspensions,
+            executable_suspensions,
+        ) = self.finish_checked_callables(staged, &input, &selected_expressions)?;
         input.set_executable_suspensions(executable_suspensions)?;
         for (owner, fact) in &mut input.items {
+            if let Some(effects) = closed_flow_effects.remove(owner) {
+                if !matches!(fact.role(), CheckedItemRole::Flow { .. }) {
+                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog.into());
+                }
+                *fact = CheckedItem::new(effects, fact.role().clone());
+            } else if matches!(fact.role(), CheckedItemRole::Flow { .. }) {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog.into());
+            }
             let Some(suspension) = item_suspensions.get(owner).copied() else {
                 continue;
             };
@@ -687,6 +699,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                     suspension,
                 },
             );
+        }
+        if !closed_flow_effects.is_empty() {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog.into());
         }
         let mut item_facts = BTreeMap::new();
         for (item, fact) in &input.items {
@@ -803,7 +818,6 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         for call in self.facts.calls().values() {
             input.push_call(call.clone());
         }
-        self.validate_flow_effect_bounds(&input, &prepared_effects)?;
         input.set_physical_candidate_argument_evaluations(
             self.facts
                 .physical_candidate_argument_evaluations()

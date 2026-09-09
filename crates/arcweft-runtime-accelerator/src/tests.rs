@@ -2166,6 +2166,7 @@ fn dense_u32_map_sum_plan() -> Arc<RuntimePlan> {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow,
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::ReturnExpr(RuntimeExprSeed::new(
                 u32_ty,
                 RuntimeExprSeedKind::Sum {

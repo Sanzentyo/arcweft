@@ -333,6 +333,11 @@ pub enum RuntimeSemanticProjectionError {
     },
     #[error("flow item {owner:?} has no executable absolute or named identity")]
     InvalidFlowIdentity { owner: ItemId },
+    #[error("flow item {owner:?} has an invalid closed effect set: {source}")]
+    InvalidFlowEffects {
+        owner: ItemId,
+        source: arcweft_core::plan::RuntimeEffectSetError,
+    },
     #[error("expression literal {owner:?} has no exact runtime value: {reason}")]
     ExpressionLiteral { owner: ExprId, reason: String },
     #[error("pattern literal {owner:?} has no exact runtime value: {reason}")]
@@ -660,7 +665,16 @@ fn project_runtime_semantic_fact_inventories(
             };
             let identity = runtime_flow_identity(declaration)
                 .map_err(|_| RuntimeSemanticProjectionError::InvalidFlowIdentity { owner })?;
-            input.push_flow(owner, identity);
+            let effects = arcweft_core::plan::RuntimeEffectSet::try_from_effects(
+                item.effects().iter().cloned(),
+            )
+            .map_err(
+                |source| RuntimeSemanticProjectionError::InvalidFlowEffects { owner, source },
+            )?;
+            input.push_flow(
+                owner,
+                arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::new(identity, effects),
+            );
         }
     }
 

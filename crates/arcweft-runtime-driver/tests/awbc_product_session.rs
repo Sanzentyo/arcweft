@@ -143,6 +143,7 @@ fn entry_selection_product_bundle() -> ArcweftBundle {
             .push_flow_seed(RuntimeFlowSeed::new(
                 flow.clone(),
                 [],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
                 vec![RuntimeFlowOpSeed::Return(entry_label.to_owned())],
             ))
             .expect("fixture Flow admits");
@@ -1000,6 +1001,7 @@ fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::EvaluatedEffect(RuntimeEvaluatedEffectSeed::Assert {
                     guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),

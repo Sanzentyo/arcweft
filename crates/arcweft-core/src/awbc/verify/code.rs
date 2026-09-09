@@ -1612,7 +1612,9 @@ fn apply_terminator(
                     message: "static goto target has no exact semantic Flow binding".to_owned(),
                 });
             }
-            verify_call_args(
+            // A terminal Flow transfer changes the active effect scope. It
+            // shares the argument ABI with calls, but has no returning caller.
+            verify_args(
                 verifier,
                 function,
                 block,
@@ -1620,7 +1622,6 @@ fn apply_terminator(
                 args,
                 state,
                 &at,
-                &format!("goto function {}", target.0),
             )?;
         }
         AwbcTerminator::GotoDynamic { target, args } => {
@@ -2714,6 +2715,20 @@ fn verify_call_args(
     at: &str,
     callee: &str,
 ) -> Result<(), AwbcVerifyError> {
+    verify_args(verifier, function, block, signature, args, state, at)?;
+    let effects = verifier.program.signatures[signature.index()].effects;
+    require_effects(verifier, function, effects, callee)
+}
+
+fn verify_args(
+    verifier: &Verifier<'_, '_>,
+    function: usize,
+    block: usize,
+    signature: AwbcSignatureId,
+    args: &[AwbcRegisterId],
+    state: &FlowState,
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
     check_index(
         verifier.program.signatures.len(),
         signature.0,
@@ -2729,7 +2744,7 @@ fn verify_call_args(
         let actual = read_register(verifier, function, block, *arg, state)?;
         require_compatible(verifier.program, *expected, actual, at)?;
     }
-    require_effects(verifier, function, signature.effects, callee)
+    Ok(())
 }
 
 fn require_effects(

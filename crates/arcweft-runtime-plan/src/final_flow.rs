@@ -24,9 +24,9 @@ use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::plan::{
     FlowRuntimeId, RuntimeAwaitPendingObserverSeed, RuntimeBuiltinIteratorEvidenceSeed,
     RuntimeChoiceOptionSeed, RuntimeDialogueContentPlanSeedId, RuntimeDropPolicySeed,
-    RuntimeEffectFieldSeed, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEvaluatedEffectSeed,
-    RuntimeExprSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed,
-    RuntimeFunctionEffectSet, RuntimeFunctionExecutableBodySeed, RuntimeFunctionInputBindingSeed,
+    RuntimeEffectFieldSeed, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed, RuntimeExprSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteBodySeed,
     RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostTaskRequestTemplateSeed, RuntimeIteratorEvidenceSeed,
@@ -407,7 +407,7 @@ struct PendingDialogueEffectDefinition<'facts> {
     scope: RuntimeScopedExecutableSemanticFactView<'facts>,
     module: HirModuleId,
     site: RuntimeFunctionSiteSeedId,
-    effects: RuntimeFunctionEffectSet,
+    effects: RuntimeEffectSet,
     operation: RuntimeEvaluatedEffectFact,
 }
 
@@ -1426,13 +1426,14 @@ pub fn lower_runtime_plan_with_stats(
         }
         match item.item().kind() {
             HirItemKind::Flow(flow) => {
-                let Some(identity) = facts.flow(item.id()).cloned() else {
+                let Some(flow_fact) = facts.flow(item.id()) else {
                     errors.push(RuntimePlanLowerError::new(format!(
                         "checked runtime Flow identity is missing for final-HIR item {:?}",
                         item.id()
                     )));
                     continue;
                 };
+                let identity = flow_fact.identity().clone();
                 match flow_invocation_schema(item.module(), flow, &identity, facts) {
                     Ok(schema) => flow_schemas.push(schema),
                     Err(error) => {
@@ -1467,7 +1468,12 @@ pub fn lower_runtime_plan_with_stats(
                 match lowerer.lower_body(flow.body()) {
                     Ok(ops) => {
                         assertion_sites.extend(lowerer.into_assertion_sites());
-                        flow_seeds.push(RuntimeFlowSeed::new(identity, params, ops));
+                        flow_seeds.push(RuntimeFlowSeed::new(
+                            identity,
+                            params,
+                            flow_fact.effects().clone(),
+                            ops,
+                        ));
                     }
                     Err(mut item_errors) => errors.append(&mut item_errors),
                 }
@@ -1841,7 +1847,7 @@ fn reserve_implicit_function_sites(
                 .into_boxed_slice(),
             result: callable.result().identity(),
             body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         });
         let declaration = match declaration {
             Ok(declaration) => declaration,
@@ -1981,17 +1987,16 @@ fn reserve_closure_sites<'facts>(
                 continue;
             }
         };
-        let effects =
-            match RuntimeFunctionEffectSet::try_from_effects(closure.effects().iter().cloned()) {
-                Ok(effects) => effects,
-                Err(error) => {
-                    errors.push(RuntimePlanLowerError::new(format!(
-                        "project closure {:?} effect row is invalid: {error}",
-                        key
-                    )));
-                    continue;
-                }
-            };
+        let effects = match RuntimeEffectSet::try_from_effects(closure.effects().iter().cloned()) {
+            Ok(effects) => effects,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "project closure {:?} effect row is invalid: {error}",
+                    key
+                )));
+                continue;
+            }
+        };
         let declaration = captures.and_then(|captures| {
             parameters.map(|parameters| RuntimeFunctionSiteDeclarationSeed {
                 inputs: captures
@@ -2162,17 +2167,16 @@ fn reserve_project_function_sites<'facts>(
             )));
             continue;
         };
-        let effects =
-            match RuntimeFunctionEffectSet::try_from_effects(instance.effects().iter().cloned()) {
-                Ok(effects) => effects,
-                Err(error) => {
-                    errors.push(RuntimePlanLowerError::new(format!(
-                        "project-function instance {:?} effect row is invalid: {error}",
-                        key
-                    )));
-                    continue;
-                }
-            };
+        let effects = match RuntimeEffectSet::try_from_effects(instance.effects().iter().cloned()) {
+            Ok(effects) => effects,
+            Err(error) => {
+                errors.push(RuntimePlanLowerError::new(format!(
+                    "project-function instance {:?} effect row is invalid: {error}",
+                    key
+                )));
+                continue;
+            }
+        };
         let body_kind = match instance.execution() {
             crate::semantic_facts::RuntimeProjectFunctionExecution::ExpressionFunctionSite => {
                 RuntimeFunctionSiteBodyKind::Expression
@@ -2285,7 +2289,7 @@ fn reserve_project_default_function_sites<'facts>(
                 })
             })
             .collect::<Result<Vec<_>, RuntimePlanLowerError>>();
-        let effects = RuntimeFunctionEffectSet::try_from_effects(default.effects().iter().cloned())
+        let effects = RuntimeEffectSet::try_from_effects(default.effects().iter().cloned())
             .map_err(|error| {
                 RuntimePlanLowerError::new(format!(
                     "project-function instance {:?} default effect row is invalid: {error}",
@@ -2653,11 +2657,12 @@ fn define_closure_sites(
                 .with_closure(locals, closure.key(), closure.semantics());
                 flow.lower_flow_value(closure.body(), RuntimeFlowValueContinuation::Return)
                     .map(|ops| {
-                        let effects = RuntimeFunctionEffectSet::try_from_effects(
-                            closure.effects().iter().cloned(),
-                        )
-                        .expect("project closure effect row was validated during reservation");
-                        RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
+                        let effects =
+                            RuntimeEffectSet::try_from_effects(closure.effects().iter().cloned())
+                                .expect(
+                                    "project closure effect row was validated during reservation",
+                                );
+                        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                             effects,
                             ops: ops.into_boxed_slice(),
                         })
@@ -2756,17 +2761,16 @@ fn define_project_function_sites(
                         continue;
                     }
                 };
-                let effects = match RuntimeFunctionEffectSet::try_from_effects(
-                    instance.effects().iter().cloned(),
-                ) {
-                    Ok(effects) => effects,
-                    Err(error) => {
-                        errors.push(RuntimePlanLowerError::new(error.to_string()));
-                        continue;
-                    }
-                };
+                let effects =
+                    match RuntimeEffectSet::try_from_effects(instance.effects().iter().cloned()) {
+                        Ok(effects) => effects,
+                        Err(error) => {
+                            errors.push(RuntimePlanLowerError::new(error.to_string()));
+                            continue;
+                        }
+                    };
                 Ok(RuntimeFunctionSiteBodySeed::Executable(
-                    RuntimeFunctionExecutableBodySeed {
+                    RuntimeExecutableBodySeed {
                         effects,
                         ops: ops.into_boxed_slice(),
                     },
@@ -2856,11 +2860,10 @@ fn define_project_default_function_sites(
                 );
                 flow.lower_flow_value(default.source(), RuntimeFlowValueContinuation::Return)
                     .map(|ops| {
-                        let effects = RuntimeFunctionEffectSet::try_from_effects(
-                            default.effects().iter().cloned(),
-                        )
-                        .expect("default site effect row was validated during reservation");
-                        RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
+                        let effects =
+                            RuntimeEffectSet::try_from_effects(default.effects().iter().cloned())
+                                .expect("default site effect row was validated during reservation");
+                        RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
                             effects,
                             ops: ops.into_boxed_slice(),
                         })
@@ -3305,7 +3308,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                 ))
             };
             let effects =
-                RuntimeFunctionEffectSet::try_from_effects(effect.effects().iter().cloned())
+                RuntimeEffectSet::try_from_effects(effect.effects().iter().cloned())
                     .map_err(|error| error.to_string());
             let capture_inputs = captures.and_then(|captures| {
                 captures
@@ -3365,7 +3368,7 @@ fn reserve_dialogue_effect_sites<'facts>(
                 continue;
             }
             let effects =
-                RuntimeFunctionEffectSet::try_from_effects(effect.effects().iter().cloned())
+                RuntimeEffectSet::try_from_effects(effect.effects().iter().cloned())
                     .expect("effect set reservation was already validated");
             definitions.push(PendingDialogueEffectDefinition {
                 key: program,
@@ -3412,7 +3415,7 @@ fn define_dialogue_effect_sites<'facts>(
                 continue;
             }
         };
-        let body = RuntimeFunctionSiteBodySeed::Executable(RuntimeFunctionExecutableBodySeed {
+        let body = RuntimeFunctionSiteBodySeed::Executable(RuntimeExecutableBodySeed {
             effects: definition.effects,
             ops: vec![RuntimeFlowOpSeed::EvaluatedEffect(operation)].into_boxed_slice(),
         });
@@ -3543,7 +3546,7 @@ fn lower_dialogue_application<'facts>(
             inputs: captures.into_boxed_slice(),
             result: body.ty(),
             body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         });
         let declaration = match declaration {
             Ok(declaration) => declaration,
@@ -3860,8 +3863,10 @@ fn lower_controller_callable(
         contract: callable.role().contract,
         code: arcweft_core::plan::RuntimeCallableExecutableSeedCode::ControllerFlow(flow.clone()),
     };
+    let effects = RuntimeEffectSet::try_from_effects(instance.effects().iter().cloned())
+        .map_err(|error| RuntimePlanLowerError::new(error.to_string()))?;
     Ok(LoweredControllerCallable {
-        flow: RuntimeFlowSeed::new(flow.clone(), [], ops),
+        flow: RuntimeFlowSeed::new(flow.clone(), [], effects, ops),
         flow_executable,
         executable,
         assertions: Vec::new(),
@@ -4023,7 +4028,10 @@ fn lower_entry_flows(
             continue;
         };
         if !matches!(item.item().kind(), HirItemKind::Flow(_))
-            || facts.flow(flow.owner()) != Some(&flow.executable().flow)
+            || facts
+                .flow(flow.owner())
+                .map(crate::semantic_facts::RuntimeFlowFact::identity)
+                != Some(&flow.executable().flow)
         {
             errors.push(RuntimePlanLowerError::new(format!(
                 "checked Entry Flow executable `{}` does not match its exact final-HIR Flow owner",
@@ -6514,6 +6522,7 @@ fn thread_item_matches_kind(item: &HirThreadFlowItem, kind: &HirStmtKind) -> boo
 
 #[cfg(test)]
 mod tests {
+    use arcweft_core::plan::RuntimeEffectSet;
     use std::sync::Arc;
 
     use arcweft_core::{
@@ -6566,14 +6575,20 @@ mod tests {
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
         let mut input = complete_type_input(&project);
-        input.push_flow(owner, identity.clone());
+        input.push_flow(
+            owner,
+            crate::semantic_facts::RuntimeFlowFact::new(
+                identity.clone(),
+                RuntimeEffectSet::empty(),
+            ),
+        );
         let facts = runtime_facts(&project, input).expect("checked facts");
         let entry_input = RuntimeEntryLoweringInput::empty(executable);
         let report = lower_runtime_plan_with_stats(executable, &facts, &entry_input)
             .expect("empty Flow lowers");
         assert_eq!(report.plan.flows().len(), 1);
         assert_eq!(report.plan.flows()[0].id, identity);
-        assert!(report.plan.flows()[0].ops.is_empty());
+        assert!(report.plan.flows()[0].body().ops().is_empty());
     }
 
     #[test]
@@ -6590,7 +6605,10 @@ mod tests {
             .expect("Flow item");
         let identity = FlowRuntimeId::canonical("opening").expect("runtime Flow identity");
         let mut input = complete_type_input(&project);
-        input.push_flow(owner, identity);
+        input.push_flow(
+            owner,
+            crate::semantic_facts::RuntimeFlowFact::new(identity, RuntimeEffectSet::empty()),
+        );
         let facts = runtime_facts(&project, input).expect("checked facts");
         let report = lower_runtime_plan_with_stats(
             executable,
@@ -6599,7 +6617,7 @@ mod tests {
         )
         .expect("Thread expression statement lowers");
 
-        let [FlowOp::Thread { name, body }] = report.plan.flows()[0].ops.as_slice() else {
+        let [FlowOp::Thread { name, body }] = report.plan.flows()[0].body().ops() else {
             panic!("ordinary expression statement must project its typed Thread payload")
         };
         assert!(name.is_none());
@@ -6626,7 +6644,10 @@ mod tests {
         let flow =
             FlowRuntimeId::from_source_entity_body("flow.main").expect("runtime Flow identity");
         let mut fact_input = complete_type_input(&project);
-        fact_input.push_flow(flow_owner, flow.clone());
+        fact_input.push_flow(
+            flow_owner,
+            crate::semantic_facts::RuntimeFlowFact::new(flow.clone(), RuntimeEffectSet::empty()),
+        );
         let facts = runtime_facts(&project, fact_input).expect("checked facts");
 
         let missing = RuntimeEntryLoweringInput::empty(executable);

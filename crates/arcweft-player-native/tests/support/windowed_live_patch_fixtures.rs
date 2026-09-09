@@ -1149,7 +1149,12 @@ fn push_fixture_flow(
     ops: Vec<RuntimeFlowOpSeed>,
 ) {
     builder
-        .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), [], ops))
+        .push_flow_seed(RuntimeFlowSeed::new(
+            flow.clone(),
+            [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+            ops,
+        ))
         .expect("fixture flow admits");
     builder
         .push_flow_schema(RuntimeFlowSchema {

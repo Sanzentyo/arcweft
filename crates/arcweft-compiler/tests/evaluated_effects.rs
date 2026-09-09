@@ -79,7 +79,7 @@ entry cli @entry.main { goto @flow.main }
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .filter_map(|operation| match operation {
             FlowOp::EvaluatedEffect(effect) => Some(effect),
             _ => None,

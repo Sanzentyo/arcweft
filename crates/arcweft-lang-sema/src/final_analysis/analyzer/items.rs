@@ -17,13 +17,7 @@ use super::{
     calls::{AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix},
     statements::{checked_effect_expression, function_effect_contract, scope_span, source_span},
 };
-use crate::{
-    callable::{
-        CallTargetFacts, CheckedCallCalleeExecution, CheckedCallSite, EffectPermission,
-        PreparedCallGraphSelectedNode, ResolvedCallableState,
-    },
-    semantic_coordinate::StableCheckedValueCoordinate,
-};
+use crate::callable::{CheckedCallSite, EffectPermission, PreparedCallGraphSelectedNode};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
@@ -55,13 +49,6 @@ struct EffectTraceSelectedCall<'a> {
     selected: &'a CallableCandidateId,
 }
 
-trait EffectTraceCallAuthority {
-    fn selected_call(
-        &self,
-        owner: ExprId,
-    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError>;
-}
-
 struct PreparedEffectTraceCallAuthority<'a> {
     graph: &'a AnalyzerPreparedCallGraph,
 }
@@ -70,32 +57,25 @@ impl<'a> PreparedEffectTraceCallAuthority<'a> {
     const fn new(graph: &'a AnalyzerPreparedCallGraph) -> Self {
         Self { graph }
     }
-}
 
-impl EffectTraceCallAuthority for PreparedEffectTraceCallAuthority<'_> {
-    fn selected_call(
-        &self,
-        owner: ExprId,
-    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError> {
-        let Some(node) = prepared_call_node(self.graph, owner) else {
-            return Ok(None);
-        };
+    fn selected_call(&self, owner: ExprId) -> Option<EffectTraceSelectedCall<'_>> {
+        let node = prepared_call_node(self.graph, owner)?;
         let prefix = node.prefix();
         let application = prefix.application();
         let record = prefix.record();
         let origin = record.function_value_origin();
         let producer = origin.and_then(|origin| match origin.producer() {
-            crate::callable::PreparedFunctionValueOriginProducer::PreparedContinuation(site) => {
+            crate::callable::PreparedFunctionValueOriginProducer::PreparedContinuation(site)
+            | crate::callable::PreparedFunctionValueOriginProducer::Call(site) => {
                 Some(site.expression())
             }
-            crate::callable::PreparedFunctionValueOriginProducer::Call(_)
-            | crate::callable::PreparedFunctionValueOriginProducer::Lexical { .. }
-            | crate::callable::PreparedFunctionValueOriginProducer::IndependentExpression {
-                ..
-            } => None,
+            crate::callable::PreparedFunctionValueOriginProducer::IndependentExpression {
+                producer,
+            } => prepared_call_node(self.graph, *producer).map(|_| *producer),
+            crate::callable::PreparedFunctionValueOriginProducer::Lexical { .. } => None,
         });
         let argument_sources = record.inputs().expression_sources();
-        Ok(Some(EffectTraceSelectedCall {
+        Some(EffectTraceSelectedCall {
             dispatch: if origin.is_some() {
                 EffectTraceCallDispatch::Value
             } else {
@@ -104,98 +84,7 @@ impl EffectTraceCallAuthority for PreparedEffectTraceCallAuthority<'_> {
             producer,
             argument_sources,
             selected: application.selected().id(),
-        }))
-    }
-}
-
-struct CheckedEffectTraceCallAuthority<'a> {
-    calls: &'a [CallTargetFacts],
-    sites: BTreeMap<StableCheckedValueCoordinate, ExprId>,
-}
-
-impl<'a> CheckedEffectTraceCallAuthority<'a> {
-    fn seal(calls: &'a [CallTargetFacts]) -> Result<Self, FinalSemanticAnalysisError> {
-        let mut sites = BTreeMap::new();
-        for call in calls {
-            let Some(application) = call.selected_application() else {
-                continue;
-            };
-            if sites
-                .insert(application.core().stable_site().clone(), call.expression())
-                .is_some()
-            {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-        }
-        Ok(Self { calls, sites })
-    }
-}
-
-impl EffectTraceCallAuthority for CheckedEffectTraceCallAuthority<'_> {
-    fn selected_call(
-        &self,
-        owner: ExprId,
-    ) -> Result<Option<EffectTraceSelectedCall<'_>>, FinalSemanticAnalysisError> {
-        let mut matching = self.calls.iter().filter(|call| call.expression() == owner);
-        let Some(call) = matching.next() else {
-            return Ok(None);
-        };
-        if matching.next().is_some() {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
-        let Some(application) = call.selected_application() else {
-            return Ok(None);
-        };
-        let selected = application.core().candidates().selected();
-        let (dispatch, producer) = match (application.core().callee(), selected.state()) {
-            (CheckedCallCalleeExecution::Direct, ResolvedCallableState::Base) => {
-                (EffectTraceCallDispatch::Direct, None)
-            }
-            (CheckedCallCalleeExecution::Value { .. }, ResolvedCallableState::Base) => {
-                let producer = match selected.base().authority().stable() {
-                    crate::callable::ResolvedCallableStableIdentity::FunctionValue(identity) => {
-                        self.sites
-                            .get(&StableCheckedValueCoordinate::Expression(
-                                identity.expression().clone(),
-                            ))
-                            .copied()
-                    }
-                    crate::callable::ResolvedCallableStableIdentity::Catalog(_)
-                    | crate::callable::ResolvedCallableStableIdentity::Language(_)
-                    | crate::callable::ResolvedCallableStableIdentity::Lexical(_) => None,
-                };
-                (EffectTraceCallDispatch::Value, producer)
-            }
-            (
-                CheckedCallCalleeExecution::Value { .. },
-                ResolvedCallableState::Continuation(continuation),
-            ) => {
-                let producer = self
-                    .sites
-                    .get(continuation.prefix_application_site())
-                    .copied()
-                    .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-                (EffectTraceCallDispatch::Value, Some(producer))
-            }
-            (CheckedCallCalleeExecution::Direct, ResolvedCallableState::Continuation(_)) => {
-                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-            }
-        };
-        let argument_sources = application
-            .core()
-            .execution()
-            .arguments()
-            .iter()
-            .flat_map(|argument| argument.slots())
-            .map(|slot| slot.source().owner())
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
-        Ok(Some(EffectTraceSelectedCall {
-            dispatch,
-            producer,
-            argument_sources,
-            selected: selected.id(),
-        }))
+        })
     }
 }
 
@@ -242,7 +131,7 @@ fn effect_trace_notes(
     module: &HirModule,
     owner: ItemId,
     input: &FinalSemanticAnalysisInput,
-    call_authority: &impl EffectTraceCallAuthority,
+    call_authority: &PreparedEffectTraceCallAuthority<'_>,
     root_expressions: &std::collections::BTreeSet<ExprId>,
     prepared_effects: &crate::final_analysis::statement_effects::PreparedExecutionEffectCatalog,
     symbols: &ProjectSymbolTable,
@@ -286,7 +175,7 @@ fn effect_trace_notes(
                     if trace.returned_calls.contains(owner) {
                         notes.push(format!("returned function value from `{label}`"));
                     }
-                    let selected = call_authority.selected_call(*owner)?;
+                    let selected = call_authority.selected_call(*owner);
                     if checked.effects().contains(effect)
                         && selected
                             .is_some_and(|call| call.dispatch == EffectTraceCallDispatch::Direct)
@@ -387,7 +276,7 @@ struct FunctionValueEffectTrace {
 fn function_value_effect_trace(
     module: &HirModule,
     input: &FinalSemanticAnalysisInput,
-    call_authority: &impl EffectTraceCallAuthority,
+    call_authority: &PreparedEffectTraceCallAuthority<'_>,
     root_expressions: &std::collections::BTreeSet<ExprId>,
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<super::HirModuleId, &HirModule>,
@@ -404,7 +293,7 @@ fn function_value_effect_trace(
         let HirExprKind::Call(_) = expression.kind() else {
             continue;
         };
-        let Some(call) = call_authority.selected_call(*owner)? else {
+        let Some(call) = call_authority.selected_call(*owner) else {
             continue;
         };
         if call.dispatch != EffectTraceCallDispatch::Value {
@@ -415,7 +304,7 @@ fn function_value_effect_trace(
             continue;
         };
         let origin_call = call_authority
-            .selected_call(origin)?
+            .selected_call(origin)
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
         trace.returned_calls.insert(origin);
         for argument in origin_call.argument_sources {
@@ -724,7 +613,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<
         (
             Arc<CheckedCallableCatalog>,
-            crate::final_analysis::statement_effects::PreparedExecutionEffectCatalog,
+            BTreeMap<ItemId, EffectSet>,
             BTreeMap<ItemId, CheckedSuspensionRole>,
             BTreeMap<
                 ExprId,
@@ -987,6 +876,25 @@ impl Analyzer<'_, '_, '_> {
                 Err(_) => return Err(FinalSemanticAnalysisError::CheckedCallableCatalog),
             }
         }
+        self.validate_flow_effect_bounds(input, &prepared_effects)?;
+        let closed_flow_effects = input
+            .items
+            .iter()
+            .filter(|(_, item)| matches!(item.role(), CheckedItemRole::Flow { .. }))
+            .map(|(owner, item)| {
+                let actual = prepared_effects
+                    .item_effects(*owner)
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                // Preserve authored scopes and unused permissions. Only body
+                // effects not already covered by that bound need publication
+                // (all inferred effects, or implicit control.suspend).
+                Ok((
+                    *owner,
+                    item.effects()
+                        .union(&actual.effects_not_covered_by(item.effects())),
+                ))
+            })
+            .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
         let checked = staged
             .builder
             .finish()
@@ -999,23 +907,27 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
         Ok((
             checked,
-            prepared_effects,
+            closed_flow_effects,
             item_suspensions,
             executable_suspensions,
         ))
     }
 
-    /// Validates authored Flow effect upper bounds after call facts have been
-    /// finalized. Flows are structural execution owners rather than ordinary
-    /// callable symbols, so they deliberately do not enter the checked
+    /// Validates authored Flow effect upper bounds after selected calls and
+    /// their body effects have closed. Flows are structural execution owners
+    /// rather than ordinary callable symbols, so they do not enter the checked
     /// callable catalog. Their bodies nevertheless consume the same final
     /// expression effects and typed effect identities as ordinary functions.
-    pub(super) fn validate_flow_effect_bounds(
+    fn validate_flow_effect_bounds(
         &self,
         input: &FinalSemanticAnalysisInput,
         prepared_effects: &crate::final_analysis::statement_effects::PreparedExecutionEffectCatalog,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let call_authority = CheckedEffectTraceCallAuthority::seal(&input.calls)?;
+        let call_authority = PreparedEffectTraceCallAuthority::new(
+            self.facts
+                .prepared_calls()
+                .map_err(FinalSemanticAnalysisError::from)?,
+        );
         for module in self.modules.values().copied() {
             for (owner, item) in module.items() {
                 self.control.check()?;

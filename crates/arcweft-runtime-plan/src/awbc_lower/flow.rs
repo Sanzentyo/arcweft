@@ -33,9 +33,9 @@ use arcweft_core::line_task::{
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     ChoiceRuntimeOption, EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeDialogueValueRole,
-    RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimeFunctionEffectSet,
-    RuntimeFunctionExecutableBody, RuntimeFunctionInputBinding, RuntimeIteratorEvidence,
-    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
+    RuntimeEffectSet, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeExecutableBody, RuntimeFlow,
+    RuntimeFunctionInputBinding, RuntimeIteratorEvidence, RuntimeIteratorWitnessExecutable,
+    RuntimeLineOperation, RuntimeMatchArm, RuntimePlan,
     RuntimeProjectCallAttachedPresence as RuntimeProjectCallAttachedPresenceCore,
     RuntimeProjectCallOrdinaryMaterialization as RuntimeProjectCallOrdinaryMaterializationCore,
     RuntimeProjectCallOutcome as RuntimeProjectCallOutcomeCore, RuntimeProjectCallPlan,
@@ -254,7 +254,7 @@ pub struct AwbcFlowLowerer<'inventory, 'plan> {
     diagnostics: Vec<AwbcLowerDiagnostic>,
     loop_targets: Vec<LoopLoweringTarget>,
     line_group: Option<LineGroupLoweringContext>,
-    active_effect_set: Option<RuntimeFunctionEffectSet>,
+    active_effect_set: Option<RuntimeEffectSet>,
 }
 
 impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
@@ -683,7 +683,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
         owner: AwbcFunctionId,
         inputs: &[RuntimeFunctionInputBinding],
         result: arcweft_core::runtime_id::RuntimePlanTypeId,
-        executable: &RuntimeFunctionExecutableBody,
+        executable: &RuntimeExecutableBody,
         path: &str,
     ) -> AwbcFunctionId {
         let mut frame = FrameBuilder::new();
@@ -779,7 +779,11 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             frame.parameter(*parameter, ty);
         }
         let mut body = FlowBodyBuilder::new(self.inventory, owner, AwbcSafePointKind::FlowEntry);
-        self.lower_ops(&mut frame, &mut body, &flow.ops, &public_name);
+        let previous_effect_set = self
+            .active_effect_set
+            .replace(flow.body().effects().clone());
+        self.lower_ops(&mut frame, &mut body, flow.body().ops(), &public_name);
+        self.active_effect_set = previous_effect_set;
         if body.needs_value_fallthrough() {
             self.terminate_value_fallthrough(&mut frame, &mut body);
         }
@@ -797,15 +801,12 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
             .iter()
             .map(|parameter| self.local_type(*parameter))
             .collect();
+        let effects = self.inventory.intern_effect_set(flow.body().effects());
         let signature = if body.returns_value {
-            self.inventory.intern_signature(
-                params,
-                Some(self.inventory.dynamic_ty()),
-                AwbcEffectSetId(0),
-            )
-        } else {
             self.inventory
-                .intern_signature(params, None, AwbcEffectSetId(0))
+                .intern_signature(params, Some(self.inventory.dynamic_ty()), effects)
+        } else {
+            self.inventory.intern_signature(params, None, effects)
         };
         let public_id = self.inventory.intern_string(&public_name);
         let mut flags = vec![
@@ -1447,7 +1448,7 @@ impl<'inventory, 'plan> AwbcFlowLowerer<'inventory, 'plan> {
                         AwbcExprLowerer::new(self.inventory, frame, path, self.plan).lower(expr)
                     })
                     .collect();
-                let empty_effects = RuntimeFunctionEffectSet::empty();
+                let empty_effects = RuntimeEffectSet::empty();
                 let declared_effects = self.active_effect_set.as_ref().unwrap_or(&empty_effects);
                 let Some(effect) = self
                     .inventory
@@ -3135,7 +3136,7 @@ fn selected_flow_closure(plan: &RuntimePlan, entry: &RuntimeEntrySpec) -> BTreeS
             .iter()
             .filter(|flow| selected.contains(&flow.id))
         {
-            collect_flow_dependencies(&flow.ops, &mut discovered, &mut has_dynamic_target);
+            collect_flow_dependencies(flow.body().ops(), &mut discovered, &mut has_dynamic_target);
         }
         if has_dynamic_target {
             return plan.flows().iter().map(|flow| flow.id.clone()).collect();

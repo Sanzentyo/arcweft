@@ -331,6 +331,7 @@ mod tests {
             .push_flow_seed(RuntimeFlowSeed::new(
                 flow.clone(),
                 [],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
                 vec![RuntimeFlowOpSeed::Return("done".to_owned())],
             ))
             .expect("flow admits");

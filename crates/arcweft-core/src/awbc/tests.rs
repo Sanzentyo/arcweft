@@ -87,6 +87,20 @@ fn minimal_program() -> AwbcProgram {
     }
 }
 
+fn add_effect_set(program: &mut AwbcProgram, effects: &[&str]) -> AwbcEffectSetId {
+    let id = AwbcEffectSetId(u32::try_from(program.effect_sets.len()).unwrap());
+    let effects = effects
+        .iter()
+        .map(|effect| {
+            let string = AwbcStringId(u32::try_from(program.strings.len()).unwrap());
+            program.strings.push((*effect).to_owned());
+            string
+        })
+        .collect();
+    program.effect_sets.push(AwbcEffectSet { effects });
+    id
+}
+
 fn project_call_invoke_program() -> AwbcProgram {
     let mut program = minimal_program();
     program.constants = vec![AwbcConstant::Unit];
@@ -1419,20 +1433,12 @@ fn project_call_verifier_rejects_default_capture_domain_and_effect_mismatches() 
     );
 
     let mut default_effects = project_call_default_program();
-    default_effects.strings.push("effect".to_owned());
-    default_effects.effect_sets.push(AwbcEffectSet {
-        effects: vec![AwbcStringId(2)],
-    });
-    default_effects.signatures[1].effects = AwbcEffectSetId(1);
+    default_effects.signatures[1].effects = add_effect_set(&mut default_effects, &["fs.read"]);
     default_effects.canonicalize_string_table();
     expect_project_call_rejection(default_effects, "project-call default");
 
     let mut target_effects = project_call_invoke_program();
-    target_effects.strings.push("effect".to_owned());
-    target_effects.effect_sets.push(AwbcEffectSet {
-        effects: vec![AwbcStringId(1)],
-    });
-    target_effects.signatures[1].effects = AwbcEffectSetId(1);
+    target_effects.signatures[1].effects = add_effect_set(&mut target_effects, &["fs.read"]);
     target_effects.canonicalize_string_table();
     expect_project_call_rejection(target_effects, "project-call target");
 }
@@ -1577,7 +1583,16 @@ fn project_call_default_and_target_stages_snapshot_with_verified_rejoin() {
 #[test]
 fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return() {
     for dynamic in [false, true] {
-        let program = goto_unwind_program(dynamic);
+        let mut program = goto_unwind_program(dynamic);
+        let effects = add_effect_set(&mut program, &["fs.read"]);
+        let signature = AwbcSignatureId(u32::try_from(program.signatures.len()).unwrap());
+        program.signatures.push(AwbcSignature {
+            params: Vec::new(),
+            result: None,
+            effects,
+        });
+        program.functions[2].signature = signature;
+        program.canonicalize_string_table();
         program
             .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
             .expect("goto unwind program verifies");
@@ -1643,6 +1658,134 @@ fn goto_static_and_dynamic_unwind_every_call_frame_without_project_call_return()
             cleanup_effects,
             vec![AwbcEffectPlanId(0), AwbcEffectPlanId(0)]
         );
+    }
+}
+
+#[test]
+fn flow_transfer_keeps_target_effect_and_capability_validation() {
+    for dynamic in [false, true] {
+        let mut program = goto_unwind_program(dynamic);
+        let effects = add_effect_set(&mut program, &["fs.read"]);
+        let signature = AwbcSignatureId(u32::try_from(program.signatures.len()).unwrap());
+        program.signatures.push(AwbcSignature {
+            params: Vec::new(),
+            result: None,
+            effects,
+        });
+        program.functions[2].signature = signature;
+        program.signatures[1].effects = effects;
+        program.instructions.push(AwbcInstruction::EmitEffect {
+            effect: AwbcEffectPlanId(0),
+            args: Vec::new(),
+        });
+        program.blocks[2].instructions = AwbcTableRange::new(1, 1);
+        program.canonicalize_string_table();
+        program
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect("transfer changes the active Flow effect scope");
+        let denied = std::collections::BTreeSet::new();
+        assert!(matches!(
+            program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext {
+                allowed_effects: Some(&denied), ..AwbcVerifyContext::default()
+            }),
+            Err(AwbcVerifyError::EffectDenied { effect }) if effect == "fs.read"
+        ));
+
+        // The destination's own effect must still fit the destination scope.
+        program.signatures[signature.index()].effects = AwbcEffectSetId(0);
+        assert!(matches!(
+            program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+            Err(AwbcVerifyError::EffectSetMismatch { caller: 2, .. })
+        ));
+    }
+}
+
+#[test]
+fn static_flow_transfer_still_validates_argument_arity_and_types() {
+    let mut program = goto_unwind_program(false);
+    program.blocks[1].terminator = AwbcTerminator::GotoStatic {
+        function: AwbcFunctionId(2),
+        args: vec![AwbcRegisterId(0)],
+    };
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::ArgumentCountMismatch { .. })
+    ));
+    program.signatures.push(AwbcSignature {
+        params: vec![AwbcTypeId(0)],
+        result: None,
+        effects: AwbcEffectSetId(0),
+    });
+    program.functions[2].signature = AwbcSignatureId(2);
+    program.frame_layouts[2].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: AwbcTypeId(0),
+        role: AwbcFrameSlotRole::Parameter,
+        scope_depth: 0,
+    });
+    assert!(matches!(
+        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+        Err(AwbcVerifyError::TypeMismatch { .. })
+    ));
+}
+
+#[test]
+fn returning_calls_use_the_canonical_scoped_effect_coverage_rule() {
+    for project_call in [false, true] {
+        for (permitted, required, accepted) in [
+            (vec![], "fs.read", false),
+            (vec!["fs.read(save)"], "fs.read", true),
+            (vec!["fs.read"], "fs.read(save)", true),
+            (vec!["fs.read(save)"], "fs.read(other)", false),
+            (
+                vec!["fs.read(other)", "fs.read(save)", "fs.write"],
+                "fs.read",
+                true,
+            ),
+            (
+                vec!["fs.read(other)", "fs.read(save)", "fs.write"],
+                "fs.read(save)",
+                true,
+            ),
+            (vec!["fs.read.deep", "fs.reader"], "fs.read", false),
+        ] {
+            let mut program = project_call_invoke_program();
+            if !project_call {
+                program.signatures[1].result = None;
+                program.blocks[2].terminator = AwbcTerminator::Return { value: None };
+                program.blocks[0].terminator = AwbcTerminator::CallFunction {
+                    function: AwbcFunctionId(1),
+                    args: Vec::new(),
+                    dst: None,
+                    resume: AwbcResumePointId(0),
+                };
+            }
+            program.signatures[0].effects = add_effect_set(&mut program, &permitted);
+            program.signatures[1].effects = add_effect_set(&mut program, &[required]);
+            program.canonicalize_string_table();
+            let result = program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default());
+            if accepted {
+                result.expect("scoped effect coverage agrees with semantic analysis");
+            } else {
+                assert!(
+                    matches!(result, Err(AwbcVerifyError::EffectSetMismatch { .. })),
+                    "{result:?}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn verifier_rejects_noncanonical_effect_identities_at_wire_admission() {
+    for invalid in ["invalid", "fs.read()", "fs.read (save)"] {
+        let mut program = minimal_program();
+        program.signatures[0].effects = add_effect_set(&mut program, &[invalid]);
+        program.canonicalize_string_table();
+        assert!(matches!(
+            program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
+            Err(AwbcVerifyError::InvalidInvariant { at, .. }) if at == "effect set 1"
+        ));
     }
 }
 

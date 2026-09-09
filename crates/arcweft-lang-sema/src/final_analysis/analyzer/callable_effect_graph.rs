@@ -130,10 +130,14 @@ impl CallableEffectGraph {
             {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
-            if matches!(
-                selected.schema().effects(),
-                CallableEffectSchema::Project { .. }
-            ) && let Some(target) = selected.checked()
+            if selected
+                .next_group_for(application.completed_group())
+                .is_none()
+                && matches!(
+                    selected.schema().effects(),
+                    CallableEffectSchema::Project { .. }
+                )
+                && let Some(target) = selected.checked()
                 && body_ids.contains(target)
                 && calls_by_expression
                     .insert(

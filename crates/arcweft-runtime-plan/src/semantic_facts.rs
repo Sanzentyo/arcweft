@@ -77,6 +77,7 @@ use crate::assertion_identity::RuntimeAssertionMode;
 
 mod content;
 mod evaluated_effect;
+mod flow;
 mod project_function;
 mod type_dependencies;
 
@@ -90,6 +91,7 @@ pub use evaluated_effect::{
     RuntimeDropFadeFact, RuntimeDropPolicyFact, RuntimeEffectFieldFact, RuntimeEvaluatedEffect,
     RuntimeEvaluatedEffectFact, RuntimeEvaluatedEffectOperandFact, RuntimeLogLevel,
 };
+pub use flow::RuntimeFlowFact;
 pub use project_function::{
     RuntimeClosureCaptureFact, RuntimeClosureInstanceFact, RuntimeClosureInstanceKey,
     RuntimeClosureParameterFact, RuntimeProjectAttachedDefaultCapture,
@@ -4092,7 +4094,7 @@ impl RuntimePureProgramFact {
 #[derive(Debug)]
 pub struct RuntimePlanSemanticFactInput {
     local_declarations: Vec<(LocalId, RuntimeNormalizedType)>,
-    flows: Vec<(ItemId, FlowRuntimeId)>,
+    flows: Vec<(ItemId, RuntimeFlowFact)>,
     expression_types: Vec<(ExprId, RuntimeNormalizedType)>,
     pattern_types: Vec<(PatternId, RuntimeNormalizedType)>,
     expression_literals: Vec<(ExprId, RuntimeValue)>,
@@ -4178,8 +4180,8 @@ impl RuntimePlanSemanticFactInput {
         self.local_declarations.push((owner, ty));
     }
 
-    pub fn push_flow(&mut self, owner: ItemId, identity: FlowRuntimeId) {
-        self.flows.push((owner, identity));
+    pub fn push_flow(&mut self, owner: ItemId, flow: RuntimeFlowFact) {
+        self.flows.push((owner, flow));
     }
 
     /// Stages the accepted normalized type of one selected runtime-domain
@@ -4423,7 +4425,7 @@ pub struct RuntimePlanSemanticFacts {
     snapshots: BTreeMap<HirModuleId, HirSnapshotId>,
     local_declaration_order: Box<[LocalId]>,
     local_declarations: BTreeMap<LocalId, RuntimeNormalizedType>,
-    flows: BTreeMap<ItemId, FlowRuntimeId>,
+    flows: BTreeMap<ItemId, RuntimeFlowFact>,
     expression_types: BTreeMap<ExprId, RuntimeNormalizedType>,
     expression_children: BTreeMap<ExprId, Box<[ExprId]>>,
     pattern_types: BTreeMap<PatternId, RuntimeNormalizedType>,
@@ -5785,7 +5787,7 @@ impl RuntimePlanSemanticFacts {
                         expression: *expression,
                     });
                 };
-                if flows.get(owner) != Some(runtime) {
+                if flows.get(owner).map(RuntimeFlowFact::identity) != Some(runtime) {
                     return Err(RuntimeSemanticFactsError::InvalidChoiceFact {
                         expression: *expression,
                     });
@@ -6935,8 +6937,8 @@ impl RuntimePlanSemanticFacts {
         roots
     }
 
-    /// Compiler-admitted core identity for one exact final-HIR Flow item.
-    pub fn flow(&self, item: ItemId) -> Option<&FlowRuntimeId> {
+    /// Compiler-admitted identity and closed effects for one exact final-HIR Flow item.
+    pub fn flow(&self, item: ItemId) -> Option<&RuntimeFlowFact> {
         self.flows.get(&item)
     }
 

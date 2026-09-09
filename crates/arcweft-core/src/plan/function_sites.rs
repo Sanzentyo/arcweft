@@ -4,71 +4,12 @@ use std::num::NonZeroU32;
 
 use thiserror::Error;
 
-use arcweft_id::EffectId;
+use super::RuntimeExecutableBody;
 
-use super::FlowOp;
 use crate::pattern::RuntimePattern;
 use crate::runtime_id::RuntimePlanTypeId;
 use crate::runtime_id::{RuntimeFunctionSiteId, RuntimeLocalDeclarationId};
 use crate::value::RuntimeExpr;
-
-/// The one runtime projection of a checked closed effect row.
-///
-/// The aggregate function-site table owns this row.  It is deliberately a
-/// typed slice of the foundational `EffectId` values rather than a debug
-/// label, source spelling, or encoded integer.  Callers must provide the
-/// canonical set; the checked constructor rejects duplicate members.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct RuntimeFunctionEffectSet(Box<[EffectId]>);
-
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum RuntimeFunctionEffectSetError {
-    #[error("runtime function effect set contains duplicate effect `{effect}`")]
-    Duplicate { effect: EffectId },
-}
-
-impl RuntimeFunctionEffectSet {
-    #[must_use]
-    pub fn empty() -> Self {
-        Self(Vec::new().into_boxed_slice())
-    }
-
-    /// Constructs the canonical sorted/unique runtime projection of one
-    /// checked effect row.
-    pub fn try_from_effects(
-        effects: impl IntoIterator<Item = EffectId>,
-    ) -> Result<Self, RuntimeFunctionEffectSetError> {
-        let mut effects = effects.into_iter().collect::<Vec<_>>();
-        effects.sort();
-        if let Some(effect) = effects
-            .windows(2)
-            .find_map(|pair| (pair[0] == pair[1]).then(|| pair[0].clone()))
-        {
-            return Err(RuntimeFunctionEffectSetError::Duplicate { effect });
-        }
-        Ok(Self(effects.into_boxed_slice()))
-    }
-
-    #[must_use]
-    pub fn as_slice(&self) -> &[EffectId] {
-        &self.0
-    }
-
-    #[must_use]
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &EffectId> + DoubleEndedIterator {
-        self.0.iter()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-}
 
 /// The body family reserved by a function-site construction handle.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -125,40 +66,11 @@ impl RuntimeFunctionInputBinding {
     }
 }
 
-/// An executable structured function body.  Its flow operations are lowered
-/// through the same closed `FlowOp` algebra used by ordinary plan roots.
-#[derive(Clone, Debug, PartialEq)]
-pub struct RuntimeFunctionExecutableBody {
-    effects: RuntimeFunctionEffectSet,
-    ops: Box<[FlowOp]>,
-}
-
-impl RuntimeFunctionExecutableBody {
-    pub(crate) fn new(effects: RuntimeFunctionEffectSet, ops: Box<[FlowOp]>) -> Self {
-        Self { effects, ops }
-    }
-
-    #[must_use]
-    pub const fn effects(&self) -> &RuntimeFunctionEffectSet {
-        &self.effects
-    }
-
-    #[must_use]
-    pub fn is_effect_free(&self) -> bool {
-        self.effects.is_empty()
-    }
-
-    #[must_use]
-    pub fn ops(&self) -> &[FlowOp] {
-        &self.ops
-    }
-}
-
 /// One typed structured function body owned by its complete runtime plan.
 #[derive(Clone, Debug, PartialEq)]
 pub enum RuntimeFunctionSiteBody {
     Expression(RuntimeExpr),
-    Executable(RuntimeFunctionExecutableBody),
+    Executable(RuntimeExecutableBody),
 }
 
 impl RuntimeFunctionSiteBody {
@@ -179,7 +91,7 @@ impl RuntimeFunctionSiteBody {
     }
 
     #[must_use]
-    pub const fn executable(&self) -> Option<&RuntimeFunctionExecutableBody> {
+    pub const fn executable(&self) -> Option<&RuntimeExecutableBody> {
         match self {
             Self::Expression(_) => None,
             Self::Executable(executable) => Some(executable),

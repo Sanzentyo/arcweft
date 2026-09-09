@@ -53,7 +53,8 @@ entry agent @entry.agent.main { controller = run }
     .expect("Agent controller compiles through an ordinary function site");
     assert!(compiled.plan.flows().iter().all(|flow| {
         !flow
-            .ops
+            .body()
+            .ops()
             .iter()
             .any(|op| matches!(op, FlowOp::HostCall { .. }))
     }));

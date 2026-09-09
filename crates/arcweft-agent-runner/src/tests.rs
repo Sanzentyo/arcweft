@@ -1027,6 +1027,7 @@ fn observe_checkpoint_program() -> AwbcProgram {
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
                     LineEffectRequest::Call(RuntimeCall {
@@ -1055,6 +1056,7 @@ fn runtime_assertion_program() -> AwbcProgram {
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Effect(arcweft_core::plan::RuntimeLineEffectSeed::Static(
                     LineEffectRequest::Assert(RuntimeAssertion::new(
@@ -1214,6 +1216,7 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> AwbcProgram {
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
                     binding: Some(await_response_binding_pattern(
@@ -1277,6 +1280,7 @@ fn read_resource_binding_program() -> AwbcProgram {
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
                     binding: Some(await_response_binding_pattern(
@@ -1360,6 +1364,7 @@ fn single_response_field_program(request: SingleResponseFieldRequest) -> AwbcPro
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Await {
                     binding: Some(await_response_binding_pattern(
@@ -1416,6 +1421,7 @@ fn direct_observe_program() -> AwbcProgram {
         RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::HostCall {
                     binding: Some(response_binding_pattern(OBSERVATION_TY, observation)),

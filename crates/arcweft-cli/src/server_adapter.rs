@@ -545,7 +545,12 @@ mod tests {
         let id = FlowRuntimeId::from_runtime_target_value(id).expect("flow runtime id");
         let mut builder = RuntimePlanBuilder::new();
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(id, [], ops))
+            .push_flow_seed(RuntimeFlowSeed::new(
+                id,
+                [],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+                ops,
+            ))
             .expect("typed flow seed is admitted");
         builder.finish().expect("plan is valid")
     }

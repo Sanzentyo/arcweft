@@ -1031,7 +1031,12 @@ mod tests {
             ]
         };
         builder
-            .push_flow_seed(RuntimeFlowSeed::new(flow.clone(), [], main_ops))
+            .push_flow_seed(RuntimeFlowSeed::new(
+                flow.clone(),
+                [],
+                arcweft_core::plan::RuntimeEffectSet::empty(),
+                main_ops,
+            ))
             .expect("flow admits");
         builder
             .push_flow_schema(RuntimeFlowSchema {

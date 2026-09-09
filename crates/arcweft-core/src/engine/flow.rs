@@ -48,7 +48,7 @@ impl Engine {
             };
             let Some(op) = self
                 .flow_at_cursor(cursor)
-                .and_then(|flow| flow.ops.get(cursor.op_index))
+                .and_then(|flow| flow.body().ops().get(cursor.op_index))
                 .cloned()
             else {
                 self.finish(output, pure_backend);

@@ -280,7 +280,7 @@ flow main() -> i64 {
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .find_map(|op| match op {
             FlowOp::ProjectCall { site } => compiled
                 .plan
@@ -335,7 +335,7 @@ flow main() -> i64 {
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .find_map(|op| match op {
             FlowOp::ProjectCall { site } => compiled
                 .plan
@@ -392,7 +392,7 @@ flow main() -> i64 {
         .plan
         .flows()
         .iter()
-        .flat_map(|flow| flow.ops.iter())
+        .flat_map(|flow| flow.body().ops().iter())
         .filter_map(|op| match op {
             FlowOp::ProjectCall { site } => compiled
                 .plan

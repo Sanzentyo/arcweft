@@ -246,7 +246,7 @@ fn check_failure_retains_exact_session_identity() {
     assert_eq!(guards.len(), 2);
     assert_ne!(guards[0], guards[1]);
     assert!(matches!(
-        report.plan.flows()[0].ops.as_slice(),
+        report.plan.flows()[0].body().ops(),
         [
             FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
                 profile: RuntimeAssertionProfile::Always,
@@ -309,7 +309,7 @@ fn enabled_debug_failure_retains_exact_session_identity() {
     assert_eq!(report.assertion_site_count(), 2);
     assert_eq!(guards.len(), 2);
     assert!(matches!(
-        report.plan.flows()[0].ops.as_slice(),
+        report.plan.flows()[0].body().ops(),
         [
             FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
                 profile: RuntimeAssertionProfile::DebugOnly,
@@ -410,7 +410,7 @@ fn prove_has_no_runtime_mode_or_guard() {
         lower_assertion_project(&project, RuntimeAssertionAdmission::Discharged, &[true]);
     assert_eq!(report.assertion_site_count(), 0);
     assert!(guards.is_empty());
-    assert!(report.plan.flows()[0].ops.is_empty());
+    assert!(report.plan.flows()[0].body().ops().is_empty());
 }
 
 #[test]
@@ -435,7 +435,7 @@ fn release_plan_omits_debug_evaluation_and_inventory() {
     assert_eq!(debug_guards.len(), 2);
     assert_eq!(release_report.assertion_site_count(), 0);
     assert!(release_guards.is_empty());
-    assert!(release_report.plan.flows()[0].ops.is_empty());
+    assert!(release_report.plan.flows()[0].body().ops().is_empty());
 }
 
 #[test]
@@ -649,7 +649,10 @@ fn lower_assertion_project(
     }
     input.push_flow(
         flow_owner,
-        FlowRuntimeId::canonical("checks").expect("runtime Flow identity"),
+        arcweft_runtime_plan::semantic_facts::RuntimeFlowFact::new(
+            FlowRuntimeId::canonical("checks").expect("runtime Flow identity"),
+            arcweft_core::plan::RuntimeEffectSet::empty(),
+        ),
     );
     for (condition, value) in conditions.iter().copied().zip(values.iter().copied()) {
         input.push_expression_literal(condition, RuntimeValue::Bool(value));
@@ -664,7 +667,8 @@ fn lower_assertion_project(
     )
     .expect("runtime assertion fixture lowers");
     let guards = report.plan.flows()[0]
-        .ops
+        .body()
+        .ops()
         .iter()
         .filter_map(|operation| match operation {
             FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert { guard, .. }) => Some(guard),

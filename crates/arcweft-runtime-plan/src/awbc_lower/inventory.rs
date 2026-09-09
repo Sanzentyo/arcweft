@@ -27,9 +27,9 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeDialogueValueRole, RuntimeEntryKind, RuntimeEntrySpec,
-    RuntimeEntryTarget, RuntimeFunctionEffectSet, RuntimeFunctionInputBinding,
-    RuntimeFunctionSiteBody, RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeDialogueValueRole, RuntimeEffectSet, RuntimeEntryKind, RuntimeEntrySpec,
+    RuntimeEntryTarget, RuntimeFunctionInputBinding, RuntimeFunctionSiteBody,
+    RuntimeHostCallTarget, RuntimePlan, RuntimeTraitMethodId,
 };
 use arcweft_core::runtime_id::{
     RuntimeDialogueContentTemplateId, RuntimeFunctionSiteId, RuntimeLocalDeclarationId,
@@ -719,7 +719,7 @@ impl AwbcInventory {
         Some(checked.semantic_identity_digest())
     }
 
-    pub fn intern_effect_set(&mut self, effects: &RuntimeFunctionEffectSet) -> AwbcEffectSetId {
+    pub fn intern_effect_set(&mut self, effects: &RuntimeEffectSet) -> AwbcEffectSetId {
         let ids = effects
             .iter()
             .map(|effect| self.intern_string(effect.as_str()))
@@ -1497,7 +1497,7 @@ impl AwbcInventory {
     pub fn intern_evaluated_effect(
         &mut self,
         effect: &RuntimeEffectExpr,
-        declared_effects: &RuntimeFunctionEffectSet,
+        declared_effects: &RuntimeEffectSet,
     ) -> Option<AwbcEffectPlanId> {
         let descriptor = effect.host_descriptor()?;
         let arg_count = effect.argument_exprs().len();

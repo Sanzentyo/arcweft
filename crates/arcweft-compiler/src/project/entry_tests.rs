@@ -738,7 +738,7 @@ entry agent @entry.agent.controller {
         .find(|flow| &flow.id == controller)
         .expect("controller flow exists");
 
-    let expr = first_controller_binding(&compiled.runtime_plan().plan, &flow.ops);
+    let expr = first_controller_binding(&compiled.runtime_plan().plan, flow.body().ops());
     assert!(matches!(
         expr.kind(),
         RuntimeExprKind::Value(RuntimeValue::UInt(RuntimeUInt::U32(1)))
@@ -982,7 +982,7 @@ entry agent @entry.agent.second {
             .iter()
             .find(|flow| &flow.id == controller)
             .expect("controller flow exists");
-        let expr = first_controller_binding(&compiled.runtime_plan().plan, &flow.ops);
+        let expr = first_controller_binding(&compiled.runtime_plan().plan, flow.body().ops());
         assert!(matches!(
             expr.kind(),
             RuntimeExprKind::Value(RuntimeValue::UInt(actual)) if actual == &expected

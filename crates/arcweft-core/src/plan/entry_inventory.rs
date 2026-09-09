@@ -776,7 +776,7 @@ impl RuntimePlan {
     fn verify_project_call_sites(&self) -> Result<(), RuntimePlanError> {
         let check_ops = |ops: &[FlowOp]| self.verify_project_call_ops(ops);
         for flow in &self.flows {
-            check_ops(&flow.ops)?;
+            check_ops(flow.body().ops())?;
         }
         for site in self.function_sites().iter() {
             if let Some(body) = site.body().executable() {

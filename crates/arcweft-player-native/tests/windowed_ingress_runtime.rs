@@ -259,6 +259,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
         .push_flow_seed(RuntimeFlowSeed::new(
             flow.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![
                 RuntimeFlowOpSeed::Dialogue {
                     content,

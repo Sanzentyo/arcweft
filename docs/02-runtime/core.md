@@ -17,9 +17,11 @@ Arcweft keeps three ID domains separate:
 - Source references live in parser/HIR/lowering while relative syntax is still
   meaningful. They may contain family-qualified source spelling such as
   `@flow.main` or current/parent-relative addressing.
-- Canonical runtime IDs are execution lookup keys. Source `@flow.main` lowers
-  to a `FlowRuntimeId` whose canonical path is `main`; `flow.main` is not the
-  runtime lookup key.
+- Runtime IDs are execution lookup keys. A source-backed Flow retains the
+  identity projected from its accepted declaration digest and the separate
+  public label `flow.main`. Manually constructed runtime IDs such as `main`
+  remain explicit inputs to the canonical runtime-ID API; they do not recreate
+  the identity of an accepted source declaration.
 - Public/debug labels are deliberate strings used in AWBC reports, manifests,
   logs, diagnostics, and user-facing output. Runtime code must not recover a
   lookup ID by splitting one of these labels.
@@ -45,7 +47,13 @@ pub struct RuntimePlan {
 
 pub struct RuntimeFlow {
     pub id: FlowRuntimeId,
-    pub ops: Vec<FlowOp>,
+    pub params: Box<[RuntimeLocalDeclarationId]>,
+    body: RuntimeExecutableBody,
+}
+
+pub struct RuntimeExecutableBody {
+    effects: RuntimeEffectSet,
+    ops: Box<[FlowOp]>,
 }
 
 pub enum FlowOp {
@@ -144,6 +152,15 @@ pub struct RuntimeStepResult {
 ```
 
 Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であり、まだ完全な story VM ではない。
+Flow roots and structured function sites share `RuntimeExecutableBody`.
+Consumers read `RuntimeFlow::body()` and its `effects()` / `ops()` accessors;
+construction admits the closed effect row and operations together. Semantic
+inference supplies omitted Flow rows, while authored bounds retain their
+declared scopes and unused permissions. AWBC signatures preserve that row and
+the verifier checks returning calls using `EffectId` coverage. Terminal Flow
+transfers begin a new effect scope as described in
+[control transfer](../01-language/control-transfer-return-out-yield.md).
+
 `Engine::step(RuntimeStepInput, RuntimeStepOptions) -> RuntimeStepResult` は
 `RuntimeStepMode` と `RuntimeStepBudget::max_ops` に従って lowered flow op を
 内部 drain する。`OneOp` は最大 1 op、`Drain` / `Server` は blocked/done/failed

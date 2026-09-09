@@ -618,11 +618,11 @@ fn runtime_plan_consumes_project_view_without_flattening() {
             .plan
             .flows()
             .iter()
-            .map(|flow| flow.id.clone())
+            .map(|flow| (&flow.id, flow.body().effects()))
             .collect::<Vec<_>>(),
         projected
             .iter()
-            .map(|(_, _, runtime)| runtime.clone())
+            .map(|(_, _, runtime)| (runtime.identity(), runtime.effects()))
             .collect::<Vec<_>>()
     );
 }

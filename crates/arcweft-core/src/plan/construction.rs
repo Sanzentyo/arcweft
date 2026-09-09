@@ -22,9 +22,9 @@ pub use seed::{
     RuntimeDialogueContentTemplateManifestSeed, RuntimeDialogueEffectSiteSeed,
     RuntimeDialogueMarkSeedId, RuntimeDialogueResultTargetSeed,
     RuntimeDialogueResultTargetSeedError, RuntimeDialogueValueSiteSeed, RuntimeDropPolicySeed,
-    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExprMatchArmSeed, RuntimeExprSeed,
-    RuntimeExprSeedKind, RuntimeFieldProjectionSeed, RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed,
-    RuntimeFlowSeed, RuntimeFunctionExecutableBodySeed, RuntimeFunctionInputBindingSeed,
+    RuntimeEffectFieldSeed, RuntimeEvaluatedEffectSeed, RuntimeExecutableBodySeed,
+    RuntimeExprMatchArmSeed, RuntimeExprSeed, RuntimeExprSeedKind, RuntimeFieldProjectionSeed,
+    RuntimeFlowMatchArmSeed, RuntimeFlowOpSeed, RuntimeFlowSeed, RuntimeFunctionInputBindingSeed,
     RuntimeFunctionSiteBodySeed, RuntimeFunctionSiteDeclarationSeed, RuntimeFunctionSiteSeedId,
     RuntimeHostArgumentSeed, RuntimeHostCallTargetSeed, RuntimeHostTaskRequestTemplateSeed,
     RuntimeIteratorEvidenceSeed, RuntimeIteratorWitnessEvidenceSeed,
@@ -57,10 +57,10 @@ use crate::stream::StreamPlan;
 use crate::value::{RuntimeAgentConstructor, RuntimeDialogueOpaqueRole, RuntimeRecordFieldIdError};
 
 use super::dialogue_content::RuntimeDialogueContentPlanTableBuilder;
+use super::executable_body::{RuntimeEffectSet, RuntimeExecutableBody};
 use super::function_sites::{
-    RuntimeFunctionEffectSet, RuntimeFunctionInputBinding, RuntimeFunctionInputSource,
-    RuntimeFunctionSiteBody, RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError,
-    RuntimeFunctionSiteTableBuilder,
+    RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSiteBody,
+    RuntimeFunctionSiteBodyKind, RuntimeFunctionSiteError, RuntimeFunctionSiteTableBuilder,
 };
 use super::local_declarations::{
     RuntimeLocalDeclarationTableBuilder, RuntimeLocalDeclarationTableError,
@@ -495,7 +495,7 @@ struct ReservedFunctionSite {
     inputs: Box<[RuntimeFunctionInputBinding]>,
     result: RuntimePlanTypeId,
     body_kind: RuntimeFunctionSiteBodyKind,
-    effects: RuntimeFunctionEffectSet,
+    effects: RuntimeEffectSet,
     body: Option<RuntimeFunctionSiteBody>,
 }
 
@@ -673,7 +673,7 @@ impl RuntimePlanBuilder {
             inputs: inputs.into_iter().collect(),
             result,
             body_kind: RuntimeFunctionSiteBodyKind::Expression,
-            effects: RuntimeFunctionEffectSet::empty(),
+            effects: RuntimeEffectSet::empty(),
         })?;
         self.define_function_site_seed(&site, body)?;
         Ok(site)
@@ -802,12 +802,10 @@ impl RuntimePlanBuilder {
                 let ops = self.lower_flow_ops(body.ops.into_vec())?;
                 let mut scope = function_input_scope(&inputs);
                 self.validate_flow_operation_locals_with_usage(&ops, &mut scope)?;
-                RuntimeFunctionSiteBody::Executable(
-                    super::function_sites::RuntimeFunctionExecutableBody::new(
-                        body_effects,
-                        ops.into_boxed_slice(),
-                    ),
-                )
+                RuntimeFunctionSiteBody::Executable(RuntimeExecutableBody::new(
+                    body_effects,
+                    ops.into_boxed_slice(),
+                ))
             }
         };
         self.function_sites[index].body = Some(lowered);
@@ -2170,7 +2168,7 @@ impl RuntimePlanBuilder {
     }
 
     fn try_push_flow_seed(&mut self, seed: RuntimeFlowSeed) -> Result<u32, RuntimePlanBuildError> {
-        let (id, params, ops) = seed.into_parts();
+        let (id, params, body) = seed.into_parts();
         let label = id.canonical_label();
         let mut unique = BTreeSet::new();
         let mut resolved = Vec::with_capacity(params.len());
@@ -2186,7 +2184,7 @@ impl RuntimePlanBuilder {
             }
             resolved.push(local);
         }
-        let ops = self.lower_flow_ops(ops)?;
+        let ops = self.lower_flow_ops(body.ops.into_vec())?;
         let mut scope = resolved.iter().copied().collect::<BTreeSet<_>>();
         self.validate_flow_operation_locals(&ops, &mut scope)?;
         push_row(
@@ -2194,7 +2192,7 @@ impl RuntimePlanBuilder {
             RuntimeFlow {
                 id,
                 params: resolved.into_boxed_slice(),
-                ops,
+                body: RuntimeExecutableBody::new(body.effects, ops.into_boxed_slice()),
             },
             RuntimePlanTable::Flows,
         )

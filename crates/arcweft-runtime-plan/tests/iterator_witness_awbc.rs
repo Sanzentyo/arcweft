@@ -100,6 +100,7 @@ fn counter_plan() -> RuntimePlan {
         .push_flow_seed(RuntimeFlowSeed::new(
             main.clone(),
             [],
+            arcweft_core::plan::RuntimeEffectSet::empty(),
             vec![RuntimeFlowOpSeed::For {
                 pattern: RuntimePatternSeed::new(
                     item_type,

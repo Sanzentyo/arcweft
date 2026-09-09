@@ -2615,6 +2615,8 @@ impl CheckedItem {
         Self { effects, role }
     }
 
+    /// Closed exposed effects for structural Flow execution. Ordinary
+    /// callable effects are owned by the checked callable catalog.
     pub const fn effects(&self) -> &EffectSet {
         &self.effects
     }
