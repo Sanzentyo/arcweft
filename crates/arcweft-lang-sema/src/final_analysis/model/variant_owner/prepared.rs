@@ -6,8 +6,8 @@ use super::{
 };
 use crate::env::{EnumVariantPayload, EnvironmentEnumSchema};
 use crate::types::{
-    AgentBuiltinType, CharacterNominalType, ProjectNominalType, TypeKind, VariantPayloadShape,
-    VariantPayloadType, VariantPayloadTypeShape,
+    CharacterNominalType, ProjectNominalType, TypeKind, VariantPayloadShape, VariantPayloadType,
+    VariantPayloadTypeShape,
 };
 use arcweft_core::pattern::RuntimeBuiltinVariantIdentity;
 
@@ -123,18 +123,17 @@ impl PreparedVariantOwnerSeed {
         schema: &EnvironmentEnumSchema,
         ty: &TypeKind,
     ) -> Result<Self, CheckedVariantOwnerError> {
-        let kind = match ty {
-            TypeKind::AgentResourceBody => VariantOwnerKind::RuntimeBuiltin {
-                owner: RuntimeBuiltinVariantIdentity::AgentResourceBody,
+        let runtime_owner = match ty {
+            TypeKind::AgentResourceBody => Some(RuntimeBuiltinVariantIdentity::AgentResourceBody),
+            TypeKind::AgentBuiltin(builtin) => builtin.runtime_variant(),
+            _ => None,
+        };
+        let kind = match runtime_owner {
+            Some(owner) => VariantOwnerKind::RuntimeBuiltin {
+                owner,
                 ty: ty.clone(),
             },
-            TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryEncoding) => {
-                VariantOwnerKind::RuntimeBuiltin {
-                    owner: RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
-                    ty: ty.clone(),
-                }
-            }
-            _ => VariantOwnerKind::BuiltinClosed {
+            None => VariantOwnerKind::BuiltinClosed {
                 nominal: schema.owner().clone(),
                 ty: ty.clone(),
             },

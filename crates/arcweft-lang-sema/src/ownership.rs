@@ -1658,10 +1658,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
     ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
         match builtin {
             AgentBuiltinType::ObservedObjectId
-            | AgentBuiltinType::CaptureFormat
-            | AgentBuiltinType::CaptureKind
             | AgentBuiltinType::WaitError
-            | AgentBuiltinType::PointerButton
             | AgentBuiltinType::RagError
             | AgentBuiltinType::AgentSourcePosition
             | AgentBuiltinType::AgentProjectFlowControlSummary
@@ -1701,16 +1698,22 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     )),
                 ))
             }
-            AgentBuiltinType::AgentBinaryEncoding => {
-                let owner = RuntimeBuiltinVariantIdentity::AgentBinaryEncoding;
-                let checked =
-                    RuntimeCheckedType::try_builtin_variant(owner, [None]).map_err(|source| {
-                        RuntimeOwnershipError::BuiltinVariantSchema {
-                            path: path.clone(),
-                            owner,
-                            source,
-                        }
-                    })?;
+            AgentBuiltinType::CaptureFormat
+            | AgentBuiltinType::CaptureKind
+            | AgentBuiltinType::PointerButton
+            | AgentBuiltinType::AgentBinaryEncoding => {
+                let owner = builtin
+                    .runtime_variant()
+                    .expect("Agent enum owns its runtime schema");
+                let checked = RuntimeCheckedType::try_builtin_variant(
+                    owner,
+                    owner.cases().iter().map(|_| None),
+                )
+                .map_err(|source| RuntimeOwnershipError::BuiltinVariantSchema {
+                    path: path.clone(),
+                    owner,
+                    source,
+                })?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Checked(checked),
                 ))
@@ -2117,10 +2120,22 @@ mod tests {
                 arcweft_core::value::RuntimeAgentValue::ViewportPoint { x: 3, y: 4 },
             ))
             .expect("ViewportPoint carrier");
-        rejected(
-            TypeKind::AgentBuiltin(AgentBuiltinType::CaptureKind),
-            RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
-        );
+        for builtin in AgentBuiltinType::UNIT_VARIANTS {
+            let admission = classifier
+                .classify(&TypeKind::AgentBuiltin(builtin))
+                .expect("Agent unit enum has a canonical snapshot owner");
+            for case in builtin.runtime_variant().unwrap().cases() {
+                let value = RuntimeValue::try_builtin_variant(case.identity(), None).unwrap();
+                admission
+                    .validate_live_value(&value)
+                    .expect("each enum case is admitted");
+                assert!(
+                    admission
+                        .validate_live_value(&RuntimeValue::String(case.name().to_owned()))
+                        .is_err()
+                );
+            }
+        }
     }
 
     #[test]

@@ -1,7 +1,7 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
 use crate::pattern::{
-    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission,
-    RuntimeOpaqueTypeOwner, RuntimePattern, RuntimeVariantIdentity, match_runtime_pattern,
+    RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+    RuntimePattern, match_runtime_pattern,
 };
 use crate::plan::{
     RuntimeFunctionInputSource, RuntimeFunctionSiteBody, RuntimePlan, RuntimePlanTypeDeclaration,
@@ -1987,92 +1987,17 @@ impl<'a> PureEvaluator<'a> {
         payload: Option<&RuntimeExpr>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let plan = Arc::clone(self.plan);
-        let declaration = plan
-            .type_table()
-            .get(ty)
-            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
-        let (owner, name, payload_ty) = match declaration.projection() {
-            RuntimePlanTypeProjection::Option { some_payload, .. } => {
-                let builtin = RuntimeBuiltinVariantIdentity::Option;
-                let schema = builtin
-                    .case_at(ordinal)
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                let payload = match schema.identity() {
-                    RuntimeBuiltinVariantCaseIdentity::OptionSome => Some(*some_payload),
-                    RuntimeBuiltinVariantCaseIdentity::OptionNone => None,
-                    _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-                };
-                (
-                    RuntimeVariantIdentity::Builtin(builtin),
-                    schema.name().to_owned(),
-                    payload,
-                )
-            }
-            RuntimePlanTypeProjection::Result {
-                value_payload,
-                error_payload,
-                ..
-            } => {
-                let builtin = RuntimeBuiltinVariantIdentity::Result;
-                let schema = builtin
-                    .case_at(ordinal)
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                let payload = match schema.identity() {
-                    RuntimeBuiltinVariantCaseIdentity::ResultOk => Some(*value_payload),
-                    RuntimeBuiltinVariantCaseIdentity::ResultErr => Some(*error_payload),
-                    _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-                };
-                (
-                    RuntimeVariantIdentity::Builtin(builtin),
-                    schema.name().to_owned(),
-                    payload,
-                )
-            }
-            RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
-                let schema = owner
-                    .case_at(ordinal)
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                let payload = usize::try_from(ordinal)
-                    .ok()
-                    .and_then(|ordinal| cases.get(ordinal))
-                    .copied()
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                (
-                    RuntimeVariantIdentity::Builtin(*owner),
-                    schema.name().to_owned(),
-                    payload,
-                )
-            }
-            RuntimePlanTypeProjection::ProjectNominal { .. }
-            | RuntimePlanTypeProjection::Opaque { .. } => {
-                let domain = plan
-                    .variant_domains()
-                    .get(ty)
-                    .ok_or(RuntimeEvalError::MissingVariantDomain(ty))?;
-                let case = domain
-                    .case(ordinal)
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                (
-                    RuntimeVariantIdentity::Nominal {
-                        nominal: domain.nominal().clone(),
-                        semantic_identity: declaration.semantic_identity(),
-                    },
-                    case.name().to_owned(),
-                    case.payload(),
-                )
-            }
-            _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
-        };
+        let case = plan.variant_case(ty, ordinal)?;
         let payload = payload.map(|expr| self.evaluate_expr(expr)).transpose()?;
-        match (payload_ty, payload.as_ref()) {
+        match (case.payload(), payload.as_ref()) {
             (Some(expected), Some(value)) if plan.value_matches_type(expected, value)? => {}
             (None, None) => {}
             _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
         }
         Ok(RuntimeValue::Variant {
-            owner,
+            owner: case.owner().clone(),
             ordinal,
-            name,
+            name: case.name().to_owned(),
             payload: payload.map(Box::new),
         })
     }

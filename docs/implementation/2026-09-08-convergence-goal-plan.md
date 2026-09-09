@@ -251,3 +251,11 @@ MCP の4テストが通過した。残る callable 18件に加え、Try の Agen
 組み込みケースの構造を直接検証するようにした。runtime-plan の64テスト、
 関連 compiler 22テスト、resource/attach/checkpoint の実行と MCP 4テストが通った。
 callable 18件、capture の失敗とネイティブ HIR公開失敗、後続工程は未完のまま保持する。
+
+[Agent enum の case authority の記録](2026-09-09-agent-enum-case-authority.md)
+では、CaptureFormat・CaptureKind・PointerButton を既存の組み込み variant へ
+統合し、実行計画の構築・値検査・パターン・native/pure・AWBC のケース選択を
+共通化した。4 enum の全8ケースを native/AWBC の関数引数・Match・codec で
+検証し、関連ライブラリ490件と capture ソースの check が通った。run に残る
+スタックオーバーフローは意味解析の call graph 挿入で再現・特定しており、
+引き続き修正する。既知の callable と後続工程の完了条件は維持する。

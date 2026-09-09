@@ -8,10 +8,9 @@ use crate::effect::{
 };
 use crate::entry::TypeLayoutHash;
 use crate::pattern::{
-    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeCheckedType,
-    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimePattern,
     RuntimePatternBindingCoordinate, RuntimePatternBindingPath, RuntimePatternBindingStep,
-    RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField, RuntimeVariantIdentity,
+    RuntimePatternKind, RuntimePatternRest, RuntimeRecordPatternField,
 };
 use crate::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 use crate::stream::{StreamMatchArm, StreamOp, StreamPlan};
@@ -1019,7 +1018,7 @@ impl RuntimePlanBuilder {
         ordinal: u32,
         actual: Option<RuntimePlanTypeId>,
     ) -> Result<(), RuntimePlanBuildError> {
-        let expected = self.variant_payload_type(owner, ordinal)?;
+        let expected = self.variant_case(owner, ordinal)?.payload();
         if expected == actual {
             Ok(())
         } else {
@@ -1029,30 +1028,6 @@ impl RuntimePlanBuilder {
                 expected,
                 actual,
             })
-        }
-    }
-
-    fn variant_payload_type(
-        &self,
-        owner: RuntimePlanTypeId,
-        ordinal: u32,
-    ) -> Result<Option<RuntimePlanTypeId>, RuntimePlanBuildError> {
-        if let Some(domain) = self.variant_domains.get(owner) {
-            return domain
-                .case(ordinal)
-                .map(super::super::RuntimeVariantCase::payload)
-                .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
-        }
-        match (self.projection(owner)?, ordinal) {
-            (RuntimePlanTypeProjection::Option { some_payload, .. }, 0) => Ok(Some(*some_payload)),
-            (RuntimePlanTypeProjection::Option { .. }, 1) => Ok(None),
-            (RuntimePlanTypeProjection::Result { value_payload, .. }, 0) => {
-                Ok(Some(*value_payload))
-            }
-            (RuntimePlanTypeProjection::Result { error_payload, .. }, 1) => {
-                Ok(Some(*error_payload))
-            }
-            _ => Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal }),
         }
     }
 
@@ -2058,7 +2033,7 @@ impl RuntimePlanBuilder {
                 }
             }
             RuntimePatternSeedKind::Variant { ordinal, payload } => {
-                let expected = self.variant_payload_type(ty, ordinal)?;
+                let expected = self.variant_case(ty, ordinal)?.payload();
                 let payload = if let Some(payload) = payload {
                     path.push(RuntimePatternBindingStep::VariantPayload);
                     let payload = self.lower_pattern(*payload, admission, path);
@@ -5039,115 +5014,27 @@ impl RuntimePlanBuilder {
         else {
             return Ok(false);
         };
-        let declaration =
-            self.types
-                .get(owner)
-                .ok_or(RuntimePlanBuildError::InvalidTypeProjection {
-                    context: "variant value owner",
-                    ty: owner,
-                })?;
-        let owner_matches = match (declaration.projection(), actual_owner) {
-            (
-                RuntimePlanTypeProjection::Option { .. },
-                RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-            )
-            | (
-                RuntimePlanTypeProjection::Result { .. },
-                RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
-            ) => true,
-            (
-                RuntimePlanTypeProjection::BuiltinVariant { owner, .. },
-                RuntimeVariantIdentity::Builtin(actual),
-            ) => owner == actual,
-            (
-                RuntimePlanTypeProjection::ProjectNominal { .. }
-                | RuntimePlanTypeProjection::Opaque { .. },
-                RuntimeVariantIdentity::Nominal {
-                    nominal: actual,
-                    semantic_identity,
-                },
-            ) => {
-                self.variant_domains
-                    .get(owner)
-                    .is_some_and(|domain| domain.nominal() == actual)
-                    && declaration.semantic_identity() == *semantic_identity
-            }
-            _ => false,
-        };
-        if !owner_matches {
+        let case = self.variant_case(owner, *ordinal)?;
+        if actual_owner != case.owner() || name != case.name() {
             return Ok(false);
         }
-        let (expected_name, expected_payload) = self.variant_case_metadata(owner, *ordinal)?;
-        if expected_name != name || expected_payload.is_some() != payload.is_some() {
-            return Ok(false);
-        }
-        match (expected_payload, payload) {
+        match (case.payload(), payload) {
             (Some(expected), Some(payload)) => self.value_matches_type(expected, payload, depth),
             (None, None) => Ok(true),
             _ => Ok(false),
         }
     }
 
-    fn variant_case_metadata(
+    fn variant_case(
         &self,
         owner: RuntimePlanTypeId,
         ordinal: u32,
-    ) -> Result<(&str, Option<RuntimePlanTypeId>), RuntimePlanBuildError> {
-        if let Some(domain) = self.variant_domains.get(owner) {
-            let case = domain
-                .case(ordinal)
-                .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
-            return Ok((case.name(), case.payload()));
-        }
-        let projection = self.projection(owner)?;
-        let (builtin_owner, payload) = match projection {
-            RuntimePlanTypeProjection::Option { some_payload, .. } => {
-                let payload = match RuntimeBuiltinVariantIdentity::Option
-                    .case_at(ordinal)
-                    .map(crate::pattern::RuntimeBuiltinVariantCaseSchema::identity)
-                {
-                    Some(RuntimeBuiltinVariantCaseIdentity::OptionSome) => Some(*some_payload),
-                    Some(RuntimeBuiltinVariantCaseIdentity::OptionNone) => None,
-                    _ => {
-                        return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
-                    }
-                };
-                (RuntimeBuiltinVariantIdentity::Option, payload)
-            }
-            RuntimePlanTypeProjection::Result {
-                value_payload,
-                error_payload,
-                ..
-            } => {
-                let payload = match RuntimeBuiltinVariantIdentity::Result
-                    .case_at(ordinal)
-                    .map(crate::pattern::RuntimeBuiltinVariantCaseSchema::identity)
-                {
-                    Some(RuntimeBuiltinVariantCaseIdentity::ResultOk) => Some(*value_payload),
-                    Some(RuntimeBuiltinVariantCaseIdentity::ResultErr) => Some(*error_payload),
-                    _ => {
-                        return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal });
-                    }
-                };
-                (RuntimeBuiltinVariantIdentity::Result, payload)
-            }
-            RuntimePlanTypeProjection::BuiltinVariant {
-                owner: builtin_owner,
-                cases,
-            } => {
-                let payload = usize::try_from(ordinal)
-                    .ok()
-                    .and_then(|ordinal| cases.get(ordinal))
-                    .copied()
-                    .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
-                (*builtin_owner, payload)
-            }
-            _ => return Err(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal }),
-        };
-        let schema = builtin_owner
-            .case_at(ordinal)
-            .ok_or(RuntimePlanBuildError::UnknownVariantCase { owner, ordinal })?;
-        Ok((schema.name(), payload))
+    ) -> Result<super::super::RuntimePlanVariantCase<'_>, RuntimePlanBuildError> {
+        let declaration = self
+            .types
+            .get(owner)
+            .ok_or(super::super::RuntimePlanVariantCaseError::UnknownType { ty: owner })?;
+        Ok(declaration.select_variant_case(owner, self.variant_domains.get(owner), ordinal)?)
     }
 }
 

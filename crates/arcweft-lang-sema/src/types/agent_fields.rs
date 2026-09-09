@@ -252,12 +252,10 @@ fn semantic_field_value(value: RuntimeAgentFieldValue) -> TypeKind {
         RuntimeAgentFieldValue::Agent(operational) => agent_type(operational),
         RuntimeAgentFieldValue::BuiltinVariant(owner) => match owner {
             RuntimeBuiltinVariantIdentity::AgentResourceBody => TypeKind::AgentResourceBody,
-            RuntimeBuiltinVariantIdentity::AgentBinaryEncoding => {
-                TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryEncoding)
-            }
-            RuntimeBuiltinVariantIdentity::Option | RuntimeBuiltinVariantIdentity::Result => {
-                unreachable!("Agent field values only expose Agent-owned builtin variants")
-            }
+            owner => TypeKind::AgentBuiltin(
+                AgentBuiltinType::from_runtime_variant(owner)
+                    .expect("Agent field values only expose Agent-owned builtin variants"),
+            ),
         },
         RuntimeAgentFieldValue::VecAgent(operational) => {
             TypeKind::Vec(Box::new(agent_type(operational)))

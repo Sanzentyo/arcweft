@@ -5,16 +5,17 @@ use arcweft_agent_protocol::protocol::{
     CaptureFormat, CaptureRequest, ObserveRequest, PointerButton, RagRequest, WaitRequest,
 };
 use arcweft_core::{
+    pattern::RuntimeBuiltinVariantCaseIdentity,
     task::NamedHostArg,
     value::{RuntimePayload, RuntimeValue},
 };
 
 use crate::error::AgentHostRequestAdmissionError;
-use crate::label_parse::parse_pointer_button_label;
 use crate::runtime_value::{
-    runtime_agent_value_map, runtime_bool, runtime_capture_format, runtime_capture_target,
-    runtime_duration_millis, runtime_predicate, runtime_public_id, runtime_public_ids,
-    runtime_string, runtime_u32, runtime_usize, runtime_value_to_json, value_label,
+    runtime_agent_value_map, runtime_bool, runtime_capture_format, runtime_capture_kind,
+    runtime_capture_target, runtime_duration_millis, runtime_predicate, runtime_public_id,
+    runtime_public_ids, runtime_string, runtime_u32, runtime_usize, runtime_value_to_json,
+    value_label,
 };
 
 #[derive(Debug)]
@@ -80,7 +81,7 @@ impl<'a> RuntimeAgentArgs<'a> {
                 .map_or(Ok(CaptureFormat::Png), runtime_capture_format)?,
             capture_kind: self
                 .named_any(&["capture_kind", "kind"])
-                .map_or_else(|| Ok("color".to_owned()), runtime_string)?,
+                .map_or_else(|| Ok("color".to_owned()), runtime_capture_kind)?,
             name: self
                 .named("name")
                 .map_or_else(|| Ok("capture".to_owned()), runtime_string)?,
@@ -216,5 +217,22 @@ fn runtime_viewport_point(value: &RuntimeValue) -> Result<(u32, u32), String> {
 }
 
 fn runtime_pointer_button(value: &RuntimeValue) -> Result<PointerButton, String> {
-    parse_pointer_button_label(&runtime_string(value)?)
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::PointerButtonPrimary, None)) => {
+            Ok(PointerButton::Primary)
+        }
+        Some((RuntimeBuiltinVariantCaseIdentity::PointerButtonSecondary, None)) => {
+            Ok(PointerButton::Secondary)
+        }
+        Some((RuntimeBuiltinVariantCaseIdentity::PointerButtonMiddle, None)) => {
+            Ok(PointerButton::Middle)
+        }
+        _ => Err(format!(
+            "expected typed Agent pointer button, got `{}`",
+            value_label(value)
+        )),
+    }
 }
+
+#[cfg(test)]
+mod tests;

@@ -399,6 +399,9 @@ pub enum RuntimeBuiltinVariantIdentity {
     Result = 1,
     AgentResourceBody = 2,
     AgentBinaryEncoding = 3,
+    CaptureFormat = 4,
+    CaptureKind = 5,
+    PointerButton = 6,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -449,6 +452,13 @@ pub enum RuntimeBuiltinVariantCaseIdentity {
     AgentResourceBodyText,
     AgentResourceBodyBytesBase64,
     AgentBinaryEncodingBase64,
+    CaptureFormatPng,
+    CaptureFormatRawRgba,
+    CaptureKindColor,
+    CaptureKindMask,
+    PointerButtonPrimary,
+    PointerButtonSecondary,
+    PointerButtonMiddle,
 }
 
 impl RuntimeBuiltinVariantCaseIdentity {
@@ -463,6 +473,15 @@ impl RuntimeBuiltinVariantCaseIdentity {
                 RuntimeBuiltinVariantIdentity::AgentResourceBody
             }
             Self::AgentBinaryEncodingBase64 => RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+            Self::CaptureFormatPng | Self::CaptureFormatRawRgba => {
+                RuntimeBuiltinVariantIdentity::CaptureFormat
+            }
+            Self::CaptureKindColor | Self::CaptureKindMask => {
+                RuntimeBuiltinVariantIdentity::CaptureKind
+            }
+            Self::PointerButtonPrimary
+            | Self::PointerButtonSecondary
+            | Self::PointerButtonMiddle => RuntimeBuiltinVariantIdentity::PointerButton,
         }
     }
 }
@@ -506,15 +525,59 @@ const AGENT_BINARY_ENCODING_CASES: [RuntimeBuiltinVariantCaseSchema; 1] =
         "Base64",
         false,
     )];
+const CAPTURE_FORMAT_CASES: [RuntimeBuiltinVariantCaseSchema; 2] = [
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::CaptureFormatPng,
+        "png",
+        false,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::CaptureFormatRawRgba,
+        "raw_rgba",
+        false,
+    ),
+];
+const CAPTURE_KIND_CASES: [RuntimeBuiltinVariantCaseSchema; 2] = [
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::CaptureKindColor,
+        "color",
+        false,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::CaptureKindMask,
+        "mask",
+        false,
+    ),
+];
+const POINTER_BUTTON_CASES: [RuntimeBuiltinVariantCaseSchema; 3] = [
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::PointerButtonPrimary,
+        "primary",
+        false,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::PointerButtonSecondary,
+        "secondary",
+        false,
+    ),
+    RuntimeBuiltinVariantCaseSchema::new(
+        RuntimeBuiltinVariantCaseIdentity::PointerButtonMiddle,
+        "middle",
+        false,
+    ),
+];
 
 impl RuntimeBuiltinVariantIdentity {
-    const COUNT: usize = Self::AgentBinaryEncoding as usize + 1;
+    const COUNT: usize = Self::PointerButton as usize + 1;
     const DECODE: [Option<Self>; RuntimeBuiltinVariantIdentity::COUNT] = {
         let mut decode = [None; RuntimeBuiltinVariantIdentity::COUNT];
         decode[Self::Option as usize] = Some(Self::Option);
         decode[Self::Result as usize] = Some(Self::Result);
         decode[Self::AgentResourceBody as usize] = Some(Self::AgentResourceBody);
         decode[Self::AgentBinaryEncoding as usize] = Some(Self::AgentBinaryEncoding);
+        decode[Self::CaptureFormat as usize] = Some(Self::CaptureFormat);
+        decode[Self::CaptureKind as usize] = Some(Self::CaptureKind);
+        decode[Self::PointerButton as usize] = Some(Self::PointerButton);
         decode
     };
 
@@ -535,6 +598,9 @@ impl RuntimeBuiltinVariantIdentity {
             Self::Result => &RESULT_CASES,
             Self::AgentResourceBody => &AGENT_RESOURCE_BODY_CASES,
             Self::AgentBinaryEncoding => &AGENT_BINARY_ENCODING_CASES,
+            Self::CaptureFormat => &CAPTURE_FORMAT_CASES,
+            Self::CaptureKind => &CAPTURE_KIND_CASES,
+            Self::PointerButton => &POINTER_BUTTON_CASES,
         }
     }
 
@@ -1403,10 +1469,8 @@ pub enum RuntimePatternMatchError {
         ty: RuntimePlanTypeId,
         field: RuntimeRecordFieldId,
     },
-    #[error("runtime variant pattern type {ty} has no case {ordinal}")]
-    UnknownVariantCase { ty: RuntimePlanTypeId, ordinal: u32 },
-    #[error("runtime variant pattern type {ty} has no nominal-variant domain")]
-    MissingVariantDomain { ty: RuntimePlanTypeId },
+    #[error(transparent)]
+    VariantCase(#[from] crate::plan::RuntimePlanVariantCaseError),
     #[error("runtime variant pattern type {ty} has an invalid payload shape for case {ordinal}")]
     VariantPayload { ty: RuntimePlanTypeId, ordinal: u32 },
 }
@@ -1685,7 +1749,7 @@ fn validate_variant_pattern(
     path: &[RuntimePatternBindingStep],
     locals: &mut BTreeSet<RuntimeLocalDeclarationId>,
 ) -> Result<(), RuntimePatternMatchError> {
-    match (variant_payload_type(plan, ty, ordinal)?, payload) {
+    match (plan.variant_case(ty, ordinal)?.payload(), payload) {
         (Some(expected), Some(payload)) => {
             validate_child_type(expected, payload.ty())?;
             let mut child_path = path.to_vec();
@@ -1744,45 +1808,6 @@ fn validate_child_type(
         Ok(())
     } else {
         Err(RuntimePatternMatchError::ChildType { expected, actual })
-    }
-}
-
-fn variant_payload_type(
-    plan: &RuntimePlan,
-    ty: RuntimePlanTypeId,
-    ordinal: u32,
-) -> Result<Option<RuntimePlanTypeId>, RuntimePatternMatchError> {
-    let declaration = plan
-        .type_table()
-        .get(ty)
-        .ok_or(RuntimePatternMatchError::UnknownType { ty })?;
-    match declaration.projection() {
-        RuntimePlanTypeProjection::Result {
-            value_payload,
-            error_payload,
-            ..
-        } => match ordinal {
-            0 => Ok(Some(*value_payload)),
-            1 => Ok(Some(*error_payload)),
-            _ => Err(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal }),
-        },
-        RuntimePlanTypeProjection::Option { some_payload, .. } => match ordinal {
-            0 => Ok(Some(*some_payload)),
-            1 => Ok(None),
-            _ => Err(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal }),
-        },
-        RuntimePlanTypeProjection::ProjectNominal { .. }
-        | RuntimePlanTypeProjection::Opaque { .. } => {
-            let domain = plan
-                .variant_domains()
-                .get(ty)
-                .ok_or(RuntimePatternMatchError::MissingVariantDomain { ty })?;
-            domain
-                .case(ordinal)
-                .map(crate::plan::RuntimeVariantCase::payload)
-                .ok_or(RuntimePatternMatchError::UnknownVariantCase { ty, ordinal })
-        }
-        _ => Err(RuntimePatternMatchError::InvalidKind { ty }),
     }
 }
 
@@ -2001,19 +2026,11 @@ fn runtime_value_matches_type_inner(
             runtime_choice_matches_type(plan, types, value, depth)
         }
         (
-            RuntimePlanTypeProjection::Result {
-                value_payload,
-                error_payload,
-                ..
-            },
+            RuntimePlanTypeProjection::Result { .. }
+            | RuntimePlanTypeProjection::Option { .. }
+            | RuntimePlanTypeProjection::BuiltinVariant { .. },
             value,
-        ) => runtime_result_matches_type(plan, *value_payload, *error_payload, value, depth),
-        (RuntimePlanTypeProjection::Option { some_payload, .. }, value) => {
-            runtime_option_matches_type(plan, *some_payload, value, depth)
-        }
-        (RuntimePlanTypeProjection::BuiltinVariant { owner, cases }, value) => {
-            runtime_builtin_variant_matches_type(plan, *owner, cases, value, depth)
-        }
+        ) => runtime_variant_matches_type(plan, ty, value, depth),
         (RuntimePlanTypeProjection::AgentValue, value) => {
             RuntimeCheckedType::AgentValue.accepts_value(value)
         }
@@ -2030,7 +2047,7 @@ fn runtime_value_matches_type_inner(
                 owner: RuntimeVariantIdentity::Nominal { .. },
                 ..
             },
-        ) => runtime_nominal_variant_matches_type(plan, ty, declaration, value, depth),
+        ) => runtime_variant_matches_type(plan, ty, value, depth),
         (
             RuntimePlanTypeProjection::Opaque {
                 producer,
@@ -2115,47 +2132,14 @@ fn runtime_choice_matches_type(
         .any(|ty| runtime_value_matches_type_inner(plan, *ty, value, depth + 1))
 }
 
-fn runtime_result_matches_type(
+fn runtime_variant_matches_type(
     plan: &RuntimePlan,
-    ok: RuntimePlanTypeId,
-    error: RuntimePlanTypeId,
+    ty: RuntimePlanTypeId,
     value: &RuntimeValue,
     depth: usize,
 ) -> bool {
     let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
-        ordinal,
-        name,
-        payload: Some(payload),
-    } = value
-    else {
-        return false;
-    };
-    match RuntimeBuiltinVariantIdentity::Result.case_at(*ordinal) {
-        Some(case)
-            if case.name() == name
-                && case.identity() == RuntimeBuiltinVariantCaseIdentity::ResultOk =>
-        {
-            runtime_value_matches_type_inner(plan, ok, payload, depth + 1)
-        }
-        Some(case)
-            if case.name() == name
-                && case.identity() == RuntimeBuiltinVariantCaseIdentity::ResultErr =>
-        {
-            runtime_value_matches_type_inner(plan, error, payload, depth + 1)
-        }
-        _ => false,
-    }
-}
-
-fn runtime_option_matches_type(
-    plan: &RuntimePlan,
-    item: RuntimePlanTypeId,
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
+        owner,
         ordinal,
         name,
         payload,
@@ -2163,63 +2147,18 @@ fn runtime_option_matches_type(
     else {
         return false;
     };
-    match RuntimeBuiltinVariantIdentity::Option.case_at(*ordinal) {
-        Some(case)
-            if case.name() == name
-                && case.identity() == RuntimeBuiltinVariantCaseIdentity::OptionSome =>
-        {
-            payload.as_deref().is_some_and(|payload| {
-                runtime_value_matches_type_inner(plan, item, payload, depth + 1)
-            })
-        }
-        Some(case)
-            if case.name() == name
-                && case.identity() == RuntimeBuiltinVariantCaseIdentity::OptionNone =>
-        {
-            payload.is_none()
-        }
-        _ => false,
-    }
-}
-
-fn runtime_builtin_variant_matches_type(
-    plan: &RuntimePlan,
-    owner: RuntimeBuiltinVariantIdentity,
-    cases: &[Option<RuntimePlanTypeId>],
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    let RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Builtin(actual_owner),
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
+    let Ok(case) = plan.variant_case(ty, *ordinal) else {
         return false;
     };
-    if *actual_owner != owner {
-        return false;
-    }
-    let Some(schema) = owner.case_at(*ordinal) else {
-        return false;
-    };
-    if schema.name() != name {
-        return false;
-    }
-    let Some(expected_payload) = usize::try_from(*ordinal)
-        .ok()
-        .and_then(|ordinal| cases.get(ordinal))
-    else {
-        return false;
-    };
-    match (expected_payload, payload.as_deref()) {
-        (Some(expected), Some(payload)) => {
-            runtime_value_matches_type_inner(plan, *expected, payload, depth + 1)
+    owner == case.owner()
+        && name == case.name()
+        && match (case.payload(), payload.as_deref()) {
+            (Some(expected), Some(payload)) => {
+                runtime_value_matches_type_inner(plan, expected, payload, depth + 1)
+            }
+            (None, None) => true,
+            _ => false,
         }
-        (None, None) => true,
-        _ => false,
-    }
 }
 
 fn runtime_nominal_record_matches_type(
@@ -2242,43 +2181,6 @@ fn runtime_nominal_record_matches_type(
                     runtime_value_matches_type_inner(plan, field.ty(), value, depth + 1)
                 })
     })
-}
-
-fn runtime_nominal_variant_matches_type(
-    plan: &RuntimePlan,
-    ty: RuntimePlanTypeId,
-    declaration: &RuntimePlanTypeDeclaration,
-    value: &RuntimeValue,
-    depth: usize,
-) -> bool {
-    let RuntimeValue::Variant {
-        owner:
-            RuntimeVariantIdentity::Nominal {
-                nominal: actual_nominal,
-                semantic_identity,
-            },
-        ordinal,
-        name,
-        payload,
-    } = value
-    else {
-        return false;
-    };
-    let Some(domain) = plan.variant_domains().get(ty) else {
-        return false;
-    };
-    actual_nominal == domain.nominal()
-        && *semantic_identity == declaration.semantic_identity()
-        && domain.case(*ordinal).is_some_and(|case| {
-            case.name() == name
-                && match (case.payload(), payload.as_deref()) {
-                    (Some(ty), Some(value)) => {
-                        runtime_value_matches_type_inner(plan, ty, value, depth + 1)
-                    }
-                    (None, None) => true,
-                    _ => false,
-                }
-        })
 }
 
 fn runtime_opaque_matches_type(
@@ -2402,6 +2304,9 @@ mod tests {
             RuntimeBuiltinVariantIdentity::Result,
             RuntimeBuiltinVariantIdentity::AgentResourceBody,
             RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+            RuntimeBuiltinVariantIdentity::CaptureFormat,
+            RuntimeBuiltinVariantIdentity::CaptureKind,
+            RuntimeBuiltinVariantIdentity::PointerButton,
         ];
         for owner in owners {
             assert_eq!(

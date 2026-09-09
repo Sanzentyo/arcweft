@@ -391,11 +391,8 @@ pub enum RuntimePlanBuildError {
         owner: RuntimePlanTypeId,
         field: crate::value::RuntimeRecordFieldId,
     },
-    #[error("variant type {owner} has no case at zero-based ordinal {ordinal}")]
-    UnknownVariantCase {
-        owner: RuntimePlanTypeId,
-        ordinal: u32,
-    },
+    #[error(transparent)]
+    VariantCase(#[from] super::RuntimePlanVariantCaseError),
     #[error("variant type {owner} case {ordinal} expected payload {expected:?}, found {actual:?}")]
     VariantPayloadMismatch {
         owner: RuntimePlanTypeId,

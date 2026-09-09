@@ -6,10 +6,7 @@ use super::{
     runtime_sequence_repeat_value, runtime_sequence_values, runtime_value_into_sequence_values,
     runtime_value_label, sum_i64_sequence_ref,
 };
-use crate::pattern::{
-    RuntimeBuiltinVariantIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
-    RuntimeVariantIdentity,
-};
+use crate::pattern::{RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner};
 use crate::plan::{
     FlowRuntimeId, RuntimePlanTypeDeclaration, RuntimePlanTypeProjection, RuntimePureInputType,
     RuntimePureOutputType,
@@ -597,62 +594,20 @@ impl Engine {
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
         let plan = std::sync::Arc::clone(&self.plan);
-        let declaration = plan
-            .type_table()
-            .get(ty)
-            .ok_or(RuntimeEvalError::UnknownPlanType(ty))?;
-        let (owner, name) = match declaration.projection() {
-            RuntimePlanTypeProjection::Option { .. } => match ordinal {
-                0 => (
-                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                    "Some".to_owned(),
-                ),
-                1 => (
-                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Option),
-                    "None".to_owned(),
-                ),
-                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-            },
-            RuntimePlanTypeProjection::Result { .. } => match ordinal {
-                0 => (
-                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
-                    "Ok".to_owned(),
-                ),
-                1 => (
-                    RuntimeVariantIdentity::Builtin(RuntimeBuiltinVariantIdentity::Result),
-                    "Err".to_owned(),
-                ),
-                _ => return Err(RuntimeEvalError::UnknownVariantCase { ty, ordinal }),
-            },
-            RuntimePlanTypeProjection::ProjectNominal { .. }
-            | RuntimePlanTypeProjection::Opaque { .. } => {
-                let domain = plan
-                    .variant_domains()
-                    .get(ty)
-                    .ok_or(RuntimeEvalError::MissingVariantDomain(ty))?;
-                let case = domain
-                    .case(ordinal)
-                    .ok_or(RuntimeEvalError::UnknownVariantCase { ty, ordinal })?;
-                (
-                    RuntimeVariantIdentity::Nominal {
-                        nominal: domain.nominal().clone(),
-                        semantic_identity: declaration.semantic_identity(),
-                    },
-                    case.name().to_owned(),
-                )
-            }
+        let case = plan.variant_case(ty, ordinal)?;
+        let payload = payload
+            .map(|expr| self.evaluate_expr_with_backend(expr, pure_backend))
+            .transpose()?;
+        match (case.payload(), payload.as_ref()) {
+            (Some(expected), Some(value)) if plan.value_matches_type(expected, value)? => {}
+            (None, None) => {}
             _ => return Err(RuntimeEvalError::InvalidExpressionType(ty)),
-        };
+        }
         Ok(RuntimeValue::Variant {
-            owner,
+            owner: case.owner().clone(),
             ordinal,
-            name,
-            payload: payload
-                .map(|expr| {
-                    self.evaluate_expr_with_backend(expr, pure_backend)
-                        .map(Box::new)
-                })
-                .transpose()?,
+            name: case.name().to_owned(),
+            payload: payload.map(Box::new),
         })
     }
 

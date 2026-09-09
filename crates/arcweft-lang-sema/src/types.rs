@@ -402,6 +402,48 @@ pub enum AgentBuiltinType {
 }
 
 impl AgentBuiltinType {
+    /// Agent Prelude atoms represented by payload-free runtime variants.
+    pub const UNIT_VARIANTS: [Self; 4] = [
+        Self::CaptureFormat,
+        Self::CaptureKind,
+        Self::PointerButton,
+        Self::AgentBinaryEncoding,
+    ];
+
+    /// Canonical case authority for an Agent Prelude enum.
+    #[must_use]
+    pub const fn runtime_variant(
+        self,
+    ) -> Option<arcweft_core::pattern::RuntimeBuiltinVariantIdentity> {
+        use arcweft_core::pattern::RuntimeBuiltinVariantIdentity as Variant;
+        match self {
+            Self::CaptureFormat => Some(Variant::CaptureFormat),
+            Self::CaptureKind => Some(Variant::CaptureKind),
+            Self::PointerButton => Some(Variant::PointerButton),
+            Self::AgentBinaryEncoding => Some(Variant::AgentBinaryEncoding),
+            Self::ObservedObjectId
+            | Self::Diagnostics
+            | Self::WaitError
+            | Self::ViewportPoint
+            | Self::RagError
+            | Self::AgentSourcePosition
+            | Self::AgentProjectFlowControlSummary
+            | Self::AgentProjectGraphSummary
+            | Self::AgentBinaryBody
+            | Self::AgentBinaryData => None,
+        }
+    }
+
+    /// Resolves an Agent enum owner without interpreting its source label.
+    #[must_use]
+    pub fn from_runtime_variant(
+        owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity,
+    ) -> Option<Self> {
+        Self::UNIT_VARIANTS
+            .into_iter()
+            .find(|builtin| builtin.runtime_variant() == Some(owner))
+    }
+
     /// Canonical Agent Prelude spelling retained for diagnostics and tooling.
     #[must_use]
     pub const fn source_label(self) -> &'static str {

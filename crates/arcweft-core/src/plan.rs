@@ -12,6 +12,7 @@ mod nominal_record_domains;
 mod project_call;
 mod type_kind;
 mod type_table;
+mod variant_case;
 mod variant_domains;
 
 pub use construction::{
@@ -93,6 +94,7 @@ pub use type_table::{
     MAX_RUNTIME_PLAN_TYPE_DEPTH, RuntimePlanTypeDeclaration, RuntimePlanTypeResolutionError,
     RuntimePlanTypeSeed, RuntimePlanTypeTable, RuntimePlanTypeTableError,
 };
+pub use variant_case::{RuntimePlanVariantCase, RuntimePlanVariantCaseError};
 pub use variant_domains::{
     RuntimeVariantCase, RuntimeVariantCaseSeed, RuntimeVariantDomain, RuntimeVariantDomainError,
     RuntimeVariantDomainSeed, RuntimeVariantDomainTable,

@@ -417,6 +417,19 @@ the payload to fit the smaller checked-value projection used by other runtime
 contracts; Agent, range and function payloads still use their admitted plan
 types. The aggregate type inventory validates each identity's full definition.
 
+After plan admission, variant case selection reads the plan type and its
+nominal domain through one typed query. Construction, runtime matching, pure
+and native evaluation, and AWBC lowering share its owner identity, case name,
+and exact payload type ID for Option, Result, core builtin variants, and
+nominal variants. They do not maintain separate ordinal/name tables.
+
+The Agent Prelude's CaptureFormat, CaptureKind, PointerButton and
+AgentBinaryEncoding are core builtin variants. Their source inventories,
+runtime values, ownership checks and codecs use that case authority; these
+enums are not operational Agent DTO leaves. Host adapters consume the admitted
+semantic case identities. A string label or malformed variant cannot stand in
+for a typed enum argument.
+
 ### 5.2 Intrinsics, host calls, tasks, and effects
 
 Host-call signatures retain the preflighted RuntimePlan type identities of every

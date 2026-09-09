@@ -486,32 +486,10 @@ pub(crate) fn variant_case_name(
     ty: RuntimePlanTypeId,
     ordinal: u32,
 ) -> Result<arcweft_core::awbc::schema::AwbcStringId, AwbcLowerDiagnostic> {
-    let name = if let Some(domain) = plan.variant_domains().get(ty) {
-        domain.case(ordinal).map(|case| case.name().to_owned())
-    } else {
-        plan.type_table()
-            .get(ty)
-            .and_then(|declaration| match declaration.projection() {
-                RuntimePlanTypeProjection::Option { .. } => match ordinal {
-                    0 => Some("Some".to_owned()),
-                    1 => Some("None".to_owned()),
-                    _ => None,
-                },
-                RuntimePlanTypeProjection::Result { .. } => match ordinal {
-                    0 => Some("Ok".to_owned()),
-                    1 => Some("Err".to_owned()),
-                    _ => None,
-                },
-                _ => None,
-            })
-    };
-    name.map(|name| inventory.intern_string(&name))
-        .ok_or_else(|| {
-            AwbcLowerDiagnostic::error(
-                format!("type.{ty}"),
-                format!("variant ordinal {ordinal} is absent from RuntimePlan type {ty}"),
-            )
-        })
+    let case = plan
+        .variant_case(ty, ordinal)
+        .map_err(|error| AwbcLowerDiagnostic::error(format!("type.{ty}"), error.to_string()))?;
+    Ok(inventory.intern_string(case.name()))
 }
 
 pub(crate) fn admitted_variant_case_name(

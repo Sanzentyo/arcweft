@@ -149,12 +149,9 @@ pub enum RuntimeAgentTypeShape {
     Resource,
     RagContextPack,
     ObservedObjectId,
-    CaptureFormat,
-    CaptureKind,
     Diagnostics,
     WaitError,
     ViewportPoint,
-    PointerButton,
     RagError,
     SourcePosition,
     ProjectFlowControlSummary,
@@ -1092,12 +1089,9 @@ impl RuntimeAgentTypeShape {
             Self::Resource => RuntimeAgentTypeProjection::Resource,
             Self::RagContextPack => RuntimeAgentTypeProjection::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentTypeProjection::ObservedObjectId,
-            Self::CaptureFormat => RuntimeAgentTypeProjection::CaptureFormat,
-            Self::CaptureKind => RuntimeAgentTypeProjection::CaptureKind,
             Self::Diagnostics => RuntimeAgentTypeProjection::Diagnostics,
             Self::WaitError => RuntimeAgentTypeProjection::WaitError,
             Self::ViewportPoint => RuntimeAgentTypeProjection::ViewportPoint,
-            Self::PointerButton => RuntimeAgentTypeProjection::PointerButton,
             Self::RagError => RuntimeAgentTypeProjection::RagError,
             Self::SourcePosition => RuntimeAgentTypeProjection::SourcePosition,
             Self::ProjectFlowControlSummary => {
@@ -1133,12 +1127,9 @@ impl RuntimeAgentTypeShape {
             Self::Resource => RuntimeAgentOperationalType::Resource,
             Self::RagContextPack => RuntimeAgentOperationalType::RagContextPack,
             Self::ObservedObjectId => RuntimeAgentOperationalType::ObservedObjectId,
-            Self::CaptureFormat => RuntimeAgentOperationalType::CaptureFormat,
-            Self::CaptureKind => RuntimeAgentOperationalType::CaptureKind,
             Self::Diagnostics => RuntimeAgentOperationalType::Diagnostics,
             Self::WaitError => RuntimeAgentOperationalType::WaitError,
             Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
-            Self::PointerButton => RuntimeAgentOperationalType::PointerButton,
             Self::RagError => RuntimeAgentOperationalType::RagError,
             Self::SourcePosition => RuntimeAgentOperationalType::SourcePosition,
             Self::ProjectFlowControlSummary => {
@@ -8240,12 +8231,9 @@ fn validate_normalized_type(
             | RuntimeAgentTypeShape::Resource
             | RuntimeAgentTypeShape::RagContextPack
             | RuntimeAgentTypeShape::ObservedObjectId
-            | RuntimeAgentTypeShape::CaptureFormat
-            | RuntimeAgentTypeShape::CaptureKind
             | RuntimeAgentTypeShape::Diagnostics
             | RuntimeAgentTypeShape::WaitError
             | RuntimeAgentTypeShape::ViewportPoint
-            | RuntimeAgentTypeShape::PointerButton
             | RuntimeAgentTypeShape::RagError
             | RuntimeAgentTypeShape::SourcePosition
             | RuntimeAgentTypeShape::ProjectFlowControlSummary

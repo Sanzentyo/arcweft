@@ -603,67 +603,49 @@ impl TypeCheckEnv {
 
     #[must_use]
     fn with_standard_agent_enums(self) -> Self {
-        [
-            (
-                "CaptureFormat",
-                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureFormat),
-                &["png", "raw_rgba"][..],
-            ),
-            (
-                "CaptureKind",
-                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::CaptureKind),
-                &["color", "mask"][..],
-            ),
-            (
-                "PointerButton",
-                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::PointerButton),
-                &["primary", "secondary", "middle"][..],
-            ),
-            (
-                "AgentBinaryEncoding",
-                TypeKind::AgentBuiltin(crate::types::AgentBuiltinType::AgentBinaryEncoding),
-                &["Base64"][..],
-            ),
-        ]
-        .into_iter()
-        .fold(self, |environment, (owner, ty, variants)| {
-            environment
-                .try_with_enum_variants(
-                    EnvironmentBindingId::try_new(owner)
-                        .expect("Agent enum owner identity is valid"),
-                    ty,
-                    variants.iter().copied(),
+        crate::types::AgentBuiltinType::UNIT_VARIANTS
+            .into_iter()
+            .fold(self, |environment, builtin| {
+                let owner = builtin
+                    .runtime_variant()
+                    .expect("Agent unit enum has a runtime schema");
+                environment
+                    .try_with_enum_variants(
+                        EnvironmentBindingId::try_new(builtin.source_label())
+                            .expect("Agent enum owner identity is valid"),
+                        TypeKind::AgentBuiltin(builtin),
+                        owner.cases().iter().map(|case| case.name()),
+                    )
+                    .expect("Agent enum inventories have distinct typed owners")
+            })
+            .try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("AgentResourceBody")
+                    .expect("Agent resource body owner identity is valid"),
+                TypeKind::AgentResourceBody,
+                "Json",
+                EnumVariantPayload::Tuple(vec![TypeKind::AgentValue]),
+            )
+            .and_then(|environment| {
+                environment.try_with_enum_variant_payload(
+                    EnvironmentBindingId::try_new("AgentResourceBody")
+                        .expect("Agent resource body owner identity is valid"),
+                    TypeKind::AgentResourceBody,
+                    "Text",
+                    EnumVariantPayload::Tuple(vec![TypeKind::String]),
                 )
-                .expect("Agent enum inventories have distinct typed owners")
-        })
-        .try_with_enum_variant_payload(
-            EnvironmentBindingId::try_new("AgentResourceBody")
-                .expect("Agent resource body owner identity is valid"),
-            TypeKind::AgentResourceBody,
-            "Json",
-            EnumVariantPayload::Tuple(vec![TypeKind::AgentValue]),
-        )
-        .and_then(|environment| {
-            environment.try_with_enum_variant_payload(
-                EnvironmentBindingId::try_new("AgentResourceBody")
-                    .expect("Agent resource body owner identity is valid"),
-                TypeKind::AgentResourceBody,
-                "Text",
-                EnumVariantPayload::Tuple(vec![TypeKind::String]),
-            )
-        })
-        .and_then(|environment| {
-            environment.try_with_enum_variant_payload(
-                EnvironmentBindingId::try_new("AgentResourceBody")
-                    .expect("Agent resource body owner identity is valid"),
-                TypeKind::AgentResourceBody,
-                "BytesBase64",
-                EnumVariantPayload::Tuple(vec![TypeKind::AgentBuiltin(
-                    crate::types::AgentBuiltinType::AgentBinaryBody,
-                )]),
-            )
-        })
-        .expect("Agent resource body variants have one canonical typed schema")
+            })
+            .and_then(|environment| {
+                environment.try_with_enum_variant_payload(
+                    EnvironmentBindingId::try_new("AgentResourceBody")
+                        .expect("Agent resource body owner identity is valid"),
+                    TypeKind::AgentResourceBody,
+                    "BytesBase64",
+                    EnumVariantPayload::Tuple(vec![TypeKind::AgentBuiltin(
+                        crate::types::AgentBuiltinType::AgentBinaryBody,
+                    )]),
+                )
+            })
+            .expect("Agent resource body variants have one canonical typed schema")
     }
 
     #[must_use]

@@ -4040,16 +4040,16 @@ fn runtime_type_at(
             .into_boxed_slice(),
         },
         TypeKind::RagContextPack => RuntimeTypeShape::Agent(RuntimeAgentTypeShape::RagContextPack),
-        TypeKind::AgentBuiltin(AgentBuiltinType::AgentBinaryEncoding) => {
-            RuntimeTypeShape::BuiltinVariant {
-                owner: arcweft_core::pattern::RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
-                cases: vec![None].into_boxed_slice(),
-            }
-        }
-        TypeKind::AgentBuiltin(builtin) => RuntimeTypeShape::Agent(
-            runtime_agent_builtin_type(*builtin)
-                .expect("non-variant Agent builtin has one operational projection"),
-        ),
+        TypeKind::AgentBuiltin(builtin) => match builtin.runtime_variant() {
+            Some(owner) => RuntimeTypeShape::BuiltinVariant {
+                owner,
+                cases: owner.cases().iter().map(|_| None).collect(),
+            },
+            None => RuntimeTypeShape::Agent(
+                runtime_agent_builtin_type(*builtin)
+                    .expect("non-variant Agent builtin has one operational projection"),
+            ),
+        },
         TypeKind::Range(item) => RuntimeTypeShape::Range(nested(item)?),
         TypeKind::IteratorState { item, .. } => RuntimeTypeShape::Iterator(nested(item)?),
         TypeKind::Vec(item) => RuntimeTypeShape::Sequence {
@@ -4394,12 +4394,9 @@ fn standard_line_handle_producer(kind: RuntimeHandleKind) -> RuntimeOpaqueTypePr
 const fn runtime_agent_builtin_type(builtin: AgentBuiltinType) -> Option<RuntimeAgentTypeShape> {
     Some(match builtin {
         AgentBuiltinType::ObservedObjectId => RuntimeAgentTypeShape::ObservedObjectId,
-        AgentBuiltinType::CaptureFormat => RuntimeAgentTypeShape::CaptureFormat,
-        AgentBuiltinType::CaptureKind => RuntimeAgentTypeShape::CaptureKind,
         AgentBuiltinType::Diagnostics => RuntimeAgentTypeShape::Diagnostics,
         AgentBuiltinType::WaitError => RuntimeAgentTypeShape::WaitError,
         AgentBuiltinType::ViewportPoint => RuntimeAgentTypeShape::ViewportPoint,
-        AgentBuiltinType::PointerButton => RuntimeAgentTypeShape::PointerButton,
         AgentBuiltinType::RagError => RuntimeAgentTypeShape::RagError,
         AgentBuiltinType::AgentSourcePosition => RuntimeAgentTypeShape::SourcePosition,
         AgentBuiltinType::AgentProjectFlowControlSummary => {
@@ -4408,7 +4405,10 @@ const fn runtime_agent_builtin_type(builtin: AgentBuiltinType) -> Option<Runtime
         AgentBuiltinType::AgentProjectGraphSummary => RuntimeAgentTypeShape::ProjectGraphSummary,
         AgentBuiltinType::AgentBinaryBody => RuntimeAgentTypeShape::BinaryResourceBody,
         AgentBuiltinType::AgentBinaryData => RuntimeAgentTypeShape::BinaryData,
-        AgentBuiltinType::AgentBinaryEncoding => return None,
+        AgentBuiltinType::CaptureFormat
+        | AgentBuiltinType::CaptureKind
+        | AgentBuiltinType::PointerButton
+        | AgentBuiltinType::AgentBinaryEncoding => return None,
     })
 }
 

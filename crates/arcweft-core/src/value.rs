@@ -2352,10 +2352,8 @@ pub enum RuntimeEvalError {
     UnknownPlanType(RuntimePlanTypeId),
     #[error("runtime plan type {0} has no nominal-record domain")]
     MissingNominalRecordDomain(RuntimePlanTypeId),
-    #[error("runtime plan type {0} has no variant domain")]
-    MissingVariantDomain(RuntimePlanTypeId),
-    #[error("runtime plan type {ty} has no variant case {ordinal}")]
-    UnknownVariantCase { ty: RuntimePlanTypeId, ordinal: u32 },
+    #[error(transparent)]
+    VariantCase(#[from] crate::plan::RuntimePlanVariantCaseError),
     #[error("runtime DialogueContent construction failed: {0}")]
     DialogueContentConstruction(String),
     #[error("runtime DialogueContent construction requires an artifact-bound plan")]

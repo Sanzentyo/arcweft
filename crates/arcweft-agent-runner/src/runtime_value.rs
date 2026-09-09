@@ -6,15 +6,14 @@ use arcweft_agent_protocol::{
     protocol::{CaptureFormat, CaptureTarget},
     value::AgentValue,
 };
+use arcweft_core::pattern::RuntimeBuiltinVariantCaseIdentity;
 use arcweft_core::value::{
     DenseSeq, RuntimeAgentCaptureTarget, RuntimeAgentCompareOp, RuntimeAgentPredicate,
     RuntimeAgentProbe, RuntimeAgentValue, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
 
 use crate::error::AgentRuntimeValueSerializationError;
-use crate::label_parse::{
-    parse_bool_label, parse_capture_format, parse_public_id_arg, parse_public_id_list,
-};
+use crate::label_parse::{parse_bool_label, parse_public_id_arg, parse_public_id_list};
 
 pub(crate) fn runtime_value_to_json(
     value: &RuntimeValue,
@@ -501,14 +500,6 @@ pub(crate) fn runtime_string(value: &RuntimeValue) -> Result<String, String> {
     match value {
         RuntimeValue::String(value) => Ok(value.clone()),
         RuntimeValue::EntityRef(value) => Ok(value.runtime_label()),
-        RuntimeValue::Variant { .. } => value
-            .builtin_variant_case()
-            .and_then(|(case, _)| {
-                case.owner()
-                    .resolve_case(case)
-                    .map(|(_, schema)| schema.name().to_owned())
-            })
-            .ok_or_else(|| "expected a canonical builtin variant value".to_owned()),
         other => Err(format!(
             "expected string-like value, got `{}`",
             value_label(other)
@@ -629,7 +620,27 @@ pub(crate) fn runtime_capture_target(value: &RuntimeValue) -> Result<CaptureTarg
 }
 
 pub(crate) fn runtime_capture_format(value: &RuntimeValue) -> Result<CaptureFormat, String> {
-    runtime_string(value).and_then(|value| parse_capture_format(&value))
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::CaptureFormatPng, None)) => Ok(CaptureFormat::Png),
+        Some((RuntimeBuiltinVariantCaseIdentity::CaptureFormatRawRgba, None)) => {
+            Ok(CaptureFormat::RawRgba)
+        }
+        _ => Err(format!(
+            "expected typed Agent capture format, got `{}`",
+            value_label(value)
+        )),
+    }
+}
+
+pub(crate) fn runtime_capture_kind(value: &RuntimeValue) -> Result<String, String> {
+    match value.builtin_variant_case() {
+        Some((RuntimeBuiltinVariantCaseIdentity::CaptureKindColor, None)) => Ok("color".to_owned()),
+        Some((RuntimeBuiltinVariantCaseIdentity::CaptureKindMask, None)) => Ok("mask".to_owned()),
+        _ => Err(format!(
+            "expected typed Agent capture kind, got `{}`",
+            value_label(value)
+        )),
+    }
 }
 
 pub(crate) fn runtime_agent_value_map(

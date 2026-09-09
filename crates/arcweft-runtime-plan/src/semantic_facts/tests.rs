@@ -1789,14 +1789,6 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             RuntimeAgentOperationalType::ObservedObjectId,
         ),
         (
-            RuntimeAgentTypeShape::CaptureFormat,
-            RuntimeAgentOperationalType::CaptureFormat,
-        ),
-        (
-            RuntimeAgentTypeShape::CaptureKind,
-            RuntimeAgentOperationalType::CaptureKind,
-        ),
-        (
             RuntimeAgentTypeShape::Diagnostics,
             RuntimeAgentOperationalType::Diagnostics,
         ),
@@ -1807,10 +1799,6 @@ fn every_agent_shape_selects_its_closed_operational_family() {
         (
             RuntimeAgentTypeShape::ViewportPoint,
             RuntimeAgentOperationalType::ViewportPoint,
-        ),
-        (
-            RuntimeAgentTypeShape::PointerButton,
-            RuntimeAgentOperationalType::PointerButton,
         ),
         (
             RuntimeAgentTypeShape::RagError,

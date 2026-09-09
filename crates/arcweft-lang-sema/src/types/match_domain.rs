@@ -110,13 +110,11 @@ impl TypeKind {
                 payload.shape().visit_types(&mut ensure_valid)?;
                 Ok(MatchDomainFamily::VariantPayload(payload))
             }
-            MatchDomainInput::AgentBuiltin(builtin) => {
-                Ok(if builtin.match_requires_closed_variant() {
-                    MatchDomainFamily::RequiresClosedVariant
-                } else {
-                    MatchDomainFamily::OpenOrOpaque
-                })
-            }
+            MatchDomainInput::AgentBuiltin(builtin) => Ok(if builtin.runtime_variant().is_some() {
+                MatchDomainFamily::RequiresClosedVariant
+            } else {
+                MatchDomainFamily::OpenOrOpaque
+            }),
             MatchDomainInput::OptionalOpenChild(value) => {
                 if let Some(value) = value {
                     ensure_valid(value)?;
@@ -260,27 +258,6 @@ impl TypeKind {
             | Self::CharacterDialogue(_)
             | Self::ViewValue
             | Self::Named(_) => MatchDomainInput::Immediate(MatchDomainFamily::OpenOrOpaque),
-        }
-    }
-}
-
-impl AgentBuiltinType {
-    const fn match_requires_closed_variant(self) -> bool {
-        match self {
-            Self::CaptureFormat
-            | Self::CaptureKind
-            | Self::PointerButton
-            | Self::AgentBinaryEncoding => true,
-            Self::ObservedObjectId
-            | Self::Diagnostics
-            | Self::WaitError
-            | Self::ViewportPoint
-            | Self::RagError
-            | Self::AgentSourcePosition
-            | Self::AgentProjectFlowControlSummary
-            | Self::AgentProjectGraphSummary
-            | Self::AgentBinaryBody
-            | Self::AgentBinaryData => false,
         }
     }
 }

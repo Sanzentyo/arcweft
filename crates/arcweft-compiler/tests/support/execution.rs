@@ -40,10 +40,20 @@ pub(super) fn assert_awbc_return(source: &str, expected: RuntimeValue) {
     )
     .lower()
     .expect("callable program lowers to verified AWBC");
-    let mut fiber = FiberState::for_entry(&report.program, AwbcEntryId(0), 1, 65_536)
-        .expect("main entry starts");
+    let encoded = report
+        .program
+        .encode_canonical()
+        .expect("callable AWBC encodes");
+    let program = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &encoded,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("callable AWBC decodes");
+    assert_eq!(program, report.program);
+    let mut fiber =
+        FiberState::for_entry(&program, AwbcEntryId(0), 1, 65_536).expect("main entry starts");
     for _ in 0..256 {
-        let output = vm::step(&report.program, &mut fiber, VmStepOptions::default())
+        let output = vm::step(&program, &mut fiber, VmStepOptions::default())
             .expect("AWBC callable step succeeds");
         match output.exit {
             VmExit::Running => {}
