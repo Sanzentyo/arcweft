@@ -368,6 +368,7 @@ fn cache_watch_in_memory_hits_take_precedence_over_corrupt_disk_records() {
     assert!(
         second
             .compiled
+            .analysis_lease()
             .compile_units()
             .iter()
             .all(|unit| unit.cache_status().is_hit())

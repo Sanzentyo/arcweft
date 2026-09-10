@@ -266,6 +266,7 @@ fn opening() {
     let [line] = accepted
         .executable()
         .expect("accepted executable")
+        .analysis_lease()
         .final_analysis()
         .dialogue_lines()
         .records()
@@ -317,6 +318,7 @@ fn opening() {
     let [line] = materialized_project
         .executable()
         .expect("materialized executable")
+        .analysis_lease()
         .final_analysis()
         .dialogue_lines()
         .records()
@@ -429,7 +431,12 @@ fn opening() {
             profile.diagnostics()
         )
     });
-    let [line] = executable.final_analysis().dialogue_lines().records() else {
+    let [line] = executable
+        .analysis_lease()
+        .final_analysis()
+        .dialogue_lines()
+        .records()
+    else {
         panic!("one synthetic dialogue line")
     };
     assert!(matches!(

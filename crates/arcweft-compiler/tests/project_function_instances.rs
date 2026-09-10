@@ -161,7 +161,7 @@ flow main() -> i64 {
 "#,
     )
     .expect("shared curried prefix compiles through runtime instance fact publication");
-    let analysis = compiled.semantic_analysis.as_ref();
+    let analysis = compiled.analysis.final_analysis().as_ref();
     let selections = analysis
         .calls()
         .filter_map(|(owner, facts)| {
@@ -233,7 +233,7 @@ flow main() -> i64 {
 "#,
     )
     .expect("two generic substitutions compile as distinct closed instance facts");
-    let analysis = compiled.semantic_analysis.as_ref();
+    let analysis = compiled.analysis.final_analysis().as_ref();
     let terminal_instantiations = analysis
         .calls()
         .filter_map(|(owner, facts)| {

@@ -208,6 +208,12 @@ arcweft-launch
   runtime-plan lowering / line display catalog までを束ねる Sans I/O driver
   API を所有する。CLI の profile / diagnostics / filesystem selection は
   CLI 側に残し、player host は source developer mode でこの driver を使う。
+  完成した semantic generation は `ProjectAnalysisLease` が exact HIR /
+  source / symbol ancestor、registered world、final report、semantic index を
+  一体で保持する。`CompiledProject` はこの lease と検証・実行成果物を所有し、
+  `ProjectCompilationLease` は完成済みの HIR / analysis / compiled phase を表す。
+  LSP の accepted snapshot と compiler error はこの phase lease を保持するため、
+  完成した解析は後続の実行 admission が失敗しても利用できる。
 - `arcweft-runtime-plan` は checked HIR から `arcweft-core` の `RuntimePlan` / line task graph へ lowering する。
 - `arcweft-runtime-codegen` は full-script AOT/JIT の executor policy、
   safe-region runtime-code IR、frame layout、cache key、structured compiled

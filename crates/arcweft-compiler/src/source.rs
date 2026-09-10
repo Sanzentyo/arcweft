@@ -113,8 +113,7 @@ pub fn compile_source_with_env_and_control(
     Ok(CompiledSource {
         plan: report.plan.clone(),
         dialogue_content: report.dialogue_content_catalog.clone(),
-        hir_project: Arc::clone(compiled_project.hir_project()),
-        semantic_analysis: Arc::clone(compiled_project.final_analysis()),
+        analysis: Arc::clone(compiled_project.analysis_lease()),
         style: compiled_project.style().clone(),
         fx_definitions: Arc::from(compiled_project.fx_definitions()),
         runtime_plan_stats: report.stats,

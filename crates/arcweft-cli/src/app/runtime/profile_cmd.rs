@@ -79,7 +79,9 @@ pub(in crate::app) fn runtime_profile_command(
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
             syntax: compiled.syntax_stats.into(),
-            semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
+            semantic: FinalSemanticProfileStats::from(
+                compiled.compiled.analysis_lease().final_analysis().as_ref(),
+            ),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
             awbc: AwbcProfileStats::from(&compiled.product_awbc),
             aot: AotProfileStats::from(&compiled.aot_stats),

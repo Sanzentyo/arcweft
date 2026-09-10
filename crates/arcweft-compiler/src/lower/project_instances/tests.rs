@@ -13,7 +13,7 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
          flow main() -> i64 { return identity(42i64) }\n",
     )
     .expect("checked generic instance fixture");
-    let analysis = &compiled.semantic_analysis;
+    let analysis = &compiled.analysis.final_analysis();
     let (owner, selection) = analysis
         .calls()
         .find_map(|(owner, call)| {
@@ -25,7 +25,8 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
         })
         .expect("fixture has one selected ordinary function");
     let executable = compiled
-        .hir_project
+        .analysis
+        .hir_project()
         .analysis_view()
         .expect("executable HIR");
     let function = executable
@@ -67,7 +68,7 @@ fn instance_key_encoding_spends_the_same_projection_budget() {
         "fn identity<T>(value: T) -> T { value }\nflow main() -> i64 { return identity(42i64) }\n",
     )
     .expect("generic invocation fixture");
-    let analysis = &compiled.semantic_analysis;
+    let analysis = &compiled.analysis.final_analysis();
     let (owner, selection) = analysis
         .calls()
         .find_map(|(owner, call)| {

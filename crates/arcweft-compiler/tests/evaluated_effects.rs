@@ -187,6 +187,7 @@ fn candidate_generated_content_types_follow_their_selected_producer() {
         let selected = compile_attached_dialogue_project(&source)
             .expect("a selected Index may contain a typed Content call and named scope");
         let (selector, choice) = selected
+            .analysis_lease()
             .final_analysis()
             .expressions()
             .find_map(|(owner, expression)| match expression.resolution() {
@@ -195,6 +196,7 @@ fn candidate_generated_content_types_follow_their_selected_producer() {
             })
             .expect("retained Index/Dialogue alternatives");
         let module = selected
+            .analysis_lease()
             .hir_project()
             .view()
             .modules()
@@ -231,15 +233,27 @@ fn candidate_local_type_failure_does_not_publish_an_unselected_type() {
         "pub character alice { display = \"Alice\" }\nflow main() -> Unit { alice()[|value: MissingType| value] }\nentry cli @entry.main { goto @flow.main }\n",
     ).expect("the valid Dialogue interpretation rejects the Index annotation in its probe");
     let mut retained_types = 0;
-    for (_, module) in compiled.hir_project().view().modules() {
+    for (_, module) in compiled.analysis_lease().hir_project().view().modules() {
         for (owner, _) in module.types() {
             if module
                 .candidate_provenance()
                 .contains(arcweft_lang_hir::identity::SyntheticOwner::Type(owner))
             {
                 retained_types += 1;
-                assert!(compiled.final_analysis().ty(owner).is_none());
-                assert!(compiled.final_analysis().type_resolution(owner).is_none());
+                assert!(
+                    compiled
+                        .analysis_lease()
+                        .final_analysis()
+                        .ty(owner)
+                        .is_none()
+                );
+                assert!(
+                    compiled
+                        .analysis_lease()
+                        .final_analysis()
+                        .type_resolution(owner)
+                        .is_none()
+                );
             }
         }
     }
@@ -258,7 +272,7 @@ fn candidate_control_target_failure_stays_in_the_rejected_interpretation() {
         let compiled = compile_attached_dialogue_project(&source)
             .expect("the valid Dialogue interpretation rejects an Index-local control target");
         let mut rejected = 0;
-        for (_, module) in compiled.hir_project().view().modules() {
+        for (_, module) in compiled.analysis_lease().hir_project().view().modules() {
             for (owner, statement) in module.statements() {
                 if arcweft_lang_hir::project::HirControlTransferKind::from_statement(
                     statement.kind(),
@@ -271,7 +285,13 @@ fn candidate_control_target_failure_stays_in_the_rejected_interpretation() {
                             .candidate_provenance()
                             .contains(arcweft_lang_hir::identity::SyntheticOwner::Stmt(owner))
                     );
-                    assert!(compiled.final_analysis().statement(owner).is_none());
+                    assert!(
+                        compiled
+                            .analysis_lease()
+                            .final_analysis()
+                            .statement(owner)
+                            .is_none()
+                    );
                 }
             }
         }
@@ -285,6 +305,7 @@ fn candidate_only_local_use_does_not_become_an_executable_capture() {
         "pub character alice { display = \"Alice\" }\nflow main() -> Unit { let unused = 1; let speak = || { alice()[unused]; () }; speak(); }\nentry cli @entry.main { goto @flow.main }\n",
     ).expect("the closure's Dialogue body compiles");
     let closures = compiled
+        .analysis_lease()
         .final_analysis()
         .expressions()
         .filter_map(|(_, expression)| match expression.resolution() {
@@ -297,7 +318,10 @@ fn candidate_only_local_use_does_not_become_an_executable_capture() {
         closures[0].captures().is_empty(),
         "a reference in the rejected Index interpretation is not a runtime capture"
     );
-    assert_eq!(compiled.final_analysis().captures().len(), 0);
+    assert_eq!(
+        compiled.analysis_lease().final_analysis().captures().len(),
+        0
+    );
 }
 
 #[test]
@@ -318,6 +342,7 @@ fn candidate_selection_recomputes_capture_order_and_access() {
         let compiled =
             compile_attached_dialogue_project(&source).expect("selected closure captures compile");
         let closures = compiled
+            .analysis_lease()
             .final_analysis()
             .expressions()
             .filter_map(|(_, expression)| {
@@ -332,6 +357,7 @@ fn candidate_selection_recomputes_capture_order_and_access() {
             panic!("one selected closure for {body}")
         };
         let module = compiled
+            .analysis_lease()
             .hir_project()
             .view()
             .modules()
@@ -350,6 +376,7 @@ fn candidate_selection_recomputes_capture_order_and_access() {
                 );
                 assert!(
                     compiled
+                        .analysis_lease()
                         .final_analysis()
                         .capture(capture.capture())
                         .is_some()
@@ -370,13 +397,14 @@ fn candidate_selection_recomputes_capture_order_and_access() {
 fn candidate_capture_selection_crosses_each_nested_closure() {
     let compiled = compile_attached_dialogue_project("pub character alice { display = \"Alice\" }\nflow main() -> Unit { let unused = 1; let kept = 2; let outer = || { let inner = || { alice()[unused]; kept }; inner() }; let observed = outer(); }\nentry cli @entry.main { goto @flow.main }\n").expect("nested capture selection compiles");
     let mut closures = 0;
-    for (_, expression) in compiled.final_analysis().expressions() {
+    for (_, expression) in compiled.analysis_lease().final_analysis().expressions() {
         if let CheckedExpressionResolution::Closure(closure) = expression.resolution() {
             closures += 1;
             let [capture] = closure.captures() else {
                 panic!("each crossed closure needs only the selected external use")
             };
             let module = compiled
+                .analysis_lease()
                 .hir_project()
                 .view()
                 .modules()
@@ -395,7 +423,10 @@ fn candidate_capture_selection_crosses_each_nested_closure() {
         }
     }
     assert_eq!(closures, 2);
-    assert_eq!(compiled.final_analysis().captures().len(), 2);
+    assert_eq!(
+        compiled.analysis_lease().final_analysis().captures().len(),
+        2
+    );
 }
 
 #[test]
@@ -407,6 +438,7 @@ fn candidate_recovery_is_selected_before_callable_execution_role() {
         let compiled = compile_attached_dialogue_project(&source)
             .expect("rejected syntax or yield cannot determine the function's execution role");
         let executions = compiled
+            .analysis_lease()
             .final_analysis()
             .items()
             .filter_map(|(_, item)| {
@@ -700,22 +732,23 @@ entry cli @entry.main { goto @flow.main }
     ));
 
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("compiled project has executable HIR");
     let runtime_owners = project_runtime_reachability(
         executable,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
-        compiled.checked_entries(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
+        compiled.analysis_lease().checked_entries(),
         RuntimeEmissionMode::CheckAll,
     )
     .expect("Object runtime reachability");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
-        compiled.project_symbols(),
-        compiled.registered_world(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world(),
+        compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         Some((
             compiled.dialogue_profile().presentation(),
@@ -727,6 +760,7 @@ entry cli @entry.main { goto @flow.main }
     .expect("Object runtime semantic facts")
     .0;
     let object_owner = compiled
+        .analysis_lease()
         .final_analysis()
         .expressions()
         .find_map(|(owner, expression)| {

@@ -20,7 +20,7 @@ pub(crate) fn prepare_rename(
     offset: usize,
 ) -> Option<PrepareRenameResponse> {
     let accepted = profile.accepted_environment()?;
-    let index = accepted.executable()?.semantic_index();
+    let index = accepted.analysis()?.semantic_index();
     let cursor = symbol_at(profile, document, offset, index)?;
     if !matches!(
         cursor.symbol,
@@ -49,7 +49,7 @@ pub(crate) fn rename(
     new_name: &str,
 ) -> Option<WorkspaceEdit> {
     let accepted = profile.accepted_environment()?;
-    let index = accepted.executable()?.semantic_index();
+    let index = accepted.analysis()?.semantic_index();
     let project = accepted.project();
     let cursor = symbol_at(profile, document, offset, index)?;
     let encoding = document.line_index().position_encoding();

@@ -41,7 +41,7 @@ pub(crate) fn document_symbols(
         return DocumentSymbolResponse::Nested(Vec::new());
     };
     let index = accepted
-        .executable()
+        .analysis()
         .map(|compiled| compiled.semantic_index().as_ref());
     let project = accepted.project();
     let Some(module) = project.hir_for_open_document(document.uri(), document.source_document())
@@ -322,7 +322,7 @@ pub(crate) fn workspace_symbols_for_profiles<'a>(
         accepted_profile_found = true;
         let project = accepted.project();
         let index = accepted
-            .executable()
+            .analysis()
             .map(|compiled| compiled.semantic_index().as_ref());
         for source in project
             .project_symbols()
@@ -386,7 +386,7 @@ pub(crate) fn callable_completions(profile: &LspProfile) -> Vec<CompletionItem> 
     };
     let project = accepted.project();
     let index = accepted
-        .executable()
+        .analysis()
         .map(|compiled| compiled.semantic_index().as_ref());
     project
         .project_symbols()

@@ -931,7 +931,7 @@ pub(super) fn agent_repl_hir(
             "meta",
             serde_json::json!({
                 "parse": agent_repl_classification_report(&classification),
-                "hir": agent_repl_format_hir_project(&compiled.hir_project),
+                "hir": agent_repl_format_hir_project(compiled.analysis.hir_project()),
             }),
         ),
         Err(error) => agent_repl_error(index, input, "meta", error.clone()),
@@ -1408,7 +1408,7 @@ fn agent_repl_display_type(
     };
 
     let mut selected = None;
-    for (_, module) in compiled.hir_project.view().modules() {
+    for (_, module) in compiled.analysis.hir_project().view().modules() {
         for (owner, _) in module.expressions() {
             let lookup = module
                 .source_site(
@@ -1428,7 +1428,7 @@ fn agent_repl_display_type(
             {
                 continue;
             }
-            let Some(expression) = compiled.semantic_analysis.expression(owner) else {
+            let Some(expression) = compiled.analysis.final_analysis().expression(owner) else {
                 continue;
             };
             let Some(ty) = expression.value_type() else {

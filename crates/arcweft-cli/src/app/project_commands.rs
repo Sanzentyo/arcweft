@@ -421,6 +421,7 @@ impl ProjectCommandReport {
                 .collect(),
             compile_units: state
                 .compiled
+                .analysis_lease()
                 .compile_units()
                 .iter()
                 .map(|unit| ProjectCompileUnitReport {
@@ -430,9 +431,10 @@ impl ProjectCommandReport {
                     cache: unit.cache_status().as_str(),
                 })
                 .collect(),
-            syntax_warnings: state.compiled.syntax_warnings(),
+            syntax_warnings: state.compiled.analysis_lease().syntax_warnings(),
             flows: state
                 .compiled
+                .analysis_lease()
                 .hir_project()
                 .view()
                 .items()
@@ -778,11 +780,12 @@ impl FullBuildPersistentArtifactContext {
             required_bundle_section_descriptor(&view, BundleSectionKind::ProgramBytecode)?;
         let adapter_requirements_descriptor =
             required_bundle_section_descriptor(&view, BundleSectionKind::AdapterRequirements)?;
-        let modules = state.compiled.modules();
+        let modules = state.compiled.analysis_lease().modules();
         let single_project_unit = modules.len() == 1
-            && state.compiled.compile_units().len() == 1
+            && state.compiled.analysis_lease().compile_units().len() == 1
             && state
                 .compiled
+                .analysis_lease()
                 .compile_units()
                 .first()
                 .is_some_and(|unit| unit.modules().len() == 1);
@@ -1372,6 +1375,7 @@ fn write_persistent_query_source(
     let compiled = context
         .state
         .compiled
+        .analysis_lease()
         .modules()
         .iter()
         .find(|module| module.module() == source.module())
@@ -1950,6 +1954,7 @@ fn module_compile_cache_status(
         .expect("loaded module belongs to a compile unit");
     state
         .compiled
+        .analysis_lease()
         .compile_units()
         .iter()
         .find(|unit| unit.id() == unit_id)
@@ -2102,6 +2107,7 @@ fn project_build_watch_loop(
                     .count();
                 let compile_unit_hits = next_state
                     .compiled
+                    .analysis_lease()
                     .compile_units()
                     .iter()
                     .filter(|unit| unit.cache_status().is_hit())
@@ -2179,7 +2185,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
             progress.run(CliProgressStatus::Writing, output_path.display(), || {
                 write_text_artifact(
                     output_path,
-                    &format_hir_project(checked.compiled.hir_project()),
+                    &format_hir_project(checked.compiled.analysis_lease().hir_project()),
                 )
             })?;
         }
@@ -2202,6 +2208,7 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         syntax_warnings: checked.syntax_warnings,
         flows: checked
             .compiled
+            .analysis_lease()
             .hir_project()
             .view()
             .items()
@@ -2354,7 +2361,7 @@ fn append_release_dynamic_goto_diagnostics(
     if verification_mode != VerificationMode::Release {
         return;
     }
-    let index = compiled.semantic_index();
+    let index = compiled.analysis_lease().semantic_index();
     verification.diagnostics.extend(
         index
             .flow_control_summaries()

@@ -100,13 +100,15 @@ impl DocumentAnalysis {
             if !Arc::ptr_eq(accepted_source.document(), &document) {
                 return None;
             }
-            let executable = accepted.executable()?;
-            diagnostics.extend(executable.final_analysis().diagnostics().iter().filter_map(
+            let analysis = accepted.analysis()?;
+            diagnostics.extend(analysis.final_analysis().diagnostics().iter().filter_map(
                 |diagnostic| {
                     lsp_diagnostic_from_arcweft(diagnostic, &line_index, source_document).ok()
                 },
             ));
-            Some(executable.verification().as_ref().clone())
+            accepted
+                .executable()
+                .map(|executable| executable.verification().as_ref().clone())
         });
 
         Self {

@@ -93,6 +93,7 @@ fn cache_miss_uses_the_exact_accepted_query_tuple_without_compiler_work() {
     let accepted_world = accepted
         .executable()
         .expect("accepted executable")
+        .analysis_lease()
         .registered_world();
     assert!(std::ptr::eq(stamp.world().as_ref(), accepted_world));
     assert!(std::ptr::eq(lease.world(), stamp.world().as_ref()));

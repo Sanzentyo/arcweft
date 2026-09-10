@@ -29,12 +29,14 @@ pub fn snapshot_compiled_project(
 ) -> BuildSnapshot {
     let environment_digest = BuildDigest::from_bytes(
         *compiled
+            .analysis_lease()
             .registered_environment()
             .environment_digest()
             .as_bytes(),
     );
     let project_fingerprint = project_fingerprint(sources, &request, environment_digest);
     let modules = compiled
+        .analysis_lease()
         .modules()
         .iter()
         .map(|module| {
@@ -53,6 +55,7 @@ pub fn snapshot_compiled_project(
         })
         .collect::<Vec<_>>();
     let queries = compiled
+        .analysis_lease()
         .compile_units()
         .iter()
         .map(|unit| {
@@ -107,7 +110,10 @@ pub fn runtime_plan_artifact_key(
     snapshot: &BuildSnapshot,
     compiled: &CompiledProject,
 ) -> RuntimePlanArtifactKey {
-    runtime_plan_artifact_key_for_profile(snapshot, compiled.assertion_build_profile())
+    runtime_plan_artifact_key_for_profile(
+        snapshot,
+        compiled.analysis_lease().assertion_build_profile(),
+    )
 }
 
 fn runtime_plan_artifact_key_for_profile(

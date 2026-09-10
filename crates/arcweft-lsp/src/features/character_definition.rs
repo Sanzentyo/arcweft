@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_compiler::project::CompiledProject;
+use arcweft_compiler::project::ProjectAnalysisLease;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_sema::character_definition::{
     CharacterDefinitionIntegrityError, CharacterDefinitionQueryResult,
@@ -228,7 +228,7 @@ pub(crate) fn character_definition_with_budget(
     let definition_key = CharacterDefinitionCacheKey::new(
         context.reference_key.clone(),
         context
-            .executable
+            .analysis
             .registered_world()
             .character_definition_index()
             .source_revision(),
@@ -242,7 +242,7 @@ pub(crate) fn character_definition_with_budget(
     } else {
         let checkpoint = budget.checkpoint();
         let result = query_character_definition(
-            context.executable.registered_world(),
+            context.analysis.registered_world(),
             &inventory,
             context.document.identity(),
             cursor,
@@ -274,7 +274,7 @@ pub(crate) fn character_definition_with_budget(
 
 struct CharacterRequestContext {
     accepted: Arc<AcceptedProfileEnvironment>,
-    executable: Arc<CompiledProject>,
+    analysis: Arc<ProjectAnalysisLease>,
     document: Arc<SourceDocument>,
     hir: Arc<HirModule>,
     reference_key: CharacterReferenceCacheKey,
@@ -288,7 +288,7 @@ fn prepare_character_request(
     let Some(accepted) = profile.accepted_environment() else {
         return Ok(None);
     };
-    let Some(executable) = accepted.executable().cloned() else {
+    let Some(analysis) = accepted.analysis().cloned() else {
         return Ok(None);
     };
     budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
@@ -326,8 +326,8 @@ fn prepare_character_request(
     let reference_key = CharacterReferenceCacheKey::new(
         accepted.profile().clone(),
         accepted.generation(),
-        executable.registered_world().symbols().world().clone(),
-        *executable.registered_world().symbols().revision(),
+        analysis.registered_world().symbols().world().clone(),
+        *analysis.registered_world().symbols().revision(),
         exact_document.identity().clone(),
         module.clone(),
         hir.provenance().source_snapshot().clone(),
@@ -335,7 +335,7 @@ fn prepare_character_request(
     );
     Ok(Some(CharacterRequestContext {
         accepted,
-        executable,
+        analysis,
         document: exact_document,
         hir,
         reference_key,
@@ -355,7 +355,7 @@ fn character_reference_inventory(
     let checkpoint = budget.checkpoint();
     let project = context.accepted.project();
     let inventory = collect_character_references(
-        context.executable.registered_world(),
+        context.analysis.registered_world(),
         CharacterReferenceInput::new(
             project.hir_project().analysis_view().map_err(|_| {
                 CharacterDefinitionRequestError::admitted_integrity(
@@ -366,7 +366,7 @@ fn character_reference_inventory(
                 )
             })?,
             context.hir.as_ref(),
-            context.executable.final_analysis().as_ref(),
+            context.analysis.final_analysis().as_ref(),
         ),
         budget,
     )

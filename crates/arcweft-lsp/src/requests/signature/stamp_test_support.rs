@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::ProjectSymbolRevision;
+use arcweft_lang_hir::{project::HirProject, symbol::ProjectSymbolRevision};
 use arcweft_source::SourceDocument;
 
 use super::PreparedSignatureRequest;
@@ -28,5 +28,11 @@ impl PreparedSignatureRequest {
         document: Arc<SourceDocument>,
     ) {
         self.stamp.accepted_document = document;
+    }
+
+    /// Replaces only the request-side HIR allocation without constructing an
+    /// impossible accepted project with an unrelated semantic world.
+    pub(crate) fn replace_hir_project_for_stamp_test(&mut self, project: Arc<HirProject>) {
+        self.stamp.hir_project = project;
     }
 }

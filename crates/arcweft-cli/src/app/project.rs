@@ -842,7 +842,7 @@ fn load_and_check_project_sources(
         })?
     };
     let emitter = DiagnosticEmitter::stderr();
-    for compiled_module in compiled_project.modules() {
+    for compiled_module in compiled_project.analysis_lease().modules() {
         let source = sources
             .module(compiled_module.module())
             .expect("compiled project modules originate from the accepted project sources");
@@ -859,7 +859,7 @@ fn load_and_check_project_sources(
     let compiled_project = Arc::new(compiled_project);
     Ok(CheckedModule {
         source_document,
-        syntax_warnings: compiled_project.syntax_warnings(),
+        syntax_warnings: compiled_project.analysis_lease().syntax_warnings(),
         compiled: compiled_project,
         execution_diagnostics,
         phases,
@@ -1381,14 +1381,18 @@ pub(crate) fn verify_compiled_project(
     compiled: &CompiledProject,
     policy: VerificationPolicy,
 ) -> Result<VerificationReport, ExitCode> {
-    let project = compiled.hir_project().analysis_view().map_err(|error| {
-        eprintln!("error: compiled HIR project is not executable: {error}");
-        ExitCode::FAILURE
-    })?;
+    let project = compiled
+        .analysis_lease()
+        .hir_project()
+        .analysis_view()
+        .map_err(|error| {
+            eprintln!("error: compiled HIR project is not executable: {error}");
+            ExitCode::FAILURE
+        })?;
     verify_project(
         project,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
         policy,
     )
     .map_err(|error| {

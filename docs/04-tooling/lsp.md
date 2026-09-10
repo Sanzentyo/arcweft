@@ -241,6 +241,22 @@ available semantic facts. Discarded candidate probes do not publish their own
 diagnostic rows. Source, cancellation, resource and invariant failures retain
 their owning failure disposition instead of becoming a viable call.
 
+The accepted project owns one compiler phase lease. A completed
+`ProjectAnalysisLease` retains the exact HIR/source/symbol ancestor, registered
+world, assertion profile, final semantic report and semantic index. A compiled
+project owns that same lease together with verification and runtime products.
+The compiler retains the latest fully constructed phase on an error: analysis
+construction failure provides only HIR, while a rejected call or a later
+verification/lowering failure can retain completed analysis. Partial reports
+are not published. Failed compilations do not flush persistent compile stores.
+
+Signature help and semantic-only hover, inlay, navigation and reference
+features consume the retained analysis without requiring an executable. They
+still require exact accepted source, URI, module and profile identities.
+Signature caches and in-flight responses remain bound to that accepted
+generation; an edit invalidates old responses even when both generations have
+completed analysis. Verifier diagnostics require the compiled phase.
+
 Workspace edits are negotiated in the transport. If the client advertises
 `workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
 rename results are returned as versioned `documentChanges`; otherwise they fall

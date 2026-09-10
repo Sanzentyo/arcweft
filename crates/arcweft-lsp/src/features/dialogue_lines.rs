@@ -40,14 +40,14 @@ pub(crate) fn definition(
     offset: usize,
 ) -> Option<GotoDefinitionResponse> {
     let accepted = exact_environment(profile, document)?;
-    let executable = accepted.executable()?;
+    let semantic = accepted.analysis()?;
     let project = accepted.project();
     let hir = project.hir_project();
-    let index = executable.semantic_index();
+    let index = semantic.semantic_index();
     let cursor = symbol_at(
         project,
         hir,
-        executable.final_analysis().dialogue_lines(),
+        semantic.final_analysis().dialogue_lines(),
         index,
         document,
         offset,
@@ -64,14 +64,14 @@ pub(crate) fn references(
     offset: usize,
 ) -> Option<Vec<Location>> {
     let accepted = exact_environment(profile, document)?;
-    let executable = accepted.executable()?;
+    let semantic = accepted.analysis()?;
     let project = accepted.project();
     let hir = project.hir_project();
-    let index = executable.semantic_index();
+    let index = semantic.semantic_index();
     let cursor = symbol_at(
         project,
         hir,
-        executable.final_analysis().dialogue_lines(),
+        semantic.final_analysis().dialogue_lines(),
         index,
         document,
         offset,
@@ -101,14 +101,14 @@ pub(crate) fn prepare_rename(
     offset: usize,
 ) -> Option<PrepareRenameResponse> {
     let accepted = exact_environment(profile, document)?;
-    let executable = accepted.executable()?;
+    let semantic = accepted.analysis()?;
     let project = accepted.project();
     let hir = project.hir_project();
-    let index = executable.semantic_index();
+    let index = semantic.semantic_index();
     let cursor = symbol_at(
         project,
         hir,
-        executable.final_analysis().dialogue_lines(),
+        semantic.final_analysis().dialogue_lines(),
         index,
         document,
         offset,
@@ -138,11 +138,11 @@ pub(crate) fn rename(
     new_name: &str,
 ) -> Option<WorkspaceEdit> {
     let accepted = exact_environment(profile, document)?;
-    let executable = accepted.executable()?;
+    let semantic = accepted.analysis()?;
     let project = accepted.project();
     let hir = project.hir_project();
-    let index = executable.semantic_index();
-    let lines = executable.final_analysis().dialogue_lines();
+    let index = semantic.semantic_index();
+    let lines = semantic.final_analysis().dialogue_lines();
     let cursor = symbol_at(project, hir, lines, index, document, offset)?;
     let replacement = DialogueLineId::try_new(new_name.to_owned()).ok()?;
     if matches!(

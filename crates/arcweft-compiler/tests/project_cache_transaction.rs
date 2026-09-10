@@ -500,10 +500,14 @@ fn compiled_project_contains_no_linked_hir() {
         )
         .expect("compiled project");
 
-    let retained = Arc::clone(compiled.hir_project());
-    assert!(Arc::ptr_eq(compiled.hir_project(), &retained));
-    let compiled_module = &compiled.modules()[0];
+    let retained = Arc::clone(compiled.analysis_lease().hir_project());
+    assert!(Arc::ptr_eq(
+        compiled.analysis_lease().hir_project(),
+        &retained
+    ));
+    let compiled_module = &compiled.analysis_lease().modules()[0];
     let accepted_module = compiled
+        .analysis_lease()
         .hir_project()
         .module(compiled_module.module())
         .expect("compiled module remains present in the accepted HIR project")
@@ -554,22 +558,23 @@ fn runtime_plan_consumes_project_view_without_flattening() {
         .expect("three-module project compiles");
 
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
-        compiled.checked_entries(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
+        compiled.analysis_lease().checked_entries(),
         RuntimeEmissionMode::CheckAll,
     )
     .expect("runtime reachability projects from the accepted project view");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
-        compiled.project_symbols(),
-        compiled.registered_world(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world(),
+        compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
         None,
@@ -592,7 +597,13 @@ fn runtime_plan_consumes_project_view_without_flattening() {
                 .expect("project item retains its canonical module");
             assert!(Arc::ptr_eq(item.module(), accepted_module));
             assert_eq!(item.id().module(), item.module().module_id());
-            assert!(compiled.final_analysis().item(item.id()).is_some());
+            assert!(
+                compiled
+                    .analysis_lease()
+                    .final_analysis()
+                    .item(item.id())
+                    .is_some()
+            );
             let runtime = runtime_facts
                 .flow(item.id())
                 .cloned()
@@ -659,22 +670,23 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         )
         .expect("typed Match project compiles");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
-        compiled.checked_entries(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
+        compiled.analysis_lease().checked_entries(),
         RuntimeEmissionMode::CheckAll,
     )
     .expect("accepted runtime reachability");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
-        compiled.project_symbols(),
-        compiled.registered_world(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world(),
+        compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
         None,
@@ -695,7 +707,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
 
     let mut saw_bool_local = false;
     let mut saw_presentation_local = false;
-    for (owner, checked) in compiled.final_analysis().locals() {
+    for (owner, checked) in compiled.analysis_lease().final_analysis().locals() {
         if !runtime_owners.contains_local(owner) {
             saw_presentation_local = true;
             assert!(runtime_facts.local_type(owner).is_none());
@@ -742,7 +754,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
     let mut saw_bool_expression = false;
     let mut saw_i64_expression = false;
     let mut saw_presentation_expression = false;
-    for (owner, checked) in compiled.final_analysis().expressions() {
+    for (owner, checked) in compiled.analysis_lease().final_analysis().expressions() {
         if !expression_type_owners.contains(&owner) {
             saw_presentation_expression |= !runtime_owners.contains_expression(owner);
             assert!(runtime_facts.expression_type(owner).is_none());
@@ -789,7 +801,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
 
     let mut saw_bool_pattern = false;
     let mut saw_presentation_pattern = false;
-    for (owner, checked) in compiled.final_analysis().patterns() {
+    for (owner, checked) in compiled.analysis_lease().final_analysis().patterns() {
         if !runtime_owners.contains_pattern(owner) {
             saw_presentation_pattern = true;
             assert!(runtime_facts.pattern_type(owner).is_none());
@@ -834,7 +846,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
     }
 
     let mut saw_presentation_type = false;
-    for (owner, checked) in compiled.final_analysis().types() {
+    for (owner, checked) in compiled.analysis_lease().final_analysis().types() {
         if !runtime_owners.contains_type(owner) {
             saw_presentation_type = true;
             assert!(runtime_facts.ty(owner).is_none());
@@ -912,6 +924,7 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         )
         .expect("direct record-field assignment compiles");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted assignment project is executable");
@@ -923,6 +936,7 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         })
         .expect("assignment statement");
     let checked = compiled
+        .analysis_lease()
         .final_analysis()
         .statement(statement)
         .expect("checked assignment statement");
@@ -931,17 +945,17 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
     };
     let runtime_owners = project_runtime_reachability(
         executable,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
-        compiled.checked_entries(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
+        compiled.analysis_lease().checked_entries(),
         RuntimeEmissionMode::CheckAll,
     )
     .expect("accepted assignment reachability");
     let runtime = project_runtime_semantic_facts(
         executable,
-        compiled.project_symbols(),
-        compiled.registered_world(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world(),
+        compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
         None,
@@ -971,22 +985,23 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         )
         .expect("project enum fixture compiles");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
-        compiled.project_symbols(),
-        compiled.final_analysis(),
-        compiled.checked_entries(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().final_analysis(),
+        compiled.analysis_lease().checked_entries(),
         RuntimeEmissionMode::CheckAll,
     )
     .expect("accepted project enum reachability");
     let runtime_facts = project_runtime_semantic_facts(
         executable,
-        compiled.project_symbols(),
-        compiled.registered_world(),
-        compiled.final_analysis(),
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world(),
+        compiled.analysis_lease().final_analysis(),
         &runtime_owners,
         None,
         None,
@@ -1065,15 +1080,19 @@ fn lowered_hir_cache_rejects_exact_source_from_another_syntax_and_hir_session() 
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 1);
     assert_eq!(
-        first.compile_units()[0].fingerprint(),
-        second.compile_units()[0].fingerprint()
+        first.analysis_lease().compile_units()[0].fingerprint(),
+        second.analysis_lease().compile_units()[0].fingerprint()
     );
     assert_eq!(
-        second.compile_units()[0].cache_status(),
+        second.analysis_lease().compile_units()[0].cache_status(),
         ProjectCompileCacheStatus::Miss
     );
     assert_eq!(
-        second.modules()[0].hir().snapshot_id().module().database(),
+        second.analysis_lease().modules()[0]
+            .hir()
+            .snapshot_id()
+            .module()
+            .database(),
         second_hir_database
     );
 }
@@ -1104,15 +1123,21 @@ fn lowered_hir_cache_hit_remains_read_only() {
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 0);
     assert_eq!(
-        hit.compile_units()[0].cache_status(),
+        hit.analysis_lease().compile_units()[0].cache_status(),
         ProjectCompileCacheStatus::Hit
     );
     assert_eq!(
-        hit.registered_environment().character_digest(),
-        first.registered_environment().character_digest()
+        hit.analysis_lease()
+            .registered_environment()
+            .character_digest(),
+        first
+            .analysis_lease()
+            .registered_environment()
+            .character_digest()
     );
-    hit.registered_environment()
-        .verify_character_inventory(hit.project_symbols())
+    hit.analysis_lease()
+        .registered_environment()
+        .verify_character_inventory(hit.analysis_lease().project_symbols())
         .expect("hit path produced a complete registered world");
 }
 
@@ -1129,8 +1154,8 @@ fn failed_instance_projection_preserves_the_prior_accepted_generation() {
     let first = session
         .compile(&project, &accepted_context, &mut cache)
         .expect("accepted generation");
-    let first_hash = first.program_hash().clone();
-    let first_hir = Arc::clone(first.hir_project());
+    let first_hash = first.analysis_lease().program_hash().clone();
+    let first_hir = Arc::clone(first.analysis_lease().hir_project());
     for limits in [
         ProjectInstantiationLimits::new(0, 0, 100_000, 128, 100_000),
         ProjectInstantiationLimits::new(100, 100, 1, 128, 100_000),
@@ -1153,18 +1178,22 @@ fn failed_instance_projection_preserves_the_prior_accepted_generation() {
         );
         assert_eq!(cache.stores, 0);
         first
+            .analysis_lease()
             .final_analysis()
             .validate_generation(
                 first_hir.analysis_view().expect("prior executable lease"),
-                first.project_symbols(),
+                first.analysis_lease().project_symbols(),
             )
             .expect("prior semantic generation remains valid");
-        assert_eq!(first.program_hash(), &first_hash);
+        assert_eq!(first.analysis_lease().program_hash(), &first_hash);
         let recovered = session
             .compile(&project, &accepted_context, &mut cache)
             .expect("the next normal compile still uses the accepted generation");
-        assert_eq!(recovered.program_hash(), &first_hash);
-        assert!(Arc::ptr_eq(recovered.hir_project(), &first_hir));
+        assert_eq!(recovered.analysis_lease().program_hash(), &first_hash);
+        assert!(Arc::ptr_eq(
+            recovered.analysis_lease().hir_project(),
+            &first_hir
+        ));
         assert_eq!(cache.stores, 0);
     }
 }
@@ -1212,14 +1241,17 @@ fn lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes() {
         "the foreign document artifact was replaced"
     );
     assert_eq!(
-        first.compile_units()[0].fingerprint(),
-        second.compile_units()[0].fingerprint()
+        first.analysis_lease().compile_units()[0].fingerprint(),
+        second.analysis_lease().compile_units()[0].fingerprint()
     );
     assert_eq!(
-        second.compile_units()[0].cache_status(),
+        second.analysis_lease().compile_units()[0].cache_status(),
         ProjectCompileCacheStatus::Miss
     );
-    assert_eq!(second.modules()[0].source(), &expected_identity);
+    assert_eq!(
+        second.analysis_lease().modules()[0].source(),
+        &expected_identity
+    );
 }
 
 #[test]
@@ -1264,7 +1296,7 @@ fn conditional_recovery_edits_invalidate_positive_and_negative_cache_evidence() 
             let compiled = result.unwrap_or_else(|error| panic!("{body}: {error:?}"));
             assert_eq!(cache.stores, 1, "{body}");
             assert_eq!(
-                compiled.compile_units()[0].cache_status(),
+                compiled.analysis_lease().compile_units()[0].cache_status(),
                 ProjectCompileCacheStatus::Miss
             );
             cache.reset_activity();
@@ -1272,8 +1304,14 @@ fn conditional_recovery_edits_invalidate_positive_and_negative_cache_evidence() 
                 .compile(&project, &context, &mut cache)
                 .expect("unchanged accepted source can reuse HIR");
             assert_eq!(cache.stores, 0);
-            assert_eq!(reused.program_hash(), compiled.program_hash());
-            assert!(Arc::ptr_eq(reused.hir_project(), compiled.hir_project()));
+            assert_eq!(
+                reused.analysis_lease().program_hash(),
+                compiled.analysis_lease().program_hash()
+            );
+            assert!(Arc::ptr_eq(
+                reused.analysis_lease().hir_project(),
+                compiled.analysis_lease().hir_project()
+            ));
             accepted = Some(compiled);
         } else {
             assert!(result.is_err(), "{body}");
@@ -1283,10 +1321,15 @@ fn conditional_recovery_edits_invalidate_positive_and_negative_cache_evidence() 
             );
             let prior = accepted.as_ref().expect("prior accepted generation");
             prior
+                .analysis_lease()
                 .final_analysis()
                 .validate_generation(
-                    prior.hir_project().analysis_view().unwrap(),
-                    prior.project_symbols(),
+                    prior
+                        .analysis_lease()
+                        .hir_project()
+                        .analysis_view()
+                        .unwrap(),
+                    prior.analysis_lease().project_symbols(),
                 )
                 .unwrap();
             assert!(session.compile(&project, &context, &mut cache).is_err());
@@ -1333,14 +1376,17 @@ fn source_revision_change_invalidates_the_compile_unit_cache() {
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 1);
     assert_ne!(
-        first.compile_units()[0].fingerprint(),
-        changed.compile_units()[0].fingerprint()
+        first.analysis_lease().compile_units()[0].fingerprint(),
+        changed.analysis_lease().compile_units()[0].fingerprint()
     );
     assert_eq!(
-        changed.compile_units()[0].cache_status(),
+        changed.analysis_lease().compile_units()[0].cache_status(),
         ProjectCompileCacheStatus::Miss
     );
-    assert_eq!(changed.modules()[0].source().revision(), changed_revision);
+    assert_eq!(
+        changed.analysis_lease().modules()[0].source().revision(),
+        changed_revision
+    );
 }
 
 #[test]
@@ -1354,6 +1400,7 @@ fn symbol_table_revision_invalidates_exact_changed_modules() {
         module: &CanonicalModulePath,
     ) -> &'project arcweft_compiler::project::ProjectCompileUnitSummary {
         project
+            .analysis_lease()
             .compile_units()
             .iter()
             .find(|unit| unit.modules() == std::slice::from_ref(module))
@@ -1365,6 +1412,7 @@ fn symbol_table_revision_invalidates_exact_changed_modules() {
         module: &CanonicalModulePath,
     ) -> &'project CompiledProjectModule {
         project
+            .analysis_lease()
             .modules()
             .iter()
             .find(|compiled| compiled.module() == module)
@@ -1395,9 +1443,10 @@ fn symbol_table_revision_invalidates_exact_changed_modules() {
             &mut cache,
         )
         .expect("initial three-unit project compiles");
-    assert_eq!(first.compile_units().len(), 3);
+    assert_eq!(first.analysis_lease().compile_units().len(), 3);
     assert!(
         first
+            .analysis_lease()
             .compile_units()
             .iter()
             .all(|unit| unit.cache_status() == ProjectCompileCacheStatus::Miss)
@@ -1462,17 +1511,21 @@ fn symbol_table_revision_invalidates_exact_changed_modules() {
     assert_eq!(cache.loads, 3, "every unit consults its typed fingerprint");
     assert_eq!(cache.stores, 2, "only changed and dependent units rebuild");
     assert_ne!(
-        first.project_symbols().revision(),
-        changed.project_symbols().revision()
+        first.analysis_lease().project_symbols().revision(),
+        changed.analysis_lease().project_symbols().revision()
     );
     assert_eq!(
-        changed.project_symbols().revision(),
-        changed.registered_environment().symbol_revision(),
+        changed.analysis_lease().project_symbols().revision(),
+        changed
+            .analysis_lease()
+            .registered_environment()
+            .symbol_revision(),
         "symbol publication and registered semantic facts share the final project revision",
     );
     changed
+        .analysis_lease()
         .registered_environment()
-        .verify_character_inventory(changed.project_symbols())
+        .verify_character_inventory(changed.analysis_lease().project_symbols())
         .expect("no partial registration is observable after the two required rebuilds");
 }
 
@@ -1494,12 +1547,13 @@ fn pending_stores_flush_after_complete_success() {
     assert_eq!(cache.stores, 1);
     assert_eq!(cache.units.len(), 1);
     assert_eq!(
-        compiled.compile_units()[0].cache_status(),
+        compiled.analysis_lease().compile_units()[0].cache_status(),
         ProjectCompileCacheStatus::Miss
     );
     compiled
+        .analysis_lease()
         .registered_environment()
-        .verify_character_inventory(compiled.project_symbols())
+        .verify_character_inventory(compiled.analysis_lease().project_symbols())
         .expect("cache stores flush only for a complete registered project");
 }
 
@@ -1538,14 +1592,17 @@ fn character_digest_cannot_key_semantic_reuse() {
     let changed_base = TypeCheckEnv::standard().with_symbol("configured", TypeKind::Bool);
     let changed_registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(changed_base.clone()),
-        first.hir_project().view(),
+        first.analysis_lease().hir_project().view(),
         &facts,
-        Some(first.registered_environment()),
+        Some(first.analysis_lease().registered_environment()),
     ))
     .expect("registration remains valid under a base-only change");
     assert_eq!(
         changed_registered.environment().character_digest(),
-        first.registered_environment().character_digest()
+        first
+            .analysis_lease()
+            .registered_environment()
+            .character_digest()
     );
     cache.reset_activity();
 
@@ -1572,20 +1629,23 @@ fn compiled_project_holds_one_registered_world() {
         .expect("compiled project");
 
     assert_eq!(
-        compiled.project_symbols().world(),
-        compiled.registered_environment().world()
+        compiled.analysis_lease().project_symbols().world(),
+        compiled.analysis_lease().registered_environment().world()
     );
     assert_eq!(
-        compiled.project_symbols().revision(),
-        compiled.registered_environment().symbol_revision()
+        compiled.analysis_lease().project_symbols().revision(),
+        compiled
+            .analysis_lease()
+            .registered_environment()
+            .symbol_revision()
     );
     assert!(std::ptr::eq(
-        compiled.project_symbols(),
-        compiled.registered_world().symbols()
+        compiled.analysis_lease().project_symbols(),
+        compiled.analysis_lease().registered_world().symbols()
     ));
     assert!(std::ptr::eq(
-        compiled.registered_environment(),
-        compiled.registered_world().environment()
+        compiled.analysis_lease().registered_environment(),
+        compiled.analysis_lease().registered_world().environment()
     ));
 }
 
@@ -1603,6 +1663,7 @@ fn compiled_snapshot_carries_the_registered_environment_digest() {
         .expect("compiled project");
     let expected = BuildDigest::from_bytes(
         *compiled
+            .analysis_lease()
             .registered_environment()
             .environment_digest()
             .as_bytes(),

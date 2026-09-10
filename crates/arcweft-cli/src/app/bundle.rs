@@ -263,7 +263,7 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
     compiled: ProfileCompiledRuntimePlan,
     include_spaces: Vec<BundleVirtualFileSpace>,
 ) -> Result<CompiledBundleArtifact, ExitCode> {
-    let semantic_index = Arc::clone(compiled.compiled.semantic_index());
+    let semantic_index = Arc::clone(compiled.compiled.analysis_lease().semantic_index());
     let execution_diagnostics = Arc::clone(&compiled.execution_diagnostics);
     let verification = verify_compiled_project(&compiled.compiled, VerificationPolicy::default())?;
     if verification.has_blocking_runtime_safety_gaps() {

@@ -58,7 +58,7 @@ pub(in crate::app) fn script_bench_selection(
     let compiled = compile_profile_runtime_plan(selection, &semantic, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let file_roots = selection.native_file_roots();
-    let manifest = collect_script_tests(compiled.compiled.hir_project());
+    let manifest = collect_script_tests(compiled.compiled.analysis_lease().hir_project());
     let runtime = BenchRuntimeContext {
         pure_config,
         host_policy: &host_policy,
@@ -72,7 +72,9 @@ pub(in crate::app) fn script_bench_selection(
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
             syntax: compiled.syntax_stats.into(),
-            semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
+            semantic: FinalSemanticProfileStats::from(
+                compiled.compiled.analysis_lease().final_analysis().as_ref(),
+            ),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
             awbc: AwbcProfileStats::from(&compiled.product_awbc),
             aot: AotProfileStats::from(&compiled.aot_stats),

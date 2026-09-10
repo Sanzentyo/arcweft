@@ -20,7 +20,7 @@ pub(in crate::app) fn accepted_build_snapshot(
         sources,
         compiled,
         BuildSnapshotRequest {
-            build_id: compiled.program_hash().as_str().to_owned(),
+            build_id: compiled.analysis_lease().program_hash().as_str().to_owned(),
             compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
             target_triple: format!("{}-{}", env::consts::ARCH, env::consts::OS),
             target_features: Vec::new(),

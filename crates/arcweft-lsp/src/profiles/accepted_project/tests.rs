@@ -133,8 +133,7 @@ fn exact_root_dependency_and_declaration_free_hir_are_retained() {
         (dependency_path.clone(), Arc::clone(&dependency)),
     ]);
     let snapshot = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(Arc::clone(&root), "file:///accepted/root.arcw"),
             AcceptedSourceDocumentSeed::new(
@@ -153,9 +152,12 @@ fn exact_root_dependency_and_declaration_free_hir_are_retained() {
 
     assert!(Arc::ptr_eq(
         snapshot.tooling_lease(),
-        compiled.tooling_lease()
+        compiled.analysis_lease().tooling_lease()
     ));
-    assert!(Arc::ptr_eq(snapshot.hir_project(), compiled.hir_project()));
+    assert!(Arc::ptr_eq(
+        snapshot.hir_project(),
+        compiled.analysis_lease().hir_project()
+    ));
     let root_key = snapshot
         .module_key(root.identity())
         .expect("root module key");
@@ -207,17 +209,17 @@ fn compiled_semantic_authority_is_admitted_only_as_one_compiled_generation() {
     let first = compiled_project(&[(CanonicalModulePath::crate_root(), first_document)]);
     let second = compiled_project(&[(CanonicalModulePath::crate_root(), second_document)]);
 
-    validate_compiled_semantic_authority(&first)
+    validate_semantic_authority(first.analysis_lease())
         .expect("first compiled generation retains its exact semantic authority");
-    validate_compiled_semantic_authority(&second)
+    validate_semantic_authority(second.analysis_lease())
         .expect("second compiled generation retains its exact semantic authority");
     assert!(!Arc::ptr_eq(
-        first.final_analysis().checked_callables(),
-        second.final_analysis().checked_callables(),
+        first.analysis_lease().final_analysis().checked_callables(),
+        second.analysis_lease().final_analysis().checked_callables(),
     ));
     assert!(!Arc::ptr_eq(
-        first.semantic_index().checked_callables(),
-        second.semantic_index().checked_callables(),
+        first.analysis_lease().semantic_index().checked_callables(),
+        second.analysis_lease().semantic_index().checked_callables(),
     ));
 }
 
@@ -226,18 +228,17 @@ fn recovered_tooling_lease_retains_exact_source_hir_and_navigation_without_seman
     let root = document("arcweft-project://accepted/recovered.arcw", "fn {\n");
     let error = project_compilation(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))])
         .expect_err("recovered source is not executable");
-    let tooling = error
-        .tooling_lease()
+    let compilation = error
+        .compilation_lease()
         .cloned()
         .expect("post-HIR failure retains the exact tooling lease");
+    assert!(compilation.analysis_lease().is_none());
+    let tooling = Arc::clone(compilation.tooling_lease());
     let uri_text = "file:///accepted/recovered.arcw";
     let uri = uri_text.parse::<Uri>().expect("recovered URI");
-    let snapshot = AcceptedProjectSnapshot::try_new(
-        Arc::clone(&tooling),
-        None,
-        vec![seed(Arc::clone(&root), uri_text)],
-    )
-    .expect("recovered tooling snapshot");
+    let snapshot =
+        AcceptedProjectSnapshot::try_new(compilation, vec![seed(Arc::clone(&root), uri_text)])
+            .expect("recovered tooling snapshot");
 
     assert!(Arc::ptr_eq(snapshot.tooling_lease(), &tooling));
     assert!(Arc::ptr_eq(snapshot.hir_project(), tooling.hir_project()));
@@ -259,7 +260,7 @@ fn recovered_tooling_lease_retains_exact_source_hir_and_navigation_without_seman
     ));
     assert!(snapshot.hir_for_open_document(&uri, &root).is_some());
     assert!(snapshot.entry_references().is_empty());
-    assert!(snapshot.sources().character_source_revision().is_none());
+    assert!(snapshot.compilation_lease().analysis_lease().is_none());
 }
 
 #[test]
@@ -270,8 +271,7 @@ fn duplicate_identity_and_uri_are_rejected_without_overwrite() {
     );
     let compiled = compiled_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
     let duplicate = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(Arc::clone(&root), "file:///accepted/duplicate.arcw"),
             seed(Arc::clone(&root), "file:///accepted/duplicate-again.arcw"),
@@ -284,8 +284,7 @@ fn duplicate_identity_and_uri_are_rejected_without_overwrite() {
 
     let extra = document("arcweft-generated://accepted/extra.arcw", "\n");
     let duplicate_uri = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(root, "file:///accepted/shared.arcw"),
             AcceptedSourceDocumentSeed::new(
@@ -319,8 +318,7 @@ fn conflicting_source_id_reports_both_exact_revisions() {
     let compiled = compiled_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&first))]);
 
     let result = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(Arc::clone(&first), "file:///accepted/conflicting.arcw"),
             seed(
@@ -379,8 +377,7 @@ fn accepted_generated_source_without_module_is_not_forged_into_hir() {
     let generated = document("arcweft-generated://accepted/index.arcw", "\n");
     let compiled = compiled_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
     let snapshot = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(root, "file:///accepted/main.arcw"),
             AcceptedSourceDocumentSeed::new(

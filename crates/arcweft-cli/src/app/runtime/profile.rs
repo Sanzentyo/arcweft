@@ -202,16 +202,15 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
     let execution_diagnostics =
         crate::app::runtime_artifact::bind_execution_diagnostics(selection, sources, &compiled)?;
     let source_map = compiled.view_product().product().source_map().clone();
-    let syntax_stats =
-        compiled
-            .modules()
-            .iter()
-            .try_fold(SyntaxParseStats::ZERO, |stats, module| {
-                stats.checked_add(*module.syntax_stats()).ok_or_else(|| {
-                    eprintln!("error: accepted syntax work accounting overflowed usize");
-                    ExitCode::FAILURE
-                })
-            })?;
+    let syntax_stats = compiled.analysis_lease().modules().iter().try_fold(
+        SyntaxParseStats::ZERO,
+        |stats, module| {
+            stats.checked_add(*module.syntax_stats()).ok_or_else(|| {
+                eprintln!("error: accepted syntax work accounting overflowed usize");
+                ExitCode::FAILURE
+            })
+        },
+    )?;
     let runtime_plan_report = compiled.runtime_plan().clone();
     let plan = runtime_plan_report.plan;
     let dialogue_content_catalog = runtime_plan_report.dialogue_content_catalog;
@@ -229,7 +228,7 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
         fx_definitions: Arc::from(compiled.fx_definitions()),
         view_product: compiled.view_product().clone(),
         plan,
-        syntax_warnings: compiled.syntax_warnings(),
+        syntax_warnings: compiled.analysis_lease().syntax_warnings(),
         syntax_stats,
         line_task_groups,
         runtime_plan_stats,

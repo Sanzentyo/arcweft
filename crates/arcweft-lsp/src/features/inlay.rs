@@ -32,7 +32,7 @@ fn inferred_let_type_inlay_hints(
     let Some(accepted) = profile.accepted_environment() else {
         return Vec::new();
     };
-    let Some(executable) = accepted.executable() else {
+    let Some(semantic) = accepted.analysis() else {
         return Vec::new();
     };
     let project = accepted.project();
@@ -41,7 +41,7 @@ fn inferred_let_type_inlay_hints(
         return Vec::new();
     };
     let module = module.as_ref();
-    let analysis = executable.final_analysis();
+    let analysis = semantic.final_analysis();
 
     let numeric_fallback_ranges = numeric_fallback_ranges(module, analysis);
     let sites = final_hir_let_sites(module);

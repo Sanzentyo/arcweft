@@ -120,7 +120,9 @@ pub(super) fn verify_types_command(
         syntax_warnings: checked.syntax_warnings,
         line_task_groups,
         phases: checked.phases.clone(),
-        semantic: FinalSemanticProfileStats::from(checked.compiled.final_analysis().as_ref()),
+        semantic: FinalSemanticProfileStats::from(
+            checked.compiled.analysis_lease().final_analysis().as_ref(),
+        ),
         verifier: VerifyTypesVerifierSummary {
             diagnostics: verification.diagnostics.len(),
             obligations: verification.obligations.len(),

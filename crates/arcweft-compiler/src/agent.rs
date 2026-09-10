@@ -43,6 +43,7 @@ pub fn compile_agent_project_bundle(
     runtime_plan_artifact_key: RuntimePlanArtifactKey,
 ) -> Result<CompiledAgentBundle, CompileAgentError> {
     let checked = compiled
+        .analysis_lease()
         .checked_entries()
         .get_public(selected_entry)
         .ok_or_else(|| CompileAgentError::MissingSelectedEntry {
@@ -153,8 +154,7 @@ pub fn compile_checked_agent_bundle(
         bundle,
         manifest,
         execution_diagnostics: Arc::new(execution_diagnostics),
-        hir_project: Arc::clone(compiled.hir_project()),
-        semantic_analysis: Arc::clone(compiled.final_analysis()),
+        analysis: Arc::clone(compiled.analysis_lease()),
         runtime_plan_stats: RuntimePlanLowerStats {
             pure_helpers,
             ..RuntimePlanLowerStats::default()
@@ -166,6 +166,7 @@ fn agent_bundle_source_documents(
     compiled: &CompiledProject,
 ) -> Result<Vec<&arcweft_source::SourceDocument>, CompileAgentError> {
     let root = compiled
+        .analysis_lease()
         .modules()
         .iter()
         .find(|module| module.module().is_crate_root())
@@ -175,10 +176,11 @@ fn agent_bundle_source_documents(
         .hir()
         .provenance()
         .document();
-    let mut documents = Vec::with_capacity(compiled.modules().len());
+    let mut documents = Vec::with_capacity(compiled.analysis_lease().modules().len());
     documents.push(root.as_ref());
     documents.extend(
         compiled
+            .analysis_lease()
             .modules()
             .iter()
             .filter(|module| !module.module().is_crate_root())
@@ -192,6 +194,7 @@ fn validate_checked_agent_inputs<'a>(
     checked: &CheckedAgentEntry,
 ) -> Result<&'a CheckedCallableFacts, CompileAgentError> {
     let Some(accepted) = compiled
+        .analysis_lease()
         .checked_entries()
         .get_public(checked.id().public_id())
         .and_then(arcweft_lang_sema::entry::CheckedEntryBinding::agent)
@@ -208,6 +211,7 @@ fn validate_checked_agent_inputs<'a>(
     exact_controller_function(compiled, checked)?;
     let declaration = CallableDeclarationKey::Existing(checked.controller().declaration().clone());
     compiled
+        .analysis_lease()
         .final_analysis()
         .checked_callables()
         .project_callable(&declaration)
@@ -253,19 +257,27 @@ fn exact_controller_function<'a>(
 ) -> Result<&'a HirFunctionItem, CompileAgentError> {
     let declaration = checked.controller().declaration();
     let declaration_key = CallableDeclarationKey::Existing(declaration.clone());
-    if compiled.hir_project().package() != declaration.package() {
+    if compiled.analysis_lease().hir_project().package() != declaration.package() {
         return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
             matches: 0,
         });
     }
-    let Some(symbol) = compiled.project_symbols().callable(&declaration_key) else {
+    let Some(symbol) = compiled
+        .analysis_lease()
+        .project_symbols()
+        .callable(&declaration_key)
+    else {
         return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
             matches: 0,
         });
     };
-    let Some(module) = compiled.hir_project().module(declaration.module()) else {
+    let Some(module) = compiled
+        .analysis_lease()
+        .hir_project()
+        .module(declaration.module())
+    else {
         return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
             matches: 0,
@@ -330,7 +342,11 @@ fn agent_artifact_manifest(
 }
 
 fn compiled_source_hash(compiled: &CompiledProject) -> StableHash {
-    let mut modules = compiled.modules().iter().collect::<Vec<_>>();
+    let mut modules = compiled
+        .analysis_lease()
+        .modules()
+        .iter()
+        .collect::<Vec<_>>();
     modules.sort_by(|left, right| left.module().cmp(right.module()));
     let mut hasher = blake3::Hasher::new_derive_key("arcweft.agent-artifact.source-set.v1");
     for module in modules {

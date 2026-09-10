@@ -152,7 +152,8 @@ fn predicate_and_non_unit_proof_missing_tails_are_exact_semantic_diagnostics() {
         );
 
         let tooling = project
-            .tooling_lease()
+            .compilation_lease()
+            .map(arcweft_compiler::project::ProjectCompilationLease::tooling_lease)
             .expect("semantic recovery retains the exact tooling generation");
         let [module] = tooling.modules() else {
             panic!("single-source fixture retains one compiled module")
@@ -214,6 +215,7 @@ fn verifier_consumes_predicate_proof_arena_records() {
         AssertionBuildProfile::Debug,
     );
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("compiled project remains executable");
@@ -226,14 +228,26 @@ fn verifier_consumes_predicate_proof_arena_records() {
                 let HirPredicateBody::Expression { expression, .. } = predicate.body() else {
                     panic!("fixture Predicate retains its expression body")
                 };
-                assert!(compiled.final_analysis().expression(*expression).is_some());
+                assert!(
+                    compiled
+                        .analysis_lease()
+                        .final_analysis()
+                        .expression(*expression)
+                        .is_some()
+                );
             }
             HirItemKind::Proof(proof) => {
                 proof_owner = Some(item.id());
                 let HirProofBody::Expression { expression, .. } = proof.body() else {
                     panic!("fixture Proof retains its expression body")
                 };
-                assert!(compiled.final_analysis().expression(*expression).is_some());
+                assert!(
+                    compiled
+                        .analysis_lease()
+                        .final_analysis()
+                        .expression(*expression)
+                        .is_some()
+                );
             }
             _ => {}
         }
@@ -242,6 +256,7 @@ fn verifier_consumes_predicate_proof_arena_records() {
     let proof_owner = proof_owner.expect("typed Proof item");
     assert!(matches!(
         compiled
+            .analysis_lease()
             .final_analysis()
             .item(predicate_owner)
             .expect("Predicate semantic fact")
@@ -250,6 +265,7 @@ fn verifier_consumes_predicate_proof_arena_records() {
     ));
     assert!(matches!(
         compiled
+            .analysis_lease()
             .final_analysis()
             .item(proof_owner)
             .expect("Proof semantic fact")
@@ -286,11 +302,11 @@ flow assertions {
     let release = compile_assertion_project(source, AssertionBuildProfile::Release);
 
     assert_eq!(
-        debug.assertion_build_profile(),
+        debug.analysis_lease().assertion_build_profile(),
         AssertionBuildProfile::Debug
     );
     assert_eq!(
-        release.assertion_build_profile(),
+        release.analysis_lease().assertion_build_profile(),
         AssertionBuildProfile::Release
     );
     assert_eq!(
@@ -365,6 +381,7 @@ fn reloaded_artifact_uses_fresh_inventory_without_old_stmt_equality() {
 
 fn assertion_dispositions(project: &CompiledProject) -> Vec<CheckedAssertionDisposition> {
     project
+        .analysis_lease()
         .final_analysis()
         .statements()
         .filter_map(|(_, statement)| match statement.payload() {

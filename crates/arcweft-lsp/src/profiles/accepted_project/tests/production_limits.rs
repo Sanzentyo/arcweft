@@ -32,8 +32,7 @@ fn production_document_limit_accepts_exact_and_rejects_one_over() {
     }));
 
     let exact = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         seeds.clone(),
     )
     .expect("4,096 accepted documents are inclusive");
@@ -48,8 +47,7 @@ fn production_document_limit_accepts_exact_and_rejects_one_over() {
     )));
     assert!(matches!(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.tooling_lease()),
-            Some(compiled.as_ref()),
+            arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
             seeds,
         ),
         Err(AcceptedProjectSnapshotError::Limit {
@@ -76,8 +74,7 @@ fn production_source_byte_limit_accepts_exact_and_rejects_one_over() {
         &"x".repeat(generated_len),
     );
     let exact = AcceptedProjectSnapshot::try_new(
-        Arc::clone(compiled.tooling_lease()),
-        Some(compiled.as_ref()),
+        arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
         vec![
             seed(
                 Arc::clone(&root),
@@ -98,8 +95,7 @@ fn production_source_byte_limit_accepts_exact_and_rejects_one_over() {
     );
     assert!(matches!(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.tooling_lease()),
-            Some(compiled.as_ref()),
+            arcweft_compiler::project::ProjectCompilationLease::Compiled(Arc::clone(&compiled)),
             vec![
                 seed(root, "file:///accepted/production-byte-root.arcw"),
                 unavailable_seed(one_over_generated),

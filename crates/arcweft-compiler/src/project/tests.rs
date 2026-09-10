@@ -1,4 +1,6 @@
 use super::*;
+
+mod analysis_lease;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
 };
@@ -298,6 +300,7 @@ flow main() -> i64 {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("one generic body publishes two closed runtime instances");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted executable project");
@@ -372,6 +375,7 @@ flow main() -> i64 {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("generic captured closure publishes one closed closure per parent instance");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted executable project");
@@ -475,6 +479,7 @@ flow main() {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("generic dialogue publishes one closed content occurrence per instance");
     let executable = compiled
+        .analysis_lease()
         .hir_project()
         .analysis_view()
         .expect("accepted executable project");
@@ -564,7 +569,8 @@ fn recovered_source_commits_poisoned_hir_for_tooling() {
             .expect_err("recovered declaration remains non-executable");
         assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
         let tooling = error
-            .tooling_lease()
+            .compilation_lease()
+            .map(crate::project::ProjectCompilationLease::tooling_lease)
             .expect("recovered final HIR publishes one tooling lease");
         assert_eq!(tooling.modules().len(), 1);
         let module = &tooling.modules()[0];
@@ -596,7 +602,12 @@ fn recovered_source_commits_poisoned_hir_for_tooling() {
         )
         .expect_err("cached compilation must not execute recovered HIR");
         assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
-        assert!(error.tooling_lease().is_some());
+        assert!(
+            error
+                .compilation_lease()
+                .map(crate::project::ProjectCompilationLease::tooling_lease)
+                .is_some()
+        );
     }
 }
 
@@ -659,7 +670,7 @@ fn compiled_project_modules_retain_typed_non_blocking_lints() {
     let (mut session, parsed_sources) = compilation_state(&project);
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("valid project with a non-blocking syntax warning compiles");
-    let lint = compiled.modules()[0]
+    let lint = compiled.analysis_lease().modules()[0]
         .syntax_lints()
         .iter()
         .find(|lint| lint.code() == SyntaxLintCode::RedundantDeclIdentity)
@@ -667,10 +678,11 @@ fn compiled_project_modules_retain_typed_non_blocking_lints() {
 
     assert_eq!(lint.code().stable_code(), "AWF0101");
     assert_eq!(lint.code().domain_name(), "style::redundant_decl_identity");
-    assert!(compiled.syntax_warnings() > 0);
+    assert!(compiled.analysis_lease().syntax_warnings() > 0);
     assert_eq!(
-        compiled.syntax_warnings(),
+        compiled.analysis_lease().syntax_warnings(),
         compiled
+            .analysis_lease()
             .modules()
             .iter()
             .flat_map(CompiledProjectModule::syntax_lints)
@@ -685,12 +697,15 @@ fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
     let (mut session, parsed_sources) = compilation_state(&project);
     let first = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("first project compilation");
-    let retained = Arc::clone(first.hir_project());
+    let retained = Arc::clone(first.analysis_lease().hir_project());
 
     let second = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("identical project recompilation");
 
-    assert!(Arc::ptr_eq(&retained, second.hir_project()));
+    assert!(Arc::ptr_eq(
+        &retained,
+        second.analysis_lease().hir_project()
+    ));
 }
 
 #[test]
@@ -712,14 +727,23 @@ flow reference {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("typed dialogue-line reference compiles through runtime lowering");
 
-    let [line] = compiled.final_analysis().dialogue_lines().records() else {
+    let [line] = compiled
+        .analysis_lease()
+        .final_analysis()
+        .dialogue_lines()
+        .records()
+    else {
         panic!("one accepted dialogue line")
     };
     assert_eq!(
         line.id().as_str(),
         "say.fn.org.arcweft.removed-role.function.opening.001"
     );
-    let [reference] = compiled.semantic_index().dialogue_line_references() else {
+    let [reference] = compiled
+        .analysis_lease()
+        .semantic_index()
+        .dialogue_line_references()
+    else {
         panic!("one accepted dialogue-line reference")
     };
     assert_eq!(reference.target(), line.id());
@@ -795,19 +819,22 @@ fn multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transacti
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("semantic Unit aliases admit omitted Proof tails");
 
-    let tooling = compiled.tooling_lease();
-    assert!(Arc::ptr_eq(tooling.hir_project(), compiled.hir_project()));
+    let tooling = compiled.analysis_lease().tooling_lease();
+    assert!(Arc::ptr_eq(
+        tooling.hir_project(),
+        compiled.analysis_lease().hir_project()
+    ));
     assert!(std::ptr::eq(
         tooling.project_symbols(),
-        compiled.registered_world().symbols()
+        compiled.analysis_lease().registered_world().symbols()
     ));
-    assert_eq!(compiled.modules().len(), 2);
+    assert_eq!(compiled.analysis_lease().modules().len(), 2);
     assert_eq!(
-        compiled.hir_project().database_id(),
+        compiled.analysis_lease().hir_project().database_id(),
         session.hir_database_id()
     );
     let mut proofs = 0_usize;
-    for module in compiled.modules() {
+    for module in compiled.analysis_lease().modules() {
         for &item_id in module.hir().source_ordered_items() {
             let item = module.hir().resolve_item(item_id).expect("published item");
             let HirItemKind::Proof(proof) = item.kind() else {
@@ -995,7 +1022,7 @@ fn failed_project_build_preserves_the_previous_accepted_hir_project_arc() {
         &accepted_context,
     )
     .expect("initial accepted project");
-    let retained = Arc::clone(accepted.hir_project());
+    let retained = Arc::clone(accepted.analysis_lease().hir_project());
 
     let (collision_project, collision_context, _, _) = dialogue_collision_project();
     let (_, collision_sources) = compilation_state(&collision_project);
@@ -1015,7 +1042,10 @@ fn failed_project_build_preserves_the_previous_accepted_hir_project_arc() {
         &accepted_context,
     )
     .expect("accepted input remains reusable after rejection");
-    assert!(Arc::ptr_eq(&retained, rebuilt.hir_project()));
+    assert!(Arc::ptr_eq(
+        &retained,
+        rebuilt.analysis_lease().hir_project()
+    ));
 }
 
 #[test]
@@ -1031,7 +1061,8 @@ fn project_parse_diagnostics_retain_the_attached_source_payload() {
         .expect_err("malformed View export must remain non-executable");
     assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
     let tooling = error
-        .tooling_lease()
+        .compilation_lease()
+        .map(crate::project::ProjectCompilationLease::tooling_lease)
         .expect("recovered View retains a tooling project");
     assert_eq!(tooling.modules().len(), 1);
     assert!(Arc::ptr_eq(
@@ -1080,7 +1111,12 @@ fn fatal_pre_hir_failure_exposes_no_tooling_lease() {
         .expect_err("missing accepted ParsedSource is fatal before HIR publication");
 
     assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
-    assert!(error.tooling_lease().is_none());
+    assert!(
+        error
+            .compilation_lease()
+            .map(crate::project::ProjectCompilationLease::tooling_lease)
+            .is_none()
+    );
 }
 
 #[test]
@@ -1121,7 +1157,8 @@ fn recovered_module_never_enters_runtime_plan_or_compile_cache() {
 
     assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
     let tooling = error
-        .tooling_lease()
+        .compilation_lease()
+        .map(crate::project::ProjectCompilationLease::tooling_lease)
         .expect("recovered module retains tooling evidence");
     assert!(
         tooling
@@ -1347,7 +1384,10 @@ fn pending_stores_discard_on_registration_error() {
     .expect_err("unknown character owner rejects project");
     assert_eq!(error.stage(), ProjectCompileStage::Registration.as_str());
     assert!(
-        error.tooling_lease().is_none(),
+        error
+            .compilation_lease()
+            .map(crate::project::ProjectCompilationLease::tooling_lease)
+            .is_none(),
         "registration prelude rejection occurs before a complete tooling lease exists"
     );
     assert_eq!(cache.stores, 0);
@@ -1536,8 +1576,10 @@ fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
     let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("same-labeled module Flow project compiles");
 
-    let graph = crate::agent_project::agent_project_graph_from_project(compiled.semantic_index())
-        .expect("typed Agent project graph");
+    let graph = crate::agent_project::agent_project_graph_from_project(
+        compiled.analysis_lease().semantic_index(),
+    )
+    .expect("typed Agent project graph");
     let flow_symbols = graph
         .symbols
         .iter()
@@ -1561,9 +1603,10 @@ fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
         flow_symbols[1].qualified_name
     );
 
-    let compatibility_entities =
-        crate::agent_project::agent_required_entities_from_project(compiled.semantic_index())
-            .expect("public compatibility entity projection");
+    let compatibility_entities = crate::agent_project::agent_required_entities_from_project(
+        compiled.analysis_lease().semantic_index(),
+    )
+    .expect("public compatibility entity projection");
     assert!(
         compatibility_entities
             .iter()

@@ -470,11 +470,11 @@ fn accepted_module_and_analysis(
     document: &DocumentSnapshot,
 ) -> Option<(Arc<HirModule>, Arc<FinalSemanticAnalysis>)> {
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
+    let semantic = accepted.analysis()?;
     let project = accepted.project();
     let module =
         Arc::clone(project.hir_for_open_document(document.uri(), document.source_document())?);
-    Some((module, Arc::clone(executable.final_analysis())))
+    Some((module, Arc::clone(semantic.final_analysis())))
 }
 
 fn source_range_for_query(module: &HirModule, query: HirSourceQuery) -> Option<TextRange> {

@@ -55,6 +55,7 @@ fn checked_controller_identity(
     entry: &PublicId,
 ) -> arcweft_core::entry::RuntimeCallableId {
     let checked = compiled
+        .analysis_lease()
         .checked_entries()
         .get_public(entry)
         .unwrap()
@@ -62,6 +63,7 @@ fn checked_controller_identity(
         .unwrap();
     let declaration = CallableDeclarationKey::Existing(checked.controller().declaration().clone());
     let callable = compiled
+        .analysis_lease()
         .final_analysis()
         .checked_callables()
         .project_callable(&declaration)
@@ -274,7 +276,7 @@ fn compile_attached_project(
 #[test]
 fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     let compiled = compile_entry_project(ENTRY_SOURCE).expect("matching selection compiles");
-    assert_eq!(compiled.checked_entries().len(), 1);
+    assert_eq!(compiled.analysis_lease().checked_entries().len(), 1);
     let plan = &compiled.runtime_plan().plan;
     let entry = plan.entries().first().expect("lowered entry exists");
     let RuntimeEntryRoles::Stateful(roles) = &entry.roles else {
@@ -282,6 +284,7 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     };
     let expected_binding = EntryBindingIdentity::from_bytes(
         *compiled
+            .analysis_lease()
             .checked_entries()
             .entries()
             .next()
@@ -366,6 +369,7 @@ entry cli @entry.cli.main {
         .first()
         .expect("lowered entry exists");
     let checked = compiled
+        .analysis_lease()
         .checked_entries()
         .entries()
         .next()
@@ -469,6 +473,7 @@ entry agent @entry.agent.smoke {
         panic!("Agent entry must target its generated controller flow");
     };
     let authored_declaration = compiled
+        .analysis_lease()
         .project_symbols()
         .callable_symbols()
         .find_map(|symbol| match symbol.declaration() {
@@ -517,21 +522,31 @@ fn body_only_change_preserves_binding_and_changes_compile_artifact_identity() {
     );
     let baseline = compile_entry_project(ENTRY_SOURCE).expect("baseline compiles");
     let changed = compile_entry_project(&changed).expect("body-only variant compiles");
-    let baseline_entry = baseline.checked_entries().entries().next().unwrap();
-    let changed_entry = changed.checked_entries().entries().next().unwrap();
+    let baseline_entry = baseline
+        .analysis_lease()
+        .checked_entries()
+        .entries()
+        .next()
+        .unwrap();
+    let changed_entry = changed
+        .analysis_lease()
+        .checked_entries()
+        .entries()
+        .next()
+        .unwrap();
 
     assert_eq!(
         baseline_entry.binding_digest(),
         changed_entry.binding_digest()
     );
     assert_ne!(
-        baseline.compile_units()[0].fingerprint(),
-        changed.compile_units()[0].fingerprint()
+        baseline.analysis_lease().compile_units()[0].fingerprint(),
+        changed.analysis_lease().compile_units()[0].fingerprint()
     );
 }
 
 fn checked_project_index(compiled: &CompiledProject) -> ProjectSemanticIndex {
-    compiled.semantic_index().as_ref().clone()
+    compiled.analysis_lease().semantic_index().as_ref().clone()
 }
 
 #[test]
@@ -814,6 +829,7 @@ entry agent @entry.agent.controller {
         .expect("Agent intrinsic inside the exact selected controller compiles");
     assert!(
         compiled
+            .analysis_lease()
             .checked_entries()
             .entries()
             .any(|entry| entry.id().public_id().as_str() == "entry.agent.controller")

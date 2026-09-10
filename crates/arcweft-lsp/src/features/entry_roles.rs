@@ -59,7 +59,7 @@ pub(crate) fn definition(
     offset: usize,
 ) -> Option<GotoDefinitionResponse> {
     let accepted = profile.accepted_environment()?;
-    let index = accepted.executable()?.semantic_index();
+    let index = accepted.analysis()?.semantic_index();
     let project = accepted.project();
     let cursor = symbol_at(profile, document, offset, index)?;
     Some(GotoDefinitionResponse::Scalar(declaration_location(
@@ -75,7 +75,7 @@ pub(crate) fn references(
     offset: usize,
 ) -> Option<Vec<Location>> {
     let accepted = profile.accepted_environment()?;
-    let index = accepted.executable()?.semantic_index();
+    let index = accepted.analysis()?.semantic_index();
     let project = accepted.project();
     let cursor = symbol_at(profile, document, offset, index)?;
     let encoding = document.line_index().position_encoding();
@@ -181,7 +181,7 @@ pub(crate) fn hover(
     offset: usize,
 ) -> Option<Hover> {
     let accepted = profile.accepted_environment()?;
-    let index = accepted.executable()?.semantic_index();
+    let index = accepted.analysis()?.semantic_index();
     let project = accepted.project();
     let cursor = symbol_at(profile, document, offset, index)?;
     let mut text = match &cursor.symbol {

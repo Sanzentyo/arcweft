@@ -6,7 +6,9 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_compiler::project::{CompiledProject, ProjectToolingLease};
+use arcweft_compiler::project::{
+    ProjectAnalysisLease, ProjectCompilationLease, ProjectToolingLease,
+};
 use arcweft_lang_hir::{
     expr::HirExprKind,
     item::{HirItemKind, HirUseBindingKind},
@@ -105,9 +107,6 @@ impl AcceptedProjectLimitKind {
 /// Immutable source adapter registry owned by one accepted project.
 #[derive(Debug)]
 pub(crate) struct AcceptedSourceDocuments {
-    world: ProjectSymbolWorldId,
-    symbol_revision: ProjectSymbolRevision,
-    character_source_revision: Option<SourceSetRevision>,
     by_identity: BTreeMap<SourceDocumentIdentity, AcceptedSourceDocument>,
     by_uri: BTreeMap<LspUriKey, SourceDocumentIdentity>,
 }
@@ -183,7 +182,7 @@ struct AcceptedSourceRegistryBuilder {
 /// One immutable HIR/source/module carrier published from an accepted tooling lease.
 #[derive(Debug)]
 pub(crate) struct AcceptedProjectSnapshot {
-    tooling: Arc<ProjectToolingLease>,
+    compilation: ProjectCompilationLease,
     callable_references: Arc<[AcceptedCallableReference]>,
     entry_references: Arc<[AcceptedEntryReference]>,
     sources: AcceptedSourceDocuments,
@@ -259,10 +258,9 @@ pub(crate) enum AcceptedProjectSnapshotError {
         expected: SourceSetRevision,
         actual: SourceSetRevision,
     },
-    CompiledToolingLeaseMismatch,
-    CompiledSemanticGenerationMismatch,
-    CompiledCheckedCatalogLeaseMismatch,
-    CompiledCheckedCatalogAuthority(CheckedCallableLookupError),
+    SemanticGenerationMismatch,
+    CheckedCatalogLeaseMismatch,
+    CheckedCatalogAuthority(CheckedCallableLookupError),
     CompiledModuleInventoryMismatch {
         project_only: Box<[CanonicalModulePath]>,
         compiled_only: Box<[CanonicalModulePath]>,
@@ -290,7 +288,7 @@ pub(crate) enum AcceptedProjectSnapshotError {
 }
 
 #[derive(Debug)]
-enum CompiledSemanticAuthorityError {
+enum SemanticAuthorityError {
     GenerationMismatch,
     CatalogLeaseMismatch,
     CatalogAuthority(CheckedCallableLookupError),
@@ -350,21 +348,18 @@ impl std::fmt::Display for AcceptedProjectSnapshotError {
                 formatter,
                 "accepted character source revision mismatch: expected {expected:?}, actual {actual:?}"
             ),
-            Self::CompiledToolingLeaseMismatch => write!(
+
+            Self::SemanticGenerationMismatch => write!(
                 formatter,
-                "compiled project does not retain the accepted tooling lease allocation"
+                "accepted semantic report does not match the retained HIR generation"
             ),
-            Self::CompiledSemanticGenerationMismatch => write!(
+            Self::CheckedCatalogLeaseMismatch => write!(
                 formatter,
-                "compiled semantic report does not match the retained HIR generation"
+                "accepted semantic report and project index do not retain the same checked callable catalog allocation"
             ),
-            Self::CompiledCheckedCatalogLeaseMismatch => write!(
+            Self::CheckedCatalogAuthority(error) => write!(
                 formatter,
-                "compiled semantic report and project index do not retain the same checked callable catalog allocation"
-            ),
-            Self::CompiledCheckedCatalogAuthority(error) => write!(
-                formatter,
-                "compiled checked callable catalog is not admitted by the accepted semantic world: {error:?}"
+                "accepted checked callable catalog is not admitted by the accepted semantic world: {error:?}"
             ),
             Self::CompiledModuleInventoryMismatch {
                 project_only,
@@ -419,18 +414,12 @@ impl From<SourceSetRevisionError> for AcceptedProjectSnapshotError {
     }
 }
 
-impl From<CompiledSemanticAuthorityError> for AcceptedProjectSnapshotError {
-    fn from(error: CompiledSemanticAuthorityError) -> Self {
+impl From<SemanticAuthorityError> for AcceptedProjectSnapshotError {
+    fn from(error: SemanticAuthorityError) -> Self {
         match error {
-            CompiledSemanticAuthorityError::GenerationMismatch => {
-                Self::CompiledSemanticGenerationMismatch
-            }
-            CompiledSemanticAuthorityError::CatalogLeaseMismatch => {
-                Self::CompiledCheckedCatalogLeaseMismatch
-            }
-            CompiledSemanticAuthorityError::CatalogAuthority(error) => {
-                Self::CompiledCheckedCatalogAuthority(error)
-            }
+            SemanticAuthorityError::GenerationMismatch => Self::SemanticGenerationMismatch,
+            SemanticAuthorityError::CatalogLeaseMismatch => Self::CheckedCatalogLeaseMismatch,
+            SemanticAuthorityError::CatalogAuthority(error) => Self::CheckedCatalogAuthority(error),
         }
     }
 }
@@ -566,7 +555,7 @@ impl AcceptedSourceRegistryBuilder {
     fn validate_world(
         &self,
         world: &RegisteredSemanticWorld,
-    ) -> Result<SourceSetRevision, AcceptedProjectSnapshotError> {
+    ) -> Result<(), AcceptedProjectSnapshotError> {
         let symbols = world.symbols();
         let environment = world.environment();
         let index = world.character_definition_index();
@@ -627,19 +616,11 @@ impl AcceptedSourceRegistryBuilder {
                 },
             );
         }
-        Ok(actual)
+        Ok(())
     }
 
-    fn finish(
-        self,
-        world: ProjectSymbolWorldId,
-        symbol_revision: ProjectSymbolRevision,
-        character_source_revision: Option<SourceSetRevision>,
-    ) -> AcceptedSourceDocuments {
+    fn finish(self) -> AcceptedSourceDocuments {
         AcceptedSourceDocuments {
-            world,
-            symbol_revision,
-            character_source_revision,
             by_identity: self.by_identity,
             by_uri: self.by_uri,
         }
@@ -666,26 +647,26 @@ fn validate_bound_hir_source(
     Ok(())
 }
 
-fn validate_compiled_semantic_authority(
-    compiled: &CompiledProject,
-) -> Result<(), CompiledSemanticAuthorityError> {
-    let analysis = compiled.final_analysis();
-    let project = compiled
+fn validate_semantic_authority(
+    semantic: &ProjectAnalysisLease,
+) -> Result<(), SemanticAuthorityError> {
+    let analysis = semantic.final_analysis();
+    let project = semantic
         .hir_project()
         .analysis_view()
-        .map_err(|_| CompiledSemanticAuthorityError::GenerationMismatch)?;
+        .map_err(|_| SemanticAuthorityError::GenerationMismatch)?;
     analysis
-        .validate_generation(project, compiled.project_symbols())
-        .map_err(|_| CompiledSemanticAuthorityError::GenerationMismatch)?;
+        .validate_generation(project, semantic.project_symbols())
+        .map_err(|_| SemanticAuthorityError::GenerationMismatch)?;
     let checked = analysis.checked_callables();
-    if !Arc::ptr_eq(checked, compiled.semantic_index().checked_callables()) {
-        return Err(CompiledSemanticAuthorityError::CatalogLeaseMismatch);
+    if !Arc::ptr_eq(checked, semantic.semantic_index().checked_callables()) {
+        return Err(SemanticAuthorityError::CatalogLeaseMismatch);
     }
     analysis
         .validate_registered_callable_authority(
-            compiled.registered_world().environment().callable_catalog(),
+            semantic.registered_world().environment().callable_catalog(),
         )
-        .map_err(CompiledSemanticAuthorityError::CatalogAuthority)
+        .map_err(SemanticAuthorityError::CatalogAuthority)
 }
 
 impl AcceptedProjectSnapshot {
@@ -695,23 +676,21 @@ impl AcceptedProjectSnapshot {
         reason = "one admission boundary validates and preserves the exact HIR, symbol, source, and document identity tuple"
     )]
     pub(crate) fn try_new(
-        tooling: Arc<ProjectToolingLease>,
-        executable: Option<&CompiledProject>,
+        compilation: ProjectCompilationLease,
         source_seeds: Vec<AcceptedSourceDocumentSeed>,
     ) -> Result<Self, AcceptedProjectSnapshotError> {
-        if executable.is_some_and(|compiled| !Arc::ptr_eq(compiled.tooling_lease(), &tooling)) {
-            return Err(AcceptedProjectSnapshotError::CompiledToolingLeaseMismatch);
-        }
-        if let Some(compiled) = executable {
-            validate_compiled_semantic_authority(compiled)
-                .map_err(AcceptedProjectSnapshotError::from)?;
+        let tooling = compilation.tooling_lease();
+        let analysis = compilation.analysis_lease().map(Arc::as_ref);
+
+        if let Some(semantic) = analysis {
+            validate_semantic_authority(semantic).map_err(AcceptedProjectSnapshotError::from)?;
         }
         let mut source_builder = AcceptedSourceRegistryBuilder::default();
         for seed in source_seeds {
             source_builder.insert(seed)?;
         }
-        let character_source_revision = executable
-            .map(CompiledProject::registered_world)
+        analysis
+            .map(ProjectAnalysisLease::registered_world)
             .map(|world| source_builder.validate_world(world))
             .transpose()?;
 
@@ -813,16 +792,12 @@ impl AcceptedProjectSnapshot {
             modules: module_count,
             source_bytes: source_builder.source_bytes,
         };
-        let sources = source_builder.finish(
-            symbols.world().clone(),
-            *symbols.revision(),
-            character_source_revision,
-        );
+        let sources = source_builder.finish();
         let mut callable_references = import_callable_references(hir.as_ref(), symbols, &sources);
-        if let Some(compiled) = executable {
+        if let Some(semantic) = analysis {
             callable_references.extend(final_call_references(
                 hir.as_ref(),
-                compiled.final_analysis(),
+                semantic.final_analysis(),
                 &sources,
             ));
         }
@@ -841,7 +816,7 @@ impl AcceptedProjectSnapshot {
                 .then_with(|| left.declaration.cmp(&right.declaration))
         });
         callable_references.dedup();
-        let mut entry_references = executable.map_or_else(Vec::new, |compiled| {
+        let mut entry_references = analysis.map_or_else(Vec::new, |compiled| {
             final_entry_references(
                 hir.as_ref(),
                 compiled.final_analysis(),
@@ -865,7 +840,7 @@ impl AcceptedProjectSnapshot {
         });
         entry_references.dedup();
         Ok(Self {
-            tooling,
+            compilation,
             callable_references: callable_references.into(),
             entry_references: entry_references.into(),
             sources,
@@ -875,16 +850,20 @@ impl AcceptedProjectSnapshot {
     }
 
     pub(crate) fn hir_project(&self) -> &Arc<HirProject> {
-        self.tooling.hir_project()
+        self.tooling_lease().hir_project()
     }
 
-    pub(crate) const fn tooling_lease(&self) -> &Arc<ProjectToolingLease> {
-        &self.tooling
+    pub(crate) fn tooling_lease(&self) -> &Arc<ProjectToolingLease> {
+        self.compilation.tooling_lease()
+    }
+
+    pub(crate) const fn compilation_lease(&self) -> &ProjectCompilationLease {
+        &self.compilation
     }
 
     /// Exact project-symbol authority published with this accepted generation.
     pub(crate) fn project_symbols(&self) -> &ProjectSymbolTable {
-        self.tooling.project_symbols()
+        self.tooling_lease().project_symbols()
     }
 
     pub(crate) fn callable_references(&self) -> &[AcceptedCallableReference] {
@@ -925,7 +904,7 @@ impl AcceptedProjectSnapshot {
 
     /// Returns the compiler-retained grammar lease for one accepted module key.
     pub(crate) fn parsed_source(&self, key: &AcceptedModuleKey) -> Option<&ParsedSource> {
-        self.tooling
+        self.tooling_lease()
             .modules()
             .iter()
             .find(|module| module.module() == key.module())
@@ -942,7 +921,7 @@ impl AcceptedProjectSnapshot {
         key: &AcceptedModuleKey,
     ) -> Result<&Arc<HirModule>, AcceptedHirLookupError> {
         let hir = self
-            .tooling
+            .tooling_lease()
             .hir_project()
             .view()
             .module(key.module())
@@ -1181,18 +1160,6 @@ fn final_hir_source_span(module: &HirModule, query: HirSourceQuery) -> Option<So
 }
 
 impl AcceptedSourceDocuments {
-    pub(crate) const fn world(&self) -> &ProjectSymbolWorldId {
-        &self.world
-    }
-
-    pub(crate) const fn symbol_revision(&self) -> &ProjectSymbolRevision {
-        &self.symbol_revision
-    }
-
-    pub(crate) const fn character_source_revision(&self) -> Option<SourceSetRevision> {
-        self.character_source_revision
-    }
-
     pub(crate) fn get(&self, identity: &SourceDocumentIdentity) -> Option<&AcceptedSourceDocument> {
         self.by_identity.get(identity)
     }

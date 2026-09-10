@@ -186,14 +186,14 @@ pub(super) fn compile_agent_script_source(
     )
     .map_err(|error| project_compile_message(&error))?;
     let semantic_index = target.target_entities.iter().cloned().fold(
-        compiled.semantic_index().as_ref().clone(),
+        compiled.analysis_lease().semantic_index().as_ref().clone(),
         ProjectSemanticIndex::with_entity,
     );
     let snapshot = snapshot_compiled_project(
         &project,
         &compiled,
         BuildSnapshotRequest {
-            build_id: compiled.program_hash().as_str().to_owned(),
+            build_id: compiled.analysis_lease().program_hash().as_str().to_owned(),
             compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
             target_triple: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
             target_features: Vec::new(),
@@ -330,11 +330,17 @@ fn agent_script_compile_target(
         let typecheck_environment = Arc::new(
             checked
                 .compiled
+                .analysis_lease()
                 .registered_environment()
                 .typecheck_env()
                 .clone(),
         );
-        let mut project = checked.compiled.semantic_index().as_ref().clone();
+        let mut project = checked
+            .compiled
+            .analysis_lease()
+            .semantic_index()
+            .as_ref()
+            .clone();
         for signal in &options.signals {
             let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
             let identity = ProjectEntityId::public(id.clone());

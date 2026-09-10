@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_compiler::project::CompiledProject;
+use arcweft_compiler::project::ProjectAnalysisLease;
 use arcweft_lang_hir::{
     module::HirModule,
     project::HirProject,
@@ -43,7 +43,7 @@ use super::{ActiveRequest, RequestAdmissionError, RequestControl, SignatureCance
 #[derive(Debug)]
 pub(crate) struct AcceptedDocumentHirLease {
     environment: Arc<AcceptedProfileEnvironment>,
-    executable: Arc<CompiledProject>,
+    analysis: Arc<ProjectAnalysisLease>,
     document: Arc<SourceDocument>,
     module: AcceptedModuleKey,
 }
@@ -177,7 +177,7 @@ pub(crate) enum SignatureAcquireError {
     },
     ProfileClosing,
     NoAcceptedEnvironment,
-    ExecutableUnavailable,
+    SemanticUnavailable,
     ProfileKeyMismatch,
     UriNotAccepted {
         uri: LspUriKey,
@@ -221,8 +221,8 @@ impl std::fmt::Display for SignatureAcquireError {
             Self::NoAcceptedEnvironment => {
                 formatter.write_str("profile has no accepted environment")
             }
-            Self::ExecutableUnavailable => {
-                formatter.write_str("accepted project is available only for tooling")
+            Self::SemanticUnavailable => {
+                formatter.write_str("accepted project has no completed semantic analysis")
             }
             Self::ProfileKeyMismatch => {
                 formatter.write_str("accepted profile key differs from the mapped profile")
@@ -398,13 +398,13 @@ pub(crate) enum SignatureRequestError {
 impl AcceptedDocumentHirLease {
     pub(crate) fn new(
         environment: Arc<AcceptedProfileEnvironment>,
-        executable: Arc<CompiledProject>,
+        analysis: Arc<ProjectAnalysisLease>,
         document: Arc<SourceDocument>,
         module: AcceptedModuleKey,
     ) -> Self {
         Self {
             environment,
-            executable,
+            analysis,
             document,
             module,
         }
@@ -415,7 +415,7 @@ impl AcceptedDocumentHirLease {
     }
 
     pub(crate) fn world(&self) -> &RegisteredSemanticWorld {
-        self.executable.registered_world()
+        self.analysis.registered_world()
     }
 
     pub(crate) fn hir(&self) -> Result<&HirModule, SignatureAcquireError> {
@@ -437,7 +437,7 @@ impl AcceptedDocumentHirLease {
     /// Exact final semantic report retained by the same accepted generation as
     /// this document and HIR module.
     pub(crate) fn final_analysis(&self) -> &FinalSemanticAnalysis {
-        self.executable.final_analysis().as_ref()
+        self.analysis.final_analysis().as_ref()
     }
 }
 
@@ -719,7 +719,7 @@ impl SignatureAcquireError {
                 | RequestAdmissionError::QueueClosed,
             )
             | Self::ProfileClosing => ErrorCode::ServerCancelled as i32,
-            Self::Admission(_) | Self::NoAcceptedEnvironment | Self::ExecutableUnavailable => {
+            Self::Admission(_) | Self::NoAcceptedEnvironment | Self::SemanticUnavailable => {
                 ErrorCode::RequestFailed as i32
             }
             Self::SourceDigestCollision { .. }
@@ -743,7 +743,7 @@ impl SignatureAcquireError {
             Self::ProfileNotMapped { .. } => "aw.signature.acquire.profile_not_mapped",
             Self::ProfileClosing => "aw.signature.acquire.profile_closing",
             Self::NoAcceptedEnvironment => "aw.signature.acquire.no_accepted_environment",
-            Self::ExecutableUnavailable => "aw.signature.acquire.executable_unavailable",
+            Self::SemanticUnavailable => "aw.signature.acquire.semantic_unavailable",
             Self::ProfileKeyMismatch => "aw.signature.acquire.profile_key_mismatch",
             Self::UriNotAccepted { .. } => "aw.signature.acquire.uri_not_accepted",
             Self::OverlayNotAccepted { .. } => "aw.signature.acquire.overlay_not_accepted",

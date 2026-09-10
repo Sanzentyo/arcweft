@@ -193,7 +193,10 @@ fn unreachable_dialogue_view_function_does_not_enter_runtime_projection() {
 
     assert!(compiled.runtime_plan().plan.flows().is_empty());
     assert!(compiled.runtime_plan().plan.entries().is_empty());
-    assert_eq!(compiled.final_analysis().items().count(), 1);
+    assert_eq!(
+        compiled.analysis_lease().final_analysis().items().count(),
+        1
+    );
 }
 
 struct Fixture {

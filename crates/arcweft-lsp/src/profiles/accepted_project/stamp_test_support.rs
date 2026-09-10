@@ -21,9 +21,6 @@ pub(crate) fn mutated_project(
     mutation: AcceptedProjectStampMutation,
 ) -> Arc<AcceptedProjectSnapshot> {
     let sources = AcceptedSourceDocuments {
-        world: current.sources.world.clone(),
-        symbol_revision: current.sources.symbol_revision,
-        character_source_revision: current.sources.character_source_revision,
         by_identity: current
             .sources
             .by_identity
@@ -50,7 +47,7 @@ pub(crate) fn mutated_project(
         }
     }
     Arc::new(AcceptedProjectSnapshot {
-        tooling: Arc::clone(&current.tooling),
+        compilation: current.compilation.clone(),
         callable_references: Arc::clone(&current.callable_references),
         entry_references: Arc::clone(&current.entry_references),
         sources,

@@ -513,13 +513,25 @@ poisoned type does not become an unknown-call diagnostic. This does not relax
 the selected-only execution-plan boundary or the correlated materialization
 failure order.
 
-The semantic signature API can project rejected/ambiguous diagnostics from
-these facts. Interactive LSP signature acquisition currently requires
-`accepted.executable()` and therefore cannot acquire them after a compilation
-failure. The compiler's immutable pre-executable tooling lease retains HIR and
-symbols, while the semantic world/report remains with the executable product.
-Completing that semantic/tooling lifetime across failed compilations remains
-part of decision 5. No independent analyzer rerun, mutable optional report or
-peer semantic catalog is introduced as a fallback. The coupled contract as a
-whole remains proposed; its other open decisions and positive acceptance
-failures remain required.
+At that cut, the semantic signature API could project rejected/ambiguous
+diagnostics, but interactive acquisition still required an executable. The
+[semantic project lease follow-up](2026-09-10-semantic-project-lease.md), based
+on `f171b4bfcd04b17da51876341a2b511bd06e20f4`, closes that lifetime gap with one
+compiler-owned immutable analysis lease. It owns the exact HIR/source/symbol
+ancestor, registered world, assertion profile, final report and semantic index.
+`CompiledProject` owns this lease plus its executable products; a single phase
+enum retains the latest completed HIR, analysis or compiled product.
+
+The LSP accepted snapshot owns that phase lease. Signature acquisition and
+semantic-only features use completed analysis after a call diagnostic or
+later executable admission failure, with existing source/profile/stamp checks.
+Failed analysis construction retains only HIR, and failed compilation does
+not flush persistent compile stores. Separate accepted executable fields and
+copied world/revision checks are removed because the ancestor relationship is
+owned by the lease itself; source/URI/overlay validation remains.
+
+This selects and implements the semantic-phase ownership part of decision 5.
+It introduces no analyzer rerun, mutable partial report or peer semantic
+catalog. The coupled contract as a whole remains proposed; complete-program
+activation, the other open decisions and positive acceptance failures remain
+required.

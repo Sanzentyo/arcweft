@@ -8,8 +8,7 @@ use std::{
     },
 };
 
-use arcweft_compiler::project::CompiledProject;
-use arcweft_lang_hir::symbol::{ProjectSymbolRevision, ProjectSymbolWorldId};
+use arcweft_compiler::project::{CompiledProject, ProjectAnalysisLease};
 use arcweft_lang_sema::character_definition::{
     CharacterDefinitionQueryResult, CharacterDefinitionRequestBudget,
     CharacterDefinitionResourceError, CharacterDefinitionWorkReceipt, CharacterReferenceInventory,
@@ -18,7 +17,7 @@ use arcweft_lang_sema::registration::RegisteredSemanticWorld;
 #[cfg(test)]
 use arcweft_lang_sema::signature::SignatureQueryOutcome;
 use arcweft_launch::ProfileId;
-use arcweft_source::{SourceDocumentIdentity, SourceSetRevision};
+use arcweft_source::SourceDocumentIdentity;
 use lsp_types::Uri;
 use thiserror::Error;
 
@@ -69,7 +68,6 @@ pub(crate) enum AcceptedOverlaySetError {
 #[derive(Debug)]
 pub struct AcceptedProfileCandidate {
     profile: AcceptedProfileKey,
-    executable: Option<Arc<CompiledProject>>,
     project: Arc<AcceptedProjectSnapshot>,
     overlays: AcceptedOverlaySet,
 }
@@ -77,25 +75,6 @@ pub struct AcceptedProfileCandidate {
 /// Candidate construction failed before any profile state was mutated.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum AcceptedProfileCandidateError {
-    #[error("candidate world ID differs from the accepted project")]
-    WorldMismatch {
-        expected: ProjectSymbolWorldId,
-        actual: ProjectSymbolWorldId,
-    },
-    #[error("candidate symbol revision differs from the accepted project")]
-    SymbolRevisionMismatch {
-        expected: ProjectSymbolRevision,
-        actual: ProjectSymbolRevision,
-    },
-    #[error("candidate character source revision differs from accepted sources")]
-    CharacterSourceRevisionMismatch {
-        expected: SourceSetRevision,
-        actual: SourceSetRevision,
-    },
-    #[error("candidate executable is missing an accepted character source revision")]
-    MissingCharacterSourceRevision,
-    #[error("candidate executable does not share the accepted tooling lease Arc")]
-    CompiledToolingLeaseMismatch,
     #[error("candidate overlay URI is absent from accepted sources")]
     UnknownOverlayUri { uri: LspUriKey },
     #[error("candidate overlay identity differs from accepted URI identity")]
@@ -172,46 +151,13 @@ impl AcceptedOverlayEntry {
 impl AcceptedProfileCandidate {
     #[allow(
         clippy::result_large_err,
-        reason = "candidate admission preserves exact world, revision, URI, and source identity evidence"
+        reason = "candidate admission preserves exact overlay URI and source identity evidence"
     )]
     pub(crate) fn try_new(
         profile: AcceptedProfileKey,
-        executable: Option<Arc<CompiledProject>>,
         project: Arc<AcceptedProjectSnapshot>,
         overlays: AcceptedOverlaySet,
     ) -> Result<Self, AcceptedProfileCandidateError> {
-        let sources = project.sources();
-        if let Some(compiled) = executable.as_ref() {
-            if !Arc::ptr_eq(compiled.tooling_lease(), project.tooling_lease()) {
-                return Err(AcceptedProfileCandidateError::CompiledToolingLeaseMismatch);
-            }
-            let world = compiled.registered_world();
-            let symbols = world.symbols();
-            let index = world.character_definition_index();
-            if sources.world() != symbols.world() {
-                return Err(AcceptedProfileCandidateError::WorldMismatch {
-                    expected: sources.world().clone(),
-                    actual: symbols.world().clone(),
-                });
-            }
-            if sources.symbol_revision() != symbols.revision() {
-                return Err(AcceptedProfileCandidateError::SymbolRevisionMismatch {
-                    expected: *sources.symbol_revision(),
-                    actual: *symbols.revision(),
-                });
-            }
-            let expected = sources
-                .character_source_revision()
-                .ok_or(AcceptedProfileCandidateError::MissingCharacterSourceRevision)?;
-            if expected != index.source_revision() {
-                return Err(
-                    AcceptedProfileCandidateError::CharacterSourceRevisionMismatch {
-                        expected,
-                        actual: index.source_revision(),
-                    },
-                );
-            }
-        }
         for (uri, overlay) in overlays.iter() {
             let Some(identity) = project.source_identity_by_uri(uri) else {
                 return Err(AcceptedProfileCandidateError::UnknownOverlayUri { uri: uri.clone() });
@@ -226,7 +172,6 @@ impl AcceptedProfileCandidate {
         }
         Ok(Self {
             profile,
-            executable,
             project,
             overlays,
         })
@@ -242,7 +187,6 @@ impl AcceptedProfileCandidate {
     ) -> Result<Self, AcceptedProfileCandidateError> {
         Self::try_new(
             current.profile.clone(),
-            current.executable.clone(),
             Arc::clone(&current.project),
             overlays,
         )
@@ -301,7 +245,6 @@ pub enum ProfileEnvironmentLifecycle {
 pub struct AcceptedProfileEnvironment {
     generation: AcceptedEnvironmentGeneration,
     profile: AcceptedProfileKey,
-    executable: Option<Arc<CompiledProject>>,
     #[cfg(test)]
     stamp_world_override: Option<Arc<RegisteredSemanticWorld>>,
     project: Arc<AcceptedProjectSnapshot>,
@@ -314,8 +257,12 @@ impl AcceptedProfileEnvironment {
         self.generation
     }
 
-    pub(crate) const fn executable(&self) -> Option<&Arc<CompiledProject>> {
-        self.executable.as_ref()
+    pub(crate) fn executable(&self) -> Option<&Arc<CompiledProject>> {
+        self.project.compilation_lease().compiled()
+    }
+
+    pub(crate) fn analysis(&self) -> Option<&Arc<ProjectAnalysisLease>> {
+        self.project.compilation_lease().analysis_lease()
     }
 
     pub(crate) fn registered_world(&self) -> Option<&RegisteredSemanticWorld> {
@@ -323,9 +270,7 @@ impl AcceptedProfileEnvironment {
         if let Some(world) = self.stamp_world_override.as_deref() {
             return Some(world);
         }
-        self.executable
-            .as_deref()
-            .map(CompiledProject::registered_world)
+        self.analysis().map(|analysis| analysis.registered_world())
     }
 
     pub(crate) fn registered_world_arc(&self) -> Option<Arc<RegisteredSemanticWorld>> {
@@ -333,9 +278,8 @@ impl AcceptedProfileEnvironment {
         if let Some(world) = self.stamp_world_override.as_ref() {
             return Some(Arc::clone(world));
         }
-        self.executable
-            .as_ref()
-            .map(|compiled| compiled.registered_world_arc())
+        self.analysis()
+            .map(|analysis| analysis.registered_world_arc())
     }
 
     pub const fn profile(&self) -> &AcceptedProfileKey {
@@ -548,14 +492,12 @@ impl LspProfileState {
         before_swap(accepted.as_ref());
         let AcceptedProfileCandidate {
             profile,
-            executable,
             project,
             overlays,
         } = candidate;
         let candidate = Arc::new(AcceptedProfileEnvironment {
             generation: AcceptedEnvironmentGeneration(generation),
             profile,
-            executable,
             #[cfg(test)]
             stamp_world_override: None,
             project,

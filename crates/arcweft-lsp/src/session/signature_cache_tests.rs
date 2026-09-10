@@ -1485,3 +1485,4 @@ fn stale_error_is_typed_before_publication() {
 
 mod integration_rows;
 mod lifecycle;
+mod semantic_lease;

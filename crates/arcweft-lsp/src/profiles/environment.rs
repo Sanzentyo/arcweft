@@ -1,8 +1,8 @@
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_character::catalog::CharacterCatalog;
 use arcweft_compiler::project::{
-    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompilationSession,
-    ProjectCompileError, compile_project,
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompilationLease,
+    ProjectCompilationSession, ProjectCompileError, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::RegisteredTypeCheckEnv};
@@ -279,14 +279,14 @@ pub(crate) fn register_loaded_environment(
         topology.loaded_project().module_parsed_source_map(),
         &context,
     );
-    let (tooling, executable, diagnostic) = match compile_result {
+    let (compilation, diagnostic) = match compile_result {
         Ok(project) => {
             let project = Arc::new(project);
-            (Arc::clone(project.tooling_lease()), Some(project), None)
+            (ProjectCompilationLease::Compiled(project), None)
         }
         Err(error) => {
             let details = project_compile_details(&error);
-            let Some(tooling) = error.tooling_lease().cloned() else {
+            let Some(compilation) = error.compilation_lease().cloned() else {
                 return Err(RegisterProfileEnvironmentError::Compile {
                     details,
                     source: Box::new(error),
@@ -300,11 +300,11 @@ pub(crate) fn register_loaded_environment(
                 ),
             )
             .with_project_compile_diagnostics(error.diagnostics().iter().cloned());
-            (tooling, None, Some(diagnostic))
+            (compilation, Some(diagnostic))
         }
     };
     let project = Arc::new(
-        AcceptedProjectSnapshot::try_new(Arc::clone(&tooling), executable.as_deref(), source_seeds)
+        AcceptedProjectSnapshot::try_new(compilation, source_seeds)
             .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
     );
     let mut overlay_entries = Vec::with_capacity(overlays.len());
@@ -323,13 +323,9 @@ pub(crate) fn register_loaded_environment(
     }
     let overlays = AcceptedOverlaySet::try_new(overlay_entries)
         .map_err(RegisterProfileEnvironmentError::Overlay)?;
-    let candidate = AcceptedProfileCandidate::try_new(
-        accepted_profile_key(topology)?,
-        executable,
-        project,
-        overlays,
-    )
-    .map_err(|error| RegisterProfileEnvironmentError::Candidate(Box::new(error)))?;
+    let candidate =
+        AcceptedProfileCandidate::try_new(accepted_profile_key(topology)?, project, overlays)
+            .map_err(|error| RegisterProfileEnvironmentError::Candidate(Box::new(error)))?;
     Ok((candidate, characters, diagnostic))
 }
 

@@ -53,7 +53,7 @@ pub(in crate::app) fn script_test_selection(
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
     let host_policy = native_host_policy_for_selection(selection)?;
-    let manifest = collect_script_tests(checked.compiled.hir_project());
+    let manifest = collect_script_tests(checked.compiled.analysis_lease().hir_project());
     let plan = checked.runtime_plan().plan.clone();
     let file_roots = selection.native_file_roots();
     let source = NativeRunSource::new(selection.path(), &file_roots);

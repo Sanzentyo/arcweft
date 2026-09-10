@@ -57,13 +57,13 @@ impl ArcweftLspSession {
             .as_ref()
             .cloned()
             .ok_or(SignatureAcquireError::NoAcceptedEnvironment)?;
-        let executable = accepted
-            .executable()
+        let analysis = accepted
+            .analysis()
             .cloned()
-            .ok_or(SignatureAcquireError::ExecutableUnavailable)?;
+            .ok_or(SignatureAcquireError::SemanticUnavailable)?;
         let world = accepted
             .registered_world_arc()
-            .ok_or(SignatureAcquireError::ExecutableUnavailable)?;
+            .ok_or(SignatureAcquireError::SemanticUnavailable)?;
         let mapped_profile = self
             .profile_keys_by_uri
             .get(&uri)
@@ -164,7 +164,7 @@ impl ArcweftLspSession {
 
         let lease = AcceptedDocumentHirLease::new(
             Arc::clone(&accepted),
-            executable,
+            analysis,
             Arc::clone(&accepted_document),
             module.clone(),
         );
@@ -502,7 +502,7 @@ impl ArcweftLspSession {
                 actual: pending.actual().clone(),
             });
         }
-        if current.executable().is_none() {
+        if current.analysis().is_none() {
             return Err(SignatureRequestStale::AcceptedReplaced);
         }
         let Some(world) = current.registered_world_arc() else {

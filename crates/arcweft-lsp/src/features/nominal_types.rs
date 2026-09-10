@@ -73,9 +73,9 @@ pub(crate) fn hover(
     offset: usize,
 ) -> Option<Hover> {
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
-    let analysis = executable.final_analysis();
-    let index = executable.semantic_index();
+    let semantic = accepted.analysis()?;
+    let analysis = semantic.final_analysis();
+    let index = semantic.semantic_index();
     let project = exact_project(accepted.project(), document)?;
     if let Some(cursor) = language_symbol_at(project, analysis, document, offset) {
         return Some(language_nominal_hover(document, cursor));
@@ -234,9 +234,9 @@ pub(crate) fn definition(
     offset: usize,
 ) -> Option<GotoDefinitionResponse> {
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
-    let analysis = executable.final_analysis();
-    let index = executable.semantic_index();
+    let semantic = accepted.analysis()?;
+    let analysis = semantic.final_analysis();
+    let index = semantic.semantic_index();
     let project = exact_project(accepted.project(), document)?;
     if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
@@ -279,10 +279,10 @@ pub(crate) fn references(
     offset: usize,
 ) -> Option<Vec<Location>> {
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
-    let analysis = executable.final_analysis();
-    let index = executable.semantic_index();
-    let world = executable.registered_world();
+    let semantic = accepted.analysis()?;
+    let analysis = semantic.final_analysis();
+    let index = semantic.semantic_index();
+    let world = semantic.registered_world();
     let project = exact_project(accepted.project(), document)?;
     if language_symbol_at(project, analysis, document, offset).is_some() {
         return Some(Vec::new());
@@ -504,9 +504,9 @@ pub(crate) fn prepare_rename(
     offset: usize,
 ) -> Option<PrepareRenameResponse> {
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
-    let analysis = executable.final_analysis();
-    let index = executable.semantic_index();
+    let semantic = accepted.analysis()?;
+    let analysis = semantic.final_analysis();
+    let index = semantic.semantic_index();
     let project = exact_project(accepted.project(), document)?;
     if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
@@ -535,10 +535,10 @@ pub(crate) fn rename(
 ) -> Option<WorkspaceEdit> {
     let new_name = ModuleSegment::new(new_name).ok()?;
     let accepted = profile.accepted_environment()?;
-    let executable = accepted.executable()?;
-    let analysis = executable.final_analysis();
-    let index = executable.semantic_index();
-    let world = executable.registered_world();
+    let semantic = accepted.analysis()?;
+    let analysis = semantic.final_analysis();
+    let index = semantic.semantic_index();
+    let world = semantic.registered_world();
     let project = exact_project(accepted.project(), document)?;
     if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
@@ -1390,8 +1390,8 @@ adapter = "rust-nominal-tooling"
         } = accepted_rust_nominal_tooling_fixture();
         let accepted = profile.accepted_environment().expect("accepted profile");
         let analysis = accepted
-            .executable()
-            .expect("accepted executable")
+            .analysis()
+            .expect("accepted semantic")
             .final_analysis();
         let cursor = accepted_nominal_at(accepted.project(), analysis, &document, offset)
             .expect("typed accepted nominal cursor");
@@ -1435,7 +1435,7 @@ adapter = "rust-nominal-tooling"
         };
         let metadata = accepted
             .registered_world()
-            .expect("accepted executable world")
+            .expect("accepted semantic world")
             .environment()
             .rust_metadata()
             .get(cursor.nominal.declaration())

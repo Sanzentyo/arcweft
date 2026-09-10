@@ -758,7 +758,9 @@ pub(in crate::app) struct JitCheckSourceCompilerReport {
 impl From<&CheckedModule> for JitCheckSourceCompilerReport {
     fn from(checked: &CheckedModule) -> Self {
         Self {
-            semantic: FinalSemanticProfileStats::from(checked.compiled.final_analysis().as_ref()),
+            semantic: FinalSemanticProfileStats::from(
+                checked.compiled.analysis_lease().final_analysis().as_ref(),
+            ),
             phases: checked.phases.clone(),
         }
     }

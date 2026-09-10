@@ -348,6 +348,7 @@ fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidat
     let root = CanonicalModulePath::crate_root();
     let document = Arc::clone(
         compiled
+            .analysis_lease()
             .hir_project()
             .view()
             .module(&root)
@@ -360,8 +361,7 @@ fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidat
         .expect("source URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.tooling_lease()),
-            Some(compiled.as_ref()),
+            arcweft_compiler::project::ProjectCompilationLease::Compiled(compiled),
             vec![AcceptedSourceDocumentSeed::new(
                 document,
                 AcceptedSourceLocator::Uri { uri: source_uri },
@@ -383,7 +383,6 @@ fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidat
             &manifest_uri,
             ProfileId::new("test").expect("valid test profile ID"),
         ),
-        Some(compiled),
         project,
         AcceptedOverlaySet::default(),
     )
@@ -403,8 +402,7 @@ fn accepted_character_candidate(
         .expect("manifest URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.tooling_lease()),
-            Some(compiled.as_ref()),
+            arcweft_compiler::project::ProjectCompilationLease::Compiled(compiled),
             vec![
                 AcceptedSourceDocumentSeed::new(
                     root,
@@ -434,7 +432,6 @@ fn accepted_character_candidate(
             &profile_manifest_uri,
             ProfileId::new("test").expect("profile"),
         ),
-        Some(compiled),
         project,
         AcceptedOverlaySet::default(),
     )
@@ -788,11 +785,11 @@ fn successful_identical_rebuild_increments_generation() {
         .replace_accepted(accepted_candidate(Arc::clone(&world)))
         .expect("first accepted environment");
     assert!(Arc::ptr_eq(
-        accepted_executable(&first).hir_project(),
+        accepted_executable(&first).analysis_lease().hir_project(),
         first.project().hir_project()
     ));
     assert!(Arc::ptr_eq(
-        accepted_executable(&first).tooling_lease(),
+        accepted_executable(&first).analysis_lease().tooling_lease(),
         first.project().tooling_lease()
     ));
     insert_signature_cache(&first);
@@ -800,11 +797,13 @@ fn successful_identical_rebuild_increments_generation() {
         .replace_accepted(accepted_candidate(world))
         .expect("identical complete rebuild is still a new generation");
     assert!(Arc::ptr_eq(
-        accepted_executable(&second).hir_project(),
+        accepted_executable(&second).analysis_lease().hir_project(),
         second.project().hir_project()
     ));
     assert!(Arc::ptr_eq(
-        accepted_executable(&second).tooling_lease(),
+        accepted_executable(&second)
+            .analysis_lease()
+            .tooling_lease(),
         second.project().tooling_lease()
     ));
     assert_eq!(first.generation().get(), 1);
@@ -868,8 +867,8 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
                 .then_some(identity)
         })
         .expect("module-backed source identity");
-    let symbols = world.project_symbols();
-    let environment = world.registered_environment();
+    let symbols = world.analysis_lease().project_symbols();
+    let environment = world.analysis_lease().registered_environment();
     let generation = accepted.generation();
     let world_id = symbols.world().clone();
     let symbol_revision = *symbols.revision();
@@ -917,9 +916,9 @@ fn signature_cache_key_misses_when_any_single_identity_field_changes() {
             .expect("changed symbol revision");
     let (changed_characters, _, _) = registered_world_with_character_asset(
         "layers/body-updated.png",
-        Some(world.registered_environment()),
+        Some(world.analysis_lease().registered_environment()),
     );
-    let changed_environment = changed_characters.registered_environment();
+    let changed_environment = changed_characters.analysis_lease().registered_environment();
     let variations = [
         SignatureCacheKey::new(
             AcceptedEnvironmentGeneration::for_test(generation.get() + 1),
@@ -1175,8 +1174,14 @@ fn base_change_same_character_invalidates_broad_cache() {
         TypeCheckEnv::standard().with_symbol("adapter.mode", TypeKind::Bool),
     );
     assert_eq!(
-        first_world.registered_environment().character_digest(),
-        second_world.registered_environment().character_digest(),
+        first_world
+            .analysis_lease()
+            .registered_environment()
+            .character_digest(),
+        second_world
+            .analysis_lease()
+            .registered_environment()
+            .character_digest(),
         "the narrow character key deliberately cannot observe base facts"
     );
 
@@ -1212,15 +1217,27 @@ fn character_digest_and_revision_change_publish_a_fresh_cache_namespace() {
     insert_signature_cache(&first);
     let (second_world, second_root, second_manifest) = registered_world_with_character_asset(
         "layers/body-updated.png",
-        Some(first_world.registered_environment()),
+        Some(first_world.analysis_lease().registered_environment()),
     );
     assert_ne!(
-        first_world.registered_environment().character_digest(),
-        second_world.registered_environment().character_digest()
+        first_world
+            .analysis_lease()
+            .registered_environment()
+            .character_digest(),
+        second_world
+            .analysis_lease()
+            .registered_environment()
+            .character_digest()
     );
     assert_ne!(
-        first_world.registered_environment().character_revision(),
-        second_world.registered_environment().character_revision()
+        first_world
+            .analysis_lease()
+            .registered_environment()
+            .character_revision(),
+        second_world
+            .analysis_lease()
+            .registered_environment()
+            .character_revision()
     );
 
     let second = state
@@ -1241,14 +1258,12 @@ fn generation_overflow_preserves_state() {
     let state = LspProfileState::new();
     let AcceptedProfileCandidate {
         profile,
-        executable,
         project,
         overlays,
     } = accepted_candidate(registered_world());
     let previous = Arc::new(AcceptedProfileEnvironment {
         generation: AcceptedEnvironmentGeneration::for_test(u64::MAX),
         profile,
-        executable,
         stamp_world_override: None,
         project,
         overlays,

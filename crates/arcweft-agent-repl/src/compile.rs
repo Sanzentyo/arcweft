@@ -72,12 +72,12 @@ pub(crate) fn compile_repl_cell(
     )
     .map_err(|error| map_project_compile_error(&error))?;
     let artifact_project = base.target_entities().iter().cloned().fold(
-        compiled.semantic_index().as_ref().clone(),
+        compiled.analysis_lease().semantic_index().as_ref().clone(),
         arcweft_lang_sema::project_index::ProjectSemanticIndex::with_entity,
     );
     let bindings = committed_bindings(
         parsed.id,
-        compiled.hir_project(),
+        compiled.analysis_lease().hir_project(),
         &document,
         &parsed.synthetic_controller_name,
         parsed.cell_source_range,
@@ -90,7 +90,7 @@ pub(crate) fn compile_repl_cell(
         &project,
         &compiled,
         BuildSnapshotRequest {
-            build_id: compiled.program_hash().as_str().to_owned(),
+            build_id: compiled.analysis_lease().program_hash().as_str().to_owned(),
             compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
             target_triple: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
             target_features: Vec::new(),
@@ -264,7 +264,8 @@ mod tests {
         assert!(
             compiled
                 .artifact
-                .hir_project
+                .analysis
+                .hir_project()
                 .view()
                 .modules()
                 .any(|(_, module)| module.provenance().source_identity()

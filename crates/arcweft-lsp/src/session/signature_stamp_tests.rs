@@ -604,7 +604,12 @@ impl StampMutation {
                     prepared.stamp().hir_project(),
                     alternate.project().hir_project()
                 ));
-                Some(install_project(prepared, Arc::clone(alternate.project())))
+                // A fresh project now also owns its fresh semantic world. Alter
+                // only the request's retained HIR stamp to reach this guard.
+                prepared.replace_hir_project_for_stamp_test(Arc::clone(
+                    alternate.project().hir_project(),
+                ));
+                None
             }
             Self::DocumentIdentity => {
                 let next_version = prepared.stamp().lsp_version() + 1;
@@ -872,26 +877,8 @@ fn rebuilt_project(
         })
         .collect();
     Arc::new(
-        AcceptedProjectSnapshot::try_new(
-            Arc::clone(
-                prepared
-                    .stamp()
-                    .accepted()
-                    .executable()
-                    .expect("stamp executable")
-                    .tooling_lease(),
-            ),
-            Some(
-                prepared
-                    .stamp()
-                    .accepted()
-                    .executable()
-                    .expect("stamp executable")
-                    .as_ref(),
-            ),
-            seeds,
-        )
-        .expect("reconstructed accepted stamp project"),
+        AcceptedProjectSnapshot::try_new(current.compilation_lease().clone(), seeds)
+            .expect("reconstructed accepted stamp project"),
     )
 }
 

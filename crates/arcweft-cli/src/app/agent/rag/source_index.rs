@@ -93,7 +93,7 @@ pub(in crate::app::agent) fn agent_source_rag_index(
             .map_err(|code| format!("agent rag query failed to compile source: {code:?}"))?;
     let source = checked.source_document.text();
     let source_hash = agent_content_hash(source);
-    let project = checked.compiled.semantic_index();
+    let project = checked.compiled.analysis_lease().semantic_index();
     let source_file = DebugSourceFile {
         program_hash: StableHash::new(project.program_hash().as_str())
             .map_err(|error| format!("invalid source file program hash: {error}"))?,

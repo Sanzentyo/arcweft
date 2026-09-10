@@ -25,7 +25,6 @@ pub(crate) fn mutated_environment(
 ) -> Arc<AcceptedProfileEnvironment> {
     let mut generation = current.generation;
     let mut profile = current.profile.clone();
-    let executable = current.executable.clone();
     let mut stamp_world_override = current.stamp_world_override.clone();
     let mut project = Arc::clone(&current.project);
     match mutation {
@@ -40,7 +39,6 @@ pub(crate) fn mutated_environment(
     Arc::new(AcceptedProfileEnvironment {
         generation,
         profile,
-        executable,
         stamp_world_override,
         project,
         overlays: current.overlays.clone(),
