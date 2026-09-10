@@ -390,6 +390,34 @@ flow main() -> i64 { return fallback(.Empty(), 42i64) }
 );
 
 callable_case!(
+    correlated_ordinary_call_closes_from_a_later_parent_argument,
+    r#"
+fn empty<T>() -> Option<T> { None }
+fn fallback<T>(input: Option<T>, value: T) -> T { value }
+flow main() -> i64 { return fallback(empty(), 42i64) }
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
+    correlated_ordinary_calls_combine_complementary_parent_evidence,
+    r#"
+enum Either<A, B> { Left A, Right B }
+fn left<A, B>(value: A) -> Either<A, B> { .Left(value) }
+fn right<A, B>(value: B) -> Either<A, B> { .Right(value) }
+fn combine<A, B>(left: Either<A, B>, right: Either<A, B>) -> i64 { 42i64 }
+flow main() -> i64 {
+    let first = combine(left(1i64), right("two"))
+    let second = combine(right("two"), left(1i64))
+    return first + second
+}
+"#,
+    RuntimeValue::i64(84),
+    "84"
+);
+
+callable_case!(
     contextual_project_constructor_infers_an_unselected_case_parameter,
     r#"
 enum Either<A, B> { Left A, Right B }

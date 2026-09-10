@@ -233,6 +233,57 @@ flow main() -> i64 { return fallback(.Full(42i64), 0i64) }
 }
 
 #[test]
+fn correlated_ordinary_call_closes_from_a_later_parent_argument() {
+    let fixture = fixture(
+        r"
+fn empty<T>() -> Option<T> { None }
+fn fallback<T>(input: Option<T>, value: T) -> T { value }
+flow main() -> i64 { return fallback(empty(), 42i64) }
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("parent sources close an ordinary child call");
+    assert_selected_calls(&analysis, 2);
+}
+
+#[test]
+fn correlated_ordinary_calls_combine_complementary_parent_evidence() {
+    for (left, right) in [
+        ("left(1i64)", "right(\"two\")"),
+        ("right(\"two\")", "left(1i64)"),
+    ] {
+        let source = format!(
+            "enum Either<A, B> {{ Left A, Right B }}\n\
+             fn left<A, B>(value: A) -> Either<A, B> {{ .Left(value) }}\n\
+             fn right<A, B>(value: B) -> Either<A, B> {{ .Right(value) }}\n\
+             fn combine<A, B>(left: Either<A, B>, right: Either<A, B>) -> i64 {{ 42i64 }}\n\
+             flow main() -> i64 {{ return combine({left}, {right}) }}"
+        );
+        let fixture = fixture(&source, None);
+        let analysis = analyze(&fixture).unwrap_or_else(|error| {
+            panic!("correlated ordinary arguments {left}, {right}: {error:?}");
+        });
+        assert_selected_calls(&analysis, 5);
+        let closed_owners = analysis
+            .calls()
+            .filter_map(|(owner, _)| analysis.expression(owner)?.value_type())
+            .filter_map(|ty| match ty {
+                TypeKind::ProjectNominal(nominal)
+                    if nominal.arguments() == [TypeKind::I64, TypeKind::String] =>
+                {
+                    Some(nominal)
+                }
+                _ => None,
+            })
+            .count();
+        assert_eq!(
+            closed_owners, 2,
+            "both child results close under the same parent"
+        );
+    }
+}
+
+#[test]
 fn contextual_unit_constructor_call_closes_from_a_later_argument() {
     let fixture = fixture(
         r"
