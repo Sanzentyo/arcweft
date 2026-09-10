@@ -1,0 +1,3 @@
+"path","owner","bytes","physical_lines","code_lines","classification","is_rust","embedded_test_lines","base_physical_lines","physical_line_growth"
+"crates/arcweft-lang-sema/src/types/constraints/transaction/tests.rs","arcweft-lang-sema","12352","345","326","test","true","0","259","86"
+"crates/arcweft-lang-sema/src/types/constraints/transaction.rs","arcweft-lang-sema","68293","1844","1738","production","true","0","1842","2"

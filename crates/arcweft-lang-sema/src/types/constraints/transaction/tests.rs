@@ -8,7 +8,8 @@ use crate::effect_row::{
 };
 use crate::effects::EffectSet;
 use crate::types::constraints::{
-    NoConstraintClient, TypeConstraintParameterEligibility, TypeConstraintParameterScope,
+    NoConstraintClient, TypeConstraintFailureInvariant, TypeConstraintParameterEligibility,
+    TypeConstraintParameterScope,
     context::{
         LocalConstraintAccounting, TypeConstraintContextIssuer, TypeConstraintEffectScope,
         TypeConstraintLimits, TypeConstraintWorkReport,
@@ -175,6 +176,91 @@ fn source_frontier<A: TypeConstraintAccounting>(
         transaction.frontier.push(path);
     }
     transaction
+}
+
+#[test]
+fn advancing_materialization_preserves_the_queue_until_the_current_ticket_is_submitted() {
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(4096, 2048, 128, 128),
+            &cancellation,
+            scope(),
+        );
+    let mut transaction = source_frontier(&mut context);
+    for remaining in [1, 0] {
+        let mut ticket = transaction
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+            .expect("every retained path is materialized");
+        assert!(matches!(
+            transaction.next_materialization_ticket(&mut context),
+            Err(MaterializationImmediateFailure::Invariant(
+                TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        TypeConstraintSourceProtocolInvariant::Ticket
+                    )
+                )
+            ))
+        ));
+        assert_eq!(transaction.materialization.len(), remaining);
+        transaction
+            .validate_materialization_callback_begin(&ticket)
+            .unwrap();
+        let binding = ticket.bind_callback().unwrap();
+        ticket.validate_callback_binding(&binding).unwrap();
+        let closed = ticket
+            .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+            .unwrap();
+        transaction
+            .submit_closed_materialization(ticket, closed)
+            .unwrap();
+    }
+    assert!(
+        transaction
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+            .is_none()
+    );
+    transaction
+        .finish(context)
+        .complete()
+        .expect("both equivalent paths completed");
+}
+
+#[test]
+fn a_completed_alternative_cannot_hide_an_outstanding_materialization() {
+    let cancellation = AtomicBool::new(false);
+    let mut context =
+        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(4096, 2048, 128, 128),
+            &cancellation,
+            scope(),
+        );
+    let mut transaction = source_frontier(&mut context);
+    let mut first = transaction
+        .next_materialization_ticket(&mut context)
+        .unwrap()
+        .unwrap();
+    first.bind_callback().unwrap();
+    let closed = first
+        .bind_closed_submission(ClosedMaterializationSubmission::Sealed(()))
+        .unwrap();
+    transaction
+        .submit_closed_materialization(first, closed)
+        .unwrap();
+    let _outstanding = transaction
+        .next_materialization_ticket(&mut context)
+        .unwrap()
+        .unwrap();
+    assert!(matches!(
+        transaction.finish(context).complete(),
+        Err(TypeConstraintFailure::Invariant(
+            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
+                TypeConstraintSourceProtocolInvariant::Outcome
+            ))
+        ))
+    ));
 }
 
 #[test]

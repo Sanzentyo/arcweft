@@ -1042,9 +1042,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if !self.closed {
             self.close(context).map_err(materialization_immediate)?;
         }
-        let Some(ticket) = self.materialization.pop_front() else {
-            return Ok(None);
-        };
         if self.active_materialization.is_some() {
             return Err(materialization_immediate(TypeConstraintError::Invariant(
                 TypeConstraintInvariant::SourceProtocol(
@@ -1052,6 +1049,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 ),
             )));
         }
+        let Some(ticket) = self.materialization.pop_front() else {
+            return Ok(None);
+        };
         self.active_materialization = Some(ticket.identity.clone());
         if !matches!(ticket.phase, MaterializationTicketPhase::Ready) {
             self.active_materialization = None;
@@ -1173,15 +1173,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     where
         A: TypeConstraintAccounting,
     {
-        let outcome = if self.materialization.is_empty() && !self.closed {
-            match self.close(&mut context) {
-                Ok(()) => self.finish_candidate(&mut context),
-                Err(error) => Err(error.into()),
-            }
-        } else if !self.materialization.is_empty() && self.first_failure.is_none() {
-            Err(TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType).into())
-        } else {
-            self.finish_candidate(&mut context)
+        let outcome = match self.close(&mut context) {
+            Ok(()) => self.finish_candidate(&mut context),
+            Err(error) => Err(error.into()),
         };
         TypeConstraintRun {
             outcome: Some(outcome),
@@ -1381,6 +1375,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     {
         if let Some(error) = self.first_failure.take() {
             return Err(error);
+        }
+        if self.active_materialization.is_some() {
+            return Err(protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into());
+        }
+        if !self.materialization.is_empty() {
+            return Err(
+                TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType).into(),
+            );
         }
         let fatal_index = self
             .materialized
