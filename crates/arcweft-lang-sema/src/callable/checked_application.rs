@@ -697,11 +697,11 @@ impl ResolvedCallableBase {
     /// Nested rows come only from the checked instantiation; the supplied row
     /// controls the invocation boundary and is never used to reconstruct raw
     /// schema children.
-    pub(crate) fn callable_type_with_invocation_effects(
+    pub(crate) fn callable_type_with_terminal_effects(
         &self,
         invocation: &EffectRow,
     ) -> Result<TypeKind, CallConstraintInvariant> {
-        projected_function_type_with_invocation_effects(
+        projected_function_type_with_terminal_effects(
             self.schema(),
             self.base_call_group(),
             &self.effect_instantiation,
@@ -2402,10 +2402,19 @@ impl CheckedCallApplicationCore {
             return Err(CallConstraintInvariant::PreparedBaseMismatch);
         }
         validate_callee(&input.callee, selected)?;
-        if let Some(fixed) = selected.schema().effects().fixed_row()
-            && fixed != &input.effects
-        {
-            return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+        if let Some(fixed) = selected.schema().effects().fixed_row() {
+            let expected = if selected
+                .base()
+                .next_group_for(input.current_group)
+                .is_some()
+            {
+                EffectRow::closed(crate::effects::EffectSet::new())
+            } else {
+                fixed.clone()
+            };
+            if expected != input.effects {
+                return Err(CallConstraintInvariant::PreparedSchemaMismatch);
+            }
         }
         let consumer = CheckedCallConsumerAdmission::seal(
             input.consumer,
@@ -3531,35 +3540,27 @@ fn remaining_function_type(
     effects: &super::CheckedCallableEffectInstantiation,
 ) -> Result<TypeKind, CallConstraintInvariant> {
     let invocation = effects.project_invocation_effects(schema)?;
-    projected_function_type_with_invocation_effects(schema, first_group, effects, &invocation)
+    projected_function_type_with_terminal_effects(schema, first_group, effects, &invocation)
 }
 
-fn projected_function_type_with_invocation_effects(
+fn projected_function_type_with_terminal_effects(
     schema: &CallableSignatureSchema,
     first_group: CallableGroupIndex,
     effects: &super::CheckedCallableEffectInstantiation,
     invocation: &EffectRow,
 ) -> Result<TypeKind, CallConstraintInvariant> {
-    if schema.group(first_group).is_none() {
-        return Err(CallConstraintInvariant::MalformedSchemaInventory);
-    }
-    let mut result = effects.project_result(schema)?;
-    for group in schema.groups().iter().skip(first_group.get()).rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| {
+    schema
+        .project_function_type_from_group(
+            first_group,
+            invocation,
+            || effects.project_result(schema),
+            |coordinate, _| {
                 effects
-                    .project_parameter(
-                        schema,
-                        CallableParameterCoordinate::new(group.index(), parameter.index()),
-                    )?
+                    .project_parameter(schema, coordinate)?
                     .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        result = TypeKind::function_with_effects(parameters, result, invocation.clone());
-    }
-    Ok(result)
+            },
+        )
+        .map_err(CallConstraintInvariant::from)
 }
 
 fn schema_function_type(
@@ -3569,20 +3570,24 @@ fn schema_function_type(
         .effects()
         .fixed_row()
         .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)?;
-    let mut result = schema
-        .value_type()
-        .cloned()
-        .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)?;
-    for group in schema.groups().iter().rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| parameter.declared_type().cloned())
-            .collect::<Option<Vec<_>>>()
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
-        result = TypeKind::function_with_effects(parameters, result, effects.clone());
-    }
-    Ok(result)
+    schema
+        .project_function_type_from_group(
+            CallableGroupIndex::ZERO,
+            effects,
+            || {
+                schema
+                    .value_type()
+                    .cloned()
+                    .ok_or(CallConstraintInvariant::PreparedSchemaMismatch)
+            },
+            |_, parameter| {
+                parameter
+                    .declared_type()
+                    .cloned()
+                    .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
+            },
+        )
+        .map_err(CallConstraintInvariant::from)
 }
 
 /// The sole version-1 callable encoder. It is private, cannot finish into a

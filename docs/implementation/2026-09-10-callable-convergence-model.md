@@ -438,3 +438,22 @@ Documentation review resolved all 27 relative links in the changed investigation
 and request. `git diff --check` passed. This is a test/evidence cut; it records
 the reusable-application boundary and leaves the coupled model's open decisions
 explicit rather than publishing an incomplete implementation contract.
+
+## Curried effects and ABI implementation follow-up
+
+The [curried application cut](2026-09-10-curried-application-effects-and-abi.md)
+starts from clean `main` at `2a466cbcdcea89191b9fe90d9914446322e1ced1`.
+It fixes the shared remaining-group function-type projection, constrains known
+declaration effects in the existing lower transaction, and replaces the native
+and AWBC checks that incorrectly required a new prefix to retain the input's
+lineage and function type. The three-group effectful program reaches its real
+return through both backends. Its complete validation and ownership review
+are recorded in that note.
+
+The full ProjectCall `RUST_SHAPES.md` (934 lines / 37,309 bytes) has now been
+read alongside its previously read contract, acceptance matrix and consumer
+inventory. Those shapes confirm that the call fact owns the new prefix ABI,
+while the input checks its own exact expected lineage. They do not authorize
+reusing a caller's result pattern or resume site inside a first-class function
+value. The coupled source protocol, implicit effect-row algebra, scheme
+specialization and reusable activation questions above remain open.

@@ -1630,7 +1630,7 @@ fn selected_callable_type(
     let effects = final_callable_effects(selected, checked_callables)?;
     let declared = selected
         .base()
-        .callable_type_with_invocation_effects(&effects)
+        .callable_type_with_terminal_effects(&effects)
         .map_err(|error| {
             final_call_seal_error(
                 FinalCallSealLocation::Site(application.core().site()),

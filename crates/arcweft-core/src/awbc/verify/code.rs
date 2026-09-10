@@ -2181,12 +2181,22 @@ fn verify_project_call(
                 return invalid_type(at, "project-call continuation drops its existing prefix");
             }
             if let AwbcProjectCallInput::Continuation { expected_abi, .. } = &call.input {
-                if result_abi.lineage != expected_abi.lineage
-                    || result_abi.function_type != expected_abi.function_type
+                let Some(AwbcRuntimeTypeShape::Function { parameters, result }) =
+                    runtime_shape(program, expected_abi.function_type)
+                else {
+                    return invalid_type(at, "project-call input ABI is not a function");
+                };
+                // The checked result is a new prefix with its own lineage.
+                // Its remaining function type is the applied group's result.
+                if *result != result_abi.function_type
+                    || !parameters.iter().copied().eq(call
+                        .ordinary
+                        .iter()
+                        .map(AwbcProjectCallOrdinaryMaterialization::abi_ty))
                 {
                     return invalid_type(
                         at,
-                        "project-call continuation changes lineage or function type",
+                        "project-call continuation application signature disagrees",
                     );
                 }
             }

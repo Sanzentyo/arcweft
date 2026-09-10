@@ -137,29 +137,25 @@ impl PreparedResolvedCallableDefinition {
         &self,
         start: CallableGroupIndex,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        if self.schema().group(start).is_none() {
-            return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
-        }
         let effects = self.source_invocation_effects();
-        let mut result = self
-            .schema()
-            .value_type()
-            .cloned()
-            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        for group in self.schema().groups().iter().skip(start.get()).rev() {
-            let parameters = group
-                .parameters()
-                .iter()
-                .map(|parameter| {
+        self.schema()
+            .project_function_type_from_group(
+                start,
+                &effects,
+                || {
+                    self.schema()
+                        .value_type()
+                        .cloned()
+                        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
+                },
+                |_, parameter| {
                     parameter
                         .declared_type()
                         .cloned()
                         .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            result = TypeKind::function_with_effects(parameters, result, effects.clone());
-        }
-        Ok(result)
+                },
+            )
+            .map_err(super::super::CallConstraintInvariant::from)
     }
 
     fn projected_function_type_from_group(
@@ -177,29 +173,18 @@ impl PreparedResolvedCallableDefinition {
         start: CallableGroupIndex,
         effects: &crate::effect_row::EffectRow,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        if self.schema().group(start).is_none() {
-            return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
-        }
-        let mut result = self.effect_instantiation.project_result(self.schema())?;
-        for group in self.schema().groups().iter().skip(start.get()).rev() {
-            let parameters = group
-                .parameters()
-                .iter()
-                .map(|parameter| {
+        self.schema()
+            .project_function_type_from_group(
+                start,
+                effects,
+                || self.effect_instantiation.project_result(self.schema()),
+                |coordinate, _| {
                     self.effect_instantiation
-                        .project_parameter(
-                            self.schema(),
-                            super::super::CallableParameterCoordinate::new(
-                                group.index(),
-                                parameter.index(),
-                            ),
-                        )?
+                        .project_parameter(self.schema(), coordinate)?
                         .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            result = TypeKind::function_with_effects(parameters, result, effects.clone());
-        }
-        Ok(result)
+                },
+            )
+            .map_err(super::super::CallConstraintInvariant::from)
     }
 
     fn source_result_type_for_group(
@@ -989,10 +974,21 @@ impl PreparedResolvedCallable {
             .project_parameter(self.schema(), coordinate)
     }
 
+    /// The definition's effect row in the authorized candidate namespace.
+    /// This describes terminal invocation, including when the current call
+    /// merely creates a continuation.
+    pub(crate) fn constraint_callable_effects(
+        &self,
+    ) -> Result<crate::effect_row::EffectRow, super::super::CallConstraintInvariant> {
+        self.definition
+            .effect_instantiation
+            .project_invocation_effects(self.schema())
+    }
+
     /// Projects the complete callable type through this definition's sole
     /// higher-order effect overlay while using the caller-supplied checked
-    /// invocation row only for each curried application boundary.
-    pub(crate) fn constraint_callable_type_with_invocation_effects(
+    /// invocation row only for the terminal curried application boundary.
+    pub(crate) fn constraint_callable_type_with_terminal_effects(
         &self,
         effects: &crate::effect_row::EffectRow,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {

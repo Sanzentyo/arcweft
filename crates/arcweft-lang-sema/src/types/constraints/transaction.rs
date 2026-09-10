@@ -605,6 +605,62 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         }
     }
 
+    /// Adds fixed row evidence to the same path-local effect environment used
+    /// by function-type relations. Both directions are needed: a known row
+    /// cannot grow to satisfy another use or collapse to the empty solution.
+    pub(crate) fn constrain_effect_equality<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        left: &crate::effect_row::EffectRow,
+        right: &crate::effect_row::EffectRow,
+    ) {
+        if self.first_failure.is_some() || self.closed {
+            return;
+        }
+        if let Err(error) = context
+            .validate_effect_row(left)
+            .and_then(|()| context.validate_effect_row(right))
+        {
+            self.first_failure = Some(error.into());
+            return;
+        }
+        let frontier = core::mem::take(&mut self.frontier);
+        let mut advanced = Vec::with_capacity(frontier.len());
+        let mut rejection = None;
+        for mut path in frontier {
+            let constrained = (|| {
+                context.enter_node()?;
+                path.effects
+                    .constrain_subset(left, right)
+                    .map_err(super::map_effect_environment_error)?;
+                context.enter_node()?;
+                path.effects
+                    .constrain_subset(right, left)
+                    .map_err(super::map_effect_environment_error)
+            })();
+            match constrained {
+                Ok(()) => advanced.push(path),
+                Err(TypeConstraintError::Rejected(error)) => {
+                    rejection.get_or_insert(error);
+                }
+                Err(error) => {
+                    self.first_failure = Some(error.into());
+                    return;
+                }
+            }
+        }
+        if advanced.is_empty() {
+            self.first_failure = Some(
+                TypeConstraintError::Rejected(
+                    rejection.unwrap_or(TypeConstraintRejection::Mismatch),
+                )
+                .into(),
+            );
+        } else {
+            self.frontier = advanced;
+        }
+    }
+
     pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,

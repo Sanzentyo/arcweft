@@ -75,6 +75,22 @@ flow main() -> i64 {
 );
 
 callable_case!(
+    curried_terminal_effect,
+    r#"
+fn staged(first: i64)(second: i64)(third: i64) -> i64 effects { fs.read } {
+    first + second + third
+}
+flow main() -> i64 {
+    let first = staged(1i64)
+    let second = first(2i64)
+    return second(39i64)
+}
+"#,
+    RuntimeValue::i64(42),
+    "42"
+);
+
+callable_case!(
     callback_with_inferred_effects,
     r#"
 fn increment(value: i64) -> i64 { value + 1i64 }

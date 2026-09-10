@@ -39,20 +39,14 @@ pub(super) fn physical_evaluation_kind(
 pub(in super::super) fn source_callable_schema_type(
     schema: &crate::callable::CallableSignatureSchema,
 ) -> Option<TypeKind> {
-    let mut result = schema.value_type()?.clone();
-    for group in schema.groups().iter().rev() {
-        let parameters = group
-            .parameters()
-            .iter()
-            .map(|parameter| parameter.declared_type().cloned())
-            .collect::<Option<Vec<_>>>()?;
-        result = TypeKind::function_with_effects(
-            parameters,
-            result,
-            schema.effects().fixed_row()?.clone(),
-        );
-    }
-    Some(result)
+    schema
+        .project_function_type_from_group(
+            CallableGroupIndex::ZERO,
+            schema.effects().fixed_row()?,
+            || schema.value_type().cloned().ok_or(()),
+            |_, parameter| parameter.declared_type().cloned().ok_or(()),
+        )
+        .ok()
 }
 
 impl Analyzer<'_, '_, '_> {

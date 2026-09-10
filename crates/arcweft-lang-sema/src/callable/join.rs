@@ -637,7 +637,7 @@ pub fn select_project_function_runtime(
         ResolvedCallableState::Base => {
             let ty = selected
                 .base()
-                .callable_type_with_invocation_effects(join.effects())
+                .callable_type_with_terminal_effects(checked.exposed_row())
                 .map_err(CheckedProjectFunctionRuntimeSelectionError::from)?;
             (
                 CheckedProjectFunctionRuntimeInput::Direct,

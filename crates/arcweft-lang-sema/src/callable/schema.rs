@@ -2617,70 +2617,6 @@ impl CallableSignatureSchema {
                 .all(|(left, right)| left.semantic_eq(right))
     }
 
-    /// Builds the strict positional schema for an evaluated function value.
-    pub(crate) fn for_function_value(
-        ty: &TypeKind,
-        limits: &CallableLimits,
-    ) -> Result<Self, CallableSchemaError> {
-        let TypeKind::Function {
-            binder,
-            params,
-            return_type,
-            effects,
-        } = ty
-        else {
-            return Err(CallableSchemaError::FamilyInvariant {
-                family: super::CallableFamily::FunctionValue,
-                code: super::CallableFamilyInvariantCode::InvalidParameterType,
-            });
-        };
-        let parameters = params
-            .iter()
-            .enumerate()
-            .map(|(index, parameter)| {
-                CallableParameter::try_new(
-                    CallableParameterIndex::try_from_usize(index).map_err(|_| {
-                        CallableSchemaError::ParameterLimit {
-                            actual: params.len(),
-                            limit: limits.max_parameters_per_callable(),
-                        }
-                    })?,
-                    Some(
-                        CallableName::try_new(format!("arg{}", index + 1)).map_err(|_| {
-                            CallableSchemaError::FamilyInvariant {
-                                family: super::CallableFamily::FunctionValue,
-                                code: super::CallableFamilyInvariantCode::InvalidParameterType,
-                            }
-                        })?,
-                    ),
-                    CallableParameterAdmission::checked(parameter.clone()),
-                    CallableParameterPassing::PositionalOnly,
-                    CallableParameterPresence::Required,
-                    None,
-                    None,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let group = CallableParameterGroup::try_new(
-            CallableGroupIndex::ZERO,
-            CallableGroupKind::Initial,
-            parameters,
-            limits,
-        )?;
-        Self::try_new(
-            vec![group],
-            return_type.as_ref().clone(),
-            CallableEffectSchema::fixed(effects.clone()),
-            CallableArgumentPolicy::new(
-                UnknownNamedArgumentPolicy::Reject,
-                SpreadArgumentPolicy::FixedLiteralOnly,
-            ),
-            CallableValidator::Ordinary,
-            CallableGenericParameterIssuer::function_scheme(*binder),
-            limits,
-        )
-    }
-
     /// Builds a constructor from one accepted declaration-template case and
     /// its authenticated formal parameters. Tuple and record payloads keep
     /// their distinct positional and named argument contracts; the application
@@ -3354,6 +3290,9 @@ impl CallableArgumentPolicy {
 }
 
 mod families;
+mod function_type;
+
+pub(crate) use function_type::CallableFunctionTypeProjectionError;
 
 pub(super) use families::{dialogue_schema, presentation_schema};
 pub(crate) use families::{fx_callable_schema, presentation_content_schema};

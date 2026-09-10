@@ -238,6 +238,12 @@ impl member の関数的な宣言に属する構文であり、`flow` parameter 
 1 group に限る。
 `flow main(a)(b)` のような curried flow parameter は構文診断になる。
 
+宣言本体は最後の call group を適用した時に実行する。途中の group は
+評価済みの引数を保持するため、その group の関数型に付く呼び出しの effect row は
+空であり、宣言本体の effect row は最後の group に付く。各 group に渡す引数式の
+評価による effect は、その引数式を実行した時に発生する。引数や戻り値に含まれる
+別の関数型の effect row は、それぞれの関数を apply する境界に属する。
+
 ```arcw
 fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
     (a, b, c)

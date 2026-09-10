@@ -3144,13 +3144,48 @@ impl RuntimePlanBuilder {
         if let super::super::RuntimeProjectCallOutcome::Continue { result_abi, .. } = outcome {
             if let super::super::RuntimeProjectCallInput::Continuation { expected_abi, .. } = input
             {
-                if result_abi.lineage() != expected_abi.lineage()
-                    || result_abi.function_type() != expected_abi.function_type()
+                let input_type = self.resolve_seed_type(
+                    "continuation input function type",
+                    expected_abi.function_type(),
+                )?;
+                let RuntimePlanTypeProjection::Function { parameters, result } =
+                    self.projection(input_type)?
+                else {
+                    return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                        context: "continuation input function type",
+                    });
+                };
+                let result_type = self.resolve_seed_type(
+                    "continuation result function type",
+                    result_abi.function_type(),
+                )?;
+                // Each checked prefix issues its own lineage and retains one
+                // fewer group. Compare the applied function's result, not the
+                // identities of two different continuation values.
+                if *result != result_type
+                    || !parameters.iter().copied().eq(ordinary
+                        .iter()
+                        .map(super::super::RuntimeProjectCallOrdinaryMaterialization::abi_ty))
                 {
                     return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
-                        context: "continuation result identity",
+                        context: "continuation application signature",
                     });
                 }
+            }
+            let appended = result_abi.prefix_types().get(prefix_types.len()..).ok_or(
+                RuntimePlanBuildError::InvalidProjectCallAbi {
+                    context: "continuation result prefix",
+                },
+            )?;
+            let bindings = ordinary.iter().map(|row| {
+                self.types
+                    .get(row.binding_ty())
+                    .map(|declaration| declaration.semantic_identity())
+            });
+            if !appended.iter().copied().map(Some).eq(bindings) {
+                return Err(RuntimePlanBuildError::InvalidProjectCallAbi {
+                    context: "continuation result binding types",
+                });
             }
         }
         if let super::super::RuntimeProjectCallOutcome::Invoke { function_site } = outcome {

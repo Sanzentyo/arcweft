@@ -627,6 +627,15 @@ where
             .constrain(&mut self.context, pattern, actual, acceptance);
     }
 
+    pub(crate) fn constrain_effect_equality(
+        &mut self,
+        left: &crate::effect_row::EffectRow,
+        right: &crate::effect_row::EffectRow,
+    ) {
+        self.lower
+            .constrain_effect_equality(&mut self.context, left, right);
+    }
+
     /// Run one prepared source through every correlated frontier row.
     pub(crate) fn probe_prepared_source(
         &mut self,

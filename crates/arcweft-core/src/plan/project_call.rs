@@ -231,6 +231,13 @@ impl RuntimeProjectCallOrdinaryMaterialization {
         }
     }
 
+    pub(crate) const fn abi_ty(&self) -> RuntimePlanTypeId {
+        match self {
+            Self::Fixed(row) => row.abi_ty(),
+            Self::Rest(row) => row.abi_ty(),
+        }
+    }
+
     #[must_use]
     pub fn source_indices(&self) -> Box<[u32]> {
         match self {

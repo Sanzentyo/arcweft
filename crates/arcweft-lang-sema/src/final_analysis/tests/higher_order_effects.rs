@@ -46,6 +46,44 @@ fn application_rows(analysis: &FinalSemanticAnalysis, name: &str) -> Vec<Vec<Str
 }
 
 #[test]
+fn effectful_terminal_prefix_cannot_be_passed_to_a_pure_callback() {
+    let fixture = fixture(
+        r#"
+fn staged(first: i64)(second: i64) -> i64 effects { fs.read } { first + second }
+fn invoke(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }
+fn caller() {
+    let prefix = staged(1i64)
+    invoke(prefix, 41i64);
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("effect mismatch remains inspectable by tooling");
+    let rejected = analysis
+        .calls()
+        .filter(|(_, call)| {
+            matches!(
+                call.outcome(),
+                crate::callable::CallAnalysisOutcome::Rejected(_)
+            )
+        })
+        .collect::<Vec<_>>();
+    let [(owner, _)] = rejected.as_slice() else {
+        panic!("only the pure callback invocation is rejected");
+    };
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
+    let prefixes = project_applications(&analysis, "staged");
+    let [(_, prefix)] = prefixes.as_slice() else {
+        panic!("the prefix itself is valid");
+    };
+    assert!(prefix.core().effects().concrete().is_empty());
+    let Some(TypeKind::Function { effects, .. }) = prefix.result().value_type() else {
+        panic!("retained terminal group");
+    };
+    assert_eq!(effects.concrete().to_labels(), ["fs.read"]);
+}
+
+#[test]
 fn explicit_callback_rows_combine_only_when_invoked() {
     let fixture = fixture(
         r#"
@@ -314,4 +352,64 @@ flow main() -> i64 {
         application_rows(&analysis, "apply"),
         [Vec::<String>::new(), vec!["fs.read".to_owned()]]
     );
+}
+
+#[test]
+fn curried_function_types_expose_effects_only_on_the_terminal_group() {
+    let fixture = fixture(
+        r#"
+fn staged(first: i64)(second: i64)(third: i64) -> i64 effects { fs.read } {
+    first + second + third
+}
+flow main() -> i64 {
+    let first = staged(1i64)
+    let second = first(2i64)
+    return second(39i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("each curried group has a checked effect boundary");
+    let applications = project_applications(&analysis, "staged");
+    assert_eq!(applications.len(), 3);
+    for (_, application) in applications {
+        let group = application.core().current_group().get();
+        assert_eq!(application.core().effects().tail(), EffectRowTail::Closed);
+        let expected_call = if group == 2 {
+            vec!["fs.read"]
+        } else {
+            Vec::new()
+        };
+        assert_eq!(
+            application.core().effects().concrete().to_labels(),
+            expected_call
+        );
+        let mut result = application
+            .result()
+            .value_type()
+            .expect("value or continuation");
+        for remaining in group + 1..3 {
+            let TypeKind::Function {
+                return_type,
+                effects,
+                ..
+            } = result
+            else {
+                panic!("remaining group {remaining} is a function type");
+            };
+            let expected = if remaining == 2 {
+                vec!["fs.read"]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(effects.tail(), EffectRowTail::Closed);
+            assert_eq!(
+                effects.concrete().to_labels(),
+                expected,
+                "remaining group {remaining}"
+            );
+            result = return_type;
+        }
+        assert_eq!(result, &TypeKind::I64);
+    }
 }

@@ -3620,6 +3620,9 @@ impl Analyzer<'_, '_, '_> {
                 owner,
             })
         })?;
+        let callable_effects = self
+            .source_callable_effects(&prepared_candidate)
+            .map_err(AnalyzerExpressionError::fatal)?;
         let constraint_set = validate_and_prepare_call_constraints(
             self.facts
                 .prepared_calls()
@@ -3635,6 +3638,11 @@ impl Analyzer<'_, '_, '_> {
             self.catalogs.world().environment().compile_time_scalars(),
             consumer,
             &enclosing,
+            matches!(
+                callable_effects.tail(),
+                crate::effect_row::EffectRowTail::Closed
+            )
+            .then_some(callable_effects.concrete()),
         )
         .map_err(|failure| terminal_call_constraint_failure(owner, failure))?;
         let transaction = match run_prepared_candidate(
@@ -4085,7 +4093,7 @@ pub(super) fn instantiated_callee_type(
     effects: &EffectRow,
 ) -> Option<TypeKind> {
     selected
-        .constraint_callable_type_with_invocation_effects(effects)
+        .constraint_callable_type_with_terminal_effects(effects)
         .ok()
 }
 

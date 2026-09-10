@@ -2251,11 +2251,17 @@ pub(crate) struct PreparedCallConstraintSet {
         Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
     >,
     base_constraints: Box<[PreparedCallTypeConstraint]>,
+    definition_effects: Option<PreparedCallableEffectConstraint>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     result_constraint: Option<PreparedCallTypeConstraint>,
     result_schema: CallableResultSchema,
     projection_requests: Box<[PreparedCallProjectionRequest]>,
     initialization: PreparedConstraintInitialization,
+}
+
+struct PreparedCallableEffectConstraint {
+    projected: crate::effect_row::EffectRow,
+    known: crate::effect_row::EffectRow,
 }
 
 /// One fully solved call transaction before the enclosing fact projection is
@@ -3233,6 +3239,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     consumer: AnalyzerCallConsumerAdmission,
     enclosing: &EnclosingGenericParameterScope,
+    known_callable_effects: Option<&crate::effects::EffectSet>,
 ) -> CallAnalysisResult<PreparedCallConstraintSet> {
     let group = candidate.call_group();
     if inputs.candidate() != Some(candidate.id())
@@ -3249,6 +3256,20 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
         })?;
     let future_parameters = initialization.future_parameters().to_vec();
+    let definition_effects = known_callable_effects
+        .filter(|_| candidate.schema().effects().fixed_row().is_none())
+        .map(|known| {
+            candidate
+                .constraint_callable_effects()
+                .map(|projected| PreparedCallableEffectConstraint {
+                    projected,
+                    known: crate::effect_row::EffectRow::closed(known.clone()),
+                })
+                .map_err(|error| {
+                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+                })
+        })
+        .transpose()?;
     if !consumer.validates_candidate(&candidate) {
         return Err(CallAnalysisFailure::Invariant(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
@@ -4002,6 +4023,7 @@ pub(crate) fn validate_and_prepare_call_constraints(
         effect_projections,
         compile_time_scalar_admissions,
         base_constraints: base_constraints.into_boxed_slice(),
+        definition_effects,
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         result_constraint,
         result_schema,
@@ -4307,6 +4329,7 @@ pub(crate) fn run_prepared_candidate(
         effect_projections,
         compile_time_scalar_admissions,
         base_constraints,
+        definition_effects,
         receiver_constraints,
         result_constraint,
         result_schema,
@@ -4355,6 +4378,9 @@ pub(crate) fn run_prepared_candidate(
                 TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(error))
             }
         })?;
+    if let Some(effects) = definition_effects {
+        driver.constrain_effect_equality(&effects.projected, &effects.known);
+    }
     for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
         let _ = constraint.source;
         if constraint.pattern != constraint.actual {

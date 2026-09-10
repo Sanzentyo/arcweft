@@ -1999,6 +1999,14 @@ pub enum AwbcProjectCallOrdinaryMaterialization {
     },
 }
 
+impl AwbcProjectCallOrdinaryMaterialization {
+    pub(crate) const fn abi_ty(&self) -> AwbcTypeId {
+        match self {
+            Self::Fixed { abi_ty, .. } | Self::Rest { abi_ty, .. } => *abi_ty,
+        }
+    }
+}
+
 /// The attached logical parameter materialization row.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]

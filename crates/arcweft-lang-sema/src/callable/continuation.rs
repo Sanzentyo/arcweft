@@ -196,6 +196,17 @@ impl From<crate::types::GenericScopeError> for CallConstraintInvariant {
     }
 }
 
+impl From<super::schema::CallableFunctionTypeProjectionError<Self>> for CallConstraintInvariant {
+    fn from(error: super::schema::CallableFunctionTypeProjectionError<Self>) -> Self {
+        match error {
+            super::schema::CallableFunctionTypeProjectionError::MissingGroup { .. } => {
+                Self::MalformedSchemaInventory
+            }
+            super::schema::CallableFunctionTypeProjectionError::Projection(error) => error,
+        }
+    }
+}
+
 /// Opaque public carrier for a graph invariant.  The exact lower invariant
 /// remains owned by the callable graph and cannot be pattern matched through
 /// the final-analysis error surface; Debug retains typed provenance.
