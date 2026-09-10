@@ -1,4 +1,7 @@
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
+
+#[cfg(test)]
+mod function_application_tests;
 use crate::pattern::{
     RuntimeBuiltinVariantCaseIdentity, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
     RuntimePattern, match_runtime_pattern,
@@ -2730,18 +2733,7 @@ impl<'a> PureEvaluator<'a> {
         if args.len() < remaining {
             return Ok(RuntimeValue::Function(function.try_bind_prefix(args)?));
         }
-        let (call_args, remaining_args) = args.split_at(remaining);
-        let value = self.call_runtime_function(function, call_args)?;
-        if remaining_args.is_empty() {
-            return Ok(value);
-        }
-        match value {
-            RuntimeValue::Function(next) => self.apply_runtime_function(&next, remaining_args),
-            _ => Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: remaining,
-                found: args.len(),
-            }),
-        }
+        self.call_runtime_function(function, args)
     }
 
     fn call_runtime_function(

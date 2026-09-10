@@ -244,6 +244,9 @@ impl member の関数的な宣言に属する構文であり、`flow` parameter 
 評価による effect は、その引数式を実行した時に発生する。引数や戻り値に含まれる
 別の関数型の effect row は、それぞれの関数を apply する境界に属する。
 
+一回の apply に現在の引数列より多くの値を渡すことはできない。余剰引数を
+戻り値の関数へ自動で渡さず、次の関数は別の call group で明示的に apply する。
+
 ```arcw
 fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
     (a, b, c)

@@ -7,6 +7,34 @@ mod execution;
 use execution::{assert_awbc_return, assert_native_return};
 
 #[test]
+fn function_value_calls_do_not_merge_argument_groups() {
+    const SOURCE: &str = r#"
+entry cli @entry.main { goto @flow.main }
+fn increment(value: i64) -> i64 { value + 1i64 }
+flow main() -> i64 {
+    let factory = |offset: i64| { |value: i64| increment(value) + offset }
+    let handler = factory(1i64)
+    return handler(40i64)
+}
+"#;
+    compile_source(SOURCE).expect("separate applications of the two function groups compile");
+    let merged = SOURCE.replace(
+        "let handler = factory(1i64)\n    return handler(40i64)",
+        "return factory(1i64, 40i64)",
+    );
+    let error = compile_source(&merged).expect_err("surplus arguments cannot enter the next group");
+    assert!(!error.project().diagnostics().is_empty(), "{error:?}");
+    assert!(
+        error
+            .project()
+            .diagnostics()
+            .iter()
+            .all(|diagnostic| { diagnostic.syntax_diagnostic().is_none() }),
+        "the valid syntax is rejected by semantic admission: {error:?}"
+    );
+}
+
+#[test]
 fn ordinary_closure_parameters_reject_trailing_input() {
     for pattern in [
         "_ trailing",

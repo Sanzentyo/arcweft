@@ -278,7 +278,6 @@ pub(crate) enum FunctionReturnContinuation {
     },
     Bind {
         result: RuntimePattern,
-        remaining_args: Vec<RuntimeValue>,
     },
 }
 

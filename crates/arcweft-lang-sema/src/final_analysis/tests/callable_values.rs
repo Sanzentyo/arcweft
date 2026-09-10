@@ -59,6 +59,36 @@ fn direct_closure_call_preserves_its_expression_role() {
 }
 
 #[test]
+fn surplus_function_arguments_leave_no_selected_application() {
+    let fixture = fixture(
+        r#"
+fn increment(value: i64) -> i64 { value + 1i64 }
+flow main() -> i64 {
+    let factory = |offset: i64| { |value: i64| increment(value) + offset }
+    return factory(1i64, 40i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("an invalid group retains its tooling evidence");
+    let rejected = analysis
+        .calls()
+        .filter_map(|(owner, call)| match call.outcome() {
+            crate::callable::CallAnalysisOutcome::Rejected(evidence) => Some((owner, evidence)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(owner, evidence)] = rejected.as_slice() else {
+        panic!("one rejected function-value application");
+    };
+    assert_eq!(evidence.candidates().len(), 1);
+    let schema = evidence.candidates()[0].schema();
+    assert_eq!(schema.groups().len(), 1);
+    assert_eq!(schema.groups()[0].parameters().len(), 1);
+    assert_unselected_call_has_no_execution(&analysis, *owner);
+}
+
+#[test]
 fn block_argument_mutation_retains_the_assignment_role() {
     let fixture = fixture(
         r#"

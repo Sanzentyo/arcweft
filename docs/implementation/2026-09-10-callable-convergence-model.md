@@ -457,3 +457,38 @@ while the input checks its own exact expected lineage. They do not authorize
 reusing a caller's result pattern or resume site inside a first-class function
 value. The coupled source protocol, implicit effect-row algebra, scheme
 specialization and reusable activation questions above remain open.
+
+## Application arity adjudication
+
+The [application-group follow-up](2026-09-10-function-application-arity.md)
+starts from clean `main` at `73f8283ceb6dc5bb1b92f557de21e6ccfbe81a08`.
+One Apply consumes the current function arrow's arguments; excess values do
+not automatically apply the returned function. This agrees with the existing
+typed runtime-plan constructor and AWBC behavior and preserves the maintained
+call-group distinction. The follow-up removes the contradictory native
+expression/pure/flow paths and their post-return argument payload. Prefix
+binding and separate later applications retain their existing semantics.
+This rule is selected for the final callable contract; the whole coupled
+contract remains proposed.
+
+The source probe also pinpoints remaining decision 5. The analyzer's
+`publish_recovery_call` publishes rejected/ambiguous facts with an empty
+diagnostic vector. `FinalSemanticAnalysis::call_diagnostics` merely borrows
+those vectors, and signature-help projection consumes the same empty rows.
+For the excess-argument source, the compiler therefore rejects later with
+`compiler.runtime_reachability.missing_selected_call_authority` rather than
+reporting a source-backed callable diagnostic during semantic admission.
+The direct sema test requires the rejected one-parameter candidate and absent
+execution plan; no diagnostic-stage claim is inferred from compilation failure.
+The remaining repair must publish bounded, source-backed diagnostics from the
+one final call outcome and connect compiler/tooling consumers, without making
+an unselected call executable or copying diagnostics into a peer call catalog.
+
+The full [call-application authority amendment](../reviews/designs/lang-01.5.1.1.2.1.1.1.1.1.1.1.2.1-final-semantic-owner-construction-and-seal-correction/CALL_APPLICATION_AUTHORITY_AMENDMENT.md)
+is now read: 3,417 lines / 171,746 bytes, SHA-256
+`bc62047619793e971402963e358562b1c325c118bc99a37ddf4da8e11312d88b`.
+Its candidate/source/materialization error precedence, affine publication and
+acyclic identity obligations remain inputs to the coupled model. The older
+rigid-only constant rules and static source-spelling/privacy gates do not
+override the later generic-scope contract or current repository validation
+policy. Reading the complete amendment is not implementation acceptance.

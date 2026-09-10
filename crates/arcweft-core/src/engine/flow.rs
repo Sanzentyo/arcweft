@@ -1006,7 +1006,6 @@ impl Engine {
                     resume,
                     FunctionReturnContinuation::Bind {
                         result: result.clone(),
-                        remaining_args: Vec::new(),
                     },
                 );
                 if let Err(error) = self.start_function_site_call(

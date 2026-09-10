@@ -1,5 +1,8 @@
 //! Same-fiber invocation and return handling for structured function values.
 
+#[cfg(test)]
+mod tests;
+
 use std::sync::Arc;
 
 use crate::engine::{
@@ -45,17 +48,19 @@ impl Engine {
             self.complete_function_call_result(&result, resume, value, output);
             return Ok(());
         }
-        let (call_args, remaining_args) = args.split_at(remaining);
-        function.validate_bind_prefix(call_args)?;
+        if args.len() != remaining {
+            return Err(RuntimeEvalError::FunctionArgumentCount {
+                expected: remaining,
+                found: args.len(),
+            });
+        }
+        function.validate_bind_prefix(&args)?;
         let mut parameter_values = closure.bound_args().to_vec();
-        parameter_values.extend_from_slice(call_args);
+        parameter_values.extend(args);
         let frame = FunctionCallFrame::new(
             closure.site(),
             resume,
-            FunctionReturnContinuation::Bind {
-                result,
-                remaining_args: remaining_args.to_vec(),
-            },
+            FunctionReturnContinuation::Bind { result },
         );
         self.start_function_site_call(
             closure.capture_values().to_vec(),
@@ -217,22 +222,8 @@ impl Engine {
                     pure_backend,
                 );
             }
-            FunctionReturnContinuation::Bind {
-                result,
-                remaining_args,
-            } => {
-                if remaining_args.is_empty() {
-                    self.complete_function_call_result(&result, frame.resume, value, output);
-                } else if let Err(error) = self.start_function_value_call(
-                    value,
-                    remaining_args,
-                    result,
-                    frame.resume,
-                    output,
-                    pure_backend,
-                ) {
-                    self.fail_eval(error, output);
-                }
+            FunctionReturnContinuation::Bind { result } => {
+                self.complete_function_call_result(&result, frame.resume, value, output);
             }
         }
     }

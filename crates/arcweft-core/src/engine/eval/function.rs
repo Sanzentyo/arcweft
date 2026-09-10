@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(test)]
+mod tests;
+
 use crate::plan::{RuntimeFunctionInputSource, RuntimeFunctionSiteBody};
 use crate::runtime_id::RuntimeFunctionSiteId;
 use crate::value::{
@@ -119,20 +122,7 @@ impl Engine {
             return Ok(RuntimeValue::Function(function.try_bind_prefix(args)?));
         }
 
-        let (call_args, remaining_args) = args.split_at(remaining);
-        let value = self.call_runtime_function(function, call_args, pure_backend)?;
-        if remaining_args.is_empty() {
-            return Ok(value);
-        }
-        match value {
-            RuntimeValue::Function(next) => {
-                self.apply_runtime_function(&next, remaining_args, pure_backend)
-            }
-            _ => Err(RuntimeEvalError::FunctionArgumentCount {
-                expected: remaining,
-                found: args.len(),
-            }),
-        }
+        self.call_runtime_function(function, args, pure_backend)
     }
 
     fn call_runtime_function(
