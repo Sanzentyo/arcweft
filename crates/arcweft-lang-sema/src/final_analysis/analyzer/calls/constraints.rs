@@ -1440,12 +1440,14 @@ trait AnalyzerCallConstraintOperations {
     type MaterializationCheckpoint;
     type PreparedSealedBranchValue;
 
-    fn probe_source<'h>(
+    fn probe_source(
         &mut self,
-        source: AnalyzerCallConstraintSource,
-        hint: ExpectedHint<'h, AnalyzerCallConstraintDomain>,
         checkpoint: &mut Self::ProbeCheckpoint,
-        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+        probe: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            AnalyzerCallConstraintDomain,
+        >,
     ) -> Result<
         SourceProbeOutcome<AnalyzerCallConstraintDomain>,
         crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
@@ -1511,18 +1513,22 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
     type MaterializationCheckpoint = AnalyzerMaterializationCheckpoint;
     type PreparedSealedBranchValue = AnalyzerCallPreparedSealedBranch;
 
-    fn probe_source<'h>(
+    fn probe_source(
         &mut self,
-        source: AnalyzerCallConstraintSource,
-        hint: ExpectedHint<'h, AnalyzerCallConstraintDomain>,
         checkpoint: &mut Self::ProbeCheckpoint,
-        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+        probe: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            AnalyzerCallConstraintDomain,
+        >,
     ) -> Result<
         SourceProbeOutcome<AnalyzerCallConstraintDomain>,
         crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
     > {
+        let source = probe.source();
+        probe.with_hint(|hint, probe| {
         self.probe_checkpoint_check(source, checkpoint)?;
-        self.admit_physical_source(source, SourcePhase::Probe, work)?;
+        self.admit_physical_source(source, SourcePhase::Probe, probe.work())?;
         self.record_physical_source(source, Self::physical_expected(source, &hint))
             .map_err(|error| {
                 crate::callable::SourceCallbackFailure::fatal(SourceError::new(
@@ -1690,6 +1696,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 ))
             }
         }
+        })
     }
 
     fn open_probe_checkpoint(
@@ -2013,17 +2020,19 @@ impl<O: AnalyzerCallConstraintOperations>
     type MaterializationCheckpoint = O::MaterializationCheckpoint;
     type PreparedSealedBranchValue = O::PreparedSealedBranchValue;
 
-    fn probe_source<'h>(
+    fn probe_source(
         &mut self,
-        source: AnalyzerCallConstraintSource,
-        hint: ExpectedHint<'h, AnalyzerCallConstraintDomain>,
         checkpoint: &mut Self::ProbeCheckpoint,
-        work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
+        probe: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            AnalyzerCallConstraintDomain,
+        >,
     ) -> Result<
         SourceProbeOutcome<AnalyzerCallConstraintDomain>,
         crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
     > {
-        self.operations.probe_source(source, hint, checkpoint, work)
+        self.operations.probe_source(checkpoint, probe)
     }
 
     fn open_probe_checkpoint(

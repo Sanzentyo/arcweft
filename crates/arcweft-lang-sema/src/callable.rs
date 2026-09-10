@@ -89,9 +89,9 @@ pub use checked_catalog::{
 };
 pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
 pub(crate) use constraints::{
-    CandidateConstraintDriverStartFailure, CandidateConstraintWorkSession,
-    PreparedSourceConstraintGroup, SourceCallbackFailure, SourceCheckpointFailure,
-    TypeConstraintClient,
+    CandidateConstraintDriverStartFailure, CandidateConstraintSourceContext,
+    CandidateConstraintWorkSession, PreparedSourceConstraintGroup, SourceCallbackFailure,
+    SourceCheckpointFailure, TypeConstraintClient,
 };
 pub(crate) use continuation::{
     CallConstraintInvariant, EnclosingGenericParameterScope, PreparedCallContinuationAuthority,

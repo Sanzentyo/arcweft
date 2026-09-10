@@ -9,7 +9,7 @@ pub(crate) use super::limits::CandidateConstraintWorkSession;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, MaterializationCallbackBinding, MaterializationTicket, ProbeStart,
-    ProbeSubmission, TypeConstraintRun, TypeConstraintTransaction,
+    ProbeSubmission, ProbeTicket, TypeConstraintRun, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, ConstraintDomain, ExpectedHint,
@@ -29,12 +29,10 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     type MaterializationCheckpoint;
     type PreparedSealedBranchValue;
 
-    fn probe_source<'h>(
+    fn probe_source(
         &mut self,
-        source: D::Source,
-        hint: ExpectedHint<'h, D>,
         checkpoint: &mut Self::ProbeCheckpoint,
-        work: &mut CandidateConstraintWorkSession<'_>,
+        source: &mut CandidateConstraintSourceContext<'_, '_, D>,
     ) -> Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>>;
 
     fn open_probe_checkpoint(
@@ -75,6 +73,33 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
     fn finish(self) -> Result<(), SourceCheckpointFailure<D>>
     where
         Self: Sized;
+}
+
+/// A probe borrows both its exact lower ticket and the running component's
+/// context. The driver alone constructs this capability; a client cannot pair
+/// another source's hint with a fresh or unrelated accounting context.
+pub(crate) struct CandidateConstraintSourceContext<'probe, 'control, D: ConstraintDomain> {
+    ticket: &'probe ProbeTicket<D>,
+    context:
+        &'probe mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
+}
+
+impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'probe, 'control, D> {
+    pub(crate) fn source(&self) -> D::Source {
+        self.ticket.source()
+    }
+
+    pub(crate) fn work(&mut self) -> &mut CandidateConstraintWorkSession<'control> {
+        self.context.accounting_mut()
+    }
+
+    pub(crate) fn with_hint<R>(
+        &mut self,
+        operation: impl for<'hint> FnOnce(ExpectedHint<'hint, D>, &mut Self) -> R,
+    ) -> R {
+        let ticket = self.ticket;
+        ticket.with_hint(|hint| operation(hint, self))
+    }
 }
 
 /// Callback failures are deliberately separate from ordinary semantic
@@ -665,11 +690,13 @@ where
                     break;
                 }
             };
-            let attempt = self.with_callback(|client, work| {
-                lower_ticket.with_hint(|hint| {
-                    client.probe_source(source, hint, &mut checkpoint.checkpoint, work)
-                })
-            });
+            let attempt = self.client.probe_source(
+                &mut checkpoint.checkpoint,
+                &mut CandidateConstraintSourceContext {
+                    ticket: &lower_ticket,
+                    context: &mut self.context,
+                },
+            );
             let submission = match self.close_probe_callback(callback_ticket, checkpoint, attempt) {
                 Ok(SourceProbeOutcome::Accepted(result)) => ProbeSubmission::Accepted(result),
                 Ok(SourceProbeOutcome::Rejected(cause)) => ProbeSubmission::Rejected(cause),
@@ -800,18 +827,16 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
     type MaterializationCheckpoint = ();
     type PreparedSealedBranchValue = ();
 
-    fn probe_source<'h>(
+    fn probe_source(
         &mut self,
-        source: (),
-        _hint: ExpectedHint<'h, crate::types::NoConstraintClient>,
         _checkpoint: &mut Self::ProbeCheckpoint,
-        _work: &mut CandidateConstraintWorkSession<'_>,
+        source: &mut CandidateConstraintSourceContext<'_, '_, crate::types::NoConstraintClient>,
     ) -> Result<
         SourceProbeOutcome<crate::types::NoConstraintClient>,
         SourceCallbackFailure<crate::types::NoConstraintClient>,
     > {
         Err(SourceCallbackFailure::fatal(SourceError::new(
-            source,
+            source.source(),
             crate::types::constraints::SourcePhase::Probe,
             (),
         )))
@@ -1115,13 +1140,12 @@ pub(crate) mod tests {
         type MaterializationCheckpoint = u8;
         type PreparedSealedBranchValue = u8;
 
-        fn probe_source<'h>(
+        fn probe_source(
             &mut self,
-            source: u8,
-            _hint: ExpectedHint<'h, Domain>,
             _checkpoint: &mut Self::ProbeCheckpoint,
-            _work: &mut CandidateConstraintWorkSession<'_>,
+            probe: &mut CandidateConstraintSourceContext<'_, '_, Domain>,
         ) -> Result<SourceProbeOutcome<Domain>, SourceCallbackFailure<Domain>> {
+            let source = probe.source();
             self.counts.probe_call.fetch_add(1, Ordering::Relaxed);
             if matches!(
                 self.mode,

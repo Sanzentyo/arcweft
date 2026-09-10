@@ -1,0 +1,4 @@
+"path","owner","bytes","physical_lines","code_lines","classification","is_rust","embedded_test_lines","base_commit","base_bytes","base_physical_lines","physical_growth"
+"crates/arcweft-lang-sema/src/callable/constraints.rs","arcweft-lang-sema","88391","2218","2068","production","true","1316","b1d89f05e4d4574102299e5b76ecd87eb33f4ca2","87421","2194","24"
+"crates/arcweft-lang-sema/src/callable.rs","arcweft-lang-sema","13833","233","225","production","true","0","b1d89f05e4d4574102299e5b76ecd87eb33f4ca2","13799","233","0"
+"crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs","arcweft-lang-sema","202309","4965","4651","production","true","480","b1d89f05e4d4574102299e5b76ecd87eb33f4ca2","202310","4956","9"
