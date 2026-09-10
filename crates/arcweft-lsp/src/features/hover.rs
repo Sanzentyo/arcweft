@@ -635,12 +635,16 @@ fn defaulted()[body: DialogueContent = defaulted()] -> DialogueContent { body }
 "#;
         let fixture = accepted_effect_hover_fixture("attached-content-hover", authored);
         let source = fixture.source.as_str();
-        for (spelling, expected) in [
-            ("[body: InlineContent]", "required"),
-            ("[body?: RichContent]", "optional"),
-            ("[body: DialogueContent = …]", "defaulted"),
+        for (authored, spelling, expected) in [
+            ("[body: InlineContent]", "[body: InlineContent]", "required"),
+            ("[body?: RichContent]", "[body?: RichContent]", "optional"),
+            (
+                "[body: DialogueContent = defaulted()]",
+                "[body: DialogueContent = …]",
+                "defaulted",
+            ),
         ] {
-            let offset = source.find(spelling).expect("attached declaration span");
+            let offset = source.find(authored).expect("attached declaration span");
             let position = fixture
                 .document
                 .line_index()
