@@ -370,36 +370,6 @@ struct ProjectionRequest<D: ConstraintDomain> {
     closure: TypeConstraintProjectionClosure,
 }
 
-/// A completed run owns the accounting reservation until it is consumed (or
-/// dropped).  There is no caller-side report merge path.
-pub(crate) struct TypeConstraintRun<'c, A: TypeConstraintAccounting, D: ConstraintDomain> {
-    outcome: Option<Result<SolvedCandidate<D>, TypeConstraintFailure<D>>>,
-    context: TypeConstraintContext<'c, A, D>,
-}
-
-impl<'c, A, D> TypeConstraintRun<'c, A, D>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    pub(crate) fn complete(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
-        self.context.commit_accounting();
-        self.outcome
-            .take()
-            .expect("type constraint outcome is completed exactly once")
-    }
-}
-
-impl<A, D> Drop for TypeConstraintRun<'_, A, D>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    fn drop(&mut self) {
-        self.context.commit_accounting();
-    }
-}
-
 struct ProbeOperation<D: ConstraintDomain> {
     source: D::Source,
     source_ordinal: u32,
@@ -1168,18 +1138,14 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn finish<A>(
         mut self,
-        mut context: TypeConstraintContext<'_, A, D>,
-    ) -> TypeConstraintRun<'_, A, D>
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
-        let outcome = match self.close(&mut context) {
-            Ok(()) => self.finish_candidate(&mut context),
+        match self.close(context) {
+            Ok(()) => self.finish_candidate(context),
             Err(error) => Err(error.into()),
-        };
-        TypeConstraintRun {
-            outcome: Some(outcome),
-            context,
         }
     }
 

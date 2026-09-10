@@ -4356,10 +4356,49 @@ pub(crate) fn run_prepared_candidate(
         pass,
         attempt,
     );
-    let mut driver = session
-        .start(
+    let mut expected_projection_keys = projection_requests
+        .iter()
+        .map(|request| request.key.clone())
+        .collect::<Vec<_>>();
+    let solved = session
+        .with_driver(
             initialization,
             AnalyzerCallConstraintClient::new(operations),
+            |mut driver| {
+                if let Some(effects) = definition_effects {
+                    driver.constrain_effect_equality(&effects.projected, &effects.known);
+                }
+                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                for prepared in receiver_sources {
+                    driver.probe_source(prepared, ConstraintAcceptance::PatternAcceptsActual)?;
+                }
+                for group in source_groups {
+                    driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
+                }
+                if let Some(constraint) = result_constraint {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                for request in projection_requests {
+                    driver.request_projection(request.key, &request.value, request.closure);
+                }
+                driver.finish()
+            },
         )
         .map_err(|failure| match failure {
             crate::callable::CandidateConstraintDriverStartFailure::Prepared(error) => {
@@ -4376,45 +4415,7 @@ pub(crate) fn run_prepared_candidate(
             ) => {
                 TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(error))
             }
-        })?;
-    if let Some(effects) = definition_effects {
-        driver.constrain_effect_equality(&effects.projected, &effects.known);
-    }
-    for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
-        let _ = constraint.source;
-        if constraint.pattern != constraint.actual {
-            driver.constrain(
-                &constraint.pattern,
-                &constraint.actual,
-                constraint.acceptance,
-            );
-        }
-    }
-    for prepared in receiver_sources {
-        driver.probe_source(prepared, ConstraintAcceptance::PatternAcceptsActual)?;
-    }
-    for group in source_groups {
-        driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
-    }
-    if let Some(constraint) = result_constraint {
-        let _ = constraint.source;
-        if constraint.pattern != constraint.actual {
-            driver.constrain(
-                &constraint.pattern,
-                &constraint.actual,
-                constraint.acceptance,
-            );
-        }
-    }
-    let mut expected_projection_keys = projection_requests
-        .iter()
-        .map(|request| request.key.clone())
-        .collect::<Vec<_>>();
-    for request in projection_requests {
-        driver.request_projection(request.key, &request.value, request.closure);
-    }
-    let solved_result = driver.finish().complete();
-    let solved = solved_result?;
+        })??;
     let mut source_coordinates = BTreeSet::new();
     for source in &solved.closed_sources {
         if let Some(coordinate) = source.source().value_coordinate()

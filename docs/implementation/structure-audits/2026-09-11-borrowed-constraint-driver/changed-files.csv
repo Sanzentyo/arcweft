@@ -1,0 +1,8 @@
+"path","owner","bytes","physical_lines","code_lines","classification","is_rust","embedded_test_lines","base_physical_lines","physical_line_growth"
+"crates/arcweft-lang-sema/src/callable/constraints.rs","arcweft-lang-sema","92898","2281","2125","production","true","1367","2218","63"
+"crates/arcweft-lang-sema/src/callable/limits.rs","arcweft-lang-sema","48632","1412","1251","production","true","156","1405","7"
+"crates/arcweft-lang-sema/src/final_analysis/analyzer/calls/constraints.rs","arcweft-lang-sema","202685","4966","4652","production","true","480","4965","1"
+"crates/arcweft-lang-sema/src/types/constraints/context.rs","arcweft-lang-sema","62748","1700","1519","production","true","0","1695","5"
+"crates/arcweft-lang-sema/src/types/constraints/tests.rs","arcweft-lang-sema","144032","4104","3958","test","true","0","4120","-16"
+"crates/arcweft-lang-sema/src/types/constraints/transaction/tests.rs","arcweft-lang-sema","14960","429","402","test","true","0","345","84"
+"crates/arcweft-lang-sema/src/types/constraints/transaction.rs","arcweft-lang-sema","67289","1810","1709","production","true","0","1844","-34"

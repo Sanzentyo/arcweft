@@ -1,6 +1,9 @@
 //! Candidate completion must stop before issuing source materialization work.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use super::*;
 use crate::effect_row::{
@@ -60,8 +63,7 @@ fn fixed_effect_evidence_survives_candidate_sealing() {
         &known,
     );
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("fixed effect solution");
     assert_eq!(
         solved.solution.effect_bindings().collect::<Vec<_>>(),
@@ -111,7 +113,7 @@ fn fixed_effect_evidence_rejects_shrinking_and_expanding_function_relations() {
             ConstraintAcceptance::PatternAcceptsActual,
         );
         assert!(matches!(
-            transaction.finish(context).complete(),
+            transaction.finish(&mut context),
             Err(TypeConstraintFailure::Rejected(
                 TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch)
             ))
@@ -141,7 +143,7 @@ fn fixed_effect_evidence_abort_cannot_publish_a_partial_equality() {
     assert!(transaction.materialization.is_empty());
     assert!(transaction.materialized.is_empty());
     assert!(matches!(
-        transaction.finish(context).complete(),
+        transaction.finish(&mut context),
         Err(TypeConstraintFailure::Abort(
             TypeConstraintAbort::NodeLimit {
                 actual: 2,
@@ -223,8 +225,7 @@ fn advancing_materialization_preserves_the_queue_until_the_current_ticket_is_sub
             .is_none()
     );
     transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("both equivalent paths completed");
 }
 
@@ -254,7 +255,7 @@ fn a_completed_alternative_cannot_hide_an_outstanding_materialization() {
         .unwrap()
         .unwrap();
     assert!(matches!(
-        transaction.finish(context).complete(),
+        transaction.finish(&mut context),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
                 TypeConstraintSourceProtocolInvariant::Outcome
@@ -296,6 +297,89 @@ fn comparison_limit_prevents_materialization_ticket_issuance() {
 struct CancelBeforeComparison<'a> {
     cancellation: &'a AtomicBool,
     nodes: u64,
+}
+
+#[derive(Default)]
+struct AccountingReceipt {
+    commits: Cell<u32>,
+    branches: Cell<u64>,
+}
+
+struct ContextLifetimeAccounting<'a> {
+    cancellation: &'a AtomicBool,
+    receipt: &'a AccountingReceipt,
+    proposed: TypeConstraintWorkReport,
+    committed: bool,
+}
+
+impl TypeConstraintAccounting for ContextLifetimeAccounting<'_> {
+    fn charge_constraint(
+        &mut self,
+        delta: &TypeConstraintWorkReport,
+        _limits: TypeConstraintLimits,
+    ) -> Result<(), TypeConstraintError> {
+        self.proposed = self.proposed.checked_add(delta)?;
+        Ok(())
+    }
+
+    fn commit(&mut self) {
+        if !self.committed {
+            self.receipt.branches.set(self.proposed.branches);
+            self.receipt.commits.set(self.receipt.commits.get() + 1);
+            self.committed = true;
+        }
+    }
+}
+
+impl<'a> TypeConstraintContextIssuer<'a> for ContextLifetimeAccounting<'a> {
+    fn context_limits(&self) -> TypeConstraintLimits {
+        TypeConstraintLimits::new(4096, 2048, 1, 128)
+    }
+
+    fn context_cancellation(&self) -> &'a AtomicBool {
+        self.cancellation
+    }
+}
+
+#[test]
+fn transaction_completion_cannot_release_or_reset_the_surrounding_context() {
+    let cancellation = AtomicBool::new(false);
+    for complete in [false, true] {
+        let receipt = AccountingReceipt::default();
+        let mut context = TypeConstraintContext::with_accounting(
+            ContextLifetimeAccounting {
+                cancellation: &cancellation,
+                receipt: &receipt,
+                proposed: TypeConstraintWorkReport::default(),
+                committed: false,
+            },
+            TypeConstraintParameterScope::empty(),
+            TypeConstraintEffectScope::seal_call_scope([], []).unwrap(),
+        );
+        let mut first = TypeConstraintTransaction::<NoConstraintClient>::new();
+        first.initialize(&mut context, None).unwrap();
+        if complete {
+            first.finish(&mut context).unwrap();
+        } else {
+            drop(first);
+        }
+        assert_eq!(receipt.commits.get(), 0);
+
+        let mut second = TypeConstraintTransaction::<NoConstraintClient>::new();
+        assert!(matches!(
+            second.initialize(&mut context, None),
+            Err(super::super::TypeConstraintInitializationFailure::Abort(
+                TypeConstraintAbort::BranchLimit {
+                    actual: 2,
+                    limit: 1
+                }
+            ))
+        ));
+        assert_eq!(receipt.commits.get(), 0);
+        drop(context);
+        assert_eq!(receipt.commits.get(), 1);
+        assert_eq!(receipt.branches.get(), 1);
+    }
 }
 
 impl TypeConstraintAccounting for CancelBeforeComparison<'_> {

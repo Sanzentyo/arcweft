@@ -9,14 +9,15 @@ pub(crate) use super::limits::CandidateConstraintWorkSession;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
     ClosedMaterialization, MaterializationCallbackBinding, MaterializationTicket, ProbeStart,
-    ProbeSubmission, ProbeTicket, TypeConstraintRun, TypeConstraintTransaction,
+    ProbeSubmission, ProbeTicket, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
     ClosedMaterializationSubmission, ConstraintDomain, ExpectedHint,
     MaterializationImmediateFailure, MaterializationOutcome, MaterializedSourceRequest,
-    PreparedSourceConstraint, SourceError, SourcePhase, SourceProbeOutcome, TypeConstraintAbort,
-    TypeConstraintFailure, TypeConstraintFailureInvariant, TypeConstraintInitializationFailure,
-    TypeConstraintInvariant, TypeConstraintSourceProtocolInvariant,
+    PreparedSourceConstraint, SolvedCandidate, SourceError, SourcePhase, SourceProbeOutcome,
+    TypeConstraintAbort, TypeConstraintFailure, TypeConstraintFailureInvariant,
+    TypeConstraintInitializationFailure, TypeConstraintInvariant,
+    TypeConstraintSourceProtocolInvariant,
 };
 use crate::types::{ConstraintAcceptance, TypeKind};
 use std::sync::Arc;
@@ -189,8 +190,14 @@ impl<D: ConstraintDomain> PreparedSourceConstraintGroup<D> {
     }
 }
 
-pub(crate) struct CandidateConstraintDriver<'a, D: ConstraintDomain, C: TypeConstraintClient<D>> {
-    context: TypeConstraintContext<'a, CandidateConstraintWorkSession<'a>, D>,
+pub(crate) struct CandidateConstraintDriver<
+    'driver,
+    'control,
+    D: ConstraintDomain,
+    C: TypeConstraintClient<D>,
+> {
+    context:
+        &'driver mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
     lower: TypeConstraintTransaction<D>,
     client: C,
     ticket_issuer: Arc<SourceCallbackTicketIssuer>,
@@ -205,12 +212,15 @@ pub(crate) enum CandidateConstraintDriverStartFailure {
 }
 
 impl<'a> CandidateConstraintWorkSession<'a> {
-    /// Starts the only production lower candidate driver.
-    pub(crate) fn start<D, C>(
+    /// Own the component's accounting context while lending its driver. The
+    /// driver cannot return or replace the context; finishing its transaction
+    /// and releasing the surrounding accounting reservation are separate acts.
+    pub(crate) fn with_driver<D, C, R>(
         self,
         initialization: PreparedConstraintInitialization,
         client: C,
-    ) -> Result<CandidateConstraintDriver<'a, D, C>, CandidateConstraintDriverStartFailure>
+        drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
+    ) -> Result<R, CandidateConstraintDriverStartFailure>
     where
         D: ConstraintDomain,
         C: TypeConstraintClient<D>,
@@ -218,23 +228,25 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         let (parameter_scope, effect_scope, inherited) = initialization
             .into_lower_parts()
             .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
-        let mut driver = CandidateConstraintDriver {
-            context: TypeConstraintContext::with_accounting(self, parameter_scope, effect_scope),
-            lower: TypeConstraintTransaction::new(),
+        let mut context =
+            TypeConstraintContext::with_accounting(self, parameter_scope, effect_scope);
+        let mut lower = TypeConstraintTransaction::new();
+        lower
+            .initialize(&mut context, inherited)
+            .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let driver = CandidateConstraintDriver {
+            context: &mut context,
+            lower,
             client,
             ticket_issuer: Arc::new(SourceCallbackTicketIssuer),
             next_ticket_ordinal: 0,
             active_ticket: None,
         };
-        driver
-            .lower
-            .initialize(&mut driver.context, inherited)
-            .map_err(CandidateConstraintDriverStartFailure::Lower)?;
-        Ok(driver)
+        Ok(drive(driver))
     }
 }
 
-impl<'a, D, C> CandidateConstraintDriver<'a, D, C>
+impl<'driver, 'control, D, C> CandidateConstraintDriver<'driver, 'control, D, C>
 where
     D: ConstraintDomain,
     C: TypeConstraintClient<D>,
@@ -246,7 +258,7 @@ where
         closure: crate::types::constraints::TypeConstraintProjectionClosure,
     ) {
         self.lower
-            .request_projection(&mut self.context, key, value, closure);
+            .request_projection(self.context, key, value, closure);
     }
 
     fn with_callback<R>(
@@ -297,7 +309,7 @@ where
         &mut self,
         authority: SourceCallbackAuthority<D>,
         charge: impl FnOnce(
-            &mut TypeConstraintContext<'a, CandidateConstraintWorkSession<'a>, D>,
+            &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
         ) -> Result<(), crate::types::constraints::TypeConstraintError>,
     ) -> Result<SourceCallbackTicket<D>, TypeConstraintFailure<D>> {
         let ordinal = self.reserve_ticket_ordinal(charge)?;
@@ -307,14 +319,14 @@ where
     fn reserve_ticket_ordinal(
         &mut self,
         charge: impl FnOnce(
-            &mut TypeConstraintContext<'a, CandidateConstraintWorkSession<'a>, D>,
+            &mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
         ) -> Result<(), crate::types::constraints::TypeConstraintError>,
     ) -> Result<u64, TypeConstraintFailure<D>> {
         let ordinal = self.next_ticket_ordinal;
         let next_ordinal = ordinal.checked_add(1).ok_or(TypeConstraintFailure::Abort(
             TypeConstraintAbort::ArithmeticOverflow,
         ))?;
-        charge(&mut self.context).map_err(TypeConstraintFailure::from)?;
+        charge(self.context).map_err(TypeConstraintFailure::from)?;
         self.next_ticket_ordinal = next_ordinal;
         Ok(ordinal)
     }
@@ -649,7 +661,7 @@ where
         acceptance: ConstraintAcceptance,
     ) {
         self.lower
-            .constrain(&mut self.context, pattern, actual, acceptance);
+            .constrain(self.context, pattern, actual, acceptance);
     }
 
     pub(crate) fn constrain_effect_equality(
@@ -658,7 +670,7 @@ where
         right: &crate::effect_row::EffectRow,
     ) {
         self.lower
-            .constrain_effect_equality(&mut self.context, left, right);
+            .constrain_effect_equality(self.context, left, right);
     }
 
     /// Run one prepared source through every correlated frontier row.
@@ -669,7 +681,7 @@ where
     ) -> Result<(), TypeConstraintFailure<D>> {
         let started = self
             .lower
-            .begin_prepared_probe(&mut self.context, prepared, acceptance)
+            .begin_prepared_probe(self.context, prepared, acceptance)
             .map_err(TypeConstraintFailure::from)?;
         if matches!(started, ProbeStart::Skipped) {
             return Ok(());
@@ -677,7 +689,7 @@ where
         loop {
             let ticket = self
                 .lower
-                .next_probe(&mut self.context)
+                .next_probe(self.context)
                 .map_err(TypeConstraintFailure::from)?;
             let Some(lower_ticket) = ticket else {
                 break;
@@ -690,13 +702,13 @@ where
                     break;
                 }
             };
-            let attempt = self.client.probe_source(
-                &mut checkpoint.checkpoint,
-                &mut CandidateConstraintSourceContext {
-                    ticket: &lower_ticket,
-                    context: &mut self.context,
-                },
-            );
+            let mut source_context = CandidateConstraintSourceContext {
+                ticket: &lower_ticket,
+                context: self.context,
+            };
+            let attempt = self
+                .client
+                .probe_source(&mut checkpoint.checkpoint, &mut source_context);
             let submission = match self.close_probe_callback(callback_ticket, checkpoint, attempt) {
                 Ok(SourceProbeOutcome::Accepted(result)) => ProbeSubmission::Accepted(result),
                 Ok(SourceProbeOutcome::Rejected(cause)) => ProbeSubmission::Rejected(cause),
@@ -707,7 +719,7 @@ where
             };
             if let Err(error) = self
                 .lower
-                .submit_probe(&mut self.context, lower_ticket, submission)
+                .submit_probe(self.context, lower_ticket, submission)
             {
                 self.lower.record_failure(error.into());
                 break;
@@ -749,7 +761,7 @@ where
         loop {
             let ticket = self
                 .lower
-                .next_materialization_ticket(&mut self.context)
+                .next_materialization_ticket(self.context)
                 .map_err(TypeConstraintFailure::from)?;
             let Some(mut lower_ticket) = ticket else {
                 break;
@@ -792,7 +804,7 @@ where
         Ok(())
     }
 
-    pub(crate) fn finish(mut self) -> TypeConstraintRun<'a, CandidateConstraintWorkSession<'a>, D> {
+    pub(crate) fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
         if let Err(failure) = self.materialize_all() {
             self.lower.record_failure(failure);
         }
@@ -1385,21 +1397,26 @@ pub(crate) mod tests {
         let session = work
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("candidate session");
-        let mut driver = session
-            .start::<Domain, _>(
+        let result = session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
+                |mut driver| {
+                    let result = match driver.probe_prepared_source(
+                        prepared(),
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    ) {
+                        Ok(()) => driver.finish().map(|_| ()),
+                        Err(error) => {
+                            let _ = driver.finish();
+                            Err(error)
+                        }
+                    };
+
+                    result
+                },
             )
             .expect("prepared initialization");
-        let result = match driver
-            .probe_prepared_source(prepared(), ConstraintAcceptance::PatternAcceptsActual)
-        {
-            Ok(()) => driver.finish().complete().map(|_| ()),
-            Err(error) => {
-                let _ = driver.finish().complete();
-                Err(error)
-            }
-        };
         let report = work.type_constraint_report().clone();
         (result, report)
     }
@@ -1417,16 +1434,22 @@ pub(crate) mod tests {
         let session = work
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
-        let mut driver = session
-            .start::<Domain, _>(
+        session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
+                |mut driver| {
+                    let group = PreparedSourceConstraintGroup::seal([
+                        prepared_source(1),
+                        prepared_source(2),
+                    ])
+                    .expect("two-source mapper group");
+                    driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
+
+                    driver.finish().map(|_| ())
+                },
             )
-            .expect("prepared initialization");
-        let group = PreparedSourceConstraintGroup::seal([prepared_source(1), prepared_source(2)])
-            .expect("two-source mapper group");
-        driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
-        driver.finish().complete().map(|_| ())
+            .expect("prepared initialization")
     }
 
     #[test]
@@ -1479,22 +1502,25 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        let failure = session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    let failure = driver
+                        .probe_prepared_source(
+                            prepared_with_unscoped_hint(),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect_err("unscoped hint is rejected before callback");
+                    let _ = driver.finish();
+                    failure
+                },
             )
             .expect("prepared initialization");
-        let failure = driver
-            .probe_prepared_source(
-                prepared_with_unscoped_hint(),
-                ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .expect_err("unscoped hint is rejected before callback");
-        let _ = driver.finish().complete();
         assert!(matches!(
             failure,
             TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
@@ -1515,12 +1541,13 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let result = session.start::<Domain, _>(
+        let result = session.with_driver::<Domain, _, _>(
             initialization(TypeConstraintParameterScope::empty()),
             Client {
                 counts: Arc::clone(&counts),
                 mode: CallbackMode::Success,
             },
+            |_driver| (),
         );
         assert!(matches!(
             result,
@@ -1544,12 +1571,13 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let result = session.start::<Domain, _>(
+        let result = session.with_driver::<Domain, _, _>(
             initialization(TypeConstraintParameterScope::empty()),
             Client {
                 counts: Arc::clone(&counts),
                 mode: CallbackMode::Success,
             },
+            |_driver| (),
         );
         assert!(matches!(
             result,
@@ -1592,36 +1620,39 @@ pub(crate) mod tests {
             ),
         ])
         .expect("choice scope");
-        let mut driver = session
-            .start::<Domain, _>(
+        let result = session
+            .with_driver::<Domain, _, _>(
                 initialization(scope),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    driver.constrain(
+                        &TypeKind::Choice(vec![
+                            TypeKind::generic_parameter(first),
+                            TypeKind::generic_parameter(second),
+                        ]),
+                        &TypeKind::I32,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
+                    driver
+                        .probe_prepared_source(
+                            prepared_source(1),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("first source probe");
+                    driver
+                        .probe_prepared_source(
+                            prepared_source(2),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("second source probe");
+
+                    driver.finish()
+                },
             )
             .expect("prepared initialization");
-        driver.constrain(
-            &TypeKind::Choice(vec![
-                TypeKind::generic_parameter(first),
-                TypeKind::generic_parameter(second),
-            ]),
-            &TypeKind::I32,
-            ConstraintAcceptance::PatternAcceptsActual,
-        );
-        driver
-            .probe_prepared_source(
-                prepared_source(1),
-                ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .expect("first source probe");
-        driver
-            .probe_prepared_source(
-                prepared_source(2),
-                ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .expect("second source probe");
-        let result = driver.finish().complete();
         assert!(
             matches!(
                 result,
@@ -1652,53 +1683,68 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        let result = session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    driver
+                        .probe_prepared_source(
+                            prepared(),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("prepared source probe");
+                    let mut lower_ticket = driver
+                        .lower
+                        .next_materialization_ticket(driver.context)
+                        .expect("lower materialization ticket")
+                        .expect("one materialization ticket");
+
+                    cancellation.store(true, std::sync::atomic::Ordering::Release);
+                    assert!(matches!(
+                        driver.begin_materialization_callback(&mut lower_ticket),
+                        Err(MaterializationImmediateFailure::Abort(
+                            TypeConstraintAbort::Cancelled
+                        ))
+                    ));
+                    assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
+                    assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 0);
+                    assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 0);
+
+                    cancellation.store(false, std::sync::atomic::Ordering::Release);
+                    let (callback_ticket, mut checkpoint) = driver
+                        .begin_materialization_callback(&mut lower_ticket)
+                        .expect("the cancelled ticket remains ready");
+                    let attempt = driver.with_callback(|client, work| {
+                        client.materialize_sources(
+                            lower_ticket.requests(),
+                            &mut checkpoint.checkpoint,
+                            work,
+                        )
+                    });
+                    let closed = driver
+                        .close_materialization_callback(
+                            &mut lower_ticket,
+                            callback_ticket,
+                            checkpoint,
+                            attempt,
+                        )
+                        .expect("retry closes the callback");
+                    driver
+                        .lower
+                        .submit_closed_materialization(lower_ticket, closed)
+                        .expect("retry submits the closed materialization");
+                    assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 1);
+                    assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 1);
+                    assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
+
+                    driver.finish()
+                },
             )
             .expect("prepared initialization");
-        driver
-            .probe_prepared_source(prepared(), ConstraintAcceptance::PatternAcceptsActual)
-            .expect("prepared source probe");
-        let mut lower_ticket = driver
-            .lower
-            .next_materialization_ticket(&mut driver.context)
-            .expect("lower materialization ticket")
-            .expect("one materialization ticket");
-
-        cancellation.store(true, std::sync::atomic::Ordering::Release);
-        assert!(matches!(
-            driver.begin_materialization_callback(&mut lower_ticket),
-            Err(MaterializationImmediateFailure::Abort(
-                TypeConstraintAbort::Cancelled
-            ))
-        ));
-        assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 0);
-        assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 0);
-        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 0);
-
-        cancellation.store(false, std::sync::atomic::Ordering::Release);
-        let (callback_ticket, mut checkpoint) = driver
-            .begin_materialization_callback(&mut lower_ticket)
-            .expect("the cancelled ticket remains ready");
-        let attempt = driver.with_callback(|client, work| {
-            client.materialize_sources(lower_ticket.requests(), &mut checkpoint.checkpoint, work)
-        });
-        let closed = driver
-            .close_materialization_callback(&mut lower_ticket, callback_ticket, checkpoint, attempt)
-            .expect("retry closes the callback");
-        driver
-            .lower
-            .submit_closed_materialization(lower_ticket, closed)
-            .expect("retry submits the closed materialization");
-        assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 1);
-        assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 1);
-        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
-        let result = driver.finish().complete();
         assert!(
             result.is_ok(),
             "successful retry completes the candidate: {result:?}"
@@ -1727,37 +1773,40 @@ pub(crate) mod tests {
             ),
         ])
         .expect("choice scope");
-        let mut driver = session
-            .start::<Domain, _>(
+        let result = session
+            .with_driver::<Domain, _, _>(
                 initialization(scope),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::MaterializationReversedFatal,
                 },
+                |mut driver| {
+                    driver.constrain(
+                        &TypeKind::Choice(vec![
+                            TypeKind::generic_parameter(first),
+                            TypeKind::generic_parameter(second),
+                        ]),
+                        &TypeKind::I32,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
+                    driver
+                        .probe_prepared_source(
+                            prepared_source(10),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("first source probe");
+                    driver
+                        .probe_prepared_source(
+                            prepared_source(20),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("second source probe");
+
+                    driver.finish()
+                },
             )
             .expect("prepared initialization");
-        driver.constrain(
-            &TypeKind::Choice(vec![
-                TypeKind::generic_parameter(first),
-                TypeKind::generic_parameter(second),
-            ]),
-            &TypeKind::I32,
-            ConstraintAcceptance::PatternAcceptsActual,
-        );
-        driver
-            .probe_prepared_source(
-                prepared_source(10),
-                ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .expect("first source probe");
-        driver
-            .probe_prepared_source(
-                prepared_source(20),
-                ConstraintAcceptance::PatternAcceptsActual,
-            )
-            .expect("second source probe");
-
-        match driver.finish().complete() {
+        match result {
             Err(TypeConstraintFailure::FatalSource(error)) => {
                 assert_eq!(error.source(), &10);
                 assert_eq!(error.cause(), &"earlier source");
@@ -1968,101 +2017,104 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    let (ticket, checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("driver mints a probe ticket");
+                    let foreign_ticket = SourceCallbackTicket {
+                        identity: SourceCallbackTicketIdentity {
+                            issuer: Arc::new(SourceCallbackTicketIssuer),
+                            ordinal: 0,
+                        },
+                        authority: SourceCallbackAuthority::Probe { source: 1 },
+                    };
+                    assert!(matches!(
+                        driver.close_probe_callback(
+                            foreign_ticket,
+                            checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        ),
+                        Err(TypeConstraintFailure::Invariant(
+                            TypeConstraintFailureInvariant::Constraint(
+                                TypeConstraintInvariant::SourceProtocol(
+                                    TypeConstraintSourceProtocolInvariant::Ticket
+                                )
+                            )
+                        ))
+                    ));
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+
+                    let (valid_ticket, valid_checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("foreign close clears the active ticket");
+                    driver
+                        .close_probe_callback(
+                            valid_ticket,
+                            valid_checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        )
+                        .expect("valid callback can begin after foreign close");
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
+                    drop(ticket);
+
+                    drop(driver);
+                },
             )
             .expect("prepared initialization");
-
-        let (ticket, checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("driver mints a probe ticket");
-        let foreign_ticket = SourceCallbackTicket {
-            identity: SourceCallbackTicketIdentity {
-                issuer: Arc::new(SourceCallbackTicketIssuer),
-                ordinal: 0,
-            },
-            authority: SourceCallbackAuthority::Probe { source: 1 },
-        };
-        assert!(matches!(
-            driver.close_probe_callback(
-                foreign_ticket,
-                checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            ),
-            Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::Ticket
-                    )
-                )
-            ))
-        ));
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
-
-        let (valid_ticket, valid_checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("foreign close clears the active ticket");
-        driver
-            .close_probe_callback(
-                valid_ticket,
-                valid_checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            )
-            .expect("valid callback can begin after foreign close");
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
-        drop(ticket);
-        drop(driver);
 
         let session = work
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("second candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    let (ticket, mut checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("driver can mint the next generation");
+                    checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
+                    assert!(matches!(
+                        driver.close_probe_callback(
+                            ticket,
+                            checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        ),
+                        Err(TypeConstraintFailure::Invariant(
+                            TypeConstraintFailureInvariant::Constraint(
+                                TypeConstraintInvariant::SourceProtocol(
+                                    TypeConstraintSourceProtocolInvariant::Checkpoint
+                                )
+                            )
+                        ))
+                    ));
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+
+                    let (valid_ticket, valid_checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("foreign checkpoint close clears the active ticket");
+                    driver
+                        .close_probe_callback(
+                            valid_ticket,
+                            valid_checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        )
+                        .expect("valid callback can begin after foreign checkpoint close");
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
+                },
             )
             .expect("second prepared initialization");
-
-        let (ticket, mut checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("driver can mint the next generation");
-        checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
-        assert!(matches!(
-            driver.close_probe_callback(
-                ticket,
-                checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            ),
-            Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::Checkpoint
-                    )
-                )
-            ))
-        ));
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
-
-        let (valid_ticket, valid_checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("foreign checkpoint close clears the active ticket");
-        driver
-            .close_probe_callback(
-                valid_ticket,
-                valid_checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            )
-            .expect("valid callback can begin after foreign checkpoint close");
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
     }
 
     #[test]
@@ -2073,114 +2125,125 @@ pub(crate) mod tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    driver
+                        .probe_prepared_source(
+                            prepared(),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("prepared source probe");
+                    let mut materialization = driver
+                        .lower
+                        .next_materialization_ticket(driver.context)
+                        .expect("lower materialization ticket")
+                        .expect("one materialization ticket");
+                    let (_valid_ticket, checkpoint) = driver
+                        .begin_materialization_callback(&mut materialization)
+                        .expect("driver mints a materialization ticket");
+                    let foreign_ticket = SourceCallbackTicket {
+                        identity: SourceCallbackTicketIdentity {
+                            issuer: Arc::new(SourceCallbackTicketIssuer),
+                            ordinal: 0,
+                        },
+                        authority: SourceCallbackAuthority::Probe { source: 1 },
+                    };
+                    assert!(matches!(
+                        driver.close_materialization_callback(
+                            &mut materialization,
+                            foreign_ticket,
+                            checkpoint,
+                            Ok(MaterializationOutcome::Sealed(4)),
+                        ),
+                        Err(MaterializationImmediateFailure::Invariant(
+                            TypeConstraintFailureInvariant::Constraint(
+                                TypeConstraintInvariant::SourceProtocol(
+                                    TypeConstraintSourceProtocolInvariant::Ticket
+                                )
+                            )
+                        ))
+                    ));
+                    assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
+                    let (probe_ticket, probe_checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("foreign close clears the active callback ticket");
+                    driver
+                        .close_probe_callback(
+                            probe_ticket,
+                            probe_checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        )
+                        .expect("a later callback can begin");
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
+
+                    drop(driver);
+                },
             )
             .expect("prepared initialization");
-        driver
-            .probe_prepared_source(prepared(), ConstraintAcceptance::PatternAcceptsActual)
-            .expect("prepared source probe");
-        let mut materialization = driver
-            .lower
-            .next_materialization_ticket(&mut driver.context)
-            .expect("lower materialization ticket")
-            .expect("one materialization ticket");
-        let (_valid_ticket, checkpoint) = driver
-            .begin_materialization_callback(&mut materialization)
-            .expect("driver mints a materialization ticket");
-        let foreign_ticket = SourceCallbackTicket {
-            identity: SourceCallbackTicketIdentity {
-                issuer: Arc::new(SourceCallbackTicketIssuer),
-                ordinal: 0,
-            },
-            authority: SourceCallbackAuthority::Probe { source: 1 },
-        };
-        assert!(matches!(
-            driver.close_materialization_callback(
-                &mut materialization,
-                foreign_ticket,
-                checkpoint,
-                Ok(MaterializationOutcome::Sealed(4)),
-            ),
-            Err(MaterializationImmediateFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::Ticket
-                    )
-                )
-            ))
-        ));
-        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
-        let (probe_ticket, probe_checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("foreign close clears the active callback ticket");
-        driver
-            .close_probe_callback(
-                probe_ticket,
-                probe_checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            )
-            .expect("a later callback can begin");
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
-        drop(driver);
 
         let session = work
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("second candidate session");
         let counts = Arc::new(Counts::default());
-        let mut driver = session
-            .start::<Domain, _>(
+        session
+            .with_driver::<Domain, _, _>(
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
                     mode: CallbackMode::Success,
                 },
+                |mut driver| {
+                    driver
+                        .probe_prepared_source(
+                            prepared(),
+                            ConstraintAcceptance::PatternAcceptsActual,
+                        )
+                        .expect("second prepared source probe");
+                    let mut materialization = driver
+                        .lower
+                        .next_materialization_ticket(driver.context)
+                        .expect("second lower materialization ticket")
+                        .expect("one second materialization ticket");
+                    let (ticket, mut checkpoint) = driver
+                        .begin_materialization_callback(&mut materialization)
+                        .expect("driver mints the next generation");
+                    checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
+                    assert!(matches!(
+                        driver.close_materialization_callback(
+                            &mut materialization,
+                            ticket,
+                            checkpoint,
+                            Ok(MaterializationOutcome::Sealed(4)),
+                        ),
+                        Err(MaterializationImmediateFailure::Invariant(
+                            TypeConstraintFailureInvariant::Constraint(
+                                TypeConstraintInvariant::SourceProtocol(
+                                    TypeConstraintSourceProtocolInvariant::Checkpoint
+                                )
+                            )
+                        ))
+                    ));
+                    assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
+                    let (probe_ticket, probe_checkpoint) = driver
+                        .begin_probe_callback(1)
+                        .expect("foreign checkpoint close clears the active callback ticket");
+                    driver
+                        .close_probe_callback(
+                            probe_ticket,
+                            probe_checkpoint,
+                            Ok(SourceProbeOutcome::Rejected("protocol")),
+                        )
+                        .expect("a later callback can begin");
+                    assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
+                },
             )
             .expect("second prepared initialization");
-        driver
-            .probe_prepared_source(prepared(), ConstraintAcceptance::PatternAcceptsActual)
-            .expect("second prepared source probe");
-        let mut materialization = driver
-            .lower
-            .next_materialization_ticket(&mut driver.context)
-            .expect("second lower materialization ticket")
-            .expect("one second materialization ticket");
-        let (ticket, mut checkpoint) = driver
-            .begin_materialization_callback(&mut materialization)
-            .expect("driver mints the next generation");
-        checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
-        assert!(matches!(
-            driver.close_materialization_callback(
-                &mut materialization,
-                ticket,
-                checkpoint,
-                Ok(MaterializationOutcome::Sealed(4)),
-            ),
-            Err(MaterializationImmediateFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        TypeConstraintSourceProtocolInvariant::Checkpoint
-                    )
-                )
-            ))
-        ));
-        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
-        let (probe_ticket, probe_checkpoint) = driver
-            .begin_probe_callback(1)
-            .expect("foreign checkpoint close clears the active callback ticket");
-        driver
-            .close_probe_callback(
-                probe_ticket,
-                probe_checkpoint,
-                Ok(SourceProbeOutcome::Rejected("protocol")),
-            )
-            .expect("a later callback can begin");
-        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 2);
     }
 
     #[test]

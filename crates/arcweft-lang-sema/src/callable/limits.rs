@@ -360,17 +360,17 @@ struct PendingCandidateConstraintReport {
     proposed: ResolverWorkFullReport,
 }
 
-/// Exclusively borrowed candidate-wide lower constraint accounting session.
-///
-/// An unfinished session commits its checked proposal on `Drop`; a completed
-/// run owns this guard until `complete`, so exactly one publication occurs for
-/// success, failure, cancellation, and early return alike.
+/// Failure to reserve a candidate's lower constraint accounting session.
 #[derive(Clone, Copy, Debug, Eq, thiserror::Error, PartialEq)]
 pub(crate) enum CandidateConstraintSessionStartFailure {
     #[error("candidate constraint session accounting overflow")]
     ArithmeticOverflow,
 }
 
+/// Exclusively borrowed component-wide lower constraint accounting session.
+/// The context owns this reservation while drivers borrow it. Releasing the
+/// context commits the checked proposal; dropping an unentered session also
+/// commits it, with exactly one publication on success or early return.
 pub(crate) struct CandidateConstraintWorkSession<'a> {
     work: Option<&'a mut ResolverWork>,
     cancellation: &'a AtomicBool,
@@ -1317,18 +1317,21 @@ mod final_call_accounting_tests {
         let session = work
             .begin_candidate_constraint_session(limits, &cancellation)
             .expect("reserved candidate session");
-        let mut driver = session
-            .start::<crate::types::NoConstraintClient, _>(
+        let outcome = session
+            .with_driver::<crate::types::NoConstraintClient, _, _>(
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
+                |mut driver| {
+                    driver.constrain(
+                        &TypeKind::I32,
+                        &TypeKind::I32,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
+
+                    driver.finish().expect("constraint outcome")
+                },
             )
             .expect("prepared initialization");
-        driver.constrain(
-            &TypeKind::I32,
-            &TypeKind::I32,
-            ConstraintAcceptance::PatternAcceptsActual,
-        );
-        let outcome = driver.finish().complete().expect("constraint outcome");
         assert_eq!(outcome.solution.bindings().len(), 0);
         let committed = work.type_constraint_report.work();
         assert!(committed > 0);
@@ -1348,9 +1351,10 @@ mod final_call_accounting_tests {
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("reserved candidate session");
         assert!(matches!(
-            session.start::<crate::types::NoConstraintClient, _>(
+            session.with_driver::<crate::types::NoConstraintClient, _, _>(
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
+                |_driver| (),
             ),
             Err(
                 crate::callable::CandidateConstraintDriverStartFailure::Lower(
@@ -1378,7 +1382,7 @@ mod final_call_accounting_tests {
     }
 
     #[test]
-    fn uncompleted_candidate_run_commits_before_outcome_is_dropped() {
+    fn candidate_session_commits_when_finished_outcome_is_discarded() {
         use std::sync::atomic::AtomicBool;
 
         use crate::types::{ConstraintAcceptance, TypeKind};
@@ -1388,18 +1392,21 @@ mod final_call_accounting_tests {
         let session = work
             .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
             .expect("reserved candidate session");
-        let mut driver = session
-            .start::<crate::types::NoConstraintClient, _>(
+        session
+            .with_driver::<crate::types::NoConstraintClient, _, _>(
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
+                |mut driver| {
+                    driver.constrain(
+                        &TypeKind::I32,
+                        &TypeKind::I32,
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    );
+
+                    drop(driver.finish());
+                },
             )
             .expect("prepared initialization");
-        driver.constrain(
-            &TypeKind::I32,
-            &TypeKind::I32,
-            ConstraintAcceptance::PatternAcceptsActual,
-        );
-        drop(driver.finish());
         assert!(work.type_constraint_report.work() > 0);
     }
 }

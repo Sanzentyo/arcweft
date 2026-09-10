@@ -689,7 +689,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        rigid_transaction.finish().complete(),
+        rigid_transaction.finish(),
         Err(super::TypeConstraintFailure::Rejected(
             super::TypeConstraintCandidateFailure::Constraint(
                 super::TypeConstraintRejection::Mismatch,
@@ -715,7 +715,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        foreign_transaction.finish().complete(),
+        foreign_transaction.finish(),
         Err(super::TypeConstraintFailure::Invariant(
             super::TypeConstraintFailureInvariant::Constraint(
                 super::TypeConstraintInvariant::ParameterScope(
@@ -742,7 +742,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        incomplete_transaction.finish().complete(),
+        incomplete_transaction.finish(),
         Err(super::TypeConstraintFailure::Rejected(
             super::TypeConstraintCandidateFailure::Constraint(
                 super::TypeConstraintRejection::IncompleteInstantiation { .. },
@@ -753,8 +753,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
 }
 
 use super::transaction::{
-    MaterializationTicket, ProbeSubmission, ProbeTicket, TypeConstraintRun,
-    TypeConstraintTransaction,
+    MaterializationTicket, ProbeSubmission, ProbeTicket, TypeConstraintTransaction,
 };
 use super::*;
 
@@ -812,8 +811,8 @@ where
             .request_projection(&mut self.context, key, value, closure);
     }
 
-    fn finish(self) -> TypeConstraintRun<'c, A, D> {
-        self.lower.finish(self.context)
+    fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
+        self.lower.finish(&mut self.context)
     }
 }
 
@@ -847,7 +846,7 @@ fn solve_with(
         None,
     );
     transaction.constrain(&pattern, &actual, acceptance);
-    transaction.finish().complete()
+    transaction.finish()
 }
 
 #[test]
@@ -888,7 +887,7 @@ fn function_relation_is_contravariant_in_parameters_and_covariant_in_effects() {
         &actual,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    let solved = transaction.finish().complete().expect("function relation");
+    let solved = transaction.finish().expect("function relation");
 
     assert_eq!(
         solved
@@ -951,7 +950,7 @@ fn transitive_bindings_are_sealed_and_move_only() {
             &actual,
             ConstraintAcceptance::PatternAcceptsActual,
         );
-        transaction.finish().complete()
+        transaction.finish()
     }
     .expect("one sealed solution");
     let bindings = outcome
@@ -1113,7 +1112,6 @@ fn rejected_choice_branch_does_not_leak_its_speculative_binding() {
     );
     let outcome = transaction
         .finish()
-        .complete()
         .expect("the exact second alternative is accepted");
     assert_eq!(outcome.solution.bindings().count(), 0);
 }
@@ -1141,7 +1139,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch),
         ))
@@ -1167,7 +1165,6 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
     );
     let outcome = choice_transaction
         .finish()
-        .complete()
         .expect("the concrete alternative remains");
     assert_eq!(outcome.solution.bindings().count(), 0);
 }
@@ -1204,7 +1201,6 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     );
     let outcome = transaction
         .finish()
-        .complete()
         .expect("the non-cyclic Choice sibling remains");
     assert_eq!(outcome.solution.bindings().count(), 0);
 }
@@ -1600,7 +1596,6 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     );
     let inherited = transaction
         .finish()
-        .complete()
         .expect("rigid identity is a valid sealed atom");
     assert!(
         inherited
@@ -1632,7 +1627,6 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     );
     let projection = transaction
         .finish()
-        .complete()
         .expect("rigid projection self-validates")
         .projections
         .into_iter()
@@ -1680,7 +1674,7 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
             None,
         );
         transaction.request_projection((), &value, TypeConstraintProjectionClosure::Closed);
-        let outcome = transaction.finish().complete();
+        let outcome = transaction.finish();
         if effect_invariant {
             assert!(matches!(
                 outcome,
@@ -1798,7 +1792,7 @@ fn foreign_equal_generic_self_relation_is_fail_closed() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope { .. },
@@ -1828,7 +1822,7 @@ fn foreign_array_length_generic_is_fail_closed() {
     );
     transaction.constrain(&array, &array, ConstraintAcceptance::PatternAcceptsActual);
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::ParameterScope(
                 TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope { .. },
@@ -1876,10 +1870,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         &TypeKind::I32,
         ConstraintAcceptance::PatternAcceptsActual,
     );
-    let outcome = transaction
-        .finish()
-        .complete()
-        .expect("extended inherited solution");
+    let outcome = transaction.finish().expect("extended inherited solution");
     assert_eq!(
         outcome
             .solution
@@ -1924,7 +1915,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
         ),
         Some(Arc::new(unresolved)),
     );
-    let unresolved_outcome = transaction.finish().complete();
+    let unresolved_outcome = transaction.finish();
     assert!(
         matches!(
             &unresolved_outcome,
@@ -1995,7 +1986,6 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
 
     let outcome = transaction
         .finish()
-        .complete()
         .expect("current group closes the inherited chain");
     assert_eq!(
         outcome
@@ -2043,7 +2033,7 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch),
         ))
@@ -2086,7 +2076,6 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
     );
     let outcome = transaction
         .finish()
-        .complete()
         .expect("future symbol remains owned by the exact continuation scope");
     let (parameter, value) = outcome
         .solution
@@ -2542,7 +2531,7 @@ fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
             .submit_closed_materialization(ticket, closed)
             .expect("submit materialization");
     }
-    let outcome = transaction.finish(context).complete();
+    let outcome = transaction.finish(&mut context);
     assert!(matches!(
         outcome,
         Err(TypeConstraintFailure::Rejected(
@@ -2598,7 +2587,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
             .submit_probe(&mut context, ticket, submission)
             .expect("submit probe");
     }
-    let outcome = transaction.finish(context).complete();
+    let outcome = transaction.finish(&mut context);
     assert_eq!(probes.load(Ordering::Relaxed), 1);
     assert!(matches!(
         outcome,
@@ -2691,7 +2680,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
             .expect("fatal materialization is retained");
     }
     assert_eq!(traces, 2, "fatal must not stop later trace materialization");
-    match transaction.finish(context).complete() {
+    match transaction.finish(&mut context) {
         Err(TypeConstraintFailure::FatalSource(error)) => {
             assert_eq!(error.source(), &10);
             assert_eq!(error.cause(), &"earlier source");
@@ -2797,7 +2786,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             .expect("rejection is retained");
     }
     assert_eq!(traces, 3);
-    match transaction.finish(context).complete() {
+    match transaction.finish(&mut context) {
         Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(error))) => {
             assert_eq!(error.source(), &10);
             assert_eq!(error.cause().as_ref(), &["first cause", "second cause"]);
@@ -2868,7 +2857,7 @@ fn keyed_projection_is_sorted_and_closed_after_unique_pair() {
         None,
     );
     transaction.request_projection((), &TypeKind::I32, TypeConstraintProjectionClosure::Closed);
-    let outcome = transaction.finish().complete().expect("closed projection");
+    let outcome = transaction.finish().expect("closed projection");
     assert_eq!(outcome.projections.len(), 1);
     assert_eq!(outcome.projections[0].key(), &());
     assert_eq!(
@@ -2890,7 +2879,7 @@ fn keyed_projection_duplicate_is_a_typed_invariant() {
     transaction.request_projection((), &TypeKind::I32, TypeConstraintProjectionClosure::Closed);
     transaction.request_projection((), &TypeKind::I64, TypeConstraintProjectionClosure::Closed);
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
                 TypeConstraintProjectionInvariant::DuplicateKey,
@@ -2939,7 +2928,7 @@ fn required_candidate_keys_are_rejected_before_closed_projection() {
             None,
         );
         transaction.request_projection((), &projection, TypeConstraintProjectionClosure::Closed);
-        let outcome = transaction.finish().complete();
+        let outcome = transaction.finish();
         let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Constraint(
             rejection,
         ))) = outcome
@@ -2976,7 +2965,7 @@ fn closed_projection_rejects_future_eligible_row_with_typed_mismatch() {
         TypeConstraintProjectionClosure::Closed,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Invariant(
             TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
                 TypeConstraintProjectionInvariant::Mismatch(
@@ -3009,7 +2998,7 @@ fn future_projection_allows_only_future_eligible_rows() {
         &TypeKind::generic_parameter(future.clone()),
         TypeConstraintProjectionClosure::AllowFutureEligible,
     );
-    let outcome = transaction.finish().complete().expect("future projection");
+    let outcome = transaction.finish().expect("future projection");
     let value = outcome.projections[0].value();
     assert_eq!(
         value.scope().binders(),
@@ -3072,7 +3061,7 @@ fn final_equation_replays_choice_after_later_binding() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::Mismatch),
         ))
@@ -3103,7 +3092,7 @@ fn deferred_cycle_is_reported_only_after_close() {
         ConstraintAcceptance::PatternAcceptsActual,
     );
     assert!(matches!(
-        transaction.finish().complete(),
+        transaction.finish(),
         Err(TypeConstraintFailure::Rejected(
             TypeConstraintCandidateFailure::Constraint(
                 TypeConstraintRejection::CyclicInstantiation { .. },
@@ -3261,8 +3250,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
             .expect("materialization accepted");
     }
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("prepared source solves");
     assert_eq!(solved.closed_sources.len(), 1);
     let row = &solved.closed_sources[0];
@@ -3317,7 +3305,7 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
 
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(context).complete()
+    ))) = transaction.finish(&mut context)
     else {
         panic!("source relation mismatch must retain a typed rejected projection")
     };
@@ -3401,8 +3389,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
             .expect("seal surviving sibling");
     }
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("one live sibling must keep the ordinary candidate viable");
     assert_eq!(solved.closed_sources.len(), 1);
     assert_eq!(solved.closed_sources[0].selection().alternative(), Some(1));
@@ -3463,7 +3450,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     assert_eq!(row, 2);
     let Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::SourceProjection(
         rejected,
-    ))) = transaction.finish(context).complete()
+    ))) = transaction.finish(&mut context)
     else {
         panic!("all rejected frontiers must retain the deterministic first row")
     };
@@ -3536,8 +3523,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
             .expect("unchecked materialization accepted");
     }
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("unchecked source solves");
     let [row] = solved.closed_sources.as_ref() else {
         panic!("one unchecked closed source")
@@ -3624,7 +3610,7 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
     transaction
         .submit_closed_materialization(ticket, closed)
         .expect("rest materialization accepted");
-    let solved = transaction.finish(context).complete().expect("rest solves");
+    let solved = transaction.finish(&mut context).expect("rest solves");
     assert_eq!(
         solved.closed_sources[0].final_expected(),
         Some(&TypeKind::Array {
@@ -3736,8 +3722,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic rest materialization accepted");
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("generic rest solves");
     let trace = &solved.closed_sources[0];
     assert_eq!(
@@ -3873,8 +3858,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .submit_closed_materialization(ticket, closed)
         .expect("generic map rest materialization accepted");
     let solved = transaction
-        .finish(context)
-        .complete()
+        .finish(&mut context)
         .expect("generic map rest solves");
     let trace = &solved.closed_sources[0];
     assert_eq!(

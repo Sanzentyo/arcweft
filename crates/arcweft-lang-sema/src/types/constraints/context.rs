@@ -80,7 +80,7 @@ impl TypeConstraintLimits {
     }
 }
 
-/// Checked lower work counters returned by every constraint run.
+/// Checked lower work counters accumulated by one constraint context.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub(crate) struct TypeConstraintWorkReport {
     pub(crate) work: u64,
@@ -935,7 +935,8 @@ pub(crate) trait TypeConstraintAccounting {
     ) -> Result<(), TypeConstraintError>;
 
     /// Commits the already checked proposal. This operation is infallible and
-    /// idempotent so a run may invoke it from either `complete` or `Drop`.
+    /// idempotent so releasing the context and its accounting reservation
+    /// cannot publish the same proposal twice.
     fn commit(&mut self);
 }
 
@@ -1605,12 +1606,16 @@ where
         self.accounting.charge_constraint(delta, self.limits)
     }
 
-    pub(crate) fn commit_accounting(&mut self) {
-        self.accounting.commit();
-    }
-
     pub(crate) fn accounting_mut(&mut self) -> &mut A {
         &mut self.accounting
+    }
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> Drop for TypeConstraintContext<'_, A, D> {
+    fn drop(&mut self) {
+        // The context owns the reservation. A driver may finish or be dropped
+        // while this context is still loaned to a surrounding component.
+        self.accounting.commit();
     }
 }
 
