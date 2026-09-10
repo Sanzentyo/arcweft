@@ -232,6 +232,15 @@ with the same `TypeCheckEnv`. Later phases are skipped when an earlier phase
 fails, so LSP diagnostics do not report verifier obligations for source that
 has not passed profile-aware type checking.
 
+Final call facts own callable diagnostics. A rejected, ambiguous, non-callable,
+or missing final outcome retains an error at its exact HIR call source and
+grants no result type or execution plan. The compiler projects that same
+diagnostic before verification and runtime lowering; CLI and LSP consume the
+shared source diagnostic. Signature queries project diagnostics from the same
+available semantic facts. Discarded candidate probes do not publish their own
+diagnostic rows. Source, cancellation, resource and invariant failures retain
+their owning failure disposition instead of becoming a viable call.
+
 Workspace edits are negotiated in the transport. If the client advertises
 `workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
 rename results are returned as versioned `documentChanges`; otherwise they fall

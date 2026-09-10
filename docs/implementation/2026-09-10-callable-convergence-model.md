@@ -492,3 +492,34 @@ acyclic identity obligations remain inputs to the coupled model. The older
 rigid-only constant rules and static source-spelling/privacy gates do not
 override the later generic-scope contract or current repository validation
 policy. Reading the complete amendment is not implementation acceptance.
+
+## Final call diagnostic authority
+
+The [final call diagnostic follow-up](2026-09-10-final-call-diagnostics.md)
+starts from clean `main` at `d7b8d5f2c1fabb92ab3ac2544eed8f8a53ae15ab`.
+The selected ownership rule is that `CallTargetFacts` derives its mandatory
+diagnostic from the final outcome and exact final-HIR source. Prepared
+candidate, detached and intermediate seal records do not own independently
+supplied diagnostic vectors. The final outcome remains the semantic authority;
+its diagnostic is a bounded source projection, not a second call catalog.
+The compiler checks these errors before verifier/runtime projection, using
+the shared source diagnostic also consumed by CLI and LSP.
+
+Final non-callable evidence follows the same unavailable-result rule as
+rejected and ambiguous outcomes. A zero-candidate call still checks and retains
+its authored argument sources in its existing fact transaction, without a
+candidate probe or an invented schema. Source failures propagate, and a
+poisoned type does not become an unknown-call diagnostic. This does not relax
+the selected-only execution-plan boundary or the correlated materialization
+failure order.
+
+The semantic signature API can project rejected/ambiguous diagnostics from
+these facts. Interactive LSP signature acquisition currently requires
+`accepted.executable()` and therefore cannot acquire them after a compilation
+failure. The compiler's immutable pre-executable tooling lease retains HIR and
+symbols, while the semantic world/report remains with the executable product.
+Completing that semantic/tooling lifetime across failed compilations remains
+part of decision 5. No independent analyzer rerun, mutable optional report or
+peer semantic catalog is introduced as a fallback. The coupled contract as a
+whole remains proposed; its other open decisions and positive acceptance
+failures remain required.

@@ -76,6 +76,8 @@ use super::{
     PostfixBracketResolution, PreparedExecutableIngressSeal, PreparedStatementPayload,
     RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/call_diagnostics.rs"]
+mod call_diagnostics;
 #[path = "tests/callable_values.rs"]
 mod callable_values;
 #[path = "tests/compile_time_scalars.rs"]

@@ -410,6 +410,12 @@ pub enum FinalSemanticAnalysisError {
     ValueResolutionFailed { owner: ExprId },
     #[error("shared callable resolution failed for expression {owner:?}")]
     CallResolutionFailed { owner: ExprId },
+    #[error("final call facts could not seal for expression {owner:?}: {error}")]
+    CallFactsSeal {
+        owner: ExprId,
+        #[source]
+        error: Box<crate::callable::SemanticSignatureError>,
+    },
     #[error("typed call constraint failure: {0}")]
     CallConstraintFailure(FinalCallConstraintFailure),
     #[error("typed final call seal failure: {0}")]

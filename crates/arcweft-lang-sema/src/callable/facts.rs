@@ -1,5 +1,7 @@
 //! Checker-owned callable facts and public semantic signature results.
 
+mod diagnostics;
+
 use std::{collections::HashSet, sync::Arc};
 
 use arcweft_lang_hir::{
@@ -356,7 +358,6 @@ impl CheckedCallArgumentSlotSource {
 pub(crate) struct CallTargetFactsInput {
     pub(crate) enclosing_callable: Option<CallableDeclarationKey>,
     pub(crate) outcome: CallAnalysisOutcome,
-    pub(crate) diagnostics: Vec<CallableDiagnostic>,
     pub(crate) accounting: CallResolverAccountingReport,
 }
 
@@ -384,14 +385,15 @@ impl CallPoison {
 impl CallTargetFacts {
     pub(crate) fn try_new(
         input: CallTargetFactsInput,
+        module: &arcweft_lang_hir::module::HirModule,
         limits: &CallableLimits,
     ) -> Result<Self, SemanticSignatureError> {
         let CallTargetFactsInput {
             enclosing_callable,
             outcome,
-            diagnostics,
             accounting,
         } = input;
+        let diagnostics = outcome.seal_diagnostics(module, limits)?;
         if diagnostics.len() > limits.max_diagnostics() {
             return Err(CallableQueryLimitError::Diagnostics {
                 actual: diagnostics.len(),

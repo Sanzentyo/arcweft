@@ -1199,7 +1199,6 @@ struct SealedSelectedCall {
     expression_resolution: AnalyzerPreparedExpressionResolution,
     callee_expression: AnalyzerPreparedCalleeExpression,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
-    diagnostics: Vec<crate::callable::CallableDiagnostic>,
     accounting: crate::callable::CallResolverAccountingReport,
 }
 
@@ -1402,7 +1401,6 @@ fn seal_selected_call(
         expression_resolution: record.expression_resolution,
         callee_expression: record.callee_expression,
         enclosing_callable: record.enclosing_callable,
-        diagnostics: record.diagnostics,
         accounting: record.accounting,
     })
 }
@@ -1410,7 +1408,6 @@ fn seal_selected_call(
 struct SealedUnselectedCall {
     outcome: crate::callable::CallAnalysisOutcome,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
-    diagnostics: Vec<crate::callable::CallableDiagnostic>,
     accounting: crate::callable::CallResolverAccountingReport,
 }
 
@@ -1465,7 +1462,6 @@ fn seal_unselected_call(
     let AnalyzerDetachedUnselectedCall {
         enclosing_callable,
         outcome: prepared_outcome,
-        diagnostics,
         accounting,
         selected_expression_inventory,
     } = value;
@@ -1585,7 +1581,6 @@ fn seal_unselected_call(
     Ok(SealedUnselectedCall {
         outcome,
         enclosing_callable,
-        diagnostics,
         accounting,
     })
 }
@@ -1724,12 +1719,17 @@ impl super::Analyzer<'_, '_, '_> {
                                 outcome: crate::callable::CallAnalysisOutcome::Selected(
                                     sealed.application,
                                 ),
-                                diagnostics: sealed.diagnostics,
                                 accounting: sealed.accounting,
                             },
+                            self.module(owner.module())?,
                             &self.catalogs.callable_limits,
                         )
-                        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+                        .map_err(|error| {
+                            FinalSemanticAnalysisError::CallFactsSeal {
+                                owner,
+                                error: Box::new(error),
+                            }
+                        })?;
                         pending.push(PendingFinalCall {
                             owner,
                             facts,
@@ -1769,12 +1769,17 @@ impl super::Analyzer<'_, '_, '_> {
                                 outcome: crate::callable::CallAnalysisOutcome::Selected(
                                     sealed.application,
                                 ),
-                                diagnostics: sealed.diagnostics,
                                 accounting: sealed.accounting,
                             },
+                            self.module(owner.module())?,
                             &self.catalogs.callable_limits,
                         )
-                        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+                        .map_err(|error| {
+                            FinalSemanticAnalysisError::CallFactsSeal {
+                                owner,
+                                error: Box::new(error),
+                            }
+                        })?;
                         pending.push(PendingFinalCall {
                             owner,
                             facts,
@@ -1800,12 +1805,17 @@ impl super::Analyzer<'_, '_, '_> {
                             crate::callable::CallTargetFactsInput {
                                 enclosing_callable: sealed.enclosing_callable,
                                 outcome: sealed.outcome,
-                                diagnostics: sealed.diagnostics,
                                 accounting: sealed.accounting,
                             },
+                            self.module(owner.module())?,
                             &self.catalogs.callable_limits,
                         )
-                        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+                        .map_err(|error| {
+                            FinalSemanticAnalysisError::CallFactsSeal {
+                                owner,
+                                error: Box::new(error),
+                            }
+                        })?;
                         pending.push(PendingFinalCall {
                             owner,
                             facts,

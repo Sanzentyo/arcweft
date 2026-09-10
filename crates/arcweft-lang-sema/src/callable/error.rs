@@ -450,6 +450,8 @@ pub enum SemanticSignatureError {
     SourceIdentityMismatch,
     #[error("semantic signature contains an invalid span")]
     InvalidSpan,
+    #[error("checked call diagnostic source query failed: {0}")]
+    CallSource(#[from] arcweft_lang_hir::source_index::HirSourceQueryError),
     #[error("checked call callee classification is inconsistent with final HIR")]
     InvalidCalleeClassification,
     #[error("checked call accounting is inconsistent with its retained facts")]

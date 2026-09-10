@@ -794,6 +794,21 @@ where
                 }
             })?,
         );
+        let callable_errors = final_analysis
+            .call_diagnostics()
+            .filter(|diagnostic| {
+                diagnostic.severity()
+                    == arcweft_lang_sema::callable::CallableDiagnosticSeverity::Error
+            })
+            .map(arcweft_lang_sema::callable::CallableDiagnostic::to_source_diagnostic)
+            .collect::<Vec<_>>();
+        if !callable_errors.is_empty() {
+            return Err(linked_error_with_compilation_sources(
+                ProjectCompileStage::TypeCheck,
+                context,
+                callable_errors,
+            ));
+        }
         let checked_entries = final_analysis.checked_entries();
         let verification = Arc::new(
             verify_project(

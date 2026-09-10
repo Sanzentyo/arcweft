@@ -709,7 +709,11 @@ fn nominal_fallback_receiver_matches(
                             if expression == owner
                     ) && free_path_call_target(call_fact))
                 }
-                CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => false,
+                CallAnalysisOutcome::Missing(evidence) => matches!(
+                    evidence.callee(),
+                    Some(CallCalleeClassificationFact::AssociatedType { .. })
+                ),
+                CallAnalysisOutcome::NonCallable(_) => false,
             };
             if accepted {
                 return Ok(true);
@@ -2402,9 +2406,7 @@ fn validate_call_acceptance(
         }
         CallAnalysisOutcome::Ambiguous(evidence) if evidence.candidates().len() >= 2 => Ok(()),
         CallAnalysisOutcome::Rejected(evidence) if !evidence.candidates().is_empty() => Ok(()),
-        CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => {
-            Err(FinalSemanticAnalysisError::UnacceptedCall)
-        }
+        CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => Ok(()),
         CallAnalysisOutcome::Ambiguous(_) | CallAnalysisOutcome::Rejected(_) => {
             Err(FinalSemanticAnalysisError::UnacceptedCall)
         }
@@ -2450,7 +2452,12 @@ fn validate_call_result(
         })?;
     let Some(application) = call.selected_application() else {
         // Unselected evidence deliberately owns no result/effect projection.
-        return Ok(());
+        return matches!(
+            checked.result(),
+            super::CheckedExpressionResult::Unavailable
+        )
+        .then_some(())
+        .ok_or(FinalSemanticAnalysisError::CallFactMismatch);
     };
     let effects = application.core().effects();
     if application.result().value_type() != checked.value_type()
@@ -2551,9 +2558,9 @@ fn validate_call_target(
                 validate_resolved_callable(symbols, modules, candidate)?;
             }
         }
-        CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => {
-            return Err(FinalSemanticAnalysisError::UnacceptedCall);
-        }
+        // These sealed outcomes have no callable candidate to validate. Their
+        // typed callee, source and unavailable result are checked separately.
+        CallAnalysisOutcome::NonCallable(_) | CallAnalysisOutcome::Missing(_) => {}
     }
     Ok(())
 }

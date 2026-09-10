@@ -23,15 +23,24 @@ flow main() -> i64 {
         "return factory(1i64, 40i64)",
     );
     let error = compile_source(&merged).expect_err("surplus arguments cannot enter the next group");
-    assert!(!error.project().diagnostics().is_empty(), "{error:?}");
-    assert!(
-        error
-            .project()
-            .diagnostics()
-            .iter()
-            .all(|diagnostic| { diagnostic.syntax_diagnostic().is_none() }),
-        "the valid syntax is rejected by semantic admission: {error:?}"
+    let [diagnostic] = error.project().diagnostics() else {
+        panic!("one source-backed call diagnostic: {error:?}");
+    };
+    assert_eq!(
+        diagnostic.stage(),
+        arcweft_compiler::project::ProjectCompileStage::TypeCheck
     );
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .map(arcweft_source::DiagnosticCode::as_str),
+        Some("sema.call.no_viable_signature")
+    );
+    assert!(diagnostic.syntax_diagnostic().is_none());
+    assert!(diagnostic.source().is_some());
+    let span = diagnostic.diagnostic().span().unwrap();
+    assert_eq!(&merged[span.range().as_range()], "factory(1i64, 40i64)");
 }
 
 #[test]

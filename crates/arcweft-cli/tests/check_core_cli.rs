@@ -48,6 +48,34 @@ fn check_reports_typed_statement_unknown_mode_once() {
 }
 
 #[test]
+fn check_reports_final_call_diagnostics_once() {
+    for (name, source, code) in [
+        (
+            "surplus-call",
+            "fn identity(value: i64) -> i64 { value }\nflow main() -> Unit { identity(1i64, 2i64); }\nentry cli @entry.main { goto @flow.main }\n",
+            "sema.call.no_viable_signature",
+        ),
+        (
+            "non-callable",
+            "flow main() -> Unit { let value = 1i64; value(); }\nentry cli @entry.main { goto @flow.main }\n",
+            "sema.call.non_callable_target",
+        ),
+    ] {
+        let path = temp_arcw(name, source);
+        let output = CommandOutput::run([OsStr::new("check"), path.as_os_str()])
+            .expect("run check on a rejected call");
+        output.assert_failure();
+        assert_eq!(
+            output.stderr().matches(code).count(),
+            1,
+            "{}",
+            output.stderr()
+        );
+        fs::remove_file(path).expect("remove temporary source");
+    }
+}
+
+#[test]
 fn check_keeps_explicit_id_lint_on_the_independent_lint_path() {
     let path = temp_arcw("explicit-id-lint", "flow @flow.opening {\n}\n");
     let output = CommandOutput::run([OsStr::new("check"), path.as_os_str()])

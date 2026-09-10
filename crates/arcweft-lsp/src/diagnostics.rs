@@ -479,6 +479,36 @@ mod tests {
         analyze_project_fixture_with_adapter(source, encoding, None)
     }
 
+    #[test]
+    fn rejected_call_diagnostic_preserves_the_call_range() {
+        const SOURCE: &str = "fn identity(value: i64) -> i64 { value }\nflow main() -> Unit { identity(1i64, 2i64); }\nentry cli @entry.main { goto @flow.main }\n";
+        for encoding in [PositionEncoding::Utf8, PositionEncoding::Utf16] {
+            let analysis = analyze_project_fixture(SOURCE, encoding);
+            let diagnostics = analysis
+                .diagnostics()
+                .iter()
+                .filter(|diagnostic| {
+                    diagnostic.code
+                        == Some(NumberOrString::String(
+                            "sema.call.no_viable_signature".into(),
+                        ))
+                })
+                .collect::<Vec<_>>();
+            let [diagnostic] = diagnostics.as_slice() else {
+                panic!(
+                    "one final callable diagnostic: {:?}",
+                    analysis.diagnostics()
+                );
+            };
+            assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
+            assert_eq!(
+                diagnostic.range,
+                Range::new(Position::new(1, 22), Position::new(1, 42))
+            );
+            assert!(analysis.verification_report().is_none());
+        }
+    }
+
     fn analyze_project_fixture_with_adapter(
         source: &str,
         encoding: PositionEncoding,

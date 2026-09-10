@@ -93,6 +93,11 @@ struct ResolvedCallQuery {
     dialogue_patch_admissions: Box<[AnalyzerPreparedDialoguePatchAdmission]>,
 }
 
+enum CallQueryResolution {
+    Callable(Box<ResolvedCallQuery>),
+    NonCallable,
+}
+
 struct AssociatedReceiverRecovery {
     receiver: arcweft_lang_hir::identity::TypeId,
     separator: HirAssociatedSeparator,
@@ -764,7 +769,7 @@ impl Analyzer<'_, '_, '_> {
             Err(error) => return Err(error),
         };
         if let Some(recovery) = staged_callee.recovery {
-            return self.publish_associated_receiver_recovery(source, recovery, work);
+            return self.publish_associated_receiver_recovery(context, source, recovery, work);
         }
         let dialogue_context = if dialogue_application_metadata.is_some() {
             CharacterDialoguePatchContext::ImmediateContentApplication
@@ -779,7 +784,10 @@ impl Analyzer<'_, '_, '_> {
             dialogue_context,
             staged_callee.function_value_origin,
         ) {
-            Ok(resolution) => resolution,
+            Ok(CallQueryResolution::Callable(resolution)) => *resolution,
+            Ok(CallQueryResolution::NonCallable) => {
+                return Ok(CheckedExpression::unavailable_call());
+            }
             Err(error) => return Err(error),
         };
         resolution.dialogue_patch_admissions =
@@ -1207,7 +1215,7 @@ impl Analyzer<'_, '_, '_> {
         argument_count: u64,
         dialogue_context: CharacterDialoguePatchContext,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
-    ) -> Result<ResolvedCallQuery, AnalyzerExpressionError> {
+    ) -> Result<CallQueryResolution, AnalyzerExpressionError> {
         let authority = CallResolverAuthority::accepted(
             self.project,
             source.module,
@@ -1380,8 +1388,8 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
             ResolveCallOutcome::Resolved(ResolvedCallTarget::NonCallable(target)) => {
-                self.publish_non_callable_call(source, callee, target, work)?;
-                return Err(AnalyzerExpressionError::rejected(source.owner));
+                self.publish_non_callable_call(context, source, callee, target, work)?;
+                return Ok(CallQueryResolution::NonCallable);
             }
             ResolveCallOutcome::Rejected(_) => {
                 return Err(AnalyzerExpressionError::fatal(
@@ -1424,7 +1432,7 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         }
-        Ok(ResolvedCallQuery {
+        Ok(CallQueryResolution::Callable(Box::new(ResolvedCallQuery {
             callee,
             considered,
             callee_inputs,
@@ -1434,29 +1442,21 @@ impl Analyzer<'_, '_, '_> {
             argument_count,
             dialogue_context,
             dialogue_patch_admissions: Box::new([]),
-        })
+        })))
     }
 
     fn publish_associated_receiver_recovery(
         &mut self,
+        source_context: &AnalyzerExpressionContext<'_>,
         source: CallSource<'_>,
         recovery: AssociatedReceiverRecovery,
         mut work: ResolverWork,
     ) -> Result<CheckedExpression, AnalyzerExpressionError> {
         self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-            |this, _expression_authority, transaction_authority| {
-                let argument_count = source.call.arguments().len();
-                work.record_retained_argument_fact_publications(
-                    u64::try_from(argument_count).map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::AccountingOverflow,
-                        )
-                    })?,
-                )
-                .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
-                    owner: source.owner,
-                })
-                .map_err(AnalyzerExpressionError::fatal)?;
+            |this, expression_authority, transaction_authority| {
+                let context = source_context.child_candidate(expression_authority);
+                let arguments =
+                    this.stage_unselected_call_arguments(&context, source, &mut work)?;
                 let callee = CallCalleeClassificationFact::AssociatedType {
                     receiver: recovery.receiver,
                     separator: recovery.separator,
@@ -1470,13 +1470,7 @@ impl Analyzer<'_, '_, '_> {
                     .map_err(AnalyzerExpressionError::fatal)?;
                 let selected_expression_inventory =
                     arcweft_lang_hir::project::HirSelectedCallExpressionInventory::new(
-                        source
-                            .call
-                            .arguments()
-                            .iter()
-                            .map(HirCallArgument::value)
-                            .collect::<Vec<_>>()
-                            .into_boxed_slice(),
+                        arguments,
                         callee_expression,
                     );
                 let enclosing_callable = this
@@ -1492,28 +1486,13 @@ impl Analyzer<'_, '_, '_> {
                                 callee: Some(callee),
                                 kind: crate::callable::UnknownCallKind::AssociatedType,
                             },
-                            diagnostics: Vec::new(),
                             accounting: work.call_accounting(),
                             selected_expression_inventory,
                         },
                     )
                     .map_err(AnalyzerExpressionError::fact)?;
-                let selection = if source
-                    .expectation
-                    .complete_type()
-                    .is_some_and(|expected| expected.accepts(&recovery.result))
-                {
-                    CheckedTypeSelection::Expected
-                } else {
-                    CheckedTypeSelection::Inferred
-                };
                 Ok(CandidateFactTransactionAction::Commit(
-                    CheckedExpression::value(
-                        recovery.result.clone(),
-                        selection,
-                        EffectSet::new(),
-                        CheckedExpressionResolution::Call,
-                    ),
+                    CheckedExpression::unavailable_call(),
                 ))
             },
         )?
@@ -1523,10 +1502,11 @@ impl Analyzer<'_, '_, '_> {
 
     fn publish_non_callable_call(
         &mut self,
+        source_context: &AnalyzerExpressionContext<'_>,
         source: CallSource<'_>,
         callee: CallCalleeClassificationFact,
         target: crate::callable::ResolvedNonCallableTarget,
-        work: ResolverWork,
+        mut work: ResolverWork,
     ) -> Result<(), AnalyzerExpressionError> {
         let callee_expression = match callee {
             CallCalleeClassificationFact::Value { expression } => Some(expression),
@@ -1535,7 +1515,10 @@ impl Analyzer<'_, '_, '_> {
         let non_callable_source = target.source().clone();
         let non_callable_type = target.ty().clone();
         let outcome = self.run_candidate_fact_transaction::<_, AnalyzerExpressionError>(
-            |this, _expression_authority, transaction_authority| {
+            |this, expression_authority, transaction_authority| {
+                let context = source_context.child_candidate(expression_authority);
+                let arguments =
+                    this.stage_unselected_call_arguments(&context, source, &mut work)?;
                 let enclosing_callable = this
                     .enclosing_ordinary_callable(source.module, source.owner)
                     .map_err(AnalyzerExpressionError::fatal)?;
@@ -1550,11 +1533,10 @@ impl Analyzer<'_, '_, '_> {
                                 source: non_callable_source,
                                 ty: non_callable_type,
                             },
-                            diagnostics: Vec::new(),
                             accounting: work.call_accounting(),
                             selected_expression_inventory:
                                 arcweft_lang_hir::project::HirSelectedCallExpressionInventory::new(
-                                    Box::new([]),
+                                    arguments,
                                     callee_expression,
                                 ),
                         },
@@ -1566,6 +1548,35 @@ impl Analyzer<'_, '_, '_> {
         outcome
             .into_committed()
             .map_err(AnalyzerExpressionError::fact)
+    }
+
+    /// A target with no candidates still owns its authored argument sources.
+    /// Check them once inside the same fact transaction, without inventing a
+    /// callable schema or suppressing an argument's fatal source failure.
+    fn stage_unselected_call_arguments(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        source: CallSource<'_>,
+        work: &mut ResolverWork,
+    ) -> Result<Box<[ExprId]>, AnalyzerExpressionError> {
+        let mut arguments = Vec::with_capacity(source.call.arguments().len());
+        for argument in source.call.arguments() {
+            let owner = argument.value();
+            self.evaluate_expression(context, owner, None)?;
+            arguments.push(owner);
+        }
+        let count = u64::try_from(arguments.len()).map_err(|_| {
+            AnalyzerExpressionError::Abort(
+                crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
+            )
+        })?;
+        work.record_retained_argument_fact_publications(count)
+            .map_err(|_| {
+                AnalyzerExpressionError::Abort(
+                    crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
+                )
+            })?;
+        Ok(arguments.into_boxed_slice())
     }
 
     fn stage_associated_receiver_recovery_expression(
@@ -1864,7 +1875,6 @@ impl Analyzer<'_, '_, '_> {
             self.enclosing_ordinary_callable(module, owner)
                 .map_err(AnalyzerExpressionError::fatal)?,
             inventory,
-            Vec::new(),
             None,
             work.call_accounting(),
         );
@@ -2197,7 +2207,6 @@ impl Analyzer<'_, '_, '_> {
             self.enclosing_ordinary_callable(module, owner)
                 .map_err(AnalyzerExpressionError::fatal)?,
             inventory,
-            Vec::new(),
             None,
             work.call_accounting(),
         );
@@ -2495,7 +2504,6 @@ impl Analyzer<'_, '_, '_> {
             self.enclosing_ordinary_callable(source.module, source.owner)
                 .map_err(AnalyzerExpressionError::fatal)?,
             inventory,
-            Vec::new(),
             resolution.function_value_origin.take(),
             resolution.work.call_accounting(),
         );
@@ -2850,7 +2858,6 @@ impl Analyzer<'_, '_, '_> {
                 AnalyzerPreparedUnselectedCall {
                     enclosing_callable,
                     outcome,
-                    diagnostics: Vec::new(),
                     accounting: work.call_accounting(),
                     selected_expression_inventory,
                 },
@@ -4206,35 +4213,6 @@ mod tests {
                 )),
             } if found == owner
         ));
-    }
-
-    #[test]
-    fn non_callable_project_binding_never_executes_a_candidate_or_arguments() {
-        let fixture = crate::final_analysis::tests::fixture(
-            concat!(
-                "pub signal @signal.payload Payload: Watch<i64>\n",
-                "fn caller() { @signal.payload(1i64); }\n",
-            ),
-            None,
-        );
-        let cancellation = std::sync::atomic::AtomicBool::new(false);
-        let (result, physical) = super::super::analyze_final_project_with_physical_trace_for_test(
-            fixture.project.analysis_view().expect("executable HIR"),
-            &fixture.symbols,
-            crate::final_analysis::FinalSemanticCatalogs::production(&fixture.registered),
-            crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
-        );
-
-        assert!(
-            matches!(
-                &result,
-                Err(
-                    crate::final_analysis::FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. }
-                )
-            ),
-            "unexpected NonCallable analysis result: {result:?}"
-        );
-        assert!(physical.is_empty());
     }
 
     #[test]

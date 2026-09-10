@@ -2787,7 +2787,6 @@ impl PreparedCallPrefixPayload for AnalyzerPreparedCallPrefix {
 pub(crate) struct AnalyzerPreparedUnselectedCall {
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) outcome: AnalyzerPreparedUnselectedOutcome,
-    pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
     pub(crate) selected_expression_inventory: HirSelectedCallExpressionInventory,
 }
@@ -2874,7 +2873,6 @@ impl AnalyzerPreparedUnselectedCall {
         Ok(AnalyzerDetachedUnselectedCall {
             enclosing_callable: self.enclosing_callable,
             outcome,
-            diagnostics: self.diagnostics,
             accounting: self.accounting,
             selected_expression_inventory: self.selected_expression_inventory,
         })
@@ -2884,7 +2882,6 @@ impl AnalyzerPreparedUnselectedCall {
 pub(crate) struct AnalyzerDetachedUnselectedCall {
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) outcome: AnalyzerDetachedUnselectedOutcome,
-    pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
     pub(crate) selected_expression_inventory: HirSelectedCallExpressionInventory,
 }
@@ -3037,7 +3034,6 @@ pub(crate) struct AnalyzerPreparedCandidateMetadata {
     callee_expression: AnalyzerPreparedCalleeExpression,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     inventory: AnalyzerPreparedCandidateInventory,
-    diagnostics: Vec<crate::callable::CallableDiagnostic>,
     function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
     accounting: crate::callable::CallResolverAccountingReport,
 }
@@ -3049,7 +3045,6 @@ impl AnalyzerPreparedCandidateMetadata {
         callee_expression: AnalyzerPreparedCalleeExpression,
         enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
         inventory: AnalyzerPreparedCandidateInventory,
-        diagnostics: Vec<crate::callable::CallableDiagnostic>,
         function_value_origin: Option<PreparedFunctionValueOriginEvidence>,
         accounting: crate::callable::CallResolverAccountingReport,
     ) -> Self {
@@ -3059,7 +3054,6 @@ impl AnalyzerPreparedCandidateMetadata {
             callee_expression,
             enclosing_callable,
             inventory,
-            diagnostics,
             function_value_origin,
             accounting,
         }
@@ -3158,7 +3152,6 @@ impl AnalyzerPreparedCandidateRecord {
             callee_expression: metadata.callee_expression,
             enclosing_callable: metadata.enclosing_callable,
             inventory: metadata.inventory,
-            diagnostics: metadata.diagnostics,
             accounting: metadata.accounting,
             consumer,
             callee_inputs,
@@ -3174,7 +3167,6 @@ pub(crate) struct AnalyzerPreparedCandidateRecordParts {
     pub(crate) callee_expression: AnalyzerPreparedCalleeExpression,
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) inventory: AnalyzerPreparedCandidateInventory,
-    pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
     pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
@@ -3194,7 +3186,6 @@ impl AnalyzerPreparedCandidateRecordParts {
             callee_expression: self.callee_expression,
             enclosing_callable: self.enclosing_callable,
             inventory: self.inventory.detach(arena)?,
-            diagnostics: self.diagnostics,
             accounting: self.accounting,
             consumer: self.consumer,
             callee_inputs: self.callee_inputs,
@@ -3213,7 +3204,6 @@ pub(crate) struct AnalyzerDetachedCandidateRecord {
     pub(crate) callee_expression: AnalyzerPreparedCalleeExpression,
     pub(crate) enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     pub(crate) inventory: Box<[AnalyzerDetachedConsideredCandidate]>,
-    pub(crate) diagnostics: Vec<crate::callable::CallableDiagnostic>,
     pub(crate) accounting: crate::callable::CallResolverAccountingReport,
     pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
