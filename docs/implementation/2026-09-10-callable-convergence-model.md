@@ -1,5 +1,10 @@
 # Callable convergence: correlated sources and first-class function values
 
+The [in-progress scope-owner implementation](2026-09-10-correlated-call-scope-owner.md)
+records the path-owned lower boundary, current validation and the remaining
+source-protocol, ranking and residual-scope decisions. It does not change this
+model's proposed status or establish callable-component completion.
+
 Date: 2026-09-10. Inspected existing `main`, clean, at
 `54fae657e04f95688671fd2d8c0395266383858f`; `origin/main` was the same revision.
 The preceding [conditional recovery cut](2026-09-10-conditional-recovery-validation.md)
