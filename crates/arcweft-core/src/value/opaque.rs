@@ -1986,8 +1986,7 @@ mod tests {
         let value = owner
             .try_wrap(RuntimeValue::Unit)
             .expect("exact owner wraps");
-        let mut expected = vec![16];
-        expected.extend_from_slice(&15_u32.to_le_bytes());
+        let mut expected = vec![16, 15];
         expected.extend_from_slice(b"std.agent_error");
         expected.extend_from_slice(&[7; 32]);
         expected.extend_from_slice(&[0, 0]);

@@ -1,6 +1,7 @@
 //! Persistent runtime schemas, canonical value bytes, and validation.
 
 use super::identity::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash};
+use crate::canonical_varint::encode_u32;
 use crate::pattern::{RuntimeBuiltinVariantCaseIdentity, RuntimeVariantIdentity};
 use crate::value::{RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
@@ -504,8 +505,13 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
         self.extend(&[value])
     }
 
-    fn u32(&mut self, value: u32) -> Result<(), RuntimeSchemaError> {
+    fn fixed_u32(&mut self, value: u32) -> Result<(), RuntimeSchemaError> {
         self.extend(&value.to_le_bytes())
+    }
+
+    fn var_u32(&mut self, value: u32) -> Result<(), RuntimeSchemaError> {
+        let (bytes, length) = encode_u32(value);
+        self.extend(&bytes[..length])
     }
 
     fn u64(&mut self, value: u64) -> Result<(), RuntimeSchemaError> {
@@ -524,7 +530,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
         let value = u32::try_from(value).map_err(|_| RuntimeSchemaError::Encoding {
             message: "runtime value collection length does not fit u32".to_owned(),
         })?;
-        self.u32(value)
+        self.var_u32(value)
     }
 
     fn string(&mut self, value: &str) -> Result<(), RuntimeSchemaError> {
@@ -613,7 +619,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
                     });
                 }
                 self.u8(5)?;
-                self.u32(if *value == 0.0 { 0 } else { value.to_bits() })
+                self.fixed_u32(if *value == 0.0 { 0 } else { value.to_bits() })
             }
             RuntimeValue::F64(value) => {
                 if !value.is_finite() {
@@ -631,7 +637,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             }
             RuntimeValue::Char(value) => {
                 self.u8(8)?;
-                self.u32(u32::from(*value))
+                self.fixed_u32(u32::from(*value))
             }
             RuntimeValue::Duration(value) => {
                 self.u8(9)?;
@@ -639,7 +645,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             }
             RuntimeValue::Progress(value) => {
                 self.u8(19)?;
-                self.u32(if value.ratio() == 0.0 {
+                self.fixed_u32(if value.ratio() == 0.0 {
                     0
                 } else {
                     value.ratio().to_bits()
@@ -746,7 +752,7 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             } => {
                 self.u8(14)?;
                 self.variant_identity(owner)?;
-                self.u32(*ordinal)?;
+                self.var_u32(*ordinal)?;
                 self.string(name)?;
                 self.option(payload.as_deref(), Self::value)
             }
@@ -819,8 +825,8 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             }
             crate::value::RuntimeAgentValue::ViewportPoint { x, y } => {
                 self.u8(7)?;
-                self.u32(*x)?;
-                self.u32(*y)
+                self.fixed_u32(*x)?;
+                self.fixed_u32(*y)
             }
             crate::value::RuntimeAgentValue::BinaryData(data) => {
                 self.u8(8)?;
@@ -932,7 +938,7 @@ impl CanonicalSchemaBytes {
     fn new() -> Self {
         let mut bytes = Self(Vec::with_capacity(256));
         bytes.0.extend_from_slice(b"arcweft.nominal-schema\0");
-        bytes.u32(1);
+        bytes.var_u32(1);
         bytes
     }
 
@@ -948,8 +954,9 @@ impl CanonicalSchemaBytes {
         self.u8(u8::from(value));
     }
 
-    fn u32(&mut self, value: u32) {
-        self.0.extend_from_slice(&value.to_le_bytes());
+    fn var_u32(&mut self, value: u32) {
+        let (bytes, length) = encode_u32(value);
+        self.0.extend_from_slice(&bytes[..length]);
     }
 
     fn i128(&mut self, value: i128) {
@@ -957,7 +964,7 @@ impl CanonicalSchemaBytes {
     }
 
     fn len(&mut self, value: usize) -> Option<()> {
-        self.u32(u32::try_from(value).ok()?);
+        self.var_u32(u32::try_from(value).ok()?);
         Some(())
     }
 
@@ -1575,6 +1582,98 @@ mod visitor_tests {
                 .expect("direct digest")
                 .as_bytes(),
             blake3::hash(&bytes).as_bytes()
+        );
+    }
+
+    #[test]
+    fn canonical_lengths_use_shortest_varints_and_exact_byte_budgets() {
+        let value = RuntimeValue::String("x".repeat(300));
+        let mut expected = vec![7, 0xac, 0x02];
+        expected.extend_from_slice(&[b'x'; 300]);
+        assert_eq!(
+            canonical_runtime_value_bytes(&value, expected.len()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&value, expected.len())
+                .unwrap()
+                .as_bytes(),
+            blake3::hash(&expected).as_bytes(),
+        );
+        let error = super::RuntimeSchemaError::BudgetExceeded {
+            budget: "encoded_bytes",
+        };
+        assert_eq!(
+            canonical_runtime_value_bytes(&value, expected.len() - 1),
+            Err(error.clone())
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&value, expected.len() - 1),
+            Err(error)
+        );
+
+        let sequence = RuntimeValue::Tuple(vec![RuntimeValue::Unit; 300]);
+        let mut expected_sequence = vec![11, 0xac, 0x02];
+        expected_sequence.extend_from_slice(&[1; 300]);
+        assert_eq!(
+            canonical_runtime_value_bytes(&sequence, expected_sequence.len()).unwrap(),
+            expected_sequence
+        );
+    }
+
+    #[test]
+    fn schema_transcript_version_and_name_lengths_use_shortest_varints() {
+        let schema = super::RuntimeTypeSchema::Named("x".repeat(300));
+        let mut expected = b"arcweft.nominal-schema\0".to_vec();
+        expected.extend_from_slice(&[1, 25, 0xac, 0x02]);
+        expected.extend_from_slice(&[b'x'; 300]);
+        assert_eq!(schema.canonical_bytes().unwrap(), expected);
+        assert_eq!(
+            schema.try_layout_hash().unwrap().as_bytes(),
+            blake3::hash(&expected).as_bytes()
+        );
+    }
+
+    #[test]
+    fn canonical_numeric_payloads_retain_their_exact_fixed_bits() {
+        for (value, expected) in [
+            (RuntimeValue::F32(1.0), vec![5, 0, 0, 0x80, 0x3f]),
+            (RuntimeValue::F32(-0.0), vec![5, 0, 0, 0, 0]),
+            (RuntimeValue::Char('\u{100}'), vec![8, 0, 1, 0, 0]),
+        ] {
+            assert_eq!(
+                canonical_runtime_value_bytes(&value, expected.len()).unwrap(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_variant_ordinal_uses_the_shared_shortest_varint() {
+        let value = RuntimeValue::Variant {
+            owner: crate::pattern::RuntimeVariantIdentity::Nominal {
+                nominal: super::RuntimeNominalTypeId::try_new("aw.test.variant").unwrap(),
+                semantic_identity: crate::pattern::RuntimeSemanticTypeId::from_bytes([0x11; 32]),
+            },
+            ordinal: 300,
+            name: "case".to_owned(),
+            payload: None,
+        };
+        let mut expected = vec![14, 0, 15];
+        expected.extend_from_slice(b"aw.test.variant");
+        expected.extend_from_slice(&[0x11; 32]);
+        expected.extend_from_slice(&[0xac, 0x02, 4]);
+        expected.extend_from_slice(b"case");
+        expected.push(0);
+        assert_eq!(
+            canonical_runtime_value_bytes(&value, expected.len()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&value, expected.len())
+                .unwrap()
+                .as_bytes(),
+            blake3::hash(&expected).as_bytes()
         );
     }
 }

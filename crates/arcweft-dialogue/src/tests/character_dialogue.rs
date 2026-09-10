@@ -614,34 +614,42 @@ fn nested_nominal(depth: usize) -> CharacterDialogueTypedValue {
 fn nominal_with_encoded_size(type_name: &str, target: usize) -> CharacterDialogueTypedValue {
     let type_id = RuntimeNominalTypeId::try_new(type_name).expect("type");
     let layout = TypeLayoutHash::from_bytes([22; 32]);
-    let empty = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-        type_id.clone(),
-        layout,
-        Vec::new(),
-    ));
-    let header_bytes = empty
-        .try_canonical_bytes(target)
-        .expect("empty encoded value")
-        .len();
-    assert!(target >= header_bytes + 5);
-    let encoded_payload = target - header_bytes;
     let max_string_bytes = PRODUCTION_CHARACTER_DIALOGUE_LIMITS.max_config_string_bytes as usize;
-    let field_count = encoded_payload.div_ceil(max_string_bytes + 5);
-    assert!(encoded_payload >= field_count * 5);
-    let mut remaining_text = encoded_payload - field_count * 5;
-    let fields = (0..field_count)
-        .map(|_| {
-            let bytes = remaining_text.min(max_string_bytes);
-            remaining_text -= bytes;
-            RuntimeValue::String("x".repeat(bytes))
-        })
-        .collect::<Vec<_>>();
-    assert_eq!(remaining_text, 0);
-    let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
-        type_id.clone(),
-        layout,
-        fields,
-    ));
+    // Keep the field inventory fixed while sizing payloads through the public
+    // encoder. An extra unit slot covers a byte skipped by a varint transition.
+    let mut fields = vec![RuntimeValue::Unit; target.div_ceil(max_string_bytes) + 1];
+    let nominal = |fields| {
+        RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+            type_id.clone(),
+            layout,
+            fields,
+        ))
+    };
+    for field in 0..fields.len() {
+        if nominal(fields.clone())
+            .try_canonical_bytes(target)
+            .expect("partial value fits")
+            .len()
+            == target
+        {
+            break;
+        }
+        let mut lower = 0;
+        let mut upper = max_string_bytes;
+        while lower < upper {
+            let middle = (lower + upper).div_ceil(2);
+            fields[field] = RuntimeValue::String("x".repeat(middle));
+            match nominal(fields.clone()).try_canonical_bytes(target) {
+                Ok(_) => lower = middle,
+                Err(arcweft_core::entry::RuntimeSchemaError::BudgetExceeded {
+                    budget: "encoded_bytes",
+                }) => upper = middle - 1,
+                Err(error) => panic!("unexpected sizing failure: {error}"),
+            }
+        }
+        fields[field] = RuntimeValue::String("x".repeat(lower));
+    }
+    let value = nominal(fields);
     assert_eq!(
         value
             .try_canonical_bytes(target)

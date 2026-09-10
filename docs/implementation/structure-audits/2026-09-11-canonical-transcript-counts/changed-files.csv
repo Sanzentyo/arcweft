@@ -1,0 +1,4 @@
+"path","owner","classification","bytes","physical_loc","base_physical_loc","loc_growth","embedded_test_loc","normal_fan_in","normal_fan_out","dev_fan_in","dev_fan_out","responsibility"
+"crates/arcweft-core/src/entry/schema.rs","arcweft-core","production with owner-local tests","58507","1679","1580","99","141","29","6","3","6","Canonical persistence schemas and the shared bounded value transcript"
+"crates/arcweft-core/src/value/opaque.rs","arcweft-core","production with owner-local tests","94269","2441","2442","-1","644","29","6","3","6","Exact opaque owner admission and canonical-byte evidence"
+"crates/arcweft-dialogue/src/tests/character_dialogue.rs","arcweft-dialogue","test","33722","958","950","8","0","8","9","8","0","Dialogue size-limit fixtures through the public canonical encoder"
