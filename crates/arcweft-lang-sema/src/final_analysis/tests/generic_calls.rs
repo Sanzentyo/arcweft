@@ -364,7 +364,10 @@ fn assert_selected_calls(analysis: &FinalSemanticAnalysis, expected_count: usize
             .expression(owner)
             .expect("call expression is retained");
         assert_eq!(
-            expression.execution_plan().call_application(),
+            expression
+                .execution_plan()
+                .expect("selected call has execution authority")
+                .call_application(),
             Some(application.digest()),
             "call {owner:?} lost its execution authority: {:?}",
             expression.resolution(),

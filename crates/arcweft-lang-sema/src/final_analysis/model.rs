@@ -1980,7 +1980,6 @@ pub enum CheckedStructuralExecutionReason {
     Literal,
     Structural,
     CompileTimeOnly,
-    RejectedCall,
     ContentEmission,
     DialogueApplication,
     ContentValue,
@@ -2020,9 +2019,9 @@ pub enum CheckedEvaluatedEffectRole {
     },
 }
 
-/// Closed execution plan retained directly by every final checked
-/// expression.  Structural retention/omission, ordinary call callee/result,
-/// and evaluated-effect ownership are sealed together before publication.
+/// Closed execution plan for an available expression. Tooling-only call
+/// outcomes retain no plan. Structural retention/omission, ordinary call
+/// callee/result and evaluated-effect ownership seal together before publication.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum CheckedExpressionExecutionPlan {
     Structural {
@@ -2201,7 +2200,7 @@ struct CheckedExpressionData {
     result: CheckedExpressionResult,
     effects: EffectSet,
     resolution: CheckedExpressionResolution,
-    execution: CheckedExpressionExecutionPlan,
+    execution: Option<CheckedExpressionExecutionPlan>,
     match_fact: Option<CheckedMatchFact>,
     nested_path_evidence: Option<Result<NestedPathEvidence, super::CheckedChildEdgeError>>,
 }
@@ -2213,10 +2212,7 @@ impl CheckedExpression {
                 result: CheckedExpressionResult::Unavailable,
                 effects: EffectSet::new(),
                 resolution: CheckedExpressionResolution::Call,
-                execution: CheckedExpressionExecutionPlan::structural(
-                    CheckedRuntimeValueDisposition::Omit,
-                    CheckedStructuralExecutionReason::RejectedCall,
-                ),
+                execution: None,
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2237,10 +2233,10 @@ impl CheckedExpression {
                 )),
                 effects,
                 resolution,
-                execution: CheckedExpressionExecutionPlan::structural(
+                execution: Some(CheckedExpressionExecutionPlan::structural(
                     CheckedRuntimeValueDisposition::Retain,
                     CheckedStructuralExecutionReason::Value,
-                ),
+                )),
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2259,10 +2255,10 @@ impl CheckedExpression {
                 ),
                 effects,
                 resolution,
-                execution: CheckedExpressionExecutionPlan::structural(
+                execution: Some(CheckedExpressionExecutionPlan::structural(
                     CheckedRuntimeValueDisposition::Omit,
                     CheckedStructuralExecutionReason::ContentEmission,
-                ),
+                )),
                 match_fact: None,
                 nested_path_evidence: None,
             }),
@@ -2313,15 +2309,19 @@ impl CheckedExpression {
         &self.data.resolution
     }
 
-    /// Final sema-owned execution authority for this expression.
-    pub const fn execution_plan(&self) -> &CheckedExpressionExecutionPlan {
-        &self.data.execution
+    /// Final sema-owned execution authority, absent for tooling-only call
+    /// outcomes. Absence is not a structural instruction to omit the value.
+    pub const fn execution_plan(&self) -> Option<&CheckedExpressionExecutionPlan> {
+        self.data.execution.as_ref()
     }
 
     /// Replaces only the execution plan after all call/content/effect seals
     /// are available, retaining the expression's checked semantic payload.
     #[must_use]
-    pub(crate) fn with_execution_plan(mut self, execution: CheckedExpressionExecutionPlan) -> Self {
+    pub(super) fn with_execution_plan(
+        mut self,
+        execution: Option<CheckedExpressionExecutionPlan>,
+    ) -> Self {
         self.data.execution = execution;
         self
     }

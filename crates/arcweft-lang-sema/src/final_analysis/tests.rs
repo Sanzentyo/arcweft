@@ -5048,10 +5048,7 @@ fn character_any_show_rejects_reserved_look_instead_of_open_named_supply() {
         &super::CheckedExpressionResult::Unavailable
     );
     assert!(expression.value_type().is_none());
-    assert_eq!(
-        expression.execution_plan().value(),
-        super::CheckedRuntimeValueDisposition::Omit
-    );
+    callable_values::assert_unselected_call_has_no_execution(&report, owner);
 }
 
 #[test]
@@ -5662,6 +5659,7 @@ fn ambiguous_call_retains_complete_considered_set_beyond_the_tied_subset() {
     assert!(expression.value_type().is_none());
     assert!(expression.type_selection().is_none());
 
+    callable_values::assert_unselected_call_has_no_execution(&report, call.expression());
     assert_eq!(candidates.len(), 2);
     assert_eq!(considered.len(), 3);
     assert_eq!(call.accounting().logical_argument_checks(), 1);

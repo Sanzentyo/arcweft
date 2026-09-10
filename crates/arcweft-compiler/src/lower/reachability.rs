@@ -20,10 +20,10 @@ use arcweft_lang_sema::{
     callable::{CheckedCallCalleeExecution, CheckedCallSite, ResolvedCallableOrigin},
     entry::{CheckedEntryBinding, CheckedEntryCatalog},
     final_analysis::{
-        CheckedChoice, CheckedExpressionCallCallee, CheckedExpressionExecutionPlan,
+        CheckedCallExecutionCallee, CheckedChoice, CheckedExpressionExecution,
         CheckedExpressionResolution, CheckedItemRole, CheckedOrdinaryFunctionEmission,
-        CheckedRuntimeValueDisposition, CheckedStatementPayload, FinalSemanticAnalysis,
-        FinalSemanticAnalysisError,
+        CheckedRuntimeValueDisposition, CheckedStatementPayload,
+        FinalAnalysisExecutionProjectionError, FinalSemanticAnalysis, FinalSemanticAnalysisError,
     },
 };
 use thiserror::Error;
@@ -40,6 +40,8 @@ pub enum RuntimeEmissionMode<'selection> {
 pub enum RuntimeReachabilityProjectionError {
     #[error(transparent)]
     Generation(#[from] FinalSemanticAnalysisError),
+    #[error(transparent)]
+    ExecutionProjection(#[from] FinalAnalysisExecutionProjectionError),
     #[error(transparent)]
     Hir(#[from] HirRuntimeReachabilityError),
     #[error("selected Entry has no accepted checked root")]
@@ -86,6 +88,10 @@ impl RuntimeReachabilityProjectionError {
         match self {
             Self::UnsupportedOrdinaryFunction { reason, .. } => reason.diagnostic_code(),
             Self::Generation(_) => "compiler.runtime_reachability.stale_generation",
+            Self::ExecutionProjection(FinalAnalysisExecutionProjectionError::UnselectedCall {
+                ..
+            }) => "compiler.runtime_reachability.missing_selected_call_authority",
+            Self::ExecutionProjection(_) => "compiler.runtime_reachability.invalid_projection",
             Self::MissingSelectedEntry
             | Self::MissingCheckedItem { .. }
             | Self::MissingCheckedCallable { .. }
@@ -618,28 +624,25 @@ fn runtime_expression_projection_for_owner(
     analysis: &FinalSemanticAnalysis,
     owner: ExprId,
 ) -> Result<HirRuntimeExpressionProjection, RuntimeReachabilityProjectionError> {
-    let expression = analysis
-        .expression(owner)
-        .ok_or(RuntimeReachabilityProjectionError::MissingHirExpression { owner })?;
     let value = |value: CheckedRuntimeValueDisposition| match value {
         CheckedRuntimeValueDisposition::Retain => HirRuntimeValueRetention::Retain,
         CheckedRuntimeValueDisposition::Omit => HirRuntimeValueRetention::Omit,
     };
-    match expression.execution_plan() {
-        CheckedExpressionExecutionPlan::Structural { value: result, .. } => {
+    match analysis.execution_projection().expression(owner)? {
+        CheckedExpressionExecution::Structural { value: result } => {
             Ok(HirRuntimeExpressionProjection::Structural {
-                value: value(*result),
+                value: value(result),
             })
         }
-        CheckedExpressionExecutionPlan::Call { result, callee, .. } => {
+        CheckedExpressionExecution::Call { result, callee } => {
             let callee = match callee {
-                CheckedExpressionCallCallee::Static => HirRuntimeCallCalleeDisposition::Static,
-                CheckedExpressionCallCallee::RuntimeReceiver => {
+                CheckedCallExecutionCallee::Static => HirRuntimeCallCalleeDisposition::Static,
+                CheckedCallExecutionCallee::RuntimeReceiver => {
                     HirRuntimeCallCalleeDisposition::RuntimeReceiver
                 }
             };
             Ok(HirRuntimeExpressionProjection::Call {
-                result: value(*result),
+                result: value(result),
                 callee,
             })
         }

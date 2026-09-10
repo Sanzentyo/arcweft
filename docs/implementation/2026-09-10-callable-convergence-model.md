@@ -194,6 +194,10 @@ these exact ownership questions against the existing code and parent contracts:
 5. The boundary between a report retaining rejected calls for tooling and the
    complete selected program admitted to executable projection. An empty
    diagnostic list does not prove that every required call has an application.
+   The [expression-plan follow-up](2026-09-10-call-execution-admission.md)
+   removes the structural execution plan from unavailable calls and makes the
+   existing execution projection reject them. Correlated inference and full
+   diagnostic publication remain part of this request.
 
 The existing coupled request owns these unresolved decisions. No external
 blocker, new compatibility exception or reduction of its acceptance matrix is

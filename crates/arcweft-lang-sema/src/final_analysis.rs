@@ -48,6 +48,7 @@ mod accounting;
 mod analyzer;
 mod canonical_literal;
 mod error;
+mod execution_plan;
 mod fx_application;
 mod input;
 mod match_coverage;

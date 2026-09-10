@@ -1,6 +1,53 @@
 use super::{analyze, fixture};
-use crate::final_analysis::CheckedExpressionResolution;
+use crate::final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis};
 use crate::types::TypeKind;
+
+pub(super) fn assert_unselected_call_has_no_execution(
+    analysis: &FinalSemanticAnalysis,
+    owner: arcweft_lang_hir::identity::ExprId,
+) {
+    use crate::final_analysis::FinalAnalysisExecutionProjectionError;
+
+    assert!(
+        analysis
+            .call(owner)
+            .unwrap()
+            .selected_application()
+            .is_none()
+    );
+    let expression = analysis.expression(owner).expect("tooling call fact");
+    assert!(expression.value_type().is_none());
+    assert!(expression.execution_plan().is_none());
+    assert_eq!(
+        analysis.execution_projection().plan(owner),
+        Err(FinalAnalysisExecutionProjectionError::UnselectedCall { owner }),
+    );
+    assert_eq!(
+        analysis.execution_projection().expression(owner),
+        Err(FinalAnalysisExecutionProjectionError::UnselectedCall { owner }),
+    );
+}
+
+#[test]
+fn unselected_call_outcomes_never_grant_execution() {
+    use crate::callable::CallAnalysisOutcome;
+
+    let fixture = super::typed_overload_fixture(
+        "fn caller() { choose(true); }\n",
+        "choose",
+        vec![
+            super::TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
+            super::TestCallableOverload::strict([TypeKind::U64], TypeKind::U64),
+        ],
+    );
+    let analysis = analyze(&fixture).expect("rejected overloads remain inspectable by tooling");
+    let calls = analysis.calls().collect::<Vec<_>>();
+    let [(owner, call)] = calls.as_slice() else {
+        panic!("one source call");
+    };
+    assert!(matches!(call.outcome(), CallAnalysisOutcome::Rejected(_)));
+    assert_unselected_call_has_no_execution(&analysis, *owner);
+}
 
 #[test]
 fn direct_closure_call_preserves_its_expression_role() {
@@ -81,7 +128,13 @@ flow main() -> i64 {
     assert!(call.selected_application().is_some());
     let checked = analysis.expression(owner).expect("checked call expression");
     assert_eq!(checked.result().value_type(), Some(&TypeKind::I64));
-    assert!(checked.execution_plan().call_application().is_some());
+    assert!(
+        checked
+            .execution_plan()
+            .expect("selected call has an execution plan")
+            .call_application()
+            .is_some()
+    );
 }
 
 #[test]

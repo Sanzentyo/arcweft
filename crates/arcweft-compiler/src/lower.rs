@@ -517,14 +517,7 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
-        let expression = analysis.expression(owner).ok_or_else(|| {
-            RuntimeSemanticProjectionError::ExecutionProjection(
-                arcweft_lang_sema::final_analysis::FinalAnalysisExecutionProjectionError::MissingExpression {
-                    owner,
-                },
-            )
-        })?;
-        if !expression.execution_plan().executes_as_runtime_call() {
+        if !execution_projection.plan(owner)?.executes_as_runtime_call() {
             continue;
         }
         let projected = runtime_call(

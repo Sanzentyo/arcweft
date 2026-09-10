@@ -989,15 +989,13 @@ impl PreparedExpressionFact {
                 PreparedContentEmission::ObjectSpan(_)
                 | PreparedContentEmission::LanguageCallable(_) => None,
             },
-            Self::Complete(value)
-                if matches!(
-                    value.execution_plan().value(),
-                    super::CheckedRuntimeValueDisposition::Omit
-                ) =>
-            {
-                None
-            }
-            Self::Complete(value) => value.value_type(),
+            Self::Complete(value) => match value.execution_plan() {
+                Some(plan) => match plan.value() {
+                    super::CheckedRuntimeValueDisposition::Retain => value.value_type(),
+                    super::CheckedRuntimeValueDisposition::Omit => None,
+                },
+                None => None,
+            },
             Self::Entry(value) => value.shell().value_type(),
             Self::Variant(value) => value.shell().value_type(),
             Self::ProjectField(value) => value.shell().value_type(),

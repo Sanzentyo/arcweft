@@ -427,7 +427,7 @@ impl FinalAnalysisExecutionProjection<'_> {
             let hir = module(owner)
                 .and_then(|module| module.resolve_expr(owner).ok())
                 .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?;
-            let family = if expression.execution_plan().executes_as_runtime_call() {
+            let family = if self.plan(owner)?.executes_as_runtime_call() {
                 if !self.analysis.calls.contains_key(&owner) {
                     return Err(FinalAnalysisExecutionProjectionError::MissingCallFacts { owner });
                 }
@@ -634,16 +634,25 @@ impl FinalAnalysisExecutionProjection<'_> {
         })
     }
 
+    /// Borrows an executable plan. A tooling-only call has no plan and cannot
+    /// be reinterpreted as a structural expression that omits its value.
+    pub fn plan(
+        &self,
+        owner: ExprId,
+    ) -> Result<&CheckedExpressionExecutionPlan, FinalAnalysisExecutionProjectionError> {
+        self.analysis
+            .expression(owner)
+            .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?
+            .execution_plan()
+            .ok_or(FinalAnalysisExecutionProjectionError::UnselectedCall { owner })
+    }
+
     /// Returns the exact execution projection of one checked expression.
     pub fn expression(
         &self,
         owner: ExprId,
     ) -> Result<CheckedExpressionExecution, FinalAnalysisExecutionProjectionError> {
-        let expression = self
-            .analysis
-            .expression(owner)
-            .ok_or(FinalAnalysisExecutionProjectionError::MissingExpression { owner })?;
-        Ok(match expression.execution_plan() {
+        Ok(match self.plan(owner)? {
             CheckedExpressionExecutionPlan::Structural { value, .. } => {
                 CheckedExpressionExecution::Structural { value: *value }
             }
@@ -1931,7 +1940,9 @@ impl FinalSemanticAnalysis {
         self.expressions.get(&owner)
     }
 
-    /// Borrows the final execution authority for this semantic generation.
+    /// Borrows fallible execution projections from this semantic generation.
+    /// Tooling-only outcomes remain queryable in the report but cannot yield
+    /// an executable plan through this view.
     pub const fn execution_projection(&self) -> FinalAnalysisExecutionProjection<'_> {
         FinalAnalysisExecutionProjection { analysis: self }
     }
