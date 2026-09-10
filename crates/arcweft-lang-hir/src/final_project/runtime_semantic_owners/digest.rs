@@ -67,7 +67,15 @@ pub(super) fn reachability_digest(
         digest_typed_ids(&mut hasher, owners.statements.iter().copied())?;
         digest_typed_ids(&mut hasher, owners.types.iter().copied())?;
         digest_typed_ids(&mut hasher, owners.patterns.iter().copied())?;
-        digest_typed_ids(&mut hasher, owners.captures.iter().copied())?;
+        digest_len(&mut hasher, owners.captures.len())?;
+        for capture in &owners.captures {
+            hasher.update(capture.capture().raw().cache_fingerprint_input());
+            hasher.update(capture.local().raw().cache_fingerprint_input());
+            hasher.update([match capture.mode() {
+                crate::scope::CaptureAccess::Read => 0,
+                crate::scope::CaptureAccess::Reassign => 1,
+            }]);
+        }
     }
     digest_typed_ids(&mut hasher, locals.iter().copied())?;
     digest_typed_ids(&mut hasher, owners.expressions.iter().copied())?;

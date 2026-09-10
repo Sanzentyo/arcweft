@@ -150,7 +150,10 @@ fn removed_attribute_shapes_are_one_generic_recovery_without_expression_owners()
         "proof invalid_attributes() = ()\n",
     );
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    assert!(built.has_recovery());
+    assert_eq!(
+        built.recovery_status(),
+        crate::incremental::ParseStatus::Recovered
+    );
     assert_eq!(built.green().to_string(), source);
     assert_eq!(
         built
@@ -215,7 +218,10 @@ fn outer_attribute_delimiter_and_missing_value_recovery_remain_typed() {
         "proof recovered_attributes() = ()\n",
     );
     let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
-    assert!(built.has_recovery());
+    assert_eq!(
+        built.recovery_status(),
+        crate::incremental::ParseStatus::Recovered
+    );
     assert_eq!(built.green().to_string(), source);
 
     let item = attached_first_item(source);
@@ -457,6 +463,9 @@ fn removed_top_level_shapes_are_ordinary_error_items() {
             SyntaxKind::ErrorItem,
         ]
     );
-    assert!(built.has_recovery());
+    assert_eq!(
+        built.recovery_status(),
+        crate::incremental::ParseStatus::Recovered
+    );
     assert_eq!(built.green().to_string(), source);
 }

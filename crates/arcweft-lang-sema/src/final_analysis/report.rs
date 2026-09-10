@@ -35,7 +35,7 @@ use super::{
     CheckedPipeLeftOccurrence, CheckedRuntimeValueDisposition, CheckedStatement, CheckedTry,
     CheckedTryBoundary, CheckedTryCarrier, ExprId, FinalSemanticAnalysisControl,
     FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticAnalysisWork,
-    FinalSemanticProjectError, HirExecutableProjectView, HirModule, HirModuleId, ItemId, LocalId,
+    FinalSemanticProjectError, HirAnalysisProjectView, HirModule, HirModuleId, ItemId, LocalId,
     PatternId, ProjectSymbolTable, SemanticFactFamily, StmtId, TypeId, TypeKind,
     TypeResolutionReport,
     validation::{
@@ -990,7 +990,7 @@ impl FinalSemanticAnalysisDraftParts {
 impl FinalSemanticAnalysisPostEntryDraft {
     pub(crate) fn seal(
         self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         checked_entries: CheckedEntryCatalog,
         project_nominals: ProjectNominalSemanticCatalog,
@@ -1072,7 +1072,12 @@ impl FinalSemanticAnalysisPostEntryDraft {
         let type_owners = if type_resolutions.is_empty() {
             None
         } else {
-            Some(accepted_type_owners(&modules, &expressions, &calls)?)
+            Some(accepted_type_owners(
+                &modules,
+                &expressions,
+                &calls,
+                &selected_expressions,
+            )?)
         };
         validate_type_resolution_reports(
             &modules,
@@ -1099,6 +1104,11 @@ impl FinalSemanticAnalysisPostEntryDraft {
             inventory,
             &type_resolutions,
         )?;
+        for expression in expressions.values() {
+            if let super::CheckedExpressionResolution::Closure(closure) = expression.resolution() {
+                closure.validate_selection(&selected_expressions)?;
+            }
+        }
         control.check()?;
         validate_types(&modules, &types)?;
         control.check()?;
@@ -1188,7 +1198,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
 
 fn seal_checked_callable_interfaces(
     analysis: &mut FinalSemanticAnalysis,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     executable_suspensions: BTreeMap<
         ExprId,
@@ -1557,7 +1567,7 @@ impl FinalSemanticAnalysis {
     /// Validates and publishes a complete semantic generation.
     #[cfg(test)]
     pub(crate) fn try_new(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         topology: Arc<HirProjectEvaluationTopology>,
         checked_callables: Arc<CheckedCallableCatalog>,
@@ -1578,7 +1588,7 @@ impl FinalSemanticAnalysis {
     /// caller-owned cancellation at every publication phase boundary.
     #[cfg(test)]
     pub(crate) fn try_new_with_control(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         topology: Arc<HirProjectEvaluationTopology>,
         checked_callables: Arc<CheckedCallableCatalog>,
@@ -1600,7 +1610,7 @@ impl FinalSemanticAnalysis {
     /// constructor that can mint accepted roots in production.
     #[cfg(test)]
     pub(crate) fn try_new_with_control_and_type_resolutions(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         topology: Arc<HirProjectEvaluationTopology>,
         checked_callables: Arc<CheckedCallableCatalog>,
@@ -1660,7 +1670,7 @@ impl FinalSemanticAnalysis {
     /// type facts. Manual fact fixtures deliberately use the constructor above
     /// and therefore cannot fabricate nominal-reference evidence.
     pub(super) fn try_new_with_control_and_type_resolutions_and_catalog(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         checked_callables: Arc<CheckedCallableCatalog>,
         mut input: FinalSemanticAnalysisInput,
@@ -1757,7 +1767,7 @@ impl FinalSemanticAnalysis {
     /// Rejects reuse with any missing, foreign, or stale module generation.
     pub fn validate_generation(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let observed = project
@@ -1893,6 +1903,30 @@ impl FinalSemanticAnalysis {
         self.captures.get(&owner)
     }
 
+    /// Selected capture identity, source local, and access from its closed
+    /// producer. Type facts and this projection belong to the same generation.
+    pub fn selected_capture(
+        &self,
+        owner: CaptureId,
+    ) -> Option<&arcweft_lang_hir::project::HirSelectedCapture> {
+        self.capture(owner)?;
+        let row = self
+            .accepted_root_catalog()
+            .topology()
+            .module(owner.module())?
+            .captures()
+            .capture(owner)?;
+        let super::CheckedExpressionResolution::Closure(closure) =
+            self.expression(row.closure())?.resolution()
+        else {
+            return None;
+        };
+        closure
+            .captures()
+            .iter()
+            .find(|capture| capture.capture() == owner)
+    }
+
     pub fn expression(&self, owner: ExprId) -> Option<&CheckedExpression> {
         self.expressions.get(&owner)
     }
@@ -2018,7 +2052,7 @@ fn collect_sealed_patterns(
 }
 
 fn project_generation_modules(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
 ) -> BTreeMap<HirModuleId, &HirModule> {
     project
         .modules()
@@ -2150,14 +2184,10 @@ fn source_span(
     module: &HirModule,
     query: HirSourceQuery,
 ) -> Result<SourceSpan, FinalSemanticAnalysisError> {
-    let lookup = module
-        .source_site(module.provenance().source_identity(), query)
-        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-    match lookup.presence() {
-        HirSourcePresence::Present(HirSourceSite::Span(span)) => Ok(span.clone()),
-        HirSourcePresence::Present(HirSourceSite::Insertion(_))
-        | HirSourcePresence::AbsentOptional => Err(FinalSemanticAnalysisError::RecoveredOwner),
-    }
+    module
+        .source_anchor(query)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)
 }
 
 fn validate_type_resolution_reports(

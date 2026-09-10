@@ -2,6 +2,7 @@
 
 mod block_projection;
 mod call_cursor;
+mod candidates;
 mod control_projection;
 mod expr_projection;
 mod expression_manifest;
@@ -66,6 +67,10 @@ pub enum HirSourceLookupError {
     },
 }
 
+pub use candidates::{
+    HirCandidateProvenance, HirCandidateRegion, HirCandidateSelectionError,
+    HirPostfixInterpretation,
+};
 pub(crate) use expression_manifest::expression_component_role;
 pub use flow_role::{
     HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowReturnSourcePart,
@@ -93,6 +98,16 @@ pub enum HirSourceSite {
 }
 
 impl HirSourceSite {
+    /// Exact physical range, including a zero-width generated/recovery anchor.
+    pub fn range(&self) -> arcweft_source::SourceRange {
+        match self {
+            Self::Span(span) => span.range(),
+            Self::Insertion(insertion) => {
+                arcweft_source::SourceRange::new(insertion.offset(), insertion.offset())
+            }
+        }
+    }
+
     pub fn source_identity(&self) -> &SourceDocumentIdentity {
         match self {
             Self::Span(span) => span.source(),

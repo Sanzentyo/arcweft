@@ -315,3 +315,9 @@ callable の失敗と全後続工程については、引き続き goal を継�
 [候補内の構文回復と実行可否の設計依頼](../reviews/requests/2026-09-10-conditional-syntax-recovery-readiness.md)
 に、候補の保持・診断・意味解析・キャッシュを一緒に閉じる必須作業を記録した。
 設計依頼や HIR 公開の成功を、実行・AWBC と goal 全体の完了としては扱わない。
+
+[条件付き構文回復の実装記録](2026-09-10-conditional-recovery-validation.md)では、
+候補ごとの回復・ソース位置・capture と、選択後の意味情報・実行方式・キャッシュを
+接続した。ルビ、capture の値と順序、候補内の Content を native/AWBC で最後まで
+検証している。既知の sema 7件・callable 実行18件と画像サンプルの構文エラー、
+後続工程は引き続き必須であり、この区切りを goal 全体の完了とは扱わない。

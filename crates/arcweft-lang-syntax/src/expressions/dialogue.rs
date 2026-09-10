@@ -6,11 +6,15 @@
 
 use std::collections::BTreeMap;
 
+mod rebase;
+
 use arcweft_source::SourceRange;
 
 use super::{PendingExpressionComponent, PendingExpressionProjection, SyntaxExpressionSlot};
 use crate::grammar::assertion_projection::PendingAssertionProjection;
-use crate::grammar::event::{PendingPatternProjection, PendingTypeProjection};
+use crate::grammar::event::{
+    ExpectedToken, PendingPatternProjection, PendingSyntaxDiagnostic, PendingTypeProjection,
+};
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::grammar::source_projection::PendingPathProjection;
@@ -18,6 +22,7 @@ use crate::id_ref::{
     AuthoredIdRoot, AuthoredIdSegment, SyntaxIdRefComponent, SyntaxIdRefIssue, SyntaxIdRefShape,
     SyntaxIdRefSyntax,
 };
+use crate::incremental::ParseStatus;
 use crate::name::{SyntaxName, SyntaxNameIssue};
 use crate::patterns::PatternNodePath;
 use crate::text::RichTextArgumentIssue;
@@ -620,13 +625,6 @@ pub enum SyntaxRichTextHostEvent {
     Signal,
 }
 
-/// Quality of one viable candidate parse.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxCandidateQuality {
-    Clean,
-    Recovered,
-}
-
 /// Candidate-local index. It is never a source or HIR identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) struct CandidateNodeIndex(u32);
@@ -731,11 +729,15 @@ pub(crate) struct PendingCandidateGraph {
     child_edges: Box<[CandidateNodeIndex]>,
     type_index: BTreeMap<(u64, TypeRefNodePath), CandidateNodeIndex>,
     pattern_index: BTreeMap<(u64, PatternNodePath), CandidateNodeIndex>,
+    missing_tokens: Box<[(ExpectedToken, usize)]>,
+    diagnostics: Box<[PendingSyntaxDiagnostic]>,
 }
 
 impl PendingCandidateGraph {
     pub(crate) fn try_new(
         mut nodes: Vec<PendingCandidateNode>,
+        missing_tokens: Vec<(ExpectedToken, usize)>,
+        diagnostics: Vec<PendingSyntaxDiagnostic>,
     ) -> Result<Self, PendingCandidateGraphError> {
         let mut roots = Vec::new();
         let mut children = vec![Vec::new(); nodes.len()];
@@ -809,7 +811,57 @@ impl PendingCandidateGraph {
             child_edges: child_edges.into_boxed_slice(),
             type_index,
             pattern_index,
+            missing_tokens: missing_tokens.into_boxed_slice(),
+            diagnostics: diagnostics.into_boxed_slice(),
         })
+    }
+
+    pub(crate) fn recovery_status(&self) -> ParseStatus {
+        self.nodes.iter().fold(
+            ParseStatus::from_recovery(
+                !self.missing_tokens.is_empty() || !self.diagnostics.is_empty(),
+            ),
+            |status, node| {
+                let node_status = ParseStatus::from_recovery(
+                    node.kind().is_missing_node() || node.kind().is_error_node(),
+                );
+                let projection_status = match node.semantic() {
+                    PendingCandidateSemantic::Expression(projection) => {
+                        projection.recovery_status()
+                    }
+                    PendingCandidateSemantic::Assertion(projection) => {
+                        ParseStatus::from_recovery(projection.has_recovery())
+                    }
+                    PendingCandidateSemantic::KeywordStatement(projection) => {
+                        ParseStatus::from_recovery(projection.has_recovery())
+                    }
+                    PendingCandidateSemantic::Type(projection) => {
+                        ParseStatus::from_recovery(matches!(
+                            projection.authored().value_at(projection.path()),
+                            Some(crate::types::TypeRef::Recovery(_))
+                        ))
+                    }
+                    PendingCandidateSemantic::Pattern(projection) => ParseStatus::from_recovery(
+                        projection
+                            .authored()
+                            .value_at(projection.path())
+                            .is_some_and(|node| !node.state().is_valid()),
+                    ),
+                    PendingCandidateSemantic::Path(_) | PendingCandidateSemantic::KindOnly => {
+                        ParseStatus::Clean
+                    }
+                };
+                status.required(node_status).required(projection_status)
+            },
+        )
+    }
+
+    pub(crate) fn diagnostics(&self) -> &[PendingSyntaxDiagnostic] {
+        &self.diagnostics
+    }
+
+    pub(crate) fn missing_tokens(&self) -> &[(ExpectedToken, usize)] {
+        &self.missing_tokens
     }
 
     pub(crate) const fn roots(&self) -> &[CandidateNodeIndex] {
@@ -881,29 +933,20 @@ pub(crate) enum PendingCandidateGraphError {
 /// The ordinary-index interpretation retained only when both candidates win.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxPostfixIndexCandidate {
-    quality: SyntaxCandidateQuality,
     index: CandidateNodeIndex,
     graph: PendingCandidateGraph,
 }
 
 impl SyntaxPostfixIndexCandidate {
-    pub(crate) fn new(
-        quality: SyntaxCandidateQuality,
-        _candidate_root: CandidateNodeIndex,
-        graph: PendingCandidateGraph,
-    ) -> Self {
+    pub(crate) fn new(graph: PendingCandidateGraph) -> Self {
         let index = graph
             .primary_expression()
             .expect("viable ordinary-index candidates retain one semantic expression root");
-        Self {
-            quality,
-            index,
-            graph,
-        }
+        Self { index, graph }
     }
 
-    pub const fn quality(&self) -> SyntaxCandidateQuality {
-        self.quality
+    pub fn recovery_status(&self) -> ParseStatus {
+        self.graph.recovery_status()
     }
 
     pub(crate) const fn index(&self) -> CandidateNodeIndex {
@@ -918,7 +961,6 @@ impl SyntaxPostfixIndexCandidate {
 /// The dialogue-content interpretation retained only when both candidates win.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SyntaxPostfixDialogueCandidate {
-    quality: SyntaxCandidateQuality,
     content: SyntaxDialogueContentProjection,
     components: Box<[PendingExpressionComponent]>,
     graph: PendingCandidateGraph,
@@ -926,21 +968,21 @@ pub struct SyntaxPostfixDialogueCandidate {
 
 impl SyntaxPostfixDialogueCandidate {
     pub(crate) fn new(
-        quality: SyntaxCandidateQuality,
         content: SyntaxDialogueContentProjection,
         components: impl Into<Box<[PendingExpressionComponent]>>,
         graph: PendingCandidateGraph,
     ) -> Self {
         Self {
-            quality,
             content,
             components: components.into(),
             graph,
         }
     }
 
-    pub const fn quality(&self) -> SyntaxCandidateQuality {
-        self.quality
+    pub fn recovery_status(&self) -> ParseStatus {
+        self.graph
+            .recovery_status()
+            .required(ParseStatus::from_recovery(self.content.has_recovery()))
     }
 
     pub const fn content(&self) -> &SyntaxDialogueContentProjection {
@@ -970,14 +1012,17 @@ pub enum SyntaxPostfixBracketProjection {
 }
 
 impl SyntaxPostfixBracketProjection {
-    pub const fn has_recovery(&self) -> bool {
+    pub fn recovery_status(&self) -> ParseStatus {
         match self {
-            Self::Ambiguous { index, dialogue } => {
-                matches!(index.quality(), SyntaxCandidateQuality::Recovered)
-                    || matches!(dialogue.quality(), SyntaxCandidateQuality::Recovered)
-            }
-            Self::Invalid { .. } => true,
+            Self::Ambiguous { index, dialogue } => index
+                .recovery_status()
+                .alternative(dialogue.recovery_status()),
+            Self::Invalid { .. } => ParseStatus::Recovered,
         }
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.recovery_status() != ParseStatus::Clean
     }
 }
 

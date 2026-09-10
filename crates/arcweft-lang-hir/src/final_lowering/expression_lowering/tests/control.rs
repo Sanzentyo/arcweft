@@ -7,7 +7,7 @@ use super::*;
 use crate::expr::HirMatchRecoveryIssue;
 use crate::identity::CaptureId;
 use crate::pattern::{HirPatternBinding, HirPatternKind};
-use crate::scope::{CaptureAccess, HirCapture, LocalLookup};
+use crate::scope::{CaptureAccess, HirCapture, HirCaptureUse, LocalLookup};
 use crate::source_index::HirMatchArmSourcePart;
 use crate::type_ref::HirTypeKind;
 
@@ -1256,9 +1256,16 @@ fn closure_capture_freeze_rejects_first_use_owner_divergence() {
         .document()
         .span(SourceRange::new(later_start, later_start + "outer".len()))
         .expect("later captured source span");
-    let replacement =
-        HirCapture::try_new(closure_id, retained.local(), retained.access(), later_use)
-            .expect("same-module capture tamper");
+    let replacement = HirCapture::try_new(
+        closure_id,
+        retained.local(),
+        Arc::from([HirCaptureUse::new(
+            retained.uses()[0].site(),
+            retained.uses()[0].access(),
+            later_use,
+        )]),
+    )
+    .expect("same-module capture tamper");
     {
         let (slots, arenas) = transaction.storage_mut();
         arenas
@@ -1320,13 +1327,8 @@ fn closure_capture_freeze_rejects_a_sibling_scope_local() {
             .clone();
         (closure_id, capture_id, retained)
     };
-    let replacement = HirCapture::try_new(
-        closure_id,
-        sibling,
-        retained.access(),
-        retained.first_use().clone(),
-    )
-    .expect("same-module sibling capture tamper");
+    let replacement = HirCapture::try_new(closure_id, sibling, Arc::clone(retained.uses()))
+        .expect("same-module sibling capture tamper");
     {
         let (slots, arenas) = transaction.storage_mut();
         arenas
@@ -1391,13 +1393,9 @@ fn assert_capture_graph_tamper_rejected(tamper: CaptureGraphTamper) {
                     .unwrap()
                     .clone()
             };
-            let replacement = HirCapture::try_new(
-                root,
-                retained.local(),
-                retained.access(),
-                retained.first_use().clone(),
-            )
-            .expect("same-module wrong capture owner");
+            let replacement =
+                HirCapture::try_new(root, retained.local(), Arc::clone(retained.uses()))
+                    .expect("same-module wrong capture owner");
             let (slots, arenas) = transaction.storage_mut();
             arenas
                 .captures()
@@ -1429,13 +1427,8 @@ fn assert_capture_graph_tamper_rejected(tamper: CaptureGraphTamper) {
                     .clone();
                 (first, retained)
             };
-            let replacement = HirCapture::try_new(
-                closure_id,
-                first,
-                retained.access(),
-                retained.first_use().clone(),
-            )
-            .expect("same-module duplicate capture Local");
+            let replacement = HirCapture::try_new(closure_id, first, Arc::clone(retained.uses()))
+                .expect("same-module duplicate capture Local");
             let (slots, arenas) = transaction.storage_mut();
             arenas
                 .captures()
@@ -1468,6 +1461,72 @@ fn closure_capture_freeze_rejects_cross_arena_corruption_atomically() {
         CaptureGraphTamper::DuplicateLocal,
     ] {
         assert_capture_graph_tamper_rejected(tamper);
+    }
+}
+
+#[test]
+fn closure_capture_freeze_validates_every_use_atomically() {
+    for tamper in 0..3 {
+        let (initial, revised) = parsed_revisions(
+            &format!("capture-complete-uses-{tamper}"),
+            "result { let outer = 1; || outer + outer + outer }",
+        );
+        let mut database = HirDatabase::try_new().unwrap();
+        let mut transaction = stage(&database, &initial);
+        let scope = allocate_module_scope(&mut transaction, &initial);
+        transaction
+            .lower_attached_expression(&attached_expressions(&initial).pop().unwrap(), scope)
+            .unwrap();
+        let accepted = transaction.finish(&mut database).unwrap().into_module();
+        let before = database.test_state();
+        let mut transaction = stage(&database, &revised);
+        let scope = allocate_module_scope(&mut transaction, &revised);
+        let root = transaction
+            .lower_attached_expression(&attached_expressions(&revised).pop().unwrap(), scope)
+            .unwrap();
+        let (closure, captures) = staged_closure_captures(&mut transaction, root);
+        let [capture_id] = captures.as_ref() else {
+            panic!("one complete capture")
+        };
+        let (slots, arenas) = transaction.storage_mut();
+        let capture = arenas
+            .captures()
+            .resolve_staged(slots, *capture_id)
+            .unwrap();
+        let mut uses = capture.uses().to_vec();
+        assert_eq!(uses.len(), 3);
+        match tamper {
+            0 => {
+                uses.pop();
+            }
+            1 => uses[2].require_access(CaptureAccess::Reassign),
+            2 => {
+                let last = &uses[2];
+                let range = last.source().range();
+                let forged = revised
+                    .document()
+                    .span(SourceRange::new(range.start() + 1, range.end()))
+                    .unwrap();
+                uses[2] = HirCaptureUse::new(last.site(), last.access(), forged);
+            }
+            _ => unreachable!(),
+        }
+        let replacement = HirCapture::try_new(closure, capture.local(), uses.into()).unwrap();
+        arenas
+            .captures()
+            .revise_finalized(slots, *capture_id, replacement)
+            .unwrap();
+        assert!(matches!(
+            transaction.finish(&mut database),
+            Err(HirLowerFailure::Invariant(
+                HirInvariantFailure::InvalidSourceIndex
+            ))
+        ));
+        assert_eq!(database.test_state(), before);
+        assert!(Arc::ptr_eq(
+            &accepted,
+            &database.current(&module_key(&initial)).unwrap()
+        ));
     }
 }
 

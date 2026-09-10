@@ -672,7 +672,7 @@ fn validate_compiled_semantic_authority(
     let analysis = compiled.final_analysis();
     let project = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .map_err(|_| CompiledSemanticAuthorityError::GenerationMismatch)?;
     analysis
         .validate_generation(project, compiled.project_symbols())

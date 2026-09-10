@@ -5,7 +5,7 @@
 //! classifier or expose caller-constructed admission rows.
 
 use arcweft_lang_hir::{
-    identity::ExprId, project::HirExecutableProjectView, symbol::ProjectSymbolTable,
+    identity::ExprId, project::HirAnalysisProjectView, symbol::ProjectSymbolTable,
 };
 use thiserror::Error;
 
@@ -145,7 +145,7 @@ impl FinalSemanticAnalysis {
     /// fail closed in this cut.
     pub fn checked_need_producer_admission_for_call(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         world: &RegisteredSemanticWorld,
         call: ExprId,
@@ -177,7 +177,7 @@ impl FinalSemanticAnalysis {
 
     fn checked_producer_argument_values<'a>(
         &'a self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         call: ExprId,
         limits: CheckedOwnershipLimits,

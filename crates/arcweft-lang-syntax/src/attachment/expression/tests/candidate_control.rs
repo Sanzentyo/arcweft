@@ -22,6 +22,78 @@ fn with_index_primary(source: &str, inspect: impl FnOnce(AttachedCandidateNode<'
 }
 
 #[test]
+fn candidate_recovery_preserves_original_diagnostics_and_required_composition() {
+    use crate::incremental::ParseStatus;
+
+    let outer = expression("alice()[|[夢](ゆめ)]", SyntaxKind::PostfixBracketExpression);
+    let index = outer.ambiguous_index_candidate().expect("retained Index");
+    let dialogue = outer
+        .ambiguous_dialogue_candidate()
+        .expect("retained Dialogue");
+    assert_eq!(index.recovery_status(), ParseStatus::Recovered);
+    assert_eq!(dialogue.recovery_status(), ParseStatus::Clean);
+    assert!(dialogue.diagnostics().next().is_none());
+    assert!(dialogue.missing_tokens().next().is_none());
+    let trailing = index
+        .diagnostics()
+        .find(|diagnostic| diagnostic.code() == "syntax.pattern.unexpected_trailing_input")
+        .expect("original Pattern diagnostic stays with its candidate");
+    assert_eq!(
+        trailing.primary().source(),
+        outer.whole_source_span().source()
+    );
+    assert_eq!(trailing.primary().range().as_range().len(), "(ゆめ)".len());
+    assert_eq!(
+        index
+            .primary()
+            .unwrap()
+            .closure_view()
+            .unwrap()
+            .projection()
+            .syntax()
+            .terminator(),
+        crate::expressions::SyntaxClosureTerminator::RecoveredMissing,
+    );
+
+    for (value, expected) in [
+        ("items[value]", ParseStatus::Clean),
+        ("alice()[|[夢](ゆめ)]", ParseStatus::Conditional),
+        ("items[alice()[|[夢](ゆめ)]]", ParseStatus::Conditional),
+        ("|_ trailing| 0", ParseStatus::Recovered),
+        ("|[value] trailing| 0", ParseStatus::Recovered),
+        ("items[|[value] trailing| 0]", ParseStatus::Recovered),
+        ("(|_ trailing| 0)[value]", ParseStatus::Recovered),
+    ] {
+        let source = format!("predicate leaf() = {value}\n");
+        let build = parse_document(&document(&source), ParseOptions::default())
+            .expect("retained source grammar");
+        assert_eq!(build.recovery_status(), expected, "{value}");
+        assert_eq!(build.green().to_string(), source);
+    }
+}
+
+#[test]
+fn recovery_composition_is_independent_of_grouping_and_required_order() {
+    use crate::incremental::ParseStatus::{Clean, Conditional, Recovered};
+    let states = [Clean, Conditional, Recovered];
+    for a in states {
+        assert_eq!(a.required(Clean), a);
+        assert_eq!(a.required(Recovered), Recovered);
+        for b in states {
+            assert_eq!(a.required(b), b.required(a));
+            assert_eq!(a.alternative(b), b.alternative(a));
+            for c in states {
+                assert_eq!(a.required(b).required(c), a.required(b.required(c)));
+                assert_eq!(
+                    a.alternative(b).alternative(c),
+                    a.alternative(b.alternative(c))
+                );
+            }
+        }
+    }
+}
+
+#[test]
 fn candidate_closure_view_preserves_parameter_pattern_type_and_body_relations() {
     with_index_primary("items[|value: Pair| value]", |primary| {
         let closure = primary

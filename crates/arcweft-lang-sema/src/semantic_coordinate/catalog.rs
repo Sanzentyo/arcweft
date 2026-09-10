@@ -7,8 +7,8 @@ use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::{ExprId, ItemId, LocalId, PatternId, StmtId},
     project::{
-        HirControlTransferKind, HirControlTransferLookupError, HirControlTransferTarget,
-        HirExecutableProjectView, HirLoopTargetFamily, HirProjectEvaluationTopology,
+        HirAnalysisProjectView, HirControlTransferKind, HirControlTransferLookupError,
+        HirControlTransferTarget, HirLoopTargetFamily, HirProjectEvaluationTopology,
         HirSemanticBodyLocation, HirSemanticBodyLocator, HirSemanticBodyLookupError,
         HirSemanticBodyOwner, HirSemanticBodyOwnerRole, HirSemanticOwnerPath,
         HirSemanticPathLocation, HirSemanticPathLookupError, HirSemanticPathOwnerId,
@@ -366,7 +366,7 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
     /// the same module generation as the accepted-root catalog.
     pub(crate) fn dialogue_mark(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         mark: HirDialogueMarkId,
     ) -> Result<StableCheckedDialogueMarkCoordinate, SemanticCoordinateIndexError> {
         let owner = mark.content().owner();
@@ -504,7 +504,10 @@ impl<'catalog, 'edges> SemanticCoordinateIndex<'catalog, 'edges> {
         {
             return Err(SemanticCoordinateIndexError::InvalidRootPath);
         }
-        let target = match (location.kind(), location.target()) {
+        let resolved_target = location
+            .target()
+            .map_err(|_| SemanticCoordinateIndexError::InvalidRootPath)?;
+        let target = match (location.kind(), resolved_target) {
             (HirControlTransferKind::Out, HirControlTransferTarget::Output { application }) => {
                 let owner = HirSemanticPathOwnerId::Expression(*application);
                 let Some(application_location) = self.catalog.semantic_path(owner)? else {

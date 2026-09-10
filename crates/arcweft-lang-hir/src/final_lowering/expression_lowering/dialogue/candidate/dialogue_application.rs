@@ -140,11 +140,22 @@ impl StagedHirModuleTransaction<'_> {
                     let component = child.component_role();
                     let role = expression_component_role(expression_projection, component)
                         .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                    let child_family = match component {
+                        ExpressionComponentRole::DialogueNode { ordinal, .. }
+                            if matches!(source.nodes().get(usize::try_from(ordinal).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?), Some(arcweft_lang_syntax::expressions::SyntaxDialogueNodeProjection::ContentApplication(_))) => HirAttachedContentApplicationFamilyKind::ContentCall,
+                        _ => HirAttachedContentApplicationFamilyKind::DialogueLine,
+                    };
                     let (value, missing) = match child {
                         AttachedCandidateExpressionChild::Authored { node, .. }
-                        | AttachedCandidateExpressionChild::Recovered { node, .. } => {
-                            (self.lower_candidate_expression(node, scope, cursor)?, false)
-                        }
+                        | AttachedCandidateExpressionChild::Recovered { node, .. } => (
+                            self.lower_candidate_expression_with_family(
+                                node,
+                                scope,
+                                cursor,
+                                child_family,
+                            )?,
+                            false,
+                        ),
                         AttachedCandidateExpressionChild::Missing { source, .. } => (
                             self.lower_missing_candidate_expression(scope, cursor, role, &source)?,
                             true,

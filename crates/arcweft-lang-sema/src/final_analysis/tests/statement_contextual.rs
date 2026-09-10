@@ -79,7 +79,7 @@ fn stateful_flow_fixture(body: &str, extra: &str) -> Fixture {
 fn root_module(fixture: &Fixture) -> &HirModule {
     fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -186,7 +186,7 @@ fn assert_pattern_and_local_type(
 
 fn assert_rejected_source(label: &str, source: &str) {
     let fixture = fixture(source, None);
-    if fixture.project.executable_view().is_ok() {
+    if fixture.project.analysis_view().is_ok() {
         assert!(
             analyze(&fixture).is_err(),
             "{label} must be rejected by final analysis"
@@ -201,7 +201,7 @@ fn analyze_with_statement_mutation(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     super::super::analyzer::analyze_final_project_with_statement_mutation_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -253,7 +253,7 @@ fn p01_p03_p04_p05_p08_p09_p10_trigger_rows_use_exact_contextual_types() {
     for (label, source, wanted, view) in cases {
         let fixture = fixture(source, None);
         assert!(
-            fixture.project.executable_view().is_ok(),
+            fixture.project.analysis_view().is_ok(),
             "{label}: recovered HIR"
         );
         let report = analyze(&fixture).unwrap_or_else(|error| panic!("{label}: {error:?}"));
@@ -878,7 +878,7 @@ fn n11_timeout_and_expression_triggers_require_duration_and_bool_children() {
 fn n12_select_trigger_without_one_choice_lifecycle_is_rejected() {
     let zero = fixture("flow row { on select(_) => defer () }\n", None);
     zero.project
-        .executable_view()
+        .analysis_view()
         .expect("N12 zero-lifecycle Trigger remains executable HIR");
     let (owner, trigger) = find_on(&zero, |trigger| matches!(trigger, HirTrigger::Select(_)));
     assert!(matches!(trigger, HirTrigger::Select(_)));

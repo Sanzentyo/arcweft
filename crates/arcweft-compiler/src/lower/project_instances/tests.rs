@@ -26,7 +26,7 @@ fn instance() -> (RuntimeProjectFunctionInstanceKey, ProjectInstanceNode) {
         .expect("fixture has one selected ordinary function");
     let executable = compiled
         .hir_project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR");
     let function = executable
         .items()

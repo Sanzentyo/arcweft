@@ -111,6 +111,25 @@ impl<'a> AttachedCandidatePatternProjection<'a> {
         Some(self.owner.syntax().source_span_for_range(range))
     }
 
+    /// Complete source components of this exact retained Pattern node.
+    pub fn components(self) -> Vec<crate::attachment::AttachedPatternComponent> {
+        self.projection
+            .authored()
+            .source()
+            .components()
+            .iter()
+            .filter(|component| component.owner() == self.projection.path())
+            .map(|component| {
+                crate::attachment::AttachedPatternComponent::new(
+                    component.role(),
+                    self.owner
+                        .syntax()
+                        .source_span_for_range(*component.range()),
+                )
+            })
+            .collect()
+    }
+
     /// Immediate typed Pattern and typed-binding Type children.
     pub fn children(self) -> Option<Vec<AttachedCandidatePatternChild<'a>>> {
         let mut children = self

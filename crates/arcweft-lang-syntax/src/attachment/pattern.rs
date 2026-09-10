@@ -23,6 +23,9 @@ pub struct AttachedPatternComponent {
 }
 
 impl AttachedPatternComponent {
+    pub(crate) const fn new(role: PatternComponentRole, source: SourceSpan) -> Self {
+        Self { role, source }
+    }
     pub const fn role(&self) -> PatternComponentRole {
         self.role
     }

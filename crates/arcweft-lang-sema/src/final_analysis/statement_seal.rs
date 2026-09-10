@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use arcweft_lang_hir::{
     identity::{ExprId, LocalId, StmtId},
     module::HirModule,
-    project::{HirControlTransferKind, HirExecutableProjectView},
+    project::{HirAnalysisProjectView, HirControlTransferKind},
     stmt::{
         HirSelectBranchHead, HirSelectStmt, HirSourceLocaleValue, HirStmtKind, HirTrigger,
         HirUnsafeAuditIdentity, HirUnsafeLifetimeBody,
@@ -40,7 +40,7 @@ pub(crate) struct CheckedStatementSeal<'a, 'project, 'coordinate> {
     locals: &'a BTreeMap<LocalId, CheckedBinding>,
     callables: &'a CheckedCallableCatalog,
     coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
 }
 
 impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> {
@@ -50,7 +50,7 @@ impl<'a, 'project, 'coordinate> CheckedStatementSeal<'a, 'project, 'coordinate> 
         locals: &'a BTreeMap<LocalId, CheckedBinding>,
         callables: &'a CheckedCallableCatalog,
         coordinates: &'coordinate SemanticCoordinateIndex<'coordinate, 'coordinate>,
-        project: HirExecutableProjectView<'project>,
+        project: HirAnalysisProjectView<'project>,
     ) -> Self {
         let (includes, scrutinees) = ingress.into_parts();
         Self {

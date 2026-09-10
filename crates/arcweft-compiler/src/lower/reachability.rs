@@ -5,7 +5,7 @@ use arcweft_lang_hir::{
     identity::{ExprId, ItemId, StmtId},
     item::HirItemKind,
     project::{
-        HirExecutableProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
+        HirAnalysisProjectView, HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode,
         HirRuntimeExecutableOwner, HirRuntimeExpressionProjection, HirRuntimeReachabilityEdge,
         HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError, HirRuntimeReachabilityPath,
         HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
@@ -110,7 +110,7 @@ impl RuntimeReachabilityProjectionError {
 }
 
 pub fn project_runtime_reachability<'project>(
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     entries: &CheckedEntryCatalog,
@@ -229,7 +229,7 @@ pub fn project_runtime_reachability<'project>(
 /// that is disjoint from ordinary Flow/Entry roots. Captured View parameters
 /// enter only this transaction and therefore cannot become Flow locals.
 pub(crate) fn project_view_value_program_reachability<'project>(
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
     handler_closures: impl IntoIterator<Item = ExprId>,

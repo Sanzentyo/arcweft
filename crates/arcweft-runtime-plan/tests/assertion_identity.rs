@@ -534,7 +534,7 @@ fn lower_assertion_project(
     admission: RuntimeAssertionAdmission,
     values: &[bool],
 ) -> (RuntimePlanLowerReport, StmtId, Vec<RuntimeAssertionGuardId>) {
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     let (flow_owner, statement, conditions) = executable
         .items()
         .find_map(|item| {

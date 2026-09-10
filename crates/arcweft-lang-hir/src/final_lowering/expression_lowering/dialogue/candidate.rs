@@ -520,7 +520,9 @@ impl StagedHirModuleTransaction<'_> {
                     AttachedCandidatePathExpression::Value(path) => {
                         match project_candidate_path(path)? {
                             TypedPathProjection::Resolved(projected) => {
-                                self.record_candidate_path_capture(scope, path, &projected)?;
+                                self.record_candidate_path_capture(
+                                    expression, scope, path, &projected,
+                                )?;
                                 (HirExprKind::Path(HirPathValue::Resolved(projected)), None)
                             }
                             TypedPathProjection::Recovered(path) => {
@@ -748,12 +750,12 @@ impl StagedHirModuleTransaction<'_> {
             }
             ExpressionProjection::Record(fields) => {
                 let (record, recovery) =
-                    self.lower_candidate_record(node, scope, cursor, fields)?;
+                    self.lower_candidate_record(expression, node, scope, cursor, fields)?;
                 (HirExprKind::Record(record), recovery)
             }
             ExpressionProjection::RecordLiteral(fields) => {
                 let (record, recovery) =
-                    self.lower_candidate_record_literal(node, scope, cursor, fields)?;
+                    self.lower_candidate_record_literal(expression, node, scope, cursor, fields)?;
                 (HirExprKind::RecordLiteral(record), recovery)
             }
             ExpressionProjection::Binary { operator, .. } => {

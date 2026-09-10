@@ -15,7 +15,7 @@ fn build_only_checked_match(
 ) -> Result<CheckedMatch, SemanticTranscriptError> {
     let fixture = fixture(source, None);
     let report = analyze(&fixture).expect("focused Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -287,7 +287,7 @@ fn assert_drop_policy_payload_types(report: &FinalSemanticAnalysis) {
 }
 
 fn assert_drop_policy_coverage(fixture: &Fixture, report: &FinalSemanticAnalysis) {
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -411,7 +411,7 @@ fn root(flag: bool) -> i64 {
 ";
     let fixture = fixture(source, None);
     let report = analyze(&fixture).expect("cancellation Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");

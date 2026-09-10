@@ -308,7 +308,7 @@ impl StagedHirModuleTransaction<'_> {
                 let value = match (attached.path(), attached.nominal_path_type()) {
                     (Some(path), None) => match project_expression_path(path)? {
                         TypedPathProjection::Resolved(projected) => {
-                            self.record_attached_path_capture(scope, path, &projected)?;
+                            self.record_attached_path_capture(owner, scope, path, &projected)?;
                             HirPathValue::Resolved(projected)
                         }
                         TypedPathProjection::Recovered(recovery) => {
@@ -1973,7 +1973,13 @@ impl StagedHirModuleTransaction<'_> {
                     let local = self
                         .visible_local(scope, &field_name, first_use.range().start())?
                         .ok_or(HirInvariantFailure::InvalidLocalTimeline)?;
-                    self.record_local_capture(scope, local, first_use, CaptureAccess::Read)?;
+                    self.record_local_capture(
+                        crate::scope::HirCaptureUseSite::RecordShorthand { owner, field },
+                        scope,
+                        local,
+                        first_use,
+                        CaptureAccess::Read,
+                    )?;
                     fields.push(HirRecordField::shorthand(field_name, local));
                 }
             }

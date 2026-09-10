@@ -1364,7 +1364,7 @@ enum PendingCallableCompletion {
 pub(crate) struct PendingCheckedCallable {
     id: CheckedCallableId,
     record: Arc<CallableRecord>,
-    execution: CheckedCallableExecution,
+    execution: Option<CheckedCallableExecution>,
     suspension: Option<CheckedSuspensionRole>,
     control: Option<CheckedExecutableControlRole>,
     contract: PendingCallableEffectContract,
@@ -1477,13 +1477,12 @@ impl CheckedCallableCatalogBuilder {
     pub(crate) fn insert_body_shell(
         &mut self,
         record: Arc<CallableRecord>,
-        execution: CheckedCallableExecution,
         contract: CallableEffectContract,
         body_source: &SourceSpan,
     ) -> Result<CheckedCallableId, CheckedCallableCatalogBuildError> {
         self.insert_registered_shell(
             record,
-            execution,
+            None,
             PendingCallableEffectContract::Body(contract),
             Some(body_source),
         )
@@ -1497,7 +1496,7 @@ impl CheckedCallableCatalogBuilder {
     ) -> Result<CheckedCallableId, CheckedCallableCatalogBuildError> {
         self.insert_registered_shell(
             record,
-            execution,
+            Some(execution),
             PendingCallableEffectContract::BodylessTraitRequirement(contract),
             None,
         )
@@ -1510,7 +1509,7 @@ impl CheckedCallableCatalogBuilder {
     ) -> Result<CheckedCallableId, CheckedCallableCatalogBuildError> {
         self.insert_registered_shell(
             record,
-            execution,
+            Some(execution),
             PendingCallableEffectContract::RecordFixed,
             None,
         )
@@ -1519,7 +1518,7 @@ impl CheckedCallableCatalogBuilder {
     fn insert_registered_shell(
         &mut self,
         record: Arc<CallableRecord>,
-        execution: CheckedCallableExecution,
+        execution: Option<CheckedCallableExecution>,
         contract: PendingCallableEffectContract,
         body_source: Option<&SourceSpan>,
     ) -> Result<CheckedCallableId, CheckedCallableCatalogBuildError> {
@@ -1567,13 +1566,13 @@ impl CheckedCallableCatalogBuilder {
         &mut self,
         record: Arc<CallableRecord>,
         id: CheckedCallableId,
-        execution: CheckedCallableExecution,
+        execution: Option<CheckedCallableExecution>,
         contract: PendingCallableEffectContract,
         body_source: Option<&SourceSpan>,
     ) -> Result<CheckedCallableId, CheckedCallableCatalogBuildError> {
         validate_checked_context(&self.generation, &id)
             .map_err(|_| CheckedCallableCatalogBuildError::GenerationMismatch)?;
-        validate_pending_roles(&record, &execution, &contract)?;
+        validate_pending_roles(&record, execution.as_ref(), &contract)?;
         if self.pending.contains_key(&id) {
             return Err(CheckedCallableCatalogBuildError::DuplicateCallable);
         }
@@ -1686,6 +1685,30 @@ impl CheckedCallableCatalogBuilder {
         Ok(())
     }
 
+    /// Body execution is assigned only after its selected semantics close.
+    pub(crate) fn assign_execution_role(
+        &mut self,
+        id: &CheckedCallableId,
+        execution: CheckedCallableExecution,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if self.state != CheckedCatalogBuildState::Inferring {
+            return Err(CheckedCallableCatalogBuildError::InvalidState);
+        }
+        let pending = self
+            .pending
+            .get_mut(id)
+            .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+        if !matches!(pending.contract, PendingCallableEffectContract::Body(_)) {
+            return Err(CheckedCallableCatalogBuildError::InvalidExecutionRole);
+        }
+        if pending.execution.is_some() {
+            return Err(CheckedCallableCatalogBuildError::DuplicateInference);
+        }
+        validate_pending_roles(&pending.record, Some(&execution), &pending.contract)?;
+        pending.execution = Some(execution);
+        Ok(())
+    }
+
     pub(crate) fn assign_control_role(
         &mut self,
         id: &CheckedCallableId,
@@ -1713,6 +1736,7 @@ impl CheckedCallableCatalogBuilder {
         }
         if self.pending.values().any(|pending| {
             pending.completion == PendingCallableCompletion::AwaitingInference
+                || pending.execution.is_none()
                 || pending.suspension.is_none()
                 || pending.control.is_none()
         }) {
@@ -1965,12 +1989,15 @@ impl CheckedCallableCatalogBuilder {
             let control = pending
                 .control
                 .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+            let execution = pending
+                .execution
+                .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
             let effects = finish_effects(pending.contract, pending.inferred)?;
-            validate_fact_roles(&pending.record, &pending.execution, &effects)?;
+            validate_fact_roles(&pending.record, &execution, &effects)?;
             let facts = CheckedCallableFacts {
                 id: id.clone(),
                 record: pending.record,
-                execution: pending.execution,
+                execution,
                 suspension,
                 control,
                 effects,
@@ -2226,27 +2253,28 @@ fn validate_source_membership(
 
 fn validate_pending_roles(
     record: &CallableRecord,
-    execution: &CheckedCallableExecution,
+    execution: Option<&CheckedCallableExecution>,
     contract: &PendingCallableEffectContract,
 ) -> Result<(), CheckedCallableCatalogBuildError> {
     if record
         .method_role()
         .is_some_and(super::CallableMethodRole::is_dispatch_contract)
-        != matches!(execution, CheckedCallableExecution::DispatchContract)
+        != matches!(execution, Some(CheckedCallableExecution::DispatchContract))
     {
         return Err(CheckedCallableCatalogBuildError::InvalidExecutionRole);
     }
     let valid = match contract {
         PendingCallableEffectContract::Body(_) => {
             !matches!(record.schema().effects(), CallableEffectSchema::Fixed(_))
-                && !matches!(execution, CheckedCallableExecution::DispatchContract)
+                && !matches!(execution, Some(CheckedCallableExecution::DispatchContract))
         }
         PendingCallableEffectContract::BodylessTraitRequirement(contract) => {
-            matches!(execution, CheckedCallableExecution::DispatchContract)
+            matches!(execution, Some(CheckedCallableExecution::DispatchContract))
                 && matches!(contract.permission(), EffectPermission::Bounded(_))
         }
         PendingCallableEffectContract::RecordFixed => {
-            matches!(record.schema().effects(), CallableEffectSchema::Fixed(_))
+            execution.is_some()
+                && matches!(record.schema().effects(), CallableEffectSchema::Fixed(_))
         }
     };
     if valid {

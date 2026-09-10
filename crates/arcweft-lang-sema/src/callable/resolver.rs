@@ -55,7 +55,7 @@ use arcweft_lang_hir::{
     leaf::{HirPath, HirPathRoot, HirPathSegment, HirPathValue},
     module::HirModule,
     project::{HirLocalValueOrigin, HirProjectEvaluationTopology, HirProjectView},
-    source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite},
+    source_index::{HirExprSourceRole, HirSourceQuery},
     symbol::{
         CallableDeclarationKey, ProjectSymbolTable, ProjectValueLookup, ProjectValueLookupError,
     },
@@ -729,7 +729,7 @@ pub(crate) enum PrepareFinalCallCalleeError {
     MissingValueType { expression: ExprId },
     #[error("call callee path cannot be represented by the typed callable path owner")]
     InvalidValuePath { expression: ExprId },
-    #[error("call callee has no authored source span")]
+    #[error("call callee has no source anchor in the accepted module")]
     MissingValueSource { expression: ExprId },
     #[error("project value lookup failed")]
     ProjectValueLookup {
@@ -1026,6 +1026,7 @@ impl PreparedFunctionValueOriginQuery {
             }
             CheckedCaptureAuthorityViolation::MissingProducer { .. }
             | CheckedCaptureAuthorityViolation::GenericScope(_)
+            | CheckedCaptureAuthorityViolation::CandidateSelection(_)
             | CheckedCaptureAuthorityViolation::MissingExpressionUse { .. }
             | CheckedCaptureAuthorityViolation::MissingLocalBinding { .. }
             | CheckedCaptureAuthorityViolation::InternalLocalBinding { .. }

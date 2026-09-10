@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_lang_hir::{
     identity::{ExprId, HirModuleId, PatternId, StmtId, TypeId},
     module::HirModule,
-    project::{HirExecutableProjectView, HirProjectEvaluationTopology},
+    project::{HirAnalysisProjectView, HirProjectEvaluationTopology},
     stmt::{HirSelectBranchHead, HirSelectStmt, HirStmtKind, HirTrigger},
     symbol::CallableDeclarationKey,
 };
@@ -45,7 +45,7 @@ pub(super) enum StatementScrutineeRole {
 /// dropped before either semantic facts or ingress facts are mutated.
 pub(super) struct StatementScrutineeTypeAuthority<'a> {
     standard: &'a RegisteredStatementIngressTypes,
-    project: HirExecutableProjectView<'a>,
+    project: HirAnalysisProjectView<'a>,
     topology: &'a HirProjectEvaluationTopology,
     types: &'a BTreeMap<TypeId, TypeKind>,
     ingress: &'a PreparedExecutableIngressFacts,
@@ -54,7 +54,7 @@ pub(super) struct StatementScrutineeTypeAuthority<'a> {
 impl<'a> StatementScrutineeTypeAuthority<'a> {
     const fn new(
         standard: &'a RegisteredStatementIngressTypes,
-        project: HirExecutableProjectView<'a>,
+        project: HirAnalysisProjectView<'a>,
         topology: &'a HirProjectEvaluationTopology,
         types: &'a BTreeMap<TypeId, TypeKind>,
         ingress: &'a PreparedExecutableIngressFacts,
@@ -278,7 +278,7 @@ pub(super) fn seed_non_event_scrutinees(
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
     environment: &TypeCheckEnv,
     standard: &RegisteredStatementIngressTypes,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     topology: &HirProjectEvaluationTopology,
     ingress: &PreparedExecutableIngressFacts,
     inventory: &PreparedExecutableDeclarationInventory,
@@ -310,7 +310,7 @@ pub(super) fn seed_declaration_scrutinees(
     symbols: &arcweft_lang_hir::symbol::ProjectSymbolTable,
     environment: &TypeCheckEnv,
     standard: &RegisteredStatementIngressTypes,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     topology: &HirProjectEvaluationTopology,
     ingress: &PreparedExecutableIngressFacts,
     declaration: &CallableDeclarationKey,
@@ -529,7 +529,7 @@ pub(super) fn validate_declaration_scrutinees(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     types: &BTreeMap<TypeId, TypeKind>,
     standard: &RegisteredStatementIngressTypes,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     topology: &HirProjectEvaluationTopology,
     ingress: &PreparedExecutableIngressFacts,
     declaration: &CallableDeclarationKey,

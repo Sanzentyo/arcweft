@@ -38,7 +38,7 @@ impl PendingExpressionComponent {
         self.range
     }
 
-    fn rebased(self, offset: usize) -> Option<Self> {
+    pub(in crate::expressions) fn rebased(self, offset: usize) -> Option<Self> {
         Some(Self::new(
             self.role,
             SourceRange::new(
@@ -80,9 +80,17 @@ impl PendingExpressionProjection {
         self.projection.has_recovery()
     }
 
-    pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {
+    pub(crate) fn recovery_status(&self) -> crate::incremental::ParseStatus {
+        self.projection.recovery_status()
+    }
+
+    pub(crate) fn rebased(
+        &self,
+        offset: usize,
+        context: &mut crate::grammar::event::ProjectionRebaseContext,
+    ) -> Option<Self> {
         Some(Self {
-            projection: self.projection.clone(),
+            projection: self.projection.rebased(offset, context)?,
             components: self
                 .components
                 .iter()

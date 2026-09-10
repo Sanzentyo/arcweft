@@ -542,7 +542,7 @@ impl CandidateTypeExpectationCursor<'_> {
     }
 }
 
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     pub(super) fn validate_type(
         &mut self,
         node: AttachedCandidateNode<'_>,
@@ -565,7 +565,10 @@ impl CandidateValidationCursor<'_> {
             || metadata.source_site() != &expected.source_site
             || payload.scope() != scope
             || self.source_index_has_typed_owner(SyntheticOwner::Type(id))
-            || !self.expected.types.insert(id)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Type(id), self.region)
         {
             return None;
         }
@@ -575,6 +578,9 @@ impl CandidateValidationCursor<'_> {
                 return None;
             }
         }
+        self.expected
+            .source_components
+            .type_ref(self.parsed, id, node)?;
         Some(CandidateTypeChild {
             id,
             poisoned: payload.is_poisoned(),

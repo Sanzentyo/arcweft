@@ -84,33 +84,20 @@ impl StagedParserEvents {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn has_recovery(&self) -> bool {
-        self.events.iter().any(|event| match event {
-            SyntaxEvent::StartNode {
-                kind, projection, ..
-            } => {
-                kind.is_missing_node()
-                    || kind.is_error_node()
-                    || match projection {
-                        PendingStartProjection::Expression(projection) => projection.has_recovery(),
-                        PendingStartProjection::Assertion(projection) => projection.has_recovery(),
-                        PendingStartProjection::KeywordStatement(projection) => {
-                            projection.has_recovery()
-                        }
-                        _ => false,
-                    }
-            }
-            SyntaxEvent::MissingToken { .. } | SyntaxEvent::Diagnostic(_) => true,
-            SyntaxEvent::Token { .. } | SyntaxEvent::FinishNode => false,
-        })
+        self.clone().into_candidate_graph().recovery_status()
+            != crate::incremental::ParseStatus::Clean
     }
 
     /// Consumes the candidate's balanced event stream into its sole retained
-    /// tokenless semantic graph. Raw tokens, missing-token events, diagnostics,
-    /// Rowan nodes, and source text do not cross this boundary.
+    /// tokenless semantic graph, including candidate-local recovery evidence.
+    /// Raw tokens, Rowan nodes, and source text do not cross this boundary.
     pub(super) fn into_candidate_graph(self) -> PendingCandidateGraph {
         let mut open = Vec::<OpenCandidateNode>::new();
         let mut nodes = Vec::<CandidateNodeDraft>::new();
+        let mut missing_tokens = Vec::new();
+        let mut diagnostics = Vec::new();
         let mut cursor = self.source.start();
 
         for event in self.events {
@@ -160,10 +147,11 @@ impl StagedParserEvents {
                 SyntaxEvent::Token { range, .. } => {
                     cursor = range.end();
                 }
-                SyntaxEvent::MissingToken { at, .. } => {
+                SyntaxEvent::MissingToken { expected, at } => {
+                    missing_tokens.push((expected, at));
                     cursor = at;
                 }
-                SyntaxEvent::Diagnostic(_) => {}
+                SyntaxEvent::Diagnostic(diagnostic) => diagnostics.push(diagnostic),
                 SyntaxEvent::FinishNode => {
                     let owner = open
                         .pop()
@@ -197,6 +185,8 @@ impl StagedParserEvents {
                     )
                 })
                 .collect(),
+            missing_tokens,
+            diagnostics,
         )
         .expect("parser-produced candidate graph satisfies local adjacency invariants")
     }

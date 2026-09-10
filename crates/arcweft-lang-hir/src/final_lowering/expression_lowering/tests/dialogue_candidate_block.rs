@@ -174,7 +174,7 @@ fn computation_and_named_candidates_use_final_tail_policy() {
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     for (position, expected) in [
         HirComputationBlockKind::Result,
@@ -379,7 +379,7 @@ fn candidate_statement_recovery_preserves_typed_families_and_priority() {
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     let (_, assertion) = candidate_statement(&module, owners[0], 0);
     assert!(matches!(
@@ -537,7 +537,7 @@ fn candidate_assignment_missing_operands_preserve_family_and_priority() {
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     for (position, role) in [
         HirStmtChildRole::Target,
@@ -628,7 +628,7 @@ fn candidate_required_operand_recovery_excludes_ordinary_wait_calls() {
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     for (position, expected) in [
         HirStmtRecoveryIssue::RecoveredChild {
@@ -749,7 +749,7 @@ fn candidate_keyword_recovery_matches_central_priority() {
         ],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     let expected = [
         HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidControlLabel(

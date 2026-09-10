@@ -325,7 +325,7 @@ impl StagedHirModuleTransaction<'_> {
                     HirExprSourceRole::Target,
                 )?;
                 if statement_kind == SyntaxKind::AssignmentStatement {
-                    self.upgrade_direct_reassignment_capture(target)?;
+                    self.upgrade_direct_reassignment_capture(target);
                 }
                 let target_poisoned = self.staged_expression_is_poisoned(target)?;
                 let value = self.lower_candidate_statement_expression(

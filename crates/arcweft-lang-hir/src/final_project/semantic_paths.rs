@@ -8,7 +8,7 @@ use std::{
 
 use thiserror::Error;
 
-use super::{AcceptedHirProjectSymbolGeneration, HirExecutableProjectView};
+use super::{AcceptedHirProjectSymbolGeneration, HirAnalysisProjectView};
 use crate::{
     body_edges::{
         HirBodyChild, HirBodyChildEdge, HirBodyChildRole, HirBodyKind, HirBodyProjection,
@@ -457,14 +457,24 @@ pub struct HirSemanticBodyRow {
 /// Kind of control transfer retained by the HIR topology.
 ///
 /// The spelling of a control-transfer label is deliberately absent.  Labels
-/// are not target declarations in the current final HIR, so a labeled use is
-/// rejected while the topology is being built rather than being retained as
-/// unresolved semantic identity.
+/// are not target declarations in the current final HIR. A failed authored
+/// target remains a typed outcome only inside a retained interpretation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirControlTransferKind {
     Out,
     Break,
     Continue,
+}
+
+impl HirControlTransferKind {
+    pub const fn from_statement(statement: &HirStmtKind) -> Option<Self> {
+        match statement {
+            HirStmtKind::Out { .. } => Some(Self::Out),
+            HirStmtKind::Break { .. } => Some(Self::Break),
+            HirStmtKind::Continue { .. } => Some(Self::Continue),
+            _ => None,
+        }
+    }
 }
 
 /// Lexical construct family that can receive a `break` or `continue`.
@@ -527,7 +537,7 @@ impl HirControlTransferTarget {
 pub struct HirControlTransferRow {
     statement: StmtId,
     kind: HirControlTransferKind,
-    target: HirControlTransferTarget,
+    target: Result<HirControlTransferTarget, HirControlTransferResolutionError>,
 }
 
 impl HirControlTransferRow {
@@ -539,8 +549,26 @@ impl HirControlTransferRow {
         Self {
             statement,
             kind,
-            target,
+            target: Ok(target),
         }
+    }
+
+    fn rejected(error: HirControlTransferResolutionError) -> Option<Self> {
+        let (statement, kind) = match error {
+            HirControlTransferResolutionError::UnresolvedTarget { statement, kind } => {
+                (statement, kind)
+            }
+            HirControlTransferResolutionError::BreakValueRequiresLoopExpression { statement } => {
+                (statement, HirControlTransferKind::Break)
+            }
+            HirControlTransferResolutionError::InvalidScopeChain { .. }
+            | HirControlTransferResolutionError::InvalidOutputApplication { .. } => return None,
+        };
+        Some(Self {
+            statement,
+            kind,
+            target: Err(error),
+        })
     }
 
     pub const fn statement(&self) -> StmtId {
@@ -551,8 +579,10 @@ impl HirControlTransferRow {
         self.kind
     }
 
-    pub const fn target(&self) -> &HirControlTransferTarget {
-        &self.target
+    pub const fn target(
+        &self,
+    ) -> Result<&HirControlTransferTarget, &HirControlTransferResolutionError> {
+        self.target.as_ref()
     }
 }
 
@@ -791,7 +821,10 @@ impl<'topology> HirControlTransferLocation<'topology> {
         self.row.kind()
     }
 
-    pub const fn target(self) -> &'topology HirControlTransferTarget {
+    pub const fn target(
+        self,
+    ) -> Result<&'topology HirControlTransferTarget, &'topology HirControlTransferResolutionError>
+    {
         self.row.target()
     }
 }
@@ -1060,7 +1093,24 @@ impl HirSemanticPathIndex {
             let Some(statement_path) = self.statement(statement) else {
                 return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
             };
-            match (row.kind(), row.target()) {
+            let target = match row.target() {
+                Ok(target) => target,
+                Err(error) => {
+                    if HirControlTransferRow::rejected(*error).as_ref() != Some(row)
+                        || !statement_path.hops().iter().any(|hop| {
+                            matches!(
+                                hop.role(),
+                                HirExpressionChildRole::PostfixIndexCandidate
+                                    | HirExpressionChildRole::PostfixDialogueCandidate
+                            )
+                        })
+                    {
+                        return Err(HirSemanticPathError::InvalidControlTransferRow { statement });
+                    }
+                    continue;
+                }
+            };
+            match (row.kind(), target) {
                 (HirControlTransferKind::Out, HirControlTransferTarget::Output { application }) => {
                     if application.module() != self.snapshot.module() {
                         return Err(HirSemanticPathError::ControlTransferModuleMismatch {
@@ -1649,12 +1699,12 @@ impl HirLocalBindingOriginIndex {
 
 /// One capture row joined to its closure, captured local, and access mode in
 /// the same snapshot that owns the expression/path topology.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirCaptureEvaluationRow {
     capture: CaptureId,
     closure: ExprId,
     local: LocalId,
-    access: CaptureAccess,
+    uses: Arc<[crate::scope::HirCaptureUse]>,
 }
 
 impl HirCaptureEvaluationRow {
@@ -1670,8 +1720,8 @@ impl HirCaptureEvaluationRow {
         self.local
     }
 
-    pub const fn access(&self) -> CaptureAccess {
-        self.access
+    pub const fn uses(&self) -> &Arc<[crate::scope::HirCaptureUse]> {
+        &self.uses
     }
 }
 
@@ -2292,6 +2342,7 @@ impl HirItemEvaluationEntry {
 #[derive(Debug, Eq, PartialEq)]
 pub struct HirModuleEvaluationTopology {
     generation: Arc<super::AcceptedHirModuleGeneration>,
+    candidate_provenance: Arc<crate::source_index::HirCandidateProvenance>,
     entries: Box<[HirItemEvaluationEntry]>,
     local_origins: HirLocalBindingOriginIndex,
     captures: HirCaptureEvaluationIndex,
@@ -2301,6 +2352,10 @@ pub struct HirModuleEvaluationTopology {
 }
 
 impl HirModuleEvaluationTopology {
+    pub const fn candidate_provenance(&self) -> &Arc<crate::source_index::HirCandidateProvenance> {
+        &self.candidate_provenance
+    }
+
     pub fn module(&self) -> crate::identity::HirModuleId {
         self.generation.module()
     }
@@ -2815,7 +2870,7 @@ pub enum HirSemanticPathError {
 
 /// Typed failure while resolving one control-transfer statement during the
 /// HIR topology seal.
-#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirControlTransferResolutionError {
     #[error("control-transfer statement {statement:?} has an unresolved {kind:?} target")]
     UnresolvedTarget {
@@ -2896,7 +2951,7 @@ pub enum HirSemanticBodyLookupError {
     },
 }
 
-impl HirExecutableProjectView<'_> {
+impl HirAnalysisProjectView<'_> {
     #[allow(
         clippy::too_many_lines,
         reason = "one project seal preserves authored module, item, member, declaration, and local order"
@@ -3043,6 +3098,7 @@ impl HirExecutableProjectView<'_> {
                 builder.finish_module()?;
             modules.push(HirModuleEvaluationTopology {
                 generation: Arc::clone(module_generation),
+                candidate_provenance: Arc::clone(module.candidate_provenance()),
                 entries: entries.into_boxed_slice(),
                 local_origins,
                 selection_roots,
@@ -4815,7 +4871,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                 if row.capture != capture
                     || row.closure != owner
                     || row.local != value.local()
-                    || row.access != value.access()
+                    || !Arc::ptr_eq(&row.uses, value.uses())
                     || self.captures_by_capture.get(&capture).copied() != Some(index)
                 {
                     return Err(HirSemanticPathError::InvalidOwnedPath);
@@ -5145,7 +5201,7 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     capture,
                     closure: owner,
                     local: value.local(),
-                    access: value.access(),
+                    uses: Arc::clone(value.uses()),
                 });
             }
             let end = checked_ordinal(self.capture_rows.len())?;
@@ -5480,6 +5536,32 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
         statement: StmtId,
         kind: &HirStmtKind,
     ) -> Result<(), HirSemanticPathError> {
+        let row = match self.resolve_control_transfer(statement, kind) {
+            Ok(Some((kind, target))) => HirControlTransferRow::new(statement, kind, target),
+            Ok(None) => return Ok(()),
+            Err(HirSemanticPathError::ControlTransfer(error))
+                if self
+                    .module
+                    .candidate_provenance()
+                    .contains(crate::identity::SyntheticOwner::Stmt(statement)) =>
+            {
+                HirControlTransferRow::rejected(error)
+                    .ok_or(HirSemanticPathError::ControlTransfer(error))?
+            }
+            Err(error) => return Err(error),
+        };
+        if self.control_transfers.insert(statement, row).is_some() {
+            return Err(HirSemanticPathError::DuplicateControlTransfer { statement });
+        }
+        Ok(())
+    }
+
+    fn resolve_control_transfer(
+        &self,
+        statement: StmtId,
+        kind: &HirStmtKind,
+    ) -> Result<Option<(HirControlTransferKind, HirControlTransferTarget)>, HirSemanticPathError>
+    {
         let (kind, target) = match kind {
             HirStmtKind::Out { label, .. } => {
                 if label.is_some() {
@@ -5561,19 +5643,9 @@ impl<'module> HirProjectEvaluationTopologyBuilder<'module> {
                     HirControlTransferTarget::loop_target(family, body_owner),
                 )
             }
-            _ => return Ok(()),
+            _ => return Ok(None),
         };
-        if self
-            .control_transfers
-            .insert(
-                statement,
-                HirControlTransferRow::new(statement, kind, target),
-            )
-            .is_some()
-        {
-            return Err(HirSemanticPathError::DuplicateControlTransfer { statement });
-        }
-        Ok(())
+        Ok(Some((kind, target)))
     }
 
     fn nearest_loop_target(

@@ -15,11 +15,11 @@ mod validation;
 use self::digest::reachability_digest;
 use self::validation::validate_roots_and_edges;
 
-use super::{HirExecutableProjectView, selected_expressions::HirSelectedRuntimeExpressionOwners};
+use super::{HirAnalysisProjectView, selected_expressions::HirSelectedRuntimeExpressionOwners};
 use crate::expr::{HirExprKind, HirExpressionTypeRoot, HirTypeRootDisposition};
 use crate::identity::{
     CaptureId, ExprId, HirModuleId, HirSnapshotId, ItemId, LocalId, PatternId, ScopeId, StmtId,
-    TypeId,
+    SyntheticOwner, TypeId,
 };
 use crate::item::{HirEntryMember, HirImplMember, HirItemKind};
 use crate::module::HirModule;
@@ -341,6 +341,10 @@ pub enum HirRuntimeReachabilityLimitFamily {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HirRuntimeReachabilityError {
+    #[error(transparent)]
+    CandidateSelection(#[from] crate::source_index::HirCandidateSelectionError),
+    #[error(transparent)]
+    CaptureSelection(#[from] super::HirCaptureSelectionError),
     #[error("runtime reachability symbol world does not match the executable project")]
     SymbolWorldMismatch,
     #[error("runtime reachability topology does not lease the exact input and HIR generation")]
@@ -419,7 +423,7 @@ pub struct HirRuntimeExecutableSemanticOwners {
     statements: BTreeSet<StmtId>,
     types: BTreeSet<TypeId>,
     patterns: BTreeSet<PatternId>,
-    captures: BTreeSet<CaptureId>,
+    captures: Box<[super::HirSelectedCapture]>,
 }
 
 impl HirRuntimeExecutableSemanticOwners {
@@ -454,12 +458,22 @@ impl HirRuntimeExecutableSemanticOwners {
     }
 
     pub fn captures(&self) -> impl ExactSizeIterator<Item = CaptureId> + '_ {
-        self.captures.iter().copied()
+        let mut owners = self
+            .captures
+            .iter()
+            .map(super::HirSelectedCapture::capture)
+            .collect::<Vec<_>>();
+        owners.sort_unstable();
+        owners.into_iter()
+    }
+
+    pub const fn capture_plan(&self) -> &[super::HirSelectedCapture] {
+        &self.captures
     }
 }
 
 pub struct HirRuntimeSemanticReachability<'project> {
-    pub(super) project: HirExecutableProjectView<'project>,
+    pub(super) project: HirAnalysisProjectView<'project>,
     mode: HirRuntimeEmissionMode,
     roots: Box<[HirRuntimeReachabilityRoot]>,
     edges: Box<[HirRuntimeReachabilityEdge]>,
@@ -478,7 +492,7 @@ pub struct HirRuntimeSemanticReachability<'project> {
 }
 
 impl HirRuntimeSemanticReachability<'_> {
-    pub const fn project(&self) -> HirExecutableProjectView<'_> {
+    pub const fn project(&self) -> HirAnalysisProjectView<'_> {
         self.project
     }
 
@@ -621,8 +635,6 @@ struct StructuralIndex<'projection> {
     type_edges: BTreeMap<TypeId, Vec<TypeId>>,
     pattern_edges: BTreeMap<PatternId, Vec<HirPatternChild>>,
     owned_scopes: BTreeMap<HirScopeOwner, Vec<ScopeId>>,
-    capture_closures: BTreeMap<CaptureId, ExprId>,
-    closure_captures: BTreeMap<ExprId, Vec<(CaptureId, LocalId)>>,
 }
 
 #[derive(Default)]
@@ -633,6 +645,58 @@ struct StructuralOwners {
     types: BTreeSet<TypeId>,
     patterns: BTreeSet<PatternId>,
     captures: BTreeSet<CaptureId>,
+}
+
+impl StructuralOwners {
+    fn select_regions(
+        &mut self,
+        topology: &super::HirProjectEvaluationTopology,
+        selected: &mut impl FnMut(ExprId) -> Option<ExprId>,
+    ) -> Result<(), HirRuntimeReachabilityError> {
+        retain_selected_regions(
+            &mut self.expressions,
+            SyntheticOwner::Expr,
+            topology,
+            selected,
+        )?;
+        retain_selected_regions(
+            &mut self.statements,
+            SyntheticOwner::Stmt,
+            topology,
+            selected,
+        )?;
+        retain_selected_regions(&mut self.types, SyntheticOwner::Type, topology, selected)?;
+        retain_selected_regions(
+            &mut self.patterns,
+            SyntheticOwner::Pattern,
+            topology,
+            selected,
+        )?;
+        retain_selected_regions(&mut self.locals, SyntheticOwner::Local, topology, selected)
+    }
+}
+
+fn retain_selected_regions<T: Copy + Ord>(
+    ids: &mut BTreeSet<T>,
+    owner: impl Fn(T) -> SyntheticOwner,
+    topology: &super::HirProjectEvaluationTopology,
+    selected: &mut impl FnMut(ExprId) -> Option<ExprId>,
+) -> Result<(), HirRuntimeReachabilityError> {
+    let mut retained = BTreeSet::new();
+    for id in ids.iter().copied() {
+        let owner = owner(id);
+        let module = topology
+            .module(owner.module())
+            .ok_or(HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+        if module
+            .candidate_provenance()
+            .selects_region(owner, &mut *selected)?
+        {
+            retained.insert(id);
+        }
+    }
+    *ids = retained;
+    Ok(())
 }
 
 #[derive(Clone, Copy)]
@@ -733,7 +797,7 @@ impl HirItemKind {
     }
 }
 
-impl<'project> HirExecutableProjectView<'project> {
+impl<'project> HirAnalysisProjectView<'project> {
     #[expect(
         clippy::too_many_lines,
         reason = "one atomic transaction validates the generation, closes structural owners, and records deterministic paths"
@@ -774,7 +838,22 @@ impl<'project> HirExecutableProjectView<'project> {
                 continue;
             }
             first_paths.insert(owner.clone(), path.clone());
-            let (structural, execution_expression_roots) = self.close_executable(&index, &owner)?;
+            let (mut structural, execution_expression_roots) =
+                self.close_executable(&index, &owner)?;
+            structural.select_regions(topology, &mut selected_postfix)?;
+            let captures = if let HirRuntimeExecutableOwner::Closure(closure) = owner {
+                topology
+                    .module(closure.module())
+                    .ok_or(HirRuntimeReachabilityError::UnresolvedExpression {
+                        expression: closure,
+                    })?
+                    .select_closure_captures(closure, &mut selected_postfix)?
+            } else {
+                Box::new([])
+            };
+            structural
+                .captures
+                .extend(captures.iter().map(super::HirSelectedCapture::capture));
             let HirSelectedRuntimeExpressionOwners {
                 reached,
                 typed,
@@ -829,7 +908,7 @@ impl<'project> HirExecutableProjectView<'project> {
                 statements: structural.statements.clone(),
                 types: structural.types.clone(),
                 patterns: structural.patterns.clone(),
-                captures: structural.captures.clone(),
+                captures,
             };
             if executable_owners
                 .insert(owner.clone(), executable_row)
@@ -929,7 +1008,7 @@ impl<'project> HirExecutableProjectView<'project> {
         let generation = topology.generation();
         if generation.symbol_world() != &input.symbol_world
             || generation.symbol_revision() != input.symbol_revision
-            || generation.validate_executable_lease(self).is_err()
+            || generation.validate_analysis_lease(self).is_err()
         {
             return Err(HirRuntimeReachabilityError::TopologyGenerationMismatch);
         }
@@ -955,7 +1034,7 @@ impl<'project> HirExecutableProjectView<'project> {
 
 impl<'projection> StructuralIndex<'projection> {
     fn new(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         type_root_projection: &'projection HirExpressionTypeRootProjection,
     ) -> Self {
         let mut index = Self {
@@ -968,8 +1047,6 @@ impl<'projection> StructuralIndex<'projection> {
             type_edges: BTreeMap::new(),
             pattern_edges: BTreeMap::new(),
             owned_scopes: BTreeMap::new(),
-            capture_closures: BTreeMap::new(),
-            closure_captures: BTreeMap::new(),
         };
         for (_, module) in project.modules() {
             Self::index_module(&mut index, module);
@@ -1059,14 +1136,6 @@ impl<'projection> StructuralIndex<'projection> {
                     .map(|edge| edge.child())
                     .collect(),
             );
-        }
-        for (owner, capture) in module.captures() {
-            index.capture_closures.insert(owner, capture.closure());
-            index
-                .closure_captures
-                .entry(capture.closure())
-                .or_default()
-                .push((owner, capture.local()));
         }
     }
 
@@ -1199,13 +1268,6 @@ impl<'projection> StructuralIndex<'projection> {
                 }
             }
         }
-        owners.captures.extend(
-            self.capture_closures
-                .iter()
-                .filter_map(|(capture, closure)| {
-                    (active_closure == Some(*closure)).then_some(*capture)
-                }),
-        );
         Ok(owners)
     }
 
@@ -1223,7 +1285,7 @@ impl<'projection> StructuralIndex<'projection> {
 }
 
 fn execution_roots(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: &HirRuntimeExecutableOwner,
 ) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
     match owner {
@@ -1269,7 +1331,7 @@ fn execution_roots(
 }
 
 fn impl_method_roots(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     method: &ImplMethodDeclarationId,
 ) -> Result<HirRuntimeExecutionRoots, HirRuntimeReachabilityError> {
     let implementation = method.implementation();
@@ -1321,7 +1383,7 @@ fn impl_method_roots(
     })
 }
 
-fn resolve_item_kind(project: HirExecutableProjectView<'_>, owner: ItemId) -> Option<&HirItemKind> {
+fn resolve_item_kind(project: HirAnalysisProjectView<'_>, owner: ItemId) -> Option<&HirItemKind> {
     project
         .modules()
         .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module.as_ref()))?

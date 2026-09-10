@@ -100,7 +100,7 @@ pub(crate) enum ProofReturnProjectModuleTransaction<'source> {
 
 impl RetainedProofReturnModule {
     fn try_new(module: Arc<HirModule>) -> Result<Self, HirLowerFailure> {
-        if !module.is_cache_eligible() {
+        if !module.is_analysis_ready() {
             return Err(HirLowerFailure::RetainedModuleNotCacheEligible {
                 module: module.key().path().clone(),
             });
@@ -483,7 +483,7 @@ impl HirDatabase {
         let mut changed_requests = Vec::with_capacity(requests.len());
         for request in requests {
             let exact_current = self.current(request.key()).filter(|module| {
-                module.is_cache_eligible()
+                module.is_analysis_ready()
                     && module.provenance().syntax_snapshot() == request.source().snapshot_id()
                     && module.provenance().source_snapshot()
                         == request.source().source_snapshot_id()

@@ -660,7 +660,7 @@ fn fractional_nanosecond_duration_commits_typed_pattern_poison() {
             HirDurationIssue::FractionalNanosecond
         )))
     ));
-    assert!(!module.is_executable());
+    assert!(!module.is_analysis_ready());
     assert_eq!(
         module
             .diagnostics()

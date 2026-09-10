@@ -647,7 +647,7 @@ fn pattern_family_matches(payload: &HirPatternKind, family: PatternSyntaxFamily)
     clippy::too_many_lines,
     reason = "the closed thirteen-family attached-pattern manifest is one exhaustive grammar matrix"
 )]
-fn pattern_requirements(
+pub(super) fn pattern_requirements(
     payload: &HirPatternKind,
 ) -> BTreeMap<HirPatternSourceRole, HirSourceRequirement> {
     use HirPatternSourceRole as Role;

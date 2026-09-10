@@ -10,13 +10,13 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirDeclarationAttachedContentRootRole, HirDeclarationBodyRootRole,
+    HirAnalysisProjectView, HirDeclarationAttachedContentRootRole, HirDeclarationBodyRootRole,
     HirDeclarationContractRootRole, HirDeclarationParameterRoot, HirDeclarationParameterRootRole,
-    HirExecutableProjectView, HirPackageModuleKey, HirProject, HirProjectBuildError,
-    HirProjectBuilder, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
-    HirRuntimeCallCalleeDisposition, HirRuntimeEmissionMode, HirRuntimeExecutableOwner,
-    HirRuntimeExpressionProjection, HirRuntimeReachabilityEdge, HirRuntimeReachabilityError,
-    HirRuntimeReachabilityRoot, HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
+    HirPackageModuleKey, HirProject, HirProjectAnalysisError, HirProjectBuildError,
+    HirProjectBuilder, HirProjectModule, HirProjectModuleError, HirRuntimeCallCalleeDisposition,
+    HirRuntimeEmissionMode, HirRuntimeExecutableOwner, HirRuntimeExpressionProjection,
+    HirRuntimeReachabilityEdge, HirRuntimeReachabilityError, HirRuntimeReachabilityRoot,
+    HirRuntimeReachabilityRootKind, HirRuntimeSemanticReachability,
     HirRuntimeSemanticReachabilityInput, HirRuntimeValueRetention,
     HirSelectedExpressionInventoryError, HirSemanticOwnerPath, HirSemanticPathStep, exported_parts,
     styles,
@@ -126,7 +126,7 @@ fn build_project_with_limit(
 }
 
 fn runtime_reachability<'project>(
-    executable: HirExecutableProjectView<'project>,
+    executable: HirAnalysisProjectView<'project>,
     topology: &super::HirProjectEvaluationTopology,
     selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
     expression_projection: impl FnMut(ExprId) -> Option<HirRuntimeExpressionProjection>,
@@ -163,7 +163,7 @@ fn runtime_reachability<'project>(
 }
 
 fn retained_runtime_projection(
-    executable: HirExecutableProjectView<'_>,
+    executable: HirAnalysisProjectView<'_>,
     owner: ExprId,
 ) -> Option<HirRuntimeExpressionProjection> {
     executable.modules().find_map(|(_, module)| {
@@ -264,7 +264,7 @@ fn evaluation_topology(
     symbols: &ProjectSymbolTable,
 ) -> Arc<super::HirProjectEvaluationTopology> {
     project
-        .executable_view()
+        .analysis_view()
         .expect("executable project")
         .accept_symbol_generation(symbols)
         .expect("accepted symbol generation")
@@ -279,7 +279,7 @@ fn selected_dialogue_lines(
 ) -> Result<super::AcceptedDialogueLineInventory, super::DialogueLineProjectError> {
     let symbols = symbols_for_project(project, root_document, profile);
     let topology = evaluation_topology(project, &symbols);
-    let executable = project.executable_view().expect("executable project");
+    let executable = project.analysis_view().expect("executable project");
     let selected = executable
         .selected_expression_graph(
             &topology,
@@ -372,7 +372,7 @@ fn runtime_reachability_rejects_a_foreign_topology_generation() {
     };
     let accepted_symbols = symbols_for("accepted-runtime-topology");
     let foreign_symbols = symbols_for("foreign-runtime-topology");
-    let executable = project.executable_view().expect("executable project");
+    let executable = project.analysis_view().expect("executable project");
     let accepted = evaluation_topology(&project, &accepted_symbols);
     let foreign = evaluation_topology(&project, &foreign_symbols);
     let input = HirRuntimeSemanticReachabilityInput::try_new(
@@ -1183,7 +1183,7 @@ fn project_evaluation_topology_seals_source_order_and_local_origins() {
     )
     .expect("evaluation topology project");
     let symbols = symbols_for_project(&project, parsed.document(), "project-evaluation-topology");
-    let executable = project.executable_view().expect("executable project");
+    let executable = project.analysis_view().expect("executable project");
     let witness = executable
         .accept_symbol_generation(&symbols)
         .expect("accepted symbol generation");
@@ -1653,7 +1653,7 @@ fn project_item_entries_retain_rooted_paths_in_source_order() {
     .expect("item-root topology project");
     let symbols = symbols_for_project(&project, parsed.document(), "item-entry-paths");
     let topology = project
-        .executable_view()
+        .analysis_view()
         .expect("executable item-root project")
         .accept_symbol_generation(&symbols)
         .expect("accepted symbol generation")
@@ -1812,7 +1812,7 @@ fn activity_member_bindings_belong_only_to_the_primary_item_path_index() {
     .expect("activity item topology project");
     let symbols = symbols_for_project(&project, parsed.document(), "activity-item-paths");
     let topology = project
-        .executable_view()
+        .analysis_view()
         .expect("executable activity project")
         .accept_symbol_generation(&symbols)
         .expect("accepted symbol generation")
@@ -2087,7 +2087,7 @@ fn semantic_paths_reject_symbols_from_a_foreign_snapshot() {
     .unwrap();
 
     let result = second_project
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .accept_symbol_generation(&first_symbols);
     assert!(matches!(
@@ -2511,7 +2511,7 @@ fn ordered_project_iteration_preserves_module_ids() {
         ));
     }
 
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     assert_eq!(executable.modules().len(), 2);
     assert_eq!(executable.items().count(), 3);
 }
@@ -2582,7 +2582,7 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
         ],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, root_source.document(), "selected-expression");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -2616,7 +2616,7 @@ fn selected_expression_inventory_validates_and_projects_one_postfix_graph() {
 }
 
 fn assert_selected_graph_rejections(
-    executable: HirExecutableProjectView<'_>,
+    executable: HirAnalysisProjectView<'_>,
     topology: &Arc<super::HirProjectEvaluationTopology>,
     owner: ExprId,
     foreign: ExprId,
@@ -2641,7 +2641,7 @@ fn assert_selected_graph_rejections(
 }
 
 fn assert_selected_index_graph(
-    executable: HirExecutableProjectView<'_>,
+    executable: HirAnalysisProjectView<'_>,
     topology: &Arc<super::HirProjectEvaluationTopology>,
     owner: ExprId,
     target: ExprId,
@@ -2691,7 +2691,7 @@ fn assert_selected_index_graph(
 }
 
 fn assert_selected_dialogue_graph(
-    executable: HirExecutableProjectView<'_>,
+    executable: HirAnalysisProjectView<'_>,
     topology: &Arc<super::HirProjectEvaluationTopology>,
     owner: ExprId,
     target: ExprId,
@@ -2770,7 +2770,7 @@ fn selected_expression_inventory_rejects_a_foreign_project_topology() {
         [bind(&first_database, &package, &root_path, first_module)],
     )
     .unwrap();
-    let first_executable = first_project.executable_view().unwrap();
+    let first_executable = first_project.analysis_view().unwrap();
 
     let mut second_syntax = SyntaxDatabase::try_new().unwrap();
     let second_source = parse_initial(
@@ -2793,7 +2793,7 @@ fn selected_expression_inventory_rejects_a_foreign_project_topology() {
         "selection-foreign-second",
     );
     let second_topology = second_project
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .accept_symbol_generation(&second_symbols)
         .expect("accepted symbol generation")
@@ -2834,14 +2834,14 @@ fn selected_topology_uses_statement_plan_order_for_nested_control_bodies() {
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &source, &package, &root_path);
-    assert!(module.is_executable(), "{:?}", module.diagnostics());
+    assert!(module.is_analysis_ready(), "{:?}", module.diagnostics());
     let project = build_project(
         &database,
         package.clone(),
         [bind(&database, &package, &root_path, Arc::clone(&module))],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, source.document(), "selected-statement-plan-order");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -2923,7 +2923,7 @@ fn selected_topology_uses_statement_plan_order_for_nested_control_bodies() {
 }
 
 struct RuntimePostfixExpressionTypeInventory<'project, 'topology> {
-    executable: HirExecutableProjectView<'project>,
+    executable: HirAnalysisProjectView<'project>,
     topology: &'topology Arc<super::HirProjectEvaluationTopology>,
     owner: ExprId,
     target: ExprId,
@@ -2953,9 +2953,9 @@ fn assert_runtime_postfix_expression_type_inventory(
             |_| None,
             |_| structural_projection(HirRuntimeValueRetention::Retain),
         ),
-        Err(HirRuntimeReachabilityError::SelectedExpressions(
-            HirSelectedExpressionInventoryError::MissingPostfixSelection { expression }
-        )) if expression == owner
+        Err(HirRuntimeReachabilityError::CandidateSelection(
+            crate::source_index::HirCandidateSelectionError::Missing { selector }
+        )) if selector == owner
     ));
     let runtime_index = runtime_reachability(
         executable,
@@ -3063,7 +3063,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
         [bind(&database, &package, &root_path, module)],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, parsed.document(), "runtime-expression-types");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -3106,7 +3106,7 @@ fn runtime_expression_type_inventory_excludes_effect_metadata_subtrees() {
 )]
 fn runtime_expression_projection_applies_retained_and_omitted_call_results() {
     let (project, call, callee, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let retained = runtime_reachability(
         executable,
         &topology,
@@ -3235,7 +3235,7 @@ fn runtime_expression_projection_applies_retained_and_omitted_call_results() {
 #[test]
 fn runtime_expression_type_inventory_applies_generic_non_value_semantic_carriers() {
     let (project, call, callee, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let leaf_carrier = runtime_reachability(
         executable,
         &topology,
@@ -3301,7 +3301,7 @@ fn runtime_expression_type_inventory_applies_generic_non_value_semantic_carriers
 #[test]
 fn runtime_expression_projection_requires_an_explicit_projection() {
     let (project, _, _, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     assert!(matches!(
         runtime_reachability(
             executable,
@@ -3326,7 +3326,7 @@ fn runtime_expression_projection_requires_an_explicit_projection() {
 #[test]
 fn runtime_expression_projection_rejects_structural_projection_for_call() {
     let (project, call, _, _, _, _, _, _, topology) = runtime_call_inventory_fixture();
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     assert!(matches!(
         runtime_reachability(
             executable,
@@ -3351,7 +3351,7 @@ fn runtime_expression_projection_rejects_structural_projection_for_call() {
 #[test]
 fn runtime_expression_projection_rejects_call_projection_for_non_call() {
     let (project, _, _, argument, _, _, _, _, topology) = runtime_call_inventory_fixture();
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     assert!(matches!(
         runtime_reachability(
             executable,
@@ -3380,7 +3380,7 @@ fn runtime_expression_projection_rejects_call_projection_for_non_call() {
 fn retained_member_call_result_keeps_receiver_and_omits_select_callee() {
     let (project, _, _, _, call, callee, receiver, argument, topology) =
         runtime_call_inventory_fixture();
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     let retained = runtime_reachability(
         executable,
         &topology,
@@ -3466,7 +3466,7 @@ fn runtime_call_inventory_fixture() -> (
     .unwrap();
     let symbols = symbols_for_project(&project, parsed.document(), "runtime-expression-carrier");
     let topology = project
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .accept_symbol_generation(&symbols)
         .expect("accepted symbol generation")
@@ -3531,7 +3531,7 @@ fn runtime_semantic_reachability_excludes_presentation_and_unreachable_functions
         [bind(&database, &package, &root_path, Arc::clone(&module))],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, parsed.document(), "runtime-owner-domain");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -3702,7 +3702,7 @@ fn runtime_reachability_is_edge_order_independent_and_records_shortest_paths() {
         [bind(&database, &package, &root_path, Arc::clone(&module))],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, parsed.document(), "runtime-reachability-order");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -3831,7 +3831,7 @@ fn checked_closure_execution_edges_own_body_reachability_and_reject_foreign_targ
         [bind(&database, &package, &root_path, Arc::clone(&module))],
     )
     .unwrap();
-    let executable = project.executable_view().unwrap();
+    let executable = project.analysis_view().unwrap();
     let symbols = symbols_for_project(&project, parsed.document(), "runtime-closure-edges");
     let topology = executable
         .accept_symbol_generation(&symbols)
@@ -4059,14 +4059,14 @@ fn selected_expression_inventory_is_deterministic_across_module_input_order() {
     let reverse_symbols =
         symbols_for_project(&reverse, root_source.document(), "selected-roots-reverse");
     let forward_topology = forward
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .accept_symbol_generation(&forward_symbols)
         .expect("accepted symbol generation")
         .into_evaluation_topology()
         .expect("forward selected roots topology");
     let reverse_topology = reverse
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .accept_symbol_generation(&reverse_symbols)
         .expect("accepted symbol generation")
@@ -4074,14 +4074,14 @@ fn selected_expression_inventory_is_deterministic_across_module_input_order() {
         .expect("reverse selected roots topology");
 
     let forward = forward
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .selected_expression_graph(&forward_topology, |_| None, |_| None)
         .expect("postfix-free forward inventory")
         .expression_owners()
         .collect::<BTreeSet<_>>();
     let reverse = reverse
-        .executable_view()
+        .analysis_view()
         .unwrap()
         .selected_expression_graph(&reverse_topology, |_| None, |_| None)
         .expect("postfix-free reverse inventory")
@@ -4104,7 +4104,7 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
     );
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
-    assert!(module.is_executable(), "{:?}", module.diagnostics());
+    assert!(module.is_analysis_ready(), "{:?}", module.diagnostics());
     assert_eq!(
         module.dialogue_line_sites().records().len(),
         1,
@@ -4212,8 +4212,8 @@ fn project_rejects_cross_module_dialogue_id_collision_with_exact_sites() {
     let mut database = HirDatabase::try_new().unwrap();
     let root = lower(&mut database, &root_source, &package, &root_path);
     let child = lower(&mut database, &child_source, &package, &child_path);
-    assert!(root.is_executable(), "{:?}", root.diagnostics());
-    assert!(child.is_executable(), "{:?}", child.diagnostics());
+    assert!(root.is_analysis_ready(), "{:?}", root.diagnostics());
+    assert!(child.is_analysis_ready(), "{:?}", child.diagnostics());
     let project = build_project(
         &database,
         package.clone(),
@@ -4290,7 +4290,7 @@ fn module_line_identity_error_publishes_no_candidate_or_project() {
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &package, &root_path);
     assert!(
-        module.is_executable(),
+        module.is_analysis_ready(),
         "line identity is selected after HIR publication"
     );
     assert_eq!(module.dialogue_line_sites().records().len(), 1);
@@ -4454,7 +4454,7 @@ fn accepted_project_generation_remains_bound_to_its_original_exact_arc() {
     assert!(Arc::ptr_eq(retained, &first_module));
     assert!(!Arc::ptr_eq(retained, &second_module));
     assert_eq!(retained.snapshot_id(), first_snapshot);
-    assert_eq!(project.executable_view().unwrap().modules().len(), 1);
+    assert_eq!(project.analysis_view().unwrap().modules().len(), 1);
     assert_eq!(
         build_project(&database, package, [future_stale]).err(),
         Some(HirProjectBuildError::StaleModuleLease {
@@ -4489,7 +4489,7 @@ fn accepted_symbol_generation_witness_joins_non_callable_sources_exactly() {
         first.document(),
         "accepted-symbol-generation-witness",
     );
-    let first_executable = first_project.executable_view().unwrap();
+    let first_executable = first_project.analysis_view().unwrap();
     let witness = first_executable
         .accept_symbol_generation(&first_symbols)
         .unwrap();
@@ -4668,7 +4668,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
 }
 
 #[test]
-fn project_view_allows_recovered_but_executable_view_rejects_first_canonical() {
+fn project_view_allows_recovered_but_analysis_view_rejects_first_canonical() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
     let first_recovered_path = root_path.join(ModuleSegment::new("a_recovered").unwrap());
@@ -4703,9 +4703,9 @@ fn project_view_allows_recovered_but_executable_view_rejects_first_canonical() {
         &first_recovered_path,
     );
     let last_recovered = lower(&mut database, &last_source, &package, &last_recovered_path);
-    assert!(root.is_executable());
-    assert!(!first_recovered.is_executable());
-    assert!(!last_recovered.is_executable());
+    assert!(root.is_analysis_ready());
+    assert!(!first_recovered.is_analysis_ready());
+    assert!(!last_recovered.is_analysis_ready());
     let first_snapshot = first_recovered.snapshot_id();
     let project = build_project(
         &database,
@@ -4728,8 +4728,8 @@ fn project_view_allows_recovered_but_executable_view_rejects_first_canonical() {
     );
     assert_eq!(project.view().items().count(), 3);
     assert_eq!(
-        project.executable_view().err(),
-        Some(HirProjectExecutionError::RecoveredModule {
+        project.analysis_view().err(),
+        Some(HirProjectAnalysisError::RecoveredModule {
             module: first_recovered_path,
             snapshot: first_snapshot,
         })

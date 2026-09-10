@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use thiserror::Error;
 
-use super::HirExecutableProjectView;
+use super::HirAnalysisProjectView;
 use crate::expr::HirTypeRootDisposition;
 use crate::identity::{ExprId, TypeId};
 use crate::module::HirModule;
@@ -42,7 +42,7 @@ impl HirExpressionTypeRootProjection {
     /// Closes every expression type root and all same-module type children in
     /// the supplied executable project.
     pub fn from_project(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
     ) -> Result<Self, HirExpressionTypeRootProjectionError> {
         let mut state = TypeRootProjectionState::default();
         for (_, module) in project.modules() {
@@ -103,7 +103,7 @@ impl HirExpressionTypeRootProjection {
     }
 }
 
-impl HirExecutableProjectView<'_> {
+impl HirAnalysisProjectView<'_> {
     /// Builds the one shared transitive expression-to-type disposition
     /// projection for this exact executable HIR generation.
     pub fn type_root_projection(

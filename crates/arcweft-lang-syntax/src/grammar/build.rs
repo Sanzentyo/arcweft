@@ -260,6 +260,22 @@ pub(crate) struct GrammarBuild {
 }
 
 impl GrammarBuild {
+    pub(crate) fn diagnostic_identity_count(&self) -> usize {
+        self.diagnostics
+            .iter()
+            .chain(
+                self.index
+                    .entries()
+                    .iter()
+                    .filter_map(UnattachedGrammarEntry::expression_projection)
+                    .flat_map(|projection| projection.projection().candidate_graphs())
+                    .flat_map(crate::expressions::PendingCandidateGraph::diagnostics),
+            )
+            .map(PendingSyntaxDiagnostic::identity)
+            .collect::<std::collections::BTreeSet<_>>()
+            .len()
+    }
+
     pub(crate) fn events(&self) -> &[SyntaxEvent] {
         &self.events
     }
@@ -284,16 +300,16 @@ impl GrammarBuild {
         self.stats
     }
 
-    /// Whether this complete grammar transaction contains recoverable syntax.
-    pub(crate) fn has_recovery(&self) -> bool {
-        !self.missing_tokens.is_empty()
-            || !self.diagnostics.is_empty()
-            || self.index.entries().iter().any(|entry| {
-                entry.kind().is_missing_node()
+    /// Composes required source regions without selecting retained alternatives.
+    pub(crate) fn recovery_status(&self) -> crate::incremental::ParseStatus {
+        use crate::incremental::ParseStatus;
+        self.index.entries().iter().fold(
+            ParseStatus::from_recovery(
+                !self.missing_tokens.is_empty() || !self.diagnostics.is_empty(),
+            ),
+            |status, entry| {
+                let intrinsic = entry.kind().is_missing_node()
                     || entry.kind().is_error_node()
-                    || entry
-                        .expression_projection()
-                        .is_some_and(PendingExpressionProjection::has_recovery)
                     || entry
                         .assertion_projection()
                         .is_some_and(PendingAssertionProjection::has_recovery)
@@ -326,8 +342,15 @@ impl GrammarBuild {
                         .is_some_and(PendingViewExportProjection::has_recovery)
                     || entry
                         .view_fragment_projection()
-                        .is_some_and(PendingViewFragmentProjection::has_recovery)
-            })
+                        .is_some_and(PendingViewFragmentProjection::has_recovery);
+                status
+                    .required(ParseStatus::from_recovery(intrinsic))
+                    .required(entry.expression_projection().map_or(
+                        ParseStatus::Clean,
+                        PendingExpressionProjection::recovery_status,
+                    ))
+            },
+        )
     }
 }
 
@@ -677,7 +700,7 @@ impl<'a> EventValidator<'a> {
             kind,
             role,
             transparent_expression_group,
-            ..
+            projection,
         } = start
         else {
             unreachable!("accept_start receives only StartNode events")
@@ -706,6 +729,21 @@ impl<'a> EventValidator<'a> {
         }
         validate_start_projections(event, kind, start)?;
         self.depth += 1;
+        if let PendingStartProjection::Expression(projection) = projection {
+            for graph in projection.projection().candidate_graphs() {
+                for diagnostic in graph.diagnostics() {
+                    self.accept_diagnostic(event, diagnostic)?;
+                }
+                for (_, at) in graph.missing_tokens() {
+                    if *at > self.source.len() || !self.source.is_char_boundary(*at) {
+                        return Err(GrammarBuildError::InvalidDiagnosticRange {
+                            event,
+                            source_len: self.source.len(),
+                        });
+                    }
+                }
+            }
+        }
         Ok(())
     }
 
@@ -761,6 +799,13 @@ impl<'a> EventValidator<'a> {
         if [Some(diagnostic.range()), diagnostic.related_range()]
             .into_iter()
             .flatten()
+            .chain(
+                diagnostic
+                    .suggestions()
+                    .iter()
+                    .flat_map(super::event::PendingSyntaxSuggestion::edits)
+                    .map(super::event::PendingSyntaxEdit::range),
+            )
             .any(|range| {
                 range.start() > range.end()
                     || range.end() > self.source.len()
@@ -1079,7 +1124,10 @@ mod tests {
         let built = build_grammar(&document, &events).unwrap();
         assert!(built.diagnostics().is_empty());
         assert_eq!(built.missing_tokens().len(), 1);
-        assert!(built.has_recovery());
+        assert_eq!(
+            built.recovery_status(),
+            crate::incremental::ParseStatus::Recovered
+        );
     }
 
     #[test]

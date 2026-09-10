@@ -13,13 +13,16 @@ use crate::item::{
     HirDeclarationMemberId, HirDeclarationMemberKind, HirItem, HirItemKind, HirStyleItem,
     HirViewExportMember,
 };
-use crate::module::{HirModule, HirModuleStatus};
+use crate::module::HirModule;
 use crate::symbol::{
     CallablePackageId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
 };
 
+#[path = "final_project/capture_selection.rs"]
+mod capture_selection;
 #[path = "final_project/dialogue_lines.rs"]
 mod dialogue_lines;
+pub use capture_selection::{HirCaptureSelectionError, HirSelectedCapture};
 #[path = "final_project/runtime_semantic_owners.rs"]
 mod runtime_semantic_owners;
 #[path = "final_project/selected_expressions.rs"]
@@ -401,18 +404,16 @@ impl HirProject {
         HirProjectView { project: self }
     }
 
-    pub fn executable_view(
-        &self,
-    ) -> Result<HirExecutableProjectView<'_>, HirProjectExecutionError> {
+    pub fn analysis_view(&self) -> Result<HirAnalysisProjectView<'_>, HirProjectAnalysisError> {
         for (key, module) in &self.modules {
-            if module.module().status() == HirModuleStatus::Recovered {
-                return Err(HirProjectExecutionError::RecoveredModule {
+            if !module.module().is_analysis_ready() {
+                return Err(HirProjectAnalysisError::RecoveredModule {
                     module: key.path().clone(),
                     snapshot: module.module().snapshot_id(),
                 });
             }
         }
-        Ok(HirExecutableProjectView {
+        Ok(HirAnalysisProjectView {
             view: HirProjectView { project: self },
         })
     }
@@ -597,9 +598,10 @@ impl<'project> ProjectStyleRef<'project> {
     }
 }
 
-/// Executable-only project view, constructible only after full status checking.
+/// Source-validated project input for semantic analysis. Retained alternatives
+/// may contain recovery; only a complete selected semantic program can execute.
 #[derive(Clone, Copy)]
-pub struct HirExecutableProjectView<'project> {
+pub struct HirAnalysisProjectView<'project> {
     view: HirProjectView<'project>,
 }
 
@@ -715,14 +717,14 @@ impl AcceptedHirProjectGeneration {
     }
 
     /// Validates that this accepted generation is an exact lease for the
-    /// supplied executable project view.
+    /// supplied analysis project view.
     ///
     /// Symbol identity is validated by the admission that minted this
     /// generation. This check closes the remaining project-owned portion of
     /// the lease without reconstructing a second generation token.
-    pub fn validate_executable_lease(
+    pub fn validate_analysis_lease(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
     ) -> Result<(), AcceptedHirProjectLeaseError> {
         if self.package() != project.package() {
             return Err(AcceptedHirProjectLeaseError::PackageMismatch);
@@ -810,11 +812,11 @@ impl AcceptedHirProjectGeneration {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum AcceptedHirProjectLeaseError {
-    #[error("accepted HIR generation and executable project have different packages")]
+    #[error("accepted HIR generation and analysis project have different packages")]
     PackageMismatch,
-    #[error("executable HIR module is absent from the accepted generation: {module}")]
+    #[error("analysis HIR module is absent from the accepted generation: {module}")]
     MissingAcceptedModule { module: CanonicalModulePath },
-    #[error("accepted generation contains a module absent from executable HIR: {module}")]
+    #[error("accepted generation contains a module absent from analysis HIR: {module}")]
     ExtraAcceptedModule { module: CanonicalModulePath },
     #[error("accepted generation module identity differs for `{module}`")]
     ModuleMismatch { module: CanonicalModulePath },
@@ -842,19 +844,19 @@ pub enum AcceptedHirModuleLeaseError {
     SourceMismatch,
 }
 
-/// Exact symbol-generation witness for one executable HIR project.
+/// Exact symbol-generation witness for one HIR project admitted to analysis.
 ///
 /// The witness is move-only so consumers cannot retain an independently
 /// reconstructed package/module/source join.  It is issued only after the
-/// symbol table has been checked against every executable module lease.
+/// symbol table has been checked against every analysis module lease.
 pub struct AcceptedHirProjectSymbolGeneration<'project, 'symbols> {
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
     symbols: &'symbols ProjectSymbolTable,
     generation: Arc<AcceptedHirProjectGeneration>,
 }
 
 impl<'project, 'symbols> AcceptedHirProjectSymbolGeneration<'project, 'symbols> {
-    pub const fn project(&self) -> HirExecutableProjectView<'project> {
+    pub const fn project(&self) -> HirAnalysisProjectView<'project> {
         self.project
     }
 
@@ -879,8 +881,8 @@ pub enum AcceptedHirProjectSymbolGenerationError {
     SourceIdentityMismatch { module: CanonicalModulePath },
 }
 
-impl<'project> HirExecutableProjectView<'project> {
-    /// Mints the sole exact symbol-generation witness for this executable
+impl<'project> HirAnalysisProjectView<'project> {
+    /// Mints the sole exact symbol-generation witness for this analysis
     /// project.  Every accepted HIR module and every symbol module must join
     /// by canonical path and source-document identity.
     pub fn accept_symbol_generation<'symbols>(
@@ -958,13 +960,13 @@ impl<'project> HirExecutableProjectView<'project> {
         })
     }
 
-    /// Returns the exact tooling-capable view embedded by this executable
+    /// Returns the exact tooling-capable view embedded by this analysis
     /// admission without reopening or reconstructing the accepted project.
     pub const fn project_view(self) -> HirProjectView<'project> {
         self.view
     }
 
-    /// Exact package identity admitted by this executable project generation.
+    /// Exact package identity admitted by this analysis project generation.
     pub const fn package(self) -> &'project CallablePackageId {
         self.view.package()
     }
@@ -976,7 +978,7 @@ impl<'project> HirExecutableProjectView<'project> {
         self.view.modules()
     }
 
-    /// Resolves one exact executable module lease without reopening the
+    /// Resolves one exact analysis module lease without reopening the
     /// tooling-capable project owner or reconstructing a module from its path.
     pub fn module(self, path: &CanonicalModulePath) -> Option<&'project Arc<HirModule>> {
         self.view.module(path)
@@ -1036,8 +1038,10 @@ impl<'project> HirProjectItemRef<'project> {
 
 /// Recovered modules remain visible to tooling but cannot enter execution.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum HirProjectExecutionError {
-    #[error("HIR module `{module}` at {snapshot:?} is recovered and not executable")]
+pub enum HirProjectAnalysisError {
+    #[error(
+        "HIR module `{module}` at {snapshot:?} has required recovery and cannot enter semantic analysis"
+    )]
     RecoveredModule {
         module: CanonicalModulePath,
         snapshot: HirSnapshotId,

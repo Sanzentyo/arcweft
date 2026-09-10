@@ -273,6 +273,8 @@ pub enum FinalSemanticAnalysisError {
     UnexpectedExpressionFact { owner: ExprId },
     #[error("semantic fact references a foreign or missing HIR owner")]
     InvalidOwner,
+    #[error(transparent)]
+    ControlTransfer(#[from] arcweft_lang_hir::project::HirControlTransferResolutionError),
     #[error("semantic fact does not match its final-HIR payload family")]
     WrongPayloadFamily,
     #[error("sealed Fx edge plan for expression {owner:?} is invalid: {source}")]
@@ -478,6 +480,8 @@ pub enum FinalSemanticAnalysisError {
     },
     #[error("ordinary function {owner:?} has an invalid execution role")]
     InvalidFunctionExecution { owner: ItemId },
+    #[error("ordinary function {owner:?} admits more than one body execution interpretation")]
+    AmbiguousFunctionExecution { owner: ItemId },
     #[error("callable body support remains deferred for item {owner:?}")]
     UnsupportedCallableBody { owner: ItemId },
 }
@@ -944,7 +948,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module");
@@ -974,7 +978,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module");

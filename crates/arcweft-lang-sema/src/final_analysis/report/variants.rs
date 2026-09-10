@@ -12,8 +12,7 @@ use crate::{
 };
 
 use super::{
-    FinalAnalysisExecutionProjection, FinalAnalysisExecutionProjectionError,
-    HirExecutableProjectView,
+    FinalAnalysisExecutionProjection, FinalAnalysisExecutionProjectionError, HirAnalysisProjectView,
 };
 
 impl FinalAnalysisExecutionProjection<'_> {
@@ -22,7 +21,7 @@ impl FinalAnalysisExecutionProjection<'_> {
     /// instantiated owner; its application solution connects the two.
     pub fn variant_constructor(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         application: &CheckedCallApplication,
     ) -> Result<Option<CheckedVariantResolution>, FinalAnalysisExecutionProjectionError> {
         let owner = application.core().site().expression();

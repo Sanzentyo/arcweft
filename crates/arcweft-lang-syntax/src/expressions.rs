@@ -19,7 +19,7 @@ pub(crate) use dialogue::{
 };
 pub use dialogue::{
     SyntaxAttachedContentApplicationForm, SyntaxAttachedContentApplicationProjection,
-    SyntaxBracketTerminator, SyntaxCandidateQuality, SyntaxDialogueActionArgumentParts,
+    SyntaxBracketTerminator, SyntaxDialogueActionArgumentParts,
     SyntaxDialogueActionArgumentProjection, SyntaxDialogueActionArgumentSourcePart,
     SyntaxDialogueActionValue, SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueContent,
     SyntaxDialogueContentIssue, SyntaxDialogueContentProjection,
@@ -170,6 +170,90 @@ pub enum ExpressionProjection {
 }
 
 impl ExpressionProjection {
+    pub(crate) fn rebased(
+        &self,
+        offset: usize,
+        context: &mut crate::grammar::event::ProjectionRebaseContext,
+    ) -> Option<Self> {
+        Some(match self {
+            Self::Index(index) => Self::Index(index.rebased(offset)?),
+            Self::AttachedContentApplication(application) => {
+                Self::AttachedContentApplication(application.rebased(offset)?)
+            }
+            Self::PostfixBracket(postfix) => {
+                Self::PostfixBracket(postfix.rebased(offset, context)?)
+            }
+            Self::Unit
+            | Self::Literal(_)
+            | Self::EntityReference(_)
+            | Self::LifetimePath(_)
+            | Self::Path
+            | Self::ShortVariant(_)
+            | Self::Placeholder(_)
+            | Self::Tuple(_)
+            | Self::BracketSequence(_)
+            | Self::NumericBracketSequence(_)
+            | Self::ArrayRepeat(_)
+            | Self::Call(_)
+            | Self::Select(_)
+            | Self::Pipe(_)
+            | Self::Try { .. }
+            | Self::Await { .. }
+            | Self::Borrow { .. }
+            | Self::Dereference { .. }
+            | Self::Unary { .. }
+            | Self::Range { .. }
+            | Self::Record(_)
+            | Self::RecordLiteral(_)
+            | Self::Binary { .. }
+            | Self::Closure(_)
+            | Self::Block
+            | Self::ComputationBlock(_)
+            | Self::NamedBlock(_)
+            | Self::Loop
+            | Self::Thread(_)
+            | Self::Choice
+            | Self::If { .. }
+            | Self::IfLet { .. }
+            | Self::Match(_)
+            | Self::Error => self.clone(),
+        })
+    }
+}
+
+impl ExpressionProjection {
+    /// Every retained candidate graph in deterministic enclosing-first order.
+    pub(crate) fn candidate_graphs(&self) -> impl Iterator<Item = &PendingCandidateGraph> {
+        let mut pending = Vec::new();
+        if let Self::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous { index, dialogue }) =
+            self
+        {
+            pending.extend([dialogue.graph(), index.graph()]);
+        }
+        std::iter::from_fn(move || {
+            let graph = pending.pop()?;
+            for node in graph.nodes().iter().rev() {
+                if let PendingCandidateSemantic::Expression(projection) = node.semantic()
+                    && let Self::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
+                        index,
+                        dialogue,
+                    }) = projection.projection()
+                {
+                    pending.extend([dialogue.graph(), index.graph()]);
+                }
+            }
+            Some(graph)
+        })
+    }
+
+    /// Recovery of this required expression, preserving nested alternatives.
+    pub(crate) fn recovery_status(&self) -> crate::incremental::ParseStatus {
+        match self {
+            Self::PostfixBracket(postfix) => postfix.recovery_status(),
+            _ => crate::incremental::ParseStatus::from_recovery(self.has_recovery()),
+        }
+    }
+
     /// Whether this parser-selected family retains typed recovery.
     pub fn has_recovery(&self) -> bool {
         match self {

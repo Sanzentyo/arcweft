@@ -4468,7 +4468,7 @@ mod tests {
     fn callback_test_owner(fixture: &crate::final_analysis::tests::Fixture) -> ExprId {
         fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module")
@@ -4586,7 +4586,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module");
@@ -4638,7 +4638,7 @@ mod tests {
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
         let mut analyzer = super::super::Analyzer::new(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             crate::final_analysis::FinalSemanticCatalogs::production(&fixture.registered),
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
@@ -4747,7 +4747,7 @@ mod tests {
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
         let mut analyzer = super::super::Analyzer::new(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             crate::final_analysis::FinalSemanticCatalogs::production(&fixture.registered),
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
@@ -4793,7 +4793,7 @@ mod tests {
         let owner = callback_test_owner(&fixture);
         let cancellation = AtomicBool::new(false);
         let mut analyzer = super::super::Analyzer::new(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             crate::final_analysis::FinalSemanticCatalogs::production(&fixture.registered),
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
@@ -4841,7 +4841,7 @@ mod tests {
     fn dialogue_terminal_mapping_requires_the_exact_lower_source_projection() {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
-        let view = fixture.project.executable_view().expect("executable HIR");
+        let view = fixture.project.analysis_view().expect("executable HIR");
         let module = view
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module");

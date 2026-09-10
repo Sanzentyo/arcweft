@@ -6,13 +6,12 @@ use arcweft_lang_syntax::attachment::AttachedCandidatePathProjection;
 use arcweft_lang_syntax::attachment::source_file::AttachedPath;
 use arcweft_source::SourceSpan;
 
-use crate::expr::HirExprKind;
 use crate::identity::{
     CaptureId, ExprId, HirLimit, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
 };
-use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment};
+use crate::leaf::{HirName, HirPath};
 use crate::lowering::{HirInvariantFailure, HirLowerFailure};
-use crate::scope::{CaptureAccess, HirCapture};
+use crate::scope::{CaptureAccess, HirCapture, HirCaptureUse, HirCaptureUseSite};
 use crate::source_index::{HirInsertionPoint, HirSourceSite};
 
 use super::StagedHirModuleTransaction;
@@ -20,12 +19,7 @@ use super::StagedHirModuleTransaction;
 pub(super) struct ClosureCaptureFrame {
     closure: ExprId,
     scope: ScopeId,
-    pending: BTreeMap<LocalId, PendingCapture>,
-}
-
-struct PendingCapture {
-    access: CaptureAccess,
-    first_use: SourceSpan,
+    pending: BTreeMap<HirCaptureUseSite, (LocalId, HirCaptureUse)>,
 }
 
 impl ClosureCaptureFrame {
@@ -68,13 +62,29 @@ impl StagedHirModuleTransaction<'_> {
         if frame.closure != closure {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
-        super::require_limit(HirLimit::SyntheticDescendantsPerOwner, frame.pending.len())?;
-
-        let mut pending = frame.pending.into_iter().collect::<Vec<_>>();
-        pending.sort_by_key(|(local, capture)| (capture.first_use.range().start(), *local));
+        let mut by_local = BTreeMap::<LocalId, Vec<HirCaptureUse>>::new();
+        for (local, use_site) in frame.pending.into_values() {
+            by_local.entry(local).or_default().push(use_site);
+        }
+        super::require_limit(HirLimit::SyntheticDescendantsPerOwner, by_local.len())?;
+        let mut pending = by_local
+            .into_iter()
+            .map(|(local, mut uses)| {
+                uses.sort_by_key(|use_site| {
+                    (
+                        use_site.source().range().start(),
+                        use_site.source().range().end(),
+                        use_site.site(),
+                    )
+                });
+                HirCapture::try_new(closure, local, uses.into())
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        pending.sort_by_key(|capture| (capture.first_use().range().start(), capture.local()));
 
         let mut captures = Vec::with_capacity(pending.len());
-        for (ordinal, (local, pending)) in pending.into_iter().enumerate() {
+        for (ordinal, payload) in pending.into_iter().enumerate() {
             let ordinal =
                 u32::try_from(ordinal).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
             let key = SyntheticKey::try_new(
@@ -85,11 +95,9 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidSlotCommit)?;
             let insertion = HirInsertionPoint::try_new(
                 self.request.source().document(),
-                pending.first_use.range().start(),
+                payload.first_use().range().start(),
             )
             .map_err(|_| HirInvariantFailure::InvalidSlotCommit)?;
-            let payload = HirCapture::try_new(closure, local, pending.access, pending.first_use)
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
             captures.push(self.arenas.captures().allocate_synthetic(
                 &mut self.slots,
                 key,
@@ -102,6 +110,7 @@ impl StagedHirModuleTransaction<'_> {
 
     pub(super) fn record_attached_path_capture(
         &mut self,
+        owner: ExprId,
         scope: ScopeId,
         source: &AttachedPath,
         path: &HirPath,
@@ -109,11 +118,12 @@ impl StagedHirModuleTransaction<'_> {
         let [segment] = source.segments() else {
             return Ok(());
         };
-        self.record_path_capture(scope, path, segment.source_span(), CaptureAccess::Read)
+        self.record_path_capture(owner, scope, path, segment.source_span())
     }
 
     pub(super) fn record_candidate_path_capture(
         &mut self,
+        owner: ExprId,
         scope: ScopeId,
         source: AttachedCandidatePathProjection<'_>,
         path: &HirPath,
@@ -125,15 +135,16 @@ impl StagedHirModuleTransaction<'_> {
         let segment = segments
             .next()
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-        self.record_path_capture(scope, path, segment.source_span(), CaptureAccess::Read)
+        self.record_path_capture(owner, scope, path, segment.source_span())
     }
 
     #[allow(
         clippy::needless_pass_by_value,
-        reason = "capture publication owns and duplicates the exact first-use source span across every crossed closure frame"
+        reason = "each crossed closure retains the exact source evidence for this lexical use"
     )]
     pub(super) fn record_local_capture(
         &mut self,
+        site: HirCaptureUseSite,
         scope: ScopeId,
         local: LocalId,
         first_use: SourceSpan,
@@ -167,88 +178,64 @@ impl StagedHirModuleTransaction<'_> {
             }
         }
         for index in frame_indices {
-            self.record_pending_capture(index, local, first_use.clone(), access)?;
+            self.record_pending_capture(
+                index,
+                local,
+                HirCaptureUse::new(site, access, first_use.clone()),
+            )?;
         }
         Ok(())
     }
 
-    pub(super) fn upgrade_direct_reassignment_capture(
-        &mut self,
-        expression: ExprId,
-    ) -> Result<(), HirLowerFailure> {
-        if self.closure_capture_frames.is_empty() {
-            return Ok(());
-        }
-        let (scope, path) = {
-            let expression = self
-                .arenas
-                .expressions()
-                .resolve_staged(&self.slots, expression)?;
-            let HirExprKind::Path(crate::leaf::HirPathValue::Resolved(path)) = expression.kind()
-            else {
-                return Ok(());
-            };
-            (expression.scope(), path.clone())
-        };
-        let Some(name) = local_reference_name(&path) else {
-            return Ok(());
-        };
-        let source = match self.slots.resolve_staged(expression)?.source_site() {
-            HirSourceSite::Span(source) => source.clone(),
-            HirSourceSite::Insertion(_) => {
-                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+    pub(super) fn upgrade_direct_reassignment_capture(&mut self, expression: ExprId) {
+        for frame in &mut self.closure_capture_frames {
+            if let Some((_, use_site)) = frame.pending.get_mut(&HirCaptureUseSite::Path(expression))
+            {
+                use_site.require_access(CaptureAccess::Reassign);
             }
-        };
-        let Some(local) = self.visible_local(scope, name, source.range().start())? else {
-            return Ok(());
-        };
-        self.record_local_capture(scope, local, source, CaptureAccess::Reassign)
+        }
     }
 
     fn record_path_capture(
         &mut self,
+        owner: ExprId,
         scope: ScopeId,
         path: &HirPath,
         first_use: SourceSpan,
-        access: CaptureAccess,
     ) -> Result<(), HirLowerFailure> {
-        let Some(name) = local_reference_name(path) else {
+        let Some(name) = path.lexical_name() else {
             return Ok(());
         };
-        let Some(local) = self.visible_local(scope, name, first_use.range().start())? else {
+        let Ok(name) = HirName::try_new(name.into()) else {
             return Ok(());
         };
-        self.record_local_capture(scope, local, first_use, access)
+        let Some(local) = self.visible_local(scope, &name, first_use.range().start())? else {
+            return Ok(());
+        };
+        self.record_local_capture(
+            HirCaptureUseSite::Path(owner),
+            scope,
+            local,
+            first_use,
+            CaptureAccess::Read,
+        )
     }
 
     fn record_pending_capture(
         &mut self,
         frame_index: usize,
         local: LocalId,
-        first_use: SourceSpan,
-        access: CaptureAccess,
+        use_site: HirCaptureUse,
     ) -> Result<(), HirLowerFailure> {
         let frame = &mut self.closure_capture_frames[frame_index];
-        if let Some(pending) = frame.pending.get_mut(&local) {
-            if pending.first_use.source() != first_use.source() {
+        if let Some((retained_local, pending)) = frame.pending.get_mut(&use_site.site()) {
+            if *retained_local != local || pending.source() != use_site.source() {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
-            let retained_order = (
-                pending.first_use.range().start(),
-                pending.first_use.range().end(),
-            );
-            let candidate_order = (first_use.range().start(), first_use.range().end());
-            if candidate_order < retained_order {
-                pending.first_use = first_use;
-            }
-            if access == CaptureAccess::Reassign {
-                pending.access = CaptureAccess::Reassign;
-            }
+            pending.require_access(use_site.access());
             return Ok(());
         }
-        frame
-            .pending
-            .insert(local, PendingCapture { access, first_use });
+        frame.pending.insert(use_site.site(), (local, use_site));
         Ok(())
     }
 
@@ -274,14 +261,4 @@ impl StagedHirModuleTransaction<'_> {
         }
         Ok(false)
     }
-}
-
-fn local_reference_name(path: &HirPath) -> Option<&HirName> {
-    if path.root() != HirPathRoot::ImplicitCrate {
-        return None;
-    }
-    let [HirPathSegment::Identifier(name)] = path.segments() else {
-        return None;
-    };
-    Some(name)
 }

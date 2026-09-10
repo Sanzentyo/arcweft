@@ -5,6 +5,7 @@
 //! transaction responsibilities rather than being reconstructed here.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use arcweft_source::SourceSpan;
 use thiserror::Error;
@@ -346,28 +347,109 @@ pub enum CaptureAccess {
     Reassign,
 }
 
+impl CaptureAccess {
+    #[must_use]
+    pub const fn required(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Read, Self::Read) => Self::Read,
+            _ => Self::Reassign,
+        }
+    }
+}
+
+/// One lexical reference in the typed expression arena. Shorthand fields have
+/// no expression child, so their ordinal is part of the reference identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirCaptureUseSite {
+    Path(ExprId),
+    RecordShorthand { owner: ExprId, field: u32 },
+}
+
+impl HirCaptureUseSite {
+    pub const fn owner(self) -> ExprId {
+        match self {
+            Self::Path(owner) | Self::RecordShorthand { owner, .. } => owner,
+        }
+    }
+}
+
+/// Source-validated lexical use, retained even in an unselected interpretation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HirCaptureUse {
+    site: HirCaptureUseSite,
+    access: CaptureAccess,
+    source: SourceSpan,
+}
+
+impl HirCaptureUse {
+    pub(crate) const fn new(
+        site: HirCaptureUseSite,
+        access: CaptureAccess,
+        source: SourceSpan,
+    ) -> Self {
+        Self {
+            site,
+            access,
+            source,
+        }
+    }
+
+    pub const fn site(&self) -> HirCaptureUseSite {
+        self.site
+    }
+    pub const fn access(&self) -> CaptureAccess {
+        self.access
+    }
+    pub const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+
+    pub(crate) fn require_access(&mut self, access: CaptureAccess) {
+        self.access = self.access.required(access);
+    }
+}
+
 /// One immutable capture-arena record.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirCapture {
     closure: ExprId,
     local: LocalId,
-    access: CaptureAccess,
-    first_use: SourceSpan,
+    uses: Arc<[HirCaptureUse]>,
 }
 
 impl HirCapture {
     pub(crate) fn try_new(
         closure: ExprId,
         local: LocalId,
-        access: CaptureAccess,
-        first_use: SourceSpan,
+        uses: Arc<[HirCaptureUse]>,
     ) -> Result<Self, HirScopeInvariantError> {
         validate_optional_module(closure.module(), Some(local.module()))?;
+        let mut sites = BTreeSet::new();
+        let mut previous = None;
+        let Some(first) = uses.first() else {
+            return Err(HirScopeInvariantError::InvalidCaptureUses);
+        };
+        for use_site in uses.iter() {
+            validate_optional_module(closure.module(), Some(use_site.site.owner().module()))?;
+            let source = use_site.source();
+            let order = (
+                source.range().start(),
+                source.range().end(),
+                use_site.site(),
+            );
+            if !sites.insert(use_site.site())
+                || source.source() != first.source().source()
+                || source.range().is_empty()
+                || previous.is_some_and(|previous| previous >= order)
+            {
+                return Err(HirScopeInvariantError::InvalidCaptureUses);
+            }
+            previous = Some(order);
+        }
         Ok(Self {
             closure,
             local,
-            access,
-            first_use,
+            uses,
         })
     }
 
@@ -379,12 +461,20 @@ impl HirCapture {
         self.local
     }
 
-    pub const fn access(&self) -> CaptureAccess {
-        self.access
+    pub fn access(&self) -> CaptureAccess {
+        self.uses
+            .iter()
+            .fold(CaptureAccess::Read, |access, use_site| {
+                access.required(use_site.access())
+            })
     }
 
-    pub const fn first_use(&self) -> &SourceSpan {
-        &self.first_use
+    pub fn first_use(&self) -> &SourceSpan {
+        self.uses[0].source()
+    }
+
+    pub const fn uses(&self) -> &Arc<[HirCaptureUse]> {
+        &self.uses
     }
 }
 
@@ -396,6 +486,8 @@ impl crate::arena::HirArenaPayload for HirCapture {
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
 pub(crate) enum HirScopeInvariantError {
+    #[error("capture uses are empty, duplicated, unordered, or source-inconsistent")]
+    InvalidCaptureUses,
     #[error("scope record references module {actual:?}, expected {expected:?}")]
     ForeignReference {
         expected: HirModuleId,

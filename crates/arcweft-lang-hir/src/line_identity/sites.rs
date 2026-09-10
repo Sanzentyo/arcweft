@@ -12,7 +12,7 @@ use arcweft_source::SourceSpan;
 
 use crate::dialogue_application::{HirAttachedContentApplicationFamily, HirDialogueCoordinateKind};
 use crate::expr::{HirExprKind, HirNamedBlockName};
-use crate::identity::{ExprId, ItemId};
+use crate::identity::{ExprId, ItemId, SyntheticOwner};
 use crate::item::{HirCapabilityMember, HirItemKind, HirRetainedName};
 use crate::module::HirModule;
 use crate::scope::HirScopeOwner;
@@ -42,7 +42,18 @@ pub(crate) fn build_site_inventory(
             .resolve_prepared(owner)
             .map_err(|_| DialogueLineBuildFatal::InvalidSourceComponent)?;
         if !matches!(metadata.origin(), HirOrigin::Source(_)) {
-            continue;
+            let Some(region) = module
+                .candidate_provenance()
+                .owner_region(SyntheticOwner::Expr(owner))
+            else {
+                continue;
+            };
+            // The selector owns the source application for an alternative root.
+            // Authored applications nested inside either region own their own
+            // source occurrence and participate in the same selected inventory.
+            if region.root() == owner {
+                continue;
+            }
         }
         let Some((semantic_application, topology)) =
             source_site_relation(module, expression.kind(), owner)?

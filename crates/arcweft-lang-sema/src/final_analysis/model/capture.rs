@@ -6,6 +6,8 @@ use std::{
     sync::Arc,
 };
 
+use arcweft_lang_hir::identity::SyntheticOwner;
+use arcweft_lang_hir::project::HirSelectedCapture;
 use arcweft_lang_hir::{project::HirProjectEvaluationTopology, scope::CaptureAccess};
 use thiserror::Error;
 
@@ -24,6 +26,8 @@ const CHECKED_IMPLICIT_CALLABLE_IDENTITY_DOMAIN: &[u8] =
 /// These are compiler invariants, not ordinary overload-candidate rejection.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum CheckedCaptureAuthorityViolation {
+    #[error(transparent)]
+    CandidateSelection(#[from] arcweft_lang_hir::project::HirCaptureSelectionError),
     #[error(transparent)]
     GenericScope(#[from] crate::types::GenericScopeError),
     #[error("checked capture fact belongs to another HIR topology allocation")]
@@ -46,27 +50,6 @@ pub enum CheckedCaptureAuthorityViolation {
     CaptureEvidenceMismatch,
     #[error("checked implicit callable identity coordinate cannot be canonically encoded")]
     IdentityCoordinateEncoding,
-}
-
-/// One accepted callable capture with its exact access mode.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct CheckedCapture {
-    local: LocalId,
-    mode: CaptureAccess,
-}
-
-impl CheckedCapture {
-    const fn new(local: LocalId, mode: CaptureAccess) -> Self {
-        Self { local, mode }
-    }
-
-    pub const fn local(&self) -> LocalId {
-        self.local
-    }
-
-    pub const fn mode(&self) -> CaptureAccess {
-        self.mode
-    }
 }
 
 /// Opaque semantic identity of one accepted implicit callable.
@@ -439,26 +422,26 @@ const fn capture_access_tag(access: CaptureAccess) -> u8 {
 pub struct CheckedClosure {
     topology: Arc<HirProjectEvaluationTopology>,
     owner: ExprId,
-    captures: Box<[CheckedCapture]>,
+    choices: BTreeMap<ExprId, ExprId>,
+    captures: Box<[HirSelectedCapture]>,
 }
 
 impl CheckedClosure {
     pub(crate) fn seal(
         topology: Arc<HirProjectEvaluationTopology>,
         owner: ExprId,
+        mut selected: impl FnMut(ExprId) -> Option<ExprId>,
     ) -> Result<Self, CheckedCaptureAuthorityViolation> {
-        let rows = topology
-            .module(owner.module())
-            .and_then(|module| module.captures().captures_for_closure(owner))
-            .ok_or(CheckedCaptureAuthorityViolation::MissingProducer { owner })?;
-        let captures = rows
-            .iter()
-            .map(|row| CheckedCapture::new(row.local(), row.access()))
-            .collect::<Vec<_>>()
-            .into_boxed_slice();
+        let mut choices = BTreeMap::new();
+        let captures = project_closure_captures(&topology, owner, |selector| {
+            let candidate = selected(selector)?;
+            choices.insert(selector, candidate);
+            Some(candidate)
+        })?;
         let checked = Self {
             topology,
             owner,
+            choices,
             captures,
         };
         checked.validate_evidence()?;
@@ -474,7 +457,7 @@ impl CheckedClosure {
         &self.topology
     }
 
-    pub const fn captures(&self) -> &[CheckedCapture] {
+    pub const fn captures(&self) -> &[HirSelectedCapture] {
         &self.captures
     }
 
@@ -482,7 +465,7 @@ impl CheckedClosure {
         &self,
         expected: &Arc<HirProjectEvaluationTopology>,
         producer: ExprId,
-    ) -> Result<&[CheckedCapture], CheckedCaptureAuthorityViolation> {
+    ) -> Result<&[HirSelectedCapture], CheckedCaptureAuthorityViolation> {
         if !Arc::ptr_eq(&self.topology, expected) {
             return Err(CheckedCaptureAuthorityViolation::TopologyMismatch);
         }
@@ -497,22 +480,48 @@ impl CheckedClosure {
     }
 
     fn validate_evidence(&self) -> Result<(), CheckedCaptureAuthorityViolation> {
-        let rows = self
-            .topology
-            .module(self.owner.module())
-            .and_then(|module| module.captures().captures_for_closure(self.owner))
-            .ok_or(CheckedCaptureAuthorityViolation::MissingProducer { owner: self.owner })?;
-        let mut seen = BTreeSet::new();
-        (rows.len() == self.captures.len()
-            && rows.iter().zip(self.captures.iter()).all(|(row, checked)| {
-                row.closure() == self.owner
-                    && row.local() == checked.local
-                    && row.access() == checked.mode
-                    && seen.insert(checked.local)
-            }))
-        .then_some(())
-        .ok_or(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)
+        let mut used = BTreeSet::new();
+        let expected = project_closure_captures(&self.topology, self.owner, |selector| {
+            used.insert(selector);
+            self.choices.get(&selector).copied()
+        })?;
+        (expected == self.captures && used.len() == self.choices.len())
+            .then_some(())
+            .ok_or(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)
     }
+
+    /// Joins this probe-local seal to the final program before any executable
+    /// fact escapes. A selected closure must agree on every consumed choice.
+    pub(in crate::final_analysis) fn validate_selection(
+        &self,
+        selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
+    ) -> Result<(), CheckedCaptureAuthorityViolation> {
+        self.validate_authority(selected.topology(), self.owner)?;
+        if !selected.contains_owner(SyntheticOwner::Expr(self.owner))
+            || self.choices.iter().any(|(selector, candidate)| {
+                !selected
+                    .expression_edges(*selector)
+                    .iter()
+                    .any(|edge| edge.child() == *candidate)
+            })
+        {
+            return Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch);
+        }
+        Ok(())
+    }
+}
+
+fn project_closure_captures(
+    topology: &HirProjectEvaluationTopology,
+    owner: ExprId,
+    selected: impl FnMut(ExprId) -> Option<ExprId>,
+) -> Result<Box<[HirSelectedCapture]>, CheckedCaptureAuthorityViolation> {
+    let module = topology
+        .module(owner.module())
+        .ok_or(CheckedCaptureAuthorityViolation::MissingProducer { owner })?;
+    module
+        .select_closure_captures(owner, selected)
+        .map_err(Into::into)
 }
 
 impl fmt::Debug for CheckedClosure {
@@ -521,6 +530,7 @@ impl fmt::Debug for CheckedClosure {
             .debug_struct("CheckedClosure")
             .field("topology", &"generation-bound")
             .field("owner", &self.owner)
+            .field("choices", &self.choices)
             .field("captures", &self.captures)
             .finish()
     }
@@ -530,6 +540,7 @@ impl PartialEq for CheckedClosure {
     fn eq(&self, other: &Self) -> bool {
         Arc::ptr_eq(&self.topology, &other.topology)
             && self.owner == other.owner
+            && self.choices == other.choices
             && self.captures == other.captures
     }
 }
@@ -853,12 +864,82 @@ mod tests {
     use super::*;
 
     #[test]
+    fn checked_closure_requires_exact_candidate_choice_receipts() {
+        let fixture = crate::final_analysis::tests::fixture(
+            "fn caller() -> Unit { let offset = 0i64; let values = [42i64]; let read = || -> i64 { values[offset] }; () }\n",
+            None,
+        );
+        let report =
+            crate::final_analysis::tests::analyze(&fixture).expect("selected Index closure");
+        let checked = report
+            .expressions()
+            .find_map(|(_, expression)| match expression.resolution() {
+                CheckedExpressionResolution::Closure(closure) => Some(closure),
+                _ => None,
+            })
+            .expect("checked closure");
+        let (&selector, &candidate) = checked
+            .choices
+            .first_key_value()
+            .expect("capture choice receipt");
+        assert_eq!(checked.choices.len(), 1);
+        assert_eq!(checked.captures.len(), 2);
+        checked.validate_evidence().unwrap();
+
+        let mut missing = checked.clone();
+        missing.choices.clear();
+        assert!(matches!(
+            missing.validate_evidence(),
+            Err(CheckedCaptureAuthorityViolation::CandidateSelection(_))
+        ));
+        let mut extra = checked.clone();
+        extra.choices.insert(checked.owner, candidate);
+        assert_eq!(
+            extra.validate_evidence(),
+            Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)
+        );
+        let mut invalid = checked.clone();
+        invalid.choices.insert(selector, checked.owner);
+        assert!(matches!(
+            invalid.validate_evidence(),
+            Err(CheckedCaptureAuthorityViolation::CandidateSelection(_))
+        ));
+
+        let module = fixture
+            .project
+            .analysis_view()
+            .unwrap()
+            .module(&CanonicalModulePath::crate_root())
+            .unwrap();
+        let HirExprKind::PostfixBracket(postfix) = module.resolve_expr(selector).unwrap().kind()
+        else {
+            panic!("selector")
+        };
+        let arcweft_lang_hir::dialogue_application::HirPostfixBracketCandidates::Ambiguous {
+            dialogue,
+            ..
+        } = postfix.candidates()
+        else {
+            panic!("two retained candidates")
+        };
+        let mut changed = checked.clone();
+        changed.choices.insert(selector, *dialogue);
+        assert_eq!(
+            changed.validate_evidence(),
+            Err(CheckedCaptureAuthorityViolation::CaptureEvidenceMismatch)
+        );
+        checked
+            .validate_evidence()
+            .expect("failed receipts leave the accepted proof unchanged");
+    }
+
+    #[test]
     fn checked_closure_equality_and_validation_require_exact_topology_and_evidence() {
         let fixture = crate::final_analysis::tests::fixture(
             "fn caller() { let first = 1i64; let second = 2i64; let value = || -> i64 { second + first }; value(); }\n",
             None,
         );
-        let executable = fixture.project.executable_view().expect("executable HIR");
+        let executable = fixture.project.analysis_view().expect("executable HIR");
         let module = executable
             .module(&CanonicalModulePath::crate_root())
             .expect("root module");
@@ -878,9 +959,10 @@ mod tests {
             .expect("second accepted generation")
             .into_evaluation_topology()
             .expect("foreign topology allocation");
-        let checked = CheckedClosure::seal(Arc::clone(&topology), owner).expect("sealed closure");
-        let foreign_checked =
-            CheckedClosure::seal(Arc::clone(&foreign), owner).expect("foreign sealed closure");
+        let checked =
+            CheckedClosure::seal(Arc::clone(&topology), owner, |_| None).expect("sealed closure");
+        let foreign_checked = CheckedClosure::seal(Arc::clone(&foreign), owner, |_| None)
+            .expect("foreign sealed closure");
 
         assert_eq!(checked, checked.clone());
         assert_ne!(checked, foreign_checked);

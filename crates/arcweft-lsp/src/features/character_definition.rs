@@ -357,7 +357,7 @@ fn character_reference_inventory(
     let inventory = collect_character_references(
         context.executable.registered_world(),
         CharacterReferenceInput::new(
-            project.hir_project().executable_view().map_err(|_| {
+            project.hir_project().analysis_view().map_err(|_| {
                 CharacterDefinitionRequestError::admitted_integrity(
                     budget,
                     CharacterDefinitionIntegrityError::AcceptedModuleInvariant {

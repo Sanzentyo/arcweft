@@ -211,11 +211,46 @@ impl Default for SyntaxTransactionLimits {
     }
 }
 
-/// Whether a parsed snapshot is executable or contains recovered error nodes.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+/// Syntactic readiness of a parsed region, before semantic interpretation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ParseStatus {
+    /// Every retained interpretation is free of syntax recovery.
     Clean,
+    /// Recovery is confined to alternatives that semantic selection may reject.
+    Conditional,
+    /// A required region has recovered, or no alternative is syntax-complete.
     Recovered,
+}
+
+impl ParseStatus {
+    /// Combines regions that are all required by the enclosing interpretation.
+    #[must_use]
+    pub const fn required(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Recovered, _) | (_, Self::Recovered) => Self::Recovered,
+            (Self::Conditional, _) | (_, Self::Conditional) => Self::Conditional,
+            (Self::Clean, Self::Clean) => Self::Clean,
+        }
+    }
+
+    /// Combines retained alternatives without choosing their semantic meaning.
+    #[must_use]
+    pub const fn alternative(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::Clean, Self::Clean) => Self::Clean,
+            (Self::Recovered, Self::Recovered) => Self::Recovered,
+            _ => Self::Conditional,
+        }
+    }
+
+    /// Projects an unconditional recovery fact into the composition algebra.
+    pub(crate) const fn from_recovery(recovered: bool) -> Self {
+        if recovered {
+            Self::Recovered
+        } else {
+            Self::Clean
+        }
+    }
 }
 
 /// Structural reason an incremental edit transaction cannot be applied.

@@ -18,7 +18,7 @@ use arcweft_lang_hir::{
     identity::ExprId,
     leaf::{HirIdRef, HirIdRefShape, HirIdRefValue, HirShortVariantName},
     module::HirModule,
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     source_index::{
         HirExprSourceRole, HirIdRefSourcePart, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
@@ -97,14 +97,14 @@ pub struct CharacterReferenceOccurrence {
 /// Exact current analysis values used to collect character references.
 #[derive(Clone, Copy)]
 pub struct CharacterReferenceInput<'a> {
-    project: HirExecutableProjectView<'a>,
+    project: HirAnalysisProjectView<'a>,
     module: &'a HirModule,
     analysis: &'a FinalSemanticAnalysis,
 }
 
 impl<'a> CharacterReferenceInput<'a> {
     pub fn new(
-        project: HirExecutableProjectView<'a>,
+        project: HirAnalysisProjectView<'a>,
         module: &'a HirModule,
         analysis: &'a FinalSemanticAnalysis,
     ) -> Self {

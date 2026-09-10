@@ -8,7 +8,7 @@ fn ingress_fixture_ids() -> (CallableDeclarationKey, TypeId, Box<[ItemId]>) {
         crate::final_analysis::tests::fixture("fn first(value: i64) {}\nfn second() {}\n", None);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
         .expect("root module");
@@ -40,7 +40,7 @@ fn ingress_fixture_declarations() -> (Box<[CallableDeclarationKey]>, TypeId, Box
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
         .expect("root module");
@@ -528,7 +528,7 @@ fn recomputed_admission_uses_the_same_exact_atomic_bound() {
 fn preallocation_accepts_exact_edge_inventory_and_rejects_n_plus_one() {
     let fixture =
         crate::final_analysis::tests::fixture("flow @flow.opening opening { return unit }\n", None);
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let topology = executable
         .accept_symbol_generation(&fixture.symbols)
         .expect("accepted symbol generation")
@@ -596,7 +596,7 @@ fn preallocation_accepts_exact_edge_inventory_and_rejects_n_plus_one() {
 fn preallocation_accepts_exact_contextual_statement_inventory_and_rejects_n_plus_one() {
     let fixture =
         crate::final_analysis::tests::fixture("flow @flow.opening opening { return unit }\n", None);
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let topology = executable
         .accept_symbol_generation(&fixture.symbols)
         .expect("accepted symbol generation")
@@ -655,7 +655,7 @@ fn preallocation_accepts_exact_contextual_statement_inventory_and_rejects_n_plus
 fn n21_work_bound_charges_all_expression_candidates_and_include_probes() {
     let fixture =
         crate::final_analysis::tests::fixture("flow @flow.opening opening { return unit }\n", None);
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let topology = executable
         .accept_symbol_generation(&fixture.symbols)
         .expect("accepted symbol generation")

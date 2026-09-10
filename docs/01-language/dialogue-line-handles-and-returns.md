@@ -106,7 +106,7 @@ items[index]
 
 is normal indexing, because `items` is not a speaker.
 
-If a parser cannot decide during lossless parsing, it keeps a generic `PostfixBracket` CST node. HIR lowering resolves it by type.
+If a parser cannot decide during lossless parsing, it retains both interpretations under a `PostfixBracket` CST node. HIR preserves their typed structure and exact recovery ownership. Semantic analysis selects the unique valid interpretation using the target type and expected result; a rejected alternative does not make the selected program invalid. Required recovery in the selected interpretation or shared target still prevents compilation.
 
 ```text
 CharacterDialogue + [DialogueText] in flow item context

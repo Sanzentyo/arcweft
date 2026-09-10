@@ -54,7 +54,7 @@ fn ordinary_removed_form_recovery_keeps_following_final_hir_queryable_until_repa
             let mut database = HirDatabase::try_new().unwrap();
             let recovered = lower(&mut database, &initial, &key);
 
-            assert!(!recovered.is_executable(), "{initial_source}");
+            assert!(!recovered.is_analysis_ready(), "{initial_source}");
             let following_ordinal = recovered.source_ordered_items().len() - 1;
             let following_owner = recovered.source_ordered_items()[following_ordinal];
             let following_item = resolve_item(&recovered, following_ordinal);
@@ -92,7 +92,7 @@ fn ordinary_removed_form_recovery_keeps_following_final_hir_queryable_until_repa
                 .unwrap();
             let executable = lower(&mut database, &repaired, &key);
 
-            assert!(executable.is_executable(), "{following}");
+            assert!(executable.is_analysis_ready(), "{following}");
             assert_eq!(executable.source_ordered_items(), [following_owner]);
             let executable_item = resolve_item(&executable, 0);
             assert_clean_current_callable(executable_item, expected_family);

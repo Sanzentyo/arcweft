@@ -2,16 +2,15 @@
 
 use super::{
     Analyzer, AssertionContext, BTreeMap, BTreeSet, CallableDeclarationKey, CallableEffectContract,
-    CheckedAssertionDisposition, CheckedCallableExecution, CheckedExpression,
-    CheckedExpressionResolution, CheckedIteration, CheckedIteratorFamily,
-    CheckedSuspensionStatement, CheckedTraitConformance, CheckedTraitIdentity,
-    CheckedTypeSelection, CheckedValueResolution, EffectClauseSource, EffectId, EffectItemSource,
-    EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
-    GenericParameterOwnerId, GenericTypeBinding, GenericTypeParameterId, GenericTypeScope,
-    HirAssertionMode, HirCallableEffectSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
-    HirExprKind, HirExprSourceRole, HirFunctionItem, HirGenericParameter, HirImplMember, HirItem,
-    HirItemKind, HirItemSourceRole, HirModule, HirName, HirPatternSourceRole, HirScopeKind,
-    HirScopeOwner, HirScopeSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    CheckedAssertionDisposition, CheckedExpression, CheckedExpressionResolution, CheckedIteration,
+    CheckedIteratorFamily, CheckedSuspensionStatement, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, EffectClauseSource,
+    EffectId, EffectItemSource, EffectRow, EffectSet, ExprId, FinalSemanticAnalysisError,
+    FinalSemanticAnalysisInput, GenericParameterOwnerId, GenericTypeBinding,
+    GenericTypeParameterId, GenericTypeScope, HirAssertionMode, HirCallableEffectSourcePart,
+    HirCallableSourceOwner, HirCallableSourceRole, HirExprKind, HirExprSourceRole, HirFunctionItem,
+    HirGenericParameter, HirImplMember, HirItem, HirItemKind, HirItemSourceRole, HirModule,
+    HirName, HirPatternSourceRole, HirScopeKind, HirScopeOwner, HirScopeSourceRole, HirSourceQuery,
     HirStmtKind, HirTypeKind, ItemId, ModuleSegment, PatternId, PreparedAssignmentStatement,
     PreparedExpressionFact, PreparedStatementPayload, ProjectSymbolTable, ScopeId, SourceSpan,
     TypeId, TypeKind, TypeSourceEvidence,
@@ -23,6 +22,7 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn analyze_statements(
         &mut self,
         input: &mut FinalSemanticAnalysisInput,
+        selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut iteration_facts = self
             .facts
@@ -30,6 +30,10 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         for module in self.modules.values() {
             for (owner, statement) in module.statements() {
+                if !selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Stmt(owner))
+                {
+                    continue;
+                }
                 if statement.is_poisoned() {
                     return Err(FinalSemanticAnalysisError::RecoveredOwner);
                 }
@@ -352,7 +356,10 @@ impl Analyzer<'_, '_, '_> {
         let Some(value) = value else {
             return Ok(());
         };
-        match target.target().loop_family() {
+        let target = target
+            .target()
+            .map_err(|error| FinalSemanticAnalysisError::ControlTransfer(*error))?;
+        match target.loop_family() {
             Some(arcweft_lang_hir::project::HirLoopTargetFamily::LoopExpression) => Ok(()),
             Some(
                 arcweft_lang_hir::project::HirLoopTargetFamily::WhileStatement
@@ -360,7 +367,6 @@ impl Analyzer<'_, '_, '_> {
                 | arcweft_lang_hir::project::HirLoopTargetFamily::ForStatement,
             ) => {
                 let target = target
-                    .target()
                     .loop_body_owner()
                     .and_then(arcweft_lang_hir::project::HirSemanticBodyOwner::statement_owner)
                     .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
@@ -593,7 +599,6 @@ pub(super) fn function_effect_contract(
     owner: ItemId,
     function: &HirFunctionItem,
     scope: ScopeId,
-    execution: CheckedCallableExecution,
 ) -> Result<SourceCallableShell, FinalSemanticAnalysisError> {
     if function.effect_clauses().is_empty() {
         let contract = CallableEffectContract::body_inference(
@@ -604,7 +609,6 @@ pub(super) fn function_effect_contract(
         .map_err(checked_catalog_error)?;
         return Ok(SourceCallableShell::Body {
             scope,
-            execution,
             contract: Box::new(contract),
         });
     }
@@ -648,7 +652,6 @@ pub(super) fn function_effect_contract(
     .map_err(checked_catalog_error)?;
     Ok(SourceCallableShell::Body {
         scope,
-        execution,
         contract: Box::new(contract),
     })
 }
@@ -918,12 +921,8 @@ pub(super) fn source_span(
     module: &HirModule,
     query: HirSourceQuery,
 ) -> Result<SourceSpan, FinalSemanticAnalysisError> {
-    let lookup = module
-        .source_site(module.provenance().source_identity(), query)
-        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-    match lookup.presence() {
-        HirSourcePresence::Present(HirSourceSite::Span(span)) => Ok(span.clone()),
-        HirSourcePresence::Present(HirSourceSite::Insertion(_))
-        | HirSourcePresence::AbsentOptional => Err(FinalSemanticAnalysisError::RecoveredOwner),
-    }
+    module
+        .source_anchor(query)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+        .ok_or(FinalSemanticAnalysisError::RecoveredOwner)
 }

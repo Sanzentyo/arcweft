@@ -264,7 +264,7 @@ fn opening() {
         None,
     );
     let report = analyze(&fixture).expect("project runtime attached content");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let static_callee = module
         .expressions()
@@ -429,7 +429,7 @@ fn opening() {
         None,
     );
     let report = analyze(&fixture).expect("self-recursive attached default is finite");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let (item_id, binding, default_source) = module
         .items()
@@ -504,7 +504,7 @@ fn fallback(first: DialogueContent)[body: DialogueContent = first] -> DialogueCo
         None,
     );
     let report = analyze(&fixture).expect("parameter-reading attached default is checked");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let (item, function) = module
         .items()
@@ -564,7 +564,7 @@ fn fallback((first, second): (DialogueContent, DialogueContent))[body: DialogueC
         None,
     );
     let report = analyze(&fixture).expect("destructuring attached default is checked");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let (item, function) = module
         .items()
@@ -630,7 +630,7 @@ fn fallback(prefix: DialogueContent)(current: DialogueContent)[body: DialogueCon
         None,
     );
     let report = analyze(&fixture).expect("prefix/current attached-default capture analysis");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let item = module
         .items()
@@ -691,7 +691,7 @@ fn fallback(seed: DialogueContent, items: ...DialogueContent)[body: DialogueCont
         None,
     );
     let report = analyze(&fixture).expect("rest attached-default capture analysis");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let item = module
         .items()
@@ -792,7 +792,7 @@ fn opening() {
         None,
     );
     let report = analyze(&fixture).expect("optional attached content");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let (item_id, binding) = module
         .items()

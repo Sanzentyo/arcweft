@@ -175,6 +175,9 @@ fn unterminated_non_dialogue_string_retains_typed_literal_recovery() {
             .iter()
             .any(|entry| entry.kind() == SyntaxKind::LiteralExpression)
     );
-    assert!(built.has_recovery());
+    assert_eq!(
+        built.recovery_status(),
+        crate::incremental::ParseStatus::Recovered
+    );
     assert_eq!(built.green().to_string(), source);
 }

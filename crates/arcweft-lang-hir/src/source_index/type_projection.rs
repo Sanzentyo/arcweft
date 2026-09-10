@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::ast::module_path::ModulePathRoot;
-use arcweft_lang_syntax::attachment::{AttachedTypeFamily, AttachedTypeRefNode};
+use arcweft_lang_syntax::attachment::AttachedTypeRefNode;
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::reference::{BorrowKind, RegionSyntax};
 use arcweft_lang_syntax::types::{
@@ -136,9 +136,7 @@ impl StagedHirSourceIndex {
         let components = attached
             .components()
             .into_iter()
-            .filter(|component| {
-                final_type_component_for_family(attached.family(), component.role())
-            })
+            .filter(|component| final_type_component(attached.value(), component.role()))
             .collect::<Vec<_>>();
         let present = components
             .iter()
@@ -337,17 +335,17 @@ impl HirSourceIndex {
     /// arenas.  These roots deliberately have no independent syntax owner or
     /// source-index manifest: their source evidence is the typed `type`
     /// argument expression retained by the call's semantic evidence.
-    pub(crate) fn validates_content_call_types(
+    pub(crate) fn validated_content_call_types(
         &self,
         slots: &SlotSnapshot,
         expressions: &ArenaSnapshot<HirExpr, ExprId>,
         types: &ArenaSnapshot<HirType, TypeId>,
-    ) -> bool {
+    ) -> Option<Box<[(TypeId, ExprId)]>> {
         let Ok(expression_entries) = expressions.try_iter_prepared(slots) else {
-            return false;
+            return None;
         };
         let Ok(type_entries) = types.try_iter_prepared(slots) else {
-            return false;
+            return None;
         };
         let expressions = expression_entries.collect::<BTreeMap<_, _>>();
         let types = type_entries.collect::<BTreeMap<_, _>>();
@@ -367,7 +365,7 @@ impl HirSourceIndex {
             let HirAttachedContentApplicationFamily::ContentCall { evidence, .. } =
                 application.family()
             else {
-                return false;
+                return None;
             };
             let Some(discriminator) = evidence.nominal_discriminator() else {
                 continue;
@@ -375,40 +373,41 @@ impl HirSourceIndex {
             let HirAttachedContentApplicationFamily::ContentCall { invocation, .. } =
                 application.family()
             else {
-                return false;
+                return None;
             };
             let Some(argument) = invocation
                 .arguments()
                 .get(usize::from(discriminator.argument().get()))
             else {
-                return false;
+                return None;
             };
             if argument.value() != discriminator.source() {
-                return false;
+                return None;
             }
             let Some(source_expression) = expressions.get(&discriminator.source()) else {
-                return false;
+                return None;
             };
             if source_expression.is_poisoned() || source_expression.scope() != expression.scope() {
-                return false;
+                return None;
             }
             let HirExprKind::Path(HirPathValue::Resolved(path)) = source_expression.kind() else {
-                return false;
+                return None;
             };
             let Ok(key) = SyntheticKey::try_new(
                 SyntheticOwner::Expr(*owner),
                 SyntheticRole::ContentCallNominalType,
                 0,
             ) else {
-                return false;
+                return None;
             };
             let Ok(source_metadata) = slots.resolve_prepared(discriminator.source()) else {
-                return false;
+                return None;
             };
             if expected
                 .insert(
                     discriminator.semantic_only(),
                     ContentCallTypeExpectation {
+                        application: *owner,
                         key,
                         source_site: source_metadata.source_site().clone(),
                         scope: source_expression.scope(),
@@ -420,13 +419,13 @@ impl HirSourceIndex {
                 // A single type root cannot be the semantic operand of two
                 // distinct attached calls.  Reject duplicate synthetic
                 // identities instead of silently accepting one.
-                return false;
+                return None;
             }
         }
 
         for (type_id, payload) in &types {
             let Ok(metadata) = slots.resolve_prepared(*type_id) else {
-                return false;
+                return None;
             };
             let HirOrigin::Synthetic(key) = metadata.origin() else {
                 continue;
@@ -435,7 +434,7 @@ impl HirSourceIndex {
                 continue;
             }
             let Some(expected) = expected.get(type_id) else {
-                return false;
+                return None;
             };
             if *key != expected.key
                 || metadata.source_site() != &expected.source_site
@@ -444,14 +443,14 @@ impl HirSourceIndex {
                 || !matches!(payload.kind(), HirTypeKind::Path(actual) if actual == &expected.path)
                 || source_index_has_type_owner(self, *type_id)
             {
-                return false;
+                return None;
             }
         }
 
-        expected.into_iter().all(|(type_id, expectation)| {
-            types.get(&type_id).is_some_and(|payload| {
+        let valid = expected.iter().all(|(type_id, expectation)| {
+            types.get(type_id).is_some_and(|payload| {
                 slots
-                    .resolve_prepared(type_id)
+                    .resolve_prepared(*type_id)
                     .ok()
                     .and_then(|metadata| match metadata.origin() {
                         HirOrigin::Synthetic(key) if *key == expectation.key => {
@@ -463,13 +462,20 @@ impl HirSourceIndex {
                     && payload.scope() == expectation.scope
                     && matches!(payload.state(), HirPoisonState::Clean)
                     && matches!(payload.kind(), HirTypeKind::Path(actual) if actual == &expectation.path)
-                    && !source_index_has_type_owner(self, type_id)
+                    && !source_index_has_type_owner(self, *type_id)
             })
+        });
+        valid.then(|| {
+            expected
+                .into_iter()
+                .map(|(owner, expectation)| (owner, expectation.application))
+                .collect()
         })
     }
 }
 
 struct ContentCallTypeExpectation {
+    application: ExprId,
     key: SyntheticKey,
     source_site: HirSourceSite,
     scope: crate::identity::ScopeId,
@@ -546,7 +552,7 @@ fn type_manifest_matches(
     for component in attached
         .components()
         .into_iter()
-        .filter(|component| final_type_component_for_family(attached.family(), component.role()))
+        .filter(|component| final_type_component(attached.value(), component.role()))
     {
         let role = HirTypeSourceRole::from(component.role());
         if role == HirTypeSourceRole::Whole {
@@ -933,11 +939,11 @@ pub(super) fn hir_path_matches_type_path(
         )
 }
 
-fn final_type_component_for_family(family: AttachedTypeFamily, role: TypeRefComponentRole) -> bool {
+pub(super) fn final_type_component(value: &TypeRef, role: TypeRefComponentRole) -> bool {
     !matches!(
-        (family, role),
+        (value, role),
         (
-            AttachedTypeFamily::Generic | AttachedTypeFamily::TraitBound,
+            TypeRef::Generic { .. } | TypeRef::TraitBound(_),
             TypeRefComponentRole::PathRoot | TypeRefComponentRole::PathSegment { .. }
         )
     )
@@ -947,7 +953,9 @@ fn final_type_component_for_family(family: AttachedTypeFamily, role: TypeRefComp
     clippy::too_many_lines,
     reason = "the closed twelve-family attached-type manifest is one exhaustive grammar matrix"
 )]
-fn type_requirements(value: &TypeRef) -> BTreeMap<HirTypeSourceRole, HirSourceRequirement> {
+pub(super) fn type_requirements(
+    value: &TypeRef,
+) -> BTreeMap<HirTypeSourceRole, HirSourceRequirement> {
     use HirSourceRequirement::{Optional, Required};
     use HirTypeSourceRole as Role;
 

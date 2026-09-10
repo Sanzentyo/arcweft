@@ -76,7 +76,7 @@ impl StagedHirModuleTransaction<'_> {
             family.target_slot(insertion)
         })?;
         if matches!(family, AssignmentFamily::Assignment) {
-            self.upgrade_direct_reassignment_capture(target)?;
+            self.upgrade_direct_reassignment_capture(target);
         }
         let target_poisoned = self.staged_expression_is_poisoned(target)?;
         let value = self.lower_attached_assignment_operand(owner, value, scope, |insertion| {

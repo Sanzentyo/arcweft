@@ -37,7 +37,7 @@ pub(super) enum CandidateTailPolicy {
     MissingRequired,
 }
 
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     #[allow(clippy::too_many_arguments, clippy::option_option)]
     pub(super) fn validate_value_block(
         &mut self,
@@ -430,7 +430,10 @@ impl CandidateValidationCursor<'_> {
             || metadata.source_site() != &site
             || payload.scope() != scope
             || self.source_index_has_typed_owner(SyntheticOwner::Stmt(owner))
-            || !self.expected.statements.insert(owner)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Stmt(owner), self.region)
         {
             return None;
         }
@@ -919,7 +922,10 @@ impl CandidateValidationCursor<'_> {
             || payload.parent() != Some(parent)
             || payload.owner() != &HirScopeOwner::Stmt(owner)
             || self.source_index_has_typed_owner(SyntheticOwner::Scope(scope))
-            || !self.expected.scopes.insert(scope)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Scope(scope), self.region)
         {
             return None;
         }

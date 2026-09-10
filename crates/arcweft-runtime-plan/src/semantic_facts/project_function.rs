@@ -1354,6 +1354,13 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
             return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
         }
 
+        let mut captured_locals = BTreeSet::new();
+        if captures.iter().any(|capture| {
+            partition.locals().contains(&capture.source())
+                || !captured_locals.insert(capture.source())
+        }) {
+            return Err(RuntimeProjectFunctionFactError::NonCanonicalSemanticFacts);
+        }
         let expected_type_owners = partition
             .expressions()
             .iter()
@@ -1512,7 +1519,14 @@ impl RuntimeProjectFunctionInstanceSemanticFacts {
     }
 
     pub fn local_type(&self, owner: LocalId) -> Option<&RuntimeNormalizedType> {
-        self.ty(RuntimeProjectFunctionTypeOwner::Local(owner))
+        if self.partition.locals().binary_search(&owner).is_ok() {
+            self.ty(RuntimeProjectFunctionTypeOwner::Local(owner))
+        } else {
+            self.captures
+                .iter()
+                .find(|capture| capture.source() == owner)
+                .map(RuntimeCheckedCapture::ty)
+        }
     }
 
     pub fn source_type(&self, owner: TypeId) -> Option<&RuntimeNormalizedType> {

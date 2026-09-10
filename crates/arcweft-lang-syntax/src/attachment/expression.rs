@@ -116,6 +116,42 @@ impl<'a> AttachedCandidateGraph<'a> {
         }
     }
 
+    /// Syntactic readiness of this interpretation, including nested alternatives.
+    pub fn recovery_status(self) -> crate::incremental::ParseStatus {
+        self.dialogue.map_or_else(
+            || self.graph.recovery_status(),
+            crate::expressions::SyntaxPostfixDialogueCandidate::recovery_status,
+        )
+    }
+
+    /// Original diagnostics local to this retained interpretation. Diagnostics
+    /// of nested alternatives remain queryable on those alternatives.
+    pub fn diagnostics(
+        self,
+    ) -> impl ExactSizeIterator<Item = crate::incremental::SyntaxDiagnostic> + 'a {
+        self.graph
+            .diagnostics()
+            .iter()
+            .map(move |diagnostic| self.owner.syntax().bind_diagnostic(diagnostic))
+    }
+
+    /// Expected tokens and exact insertion spans retained by this interpretation.
+    pub fn missing_tokens(
+        self,
+    ) -> impl ExactSizeIterator<Item = AttachedCandidateMissingToken> + 'a {
+        self.graph
+            .missing_tokens()
+            .iter()
+            .map(move |(expected, at)| AttachedCandidateMissingToken {
+                kind: expected.kind(),
+                spelling: expected.spelling(),
+                source: self
+                    .owner
+                    .syntax()
+                    .source_span_for_range(SourceRange::new(*at, *at)),
+            })
+    }
+
     /// Primary candidate node when the candidate grammar selected one.
     ///
     /// The ordinary-index candidate has one primary index expression. A
@@ -196,7 +232,7 @@ impl<'a> AttachedCandidateGraph<'a> {
             .into_iter()
             .map(|attached| {
                 let owner = attached
-                    .nearest_dialogue_owner(attached.index)
+                    .dialogue_owner()
                     .expect("Dialogue expression roots retain one typed content owner edge");
                 let spec = expected
                     .iter()
@@ -233,6 +269,26 @@ impl<'a> AttachedCandidateGraph<'a> {
             "Dialogue candidate must bind every typed expression slot exactly once"
         );
         Some(bindings.into_iter())
+    }
+}
+
+/// A candidate-local missing token bound to its immutable source revision.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedCandidateMissingToken {
+    kind: SyntaxKind,
+    spelling: Option<&'static str>,
+    source: SourceSpan,
+}
+
+impl AttachedCandidateMissingToken {
+    pub const fn kind(&self) -> SyntaxKind {
+        self.kind
+    }
+    pub const fn spelling(&self) -> Option<&'static str> {
+        self.spelling
+    }
+    pub const fn source_span(&self) -> &SourceSpan {
+        &self.source
     }
 }
 
@@ -435,8 +491,7 @@ impl<'a> AttachedCandidateNode<'a> {
             unreachable!("expression projection is backed by expression semantics");
         };
         let nodes = self.direct_semantic_expression_nodes();
-        let mut specs =
-            candidate_semantic_child_specs(self, projection, pending.components(), &nodes);
+        let mut specs = candidate_semantic_child_specs(projection, pending.components(), &nodes);
         if matches!(projection, ExpressionProjection::Error) && specs.is_empty() {
             specs.extend(nodes.first().map(|node| {
                 CandidateSemanticChildSpec {
@@ -538,15 +593,30 @@ impl<'a> AttachedCandidateNode<'a> {
         let PendingCandidateSemantic::Expression(projection) = self.pending().semantic() else {
             return None;
         };
-        Some(
-            projection
-                .components()
-                .iter()
-                .map(move |component| AttachedExpressionComponent {
-                    role: component.role(),
-                    source: self.owner.syntax().source_span_for_range(component.range()),
-                }),
-        )
+        let mut components = projection
+            .components()
+            .iter()
+            .map(move |component| AttachedExpressionComponent {
+                role: component.role(),
+                source: self.owner.syntax().source_span_for_range(component.range()),
+            })
+            .collect::<Vec<_>>();
+        if projection.projection().is_value_block() {
+            let block = self.value_block_view()?;
+            for statement in block.statements() {
+                components.push(AttachedExpressionComponent {
+                    role: ExpressionComponentRole::Statement {
+                        ordinal: statement.ordinal(),
+                    },
+                    source: statement.source_span(),
+                });
+            }
+            components.push(AttachedExpressionComponent {
+                role: ExpressionComponentRole::Tail,
+                source: block.tail().source_span(),
+            });
+        }
+        Some(components.into_iter())
     }
 
     fn require_expression_component(self, role: ExpressionComponentRole) {
@@ -761,18 +831,18 @@ impl<'a> AttachedCandidateNode<'a> {
         None
     }
 
-    fn nearest_dialogue_owner(
-        self,
-        candidate: CandidateNodeIndex,
-    ) -> Option<AttachedCandidateDialogueOwner> {
-        let mut parent = self.graph.node(candidate)?.parent();
-        while let Some(index) = parent {
-            let ancestor = self.graph.node(index)?;
-            match ancestor.role() {
+    fn dialogue_owner(self) -> Option<AttachedCandidateDialogueOwner> {
+        let mut current = Some(self.index);
+        while let Some(index) = current {
+            let node = self.graph.node(index)?;
+            if index != self.index && ExpressionFamily::accepts(node.kind()) {
+                return None;
+            }
+            match node.role() {
                 SyntaxRole::DialogueNode(ordinal) => {
                     return Some(AttachedCandidateDialogueOwner::Node { ordinal });
                 }
-                _ => parent = ancestor.parent(),
+                _ => current = node.parent(),
             }
         }
         None
@@ -821,6 +891,30 @@ impl<'a> AttachedCandidateNode<'a> {
                 .value_at(projection.path())
                 .expect("candidate graph validates typed projections"),
         })
+    }
+
+    /// Exact component inventory of this retained semantic type node.
+    pub fn type_components(self) -> Option<Vec<super::AttachedTypeComponent>> {
+        let PendingCandidateSemantic::Type(projection) = self.pending().semantic() else {
+            return None;
+        };
+        Some(
+            projection
+                .authored()
+                .source()
+                .components()
+                .iter()
+                .filter(|component| component.owner() == projection.path())
+                .map(|component| {
+                    super::AttachedTypeComponent::new(
+                        component.role(),
+                        self.owner
+                            .syntax()
+                            .source_span_for_text_range(*component.range()),
+                    )
+                })
+                .collect(),
+        )
     }
 
     /// Pattern payload, when this is a pattern semantic node.
@@ -998,7 +1092,6 @@ impl CandidateSemanticSpecBuilder<'_> {
     reason = "the wildcard-free expression-family child table is one auditable projection authority"
 )]
 fn candidate_semantic_child_specs(
-    owner: AttachedCandidateNode<'_>,
     projection: &ExpressionProjection,
     components: &[crate::expressions::PendingExpressionComponent],
     nodes: &[AttachedCandidateNode<'_>],
@@ -1061,7 +1154,7 @@ fn candidate_semantic_child_specs(
             ),
         ],
         ExpressionProjection::AttachedContentApplication(application) => {
-            candidate_dialogue_child_specs(owner, application, builder, nodes)
+            candidate_dialogue_child_specs(application, builder, nodes)
         }
         ExpressionProjection::Pipe([left, right])
         | ExpressionProjection::Binary { left, right, .. } => vec![
@@ -1299,7 +1392,6 @@ fn candidate_call_child_specs(
 }
 
 fn candidate_dialogue_child_specs(
-    owner: AttachedCandidateNode<'_>,
     application: &crate::expressions::SyntaxAttachedContentApplicationProjection,
     builder: CandidateSemanticSpecBuilder<'_>,
     nodes: &[AttachedCandidateNode<'_>],
@@ -1318,8 +1410,8 @@ fn candidate_dialogue_child_specs(
     let expected = dialogue_expression_specs(content);
     let mut seen = BTreeSet::new();
     children.extend(nodes.iter().enumerate().skip(1).map(|(position, node)| {
-        let dialogue_owner = owner
-            .nearest_dialogue_owner(node.index)
+        let dialogue_owner = node
+            .dialogue_owner()
             .expect("Dialogue semantic children retain one typed content owner edge");
         let spec = expected
             .iter()

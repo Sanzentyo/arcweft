@@ -14,7 +14,7 @@ use arcweft_lang_hir::{
     leaf::{HirIdRef, HirIdRefValue},
     module::HirModule,
     project::{
-        HirExecutableProjectView, HirPackageModuleKey, HirProjectItemRef, HirSemanticPathOwnerId,
+        HirAnalysisProjectView, HirPackageModuleKey, HirProjectItemRef, HirSemanticPathOwnerId,
         HirSemanticPathRoot, HirSemanticPathStep,
     },
     source_index::{
@@ -54,7 +54,7 @@ impl ProjectSemanticIndex {
     /// cannot observe a mixture of accepted and reconstructed authority.
     pub fn try_from_final_project(
         program_hash: ProgramHash,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         analysis: &FinalSemanticAnalysis,
     ) -> Result<Self, ProjectSemanticIndexError> {
@@ -80,7 +80,7 @@ impl ProjectSemanticIndex {
 }
 
 fn checked_dialogue_line_references(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<Vec<AcceptedDialogueLineReference>, ProjectSemanticIndexError> {
     let modules = project
@@ -223,7 +223,7 @@ fn checked_target_ref(
 
 fn flow_and_style_entities(
     index: &mut ProjectSemanticIndex,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), ProjectSemanticIndexError> {
@@ -354,7 +354,10 @@ fn summarize_flow(
 ) -> Result<ProjectFlowControlSummary, ProjectSemanticIndexError> {
     let mut summary = ProjectFlowControlSummary::default();
 
-    for (statement_id, statement) in module.statements() {
+    for (statement_id, checked) in analysis
+        .statements()
+        .filter(|(owner, _)| owner.module() == module.module_id())
+    {
         if !is_declaration_body_owner(
             analysis,
             declaration,
@@ -362,11 +365,11 @@ fn summarize_flow(
         )? {
             continue;
         }
-        let checked = analysis.statement(statement_id).ok_or(
+        let statement = module.resolve_stmt(statement_id).map_err(|_| {
             ProjectSemanticIndexError::MissingFlowStatement {
                 owner: statement_id,
-            },
-        )?;
+            }
+        })?;
         match checked.payload() {
             CheckedStatementPayload::Include(target) => {
                 if !matches!(statement.kind(), HirStmtKind::Include(_)) {
@@ -506,7 +509,10 @@ fn summarize_flow(
         }
     }
 
-    for (owner, expression) in module.expressions() {
+    for (owner, _) in analysis
+        .expressions()
+        .filter(|(owner, _)| owner.module() == module.module_id())
+    {
         if !is_declaration_body_owner(
             analysis,
             declaration,
@@ -514,6 +520,9 @@ fn summarize_flow(
         )? {
             continue;
         }
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| ProjectSemanticIndexError::MissingFlowExpression { owner })?;
         match expression.kind() {
             HirExprKind::Await(_) => summary.record_await(),
             HirExprKind::Thread(_) => summary.record_thread(),
@@ -614,7 +623,7 @@ fn project_nominal_types(
 
 fn retained_entities(
     index: &mut ProjectSemanticIndex,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
 ) -> Result<(), ProjectSemanticIndexError> {
@@ -683,7 +692,7 @@ fn retained_value_type(
 
 fn entry_entities(
     index: &mut ProjectSemanticIndex,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
     entries: &CheckedEntryCatalog,
 ) -> Result<(), ProjectSemanticIndexError> {
@@ -726,7 +735,7 @@ fn entry_entities(
 }
 
 fn project_item(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: ItemId,
 ) -> Result<HirProjectItemRef<'_>, ProjectSemanticIndexError> {
     project

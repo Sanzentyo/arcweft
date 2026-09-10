@@ -7,7 +7,7 @@ use arcweft_lang_hir::{
     identity::{ItemId, TypeId},
     item::{HirEntryKind, HirEntryMember, HirEntryTarget, HirItemKind},
     leaf::HirIdRef,
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     source_index::{
         HirEntrySourcePart, HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
@@ -110,7 +110,7 @@ impl PreparedEntryRootCatalog {
 /// Resolves every stateful Entry root before any contextual Event pattern is
 /// seeded. A failure publishes neither a partial catalog nor a fallback root.
 pub(crate) fn prepare_entry_root_seeds(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     types: &BTreeMap<TypeId, TypeKind>,
 ) -> Result<PreparedEntryRootCatalog, Vec<CheckedEntryDiagnostic>> {
@@ -259,7 +259,7 @@ pub(crate) fn prepare_entry_root_seeds(
 }
 
 fn resolve_entry_flow_target(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     module: &arcweft_lang_hir::module::HirModule,
     target: &HirEntryTarget,

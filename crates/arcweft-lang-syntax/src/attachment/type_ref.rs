@@ -45,6 +45,9 @@ pub struct AttachedTypeComponent {
 }
 
 impl AttachedTypeComponent {
+    pub(crate) const fn new(role: TypeRefComponentRole, source: SourceSpan) -> Self {
+        Self { role, source }
+    }
     /// Semantic source role fixed by the authoritative type grammar.
     pub const fn role(&self) -> TypeRefComponentRole {
         self.role

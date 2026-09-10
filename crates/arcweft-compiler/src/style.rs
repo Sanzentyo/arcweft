@@ -142,7 +142,7 @@ pub fn lower_project_view_styles(
     analysis: &FinalSemanticAnalysis,
 ) -> Result<CompiledViewStyleArtifact, ViewStyleLowerError> {
     let executable = hir_project
-        .executable_view()
+        .analysis_view()
         .expect("project compilation admits only executable final-HIR modules before Style");
     let mut sheets = Vec::new();
     let mut sources = BTreeMap::new();

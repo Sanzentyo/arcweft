@@ -167,7 +167,7 @@ fn predicate_and_non_unit_proof_missing_tails_are_exact_semantic_diagnostics() {
             candidate
                 .diagnostic()
                 .code()
-                .is_none_or(|candidate| candidate.as_str() != "hir.project.execution")
+                .is_none_or(|candidate| candidate.as_str() != "hir.project.analysis")
         }));
     }
 }
@@ -215,7 +215,7 @@ fn verifier_consumes_predicate_proof_arena_records() {
     );
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("compiled project remains executable");
     let mut predicate_owner = None;
     let mut proof_owner = None;

@@ -130,7 +130,7 @@ fn make_probe() -> ConstructorProbe {
         None,
     );
     let report = analyze(&fixture).expect("contextual short-variant constructor analysis");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root module");
     assert!(report.calls().any(|(owner, call)| {
         let Ok(expression) = module.resolve_expr(owner) else {
@@ -184,10 +184,7 @@ flow stop_policy() -> Unit { drop(.Stop(fade = 120ms))([1i64]...) }
         let variant = report
             .execution_projection()
             .variant_constructor(
-                fixture
-                    .project
-                    .executable_view()
-                    .expect("executable fixture"),
+                fixture.project.analysis_view().expect("executable fixture"),
                 application,
             )
             .expect("completed constructor projection")

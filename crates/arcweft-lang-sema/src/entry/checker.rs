@@ -13,7 +13,7 @@ use arcweft_lang_hir::{
     leaf::{HirIdRef, HirIdRefValue, HirPathValue},
     module::HirModule,
     pattern::{HirPatternBinding, HirPatternKind},
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     source_index::{
         HirEntrySourcePart, HirExprSourceRole, HirItemSourceRole, HirSourcePresence,
         HirSourceQuery, HirSourceSite, HirStmtSourceRole,
@@ -162,7 +162,7 @@ impl<'a> PreparedEntrySemanticAuthority<'a> {
 /// Resolves every final-HIR Entry against one unpublished semantic draft and
 /// its cache-only runtime-nominal seal.
 pub(crate) fn check_prepared_project_entries(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     authority: &PreparedEntrySemanticAuthority<'_>,
     ingress: PreparedEntryIngressSeal,
@@ -171,7 +171,7 @@ pub(crate) fn check_prepared_project_entries(
 }
 
 struct EntryCheckContext<'a> {
-    project: HirExecutableProjectView<'a>,
+    project: HirAnalysisProjectView<'a>,
     symbols: &'a ProjectSymbolTable,
     authority: &'a PreparedEntrySemanticAuthority<'a>,
     ingress_facts: PreparedExecutableIngressFacts,
@@ -231,7 +231,7 @@ impl Role {
 
 impl<'a> EntryCheckContext<'a> {
     fn new(
-        project: HirExecutableProjectView<'a>,
+        project: HirAnalysisProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
         authority: &'a PreparedEntrySemanticAuthority<'a>,
         ingress: PreparedEntryIngressSeal,
@@ -1983,7 +1983,7 @@ fn entry_member_source(module: &HirModule, owner: ItemId, ordinal: usize) -> Sou
     entry_source(module, owner, HirEntrySourcePart::MemberValue { member })
 }
 
-fn expression_source(project: HirExecutableProjectView<'_>, expression: ExprId) -> SourceSpan {
+fn expression_source(project: HirAnalysisProjectView<'_>, expression: ExprId) -> SourceSpan {
     let module = project
         .modules()
         .map(|(_, module)| module.as_ref())

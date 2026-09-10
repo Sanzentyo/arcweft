@@ -28,9 +28,15 @@ impl Analyzer<'_, '_, '_> {
     pub(super) fn analyze_patterns(
         &self,
         input: &mut FinalSemanticAnalysisInput,
+        selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
     ) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values() {
             for (owner, pattern) in module.patterns() {
+                if !selected
+                    .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Pattern(owner))
+                {
+                    continue;
+                }
                 if pattern.is_poisoned() {
                     return Err(FinalSemanticAnalysisError::RecoveredOwner);
                 }

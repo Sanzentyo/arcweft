@@ -60,7 +60,7 @@ use arcweft_lang_hir::item::{
 use arcweft_lang_hir::leaf::HirIdRef;
 use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternBinding, HirPatternKind};
-use arcweft_lang_hir::project::{HirExecutableProjectView, HirRuntimeExecutableOwner};
+use arcweft_lang_hir::project::{HirAnalysisProjectView, HirRuntimeExecutableOwner};
 use arcweft_lang_hir::source_index::{
     HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
 };
@@ -219,7 +219,7 @@ pub struct RuntimeEntryLoweringInput {
 
 impl RuntimeEntryLoweringInput {
     pub fn new(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         entries: Vec<RuntimeCheckedEntryInput>,
         callables: Vec<RuntimeEntryCallableInput>,
         flows: Vec<RuntimeEntryFlowInput>,
@@ -236,11 +236,11 @@ impl RuntimeEntryLoweringInput {
         }
     }
 
-    pub fn empty(project: HirExecutableProjectView<'_>) -> Self {
+    pub fn empty(project: HirAnalysisProjectView<'_>) -> Self {
         Self::new(project, Vec::new(), Vec::new(), Vec::new())
     }
 
-    fn validate_generation(&self, project: HirExecutableProjectView<'_>) -> bool {
+    fn validate_generation(&self, project: HirAnalysisProjectView<'_>) -> bool {
         self.snapshots
             == project
                 .modules()
@@ -443,7 +443,7 @@ struct LoweredControllerCallable {
 }
 
 struct FinalLoweringContext<'project, 'data> {
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
     facts: &'data RuntimePlanSemanticFacts,
     locals: &'data BTreeMap<LocalId, RuntimeLocalSeedId>,
     project_function_sites:
@@ -601,7 +601,7 @@ impl FinalLoweringContext<'_, '_> {
     reason = "this function is the single transactional authority switch that validates and publishes one complete runtime plan"
 )]
 pub fn lower_runtime_plan_with_stats(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     entry_input: &RuntimeEntryLoweringInput,
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
@@ -1741,7 +1741,7 @@ fn collect_closure_instances_from_semantics<'facts>(
 }
 
 fn reserve_function_sites(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
     implicit_parameters: &BTreeMap<ExprId, RuntimeLocalSeedId>,
@@ -1767,7 +1767,7 @@ fn reserve_function_sites(
     (sites, definitions)
 }
 fn reserve_implicit_function_sites(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
     implicit_parameters: &BTreeMap<ExprId, RuntimeLocalSeedId>,
@@ -1876,7 +1876,7 @@ fn reserve_implicit_function_sites(
 }
 
 fn reserve_closure_sites<'facts>(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     closures: &[&'facts RuntimeClosureInstanceFact],
     closure_locals: &BTreeMap<RuntimeClosureInstanceKey, ClosureFrameLocals>,
@@ -2044,7 +2044,7 @@ fn reserve_closure_sites<'facts>(
 }
 
 fn reserve_project_function_sites<'facts>(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &'facts RuntimePlanSemanticFacts,
     instance_locals: &BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
     builder: &mut RuntimePlanBuilder,
@@ -2215,7 +2215,7 @@ fn reserve_project_function_sites<'facts>(
 }
 
 fn reserve_project_default_function_sites<'facts>(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &'facts RuntimePlanSemanticFacts,
     instance_locals: &BTreeMap<RuntimeProjectFunctionInstanceKey, ProjectFunctionFrameLocals>,
     capture_input_locals: &BTreeMap<ProjectDefaultCaptureInputKey, RuntimeLocalSeedId>,
@@ -2398,7 +2398,7 @@ fn reserve_pure_programs(
 }
 
 fn reserve_trait_methods(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
     builder: &mut RuntimePlanBuilder,
@@ -2431,7 +2431,7 @@ fn reserve_trait_methods(
 }
 
 fn trait_method_declaration(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     locals: &BTreeMap<LocalId, RuntimeLocalSeedId>,
     checked: &RuntimeTraitMethodFact,
@@ -2541,7 +2541,7 @@ fn semantic_type_label(ty: &crate::semantic_facts::RuntimeNormalizedType) -> Str
 }
 
 fn resolve_trait_method<'a>(
-    project: HirExecutableProjectView<'a>,
+    project: HirAnalysisProjectView<'a>,
     checked: &RuntimeTraitMethodFact,
 ) -> Result<(&'a HirModule, &'a HirImplFunction), RuntimePlanLowerError> {
     let module = project
@@ -3900,7 +3900,7 @@ fn local_seed(ty: &RuntimeNormalizedType, local: RuntimeLocalSeedId) -> RuntimeE
 }
 
 fn module_by_id(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     expected: HirModuleId,
 ) -> Option<&Arc<HirModule>> {
     project
@@ -3909,7 +3909,7 @@ fn module_by_id(
 }
 
 fn lower_runtime_trait_identity(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     identity: &RuntimeTraitIdentity,
 ) -> Result<(Option<usize>, Option<String>), RuntimePlanLowerError> {
     Ok(match identity {
@@ -4004,7 +4004,7 @@ fn validate_entry_input(
 }
 
 fn lower_entry_flows(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     facts: &RuntimePlanSemanticFacts,
     input: &RuntimeEntryLoweringInput,
     schemas: &[RuntimeFlowSchema],
@@ -4951,6 +4951,8 @@ impl<'a> FinalFlowLowerer<'a> {
         if matches!(
             resolved.kind(),
             HirExprKind::AttachedContentApplication(_)
+                | HirExprKind::Block(_)
+                | HirExprKind::NamedBlock(_)
                 | HirExprKind::Await(_)
                 | HirExprKind::Choice(_)
                 | HirExprKind::Loop(_)
@@ -6567,7 +6569,7 @@ mod tests {
     #[test]
     fn empty_flow_lowers_only_with_its_checked_core_identity() {
         let project = project_fixture("empty-flow", "flow opening {}\n");
-        let executable = project.executable_view().expect("executable fixture");
+        let executable = project.analysis_view().expect("executable fixture");
         let owner = executable
             .items()
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -6597,7 +6599,7 @@ mod tests {
             "thread-expression-statement",
             "flow opening {\n    thread {\n    }\n}\n",
         );
-        let executable = project.executable_view().expect("executable fixture");
+        let executable = project.analysis_view().expect("executable fixture");
         let owner = executable
             .items()
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -6630,7 +6632,7 @@ mod tests {
             "checked-entry-owner",
             "flow @flow.main main {}\nentry cli @entry.cli.main { goto @flow.main }\n",
         );
-        let executable = project.executable_view().expect("executable fixture");
+        let executable = project.analysis_view().expect("executable fixture");
         let flow_owner = executable
             .items()
             .find(|item| matches!(item.item().kind(), HirItemKind::Flow(_)))
@@ -6766,7 +6768,7 @@ mod tests {
     }
 
     fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
-        let executable = project.executable_view().expect("executable fixture");
+        let executable = project.analysis_view().expect("executable fixture");
         let (_, module) = executable.modules().next().expect("fixture module");
         let world = ProjectSymbolWorldId::try_new(
             executable.package().clone(),
@@ -6823,7 +6825,7 @@ mod tests {
     }
 
     fn retained_runtime_projection(
-        executable: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+        executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
         owner: arcweft_lang_hir::identity::ExprId,
     ) -> Option<HirRuntimeExpressionProjection> {
         executable.modules().find_map(|(_, module)| {
@@ -6853,7 +6855,7 @@ mod tests {
         project: &HirProject,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<RuntimePlanSemanticFacts, crate::semantic_facts::RuntimeSemanticFactsError> {
-        let executable = project.executable_view().expect("executable fixture");
+        let executable = project.analysis_view().expect("executable fixture");
         let reachability = runtime_reachability(project);
         RuntimePlanSemanticFacts::try_new(executable, &reachability, input)
     }

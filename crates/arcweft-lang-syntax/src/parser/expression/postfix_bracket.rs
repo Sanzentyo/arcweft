@@ -4,7 +4,7 @@ use super::{CompletedNode, completed_slot, parse_binding_power};
 use crate::expressions::{
     ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
     PendingExpressionProjection, SyntaxAttachedContentApplicationForm,
-    SyntaxAttachedContentApplicationProjection, SyntaxBracketTerminator, SyntaxCandidateQuality,
+    SyntaxAttachedContentApplicationProjection, SyntaxBracketTerminator,
     SyntaxDialogueContentProjection, SyntaxDialogueContentRecoveryBoundary, SyntaxExpressionSlot,
     SyntaxIndexProjection, SyntaxPostfixBracketProjection, SyntaxPostfixBracketRecoveryBoundary,
     SyntaxPostfixCandidateFailure, SyntaxPostfixCandidateFailureKind,
@@ -276,7 +276,6 @@ fn select_ambiguous_postfix_projection(
 ) -> PendingExpressionProjection {
     let StagedIndexAttempt::Viable {
         events: index_events,
-        quality: index_quality,
         ..
     } = index
     else {
@@ -284,7 +283,6 @@ fn select_ambiguous_postfix_projection(
     };
     let StagedDialogueAttempt::Viable {
         events: dialogue_events,
-        quality: dialogue_quality,
         content,
         components,
     } = dialogue
@@ -292,23 +290,14 @@ fn select_ambiguous_postfix_projection(
         unreachable!("ambiguous postfix selection requires a viable dialogue candidate")
     };
     let index_graph = index_events.into_candidate_graph();
-    let index_node = *index_graph
-        .roots()
-        .first()
-        .expect("viable index candidate retains one root expression");
     let dialogue_graph = dialogue_events.into_candidate_graph();
     parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
     parser.emit_raw_interval(interval);
     parser.finish();
     PendingExpressionProjection::new(
         ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
-            index: Box::new(SyntaxPostfixIndexCandidate::new(
-                index_quality,
-                index_node,
-                index_graph,
-            )),
+            index: Box::new(SyntaxPostfixIndexCandidate::new(index_graph)),
             dialogue: Box::new(SyntaxPostfixDialogueCandidate::new(
-                dialogue_quality,
                 content,
                 components,
                 dialogue_graph,
@@ -351,7 +340,6 @@ fn finish_postfix_limit(
 enum StagedIndexAttempt {
     Viable {
         events: StagedParserEvents,
-        quality: SyntaxCandidateQuality,
         index: SyntaxExpressionSlot,
         range: SourceRange,
     },
@@ -362,7 +350,6 @@ enum StagedIndexAttempt {
 enum StagedDialogueAttempt {
     Viable {
         events: StagedParserEvents,
-        quality: SyntaxCandidateQuality,
         content: SyntaxDialogueContentProjection,
         components: Vec<PendingExpressionComponent>,
     },
@@ -437,14 +424,8 @@ fn stage_index_candidate(
         };
         return StagedIndexAttempt::Failed(SyntaxPostfixCandidateFailure::new(kind, site));
     }
-    let quality = if staged.has_recovery() {
-        SyntaxCandidateQuality::Recovered
-    } else {
-        SyntaxCandidateQuality::Clean
-    };
     StagedIndexAttempt::Viable {
         events: staged,
-        quality,
         index,
         range,
     }
@@ -491,14 +472,8 @@ fn stage_dialogue_candidate(
             site,
         ));
     }
-    let quality = if staged.has_recovery() || content.has_recovery() {
-        SyntaxCandidateQuality::Recovered
-    } else {
-        SyntaxCandidateQuality::Clean
-    };
     StagedDialogueAttempt::Viable {
         events: staged,
-        quality,
         content,
         components,
     }

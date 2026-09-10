@@ -939,7 +939,7 @@ fn checked_callables(
     Arc<crate::callable::CheckedCallableCatalog>,
 ) {
     super::analyzer::freeze_checked_callables_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         super::FinalSemanticCatalogs::production(&fixture.registered),
         input,
@@ -952,7 +952,7 @@ pub(crate) fn analyze(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     analyze_final_project(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -966,7 +966,7 @@ fn analyze_with_assertion_profile(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     analyze_final_project(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation).with_assertion_build_profile(profile),
@@ -987,7 +987,7 @@ fn checked_unsafe_audit_owns_identity_and_uses_checked_reason_child() {
         None,
     );
     let report = analyze(&fixture).expect("typed unsafe audit final analysis");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root module");
     let (owner, statement) = module
         .statements()
@@ -1049,7 +1049,7 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
     ));
     fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .accept_symbol_generation(&fixture.symbols)
         .expect("accepted symbol generation")
@@ -1118,7 +1118,7 @@ fn dialogue_line_plan_bindings_are_inferred_in_source_order() {
     }));
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -1318,7 +1318,7 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
     for (label, source) in parser_rejected_cases {
         let fixture = fixture(source, None);
         assert!(
-            fixture.project.executable_view().is_err(),
+            fixture.project.analysis_view().is_err(),
             "{label} must be rejected before final semantic publication",
         );
     }
@@ -1351,7 +1351,7 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
 
     for (label, source) in semantic_cases {
         let fixture = fixture(source, None);
-        if fixture.project.executable_view().is_err() {
+        if fixture.project.analysis_view().is_err() {
             continue;
         }
         assert!(
@@ -1367,7 +1367,7 @@ fn assignment_semantics_reject_non_direct_or_non_nominal_places_and_type_mismatc
 fn function_owner(fixture: &Fixture, name: &str) -> arcweft_lang_hir::identity::ItemId {
     fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .flat_map(|(_, module)| module.items())
@@ -1428,7 +1428,7 @@ fn analyze_with_query_work(
 ) {
     let cancellation = AtomicBool::new(false);
     super::analyzer::analyze_final_project_with_physical_trace_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered)
             .with_callable_limits(callable_limits_with_query_work(max_query_work)),
@@ -1442,7 +1442,7 @@ fn analyze_with_callable_limits(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     analyze_final_project(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered)
             .with_callable_limits(callable_limits),
@@ -1562,7 +1562,7 @@ fn input_from_report(report: &FinalSemanticAnalysis) -> FinalSemanticAnalysisInp
 }
 
 fn complete_input(fixture: &Fixture) -> FinalSemanticAnalysisInput {
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     assert!(
         !executable.modules().any(|(_, module)| {
             module.items().any(|(_, item)| {
@@ -1851,7 +1851,7 @@ fn predicate_assertion_is_context_error_not_reparse() {
         } => owner,
         other => panic!("unexpected predicate assertion result: {other:?}"),
     };
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     assert!(
         !module
@@ -2008,7 +2008,7 @@ fn final_assertion_conditions_require_bool_and_empty_effect_rows() {
 #[test]
 fn multi_module_report_is_complete_generation_bound_and_exactly_accounted() {
     let fixture = fixture("fn root() {}\n", Some("fn child() {}\n"));
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let expected_expressions = executable
         .modules()
         .map(|(_, module)| module.expressions().len())
@@ -2162,7 +2162,7 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
     let report = analyze(&fixture).unwrap_or_else(|error| {
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -2606,7 +2606,7 @@ fn selected_direct_call_derives_source_order_producer_admission_without_caller_r
     let build = |source: &str| {
         let fixture = fixture(source, None);
         let report = analyze(&fixture).expect("selected producer call final analysis");
-        let project = fixture.project.executable_view().expect("executable HIR");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         report
             .checked_need_producer_admission_for_call(
                 project,
@@ -2652,7 +2652,7 @@ fn producer_admission_fails_closed_for_need_and_argument_limit() {
         None,
     );
     let report = analyze(&fixture).expect("Need producer call final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let owner = selected_call_owner(&report);
 
     assert!(matches!(
@@ -2692,7 +2692,7 @@ fn producer_admission_rejects_an_explicit_extension_receiver_capture() {
         None,
     );
     let report = analyze(&fixture).expect("extension receiver final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -2734,7 +2734,7 @@ fn producer_admission_rejects_compact_spread_slots() {
         None,
     );
     let report = analyze(&fixture).expect("compact spread final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     assert_eq!(
         report.checked_need_producer_admission_for_call(
             project,
@@ -3184,7 +3184,7 @@ fn passthrough(stream: Stream<i64, String>) -> Stream<i64, String> {
 #[test]
 fn checked_catalog_keeps_closure_body_effects_latent() {
     let fixture = fixture("fn root() { let callback = || 1; 2 }\n", None);
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root module");
     let (closure_owner, closure_body) = module
         .expressions()
@@ -3273,7 +3273,7 @@ fn root() {
         None,
     );
     let report = analyze(&fixture).expect("project-call closure effect analysis");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root module");
     let closure_owner = module
         .expressions()
@@ -3325,7 +3325,7 @@ fn root() {
 #[test]
 fn incomplete_or_duplicate_fact_sets_never_publish() {
     let fixture = fixture("fn root() {}\n", None);
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let complete = complete_input(&fixture);
     let (topology, checked_catalog) = checked_callables(&fixture, &complete);
 
@@ -3364,7 +3364,7 @@ fn cancellation_is_terminal_before_any_report_is_observable() {
     let input = complete_input(&fixture);
     let (topology, checked_callables) = checked_callables(&fixture, &input);
     let result = FinalSemanticAnalysis::try_new_with_control(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         topology,
         checked_callables,
@@ -3379,7 +3379,7 @@ fn every_call_expression_requires_one_sealed_shared_resolver_fact() {
     let fixture = fixture("fn target() {}\nfn caller() { target(); }\n", None);
     let call_owner = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .flat_map(|(_, module)| module.expressions())
@@ -3390,7 +3390,7 @@ fn every_call_expression_requires_one_sealed_shared_resolver_fact() {
     let accepted = analyze(&fixture).expect("complete call fixture analysis");
     let input = complete_input(&fixture);
     let result = FinalSemanticAnalysis::try_new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
@@ -3418,7 +3418,7 @@ fn contextual_entity_family_child_is_owned_by_its_root_resolution() {
     let report = analyze(&fixture).expect("entity-family roots have complete final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3469,7 +3469,7 @@ fn alias_use_reports_idempotently_share_the_declaration_target_fact() {
         Some("pub struct Record {}\npub type PublicAlias = Record\n"),
     );
     let report = analyze(&fixture).expect("overlapping alias products agree on one type fact");
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let child = executable
         .module(
             &CanonicalModulePath::crate_root()
@@ -3526,7 +3526,7 @@ fn type_resolution_fact_union_rejects_disagreement() {
     let fixture = fixture("fn root(value: i32) {}\n", None);
     let owner = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .find_map(|(_, module)| module.types().next().map(|(owner, _)| owner))
@@ -3630,7 +3630,7 @@ fn checked_child_edges_preserve_hir_order_and_role_ordinals() {
     let report = analyze(&fixture).expect("tuple final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3670,7 +3670,7 @@ fn checked_record_fields_use_declaration_ordinals_not_authored_order() {
     let report = analyze(&fixture).expect("record literal final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3726,7 +3726,7 @@ fn checked_match_reference(
 
 fn checked_match_product(
     report: &FinalSemanticAnalysis,
-    project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     module: &HirModule,
     symbols: &ProjectSymbolTable,
     owner: arcweft_lang_hir::identity::ExprId,
@@ -3757,7 +3757,7 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
     let report = analyze(&fixture).expect("ordinary Match final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3798,7 +3798,7 @@ fn checked_match_fact_and_edges_retain_exact_guard_presence_and_children() {
     );
     let product = checked_match_product(
         &report,
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         module,
         &fixture.symbols,
         owner,
@@ -3823,7 +3823,7 @@ fn checked_match_semantic_path_crosses_the_typed_statement_root() {
         None,
     );
     let report = analyze(&fixture).expect("statement-root Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3852,7 +3852,7 @@ fn root(value: Option<i64>) -> i64 {
         None,
     );
     let report = analyze(&fixture).expect("Option Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3881,7 +3881,7 @@ fn checked_match_transcript_rejects_non_exhaustive_and_enforces_limits() {
         None,
     );
     let report = analyze(&fixture).expect("non-exhaustive Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3937,7 +3937,7 @@ fn root(flag: bool, ready: bool) -> i64 {
         None,
     );
     let report = analyze(&fixture).expect("guarded Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -3976,7 +3976,7 @@ flow main(flag: bool) {
         None,
     );
     let report = analyze(&fixture).expect("nested Thread path final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let declaration = fixture
         .symbols
         .callable_symbols()
@@ -4036,7 +4036,7 @@ flow other {}
         None,
     );
     let report = analyze(&fixture).expect("coordinate edge authority");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4144,7 +4144,7 @@ flow other {}
         crate::final_analysis::tests::fixture("fn foreign() -> i64 { 0i64 }\n", None);
     let foreign_project = foreign_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("foreign executable HIR");
     let foreign_owner = foreign_project
         .module(&CanonicalModulePath::crate_root())
@@ -4167,7 +4167,7 @@ flow other {}
 fn semantic_coordinate_index_resolves_expression_hops_from_checked_edges() {
     let fixture = fixture("fn root() -> i64 { 1i64 + 2i64 }\n", None);
     let report = analyze(&fixture).expect("expression edge authority");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -4245,7 +4245,7 @@ fn semantic_coordinate_index_issues_output_target_with_affine_application_owner(
         "}\n",
     ));
     let report = analyze(&fixture).expect("line-plan out final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4296,7 +4296,7 @@ fn semantic_coordinate_index_issues_all_loop_families_with_affine_statement_owne
     ] {
         let fixture = fixture(source, None);
         let report = analyze(&fixture).expect("loop-family final analysis");
-        let project = fixture.project.executable_view().expect("executable HIR");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         let module = project
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -4361,7 +4361,7 @@ fn root(route: Route) -> i64 {
         None,
     );
     let report = analyze(&fixture).expect("project enum Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4410,7 +4410,7 @@ fn checked_match_transcript_changes_when_source_arm_order_changes() {
     let build = |source: &str| {
         let fixture = fixture(source, None);
         let report = analyze(&fixture).expect("ordered Match final analysis");
-        let project = fixture.project.executable_view().expect("executable HIR");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         let module = project
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -4466,7 +4466,7 @@ fn root(flag: bool) -> i64 {{
         );
         let fixture = fixture(&source, None);
         let report = analyze(&fixture).expect("call-contract Match final analysis");
-        let project = fixture.project.executable_view().expect("executable HIR");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         let module = project
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -4497,7 +4497,7 @@ fn root(pair: (bool, bool)) -> i64 {
         None,
     );
     let report = analyze(&fixture).expect("tuple Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4530,7 +4530,7 @@ flow root {
         None,
     );
     let report = analyze(&fixture).expect("For/closure Match final analysis");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let declaration = fixture
         .symbols
         .callable_symbols()
@@ -4593,7 +4593,7 @@ flow done() -> String {
     let report = analyze(&fixture).expect("Choice path final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4634,7 +4634,7 @@ flow done() -> String {
     let accepted = analyze(&fixture).expect("Choice path final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4662,7 +4662,7 @@ flow done() -> String {
     )
     .into();
     let error = FinalSemanticAnalysis::try_new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
@@ -4691,7 +4691,7 @@ flow done() -> String {
     let accepted = analyze(&fixture).expect("Choice path final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4720,7 +4720,7 @@ flow done() -> String {
     .with_nested_path_evidence(Err(super::CheckedChildEdgeError::StaleNestedPath))
     .into();
     let error = FinalSemanticAnalysis::try_new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         Arc::clone(accepted.hir_topology()),
         accepted.checked_callables().clone(),
@@ -4776,7 +4776,7 @@ fn associated_capacity_checker_signature_primary_and_schema_equal() {
     let selected = selected_candidate(call);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4854,7 +4854,7 @@ fn signature_query_observes_cancellation_before_surface_work() {
     let report = analyze(&fixture).expect("accepted final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4883,7 +4883,7 @@ fn signature_query_observes_cancellation_during_surface_traversal() {
     let report = analyze(&fixture).expect("accepted final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -4916,7 +4916,7 @@ fn signature_query_observes_deadline_at_each_bounded_control_boundary() {
     let report = analyze(&fixture).expect("accepted final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -5157,7 +5157,7 @@ fn assert_character_signature_projection(
     assert_eq!(selected_look.declared_type(), Some(expected_look));
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -5328,7 +5328,7 @@ fn assert_index_postfix_transaction(fixture: &Fixture) {
     let report = analyze(fixture).expect("postfix expression final analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -5389,7 +5389,7 @@ fn selected_postfix_child_missing_from_facts_fails_closed() {
     let accepted = analyze(&fixture).expect("selected index analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -5406,7 +5406,7 @@ fn selected_postfix_child_missing_from_facts_fails_closed() {
     input.expressions.retain(|(owner, _)| *owner != missing);
     assert!(matches!(
         FinalSemanticAnalysis::try_new(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             Arc::clone(accepted.hir_topology()),
             accepted.checked_callables().clone(),
@@ -5596,7 +5596,7 @@ fn t_res_12_006_repeated_final_authority_preserves_facts_and_projection() {
 
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -5894,7 +5894,7 @@ fn root() {
     let report = analyze(&fixture).expect("final numeric and placeholder analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -5966,7 +5966,7 @@ flow @flow.closure_numeric_fallback closure_numeric_fallback {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -6060,7 +6060,7 @@ flow @flow.numeric_inlays numeric_inlays {
     let report = analyze(&fixture).expect("final numeric Flow analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -6107,7 +6107,7 @@ effects {}
     let report = analyze(&fixture).expect("typed local function-tail analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -6183,7 +6183,7 @@ fn ordinary_function_effect_contract_preserves_omitted_empty_and_nonempty_states
     let bounded_owner = function_owner(&fixture, "bounded");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .find_map(|(_, module)| (module.module_id() == bounded_owner.module()).then_some(module))
@@ -6255,7 +6255,7 @@ flow root {
     let report = analyze(&fixture).expect("final source-independent synthetic analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -6304,7 +6304,7 @@ flow @flow.root root {
     let report = analyze(&fixture).unwrap_or_else(|error| {
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .modules()
             .next()
@@ -6318,7 +6318,7 @@ flow @flow.root root {
     });
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -6462,7 +6462,7 @@ fn reference() {
 
     let index = ProjectSemanticIndex::try_from_final_project(
         ProgramHash::new("dialogue-line-reference"),
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
     )
@@ -6991,7 +6991,7 @@ fn configure(condition: bool) {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -7060,7 +7060,7 @@ fn configure() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -7097,7 +7097,7 @@ fn configure() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -7262,7 +7262,7 @@ fn opening() {
     let analysis = analyze(&fixture).expect("typed dialogue application analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -7435,7 +7435,7 @@ entry agent @entry.agent.main {
     assert_eq!(entry.diagnostic_public_id().as_str(), "entry.agent.main");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .find_map(|(_, module)| {
@@ -7729,7 +7729,7 @@ fn cancellation_before_first_candidate_slot_retains_no_physical_prefix() {
     );
     let cancellation = AtomicBool::new(true);
     let (result, physical) = super::analyzer::analyze_final_project_with_physical_trace_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -7752,7 +7752,7 @@ fn cancellation_after_one_completed_candidate_slot_retains_only_the_physical_pre
     let control = FinalSemanticAnalysisControl::new(&cancellation)
         .with_cancellation_after_completed_physical_slots(&remaining);
     let (result, physical) = super::analyzer::analyze_final_project_with_physical_trace_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         control,
@@ -7772,7 +7772,7 @@ fn missing_target_never_emits_candidate_physical_or_retained_facts() {
     let fixture = fixture("fn caller() { absent(1i64); }\n", None);
     let cancellation = AtomicBool::new(false);
     let (result, physical) = super::analyzer::analyze_final_project_with_physical_trace_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -7914,7 +7914,7 @@ fn explicit_extension_receiver_unifies_free_and_dot_callable_identity() {
     assert_eq!(selected[0].id(), selected[1].id());
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8049,7 +8049,7 @@ fn load_story() -> Unit effects { agent.observe } {
     }));
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8094,7 +8094,7 @@ entry agent @entry.agent.main { controller = run_smoke }
     if let Err(error) = &result {
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -8153,7 +8153,7 @@ entry agent @entry.agent.main { controller = composite_wait }
     let report = analyze(&fixture).unwrap_or_else(|error| {
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&CanonicalModulePath::crate_root())
             .expect("root HIR module");
@@ -8316,7 +8316,7 @@ entry agent @entry.agent.main { controller = run_smoke }
     let report = analyze(&fixture).expect("Agent action result field analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8369,7 +8369,7 @@ entry agent @entry.agent.main { controller = inspect }
 
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8497,7 +8497,7 @@ ensures no_effect network.request
         .expect("Flow effect/no_effect identities are seeded by the HIR inventory");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8601,7 +8601,7 @@ fn report_rejects_a_foreign_hir_or_symbol_generation() {
 
     assert!(matches!(
         report.validate_generation(
-            foreign.project.executable_view().expect("foreign HIR"),
+            foreign.project.analysis_view().expect("foreign HIR"),
             &foreign.symbols,
         ),
         Err(FinalSemanticAnalysisError::GenerationMismatch
@@ -8619,7 +8619,7 @@ fn project_index_preserves_same_named_module_scoped_flows() {
     let analysis = analyze(&fixture).expect("same-named module Flow analysis");
     let index = ProjectSemanticIndex::try_from_final_project(
         ProgramHash::new("same-named-module-flow"),
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
     )
@@ -8675,7 +8675,7 @@ fn view_has_checked_callable_and_project_index_rows_without_a_call_binding() {
 
     let index = ProjectSemanticIndex::try_from_final_project(
         ProgramHash::new("checked-view-callable"),
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         &analysis,
     )
@@ -8692,7 +8692,7 @@ fn view_modifier_without_an_accepted_catalog_fails_at_the_call_owner() {
     let fixture = fixture("view Main() {\n    Text(\"hello\").x(10px)\n}\n", None);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8737,7 +8737,7 @@ fn registered_on_click_selects_the_typed_modifier_and_exact_handler_contract() {
     let analysis = analyze(&fixture).expect("registered on_click View modifier analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -8916,7 +8916,7 @@ view Main(speed: f32) {
     let analysis = analyze(&fixture).expect("typed Fx payload edge dispositions");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -9015,7 +9015,7 @@ view Main(dialogue: DialogueView) {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");

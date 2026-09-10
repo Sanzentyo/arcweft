@@ -2089,6 +2089,98 @@ fn attached_leaf_fragment_rebases_semantic_components_into_the_target_revision()
 }
 
 #[test]
+fn attached_candidate_fragment_rebases_nested_recovery_types_and_patterns() {
+    for fragment_text in [
+        "alice()[|[夢](ゆめ)]",
+        "items[|value: Vec<Int>| alice()[|[夢](ゆめ)]]",
+    ] {
+        let name = SourceName::path("attached-candidate-fragment.arcw");
+        let prefix = "前置き\r\n  ";
+        let source = format!("{prefix}{fragment_text}\n後置き");
+        let document = source_document(&name, source.as_str());
+        let mut database = syntax_database();
+        let unbound = parse_expression_fragment(fragment_text, ParseOptions::default());
+        assert_eq!(unbound.completion(), &ParseCompletion::Complete);
+        let fragment = attach_exact_fragment(
+            &mut database,
+            &SourceSnapshotId::initial(name),
+            &document,
+            fragment_text,
+            unbound,
+            GrammarKind::PostfixBracketExpression,
+        );
+        let semantic = fragment.root().semantic().unwrap();
+        let index = semantic.ambiguous_index_candidate().unwrap();
+        let primary = index.primary().unwrap();
+        assert!(primary.source_span().range().start() >= prefix.len());
+        let closure = primary.closure_view().unwrap();
+        let ruby_index = if fragment_text.starts_with("items") {
+            let [parameter] = closure.parameters() else {
+                panic!("one typed parameter")
+            };
+            let ty = parameter.ty().unwrap();
+            assert_eq!(&source[ty.source_span().range().as_range()], "Vec<Int>");
+            let pattern = parameter.pattern();
+            assert_eq!(pattern.whole_source_span().source(), document.identity());
+            assert_eq!(
+                parameter
+                    .component(crate::expressions::SyntaxClosureParameterPart::Pattern)
+                    .unwrap(),
+                &pattern.whole_source_span()
+            );
+            closure.body().node().ambiguous_index_candidate().unwrap()
+        } else {
+            index
+        };
+        let diagnostic = ruby_index
+            .diagnostics()
+            .find(|diagnostic| diagnostic.code() == "syntax.pattern.unexpected_trailing_input")
+            .unwrap();
+        assert_eq!(diagnostic.primary().source(), document.identity());
+        assert_eq!(&source[diagnostic.primary().range().as_range()], "(ゆめ)");
+        let ruby_closure = ruby_index.primary().unwrap().closure_view().unwrap();
+        let parameter = &ruby_closure.parameters()[0];
+        assert_eq!(
+            &source[parameter.pattern().whole_source_span().range().as_range()],
+            "[夢](ゆめ)"
+        );
+    }
+}
+
+#[test]
+fn attached_raw_content_fragment_rebases_its_opaque_body() {
+    let name = SourceName::path("attached-raw-content-fragment.arcw");
+    let fragment_text = "alice[#raw()[literal]]";
+    let source = format!("前置き {fragment_text} 後置き");
+    let document = source_document(&name, source.as_str());
+    let mut database = syntax_database();
+    let fragment = attach_exact_fragment(
+        &mut database,
+        &SourceSnapshotId::initial(name),
+        &document,
+        fragment_text,
+        parse_expression_fragment(fragment_text, ParseOptions::default()),
+        GrammarKind::AttachedContentApplicationExpression,
+    );
+    let mut pending = vec![fragment.root().syntax().clone()];
+    let mut raw_bodies = 0;
+    while let Some(node) = pending.pop() {
+        if let Ok(semantic) = crate::attachment::AttachedExpressionNode::from_syntax(node.clone())
+            && let ExpressionProjection::AttachedContentApplication(application) =
+                semantic.projection()
+            && let crate::expressions::SyntaxDialogueContentProjection::RawLiteral(body) =
+                application.content()
+        {
+            assert_eq!(&source[body.range().as_range()], "literal");
+            assert_eq!(body.value(), "literal");
+            raw_bodies += 1;
+        }
+        pending.extend(node.children());
+    }
+    assert_eq!(raw_bodies, 1);
+}
+
+#[test]
 fn parsed_expression_lookup_is_exact_and_rejects_stale_or_foreign_ownership() {
     let name = SourceName::path("parsed-expression-identity.arcw");
     let source = "predicate leaf() = 42ms\n";

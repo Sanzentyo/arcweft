@@ -18,7 +18,7 @@ use crate::source_index::{HirExprSourceRole, HirMatchArmSourcePart, HirSourceSit
 
 // The outer `Option` aborts source freeze; the inner one is the control recovery payload.
 #[allow(clippy::option_option)]
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     pub(super) fn validate_closure(
         &mut self,
         expression: ExprId,
@@ -369,7 +369,10 @@ impl CandidateValidationCursor<'_> {
             || payload.parent() != Some(parent)
             || payload.owner() != &HirScopeOwner::Expr(expression)
             || self.source_index_has_typed_owner(SyntheticOwner::Scope(scope))
-            || !self.expected.scopes.insert(scope)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Scope(scope), self.region)
         {
             return None;
         }

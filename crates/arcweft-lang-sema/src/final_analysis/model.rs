@@ -675,7 +675,7 @@ pub use record::{
 mod capture;
 pub(crate) use capture::CheckedImplicitCallableIdentityEvidence;
 pub use capture::{
-    CheckedCapture, CheckedCaptureAuthorityViolation, CheckedClosure, CheckedImplicitCallable,
+    CheckedCaptureAuthorityViolation, CheckedClosure, CheckedImplicitCallable,
     CheckedImplicitCallableBody, CheckedImplicitCallableIdentity, CheckedImplicitCapture,
     CheckedImplicitCaptureOccurrence, CheckedImplicitParameter, CheckedImplicitParameterOccurrence,
 };

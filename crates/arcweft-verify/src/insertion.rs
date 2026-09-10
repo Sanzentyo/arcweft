@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::{identity::HirModuleId, project::HirExecutableProjectView};
+use arcweft_lang_hir::{identity::HirModuleId, project::HirAnalysisProjectView};
 use serde::{Deserialize, Serialize};
 
 use crate::{ProofObligation, ProofObligationKind, SourceSpan, ToolActionApplicability};
@@ -51,7 +51,7 @@ impl VerifierInsertionTarget {
 }
 
 impl VerifierInsertionInventory {
-    pub(crate) fn from_project(project: HirExecutableProjectView<'_>) -> Self {
+    pub(crate) fn from_project(project: HirAnalysisProjectView<'_>) -> Self {
         let proof_items = project
             .modules()
             .map(|(_, module)| {

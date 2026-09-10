@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_hir::{
-    identity::StmtId,
+    identity::{StmtId, SyntheticOwner},
     project::{HirSemanticPathOwnerId, HirSemanticPathRoot},
     source_index::{HirSourceQuery, HirStmtSourceRole},
     stmt::HirStmtKind,
@@ -279,6 +279,15 @@ impl Analyzer<'_, '_, '_> {
                 .collect::<Result<Vec<_>, _>>()?
         };
         for (owner, statement) in statements {
+            // Candidate statements are prepared by their owning expression
+            // transaction, after its syntax and local type inputs are admitted.
+            if self
+                .module(owner.module())?
+                .candidate_provenance()
+                .contains(SyntheticOwner::Stmt(owner))
+            {
+                continue;
+            }
             self.control.check()?;
             let module = self
                 .modules
@@ -301,6 +310,9 @@ impl Analyzer<'_, '_, '_> {
                 &mut self.facts,
             )?;
             self.check_statement_bindings_published(owner, &statement)?;
+            if let HirStmtKind::Expression { expression } = statement {
+                self.check_expression_published(expression, None)?;
+            }
         }
         Ok(())
     }
@@ -310,7 +322,18 @@ impl Analyzer<'_, '_, '_> {
         declaration: &PreparedExecutableDeclaration,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut contextual_arguments = BTreeSet::new();
-        for owner in &declaration.expressions {
+        let module = self.module(declaration.module)?;
+        let expressions = declaration
+            .expressions
+            .iter()
+            .copied()
+            .filter(|owner| {
+                !module
+                    .candidate_provenance()
+                    .contains(SyntheticOwner::Expr(*owner))
+            })
+            .collect::<Vec<_>>();
+        for owner in &expressions {
             let expression = self
                 .module(owner.module())?
                 .resolve_expr(*owner)
@@ -319,13 +342,8 @@ impl Analyzer<'_, '_, '_> {
                 contextual_arguments.extend(call.arguments().iter().map(HirCallArgument::value));
             }
         }
-        let expression_set = declaration
-            .expressions
-            .iter()
-            .copied()
-            .collect::<BTreeSet<_>>();
-        let children = declaration
-            .expressions
+        let expression_set = expressions.iter().copied().collect::<BTreeSet<_>>();
+        let children = expressions
             .iter()
             .map(|owner| {
                 self.module(owner.module())?
@@ -338,8 +356,7 @@ impl Analyzer<'_, '_, '_> {
             .flatten()
             .filter(|owner| expression_set.contains(owner))
             .collect::<BTreeSet<_>>();
-        for owner in declaration
-            .expressions
+        for owner in expressions
             .iter()
             .copied()
             .filter(|owner| !children.contains(owner))
@@ -372,6 +389,18 @@ impl Analyzer<'_, '_, '_> {
             })
             .collect::<Vec<_>>();
         for (owner, local) in locals {
+            if !module
+                .candidate_provenance()
+                .selects_region(SyntheticOwner::Local(owner), |selector| {
+                    self.facts
+                        .expressions()
+                        .get(&selector)?
+                        .selected_postfix_candidate()
+                })
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            {
+                continue;
+            }
             if local.is_poisoned() {
                 return Err(FinalSemanticAnalysisError::RecoveredOwner);
             }

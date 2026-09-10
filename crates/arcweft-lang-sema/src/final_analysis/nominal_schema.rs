@@ -1299,7 +1299,7 @@ pub(super) fn validate_checked_nominal(
 
 pub(super) fn seal_nominal_draft(
     draft: FinalSemanticAnalysisDraft,
-    project: crate::final_analysis::HirExecutableProjectView<'_>,
+    project: crate::final_analysis::HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     semantic_shapes: super::AcceptedSemanticShapeCatalog,
     control: FinalSemanticAnalysisControl<'_>,

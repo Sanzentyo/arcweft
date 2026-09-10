@@ -54,16 +54,14 @@ impl ParsedSourceData {
             syntax,
             document,
             diagnostics: diagnostics.into(),
-            status: if build.has_recovery() {
-                ParseStatus::Recovered
-            } else {
-                ParseStatus::Clean
-            },
+            status: build.recovery_status(),
             stats: build.stats(),
         };
         debug_assert!(
-            data.stats
-                .matches_publication(data.document.text().len(), data.diagnostics.len()),
+            data.stats.matches_publication(
+                data.document.text().len(),
+                build.diagnostic_identity_count()
+            ),
             "validated grammar statistics must match publication",
         );
         Ok(data)
@@ -115,7 +113,7 @@ impl SyntaxDiagnostic {
         self.code == other.code && self.primary == other.primary && self.related == other.related
     }
 
-    fn bind(
+    pub(crate) fn bind(
         document: &SourceDocument,
         diagnostic: &PendingSyntaxDiagnostic,
     ) -> Result<Self, SourceSpanError> {

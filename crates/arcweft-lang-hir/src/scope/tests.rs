@@ -221,8 +221,11 @@ fn local_and_capture_retain_typed_same_module_ownership() {
     let capture = HirCapture::try_new(
         closure,
         local_id,
-        CaptureAccess::Reassign,
-        first_use.clone(),
+        Arc::from([HirCaptureUse::new(
+            HirCaptureUseSite::Path(closure),
+            CaptureAccess::Reassign,
+            first_use.clone(),
+        )]),
     )
     .unwrap();
     assert_eq!(capture.closure(), closure);
@@ -234,8 +237,11 @@ fn local_and_capture_retain_typed_same_module_ownership() {
         HirCapture::try_new(
             closure,
             id::<LocalId>(foreign, 2),
-            CaptureAccess::Read,
-            source_span(),
+            Arc::from([HirCaptureUse::new(
+                HirCaptureUseSite::Path(closure),
+                CaptureAccess::Read,
+                source_span()
+            )]),
         ),
         Err(HirScopeInvariantError::ForeignReference { .. })
     ));

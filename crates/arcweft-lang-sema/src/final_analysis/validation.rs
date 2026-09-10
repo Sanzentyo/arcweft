@@ -150,10 +150,14 @@ pub(super) fn accepted_type_owners(
     modules: &BTreeMap<HirModuleId, &HirModule>,
     expressions: &BTreeMap<ExprId, CheckedExpression>,
     calls: &BTreeMap<ExprId, CallTargetFacts>,
+    selected: &super::match_edges::CheckedSelectedExpressionGraph,
 ) -> Result<BTreeSet<TypeId>, FinalSemanticAnalysisError> {
     let mut accepted = modules
         .values()
         .flat_map(|module| module.types().map(|(owner, _)| owner))
+        .filter(|owner| {
+            selected.contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Type(*owner))
+        })
         .collect::<BTreeSet<_>>();
 
     // An Impl trait reference is a conformance identity, not a runtime value
@@ -322,7 +326,11 @@ pub(super) fn validate_complete_inventory(
         require_complete(
             modules
                 .values()
-                .flat_map(|module| module.types().map(|(id, _)| id)),
+                .flat_map(|module| module.types().map(|(id, _)| id))
+                .filter(|owner| {
+                    selected_expressions
+                        .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Type(*owner))
+                }),
             types,
             SemanticFactFamily::Type,
         )?;
@@ -330,7 +338,11 @@ pub(super) fn validate_complete_inventory(
     require_complete(
         modules
             .values()
-            .flat_map(|module| module.locals().map(|(id, _)| id)),
+            .flat_map(|module| module.locals().map(|(id, _)| id))
+            .filter(|owner| {
+                selected_expressions
+                    .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Local(*owner))
+            }),
         locals,
         SemanticFactFamily::Local,
     )?;
@@ -338,7 +350,11 @@ pub(super) fn validate_complete_inventory(
         topology
             .modules()
             .iter()
-            .flat_map(|module| module.captures().rows().map(|capture| capture.capture())),
+            .flat_map(|module| module.captures().rows().map(|capture| capture.capture()))
+            .filter(|owner| {
+                selected_expressions
+                    .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Capture(*owner))
+            }),
         captures,
         SemanticFactFamily::Capture,
     )?;
@@ -347,14 +363,22 @@ pub(super) fn validate_complete_inventory(
     require_complete(
         modules
             .values()
-            .flat_map(|module| module.patterns().map(|(id, _)| id)),
+            .flat_map(|module| module.patterns().map(|(id, _)| id))
+            .filter(|owner| {
+                selected_expressions
+                    .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Pattern(*owner))
+            }),
         patterns,
         SemanticFactFamily::Pattern,
     )?;
     require_complete(
         modules
             .values()
-            .flat_map(|module| module.statements().map(|(id, _)| id)),
+            .flat_map(|module| module.statements().map(|(id, _)| id))
+            .filter(|owner| {
+                selected_expressions
+                    .contains_owner(arcweft_lang_hir::identity::SyntheticOwner::Stmt(*owner))
+            }),
         statements,
         SemanticFactFamily::Statement,
     )?;

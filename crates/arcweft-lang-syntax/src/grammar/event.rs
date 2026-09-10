@@ -59,7 +59,11 @@ impl PendingPatternProjection {
         &self.path
     }
 
-    fn rebased(&self, offset: usize, context: &mut ProjectionRebaseContext) -> Option<Self> {
+    pub(crate) fn rebased(
+        &self,
+        offset: usize,
+        context: &mut ProjectionRebaseContext,
+    ) -> Option<Self> {
         Some(Self::new(
             self.tree,
             context.pattern(&self.authored, offset)?,
@@ -101,7 +105,11 @@ impl PendingTypeProjection {
         &self.path
     }
 
-    fn rebased(&self, offset: usize, context: &mut ProjectionRebaseContext) -> Option<Self> {
+    pub(crate) fn rebased(
+        &self,
+        offset: usize,
+        context: &mut ProjectionRebaseContext,
+    ) -> Option<Self> {
         Some(Self::new(
             self.tree,
             context.type_ref(&self.authored, offset)?,
@@ -111,7 +119,7 @@ impl PendingTypeProjection {
 }
 
 #[derive(Default)]
-struct ProjectionRebaseContext {
+pub(crate) struct ProjectionRebaseContext {
     patterns: HashMap<usize, Arc<AuthoredPattern>>,
     type_refs: HashMap<usize, Arc<AuthoredTypeRef>>,
 }
@@ -208,6 +216,14 @@ pub(crate) struct PendingSyntaxDiagnostic {
     message: String,
 }
 
+/// Publication/work identity, independent of message presentation.
+#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct SyntaxDiagnosticIdentity {
+    code: &'static str,
+    range: SourceRange,
+    related_range: Option<SourceRange>,
+}
+
 /// Recovery edit staged before the grammar snapshot is source-bound.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct PendingSyntaxEdit {
@@ -224,6 +240,14 @@ pub(crate) struct PendingSyntaxSuggestion {
 }
 
 impl PendingSyntaxDiagnostic {
+    pub(crate) const fn identity(&self) -> SyntaxDiagnosticIdentity {
+        SyntaxDiagnosticIdentity {
+            code: self.code,
+            range: self.range,
+            related_range: self.related_range,
+        }
+    }
+
     pub(crate) fn new(code: &'static str, range: SourceRange, message: impl Into<String>) -> Self {
         Self {
             code,
@@ -456,7 +480,9 @@ impl PendingStartProjection {
     fn rebased(&self, offset: usize, context: &mut ProjectionRebaseContext) -> Option<Self> {
         Some(match self {
             Self::None => Self::None,
-            Self::Expression(projection) => Self::Expression(Box::new(projection.rebased(offset)?)),
+            Self::Expression(projection) => {
+                Self::Expression(Box::new(projection.rebased(offset, context)?))
+            }
             Self::Assertion(projection) => Self::Assertion(*projection),
             Self::KeywordStatement(projection) => {
                 Self::KeywordStatement(Box::new((**projection).clone()))
@@ -626,6 +652,9 @@ fn rebase_range(range: SourceRange, offset: usize) -> Option<SourceRange> {
         range.end().checked_add(offset)?,
     ))
 }
+
+#[cfg(test)]
+mod candidate_recovery_tests;
 
 #[cfg(test)]
 mod tests {

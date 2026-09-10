@@ -2,9 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use arcweft_source::SourceRange;
-
-use super::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use super::event::{
+    PendingStartProjection, PendingSyntaxDiagnostic, SyntaxDiagnosticIdentity, SyntaxEvent,
+};
 use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
 
@@ -24,7 +24,7 @@ pub(crate) struct GrammarBudget {
     type_nodes: usize,
     pattern_nodes: usize,
     identity_nodes: usize,
-    diagnostics: BTreeSet<DiagnosticKey>,
+    diagnostics: BTreeSet<SyntaxDiagnosticIdentity>,
     failure: Option<SyntaxLimit>,
 }
 
@@ -67,13 +67,6 @@ impl BudgetFrame {
             layer_members: 0,
         }
     }
-}
-
-#[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
-struct DiagnosticKey {
-    code: &'static str,
-    range: SourceRange,
-    related_range: Option<SourceRange>,
 }
 
 /// Immutable work accounting committed with one accepted grammar snapshot.
@@ -311,7 +304,11 @@ impl GrammarBudget {
         let SyntaxEvent::Diagnostic(diagnostic) = event else {
             return true;
         };
-        let key = DiagnosticKey::from(diagnostic);
+        self.diagnostic(diagnostic)
+    }
+
+    fn diagnostic(&mut self, diagnostic: &PendingSyntaxDiagnostic) -> bool {
+        let key = diagnostic.identity();
         if self.diagnostics.contains(&key) {
             return true;
         }
@@ -683,16 +680,6 @@ impl GrammarBudget {
     }
 }
 
-impl From<&PendingSyntaxDiagnostic> for DiagnosticKey {
-    fn from(diagnostic: &PendingSyntaxDiagnostic) -> Self {
-        Self {
-            code: diagnostic.code(),
-            range: diagnostic.range(),
-            related_range: diagnostic.related_range(),
-        }
-    }
-}
-
 fn charge(counter: &mut usize, limit: SyntaxLimit) -> Result<(), SyntaxLimit> {
     if *counter >= limit.maximum() {
         return Err(limit);
@@ -707,7 +694,12 @@ pub(crate) fn validate_events(events: &[SyntaxEvent]) -> Result<GrammarBudget, S
     let mut budget = GrammarBudget::default();
     for event in events {
         match event {
-            SyntaxEvent::StartNode { kind, role, .. } => {
+            SyntaxEvent::StartNode {
+                kind,
+                role,
+                projection,
+                ..
+            } => {
                 if budget.is_direct_assertion_condition(*kind, *role)
                     && !budget.assertion_condition()
                 {
@@ -717,6 +709,17 @@ pub(crate) fn validate_events(events: &[SyntaxEvent]) -> Result<GrammarBudget, S
                 }
                 if !budget.start(*kind, *role) {
                     return Err(budget.failure().expect("failed budget start has a limit"));
+                }
+                if let PendingStartProjection::Expression(projection) = projection {
+                    for graph in projection.projection().candidate_graphs() {
+                        for diagnostic in graph.diagnostics() {
+                            if !budget.diagnostic(diagnostic) {
+                                return Err(budget
+                                    .failure()
+                                    .expect("failed retained diagnostic budget has a limit"));
+                            }
+                        }
+                    }
                 }
             }
             SyntaxEvent::FinishNode => {

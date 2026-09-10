@@ -13,7 +13,7 @@ use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtPoisonState, HirStmtReco
 
 use super::super::CandidateValidationCursor;
 
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     #[allow(
         clippy::too_many_lines,
         reason = "one candidate keyword-statement matrix validates every operand, source role, and recovery form"

@@ -31,6 +31,7 @@ struct LoweredCandidateRecordValue {
 impl StagedHirModuleTransaction<'_> {
     pub(super) fn lower_candidate_record(
         &mut self,
+        owner: ExprId,
         node: AttachedCandidateNode<'_>,
         scope: ScopeId,
         cursor: &mut CandidateCursor,
@@ -48,18 +49,21 @@ impl StagedHirModuleTransaction<'_> {
         let TypedPathProjection::Resolved(path) = project_candidate_path(path)? else {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         };
-        let (fields, recovery) = self.lower_candidate_record_fields(node, scope, cursor, fields)?;
+        let (fields, recovery) =
+            self.lower_candidate_record_fields(owner, node, scope, cursor, fields)?;
         Ok((HirRecordExpr::new(path, fields), recovery))
     }
 
     pub(super) fn lower_candidate_record_literal(
         &mut self,
+        owner: ExprId,
         node: AttachedCandidateNode<'_>,
         scope: ScopeId,
         cursor: &mut CandidateCursor,
         fields: &[SyntaxRecordField],
     ) -> Result<(HirRecordLiteralExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
-        let (fields, recovery) = self.lower_candidate_record_fields(node, scope, cursor, fields)?;
+        let (fields, recovery) =
+            self.lower_candidate_record_fields(owner, node, scope, cursor, fields)?;
         Ok((HirRecordLiteralExpr::new(fields), recovery))
     }
 
@@ -69,6 +73,7 @@ impl StagedHirModuleTransaction<'_> {
     )]
     fn lower_candidate_record_fields(
         &mut self,
+        owner: ExprId,
         node: AttachedCandidateNode<'_>,
         scope: ScopeId,
         cursor: &mut CandidateCursor,
@@ -189,7 +194,13 @@ impl StagedHirModuleTransaction<'_> {
                     let local = self
                         .visible_local(scope, &field_name, first_use.range().start())?
                         .ok_or(HirInvariantFailure::InvalidLocalTimeline)?;
-                    self.record_local_capture(scope, local, first_use, CaptureAccess::Read)?;
+                    self.record_local_capture(
+                        crate::scope::HirCaptureUseSite::RecordShorthand { owner, field },
+                        scope,
+                        local,
+                        first_use,
+                        CaptureAccess::Read,
+                    )?;
                     fields.push(HirRecordField::shorthand(field_name, local));
                 }
             }

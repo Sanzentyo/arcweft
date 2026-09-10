@@ -299,7 +299,7 @@ flow main() -> i64 {
         .expect("one generic body publishes two closed runtime instances");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted executable project");
     let (_, module) = executable.modules().next().expect("root module");
     let (function_owner, parameter_local) = module
@@ -373,7 +373,7 @@ flow main() -> i64 {
         .expect("generic captured closure publishes one closed closure per parent instance");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted executable project");
     let (_, module) = executable.modules().next().expect("root module");
     let function_owner = module
@@ -416,9 +416,18 @@ flow main() -> i64 {
             panic!("closure captures the generic parameter once")
         };
         assert_eq!(
-            closure.semantics().local_type(capture.source()),
+            closure.semantics().ty(
+                arcweft_runtime_plan::semantic_facts::RuntimeProjectFunctionTypeOwner::Local(
+                    capture.source()
+                )
+            ),
             None,
-            "the captured source local belongs to the parent catalog, not the closure body",
+            "the captured source is not a local declaration of the closure body",
+        );
+        assert_eq!(
+            closure.semantics().local_type(capture.source()),
+            Some(capture.ty()),
+            "the closure resolves the source through its own closed capture inventory",
         );
         assert_eq!(
             instance.semantics().local_type(capture.source()),
@@ -467,7 +476,7 @@ flow main() {
         .expect("generic dialogue publishes one closed content occurrence per instance");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted executable project");
     let (_, module) = executable.modules().next().expect("root module");
     let function_owner = module
@@ -559,8 +568,7 @@ fn recovered_source_commits_poisoned_hir_for_tooling() {
             .expect("recovered final HIR publishes one tooling lease");
         assert_eq!(tooling.modules().len(), 1);
         let module = &tooling.modules()[0];
-        assert!(!module.hir().is_executable());
-        assert!(!module.hir().is_cache_eligible());
+        assert!(!module.hir().is_analysis_ready());
         assert!(Arc::ptr_eq(
             module.hir(),
             tooling
@@ -1119,9 +1127,9 @@ fn recovered_module_never_enters_runtime_plan_or_compile_cache() {
         tooling
             .modules()
             .iter()
-            .all(|module| { !module.hir().is_executable() && !module.hir().is_cache_eligible() })
+            .all(|module| !module.hir().is_analysis_ready())
     );
-    assert!(tooling.hir_project().executable_view().is_err());
+    assert!(tooling.hir_project().analysis_view().is_err());
     assert_eq!(cache.stores, 0);
 }
 

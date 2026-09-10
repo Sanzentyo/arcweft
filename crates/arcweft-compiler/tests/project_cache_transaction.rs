@@ -555,7 +555,7 @@ fn runtime_plan_consumes_project_view_without_flattening() {
 
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
@@ -660,7 +660,7 @@ fn runtime_semantic_facts_retain_exact_runtime_domain_types_and_omit_presentatio
         .expect("typed Match project compiles");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
@@ -913,7 +913,7 @@ fn unreachable_assignment_retains_checked_place_but_publishes_no_runtime_fact() 
         .expect("direct record-field assignment compiles");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted assignment project is executable");
     let statement = executable
         .modules()
@@ -972,7 +972,7 @@ fn runtime_variant_facts_retain_the_complete_normalized_project_case_table() {
         .expect("project enum fixture compiles");
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("accepted project is executable");
     let runtime_owners = project_runtime_reachability(
         executable,
@@ -1155,7 +1155,7 @@ fn failed_instance_projection_preserves_the_prior_accepted_generation() {
         first
             .final_analysis()
             .validate_generation(
-                first_hir.executable_view().expect("prior executable lease"),
+                first_hir.analysis_view().expect("prior executable lease"),
                 first.project_symbols(),
             )
             .expect("prior semantic generation remains valid");
@@ -1220,6 +1220,79 @@ fn lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes() {
         ProjectCompileCacheStatus::Miss
     );
     assert_eq!(second.modules()[0].source(), &expected_identity);
+}
+
+#[test]
+fn conditional_recovery_edits_invalidate_positive_and_negative_cache_evidence() {
+    let profile = "conditional-recovery-cache";
+    let document_id = "arcweft-project://conditional-recovery-cache/src/main.arcw";
+    let source = |body: &str| {
+        format!(
+            "pub character alice {{ display = \"Alice\" }}\nfn speak() -> Unit {{ {body}; () }}\n"
+        )
+    };
+    let (initial, _, _) =
+        project_fixture_with_document_id(&source("alice()[|[夢](ゆめ)]"), profile, document_id);
+    let mut session = AttachedCompiler::new(&initial);
+    let mut cache = RecordingCache::default();
+    let mut accepted: Option<CompiledProject> = None;
+    for (body, succeeds) in [
+        ("alice()[|[夢](ゆめ)]", true),
+        ("let invalid = |_ trailing| 0", false),
+        ("alice()[｜夢《ゆめ》]", true),
+        (
+            "let values = [1i64]; let invalid = values[|[value] trailing| 0]",
+            false,
+        ),
+        (
+            "let values = [1i64]; let observed = values[{ let offset = 0i64; offset }]",
+            true,
+        ),
+        ("(|_ trailing| 0)[value]", false),
+        ("alice()[|[夢](ゆめ)]", true),
+    ] {
+        let (project, document, world) =
+            project_fixture_with_document_id(&source(body), profile, document_id);
+        session.replace_sources(&project);
+        cache.reset_activity();
+        let context = context(
+            TypeCheckEnv::standard(),
+            registration_facts(document, world),
+        );
+        let result = session.compile(&project, &context, &mut cache);
+        if succeeds {
+            let compiled = result.unwrap_or_else(|error| panic!("{body}: {error:?}"));
+            assert_eq!(cache.stores, 1, "{body}");
+            assert_eq!(
+                compiled.compile_units()[0].cache_status(),
+                ProjectCompileCacheStatus::Miss
+            );
+            cache.reset_activity();
+            let reused = session
+                .compile(&project, &context, &mut cache)
+                .expect("unchanged accepted source can reuse HIR");
+            assert_eq!(cache.stores, 0);
+            assert_eq!(reused.program_hash(), compiled.program_hash());
+            assert!(Arc::ptr_eq(reused.hir_project(), compiled.hir_project()));
+            accepted = Some(compiled);
+        } else {
+            assert!(result.is_err(), "{body}");
+            assert_eq!(
+                cache.stores, 0,
+                "rejected selection cannot publish cache entries"
+            );
+            let prior = accepted.as_ref().expect("prior accepted generation");
+            prior
+                .final_analysis()
+                .validate_generation(
+                    prior.hir_project().analysis_view().unwrap(),
+                    prior.project_symbols(),
+                )
+                .unwrap();
+            assert!(session.compile(&project, &context, &mut cache).is_err());
+            assert_eq!(cache.stores, 0);
+        }
+    }
 }
 
 #[test]

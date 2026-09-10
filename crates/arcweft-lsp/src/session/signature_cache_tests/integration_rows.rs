@@ -398,7 +398,7 @@ fn final_native_outcomes(
     .expect("registered semantic world");
     let cancellation = AtomicBool::new(false);
     let analysis = analyze_final_project(
-        project.executable_view().expect("executable HIR"),
+        project.analysis_view().expect("executable HIR"),
         registered.symbols(),
         FinalSemanticCatalogs::production(&registered),
         FinalSemanticAnalysisControl::new(&cancellation),

@@ -9,14 +9,14 @@ use super::{
     FunctionValueSignatureId, HirAssociatedCallSyntax, HirAssociatedReceiver,
     HirAssociatedSeparator, HirCallCallee, HirCallInvocation, HirExpr, HirExprKind,
     HirExprSourceRole, HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue,
-    HirRecoveredName, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
-    PrepareFinalCallCalleeError, PreparedCallCallee, PreparedFinalCallCallee,
-    PreparedFreeCallContext, PreparedFreeCallScope, PreparedFunctionValueCallee,
-    PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginProducer,
-    PreparedFunctionValueOriginProgress, PreparedFunctionValueOriginQuery,
-    PreparedFunctionValueOriginQueryError, PresentationCallableId, ProjectValueLookup,
-    PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
-    ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
+    HirRecoveredName, HirSelectedMember, HirSourceQuery, PrepareFinalCallCalleeError,
+    PreparedCallCallee, PreparedFinalCallCallee, PreparedFreeCallContext, PreparedFreeCallScope,
+    PreparedFunctionValueCallee, PreparedFunctionValueOriginEvidence,
+    PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,
+    PreparedFunctionValueOriginQuery, PreparedFunctionValueOriginQueryError,
+    PresentationCallableId, ProjectValueLookup, PromotionCallableId, ResolveCallError,
+    ResolvedAssociatedTypeReceiver, ResolvedFunctionValueSeed, TypeId, TypeKind,
+    TypeResolutionReport,
 };
 use crate::{
     callable::{
@@ -680,22 +680,13 @@ fn required_expression_span(
     module: &HirModule,
     expression: ExprId,
 ) -> Result<arcweft_source::SourceSpan, PrepareFinalCallCalleeError> {
-    let lookup = module
-        .source_site(
-            module.provenance().source_identity(),
-            HirSourceQuery::Expr {
-                owner: expression,
-                role: HirExprSourceRole::Whole,
-            },
-        )
-        .map_err(|_| PrepareFinalCallCalleeError::MissingValueSource { expression })?;
-    match lookup.presence() {
-        HirSourcePresence::Present(HirSourceSite::Span(span)) => Ok(span.clone()),
-        HirSourcePresence::Present(HirSourceSite::Insertion(_))
-        | HirSourcePresence::AbsentOptional => {
-            Err(PrepareFinalCallCalleeError::MissingValueSource { expression })
-        }
-    }
+    module
+        .source_anchor(HirSourceQuery::Expr {
+            owner: expression,
+            role: HirExprSourceRole::Whole,
+        })
+        .map_err(|_| PrepareFinalCallCalleeError::MissingValueSource { expression })?
+        .ok_or(PrepareFinalCallCalleeError::MissingValueSource { expression })
 }
 
 fn callable_path_from_hir(

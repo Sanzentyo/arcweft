@@ -56,7 +56,7 @@ use arcweft_lang_hir::module::HirModule;
 use arcweft_lang_hir::pattern::{HirPatternField, HirPatternKind};
 use arcweft_lang_hir::project::AcceptedDialogueLineInventory;
 use arcweft_lang_hir::project::{
-    HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
+    HirAnalysisProjectView, HirRuntimeExecutableOwner, HirRuntimeIteratorWitnessMethodRole,
     HirRuntimeReachabilityEdge, HirRuntimeReachabilityEdgeKind, HirRuntimeReachabilityError,
     HirRuntimeReachabilityIdentity, HirRuntimeReachabilityRootKind, HirRuntimeReachabilitySite,
     HirRuntimeSemanticReachability,
@@ -3861,7 +3861,7 @@ impl RuntimeTriggerAdmission {
 /// Checked capture metadata that is not derivable from lexical HIR alone.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeCheckedCapture {
-    capture: CaptureId,
+    projection: arcweft_lang_hir::project::HirSelectedCapture,
     ty: RuntimeNormalizedType,
 }
 
@@ -4004,12 +4004,23 @@ impl RuntimeTraitMethodFact {
 }
 
 impl RuntimeCheckedCapture {
-    pub const fn new(capture: CaptureId, ty: RuntimeNormalizedType) -> Self {
-        Self { capture, ty }
+    pub const fn new(
+        projection: arcweft_lang_hir::project::HirSelectedCapture,
+        ty: RuntimeNormalizedType,
+    ) -> Self {
+        Self { projection, ty }
     }
 
     pub const fn capture(&self) -> CaptureId {
-        self.capture
+        self.projection.capture()
+    }
+
+    pub const fn projection(&self) -> &arcweft_lang_hir::project::HirSelectedCapture {
+        &self.projection
+    }
+
+    pub const fn source(&self) -> LocalId {
+        self.projection.local()
     }
 
     pub const fn ty(&self) -> &RuntimeNormalizedType {
@@ -5030,6 +5041,17 @@ impl<'a> RuntimeSemanticOwnerSet<'a> {
         })
     }
 
+    fn expressions(self) -> BTreeSet<ExprId> {
+        self.runtime
+            .expressions()
+            .chain(
+                self.view_values
+                    .into_iter()
+                    .flat_map(HirRuntimeSemanticReachability::expressions),
+            )
+            .collect()
+    }
+
     fn locals(self) -> BTreeSet<LocalId> {
         self.runtime
             .locals()
@@ -5144,7 +5166,7 @@ impl RuntimePlanSemanticFacts {
         reason = "fact publication validates every family and cross-owner identity in one all-or-nothing accepted-generation transaction"
     )]
     pub fn try_new(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         runtime_owners: &HirRuntimeSemanticReachability<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
@@ -5156,7 +5178,7 @@ impl RuntimePlanSemanticFacts {
     }
 
     pub fn try_new_with_view_value_programs(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         runtime_owners: &HirRuntimeSemanticReachability<'_>,
         view_value_owners: &HirRuntimeSemanticReachability<'_>,
         input: RuntimePlanSemanticFactInput,
@@ -5178,7 +5200,7 @@ impl RuntimePlanSemanticFacts {
     }
 
     fn try_new_with_owner_set(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         runtime_owners: RuntimeSemanticOwnerSet<'_>,
         input: RuntimePlanSemanticFactInput,
     ) -> Result<Self, RuntimeSemanticFactsError> {
@@ -6126,10 +6148,21 @@ impl RuntimePlanSemanticFacts {
             }
         }
 
+        for expression in runtime_owners
+            .expressions()
+            .into_iter()
+            .filter(|owner| !instance_expression_owners.contains(owner))
+        {
+            if matches!(
+                resolve_expr(&modules, expression)?,
+                HirExprKind::PostfixBracket(_)
+            ) && !postfix_candidates.contains_key(&expression)
+            {
+                return Err(RuntimeSemanticFactsError::MissingPostfixCandidate { expression });
+            }
+        }
         validate_complete_expression_types(
             runtime_owners,
-            &postfix_candidates,
-            &calls,
             &expression_types,
             &instance_expression_owners,
         )?;
@@ -6342,6 +6375,12 @@ impl RuntimePlanSemanticFacts {
                 .resolve_capture(id)
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedCapture { capture: id })?;
             require_runtime_capture_owner(runtime_owners, id)?;
+            if runtime_owners
+                .executable_owners(&HirRuntimeExecutableOwner::Closure(capture.closure()))
+                .is_none_or(|owners| !owners.capture_plan().contains(checked.projection()))
+            {
+                return Err(RuntimeSemanticFactsError::InvalidCaptureProjection { capture: id });
+            }
             module_for(&modules, capture.local().module())?
                 .resolve_local(capture.local())
                 .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal {
@@ -6733,7 +6772,7 @@ impl RuntimePlanSemanticFacts {
     /// admitted them. Stable IDs surviving a reload do not make stale facts valid.
     pub fn validate_generation(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
     ) -> Result<(), RuntimeSemanticFactsError> {
         let actual = project
             .modules()
@@ -7275,6 +7314,10 @@ fn validate_pure_programs(
         let HirExprKind::Closure(closure) = resolve_expr(modules, fact.closure())? else {
             return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
         };
+        let expected_captures = owners
+            .executable_owners(&HirRuntimeExecutableOwner::Closure(fact.closure()))
+            .ok_or(RuntimeSemanticFactsError::InvalidPureProgram { program })?
+            .capture_plan();
         let Some(RuntimeTypeShape::Function { parameters, result }) = expression_types
             .get(&fact.closure())
             .map(RuntimeNormalizedType::shape)
@@ -7288,15 +7331,14 @@ fn validate_pure_programs(
             || expression_types
                 .get(&fact.body())
                 .is_none_or(|body| body.identity() != fact.result())
-            || closure.captures().len() != fact.captures().len()
+            || expected_captures.len() != fact.captures().len()
         {
             return Err(RuntimeSemanticFactsError::InvalidPureProgram { program });
         }
         let module = module_for(modules, fact.closure().module())?;
         let mut parameters = BTreeSet::new();
         let mut locals = BTreeSet::new();
-        for (expected_capture, capture) in closure
-            .captures()
+        for (expected_capture, capture) in expected_captures
             .iter()
             .copied()
             .zip(fact.captures().iter().copied())
@@ -7308,10 +7350,11 @@ fn validate_pure_programs(
             })?;
             let checked = checked_captures.get(&capture.capture());
             let local_type = local_declarations.get(&capture.local());
-            if expected_capture != capture.capture()
+            if expected_capture.capture() != capture.capture()
                 || hir_capture.closure() != fact.closure()
                 || hir_capture.local() != capture.local()
-                || hir_capture.access() != CaptureAccess::Read
+                || expected_capture.local() != capture.local()
+                || expected_capture.mode() != CaptureAccess::Read
                 || !parameters.insert(capture.parameter())
                 || !locals.insert(capture.local())
                 || checked.is_none_or(|checked| {
@@ -7336,6 +7379,8 @@ fn validate_pure_programs(
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum RuntimeSemanticFactsError {
+    #[error("runtime capture {capture:?} differs from its selected lexical projection")]
+    InvalidCaptureProjection { capture: CaptureId },
     #[error("runtime semantic facts and reachability belong to different generations")]
     ReachabilityMismatch,
     #[error("runtime semantic fact owner is outside the accepted reachability closure")]
@@ -7584,8 +7629,6 @@ pub enum RuntimeSemanticFactFamily {
 
 fn validate_complete_expression_types(
     runtime_owners: RuntimeSemanticOwnerSet<'_>,
-    _postfix_candidates: &BTreeMap<ExprId, ExprId>,
-    _calls: &BTreeMap<ExprId, RuntimeResolvedCall>,
     expression_types: &BTreeMap<ExprId, RuntimeNormalizedType>,
     instance_owned: &BTreeSet<ExprId>,
 ) -> Result<(), RuntimeSemanticFactsError> {
@@ -9308,6 +9351,11 @@ fn validate_project_function_semantic_catalog(
         }
     }
     for capture in semantics.captures() {
+        if !exact.capture_plan().contains(capture.projection()) {
+            return Err(RuntimeSemanticFactsError::InvalidCaptureProjection {
+                capture: capture.capture(),
+            });
+        }
         validate_normalized_type(modules, capture.ty())?;
     }
 
@@ -9832,6 +9880,10 @@ fn validate_closure_instance(
     let HirExprKind::Closure(hir) = resolve_expr(modules, owner)? else {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
     };
+    let expected_captures = runtime_owners
+        .executable_owners(&HirRuntimeExecutableOwner::Closure(owner))
+        .ok_or(RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?
+        .capture_plan();
     let module = module_for(modules, owner.module())?;
     let source = module
         .source_site(
@@ -9862,7 +9914,7 @@ fn validate_closure_instance(
         || closure.scope() != hir.scope()
         || closure.body() != hir.body()
         || closure.parameters().len() != hir.parameters().len()
-        || closure.captures().len() != hir.captures().len()
+        || closure.captures().len() != expected_captures.len()
         || outer.expression_type(owner) != Some(closure.function_type())
     {
         return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
@@ -9880,14 +9932,16 @@ fn validate_closure_instance(
             return Err(RuntimeSemanticFactsError::InvalidProjectFunctionInstance);
         }
     }
-    for (position, (runtime, capture)) in closure.captures().iter().zip(hir.captures()).enumerate()
+    for (position, (runtime, capture)) in
+        closure.captures().iter().zip(expected_captures).enumerate()
     {
         let checked = module
-            .resolve_capture(*capture)
+            .resolve_capture(capture.capture())
             .map_err(|_| RuntimeSemanticFactsError::InvalidProjectFunctionInstance)?;
         if u32::try_from(position).ok() != Some(runtime.position())
-            || runtime.capture() != *capture
+            || runtime.capture() != capture.capture()
             || runtime.source() != checked.local()
+            || runtime.source() != capture.local()
             || outer.local_type(runtime.source()) != Some(runtime.ty())
             || closure
                 .semantics()

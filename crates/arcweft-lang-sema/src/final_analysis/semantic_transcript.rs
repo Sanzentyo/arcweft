@@ -38,7 +38,7 @@ use arcweft_lang_hir::{
     module::HirModule,
     pattern::{HirPatternChild, HirPatternChildRole, HirPatternKind},
     project::{
-        HirExecutableProjectView, HirSemanticBodyLocator, HirSemanticBodyOwner, HirSemanticPathRoot,
+        HirAnalysisProjectView, HirSemanticBodyLocator, HirSemanticBodyOwner, HirSemanticPathRoot,
     },
     stmt::{HirStatementChild, HirStatementChildRole, HirStmtKind},
     symbol::ProjectSymbolTable,
@@ -246,7 +246,7 @@ impl CheckedMatch {
 /// escape the transaction.
 fn build_checked_match_transaction(
     analysis: &FinalSemanticAnalysis,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: ExprId,
     limits: CheckedMatchLimits,
     control: FinalSemanticAnalysisControl<'_>,
@@ -293,7 +293,7 @@ fn build_checked_match_transaction(
 /// content default while the checked callable interfaces are still unsealed.
 pub(crate) fn checked_attached_content_default_expression_digest(
     analysis: &FinalSemanticAnalysis,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: ExprId,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<crate::callable::CheckedAttachedContentDefaultExpressionDigest, SemanticTranscriptError>
@@ -410,7 +410,7 @@ impl FinalSemanticAnalysis {
     /// complete accepted-rooted semantic transaction.
     pub(crate) fn build_checked_match_for_ref(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         reference: CheckedMatchRef,
         limits: CheckedMatchLimits,
@@ -431,7 +431,7 @@ impl FinalSemanticAnalysis {
     /// accepted expression/pattern/statement/body subtree and nested Matches.
     pub(crate) fn build_checked_match_for_ref_with_control(
         &self,
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         reference: CheckedMatchRef,
         limits: CheckedMatchLimits,
@@ -4075,7 +4075,7 @@ flow main(flag: bool) -> String {
         );
         let analysis = crate::final_analysis::tests::analyze(&fixture)
             .expect("Object interpolation with exhaustive Match");
-        let project = fixture.project.executable_view().expect("executable HIR");
+        let project = fixture.project.analysis_view().expect("executable HIR");
         let module = project
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root HIR module");

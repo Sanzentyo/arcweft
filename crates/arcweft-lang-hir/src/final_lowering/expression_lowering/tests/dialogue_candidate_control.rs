@@ -38,6 +38,85 @@ fn assert_candidate_origin<I: HirTypedId>(module: &HirModule, id: I, outer: Expr
 }
 
 #[test]
+fn candidate_provenance_preserves_nested_regions_shared_targets_and_generated_children() {
+    let parsed = parsed_source(
+        "nested-candidate-provenance",
+        &["items[|input: Pair| alice()[|[夢](ゆめ)]]".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
+    assert!(module.is_analysis_ready());
+    let provenance = module.candidate_provenance();
+    let (outer_index, index) = index_candidate(&module, owners[0]);
+    let HirExprKind::Closure(closure) = expression(&module, index.index()).kind() else {
+        panic!("outer Index closure")
+    };
+    let parameter = &closure.parameters()[0];
+    for owner in [
+        SyntheticOwner::Expr(index.index()),
+        SyntheticOwner::Scope(closure.scope()),
+        SyntheticOwner::Pattern(parameter.pattern()),
+        SyntheticOwner::Type(parameter.ty().unwrap()),
+    ] {
+        assert_eq!(provenance.owner_region(owner).unwrap().root(), outer_index);
+    }
+    let nested = closure.body();
+    let HirExprKind::PostfixBracket(postfix) = expression(&module, nested).kind() else {
+        panic!("nested retained choice")
+    };
+    let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates() else {
+        panic!("both nested interpretations")
+    };
+    assert_eq!(
+        provenance
+            .owner_region(SyntheticOwner::Expr(postfix.target()))
+            .unwrap()
+            .root(),
+        outer_index
+    );
+    for root in [*index, *dialogue] {
+        let region = provenance.region(root).unwrap();
+        assert_eq!(region.selector(), nested);
+        assert_eq!(region.parent(), Some(outer_index));
+        assert_eq!(
+            provenance.owner_region(SyntheticOwner::Expr(root)),
+            Some(region)
+        );
+    }
+    let HirExprKind::AttachedContentApplication(application) =
+        expression(&module, *dialogue).kind()
+    else {
+        panic!("nested Dialogue")
+    };
+    let crate::dialogue_application::HirDialogueNodeKind::ContentApplication(ruby) =
+        application.content().nodes()[0].kind()
+    else {
+        panic!("generated Ruby")
+    };
+    assert_eq!(
+        provenance
+            .owner_region(SyntheticOwner::Expr(*ruby))
+            .unwrap()
+            .root(),
+        *dialogue
+    );
+    let shared_outer = match expression(&module, owners[0]).kind() {
+        HirExprKind::PostfixBracket(value) => value.target(),
+        _ => unreachable!(),
+    };
+    assert!(
+        provenance
+            .owner_region(SyntheticOwner::Expr(shared_outer))
+            .is_none()
+    );
+    assert!(
+        module
+            .recovered_owners()
+            .all(|owner| provenance.owner_region(owner).is_some())
+    );
+}
+
+#[test]
 fn closure_candidate_uses_shared_pattern_type_scope_and_local_arenas() {
     let parsed = parsed_source(
         "dialogue-candidate-closure",
@@ -117,15 +196,20 @@ fn closure_candidate_uses_shared_pattern_type_scope_and_local_arenas() {
 
 #[test]
 fn closure_pattern_trailing_input_publishes_in_ordinary_and_candidate_owners() {
-    for (source, candidate, token_count) in [
-        ("items[|[夢](ゆめ)]", true, 3),
-        ("items[|[value] trailing| 0]", true, 1),
-        ("|[value] trailing| 0", false, 1),
-        ("|_ trailing| 0", false, 1),
+    for (source, candidate, token_count, status) in [
+        ("items[|[夢](ゆめ)]", true, 3, HirModuleStatus::Conditional),
+        (
+            "items[|[value] trailing| 0]",
+            true,
+            1,
+            HirModuleStatus::Recovered,
+        ),
+        ("|[value] trailing| 0", false, 1, HirModuleStatus::Recovered),
+        ("|_ trailing| 0", false, 1, HirModuleStatus::Recovered),
     ] {
         let parsed = parsed_source("closure-pattern-trailing-input", &[source.into()]);
         let (module, owners, _) = lower_and_publish(&parsed);
-        assert_eq!(module.status(), HirModuleStatus::Recovered, "{source}");
+        assert_eq!(module.status(), status, "{source}");
         let closure_id = if candidate {
             index_candidate(&module, owners[0]).1.index()
         } else {
@@ -297,7 +381,7 @@ fn if_let_candidate_keeps_binding_scope_and_missing_then_recovery() {
         &["items[if let value = source else fallback]".into()],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(module.status(), HirModuleStatus::Conditional);
 
     let outer = owners[0];
     let (_, index) = index_candidate(&module, outer);

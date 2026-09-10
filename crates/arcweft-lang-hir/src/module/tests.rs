@@ -490,8 +490,7 @@ fn clean_module_retains_the_exact_source_and_all_eight_empty_arenas() {
     let module = build(&parsed, module(1)).unwrap();
 
     assert_eq!(module.status(), HirModuleStatus::Clean);
-    assert!(module.is_executable());
-    assert!(module.is_cache_eligible());
+    assert!(module.is_analysis_ready());
     assert!(Arc::ptr_eq(
         module.provenance().document(),
         parsed.document_lease()
@@ -511,8 +510,7 @@ fn parser_recovery_and_its_exact_diagnostics_make_the_module_non_executable() {
     let module = build(&parsed, module(2)).unwrap();
 
     assert_eq!(module.status(), HirModuleStatus::Recovered);
-    assert!(!module.is_executable());
-    assert!(!module.is_cache_eligible());
+    assert!(!module.is_analysis_ready());
     assert_eq!(module.diagnostics().len(), parsed.diagnostics().len());
 }
 
@@ -672,8 +670,7 @@ fn recovery_child_is_the_only_diagnostic_owner_for_its_poisoned_parent_event() {
     let module = fixture.build().expect("one terminal recovery diagnostic");
     assert_eq!(module.status(), HirModuleStatus::Recovered);
     assert_eq!(module.diagnostics().len(), 1);
-    assert!(!module.is_executable());
-    assert!(!module.is_cache_eligible());
+    assert!(!module.is_analysis_ready());
 }
 
 #[test]

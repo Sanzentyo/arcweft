@@ -241,7 +241,7 @@ flow main() -> String {
     // The exact Object grammar requires both `id` and `type`; this malformed
     // metadata-only spelling is rejected while lowering, before sema can
     // publish a call or a compatibility success path.
-    assert!(fixture.project.executable_view().is_err());
+    assert!(fixture.project.analysis_view().is_err());
 }
 
 #[test]
@@ -259,7 +259,7 @@ flow main() -> String {
 "#,
         None,
     );
-    assert!(missing_id.project.executable_view().is_ok());
+    assert!(missing_id.project.analysis_view().is_ok());
     assert!(
         analyze(&missing_id).is_err(),
         "the sema Object owner must reject a clean-HIR call without id"
@@ -278,7 +278,7 @@ flow main() -> String {
 "#,
         None,
     );
-    assert!(missing_type.project.executable_view().is_err());
+    assert!(missing_type.project.analysis_view().is_err());
 }
 
 #[test]
@@ -356,7 +356,7 @@ flow main() -> String {
 "#,
         None,
     );
-    assert!(unknown.project.executable_view().is_ok());
+    assert!(unknown.project.analysis_view().is_ok());
     assert!(analyze(&unknown).is_err());
 }
 
@@ -376,7 +376,7 @@ flow main() -> String {
         None,
     );
     assert!(
-        duplicate.project.executable_view().is_err(),
+        duplicate.project.analysis_view().is_err(),
         "duplicate Object named arguments must remain HIR recovery"
     );
 }
@@ -510,7 +510,7 @@ flow main() -> String {
         None,
     );
     assert!(
-        fixture.project.executable_view().is_err(),
+        fixture.project.analysis_view().is_err(),
         "invalid Object metadata unit must be rejected before semantic analysis"
     );
 }

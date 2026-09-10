@@ -14,11 +14,11 @@ use crate::dialogue_application::{
 use crate::expr::{
     HirCallInvocation, HirExprKind, HirExpressionChildOwnership, HirExpressionChildRole,
 };
-use crate::identity::{ExprId, HirModuleId, TypeId};
+use crate::identity::{ExprId, HirModuleId, SyntheticOwner, TypeId};
 use crate::module::HirModule;
 
 use super::{
-    HirExecutableProjectView, HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
+    HirAnalysisProjectView, HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
     HirRuntimeSemanticReachability,
 };
 
@@ -37,7 +37,7 @@ pub(super) struct HirSelectedRuntimeExpressionOwners {
 #[derive(Debug, Eq, PartialEq)]
 pub struct HirSelectedExpressionGraph {
     topology: Arc<HirProjectEvaluationTopology>,
-    owners: BTreeSet<ExprId>,
+    owners: BTreeSet<SyntheticOwner>,
     edges: BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
     type_roots: BTreeSet<TypeId>,
 }
@@ -123,12 +123,47 @@ impl HirSelectedCallExpressionInventory {
 }
 
 impl HirSelectedExpressionGraph {
+    /// Whether an arena owner belongs to the selected interpretations in this
+    /// graph. Expression membership also observes the accepted call inventory.
+    pub fn contains_owner(&self, owner: SyntheticOwner) -> bool {
+        self.owners.contains(&owner)
+    }
+
+    /// Tests interpretation containment independently of expression disposition.
+    /// A reference-only callee is still subject to its required syntax region.
+    pub fn selects_owner_region(&self, owner: SyntheticOwner) -> bool {
+        let Some(module) = self.topology.module(owner.module()) else {
+            return false;
+        };
+        let provenance = module.candidate_provenance();
+        let mut region = provenance.owner_region(owner);
+        while let Some(current) = region {
+            if !self
+                .expression_edges(current.selector())
+                .iter()
+                .any(|edge| {
+                    matches!(edge, HirExpressionEvaluationEdge::Expression { role, child, .. }
+                    if role == &current.interpretation().edge_role() && *child == current.root())
+                })
+            {
+                return false;
+            }
+            region = current
+                .parent()
+                .and_then(|parent| provenance.region(parent));
+        }
+        true
+    }
+
     pub fn topology(&self) -> &Arc<HirProjectEvaluationTopology> {
         &self.topology
     }
 
     pub fn expression_owners(&self) -> impl Iterator<Item = ExprId> + '_ {
-        self.owners.iter().copied()
+        self.owners.iter().filter_map(|owner| match owner {
+            SyntheticOwner::Expr(owner) => Some(*owner),
+            _ => None,
+        })
     }
 
     /// Returns whether this exact checked graph selected one expression owner.
@@ -138,7 +173,7 @@ impl HirSelectedExpressionGraph {
     /// acceptance distinguish an outer postfix source site from its selected
     /// synthetic dialogue candidate.
     pub fn contains_expression(&self, owner: ExprId) -> bool {
-        self.owners.contains(&owner)
+        self.owners.contains(&SyntheticOwner::Expr(owner))
     }
 
     pub fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
@@ -207,6 +242,8 @@ pub enum HirSelectedExpressionInventoryError {
     InvalidSelectedCallArguments { expression: ExprId },
     #[error("selected expression traversal did not close over its ordered owning edges")]
     InvalidSelectedGraph,
+    #[error("selected syntax region contains recovered HIR owner {owner:?}")]
+    RecoveredOwner { owner: SyntheticOwner },
 }
 
 /// Accepted use of a final-HIR call callee in runtime lowering.
@@ -240,7 +277,7 @@ pub enum HirRuntimeExpressionProjection {
     },
 }
 
-impl HirExecutableProjectView<'_> {
+impl HirAnalysisProjectView<'_> {
     /// Returns the exact expression graph reachable after bounded postfix
     /// ambiguity has been resolved by the supplied accepted decisions.
     ///
@@ -278,12 +315,73 @@ impl HirExecutableProjectView<'_> {
         {
             return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
         }
-        Ok(HirSelectedExpressionGraph {
+        let mut graph = HirSelectedExpressionGraph {
             topology: Arc::clone(topology),
-            owners: traversal.typed,
+            owners: traversal
+                .typed
+                .into_iter()
+                .map(SyntheticOwner::Expr)
+                .collect(),
             edges: traversal.edges,
             type_roots: traversal.type_roots,
-        })
+        };
+        for (_, module) in self.modules() {
+            for owner in module.slots().poisoned_live_owners() {
+                if graph.selects_owner_region(owner) {
+                    return Err(HirSelectedExpressionInventoryError::RecoveredOwner { owner });
+                }
+            }
+            for (owner, statement) in module.statements() {
+                if super::HirControlTransferKind::from_statement(statement.kind()).is_some()
+                    && graph.selects_owner_region(SyntheticOwner::Stmt(owner))
+                    && !topology
+                        .control_transfer_row(owner)
+                        .is_ok_and(|row| row.target().is_ok())
+                {
+                    return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+                }
+            }
+            let selected = module
+                .items()
+                .map(|(owner, _)| SyntheticOwner::Item(owner))
+                .chain(
+                    module
+                        .statements()
+                        .map(|(owner, _)| SyntheticOwner::Stmt(owner)),
+                )
+                .chain(
+                    module
+                        .patterns()
+                        .map(|(owner, _)| SyntheticOwner::Pattern(owner)),
+                )
+                .chain(module.types().map(|(owner, _)| SyntheticOwner::Type(owner)))
+                .chain(
+                    module
+                        .locals()
+                        .map(|(owner, _)| SyntheticOwner::Local(owner)),
+                )
+                .chain(
+                    module
+                        .scopes()
+                        .map(|(owner, _)| SyntheticOwner::Scope(owner)),
+                )
+                .filter(|owner| graph.selects_owner_region(*owner))
+                .collect::<Vec<_>>();
+            graph.owners.extend(selected);
+            let captures = module
+                .captures()
+                .filter(|(_, capture)| {
+                    graph.contains_expression(capture.closure())
+                        && capture.uses().iter().any(|use_site| {
+                            graph
+                                .selects_owner_region(SyntheticOwner::Expr(use_site.site().owner()))
+                        })
+                })
+                .map(|(owner, _)| SyntheticOwner::Capture(owner))
+                .collect::<Vec<_>>();
+            graph.owners.extend(captures);
+        }
+        Ok(graph)
     }
 
     pub(super) fn selected_runtime_expression_owners(
@@ -512,7 +610,7 @@ impl HirExecutableProjectView<'_> {
 }
 
 fn selected_expression_modules(
-    view: HirExecutableProjectView<'_>,
+    view: HirAnalysisProjectView<'_>,
 ) -> BTreeMap<HirModuleId, &HirModule> {
     view.modules()
         .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -533,7 +631,7 @@ fn selected_expression_pending(
 }
 
 fn selected_expression_excluded_roots(
-    view: HirExecutableProjectView<'_>,
+    view: HirAnalysisProjectView<'_>,
     domain: SelectedExpressionDomain,
 ) -> BTreeSet<ExprId> {
     if domain == SelectedExpressionDomain::RuntimeType {
@@ -1119,7 +1217,7 @@ fn enqueue_expression_edges(
 }
 
 fn validate_selection_topology(
-    view: HirExecutableProjectView<'_>,
+    view: HirAnalysisProjectView<'_>,
     topology: &HirProjectEvaluationTopology,
 ) -> Result<(), HirSelectedExpressionInventoryError> {
     if topology.package() != view.package() {

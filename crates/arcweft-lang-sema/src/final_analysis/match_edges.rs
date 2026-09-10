@@ -29,8 +29,7 @@ use arcweft_lang_hir::{
 use super::{
     CheckedExpressionResolution, CheckedMethodSelection, CheckedTryOperandAuthorityViolation,
     ExprId as SemaExprId, FinalCallSealFailure, FinalCallSealLocation, FinalSemanticAnalysis,
-    FinalSemanticAnalysisError, HirExecutableProjectView, HirModuleId, SemanticFactFamily,
-    TypeKind,
+    FinalSemanticAnalysisError, HirAnalysisProjectView, HirModuleId, SemanticFactFamily, TypeKind,
 };
 use crate::callable::{
     CheckedCallSite, CheckedCallableCatalog, CheckedCallableJoin, CheckedCallableJoinError,
@@ -43,6 +42,9 @@ use crate::semantic_coordinate::{
 };
 
 mod model;
+
+#[cfg(test)]
+mod tests;
 
 pub use model::{
     CheckedChildEdgeError, CheckedExpressionChildEdge, CheckedExpressionEdgeError,
@@ -125,7 +127,7 @@ pub(super) struct CheckedSelectedExpressionGraph {
 
 impl CheckedSelectedExpressionGraph {
     pub(super) fn seal(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         prepared_calls: &super::analyzer::AnalyzerPreparedCallGraph,
@@ -218,7 +220,7 @@ impl CheckedSelectedExpressionGraph {
     /// syntax or final expression membership.
     #[cfg(test)]
     pub(super) fn seal_call_free_fixture(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
     ) -> Result<Self, FinalSemanticAnalysisError> {
@@ -232,7 +234,7 @@ impl CheckedSelectedExpressionGraph {
     }
 
     fn seal_with_call_inventory(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         topology: Arc<HirProjectEvaluationTopology>,
         expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
         fx_body_obligations: &super::analyzer::PreparedFxDefinitionBodyObligations,
@@ -322,6 +324,9 @@ impl CheckedSelectedExpressionGraph {
                 HirSelectedExpressionInventoryError::InvalidSelectedGraph => {
                     FinalSemanticAnalysisError::WrongPayloadFamily
                 }
+                HirSelectedExpressionInventoryError::RecoveredOwner { .. } => {
+                    FinalSemanticAnalysisError::RecoveredOwner
+                }
             }
             })?;
         let fx_body_expressions = fx_body_obligations.owners().collect::<BTreeSet<_>>();
@@ -353,6 +358,10 @@ impl CheckedSelectedExpressionGraph {
 
     pub(super) fn topology(&self) -> &Arc<HirProjectEvaluationTopology> {
         self.graph.topology()
+    }
+
+    pub(super) fn contains_owner(&self, owner: arcweft_lang_hir::identity::SyntheticOwner) -> bool {
+        self.graph.contains_owner(owner)
     }
 
     pub(super) const fn dialogue_lines(

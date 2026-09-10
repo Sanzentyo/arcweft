@@ -174,7 +174,7 @@ flow main() -> String {
 "#,
         None,
     );
-    let executable = fixture.project.executable_view().expect("executable HIR");
+    let executable = fixture.project.analysis_view().expect("executable HIR");
     let (_, module) = executable.modules().next().expect("root HIR module");
     let (_, expression) = module
         .expressions()
@@ -370,7 +370,7 @@ fn n17_coordinate_issuer_rejects_a_stale_hir_generation() {
     let first_report = analyze(&first_fixture).expect("first generation is checked");
     let first_project = first_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("first project");
     let first_module = first_project
         .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
@@ -397,7 +397,7 @@ fn n17_coordinate_issuer_rejects_a_stale_hir_generation() {
     let stale_fixture = fixture(&one_mark_source("first", "first"), None);
     let stale_project = stale_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("stale project");
     assert!(index.dialogue_mark(stale_project, mark).is_err());
 }

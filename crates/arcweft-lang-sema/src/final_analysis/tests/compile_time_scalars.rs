@@ -447,7 +447,7 @@ flow main() -> String {
         None,
     );
     assert!(
-        fixture.project.executable_view().is_err(),
+        fixture.project.analysis_view().is_err(),
         "invalid Object metadata unit must be rejected before semantic analysis"
     );
 }

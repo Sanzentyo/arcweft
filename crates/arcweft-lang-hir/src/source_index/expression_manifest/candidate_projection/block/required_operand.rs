@@ -36,7 +36,7 @@ impl RequiredOperandFamily {
     }
 }
 
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     pub(super) fn validate_required_operand_statement(
         &mut self,
         source: AttachedCandidateStatement<'_>,

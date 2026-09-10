@@ -336,7 +336,7 @@ fn completion<K: FragmentSpec>(text: &str, build: &GrammarBuild) -> ParseComplet
         ParseCompletion::Incomplete {
             expected: vec![ExpectedToken::new(expected)],
         }
-    } else if build.has_recovery() {
+    } else if build.recovery_status() == crate::incremental::ParseStatus::Recovered {
         ParseCompletion::Invalid
     } else {
         ParseCompletion::Complete

@@ -1381,7 +1381,7 @@ pub(crate) fn verify_compiled_project(
     compiled: &CompiledProject,
     policy: VerificationPolicy,
 ) -> Result<VerificationReport, ExitCode> {
-    let project = compiled.hir_project().executable_view().map_err(|error| {
+    let project = compiled.hir_project().analysis_view().map_err(|error| {
         eprintln!("error: compiled HIR project is not executable: {error}");
         ExitCode::FAILURE
     })?;

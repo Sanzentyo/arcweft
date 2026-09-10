@@ -249,10 +249,11 @@ pub(super) fn expression_requirements(
                         HirExprSourceRole::Hash,
                         Required,
                     );
-                    if matches!(
+                    if !matches!(
                         projection.content(),
-                        SyntaxDialogueContentProjection::Present(_)
-                            | SyntaxDialogueContentProjection::RawLiteral(_)
+                        SyntaxDialogueContentProjection::Missing {
+                            boundary: SyntaxDialogueContentRecoveryBoundary::Inline { .. }
+                        }
                     ) {
                         add_expression_requirement(
                             &mut requirements,

@@ -19,7 +19,7 @@ fn assert_outer_expression_failure_rolls_back_call_publication(
 ) {
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -58,7 +58,7 @@ fn assert_outer_expression_failure_rolls_back_call_publication(
 
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -226,7 +226,7 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -250,14 +250,14 @@ fn candidate_call_keeps_nested_ordinary_call_on_candidate_context() {
         .expect("nested ordinary calls");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .expect("analyzer");
-    analyzer.resolve_all_types().expect("types");
-    analyzer.seed_local_types().expect("locals");
+    analyzer.resolve_region_types(None).expect("types");
+    analyzer.seed_local_types(None).expect("locals");
     let staged = analyzer
         .stage_checked_callables()
         .expect("checked callables");
@@ -315,7 +315,7 @@ fn selected_call_publishes_one_prepared_graph_node() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -360,7 +360,7 @@ fn multi_group_function_values_use_initializer_origin_and_shared_dependency() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -442,7 +442,7 @@ fn direct_nested_function_value_call_uses_inner_graph_site() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -522,7 +522,7 @@ fn independent_function_parameter_value_applies_without_prepared_dependency() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -574,7 +574,7 @@ fn terminal_function_result_enters_independent_origin_without_dependency() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -649,7 +649,7 @@ fn three_group_function_values_follow_prepared_adjacency() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -738,7 +738,7 @@ fn block_local_inference_rolls_back_with_its_candidate_expression() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -755,14 +755,14 @@ fn block_local_inference_rolls_back_with_its_candidate_expression() {
         .expect("block local");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .expect("analyzer");
-    analyzer.resolve_all_types().expect("types");
-    analyzer.seed_local_types().expect("declaration locals");
+    analyzer.resolve_region_types(None).expect("types");
+    analyzer.seed_local_types(None).expect("declaration locals");
     analyzer.staged_callables = Some(analyzer.stage_checked_callables().expect("callables"));
     assert!(!analyzer.facts.locals().contains_key(&local));
     let expressions_before = analyzer.facts.expressions().clone();
@@ -803,7 +803,7 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -815,14 +815,14 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
         .expect("call expression");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .expect("analyzer");
-    analyzer.resolve_all_types().expect("types");
-    analyzer.seed_local_types().expect("locals");
+    analyzer.resolve_region_types(None).expect("types");
+    analyzer.seed_local_types(None).expect("locals");
     let staged = analyzer.stage_checked_callables().expect("callables");
     for (owner, fact) in &staged.effect_expressions {
         analyzer
@@ -923,7 +923,7 @@ fn postfix_both_fail_rolls_back_both_candidate_subgraphs_and_guard() {
     let fixture = crate::final_analysis::tests::fixture("fn caller() { 1[true]; }\n", None);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -941,7 +941,7 @@ fn postfix_both_fail_rolls_back_both_candidate_subgraphs_and_guard() {
     let target = postfix.target();
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -972,7 +972,7 @@ fn postfix_ambiguous_rolls_back_both_successful_candidate_rows() {
     );
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -990,7 +990,7 @@ fn postfix_ambiguous_rolls_back_both_successful_candidate_rows() {
     let dialogue = *dialogue;
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -1058,7 +1058,7 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
     let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -1070,7 +1070,7 @@ fn contextual_literal_cache_rewrite_rolls_back_and_retry_replaces_baseline() {
         .expect("literal expression");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -1110,7 +1110,7 @@ fn uncached_expression_failure_retry_cleans_structured_guard() {
     let fixture = crate::final_analysis::tests::fixture("fn caller() { missing; }\n", None);
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -1122,7 +1122,7 @@ fn uncached_expression_failure_retry_cleans_structured_guard() {
         .expect("unresolved path expression");
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -1151,7 +1151,7 @@ fn function_value_origin_query_resumes_exact_checked_owner() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -1162,7 +1162,7 @@ fn function_value_origin_query_resumes_exact_checked_owner() {
         .expect("alias function-value analysis");
     let module = fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
@@ -1261,13 +1261,13 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
     );
     let independent_module = independent_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
     let independent_topology = independent_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .accept_symbol_generation(&independent_fixture.symbols)
         .expect("accepted HIR generation")
@@ -1317,13 +1317,13 @@ fn function_value_origin_query_classifies_independent_parameters_and_cycles() {
         crate::final_analysis::tests::fixture("fn caller() { let x = x; x(1i64); }\n", None);
     let cycle_module = cycle_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .module(&CanonicalModulePath::crate_root())
         .expect("root HIR module");
     let cycle_topology = cycle_fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .accept_symbol_generation(&cycle_fixture.symbols)
         .expect("accepted HIR generation")
@@ -1378,7 +1378,7 @@ fn lexical_function_parameter_issues_top_level_prepared_identity() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -1416,14 +1416,14 @@ fn evaluator_records_implicit_and_explicit_capture_modes_on_terminal_facts() {
     );
     let cancellation = AtomicBool::new(false);
     let mut analyzer = Analyzer::new(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
     )
     .expect("analyzer");
-    analyzer.resolve_all_types().expect("resolved types");
-    analyzer.seed_local_types().expect("seeded locals");
+    analyzer.resolve_region_types(None).expect("resolved types");
+    analyzer.seed_local_types(None).expect("seeded locals");
     let staged = analyzer
         .stage_checked_callables()
         .expect("staged checked callables");
@@ -1535,7 +1535,7 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
         let fixture = crate::final_analysis::tests::fixture(source, None);
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&CanonicalModulePath::crate_root())
             .expect("root module");
@@ -1555,14 +1555,14 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
             .expect("alias use");
         let cancellation = AtomicBool::new(false);
         let mut analyzer = Analyzer::new(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             FinalSemanticCatalogs::production(&fixture.registered),
             FinalSemanticAnalysisControl::new(&cancellation),
         )
         .expect("analyzer");
-        analyzer.resolve_all_types().expect("resolved types");
-        analyzer.seed_local_types().expect("seeded locals");
+        analyzer.resolve_region_types(None).expect("resolved types");
+        analyzer.seed_local_types(None).expect("seeded locals");
         let staged = analyzer
             .stage_checked_callables()
             .expect("staged checked callables");
@@ -1660,7 +1660,7 @@ fn function_value_origin_retains_terminal_captures_through_aliases() {
 
         let foreign_topology = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .accept_symbol_generation(&fixture.symbols)
             .expect("accepted HIR generation")

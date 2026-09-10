@@ -2,6 +2,7 @@
 
 mod call;
 pub(in crate::source_index) mod candidate_projection;
+mod capture;
 mod desugaring;
 mod dialogue_projection;
 pub(super) mod leaf;
@@ -270,7 +271,7 @@ impl HirSourceIndex {
         clippy::too_many_lines,
         reason = "one exhaustive projection validates every source-backed and synthetic expression owner across the complete arena context"
     )]
-    pub(crate) fn validates_attached_expressions(
+    pub(crate) fn validate_attached_expressions(
         &self,
         parsed: &ParsedSource,
         slots: &SlotSnapshot,
@@ -281,11 +282,15 @@ impl HirSourceIndex {
         scopes: &ArenaSnapshot<crate::scope::HirScope, crate::identity::ScopeId>,
         locals: &ArenaSnapshot<crate::scope::HirLocal, crate::identity::LocalId>,
         patterns: &ArenaSnapshot<crate::pattern::HirPattern, crate::identity::PatternId>,
-    ) -> bool {
+        captures: &ArenaSnapshot<crate::scope::HirCapture, crate::identity::CaptureId>,
+    ) -> Option<(
+        super::HirCandidateProvenance,
+        candidate_projection::CandidateSourceComponents,
+    )> {
         let Some(local_resolver) =
             crate::module::HirLocalResolver::prepared(slots, scopes, locals, statements)
         else {
-            return false;
+            return None;
         };
         let block_arenas = super::block_projection::BlockValidationArenas {
             expressions,
@@ -294,8 +299,16 @@ impl HirSourceIndex {
             locals,
             patterns,
         };
+        let mut capture_validation = capture::CaptureValidation::new(
+            slots,
+            scopes,
+            locals,
+            statements,
+            captures,
+            &local_resolver,
+        )?;
         let Ok(entries) = expressions.try_iter_prepared(slots) else {
-            return false;
+            return None;
         };
         let entries = entries.collect::<Vec<_>>();
         let mut content_call_context = entries
@@ -357,16 +370,17 @@ impl HirSourceIndex {
             };
             application.is_content_call() != content_call_owners.contains(owner)
         }) {
-            return false;
+            return None;
         }
         let expression_rows = ExpressionManifestRows::from_index(self);
         let Some(retained_style_expressions) =
             super::item_projection::retained_style_expression_owners(items, slots)
         else {
-            return false;
+            return None;
         };
         let Some(candidate_projection::CandidateExpressionAdmission {
-            expressions: candidate_expressions,
+            provenance,
+            source_components,
             mut desugared,
         }) = candidate_projection::validate_candidate_expressions(
             self,
@@ -381,9 +395,10 @@ impl HirSourceIndex {
             patterns,
             &local_resolver,
             &retained_style_expressions,
+            &mut capture_validation,
         )
         else {
-            return false;
+            return None;
         };
         if !entries.iter().all(|(owner, payload)| {
             let owner = *owner;
@@ -421,6 +436,9 @@ impl HirSourceIndex {
                                 payload.kind(),
                                 &attached,
                             )
+                            && capture_validation
+                                .attached(owner, payload, &attached)
+                                .is_some()
                             && expression_children_match(
                                 self,
                                 parsed,
@@ -461,19 +479,25 @@ impl HirSourceIndex {
                         == SyntheticRole::DialogueContentCandidateExpression
                         && key.ordinal() == 0
                         && matches!(payload.kind(), HirExprKind::AttachedContentApplication(_));
-                    (!candidate_role || candidate_expressions.contains(&owner))
+                    (!candidate_role || provenance.contains(SyntheticOwner::Expr(owner)))
                         && (expression_rows.has_owner(owner) == candidate_dialogue_source)
                 }
             };
             valid
         }) {
-            return false;
+            return None;
         }
 
-        desugaring::desugared_expression_slots_match(slots, &desugared)
+        let derived_types = self.validated_content_call_types(slots, expressions, types)?;
+        let provenance = provenance.with_derived_owners(derived_types.into_iter().map(
+            |(owner, producer)| (SyntheticOwner::Type(owner), SyntheticOwner::Expr(producer)),
+        ))?;
+        (capture_validation.complete()
+            && desugaring::desugared_expression_slots_match(slots, &desugared)
             && entries.iter().all(|(child, _)| {
                 expr_recovery_operand_is_referenced(parsed, slots, expressions, *child)
-            })
+            }))
+        .then_some((provenance, source_components))
     }
 }
 

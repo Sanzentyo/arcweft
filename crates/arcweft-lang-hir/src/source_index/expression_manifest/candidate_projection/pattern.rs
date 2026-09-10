@@ -50,7 +50,7 @@ struct PatternBindingValidation<'a> {
     generations: &'a mut BTreeMap<HirName, LocalGeneration>,
 }
 
-impl CandidateValidationCursor<'_> {
+impl CandidateValidationCursor<'_, '_> {
     pub(super) fn validate_pattern_binding(
         &mut self,
         source: AttachedCandidatePatternProjection<'_>,
@@ -99,10 +99,16 @@ impl CandidateValidationCursor<'_> {
             || metadata.source_site() != &site
             || payload.scope() != scope
             || self.source_index_has_typed_owner(SyntheticOwner::Pattern(owner))
-            || !self.expected.patterns.insert(owner)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Pattern(owner), self.region)
         {
             return None;
         }
+        self.expected
+            .source_components
+            .pattern(self.parsed, owner, payload.kind(), source)?;
         Some(owner)
     }
 
@@ -557,7 +563,10 @@ impl CandidateValidationCursor<'_> {
             || payload.is_mutable_binding() != mutable
             || payload.is_poisoned() != poisoned
             || self.source_index_has_typed_owner(SyntheticOwner::Local(expected))
-            || !self.expected.locals.insert(expected)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Local(expected), self.region)
         {
             return Some(false);
         }

@@ -313,7 +313,7 @@ impl<'a> ViewProjectLowerer<'a> {
     pub(crate) fn lower(self) -> Result<CompiledViewProduct, ViewProjectLowerError> {
         let executable = self
             .hir_project
-            .executable_view()
+            .analysis_view()
             .map_err(|_| ViewProjectLowerError::SemanticGenerationMismatch)?;
         let authored = lower_authored_views(
             executable,
@@ -519,7 +519,7 @@ fn checked_view_modifier_projection(
 }
 
 fn lower_authored_views(
-    project: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    project: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
     registered_world: &RegisteredSemanticWorld,
     fx_catalog: &CompiledFxCatalog,
@@ -1128,15 +1128,11 @@ impl AuthoredViewBodyLowerer<'_> {
         if closure.owner() != handler_source || handler_type != &expected_handler {
             return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
         }
-        if hir_closure.captures().len() != closure.captures().len() {
-            return Err(ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner });
-        }
-        let captures = hir_closure
+        let captures = closure
             .captures()
             .iter()
-            .copied()
-            .zip(closure.captures())
-            .map(|(capture_id, capture)| {
+            .map(|capture| {
+                let capture_id = capture.capture();
                 if capture.mode() != CaptureAccess::Read {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                         owner: self.owner,
@@ -1171,9 +1167,7 @@ impl AuthoredViewBodyLowerer<'_> {
                 let hir_capture = self.module.resolve_capture(capture_id).map_err(|_| {
                     ViewProjectLowerError::MissingCheckedViewProjection { owner: self.owner }
                 })?;
-                if hir_capture.closure() != handler_source
-                    || hir_capture.local() != capture.local()
-                    || hir_capture.access() != capture.mode()
+                if hir_capture.closure() != handler_source || hir_capture.local() != capture.local()
                 {
                     return Err(ViewProjectLowerError::MissingCheckedViewProjection {
                         owner: self.owner,

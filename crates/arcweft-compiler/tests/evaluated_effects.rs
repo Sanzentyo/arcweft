@@ -61,6 +61,374 @@ fn object_proxy(compiled: &CompiledProject) -> &RichTextObjectProxy {
 }
 
 #[test]
+fn ruby_content_with_a_recovered_closure_candidate_reaches_verified_awbc() {
+    for ruby in ["|[夢](ゆめ)", "｜夢《ゆめ》"] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow main() -> Unit {{ alice()[{ruby}] }}\nentry cli @entry.main {{ goto @flow.main }}\n",
+        );
+        let compiled = compile_attached_dialogue_project(&source).expect(
+            "the clean Dialogue interpretation compiles independently of recovered Index syntax",
+        );
+        let runtime_plan = compiled.runtime_plan();
+        let [template] = runtime_plan.dialogue_content_catalog.templates() else {
+            panic!("fixture publishes one dialogue template");
+        };
+        assert_eq!(
+            template.content().nodes,
+            vec![RichTextNode::Ruby {
+                body: vec![RichTextNode::Text { text: "夢".into() }],
+                ruby: "ゆめ".into(),
+            }]
+        );
+        assert_candidate_program_executes_in_native_and_awbc(&compiled);
+    }
+}
+
+fn assert_single_dialogue_execution(
+    executor: &mut impl arcweft_core::executor::RuntimeExecutor,
+    template: arcweft_core::runtime_id::RuntimeDialogueContentTemplateId,
+) {
+    use arcweft_core::{
+        engine::{FlowExit, FlowFiberStatus},
+        plan::FlowEvent,
+        step::{RuntimeStepInput, RuntimeStepOptions},
+        time::TickId,
+    };
+    let mut advances = Vec::new();
+    let mut seen = 0;
+    for tick in 0..256 {
+        let output = executor
+            .step(
+                RuntimeStepInput {
+                    tick: TickId(tick),
+                    dialogue_advances: std::mem::take(&mut advances),
+                    ..RuntimeStepInput::default()
+                },
+                RuntimeStepOptions::default(),
+            )
+            .output;
+        assert!(output.diagnostics.is_empty(), "{:?}", output.diagnostics);
+        for event in output.flow_events {
+            if let FlowEvent::DialogueLine {
+                activation,
+                template: actual,
+                values,
+                ..
+            } = event
+            {
+                assert_eq!(actual, template);
+                assert!(
+                    values.is_empty(),
+                    "the fixture retains all static content in its selected template"
+                );
+                seen += 1;
+                advances.push(activation);
+            }
+        }
+        match &executor.fiber().status {
+            FlowFiberStatus::Running | FlowFiberStatus::Dialogue(_) => {}
+            FlowFiberStatus::Done(exit) => {
+                assert_eq!(*exit, FlowExit::Done);
+                assert_eq!(seen, 1, "the selected line executes once");
+                return;
+            }
+            status => panic!("execution stopped unexpectedly: {status:?}"),
+        }
+    }
+    panic!("execution exceeded its deterministic step bound");
+}
+
+fn assert_candidate_program_executes_in_native_and_awbc(compiled: &CompiledProject) {
+    let runtime = compiled.runtime_plan();
+    let [template] = runtime.dialogue_content_catalog.templates() else {
+        panic!("one selected template")
+    };
+    let report = AwbcLowerer::new(
+        &runtime.plan,
+        &runtime.dialogue_content_catalog,
+        "candidate_execution.arcw",
+    )
+    .lower()
+    .expect("verified AWBC");
+    let bytes = report.program.encode_canonical().unwrap();
+    let decoded = arcweft_core::awbc::schema::AwbcProgram::decode_canonical(
+        &bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .unwrap();
+    assert_eq!(decoded, report.program);
+    let [flow] = runtime.plan.flows() else {
+        panic!("one flow")
+    };
+    let mut plan = runtime.plan.clone();
+    plan.bind_artifact(
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes(
+            *blake3::hash(&bytes).as_bytes(),
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut native = arcweft_core::engine::Engine::for_flow(plan, &flow.id).unwrap();
+    assert_single_dialogue_execution(&mut native, template.id());
+    let mut awbc = arcweft_core::executor::ArcweftRuntimeExecutor::from_awbc_product(
+        decoded,
+        arcweft_core::awbc::schema::AwbcEntryId(0),
+    )
+    .unwrap();
+    assert_single_dialogue_execution(&mut awbc, template.id());
+}
+
+#[test]
+fn candidate_generated_content_types_follow_their_selected_producer() {
+    for scope in ["", "scope nested "] {
+        let source = format!(
+            "#[text_proxy(role = \"keyword\", hit_test = true, channel = \"fallback\")]\npub struct KeywordHit {{ channel: String, weight: Option<i64> }}\npub character alice {{ display = \"Alice\" }}\nflow main() -> Unit {{ let values = [1i64]; let observed = values[{scope}{{ alice()[Before #object(id=@.hotspot, type=KeywordHit, weight=3)[typed]]; 0i64 }}]; assert.check(observed == 1i64); }}\nentry cli @entry.main {{ goto @flow.main }}\n"
+        );
+        let selected = compile_attached_dialogue_project(&source)
+            .expect("a selected Index may contain a typed Content call and named scope");
+        let (selector, choice) = selected
+            .final_analysis()
+            .expressions()
+            .find_map(|(owner, expression)| match expression.resolution() {
+                CheckedExpressionResolution::PostfixBracket(choice) => Some((owner, choice)),
+                _ => None,
+            })
+            .expect("retained Index/Dialogue alternatives");
+        let module = selected
+            .hir_project()
+            .view()
+            .modules()
+            .find_map(|(_, module)| (module.module_id() == selector.module()).then_some(module))
+            .unwrap();
+        let chosen = module
+            .candidate_provenance()
+            .region(choice.candidate())
+            .unwrap();
+        assert_eq!(
+            chosen.interpretation(),
+            arcweft_lang_hir::source_index::HirPostfixInterpretation::Index
+        );
+        let rejected = module
+            .candidate_provenance()
+            .regions()
+            .find(|region| region.selector() == selector && region.root() != choice.candidate())
+            .unwrap();
+        assert_eq!(
+            rejected.recovery_status(),
+            arcweft_lang_syntax::incremental::ParseStatus::Recovered
+        );
+        assert_eq!(
+            object_proxy(&selected).type_name.as_deref(),
+            Some("KeywordHit")
+        );
+        assert_candidate_program_executes_in_native_and_awbc(&selected);
+    }
+}
+
+#[test]
+fn candidate_local_type_failure_does_not_publish_an_unselected_type() {
+    let compiled = compile_attached_dialogue_project(
+        "pub character alice { display = \"Alice\" }\nflow main() -> Unit { alice()[|value: MissingType| value] }\nentry cli @entry.main { goto @flow.main }\n",
+    ).expect("the valid Dialogue interpretation rejects the Index annotation in its probe");
+    let mut retained_types = 0;
+    for (_, module) in compiled.hir_project().view().modules() {
+        for (owner, _) in module.types() {
+            if module
+                .candidate_provenance()
+                .contains(arcweft_lang_hir::identity::SyntheticOwner::Type(owner))
+            {
+                retained_types += 1;
+                assert!(compiled.final_analysis().ty(owner).is_none());
+                assert!(compiled.final_analysis().type_resolution(owner).is_none());
+            }
+        }
+    }
+    assert_eq!(
+        retained_types, 1,
+        "source tooling retains the rejected annotation"
+    );
+}
+
+#[test]
+fn candidate_control_target_failure_stays_in_the_rejected_interpretation() {
+    for transfer in ["break", "continue", "out 1"] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow main() -> Unit {{ alice()[|| {{ {transfer}; 0 }}] }}\nentry cli @entry.main {{ goto @flow.main }}\n",
+        );
+        let compiled = compile_attached_dialogue_project(&source)
+            .expect("the valid Dialogue interpretation rejects an Index-local control target");
+        let mut rejected = 0;
+        for (_, module) in compiled.hir_project().view().modules() {
+            for (owner, statement) in module.statements() {
+                if arcweft_lang_hir::project::HirControlTransferKind::from_statement(
+                    statement.kind(),
+                )
+                .is_some()
+                {
+                    rejected += 1;
+                    assert!(
+                        module
+                            .candidate_provenance()
+                            .contains(arcweft_lang_hir::identity::SyntheticOwner::Stmt(owner))
+                    );
+                    assert!(compiled.final_analysis().statement(owner).is_none());
+                }
+            }
+        }
+        assert_eq!(rejected, 1);
+    }
+}
+
+#[test]
+fn candidate_only_local_use_does_not_become_an_executable_capture() {
+    let compiled = compile_attached_dialogue_project(
+        "pub character alice { display = \"Alice\" }\nflow main() -> Unit { let unused = 1; let speak = || { alice()[unused]; () }; speak(); }\nentry cli @entry.main { goto @flow.main }\n",
+    ).expect("the closure's Dialogue body compiles");
+    let closures = compiled
+        .final_analysis()
+        .expressions()
+        .filter_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::Closure(closure) => Some(closure),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(closures.len(), 1);
+    assert!(
+        closures[0].captures().is_empty(),
+        "a reference in the rejected Index interpretation is not a runtime capture"
+    );
+    assert_eq!(compiled.final_analysis().captures().len(), 0);
+}
+
+#[test]
+fn candidate_selection_recomputes_capture_order_and_access() {
+    use arcweft_lang_hir::scope::CaptureAccess;
+    for (body, expected, expected_value) in [
+        (
+            "alice()[first]; second * 10 + first",
+            vec!["second", "first"],
+            21,
+        ),
+        ("alice()[|| { first = 99; first }]; first", vec!["first"], 1),
+        ("alice()[Point { first }]; second", vec!["second"], 2),
+    ] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nflow main() -> Unit {{ let mut first = 1; let second = 2; let read = || {{ {body} }}; let observed = read(); assert.check(observed == {expected_value}); }}\nentry cli @entry.main {{ goto @flow.main }}\n"
+        );
+        let compiled =
+            compile_attached_dialogue_project(&source).expect("selected closure captures compile");
+        let closures = compiled
+            .final_analysis()
+            .expressions()
+            .filter_map(|(_, expression)| {
+                if let CheckedExpressionResolution::Closure(closure) = expression.resolution() {
+                    Some(closure)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        let [closure] = closures.as_slice() else {
+            panic!("one selected closure for {body}")
+        };
+        let module = compiled
+            .hir_project()
+            .view()
+            .modules()
+            .find_map(|(_, module)| {
+                (module.module_id() == closure.owner().module()).then_some(module)
+            })
+            .unwrap();
+        let captures = closure
+            .captures()
+            .iter()
+            .map(|capture| {
+                assert_eq!(
+                    capture.mode(),
+                    CaptureAccess::Read,
+                    "a rejected reassignment cannot upgrade a selected read"
+                );
+                assert!(
+                    compiled
+                        .final_analysis()
+                        .capture(capture.capture())
+                        .is_some()
+                );
+                module
+                    .resolve_local(capture.local())
+                    .unwrap()
+                    .name()
+                    .as_str()
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(captures, expected, "selected first-use order for {body}");
+        assert_candidate_program_executes_in_native_and_awbc(&compiled);
+    }
+}
+
+#[test]
+fn candidate_capture_selection_crosses_each_nested_closure() {
+    let compiled = compile_attached_dialogue_project("pub character alice { display = \"Alice\" }\nflow main() -> Unit { let unused = 1; let kept = 2; let outer = || { let inner = || { alice()[unused]; kept }; inner() }; let observed = outer(); }\nentry cli @entry.main { goto @flow.main }\n").expect("nested capture selection compiles");
+    let mut closures = 0;
+    for (_, expression) in compiled.final_analysis().expressions() {
+        if let CheckedExpressionResolution::Closure(closure) = expression.resolution() {
+            closures += 1;
+            let [capture] = closure.captures() else {
+                panic!("each crossed closure needs only the selected external use")
+            };
+            let module = compiled
+                .hir_project()
+                .view()
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == closure.owner().module()).then_some(module)
+                })
+                .unwrap();
+            assert_eq!(
+                module
+                    .resolve_local(capture.local())
+                    .unwrap()
+                    .name()
+                    .as_str(),
+                "kept"
+            );
+        }
+    }
+    assert_eq!(closures, 2);
+    assert_eq!(compiled.final_analysis().captures().len(), 2);
+}
+
+#[test]
+fn candidate_recovery_is_selected_before_callable_execution_role() {
+    for content in ["|[夢](ゆめ)", "{ yield 1; 0 }"] {
+        let source = format!(
+            "pub character alice {{ display = \"Alice\" }}\nfn speak() -> Unit {{ alice()[{content}]; () }}\nflow main() -> Unit {{ speak(); }}\nentry cli @entry.main {{ goto @flow.main }}\n"
+        );
+        let compiled = compile_attached_dialogue_project(&source)
+            .expect("rejected syntax or yield cannot determine the function's execution role");
+        let executions = compiled
+            .final_analysis()
+            .items()
+            .filter_map(|(_, item)| {
+                if let arcweft_lang_sema::final_analysis::CheckedItemRole::Function {
+                    execution,
+                    ..
+                } = item.role()
+                {
+                    Some(execution)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(matches!(
+            executions.as_slice(),
+            [arcweft_lang_sema::final_analysis::CheckedFunctionExecution::DirectFrame]
+        ));
+    }
+}
+
+#[test]
 fn evaluated_effect_operands_reach_awbc_from_final_checked_sources() {
     let compiled = compile_source(
         r#"
@@ -333,7 +701,7 @@ entry cli @entry.main { goto @flow.main }
 
     let executable = compiled
         .hir_project()
-        .executable_view()
+        .analysis_view()
         .expect("compiled project has executable HIR");
     let runtime_owners = project_runtime_reachability(
         executable,

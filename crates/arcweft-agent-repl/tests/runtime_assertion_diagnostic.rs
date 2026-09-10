@@ -121,7 +121,7 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
         .insert_module(project_module)
         .expect("module insertion");
     let project = builder.finish().expect("HIR project");
-    let executable = project.executable_view().expect("executable project");
+    let executable = project.analysis_view().expect("executable project");
     let (flow_owner, statement, condition) = executable
         .items()
         .find_map(|item| {

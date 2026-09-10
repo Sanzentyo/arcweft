@@ -1,6 +1,6 @@
 //! Sans-I/O verification over the accepted final-HIR project generation.
 //!
-//! Verification consumes one executable [`HirExecutableProjectView`], its
+//! Verification consumes one executable [`HirAnalysisProjectView`], its
 //! exact [`ProjectSymbolTable`], and the matching [`FinalSemanticAnalysis`].
 //! It never lowers syntax, links or clones HIR modules, reparses source text,
 //! or rebuilds semantic facts from presentation labels.
@@ -12,7 +12,7 @@ use arcweft_lang_hir::{
     identity::{ExprId, ItemId, StmtId},
     item::{HirItemKind, HirPredicateBody, HirProofBody},
     module::HirModule,
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     source_index::{
         HirDeclarationSourceRole, HirItemSourceRole, HirSourcePresence, HirSourceQuery,
         HirSourceQueryError, HirSourceSite, HirStmtSourceRole,
@@ -590,7 +590,7 @@ pub enum VerificationOwner {
 
 /// Verifies one exact accepted final-HIR generation.
 pub fn verify_project(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     semantics: &FinalSemanticAnalysis,
     policy: VerificationPolicy,
@@ -612,7 +612,7 @@ pub fn verify_project(
 }
 
 struct ProjectVerifier<'project, 'catalog> {
-    project: HirExecutableProjectView<'project>,
+    project: HirAnalysisProjectView<'project>,
     symbols: &'catalog ProjectSymbolTable,
     semantics: &'catalog FinalSemanticAnalysis,
     insertion: VerifierInsertionInventory,
@@ -643,10 +643,19 @@ impl ProjectVerifier<'_, '_> {
                 _ => {}
             }
         }
-        for (_, module) in self.project.modules() {
-            for (owner, statement) in module.statements() {
-                self.collect_statement(module, owner, statement.kind())?;
-            }
+        let modules = self
+            .project
+            .modules()
+            .map(|(_, module)| (module.module_id(), module))
+            .collect::<BTreeMap<_, _>>();
+        for (owner, _) in self.semantics.statements() {
+            let module = modules
+                .get(&owner.module())
+                .ok_or(VerificationInputError::MissingStatementFact { owner })?;
+            let statement = module
+                .resolve_stmt(owner)
+                .map_err(|_| VerificationInputError::MissingStatementFact { owner })?;
+            self.collect_statement(module, owner, statement.kind())?;
         }
         Ok(())
     }

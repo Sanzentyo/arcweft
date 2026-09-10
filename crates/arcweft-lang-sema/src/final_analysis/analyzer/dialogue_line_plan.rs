@@ -1411,8 +1411,11 @@ impl Analyzer<'_, '_, '_> {
             let transfer = self.topology.control_transfer_row(statement).map_err(|_| {
                 AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
             })?;
+            let target = transfer.target().map_err(|error| {
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::ControlTransfer(*error))
+            })?;
             if transfer.kind() != arcweft_lang_hir::project::HirControlTransferKind::Out
-                || transfer.target().output_application() != Some(application)
+                || target.output_application() != Some(application)
             {
                 return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::WrongPayloadFamily,

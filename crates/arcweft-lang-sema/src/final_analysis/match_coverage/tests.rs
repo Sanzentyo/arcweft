@@ -16,7 +16,7 @@ fn literal_domain_limits(max_transcript_bytes: u64) -> CheckedMatchLimits {
 fn statement_ingress_domain_has_only_the_closed_opaque_residual_constructor() {
     let fixture = fixture("fn root() -> i64 { 0i64 }\n", None);
     let analysis = analyze(&fixture).expect("checked statement-ingress domain fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -81,7 +81,7 @@ fn exercise_duplicate_literal_domain(
         None,
     );
     let analysis = analyze(&fixture).expect("checked literal fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -233,7 +233,7 @@ fn recursive_usefulness_distinguishes_covered_cycles_finite_witnesses_and_no_bas
         None,
     );
     let analysis = analyze(&fixture).expect("checked fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -461,7 +461,7 @@ fn variant_witnesses_preserve_unit_tuple_and_name_free_record_rows() {
         None,
     );
     let analysis = analyze(&fixture).expect("checked witness fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -503,7 +503,7 @@ fn invalid_checked_constructor_precedes_the_witness_budget() {
         None,
     );
     let analysis = analyze(&fixture).expect("checked invalid-row fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -618,7 +618,7 @@ fn execute_match_work(
 ) -> Result<CheckedMatchWork, crate::final_analysis::semantic_transcript::SemanticTranscriptError> {
     let fixture = fixture(source, None);
     let analysis = analyze(&fixture).expect("checked executable-limit fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");
@@ -1169,7 +1169,7 @@ fn finite_pattern_oracle_agrees_with_matrix_usefulness() {
         None,
     );
     let analysis = analyze(&fixture).expect("checked oracle fixture");
-    let project = fixture.project.executable_view().expect("executable HIR");
+    let project = fixture.project.analysis_view().expect("executable HIR");
     let module = project
         .module(&CanonicalModulePath::crate_root())
         .expect("root module");

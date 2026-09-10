@@ -10,6 +10,83 @@ use super::ArcweftLspSession;
 use crate::config::LspConfig;
 
 #[test]
+fn conditional_recovery_stays_in_the_source_lease_across_lsp_edits() {
+    use arcweft_lang_syntax::incremental::ParseStatus;
+    use lsp_types::notification::DidChangeTextDocument;
+    use lsp_types::{
+        DidChangeTextDocumentParams, TextDocumentContentChangeEvent,
+        VersionedTextDocumentIdentifier,
+    };
+
+    let uri = "file:///conditional-recovery.arcw".parse::<Uri>().unwrap();
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let valid = "pub character alice { display = \"Alice\" }\nfn speak() -> Unit { alice()[|[夢](ゆめ)]; () }\n";
+    session
+        .handle_notification(Notification::new(
+            DidOpenTextDocument::METHOD.to_owned(),
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "arcweft".into(),
+                    version: 1,
+                    text: valid.into(),
+                },
+            },
+        ))
+        .unwrap();
+    let initial = session.documents.get(&uri).unwrap().parsed_source().clone();
+    assert_eq!(initial.status(), ParseStatus::Conditional);
+    assert!(initial.diagnostics().is_empty());
+    assert!(
+        initial.syntax_stats().diagnostic_identities() > 0,
+        "the rejected candidate's source diagnostics remain retained"
+    );
+
+    for (version, text, expected) in [
+        (
+            2,
+            "fn broken() -> Unit { let value = |_ trailing| 0; () }\n",
+            ParseStatus::Recovered,
+        ),
+        (3, valid, ParseStatus::Conditional),
+    ] {
+        let notifications = session
+            .handle_notification(Notification::new(
+                DidChangeTextDocument::METHOD.to_owned(),
+                DidChangeTextDocumentParams {
+                    text_document: VersionedTextDocumentIdentifier {
+                        uri: uri.clone(),
+                        version,
+                    },
+                    content_changes: vec![TextDocumentContentChangeEvent {
+                        range: None,
+                        range_length: None,
+                        text: text.into(),
+                    }],
+                },
+            ))
+            .unwrap();
+        let current = session.documents.get(&uri).unwrap().parsed_source();
+        assert_eq!(current.status(), expected);
+        assert!(!current.is_same_snapshot(&initial));
+        assert_eq!(
+            current.diagnostics().is_empty(),
+            expected == ParseStatus::Conditional
+        );
+        let published = notifications
+            .iter()
+            .find(|notification| notification.method == "textDocument/publishDiagnostics")
+            .expect("diagnostics publication");
+        let diagnostics: lsp_types::PublishDiagnosticsParams =
+            serde_json::from_value(published.params.clone()).unwrap();
+        let has_pattern_error = diagnostics.diagnostics.iter().any(|diagnostic| matches!(diagnostic.code.as_ref(), Some(lsp_types::NumberOrString::String(code)) if code == "syntax.pattern.unexpected_trailing_input"));
+        assert_eq!(has_pattern_error, expected == ParseStatus::Recovered);
+    }
+    assert_eq!(initial.status(), ParseStatus::Conditional);
+    assert!(initial.diagnostics().is_empty());
+}
+
+#[test]
 fn editless_missing_as_parser_suggestion_does_not_create_a_workspace_edit() {
     let uri = "file:///view.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());

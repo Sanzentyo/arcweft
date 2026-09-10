@@ -707,7 +707,24 @@ impl Drop for ActiveCallFrame {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(super) enum AnalyzerExpressionRejection {
-    Unavailable { owner: ExprId },
+    Unavailable {
+        owner: ExprId,
+    },
+    RecoveredInterpretation {
+        owner: ExprId,
+    },
+    TypeResolution {
+        owner: arcweft_lang_hir::identity::TypeId,
+    },
+    ControlTransfer {
+        error: arcweft_lang_hir::project::HirControlTransferResolutionError,
+    },
+    UnresolvedPostfix {
+        owner: ExprId,
+    },
+    AmbiguousPostfix {
+        owner: ExprId,
+    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -758,6 +775,28 @@ impl AnalyzerExpressionError {
         Self::Rejected(AnalyzerExpressionRejection::Unavailable { owner })
     }
 
+    pub(super) fn recovered_interpretation(owner: ExprId) -> Self {
+        Self::Rejected(AnalyzerExpressionRejection::RecoveredInterpretation { owner })
+    }
+
+    pub(super) fn rejected_type(owner: arcweft_lang_hir::identity::TypeId) -> Self {
+        Self::Rejected(AnalyzerExpressionRejection::TypeResolution { owner })
+    }
+
+    pub(super) fn rejected_control(
+        error: arcweft_lang_hir::project::HirControlTransferResolutionError,
+    ) -> Self {
+        Self::Rejected(AnalyzerExpressionRejection::ControlTransfer { error })
+    }
+
+    pub(super) fn unresolved_postfix(owner: ExprId) -> Self {
+        Self::Rejected(AnalyzerExpressionRejection::UnresolvedPostfix { owner })
+    }
+
+    pub(super) fn ambiguous_postfix(owner: ExprId) -> Self {
+        Self::Rejected(AnalyzerExpressionRejection::AmbiguousPostfix { owner })
+    }
+
     pub(super) fn is_cancellation(&self) -> bool {
         match self {
             Self::Abort(TypeConstraintAbort::Cancelled) => true,
@@ -787,7 +826,26 @@ impl AnalyzerExpressionError {
 
     pub(super) fn into_public(self, owner: ExprId) -> FinalSemanticAnalysisError {
         match self {
-            Self::Rejected(_) => FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner },
+            Self::Rejected(rejection) => match rejection {
+                AnalyzerExpressionRejection::Unavailable { owner } => {
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }
+                }
+                AnalyzerExpressionRejection::RecoveredInterpretation { .. } => {
+                    FinalSemanticAnalysisError::RecoveredOwner
+                }
+                AnalyzerExpressionRejection::TypeResolution { owner } => {
+                    FinalSemanticAnalysisError::TypeResolutionFailed { owner }
+                }
+                AnalyzerExpressionRejection::ControlTransfer { error } => {
+                    FinalSemanticAnalysisError::ControlTransfer(error)
+                }
+                AnalyzerExpressionRejection::UnresolvedPostfix { owner } => {
+                    FinalSemanticAnalysisError::UnresolvedPostfixBracket { owner }
+                }
+                AnalyzerExpressionRejection::AmbiguousPostfix { owner } => {
+                    FinalSemanticAnalysisError::AmbiguousPostfixBracket { owner }
+                }
+            },
             Self::Fatal(error) => *error,
             Self::Abort(TypeConstraintAbort::Cancelled) => FinalSemanticAnalysisError::Cancelled,
             Self::Abort(TypeConstraintAbort::ArithmeticOverflow) => {
@@ -829,7 +887,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module")

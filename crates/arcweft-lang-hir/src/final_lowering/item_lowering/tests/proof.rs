@@ -9,7 +9,7 @@ use arcweft_lang_syntax::attachment::{
 use crate::expr::{HirExprKind, HirGenericExprIssue, HirPoisonState, HirRecoveryIssue};
 use crate::item::{HirProof, HirProofBody, ProofTrust};
 use crate::pattern::{HirPatternBinding, HirPatternBindingIssue, HirPatternKind};
-use crate::project::{HirProjectBuilder, HirProjectExecutionError, HirProjectModule};
+use crate::project::{HirProjectAnalysisError, HirProjectBuilder, HirProjectModule};
 use crate::scope::LocalLookup;
 use crate::source_index::{
     HirDeclarationSourceRole, HirExprSourceRole, HirItemSourceRole, HirSourceOwnerStatus,
@@ -302,7 +302,7 @@ fn malformed_proof_body_stays_queryable_while_following_proof_keeps_clean_identi
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &key);
-    assert!(!module.is_executable());
+    assert!(!module.is_analysis_ready());
 
     let (broken_owner, broken_item, broken) = proof(&module, 0);
     assert_eq!(
@@ -454,8 +454,8 @@ fn malformed_proof_body_stays_queryable_while_following_proof_keeps_clean_identi
     let project = builder.finish().unwrap();
     assert_eq!(project.view().items().count(), 2);
     assert_eq!(
-        project.executable_view().err(),
-        Some(HirProjectExecutionError::RecoveredModule {
+        project.analysis_view().err(),
+        Some(HirProjectAnalysisError::RecoveredModule {
             module: key.path().clone(),
             snapshot: module.snapshot_id(),
         })

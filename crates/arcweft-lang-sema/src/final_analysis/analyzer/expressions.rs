@@ -2024,12 +2024,10 @@ impl Analyzer<'_, '_, '_> {
         .map(Some)
     }
 
-    /// Evaluates statement-owned expression uses while an implicit callable
-    /// transaction is active. Statement children are reached through HIR's
-    /// typed child-edge authority; no closure/capture arena is scanned. Cached
-    /// local facts still emit the use-time capture event in
-    /// `evaluate_expression`, so target and value uses merge into the same
-    /// terminal producer row with `Reassign` priority.
+    /// Completes statement-owned expressions before their containing block is
+    /// sealed. A closure's capture choices depend on its whole body, including
+    /// discarded-value statements. The same typed walk emits use-time evidence
+    /// when an implicit callable transaction is active.
     pub(super) fn evaluate_block_statement_uses(
         &mut self,
         context: &AnalyzerExpressionContext<'_>,
@@ -2050,9 +2048,7 @@ impl Analyzer<'_, '_, '_> {
         while let Some(work) = pending.pop() {
             match work {
                 Work::Expression(expression) => {
-                    if !self.implicit_callable_stack.is_empty() {
-                        self.evaluate_expression(context, expression, None)?;
-                    }
+                    self.evaluate_expression(context, expression, None)?;
                 }
                 Work::Statement(statement) => {
                     if !seen.insert(statement) {
@@ -2446,7 +2442,13 @@ impl Analyzer<'_, '_, '_> {
                 {
                     return Err(AnalyzerExpressionError::rejected(owner));
                 }
-                let checked_closure = CheckedClosure::seal(Arc::clone(&self.topology), owner)
+                let checked_closure =
+                    CheckedClosure::seal(Arc::clone(&self.topology), owner, |selector| {
+                        self.facts
+                            .expressions()
+                            .get(&selector)?
+                            .selected_postfix_candidate()
+                    })
                     .map_err(|violation| {
                         AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::from(
                             violation,
@@ -3522,10 +3524,7 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<CheckedExpression, CandidateFactOperationFailure> {
         let HirPostfixBracketCandidates::Ambiguous { index, dialogue } = postfix.candidates()
         else {
-            return Err(AnalyzerExpressionError::fatal(
-                FinalSemanticAnalysisError::UnresolvedPostfixBracket { owner },
-            )
-            .into());
+            return Err(AnalyzerExpressionError::unresolved_postfix(owner).into());
         };
         let index_id = *index;
         let dialogue_id = *dialogue;
@@ -3548,10 +3547,7 @@ impl Analyzer<'_, '_, '_> {
                 self.facts
                     .discard_candidate_projection(dialogue_projection)
                     .map_err(AnalyzerExpressionError::fact)?;
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::AmbiguousPostfixBracket { owner },
-                )
-                .into());
+                return Err(AnalyzerExpressionError::ambiguous_postfix(owner).into());
             }
             (Ok((checked, projection)), Err(index_error))
                 if matches!(&index_error, AnalyzerExpressionError::Rejected(_))
@@ -3589,10 +3585,7 @@ impl Analyzer<'_, '_, '_> {
                 if matches!(&dialogue_error, AnalyzerExpressionError::Rejected(_))
                     && matches!(&index_error, AnalyzerExpressionError::Rejected(_)) =>
             {
-                return Err(AnalyzerExpressionError::fatal(
-                    FinalSemanticAnalysisError::UnresolvedPostfixBracket { owner },
-                )
-                .into());
+                return Err(AnalyzerExpressionError::unresolved_postfix(owner).into());
             }
             (Err(dialogue_error), _) => return Err(dialogue_error.into()),
             (Ok(_), Err(index_error)) => return Err(index_error.into()),
@@ -3625,7 +3618,61 @@ impl Analyzer<'_, '_, '_> {
         expectation: &AnalyzerExpressionExpectation<'_>,
     ) -> Result<(super::PreparedExpressionFact, CandidateSemanticProjection), AnalyzerExpressionError>
     {
+        let module = self
+            .module(candidate.module())
+            .map_err(AnalyzerExpressionError::fatal)?;
+        let region = module
+            .candidate_provenance()
+            .region(candidate)
+            .ok_or_else(|| {
+                AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+        if region.recovery_status() == arcweft_lang_syntax::incremental::ParseStatus::Recovered
+            || module.recovered_owners().any(|owner| {
+                module
+                    .candidate_provenance()
+                    .owner_region(owner)
+                    .is_some_and(|region| region.root() == candidate)
+            })
+        {
+            return Err(AnalyzerExpressionError::recovered_interpretation(candidate));
+        }
+        for (owner, root) in module.candidate_provenance().owners() {
+            let arcweft_lang_hir::identity::SyntheticOwner::Stmt(statement) = owner else {
+                continue;
+            };
+            if root != candidate {
+                continue;
+            }
+            let payload = module.resolve_stmt(statement).map_err(|_| {
+                AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::InvalidOwner)
+            })?;
+            if arcweft_lang_hir::project::HirControlTransferKind::from_statement(payload.kind())
+                .is_some()
+            {
+                let row = self.topology.control_transfer_row(statement).map_err(|_| {
+                    AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::InvalidOwner)
+                })?;
+                if let Err(error) = row.target() {
+                    return Err(AnalyzerExpressionError::rejected_control(*error));
+                }
+            }
+        }
         let outcome = self.run_candidate_fact_transaction(|this, authority, _transaction| {
+            this.resolve_region_types(Some(candidate))
+                .map_err(|error| match error {
+                    FinalSemanticAnalysisError::TypeResolutionFailed { owner }
+                        if module
+                            .candidate_provenance()
+                            .owner_region(arcweft_lang_hir::identity::SyntheticOwner::Type(owner))
+                            .is_some_and(|region| region.root() == candidate) =>
+                    {
+                        AnalyzerExpressionError::rejected_type(owner)
+                    }
+                    error => AnalyzerExpressionError::fatal(error),
+                })?;
+            this.seed_local_types(Some(candidate))
+                .map_err(AnalyzerExpressionError::fatal)?;
             let child_context = context.child_candidate(authority);
             let result = this.evaluate_expression_with_expectation(
                 &child_context,

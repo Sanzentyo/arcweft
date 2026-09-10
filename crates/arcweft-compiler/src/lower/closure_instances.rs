@@ -3,7 +3,7 @@
 use super::*;
 
 pub(super) fn materialize_root_closures(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,

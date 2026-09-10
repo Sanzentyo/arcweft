@@ -4125,7 +4125,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module")
@@ -4211,7 +4211,7 @@ mod tests {
         );
         let cancellation = std::sync::atomic::AtomicBool::new(false);
         let (result, physical) = super::super::analyze_final_project_with_physical_trace_for_test(
-            fixture.project.executable_view().expect("executable HIR"),
+            fixture.project.analysis_view().expect("executable HIR"),
             &fixture.symbols,
             crate::final_analysis::FinalSemanticCatalogs::production(&fixture.registered),
             crate::final_analysis::FinalSemanticAnalysisControl::new(&cancellation),
@@ -4234,7 +4234,7 @@ mod tests {
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let module = fixture
             .project
-            .executable_view()
+            .analysis_view()
             .expect("executable HIR")
             .module(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
             .expect("root module");

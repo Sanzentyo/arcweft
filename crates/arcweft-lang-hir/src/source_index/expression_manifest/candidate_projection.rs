@@ -9,7 +9,10 @@ mod block;
 mod control;
 mod pattern;
 mod payload;
+mod source_components;
 mod type_expectation;
+
+pub(crate) use source_components::CandidateSourceComponents;
 
 #[cfg(test)]
 mod tests;
@@ -67,6 +70,8 @@ use crate::leaf::HirPathValue;
 use crate::pattern::HirPattern;
 use crate::scope::{HirLocal, HirScope};
 use crate::slot::{HirOrigin, SlotSnapshot};
+use crate::source_index::candidates::CandidateProvenanceBuilder;
+use crate::source_index::{HirCandidateProvenance, HirPostfixInterpretation};
 use crate::source_index::{
     HirExprSourceRole, HirInsertionPoint, HirSourceIndex, HirSourceSite, expression_component_role,
 };
@@ -89,18 +94,15 @@ struct CandidateTypeChild {
 
 #[derive(Default)]
 struct CandidateExpectedDescendants {
-    expressions: BTreeSet<ExprId>,
+    provenance: CandidateProvenanceBuilder,
+    source_components: CandidateSourceComponents,
     desugared: BTreeSet<ExprId>,
-    statements: BTreeSet<StmtId>,
-    types: BTreeSet<TypeId>,
-    patterns: BTreeSet<PatternId>,
-    scopes: BTreeSet<ScopeId>,
-    locals: BTreeSet<LocalId>,
     scope_children: BTreeMap<ScopeId, Vec<ScopeId>>,
 }
 
 pub(super) struct CandidateExpressionAdmission {
-    pub(super) expressions: BTreeSet<ExprId>,
+    pub(super) provenance: HirCandidateProvenance,
+    pub(super) source_components: CandidateSourceComponents,
     pub(super) desugared: BTreeSet<ExprId>,
 }
 
@@ -122,6 +124,7 @@ pub(super) fn validate_candidate_expressions(
     patterns: &ArenaSnapshot<HirPattern, PatternId>,
     local_resolver: &crate::module::HirLocalResolver<'_>,
     retained_style_expressions: &BTreeSet<ExprId>,
+    capture_validation: &mut super::capture::CaptureValidation<'_>,
 ) -> Option<CandidateExpressionAdmission> {
     let type_expectations = candidate_type_expectations(parsed, slots, retained_style_expressions)?;
     let mut expected = CandidateExpectedDescendants::default();
@@ -157,6 +160,13 @@ pub(super) fn validate_candidate_expressions(
             return None;
         };
         let root_site = outer_root_site(parsed, &attached)?;
+        expected.provenance.register(
+            outer,
+            *index_root,
+            None,
+            HirPostfixInterpretation::Index,
+            index_graph.recovery_status(),
+        )?;
         let mut index_cursor = CandidateValidationCursor::new(
             expression_rows,
             parsed,
@@ -171,7 +181,9 @@ pub(super) fn validate_candidate_expressions(
             &type_expectations,
             outer,
             SyntheticRole::PostfixIndexCandidateExpression,
+            *index_root,
             &mut expected,
+            capture_validation,
         );
         let actual_index = index_cursor.validate_index_root(
             postfix.target(),
@@ -183,6 +195,13 @@ pub(super) fn validate_candidate_expressions(
         if actual_index != *index_root {
             return None;
         }
+        expected.provenance.register(
+            outer,
+            *dialogue_root,
+            None,
+            HirPostfixInterpretation::Dialogue,
+            dialogue_graph.recovery_status(),
+        )?;
         let mut dialogue_cursor = CandidateValidationCursor::new(
             expression_rows,
             parsed,
@@ -197,7 +216,9 @@ pub(super) fn validate_candidate_expressions(
             &type_expectations,
             outer,
             SyntheticRole::DialogueContentCandidateExpression,
+            *dialogue_root,
             &mut expected,
+            capture_validation,
         );
         let actual_dialogue = dialogue_cursor.validate_dialogue_root(
             postfix.target(),
@@ -233,7 +254,8 @@ pub(super) fn validate_candidate_expressions(
     }
     candidate_descendant_slots_match(slots, scopes, &expected)?;
     Some(CandidateExpressionAdmission {
-        expressions: expected.expressions,
+        provenance: expected.provenance.seal()?,
+        source_components: expected.source_components,
         desugared: expected.desugared,
     })
 }
@@ -273,13 +295,39 @@ fn candidate_descendant_slots_match(
     scopes: &ArenaSnapshot<HirScope, ScopeId>,
     expected: &CandidateExpectedDescendants,
 ) -> Option<()> {
-    if candidate_slot_ids::<ExprId>(slots)? != expected.expressions
-        || candidate_slot_ids::<TypeId>(slots)? != expected.types
-        || candidate_slot_ids::<StmtId>(slots)? != expected.statements
-        || candidate_slot_ids::<PatternId>(slots)? != expected.patterns
-        || candidate_slot_ids::<ScopeId>(slots)? != expected.scopes
-        || candidate_slot_ids::<LocalId>(slots)? != expected.locals
-    {
+    let actual = candidate_slot_ids::<ExprId>(slots)?
+        .into_iter()
+        .map(SyntheticOwner::Expr)
+        .chain(
+            candidate_slot_ids::<TypeId>(slots)?
+                .into_iter()
+                .map(SyntheticOwner::Type),
+        )
+        .chain(
+            candidate_slot_ids::<StmtId>(slots)?
+                .into_iter()
+                .map(SyntheticOwner::Stmt),
+        )
+        .chain(
+            candidate_slot_ids::<PatternId>(slots)?
+                .into_iter()
+                .map(SyntheticOwner::Pattern),
+        )
+        .chain(
+            candidate_slot_ids::<ScopeId>(slots)?
+                .into_iter()
+                .map(SyntheticOwner::Scope),
+        )
+        .chain(
+            candidate_slot_ids::<LocalId>(slots)?
+                .into_iter()
+                .map(SyntheticOwner::Local),
+        )
+        .collect::<BTreeSet<_>>();
+    let admitted = expected.provenance.owners().filter(|owner| {
+        !matches!(owner, SyntheticOwner::Expr(owner) if expected.desugared.contains(owner))
+    }).collect::<BTreeSet<_>>();
+    if actual != admitted {
         return None;
     }
     for (parent, expected_children) in &expected.scope_children {
@@ -330,7 +378,7 @@ const fn is_candidate_role(role: SyntheticRole) -> bool {
     )
 }
 
-struct CandidateValidationCursor<'a> {
+struct CandidateValidationCursor<'a, 'capture> {
     expression_rows: &'a ExpressionManifestRows<'a>,
     parsed: &'a ParsedSource,
     slots: &'a SlotSnapshot,
@@ -344,6 +392,7 @@ struct CandidateValidationCursor<'a> {
     type_expectations: &'a BTreeMap<TypeId, CandidateTypeExpectation>,
     outer: ExprId,
     role: SyntheticRole,
+    region: ExprId,
     next_expression: u32,
     next_statement: u32,
     next_type: u32,
@@ -351,9 +400,46 @@ struct CandidateValidationCursor<'a> {
     next_scope: u32,
     next_local: u32,
     expected: &'a mut CandidateExpectedDescendants,
+    capture_validation: &'a mut super::capture::CaptureValidation<'capture>,
 }
 
-impl<'a> CandidateValidationCursor<'a> {
+impl<'a, 'capture> CandidateValidationCursor<'a, 'capture> {
+    fn with_nested_region<T>(
+        &mut self,
+        selector: ExprId,
+        root: ExprId,
+        interpretation: HirPostfixInterpretation,
+        recovery: arcweft_lang_syntax::incremental::ParseStatus,
+        validate: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Option<T> {
+        let parent = self.region;
+        self.expected.provenance.register(
+            selector,
+            root,
+            Some(parent),
+            interpretation,
+            recovery,
+        )?;
+        self.region = root;
+        let result = validate(self);
+        self.region = parent;
+        result
+    }
+
+    fn admit_desugared(&mut self, generated: BTreeSet<ExprId>) -> Option<()> {
+        for owner in generated {
+            if !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Expr(owner), self.region)
+                || !self.expected.desugared.insert(owner)
+            {
+                return None;
+            }
+        }
+        Some(())
+    }
+
     fn source_index_has_typed_owner(&self, owner: SyntheticOwner) -> bool {
         self.expression_rows.has_typed_owner(owner)
     }
@@ -373,7 +459,9 @@ impl<'a> CandidateValidationCursor<'a> {
         type_expectations: &'a BTreeMap<TypeId, CandidateTypeExpectation>,
         outer: ExprId,
         role: SyntheticRole,
+        region: ExprId,
         expected: &'a mut CandidateExpectedDescendants,
+        capture_validation: &'a mut super::capture::CaptureValidation<'capture>,
     ) -> Self {
         Self {
             expression_rows,
@@ -389,6 +477,7 @@ impl<'a> CandidateValidationCursor<'a> {
             type_expectations,
             outer,
             role,
+            region,
             next_expression: 1,
             next_statement: 0,
             next_type: 0,
@@ -396,6 +485,7 @@ impl<'a> CandidateValidationCursor<'a> {
             next_scope: 0,
             next_local: 0,
             expected,
+            capture_validation,
         }
     }
 
@@ -422,7 +512,10 @@ impl<'a> CandidateValidationCursor<'a> {
                 .expression_rows
                 .has_typed_owner(SyntheticOwner::Expr(id))
                 && !admits_dialogue_source_manifest)
-            || !self.expected.expressions.insert(id)
+            || !self
+                .expected
+                .provenance
+                .admit(SyntheticOwner::Expr(id), self.region)
         {
             return None;
         }
@@ -535,6 +628,7 @@ impl<'a> CandidateValidationCursor<'a> {
         ) {
             return None;
         }
+        let mut generated = BTreeSet::new();
         let content_matches = dialogue_content_matches(
             application.content(),
             content,
@@ -542,8 +636,9 @@ impl<'a> CandidateValidationCursor<'a> {
             &action_values,
             self.slots,
             self.expressions,
-            &mut self.expected.desugared,
+            &mut generated,
         );
+        self.admit_desugared(generated)?;
         let (application_target, plan, coordinates) = match application.family() {
             HirAttachedContentApplicationFamily::DialogueLine {
                 target,
@@ -601,7 +696,7 @@ impl<'a> CandidateValidationCursor<'a> {
         ) {
             (Vec::new(), None)
         } else {
-            self.validate_expression_children(node, projection, scope)?
+            self.validate_expression_children(node, projection, payload.kind(), scope)?
         };
         let payload_matches = match (payload.kind(), projection) {
             (HirExprKind::Unit, ExpressionProjection::Unit) => true,
@@ -745,9 +840,9 @@ impl<'a> CandidateValidationCursor<'a> {
                 {
                     return None;
                 }
-                recovery = target
-                    .poisoned
-                    .then_some(recovered_child(HirExprSourceRole::Target));
+                if target.poisoned {
+                    recovery.get_or_insert(recovered_child(HirExprSourceRole::Target));
+                }
                 if matches!(
                     expected.form(),
                     SyntaxAttachedContentApplicationForm::Bracket {
@@ -811,6 +906,7 @@ impl<'a> CandidateValidationCursor<'a> {
                     self.expressions,
                     &mut recovery,
                 )?;
+                let mut generated = BTreeSet::new();
                 let content_matches = dialogue_content_matches(
                     actual.content(),
                     expected.content(),
@@ -818,8 +914,9 @@ impl<'a> CandidateValidationCursor<'a> {
                     &action_values,
                     self.slots,
                     self.expressions,
-                    &mut self.expected.desugared,
+                    &mut generated,
                 );
+                self.admit_desugared(generated)?;
                 let coordinates_match = dialogue_coordinates_match(
                     coordinates,
                     self.expressions
@@ -858,20 +955,38 @@ impl<'a> CandidateValidationCursor<'a> {
                     ) => {
                         let site = candidate_node_root_site(self.parsed, node)?;
                         let index_ordinal = self.take_expression_ordinal()?;
-                        let actual_index = self.validate_index_root(
-                            target.id,
-                            node.ambiguous_index_candidate()?,
-                            &site,
-                            scope,
-                            index_ordinal,
+                        let index_graph = node.ambiguous_index_candidate()?;
+                        let actual_index = self.with_nested_region(
+                            id,
+                            *index,
+                            HirPostfixInterpretation::Index,
+                            index_graph.recovery_status(),
+                            |cursor| {
+                                cursor.validate_index_root(
+                                    target.id,
+                                    index_graph,
+                                    &site,
+                                    scope,
+                                    index_ordinal,
+                                )
+                            },
                         )?;
                         let dialogue_ordinal = self.take_expression_ordinal()?;
-                        let actual_dialogue = self.validate_dialogue_root(
-                            target.id,
-                            node.ambiguous_dialogue_candidate()?,
-                            &site,
-                            scope,
-                            dialogue_ordinal,
+                        let dialogue_graph = node.ambiguous_dialogue_candidate()?;
+                        let actual_dialogue = self.with_nested_region(
+                            id,
+                            *dialogue,
+                            HirPostfixInterpretation::Dialogue,
+                            dialogue_graph.recovery_status(),
+                            |cursor| {
+                                cursor.validate_dialogue_root(
+                                    target.id,
+                                    dialogue_graph,
+                                    &site,
+                                    scope,
+                                    dialogue_ordinal,
+                                )
+                            },
                         )?;
                         *index == actual_index && *dialogue == actual_dialogue
                     }
@@ -1096,6 +1211,10 @@ impl<'a> CandidateValidationCursor<'a> {
         if !payload_matches || !poison_state_matches(payload.state(), recovery) {
             return None;
         }
+        self.capture_validation.candidate(id, payload, node)?;
+        self.expected
+            .source_components
+            .expression(self.parsed, id, payload.kind(), node)?;
         Some(CandidateChild {
             id,
             missing: false,
@@ -1108,6 +1227,7 @@ impl<'a> CandidateValidationCursor<'a> {
         &mut self,
         node: AttachedCandidateNode<'_>,
         projection: &ExpressionProjection,
+        payload: &HirExprKind,
         scope: ScopeId,
     ) -> Option<(Vec<CandidateChild>, Option<HirRecoveryIssue>)> {
         let mut children = Vec::with_capacity(node.semantic_expression_children().len());
@@ -1117,7 +1237,38 @@ impl<'a> CandidateValidationCursor<'a> {
             let value = match child {
                 AttachedCandidateExpressionChild::Authored { node, .. }
                 | AttachedCandidateExpressionChild::Recovered { node, .. } => {
-                    self.validate_expression(node, scope)?
+                    match (role, payload, node.expression_projection()?) {
+                        (
+                            HirExprSourceRole::Target,
+                            HirExprKind::AttachedContentApplication(application),
+                            ExpressionProjection::Call(call),
+                        ) if application.is_content_call() => {
+                            let HirAttachedContentApplicationFamily::ContentCall {
+                                invocation, ..
+                            } = application.family()
+                            else {
+                                return None;
+                            };
+                            if !call_projection_matches(invocation, call) {
+                                return None;
+                            }
+                            recovery = self.validate_call(
+                                node,
+                                node.expression_projection()?,
+                                invocation,
+                                call,
+                                scope,
+                            )?;
+                            let id = invocation.callee().value_expression()?;
+                            CandidateChild {
+                                id,
+                                missing: false,
+                                poisoned: self.expression_is_poisoned(id)?,
+                                role,
+                            }
+                        }
+                        _ => self.validate_expression(node, scope)?,
+                    }
                 }
                 AttachedCandidateExpressionChild::Missing { source, .. } => {
                     self.validate_missing(role, &source, scope)?

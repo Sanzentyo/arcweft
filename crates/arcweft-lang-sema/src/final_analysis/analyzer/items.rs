@@ -538,25 +538,11 @@ impl Analyzer<'_, '_, '_> {
                     if symbol.source_snapshot() != module.snapshot_id() {
                         return Err(FinalSemanticAnalysisError::CatalogGenerationMismatch);
                     }
-                    match source_callable_shell(
-                        module,
-                        symbol,
-                        &self.types,
-                        self.facts.expressions(),
-                    )? {
-                        SourceCallableShell::Body {
-                            scope,
-                            execution,
-                            contract,
-                        } => {
+                    match source_callable_shell(module, symbol)? {
+                        SourceCallableShell::Body { scope, contract } => {
                             let body_source = scope_span(module, scope)?;
                             let id = builder
-                                .insert_body_shell(
-                                    Arc::clone(&record),
-                                    execution,
-                                    *contract,
-                                    &body_source,
-                                )
+                                .insert_body_shell(Arc::clone(&record), *contract, &body_source)
                                 .map_err(checked_catalog_error)?;
                             bodies.push(StagedCallableBody {
                                 id: id.clone(),
@@ -782,6 +768,20 @@ impl Analyzer<'_, '_, '_> {
             let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
+            let symbol = self
+                .symbols
+                .callable(declaration)
+                .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+            let execution = source_callable_execution(
+                self.module(body.module)?,
+                symbol,
+                &self.types,
+                self.facts.expressions(),
+            )?;
+            staged
+                .builder
+                .assign_execution_role(&body.id, execution)
+                .map_err(checked_catalog_error)?;
             let control_role = graph.selected_expressions_control_role(
                 prepared_effects
                     .declaration_expressions(declaration)
@@ -1020,7 +1020,6 @@ impl Analyzer<'_, '_, '_> {
 pub(super) enum SourceCallableShell {
     Body {
         scope: ScopeId,
-        execution: CheckedCallableExecution,
         contract: Box<CallableEffectContract>,
     },
     BodylessTraitRequirement {
@@ -1058,20 +1057,17 @@ fn module_effect_expression_facts(
 fn source_callable_shell(
     module: &HirModule,
     symbol: &arcweft_lang_hir::symbol::CallableSymbol,
-    types: &BTreeMap<TypeId, TypeKind>,
-    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
 ) -> Result<SourceCallableShell, FinalSemanticAnalysisError> {
     let item = module
         .resolve_item(symbol.source_item())
         .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
-    let inferred_body = |scope, execution| {
+    let inferred_body = |scope| {
         let anchor = scope_span(module, scope)?;
         let contract =
             CallableEffectContract::body_inference(anchor, EffectSet::new(), Box::new([]))
                 .map_err(checked_catalog_error)?;
         Ok(SourceCallableShell::Body {
             scope,
-            execution,
             contract: Box::new(contract),
         })
     };
@@ -1079,45 +1075,23 @@ fn source_callable_shell(
         return view_source_callable_shell(module, symbol, item);
     }
     match (symbol.source_owner(), item.kind()) {
-        (HirCallableSourceOwner::Item, HirItemKind::Flow(flow)) => inferred_body(
-            flow.body_scope(),
-            CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
-        ),
-        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => {
-            let CheckedItemRole::Function { execution, .. } =
-                item_role(module, symbol.source_item(), item, types, expressions)?
-            else {
-                return Err(FinalSemanticAnalysisError::InvalidFunctionExecution {
-                    owner: symbol.source_item(),
-                });
-            };
-            match function.body() {
-                HirFunctionBody::Block { scope, .. } => function_effect_contract(
-                    module,
-                    symbol.source_item(),
-                    function,
-                    *scope,
-                    CheckedCallableExecution::Runtime(execution),
-                ),
-                HirFunctionBody::Error(_) => Err(FinalSemanticAnalysisError::RecoveredOwner),
+        (HirCallableSourceOwner::Item, HirItemKind::Flow(flow)) => inferred_body(flow.body_scope()),
+        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => match function.body() {
+            HirFunctionBody::Block { scope, .. } => {
+                function_effect_contract(module, symbol.source_item(), function, *scope)
             }
-        }
+            HirFunctionBody::Error(_) => Err(FinalSemanticAnalysisError::RecoveredOwner),
+        },
         (HirCallableSourceOwner::Item, HirItemKind::Predicate(predicate)) => {
             match predicate.body() {
                 HirPredicateBody::Expression { scope, .. }
-                | HirPredicateBody::Block { scope, .. } => inferred_body(
-                    *scope,
-                    CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
-                ),
+                | HirPredicateBody::Block { scope, .. } => inferred_body(*scope),
                 HirPredicateBody::Error { .. } => Err(FinalSemanticAnalysisError::RecoveredOwner),
             }
         }
         (HirCallableSourceOwner::Item, HirItemKind::Proof(proof)) => match proof.body() {
             HirProofBody::Expression { scope, .. } | HirProofBody::Block { scope, .. } => {
-                inferred_body(
-                    *scope,
-                    CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
-                )
+                inferred_body(*scope)
             }
             HirProofBody::Error { .. } => Err(FinalSemanticAnalysisError::RecoveredOwner),
         },
@@ -1147,15 +1121,7 @@ fn source_callable_shell(
                     owner: symbol.source_item(),
                 });
             };
-            let (yield_count, _) =
-                function_body_roles(module, function.body().expect("checked above"), expressions)?;
-            let execution = checked_function_execution(
-                symbol.source_item(),
-                function.return_type(),
-                types,
-                yield_count,
-            )?;
-            inferred_body(*scope, CheckedCallableExecution::Runtime(execution))
+            inferred_body(*scope)
         }
         _ => Err(FinalSemanticAnalysisError::InvalidCallableOwner),
     }
@@ -1176,9 +1142,52 @@ fn view_source_callable_shell(
         .map_err(checked_catalog_error)?;
     Ok(SourceCallableShell::Body {
         scope: view.callable_scope(),
-        execution: CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
         contract: Box::new(contract),
     })
+}
+
+fn source_callable_execution(
+    module: &HirModule,
+    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+    types: &BTreeMap<TypeId, TypeKind>,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Result<CheckedCallableExecution, FinalSemanticAnalysisError> {
+    let item = module
+        .resolve_item(symbol.source_item())
+        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+    let (body, result) = match (symbol.source_owner(), item.kind()) {
+        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => {
+            (function.body(), function.return_type())
+        }
+        (HirCallableSourceOwner::ImplFunction { member }, HirItemKind::Impl(implementation)) => {
+            let Some(HirImplMember::Function(function)) =
+                implementation.members().get(usize::from(member))
+            else {
+                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+            };
+            (
+                function
+                    .body()
+                    .ok_or(FinalSemanticAnalysisError::UnsupportedCallableBody {
+                        owner: symbol.source_item(),
+                    })?,
+                function.return_type(),
+            )
+        }
+        (
+            HirCallableSourceOwner::Item,
+            HirItemKind::Flow(_) | HirItemKind::Predicate(_) | HirItemKind::Proof(_),
+        )
+        | (HirCallableSourceOwner::ViewItem, HirItemKind::View(_)) => {
+            return Ok(CheckedCallableExecution::Runtime(
+                CheckedFunctionExecution::DirectFrame,
+            ));
+        }
+        _ => return Err(FinalSemanticAnalysisError::InvalidCallableOwner),
+    };
+    let (yields, _) = function_body_roles(module, body, expressions)?;
+    checked_function_execution(symbol.source_item(), result, types, yields)
+        .map(CheckedCallableExecution::Runtime)
 }
 
 fn item_role(
@@ -1388,6 +1397,20 @@ impl FunctionBodyRoleFold<'_> {
             .try_child_edges()
             .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?
         {
+            if matches!(
+                edge.role(),
+                HirExpressionChildRole::PostfixIndexCandidate
+                    | HirExpressionChildRole::PostfixDialogueCandidate
+            ) {
+                let selected = self
+                    .expressions
+                    .get(&owner)
+                    .and_then(super::PreparedExpressionFact::selected_postfix_candidate)
+                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                if edge.child() != selected {
+                    continue;
+                }
+            }
             if edge.ownership() != HirExpressionChildOwnership::Owning
                 || matches!(edge.role(), HirExpressionChildRole::ClosureBody)
                 || latent_callable

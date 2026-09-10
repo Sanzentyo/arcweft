@@ -2,7 +2,7 @@
 
 use arcweft_lang_hir::{
     expr::{HirExpressionOwnedBodyRole, HirExpressionOwnedChild},
-    identity::LocalId,
+    identity::{LocalId, SyntheticOwner},
     item::{HirCapabilityFunction, HirCapabilityMember},
     project::HirSemanticPathOwnerId,
 };
@@ -22,7 +22,6 @@ use super::{
     PatternId, ProjectNominalType, ResolvedTypeRefOutcome, ScopeId, SelfTypeScope, StmtId, TypeId,
     TypeKind, TypeResolutionInput,
     expression_types::literal_type,
-    items::function_body_roles,
     patterns::{PatternSeedContext, seed_item_parameter_types, seed_pattern_locals},
     resolve_type_ref,
     statements::{enclosing_item, generic_scope},
@@ -78,7 +77,10 @@ pub(super) enum AssociatedReceiverTypeResolution {
 }
 
 impl Analyzer<'_, '_, '_> {
-    pub(super) fn resolve_all_types(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+    pub(super) fn resolve_region_types(
+        &mut self,
+        region: Option<ExprId>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
         let trait_reference_roots =
             super::super::validation::implementation_trait_reference_roots(&self.modules);
         let deferred_call_receivers = self
@@ -113,7 +115,18 @@ impl Analyzer<'_, '_, '_> {
         let owners = self
             .modules
             .values()
-            .flat_map(|module| module.types().map(|(owner, _)| owner))
+            .flat_map(|module| {
+                module
+                    .types()
+                    .filter(move |(owner, _)| {
+                        module
+                            .candidate_provenance()
+                            .owner_region(SyntheticOwner::Type(*owner))
+                            .map(|region| region.root())
+                            == region
+                    })
+                    .map(|(owner, _)| owner)
+            })
             .filter(|owner| {
                 !children.contains(owner)
                     && !deferred_call_receivers.contains(owner)
@@ -326,9 +339,20 @@ impl Analyzer<'_, '_, '_> {
         )))
     }
 
-    pub(super) fn seed_local_types(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+    pub(super) fn seed_local_types(
+        &mut self,
+        region: Option<ExprId>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values() {
             for (owner, local) in module.locals() {
+                if module
+                    .candidate_provenance()
+                    .owner_region(SyntheticOwner::Local(owner))
+                    .map(|region| region.root())
+                    != region
+                {
+                    continue;
+                }
                 if let Some(annotation) = local.annotation() {
                     let ty = self
                         .catalogs
@@ -344,6 +368,9 @@ impl Analyzer<'_, '_, '_> {
                 }
             }
             for (_, item) in module.items() {
+                if region.is_some() {
+                    continue;
+                }
                 let mut locals = BTreeMap::new();
                 let mut patterns = BTreeMap::new();
                 seed_item_parameter_types(
@@ -359,7 +386,15 @@ impl Analyzer<'_, '_, '_> {
                 )?;
                 Self::publish_seeded_pattern_facts(&mut self.facts, locals, patterns)?;
             }
-            for (_, expression) in module.expressions() {
+            for (owner, expression) in module.expressions() {
+                if module
+                    .candidate_provenance()
+                    .owner_region(SyntheticOwner::Expr(owner))
+                    .map(|region| region.root())
+                    != region
+                {
+                    continue;
+                }
                 match expression.kind() {
                     HirExprKind::Closure(closure) => {
                         for parameter in closure.parameters() {
@@ -502,6 +537,13 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut residual = Vec::new();
         for (owner, statement) in self.statement_inventory() {
+            if self
+                .module(owner.module())?
+                .candidate_provenance()
+                .contains(SyntheticOwner::Stmt(owner))
+            {
+                continue;
+            }
             if !self
                 .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Statement(owner))?
             {
@@ -578,6 +620,13 @@ impl Analyzer<'_, '_, '_> {
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut residual = BTreeSet::new();
         for owner in self.expression_inventory() {
+            if self
+                .module(owner.module())?
+                .candidate_provenance()
+                .contains(SyntheticOwner::Expr(owner))
+            {
+                continue;
+            }
             if !self
                 .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Expression(owner))?
             {
@@ -614,23 +663,17 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let mut expectations = Vec::new();
+        let mut bodies = Vec::new();
         for module in self.modules.values().copied() {
-            for (_, item) in module.items() {
+            for (owner, item) in module.items() {
                 match item.kind() {
                     HirItemKind::Function(function) => {
-                        let (yield_count, _) =
-                            function_body_roles(module, function.body(), self.facts.expressions())?;
-                        let expected = if yield_count == 0 {
-                            resolved_callable_result(function.return_type(), &self.types)?
-                        } else {
-                            TypeKind::Unit
-                        };
-                        append_function_body_result_expectations(
+                        bodies.push((
                             module,
+                            owner,
                             function.body(),
-                            expected,
-                            &mut expectations,
-                        )?;
+                            resolved_callable_result(function.return_type(), &self.types)?,
+                        ));
                     }
                     HirItemKind::Predicate(predicate) => expectations.push((
                         predicate_body_tail(predicate.body())?,
@@ -648,24 +691,20 @@ impl Analyzer<'_, '_, '_> {
                             let Some(body) = function.body() else {
                                 continue;
                             };
-                            let (yield_count, _) =
-                                function_body_roles(module, body, self.facts.expressions())?;
-                            let expected = if yield_count == 0 {
-                                resolved_callable_result(function.return_type(), &self.types)?
-                            } else {
-                                TypeKind::Unit
-                            };
-                            append_function_body_result_expectations(
+                            bodies.push((
                                 module,
+                                owner,
                                 body,
-                                expected,
-                                &mut expectations,
-                            )?;
+                                resolved_callable_result(function.return_type(), &self.types)?,
+                            ));
                         }
                     }
                     _ => {}
                 }
             }
+        }
+        for (module, owner, body, expected) in bodies {
+            self.validate_function_body_interpretation(module, owner, body, expected)?;
         }
         for (owner, expected) in expectations {
             let checked = self.check_expression_published(owner, Some(&expected))?;
@@ -701,19 +740,12 @@ impl Analyzer<'_, '_, '_> {
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
                 HirItemKind::Function(function),
             ) => {
-                let (yield_count, _) =
-                    function_body_roles(module, function.body(), self.facts.expressions())?;
-                let expected = if yield_count == 0 {
-                    self.registered_callable_result(declaration)?
-                } else {
-                    TypeKind::Unit
-                };
-                append_function_body_result_expectations(
+                return self.validate_function_body_interpretation(
                     module,
+                    view.body().source_item(),
                     function.body(),
-                    expected,
-                    &mut expectations,
-                )?;
+                    self.registered_callable_result(declaration)?,
+                );
             }
             (
                 arcweft_lang_hir::source_index::HirCallableSourceOwner::Item,
@@ -746,19 +778,12 @@ impl Analyzer<'_, '_, '_> {
                     })
                     .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
                 if let Some(body) = function.body() {
-                    let (yield_count, _) =
-                        function_body_roles(module, body, self.facts.expressions())?;
-                    let expected = if yield_count == 0 {
-                        self.registered_callable_result(declaration)?
-                    } else {
-                        TypeKind::Unit
-                    };
-                    append_function_body_result_expectations(
+                    return self.validate_function_body_interpretation(
                         module,
+                        view.body().source_item(),
                         body,
-                        expected,
-                        &mut expectations,
-                    )?;
+                        self.registered_callable_result(declaration)?,
+                    );
                 }
             }
             (
@@ -808,9 +833,15 @@ impl Analyzer<'_, '_, '_> {
             .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)
     }
 
-    pub(super) fn finalize_residual_locals(&mut self) -> Result<(), FinalSemanticAnalysisError> {
+    pub(super) fn finalize_residual_locals(
+        &mut self,
+        selected: &crate::final_analysis::match_edges::CheckedSelectedExpressionGraph,
+    ) -> Result<(), FinalSemanticAnalysisError> {
         for module in self.modules.values().copied() {
             for (owner, local) in module.locals() {
+                if !selected.contains_owner(SyntheticOwner::Local(owner)) {
+                    continue;
+                }
                 if self
                     .is_executable_declaration_body_owner(HirSemanticPathOwnerId::Local(owner))?
                 {
@@ -884,7 +915,7 @@ fn resolved_required_result(
         .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
 }
 
-fn append_function_body_result_expectations(
+pub(super) fn append_function_body_result_expectations(
     module: &HirModule,
     body: &HirFunctionBody,
     expected: TypeKind,

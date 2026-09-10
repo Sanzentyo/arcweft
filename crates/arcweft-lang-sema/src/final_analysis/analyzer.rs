@@ -18,7 +18,9 @@ use arcweft_lang_hir::{
         HirComputationBlockKind, HirExpr, HirExprKind, HirRecordField, HirRecoveredName,
         HirSelectedMember, HirUnaryOp,
     },
-    identity::{ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, TypeId},
+    identity::{
+        ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,
+    },
     item::{
         HirFlowContractClause, HirFunctionBody, HirFunctionItem, HirGenericParameter,
         HirImplMember, HirItem, HirItemKind, HirPredicateBody, HirProofBody, HirStyleBodyItem,
@@ -34,7 +36,7 @@ use arcweft_lang_hir::{
         HirPatternSequenceRest, HirVariantPattern, HirVariantPatternHead,
         HirVariantPatternHeadValue, HirVariantPatternName, HirVariantPatternPayload,
     },
-    project::{HirExecutableProjectView, HirProjectEvaluationTopology, HirProjectView},
+    project::{HirAnalysisProjectView, HirProjectEvaluationTopology, HirProjectView},
     scope::{HirScopeKind, HirScopeOwner, LocalLookup},
     source_index::{
         HirCallArgumentSourcePart, HirCallableEffectSourcePart, HirCallableSourceOwner,
@@ -153,7 +155,7 @@ impl<'a> FinalSemanticCatalogs<'a> {
 /// This is the sole public constructor.  Staging types remain crate-private so
 /// compiler, LSP, runtime, and tests cannot publish hand-assembled facts.
 pub fn analyze_final_project(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'_>,
     control: FinalSemanticAnalysisControl<'_>,
@@ -163,7 +165,7 @@ pub fn analyze_final_project(
 
 #[cfg(test)]
 pub(super) fn freeze_checked_callables_for_test(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'_>,
     input: &FinalSemanticAnalysisInput,
@@ -203,7 +205,7 @@ pub(super) fn freeze_checked_callables_for_test(
 
 #[cfg(test)]
 pub(super) fn analyze_final_project_with_physical_trace_for_test(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'_>,
     control: FinalSemanticAnalysisControl<'_>,
@@ -236,7 +238,7 @@ pub(super) fn analyze_final_project_with_physical_trace_for_test(
 
 #[cfg(test)]
 pub(super) fn analyze_final_project_with_statement_mutation_for_test(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'_>,
     control: FinalSemanticAnalysisControl<'_>,
@@ -265,7 +267,7 @@ pub(super) enum FinalAuthorityMutationForTest {
 
 #[cfg(test)]
 pub(super) fn analyze_final_project_with_authority_mutation_for_test(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'_>,
     control: FinalSemanticAnalysisControl<'_>,
@@ -275,7 +277,7 @@ pub(super) fn analyze_final_project_with_authority_mutation_for_test(
 }
 
 struct Analyzer<'project, 'catalog, 'control> {
-    executable: HirExecutableProjectView<'project>,
+    executable: HirAnalysisProjectView<'project>,
     project: HirProjectView<'project>,
     symbols: &'catalog ProjectSymbolTable,
     catalogs: FinalSemanticCatalogs<'catalog>,
@@ -518,7 +520,7 @@ fn collect_style_body_value_kinds(
 
 impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
     fn new(
-        executable: HirExecutableProjectView<'project>,
+        executable: HirAnalysisProjectView<'project>,
         symbols: &'catalog ProjectSymbolTable,
         catalogs: FinalSemanticCatalogs<'catalog>,
         control: FinalSemanticAnalysisControl<'control>,
@@ -575,8 +577,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         &mut self,
         mut mutation: M,
     ) -> Result<FinalSemanticAnalysis, super::FinalSemanticProjectError> {
-        self.resolve_all_types()?;
-        self.seed_local_types()?;
+        self.resolve_region_types(None)?;
+        self.seed_local_types(None)?;
         let entry_roots =
             crate::entry::prepare_entry_root_seeds(self.executable, self.symbols, &self.types)
                 .map_err(|diagnostics| {
@@ -594,11 +596,24 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         let ingress_seal = self.complete_contextual_declarations(entry_roots)?;
         self.infer_residual_statement_bindings()?;
         self.analyze_residual_expressions()?;
-        self.finalize_residual_locals()?;
+        let selected_expressions = super::match_edges::CheckedSelectedExpressionGraph::seal(
+            self.executable,
+            Arc::clone(&self.topology),
+            self.facts.expressions(),
+            self.facts
+                .prepared_calls()
+                .map_err(FinalSemanticAnalysisError::from)?,
+            self.fx_definition_body_obligations
+                .as_ref()
+                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+        )?;
+        self.finalize_residual_locals(&selected_expressions)?;
         let mut input = FinalSemanticAnalysisInput::new();
         input.set_ingress_seal(ingress_seal)?;
         for (owner, ty) in &self.types {
-            input.push_type(*owner, ty.clone());
+            if selected_expressions.contains_owner(SyntheticOwner::Type(*owner)) {
+                input.push_type(*owner, ty.clone());
+            }
         }
         let dialogue_view_parameters = self
             .modules
@@ -626,6 +641,9 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             .flat_map(|parameter| parameter.locals().iter().copied())
             .collect::<BTreeSet<_>>();
         for (owner, ty) in self.facts.locals() {
+            if !selected_expressions.contains_owner(SyntheticOwner::Local(*owner)) {
+                continue;
+            }
             let role = if dialogue_view_parameters.contains(owner) {
                 CheckedBindingRole::DialogueViewParameter
             } else {
@@ -635,6 +653,10 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
         }
         for module in self.topology.modules() {
             for capture in module.captures().rows() {
+                if !selected_expressions.contains_owner(SyntheticOwner::Capture(capture.capture()))
+                {
+                    continue;
+                }
                 let ty = self.facts.locals().get(&capture.local()).cloned().ok_or(
                     FinalSemanticAnalysisError::LocalTypeUnavailable {
                         owner: capture.local(),
@@ -648,24 +670,13 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 input.push_capture(capture.capture(), CheckedBinding::with_role(ty, role));
             }
         }
-        self.analyze_patterns(&mut input)?;
-        self.analyze_statements(&mut input)?;
+        self.analyze_patterns(&mut input, &selected_expressions)?;
+        self.analyze_statements(&mut input, &selected_expressions)?;
         mutation.apply_prepared_input(&mut input)?;
         self.analyze_items(&mut input)?;
         for (owner, fact) in self.facts.expressions() {
             input.push_prepared_expression(*owner, fact.clone());
         }
-        let selected_expressions = super::match_edges::CheckedSelectedExpressionGraph::seal(
-            self.executable,
-            Arc::clone(&self.topology),
-            self.facts.expressions(),
-            self.facts
-                .prepared_calls()
-                .map_err(FinalSemanticAnalysisError::from)?,
-            self.fx_definition_body_obligations
-                .as_ref()
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
-        )?;
         let staged = self
             .staged_callables
             .take()
@@ -809,6 +820,8 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
                 .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
         }
         input.set_callable_joins(callable_joins);
+        self.type_reports
+            .retain(|owner, _| selected_expressions.contains_owner(SyntheticOwner::Type(*owner)));
         input.set_selected_expressions(selected_expressions)?;
         input.set_structural_edges(structural_edges)?;
         input.expressions.clear();
@@ -985,6 +998,8 @@ mod fx_definition;
 #[path = "analyzer/view_fx.rs"]
 mod view_fx;
 pub(super) use fx_definition::PreparedFxDefinitionBodyObligations;
+#[path = "analyzer/function_body.rs"]
+mod function_body;
 #[path = "analyzer/items.rs"]
 mod items;
 #[path = "analyzer/patterns.rs"]

@@ -166,10 +166,7 @@ flow main() -> i64 { return fallback(.Full(42i64), 0i64) }
     );
     let analysis = analyze(&fixture).unwrap_or_else(|error| {
         if let FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner } = &error {
-            let executable = fixture
-                .project
-                .executable_view()
-                .expect("executable fixture");
+            let executable = fixture.project.analysis_view().expect("executable fixture");
             let expression = executable
                 .modules()
                 .find_map(|(_, module)| module.resolve_expr(*owner).ok())
@@ -182,10 +179,7 @@ flow main() -> i64 { return fallback(.Full(42i64), 0i64) }
         panic!("constructor inference failed: {error:?}");
     });
     assert_selected_calls(&analysis, 2);
-    let project = fixture
-        .project
-        .executable_view()
-        .expect("executable fixture");
+    let project = fixture.project.analysis_view().expect("executable fixture");
     let constructors = analysis
         .calls()
         .filter_map(|(_, facts)| {
@@ -285,10 +279,7 @@ fn contextual_constructor_sources_combine_complementary_type_evidence() {
             panic!("complementary constructor arguments {left}, {right}: {error:?}");
         });
         assert_selected_calls(&analysis, 3);
-        let project = fixture
-            .project
-            .executable_view()
-            .expect("executable fixture");
+        let project = fixture.project.analysis_view().expect("executable fixture");
         let constructors = analysis
             .calls()
             .filter_map(|(_, facts)| {

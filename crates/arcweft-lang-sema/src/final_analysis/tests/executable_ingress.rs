@@ -95,7 +95,7 @@ fn one_entry_fixture(flow_body: &str, extra_flows: &str) -> Fixture {
 fn event_statement(fixture: &Fixture) -> arcweft_lang_hir::identity::StmtId {
     fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable stateful Entry fixture")
         .modules()
         .flat_map(|(_, module)| module.statements())
@@ -135,7 +135,7 @@ fn analyze_with_mutation(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticProjectError> {
     let cancellation = AtomicBool::new(false);
     crate::final_analysis::analyzer::analyze_final_project_with_authority_mutation_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),

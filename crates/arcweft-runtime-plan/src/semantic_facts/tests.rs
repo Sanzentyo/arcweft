@@ -241,7 +241,7 @@ fn project_callable_attached_interface_is_consumed_only_by_its_terminal_group() 
         "project-attached-interface",
         "fn content(first: String)(second: String)[body: InlineContent] -> Unit { () }\n",
     );
-    let executable = project.executable_view().expect("clean fixture");
+    let executable = project.analysis_view().expect("clean fixture");
     let item = executable
         .items()
         .find(|item| {
@@ -435,7 +435,7 @@ fn runtime_reachability_with(
         arcweft_lang_hir::identity::ExprId,
     ) -> Option<HirRuntimeExpressionProjection>,
 ) -> HirRuntimeSemanticReachability<'_> {
-    let executable = project.executable_view().expect("clean fixture");
+    let executable = project.analysis_view().expect("clean fixture");
     let (_, first_module) = executable.modules().next().expect("fixture module");
     let world = ProjectSymbolWorldId::try_new(
         executable.package().clone(),
@@ -522,7 +522,7 @@ fn runtime_reachability_with(
 }
 
 fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<'_> {
-    let executable = project.executable_view().expect("clean fixture");
+    let executable = project.analysis_view().expect("clean fixture");
     runtime_reachability_with(
         project,
         |_| None,
@@ -531,7 +531,7 @@ fn runtime_reachability(project: &HirProject) -> HirRuntimeSemanticReachability<
 }
 
 fn retained_runtime_projection(
-    executable: arcweft_lang_hir::project::HirExecutableProjectView<'_>,
+    executable: arcweft_lang_hir::project::HirAnalysisProjectView<'_>,
     owner: arcweft_lang_hir::identity::ExprId,
 ) -> Option<HirRuntimeExpressionProjection> {
     executable.modules().find_map(|(_, module)| {
@@ -561,14 +561,14 @@ fn runtime_facts(
     project: &HirProject,
     input: RuntimePlanSemanticFactInput,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticFactsError> {
-    let executable = project.executable_view().expect("clean fixture");
+    let executable = project.analysis_view().expect("clean fixture");
     let reachability = runtime_reachability(project);
     RuntimePlanSemanticFacts::try_new(executable, &reachability, input)
 }
 
 fn boolean_literal(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
     project
-        .executable_view()
+        .analysis_view()
         .expect("clean fixture")
         .modules()
         .flat_map(|(_, module)| module.expressions())
@@ -590,7 +590,7 @@ fn expression_statement_matching(
     arcweft_lang_hir::identity::ExprId,
 ) {
     project
-        .executable_view()
+        .analysis_view()
         .expect("clean fixture")
         .modules()
         .flat_map(|(_, module)| {
@@ -608,7 +608,7 @@ fn expression_statement_matching(
 
 fn flow_item(project: &HirProject) -> arcweft_lang_hir::identity::ItemId {
     project
-        .executable_view()
+        .analysis_view()
         .expect("clean fixture")
         .items()
         .find(|item| {
@@ -623,7 +623,7 @@ fn flow_item(project: &HirProject) -> arcweft_lang_hir::identity::ItemId {
 
 fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
     project
-        .executable_view()
+        .analysis_view()
         .expect("clean fixture")
         .modules()
         .flat_map(|(_, module)| module.expressions())
@@ -718,7 +718,7 @@ fn assignment_fact_fixture(
             "}\n",
         ),
     );
-    let executable = project.executable_view().expect("assignment fixture");
+    let executable = project.analysis_view().expect("assignment fixture");
     let (_, module) = executable.modules().next().expect("root assignment module");
     let (statement, target, value) = module
         .statements()
@@ -806,7 +806,7 @@ fn trigger_fact_fixture(
         label,
         "flow trigger_owner {\n    on true => defer ()\n    return unit\n}\n",
     );
-    let executable = project.executable_view().expect("trigger fixture");
+    let executable = project.analysis_view().expect("trigger fixture");
     let (_, module) = executable.modules().next().expect("root trigger module");
     let trigger = module
         .statements()
@@ -1015,7 +1015,7 @@ fn presentation_owned_facts_are_inactive_and_filtered_local_ids_remain_contiguou
             "fn after(third: bool) { third }\n",
         ),
     );
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     let runtime_owners = runtime_reachability(&project);
     let module = executable.modules().next().expect("one fixture module").1;
     let all_locals = module.locals().map(|(owner, _)| owner).collect::<Vec<_>>();
@@ -1197,11 +1197,11 @@ fn semantic_facts_are_bound_to_the_exact_accepted_generation() {
         runtime_facts(&first, complete_type_input(&first)).expect("complete checked fact set");
 
     assert_eq!(
-        facts.validate_generation(first.executable_view().expect("same generation")),
+        facts.validate_generation(first.analysis_view().expect("same generation")),
         Ok(())
     );
     assert_eq!(
-        facts.validate_generation(second.executable_view().expect("foreign generation")),
+        facts.validate_generation(second.analysis_view().expect("foreign generation")),
         Err(RuntimeSemanticFactsError::WrongProjectGeneration)
     );
 }
@@ -1323,7 +1323,7 @@ fn runtime_type_completeness_excludes_effect_metadata_owners() {
         "effect-metadata-types",
         "fn root() effects { fs.read } { true }\n",
     );
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     let effect = executable
         .items()
         .find_map(|item| {
@@ -1595,7 +1595,7 @@ fn duplicate_pattern_types_are_rejected_before_publication() {
         "fn root(value: bool) { match value { true => (), false => () } }\n",
     );
     let pattern = project
-        .executable_view()
+        .analysis_view()
         .expect("executable fixture")
         .modules()
         .flat_map(|(_, module)| module.patterns())
@@ -2088,7 +2088,7 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
         "postfix-selected-types",
         "fn root(items: Vec<i64>, subject: i64) {\n    items[{ match subject { value => value }; 0 }]\n}\n",
     );
-    let executable = project.executable_view().expect("executable fixture");
+    let executable = project.analysis_view().expect("executable fixture");
     let modules = executable
         .modules()
         .map(|(_, module)| (module.module_id(), module.as_ref()))
@@ -2151,6 +2151,16 @@ fn postfix_type_completeness_keeps_only_the_selected_candidate_expression_tree()
     assert!(facts.expression_type(target).is_some());
     assert!(facts.expression_type(dialogue).is_none());
     assert!(facts.expression_type(index).is_none());
+
+    let mut missing_selection = complete_selected_input();
+    missing_selection.postfix_candidates.clear();
+    assert_eq!(
+        RuntimePlanSemanticFacts::try_new(executable, &runtime_owners, missing_selection)
+            .expect_err("a type-free selector still requires its exact accepted choice"),
+        RuntimeSemanticFactsError::MissingPostfixCandidate {
+            expression: postfix_owner
+        }
+    );
 
     let mut input = complete_selected_input();
     input.push_expression_type(dialogue, unit_type());
@@ -2436,7 +2446,7 @@ struct IteratorMethodFixture {
 }
 
 fn iterator_fixture_symbols(project: &HirProject) -> ProjectSymbolTable {
-    let executable = project.executable_view().expect("clean iterator fixture");
+    let executable = project.analysis_view().expect("clean iterator fixture");
     let (_, first_module) = executable
         .modules()
         .next()
@@ -2465,7 +2475,7 @@ fn iterator_method_fixture(
     implementation_ordinal: usize,
     method_name: &str,
 ) -> IteratorMethodFixture {
-    let executable = project.executable_view().expect("iterator edge fixture");
+    let executable = project.analysis_view().expect("iterator edge fixture");
     let (_, module) = executable.modules().next().expect("root fixture module");
     let (implementation, declaration) = module
         .items()
@@ -2531,7 +2541,7 @@ fn iterator_reachability_with_edges<'project>(
     project: &'project HirProject,
     edges: Vec<HirRuntimeReachabilityEdge>,
 ) -> HirRuntimeSemanticReachability<'project> {
-    let executable = project.executable_view().expect("clean iterator fixture");
+    let executable = project.analysis_view().expect("clean iterator fixture");
     let symbols = iterator_fixture_symbols(project);
     let world = symbols.world().clone();
     let revision = *symbols.revision();
@@ -2656,7 +2666,7 @@ fn iterator_witness_method_edges_are_exact_and_fail_closed() {
         ),
     );
     let statement = project
-        .executable_view()
+        .analysis_view()
         .expect("iterator edge fixture")
         .modules()
         .flat_map(|(_, module)| module.statements())

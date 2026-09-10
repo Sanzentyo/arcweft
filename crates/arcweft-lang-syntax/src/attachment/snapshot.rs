@@ -677,6 +677,14 @@ impl SyntaxNodeHandle {
             .expect("typed Pattern-component ranges belong to their retained source document")
     }
 
+    pub(crate) fn bind_diagnostic(
+        &self,
+        diagnostic: &crate::grammar::event::PendingSyntaxDiagnostic,
+    ) -> crate::incremental::SyntaxDiagnostic {
+        crate::incremental::SyntaxDiagnostic::bind(self.snapshot.document(), diagnostic)
+            .expect("validated candidate diagnostics belong to the exact source snapshot")
+    }
+
     pub(crate) fn source_text_for_range(&self, range: SourceRange) -> &str {
         self.snapshot
             .document()

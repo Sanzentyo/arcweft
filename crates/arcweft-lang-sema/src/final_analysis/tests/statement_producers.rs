@@ -318,7 +318,7 @@ fn payload_matches(expected: ExpectedPayload, actual: ExpectedPayload) -> bool {
 fn root_module<'a>(fixture: &'a Fixture) -> &'a HirModule {
     fixture
         .project
-        .executable_view()
+        .analysis_view()
         .expect("executable HIR")
         .modules()
         .next()
@@ -342,7 +342,7 @@ fn analyze_with_statement_mutation(
 ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
     let cancellation = AtomicBool::new(false);
     super::super::analyzer::analyze_final_project_with_statement_mutation_for_test(
-        fixture.project.executable_view().expect("executable HIR"),
+        fixture.project.analysis_view().expect("executable HIR"),
         &fixture.symbols,
         FinalSemanticCatalogs::production(&fixture.registered),
         FinalSemanticAnalysisControl::new(&cancellation),
@@ -603,7 +603,7 @@ fn p28_wait_producer_requires_a_duration_operand() {
 fn checked_statement_producer_matrix_p24_rejects_error_family() {
     let fixture = fixture("fn bad() { ??? }\n", None);
     assert!(
-        fixture.project.executable_view().is_err(),
+        fixture.project.analysis_view().is_err(),
         "Error HIR family must never reach checked publication"
     );
 }

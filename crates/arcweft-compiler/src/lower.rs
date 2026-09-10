@@ -85,7 +85,7 @@ use arcweft_lang_hir::{
         HirIntegerLiteral, HirLiteral, HirStringLiteral, HirUnitNumberLiteral,
     },
     project::{
-        HirExecutableProjectView, HirProjectItemRef, HirRuntimeExecutableOwner,
+        HirAnalysisProjectView, HirProjectItemRef, HirRuntimeExecutableOwner,
         HirRuntimeReachabilityError, HirRuntimeSemanticReachability,
         HirSelectedExpressionInventoryError,
     },
@@ -416,7 +416,7 @@ impl From<RuntimeSemanticFactsError> for RuntimeSemanticProjectionError {
     reason = "one projection transaction receives the same accepted project, semantic world, reachability, presentation inputs and discovery control"
 )]
 pub fn project_runtime_semantic_facts(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -452,7 +452,7 @@ pub fn project_runtime_semantic_facts(
 /// Projects runtime facts and the presentation-owned Fx definitions emitted
 /// by accepted RichText effects in the same lowering transaction.
 pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -480,7 +480,7 @@ pub(crate) fn project_runtime_semantic_facts_with_view_value_programs_and_fx(
 }
 
 fn project_runtime_semantic_fact_inventories(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -699,6 +699,11 @@ fn project_runtime_semantic_fact_inventories(
         {
             continue;
         }
+        // Interpretation is structural execution evidence. The selector can
+        // forward its selected child's value without owning a runtime type.
+        if let CheckedExpressionResolution::PostfixBracket(resolution) = expression.resolution() {
+            input.push_postfix_candidate(owner, resolution.candidate());
+        }
         if !runtime_expression_type_owners.contains(&owner) {
             continue;
         }
@@ -834,9 +839,7 @@ fn project_runtime_semantic_fact_inventories(
                     runtime_variant(variant, symbols, world, analysis)?,
                 );
             }
-            CheckedExpressionResolution::PostfixBracket(resolution) => {
-                input.push_postfix_candidate(owner, resolution.candidate());
-            }
+            CheckedExpressionResolution::PostfixBracket(_) => {}
             CheckedExpressionResolution::Await(awaited) => {
                 input.push_await(
                     owner,
@@ -1054,7 +1057,11 @@ fn project_runtime_semantic_fact_inventories(
             continue;
         }
         input.push_capture(RuntimeCheckedCapture::new(
-            owner,
+            *analysis.selected_capture(owner).ok_or_else(|| {
+                RuntimeSemanticProjectionError::Facts(Box::new(
+                    RuntimeSemanticFactsError::InvalidCaptureProjection { capture: owner },
+                ))
+            })?,
             runtime_type(capture.ty(), symbols, world, analysis)?,
         ));
     }
@@ -1522,7 +1529,7 @@ struct RuntimeDialogueApplicationProjection<'analysis> {
     reason = "one compiler-owned catalog projects global and closed-instance dialogue occurrences under one template allocator"
 )]
 fn project_runtime_dialogue_projection_catalog<'analysis>(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &'analysis FinalSemanticAnalysis,
@@ -1794,7 +1801,7 @@ type CheckedDialogueApplication<'analysis> = (
 );
 
 fn executable_dialogue_applications<'analysis>(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     analysis: &'analysis FinalSemanticAnalysis,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
 ) -> Result<Vec<CheckedDialogueApplication<'analysis>>, RuntimeSemanticProjectionError> {
@@ -1833,7 +1840,7 @@ fn executable_dialogue_applications<'analysis>(
 }
 
 fn project_dialogue_application(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: ExprId,
     target: &CheckedCharacterDialogueTarget,
     rich_text: &CheckedRichTextReport,
@@ -2013,7 +2020,7 @@ fn expression_belongs_to_non_product_plan(
 }
 
 fn build_character_presentation_catalog(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     analysis: &FinalSemanticAnalysis,
     policy: CharacterNameLocalePolicy,
 ) -> Result<CharacterPresentationCatalogData, RuntimeSemanticProjectionError> {
@@ -2148,7 +2155,7 @@ fn character_presentation_record(
 
 fn lower_checked_rich_text(
     owner: ExprId,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     report: &CheckedRichTextReport,
     cue_handle_type: &RuntimeNormalizedType,
     symbols: &ProjectSymbolTable,
@@ -2604,7 +2611,7 @@ type LoweredContentParts = (
 
 fn lower_attached_content_body(
     owner: ExprId,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     body: Option<&CheckedRichTextReport>,
     cue_handle_type: &RuntimeNormalizedType,
     symbols: &ProjectSymbolTable,
@@ -5196,7 +5203,7 @@ fn runtime_project_function_roots(
 }
 
 fn ordinary_function_runtime_call_owners(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     runtime_owners: &HirRuntimeSemanticReachability<'_>,
     execution: &arcweft_lang_sema::final_analysis::FinalAnalysisExecutionProjection<'_>,
 ) -> Result<BTreeSet<ExprId>, RuntimeSemanticProjectionError> {
@@ -5240,7 +5247,7 @@ fn ordinary_function_runtime_call_owners(
 fn runtime_call(
     owner: ExprId,
     facts: &CallTargetFacts,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -5508,7 +5515,7 @@ fn runtime_project_function_projection(
     application: &CheckedCallApplication,
     selection: &CheckedProjectFunctionRuntimeSelection,
     callable: RuntimeProjectCallable,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -5596,7 +5603,7 @@ fn runtime_project_function_materialization(
     owner: ExprId,
     callable: &RuntimeProjectCallable,
     selection: &CheckedProjectFunctionRuntimeSelection,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -5880,7 +5887,7 @@ fn discover_runtime_project_executable_dependencies(
     reason = "one post-discovery transaction materializes every closed instance from the same sealed graph"
 )]
 fn materialize_runtime_project_function_instances(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -5922,7 +5929,7 @@ fn build_runtime_project_function_instance(
     callable: RuntimeProjectCallable,
     selection: &ProjectInstanceSelection,
     instance_solution: ProjectInstanceTypes<'_>,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -6148,7 +6155,7 @@ fn runtime_project_function_instance_semantic_facts(
     lexical: RuntimeExecutableInstantiation<'_>,
     partition: arcweft_lang_sema::final_analysis::CheckedExecutableRuntimeFactPartition,
     type_projection: Box<[RuntimeProjectFunctionTypeProjection]>,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -6740,7 +6747,9 @@ fn runtime_project_function_instance_semantic_facts(
                 .capture(*owner)
                 .ok_or_else(|| origin.error("instance capture has no checked semantic fact"))?;
             Ok(RuntimeCheckedCapture::new(
-                *owner,
+                *analysis.selected_capture(*owner).ok_or_else(|| {
+                    origin.error("instance capture has no selected lexical projection")
+                })?,
                 runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
             ))
         })
@@ -6765,7 +6774,7 @@ fn runtime_closure_instance_fact(
     origin: ProjectInstantiationOrigin,
     lexical: RuntimeExecutableInstantiation<'_>,
     owner: ExprId,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,
@@ -6790,7 +6799,7 @@ fn runtime_closure_instance_fact(
     let checked = analysis
         .expression(owner)
         .ok_or_else(|| error("closure-instance has no checked expression fact"))?;
-    let CheckedExpressionResolution::Closure(_) = checked.resolution() else {
+    let CheckedExpressionResolution::Closure(checked_closure) = checked.resolution() else {
         return Err(error(
             "closure-instance owner has no checked closure authority",
         ));
@@ -6837,23 +6846,20 @@ fn runtime_closure_instance_fact(
             ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
-    let captures = closure
+    let captures = checked_closure
         .captures()
         .iter()
         .enumerate()
         .map(|(position, capture)| {
             let position = u32::try_from(position)
                 .map_err(|_| error("closure capture position exceeds u32"))?;
-            let hir = module
-                .resolve_capture(*capture)
-                .map_err(|_| error("closure capture row is absent"))?;
             let checked = analysis
-                .capture(*capture)
+                .capture(capture.capture())
                 .ok_or_else(|| error("closure capture has no checked type"))?;
             Ok(RuntimeClosureCaptureFact::new(
                 position,
-                *capture,
-                hir.local(),
+                capture.capture(),
+                capture.local(),
                 runtime_type_under(checked.ty(), lexical.types(), symbols, world, analysis)?,
             ))
         })
@@ -7369,7 +7375,7 @@ pub(crate) fn runtime_project_callable(
 fn runtime_call_target(
     owner: ExprId,
     application: &CheckedCallApplication,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     world: &RegisteredSemanticWorld,
     analysis: &FinalSemanticAnalysis,

@@ -144,7 +144,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
         .insert_module(project_module)
         .expect("module insertion");
     let project = builder.finish().expect("fixture project");
-    let executable = project.executable_view().expect("executable project");
+    let executable = project.analysis_view().expect("executable project");
     let (flow_owner, statement, condition) = executable
         .items()
         .find_map(|item| {

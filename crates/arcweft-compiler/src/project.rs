@@ -759,12 +759,12 @@ where
             registration_prelude,
             context,
         )?;
-        let executable = hir_project.executable_view().map_err(|error| {
+        let executable = hir_project.analysis_view().map_err(|error| {
             linked_error(
                 ProjectCompileStage::Readiness,
                 [
                     Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                        .with_code("hir.project.execution"),
+                        .with_code("hir.project.analysis"),
                 ],
             )
         })?;
@@ -1435,7 +1435,7 @@ fn cached_unit_matches(
             && module.hir().key().source() == parsed.document().identity()
             && module.hir().provenance().syntax_snapshot() == parsed.snapshot_id()
             && module.hir().provenance().source_identity() == parsed.document().identity()
-            && module.hir().is_cache_eligible()
+            && module.hir().is_analysis_ready()
             && Arc::ptr_eq(&current, module.hir())
     })
 }

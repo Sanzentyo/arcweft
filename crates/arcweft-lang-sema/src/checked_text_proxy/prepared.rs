@@ -8,7 +8,7 @@ use arcweft_lang_hir::{
     },
     identity::ExprId,
     leaf::{HirPathRoot, HirPathSegment},
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     symbol::{
         ProjectSymbolTable,
         nominal::{ProjectNominalBody, ProjectNominalDeclarationId},
@@ -364,7 +364,7 @@ fn prepared_field_origin_matches(
 }
 
 pub(crate) struct TextProxyFinalSealAuthority<'a> {
-    pub(crate) project: HirExecutableProjectView<'a>,
+    pub(crate) project: HirAnalysisProjectView<'a>,
     pub(crate) symbols: &'a ProjectSymbolTable,
     pub(crate) project_nominals: &'a crate::final_analysis::ProjectNominalSemanticCatalog,
     pub(crate) types: &'a BTreeMap<arcweft_lang_hir::identity::TypeId, TypeKind>,
@@ -388,7 +388,7 @@ impl SealedCheckedTextProxyCatalog {
 
 impl PreparedCheckedTextProxyCatalog {
     pub(crate) fn build(
-        project: HirExecutableProjectView<'_>,
+        project: HirAnalysisProjectView<'_>,
         symbols: &ProjectSymbolTable,
         types: &BTreeMap<arcweft_lang_hir::identity::TypeId, TypeKind>,
         reports: &BTreeMap<arcweft_lang_hir::identity::TypeId, TypeResolutionReport>,
@@ -727,7 +727,7 @@ fn reconstruct_final_definition(
 fn definition_origin_matches_hir(
     key: &ProjectNominalDeclarationId,
     definition: &PreparedCheckedTextProxyDefinition,
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
 ) -> bool {
     let checked = definition.checked();

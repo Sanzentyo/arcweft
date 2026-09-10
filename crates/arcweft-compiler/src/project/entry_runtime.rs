@@ -17,9 +17,7 @@ use arcweft_core::{
 };
 use arcweft_lang_hir::{
     item::{HirHttpMethod, HirItemKind, HirRoutePathSegment},
-    project::{
-        HirExecutableProjectView, HirRuntimeExecutableOwner, HirRuntimeSemanticReachability,
-    },
+    project::{HirAnalysisProjectView, HirRuntimeExecutableOwner, HirRuntimeSemanticReachability},
     symbol::{CallableDeclarationKey, ProjectSymbolTable},
 };
 use arcweft_lang_sema::{
@@ -86,7 +84,7 @@ impl EntryRuntimeProjection {
 /// Builds the sole generation-bound runtime Entry input directly from checked
 /// semantic bindings and their exact final-HIR owners.
 pub(super) fn runtime_entry_lowering_input(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     world: &RegisteredSemanticWorld,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,

@@ -47,7 +47,7 @@ fn candidate_graph_rejects_every_keyword_projection_family_substitution() {
     ];
 
     for (kind, projection) in cases {
-        PendingCandidateGraph::try_new(vec![node(kind, projection)])
+        PendingCandidateGraph::try_new(vec![node(kind, projection)], vec![], vec![])
             .expect("matching candidate keyword projection");
         let wrong = if kind == SyntaxKind::GotoStatement {
             PendingKeywordStatementProjection::Defer
@@ -55,16 +55,20 @@ fn candidate_graph_rejects_every_keyword_projection_family_substitution() {
             PendingKeywordStatementProjection::Goto
         };
         assert_eq!(
-            PendingCandidateGraph::try_new(vec![node(kind, wrong)]).unwrap_err(),
+            PendingCandidateGraph::try_new(vec![node(kind, wrong)], vec![], vec![]).unwrap_err(),
             PendingCandidateGraphError::InvalidKeywordStatementProjection
         );
     }
 
     assert_eq!(
-        PendingCandidateGraph::try_new(vec![node(
-            SyntaxKind::ExpressionList,
-            PendingKeywordStatementProjection::Goto,
-        )])
+        PendingCandidateGraph::try_new(
+            vec![node(
+                SyntaxKind::ExpressionList,
+                PendingKeywordStatementProjection::Goto,
+            )],
+            vec![],
+            vec![]
+        )
         .unwrap_err(),
         PendingCandidateGraphError::InvalidKeywordStatementProjection
     );

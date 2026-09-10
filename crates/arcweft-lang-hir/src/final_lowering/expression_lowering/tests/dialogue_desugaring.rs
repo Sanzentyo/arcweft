@@ -5,7 +5,7 @@ use crate::leaf::{HirPath, HirPathRoot, HirPathValue, HirStringLiteral};
 #[test]
 fn ruby_desugaring_is_admitted_in_direct_nested_and_candidate_content() {
     for (source, ambiguous, status) in [
-        ("alice()[|[夢](ゆめ)]", true, HirModuleStatus::Recovered),
+        ("alice()[|[夢](ゆめ)]", true, HirModuleStatus::Conditional),
         ("alice()[Before |[夢](ゆめ)]", false, HirModuleStatus::Clean),
         (
             "alice()[Before #strong()[｜夢《ゆめ》]]",
@@ -18,7 +18,7 @@ fn ruby_desugaring_is_admitted_in_direct_nested_and_candidate_content() {
         (
             "items[{ alice()[Before |[夢](ゆめ)] }]",
             true,
-            HirModuleStatus::Recovered,
+            HirModuleStatus::Conditional,
         ),
     ] {
         let parsed = parsed_source("ruby-content-context", &[source.into()]);
@@ -33,6 +33,50 @@ fn ruby_desugaring_is_admitted_in_direct_nested_and_candidate_content() {
             matches!(module.slots().resolve(id).unwrap().origin(), HirOrigin::Synthetic(key) if key.role() == SyntheticRole::DialogueRubyApplication)
         }));
     }
+}
+
+#[test]
+fn generated_content_nominal_type_inherits_its_validated_candidate_region() {
+    let parsed = parsed_source(
+        "candidate-content-nominal",
+        &["items[{ alice()[Before #object(type=Missing)[]]; 0 }]".into()],
+    );
+    let (module, _, _) = lower_and_publish(&parsed);
+    let mut generated = 0;
+    for (owner, expression) in module.expressions() {
+        let HirExprKind::AttachedContentApplication(application) = expression.kind() else {
+            continue;
+        };
+        let crate::dialogue_application::HirAttachedContentApplicationFamily::ContentCall {
+            evidence,
+            ..
+        } = application.family()
+        else {
+            continue;
+        };
+        let Some(discriminator) = evidence.nominal_discriminator() else {
+            continue;
+        };
+        let region = module
+            .candidate_provenance()
+            .owner_region(SyntheticOwner::Expr(owner))
+            .expect("the exact content producer belongs to a retained interpretation");
+        assert_eq!(
+            module
+                .candidate_provenance()
+                .owner_region(SyntheticOwner::Type(discriminator.semantic_only())),
+            Some(region)
+        );
+        assert!(module.resolve_type(discriminator.semantic_only()).is_ok());
+        let query = crate::source_index::HirSourceQuery::Type {
+            owner: discriminator.semantic_only(),
+            role: crate::source_index::HirTypeSourceRole::PathSegment { ordinal: 0 },
+        };
+        let source = module.source_anchor(query).unwrap().unwrap();
+        assert_eq!(&parsed.source()[source.range().as_range()], "Missing");
+        generated += 1;
+    }
+    assert_eq!(generated, 1);
 }
 
 fn generated_node(transaction: &mut StagedHirModuleTransaction<'_>, role: SyntheticRole) -> ExprId {

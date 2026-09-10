@@ -165,7 +165,7 @@ fn loop_control_transfers_resolve_the_nearest_loop_expression() {
             .expect("break transfer row");
         assert_eq!(row.kind(), HirControlTransferKind::Break);
         assert_eq!(
-            row.target(),
+            row.target().unwrap(),
             &HirControlTransferTarget::Loop {
                 family: HirLoopTargetFamily::LoopExpression,
                 body_owner: HirSemanticBodyOwner::direct_expression(expected),
@@ -244,6 +244,7 @@ fn statement_loop_control_transfers_resolve_each_statement_loop_family() {
             .get(&statement)
             .expect("transfer row")
             .target()
+            .unwrap()
         else {
             panic!("statement loop must resolve to a loop target")
         };

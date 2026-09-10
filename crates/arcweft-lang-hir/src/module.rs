@@ -44,10 +44,11 @@ use crate::source_index::{
 use crate::stmt::HirStmt;
 use crate::type_ref::HirType;
 
-/// Executability of one complete immutable HIR module snapshot.
+/// Analysis readiness of one complete immutable HIR module snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirModuleStatus {
     Clean,
+    Conditional,
     Recovered,
 }
 
@@ -447,6 +448,7 @@ pub struct HirModule {
     source_ordered_items: Box<[ItemId]>,
     declaration_members: HirDeclarationMemberIndex,
     source_components: HirSourceIndex,
+    candidate_provenance: Arc<crate::source_index::HirCandidateProvenance>,
     dialogue_line_sites: HirDialogueLineSiteInventory,
     invalidation_epoch: NonZeroU64,
 }
@@ -454,6 +456,7 @@ pub struct HirModule {
 impl HirModule {
     #[allow(
         clippy::too_many_arguments,
+        clippy::too_many_lines,
         reason = "the constructor atomically validates every owner of the immutable published module schema"
     )]
     pub(crate) fn try_new(
@@ -465,7 +468,7 @@ impl HirModule {
         arenas: HirModuleArenas,
         source_ordered_items: Box<[ItemId]>,
         declaration_members: HirDeclarationMemberIndex,
-        source_components: HirSourceIndex,
+        mut source_components: HirSourceIndex,
         invalidation_epoch: NonZeroU64,
     ) -> Result<Self, HirLowerFailure> {
         if slots.snapshot_id() != snapshot
@@ -498,48 +501,52 @@ impl HirModule {
                     types: arenas.types(),
                 },
             )
-            || !source_components.validates_attached_expressions(
-                parsed,
-                &slots,
-                arenas.items(),
-                arenas.expressions(),
-                arenas.types(),
-                arenas.statements(),
-                arenas.scopes(),
-                arenas.locals(),
-                arenas.patterns(),
-            )
-            || !source_components.validates_attached_patterns(
-                parsed,
-                &slots,
-                arenas.patterns(),
-                arenas.types(),
-            )
-            || !source_components.validates_attached_types(
-                parsed,
-                &slots,
-                arenas.items(),
-                arenas.types(),
-            )
-            || !source_components.validates_content_call_types(
-                &slots,
-                arenas.expressions(),
-                arenas.types(),
-            )
-            || !source_components.validates_attached_statements(parsed, &slots, arenas.statements())
-            || !source_components.validates_attached_thread_bodies(
-                parsed,
-                &slots,
-                arenas.items(),
-                arenas.expressions(),
-                arenas.statements(),
-                arenas.scopes(),
-                arenas.locals(),
-                arenas.patterns(),
-            )
         {
             return Err(HirInvariantFailure::InvalidSourceIndex.into());
         }
+        let (candidate_provenance, candidate_sources) = source_components
+            .validate_attached_expressions(
+                parsed,
+                &slots,
+                arenas.items(),
+                arenas.expressions(),
+                arenas.types(),
+                arenas.statements(),
+                arenas.scopes(),
+                arenas.locals(),
+                arenas.patterns(),
+                arenas.captures(),
+            )
+            .ok_or(HirInvariantFailure::InvalidSourceIndex)?;
+        if !source_components.validates_attached_patterns(
+            parsed,
+            &slots,
+            arenas.patterns(),
+            arenas.types(),
+        ) || !source_components.validates_attached_types(
+            parsed,
+            &slots,
+            arenas.items(),
+            arenas.types(),
+        ) || !source_components.validates_attached_statements(
+            parsed,
+            &slots,
+            arenas.statements(),
+        ) || !source_components.validates_attached_thread_bodies(
+            parsed,
+            &slots,
+            arenas.items(),
+            arenas.expressions(),
+            arenas.statements(),
+            arenas.scopes(),
+            arenas.locals(),
+            arenas.patterns(),
+        ) {
+            return Err(HirInvariantFailure::InvalidSourceIndex.into());
+        }
+        candidate_sources
+            .install(&mut source_components)
+            .ok_or(HirInvariantFailure::InvalidSourceIndex)?;
         validate_diagnostics(
             parsed,
             &provenance.source_identity,
@@ -551,15 +558,21 @@ impl HirModule {
         if !arenas.validates_source_ordered_items(&slots, &source_ordered_items, parsed) {
             return Err(HirInvariantFailure::InvalidSourceOrderedItems.into());
         }
-        let status = if parsed.status() == ParseStatus::Recovered || slots.has_poisoned_live_slots()
+        let status = if parsed.status() == ParseStatus::Recovered
+            || slots
+                .poisoned_live_owners()
+                .any(|owner| !candidate_provenance.contains(owner))
         {
             HirModuleStatus::Recovered
+        } else if parsed.status() == ParseStatus::Conditional || slots.has_poisoned_live_slots() {
+            HirModuleStatus::Conditional
         } else {
             HirModuleStatus::Clean
         };
+        let dialogue_line_sites = HirDialogueLineSiteInventory::empty(key.clone());
         let mut module = Self {
             snapshot,
-            key: key.clone(),
+            key,
             provenance,
             status,
             diagnostics,
@@ -568,7 +581,8 @@ impl HirModule {
             source_ordered_items,
             declaration_members,
             source_components,
-            dialogue_line_sites: HirDialogueLineSiteInventory::empty(key.clone()),
+            candidate_provenance: Arc::new(candidate_provenance),
+            dialogue_line_sites,
             invalidation_epoch,
         };
         module.dialogue_line_sites = crate::line_identity::sites::build_site_inventory(&module)?;
@@ -604,20 +618,26 @@ impl HirModule {
         &self.diagnostics
     }
 
+    /// Exact containment issued by source freeze for all retained alternatives.
+    pub const fn candidate_provenance(&self) -> &Arc<crate::source_index::HirCandidateProvenance> {
+        &self.candidate_provenance
+    }
+
+    /// Complete typed recovery inventory of this immutable module generation.
+    pub fn recovered_owners(&self) -> impl Iterator<Item = SyntheticOwner> + '_ {
+        self.slots.poisoned_live_owners()
+    }
+
     /// Source/topology evidence for dialogue sites in this exact module
     /// revision. IDs and project acceptance are intentionally absent here.
     pub const fn dialogue_line_sites(&self) -> &HirDialogueLineSiteInventory {
         &self.dialogue_line_sites
     }
 
-    /// Whether semantic, verifier, compiler, and runtime consumers may execute it.
-    pub const fn is_executable(&self) -> bool {
-        matches!(self.status, HirModuleStatus::Clean)
-    }
-
-    /// Whether persistent compilation caches may admit this snapshot.
-    pub const fn is_cache_eligible(&self) -> bool {
-        matches!(self.status, HirModuleStatus::Clean)
+    /// Whether semantic analysis may inspect this exact module. Conditional
+    /// recovery still requires a complete selected program before execution.
+    pub const fn is_analysis_ready(&self) -> bool {
+        !matches!(self.status, HirModuleStatus::Recovered)
     }
 
     /// Monotonic cache-invalidation generation published with this snapshot.
@@ -648,6 +668,26 @@ impl HirModule {
 
     pub const fn declaration_members(&self) -> &HirDeclarationMemberIndex {
         &self.declaration_members
+    }
+
+    /// Binds a source component to its exact document, preserving zero-width
+    /// insertion anchors. An insertion is a source location, not poison evidence.
+    ///
+    /// # Panics
+    /// Panics only if a published source index violates its checked range invariant.
+    pub fn source_anchor(
+        &self,
+        query: HirSourceQuery,
+    ) -> Result<Option<arcweft_source::SourceSpan>, HirSourceQueryError> {
+        let lookup = self.source_site(self.provenance.source_identity(), query)?;
+        match lookup.presence() {
+            HirSourcePresence::Present(site) => {
+                Ok(Some(self.provenance.document().span(site.range()).expect(
+                    "published source component belongs to the retained source document",
+                )))
+            }
+            HirSourcePresence::AbsentOptional => Ok(None),
+        }
     }
 
     /// Resolves one typed source role through the module's sole immutable

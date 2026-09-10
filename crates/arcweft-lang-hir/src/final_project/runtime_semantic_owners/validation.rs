@@ -8,13 +8,13 @@ use crate::{
     expr::HirExprKind,
     identity::{ExprId, ItemId, StmtId},
     item::{HirImplMember, HirItemKind},
-    project::HirExecutableProjectView,
+    project::HirAnalysisProjectView,
     stmt::HirStmtKind,
     symbol::{ImplMethodDeclarationId, ImplMethodKind},
 };
 
 pub(super) fn validate_roots_and_edges(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     input: &HirRuntimeSemanticReachabilityInput,
 ) -> Result<(), HirRuntimeReachabilityError> {
     for root in &input.roots {
@@ -51,7 +51,7 @@ pub(super) fn validate_roots_and_edges(
 }
 
 fn edge_source_family_matches(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     edge: &HirRuntimeReachabilityEdge,
 ) -> bool {
     match (&edge.source, &edge.kind) {
@@ -91,7 +91,7 @@ fn edge_source_family_matches(
 }
 
 fn resolve_expression_kind(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: ExprId,
 ) -> Option<&HirExprKind> {
     project
@@ -103,7 +103,7 @@ fn resolve_expression_kind(
 }
 
 fn resolve_statement_kind(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     owner: StmtId,
 ) -> Option<&HirStmtKind> {
     project
@@ -115,7 +115,7 @@ fn resolve_statement_kind(
 }
 
 fn edge_kind_matches_target(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     edge: &HirRuntimeReachabilityEdge,
 ) -> bool {
     match (&edge.kind, &edge.target) {
@@ -157,7 +157,7 @@ fn edge_kind_matches_target(
 }
 
 fn iterator_witness_method_matches(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     implementation_owner: ItemId,
     member: u16,
     method: &ImplMethodDeclarationId,
@@ -204,7 +204,7 @@ fn iterator_witness_method_matches(
 }
 
 fn impl_method_implementation_owner(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     method: &ImplMethodDeclarationId,
 ) -> Option<ItemId> {
     let implementation = method.implementation();
@@ -220,7 +220,7 @@ fn impl_method_implementation_owner(
 }
 
 fn root_kind_matches(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     root: &HirRuntimeReachabilityRoot,
 ) -> bool {
     match (root.kind, &root.owner) {
@@ -244,7 +244,7 @@ fn root_kind_matches(
 }
 
 fn validate_site(
-    project: HirExecutableProjectView<'_>,
+    project: HirAnalysisProjectView<'_>,
     site: HirRuntimeReachabilitySite,
 ) -> Result<(), HirRuntimeReachabilityError> {
     let resolved = match site {

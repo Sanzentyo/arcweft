@@ -971,8 +971,7 @@ fn flow_reserved_result_and_missing_body_commit_roleful_recovery() {
     let (owner, item, flow) = resolve_flow(&module, 0);
     assert_eq!(module.source_ordered_items(), [owner]);
     assert_eq!(module.status(), HirModuleStatus::Recovered);
-    assert!(!module.is_executable());
-    assert!(!module.is_cache_eligible());
+    assert!(!module.is_analysis_ready());
     assert_eq!(
         item.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MissingBody)
