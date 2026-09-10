@@ -240,8 +240,6 @@ pub enum RuntimeSchemaError {
     },
     #[error("runtime value at `{path}` contains non-finite {kind}")]
     NonFinite { path: String, kind: &'static str },
-    #[error("runtime record at `{path}` contains duplicate field `{field}`")]
-    DuplicateField { path: String, field: String },
     #[error("runtime record at `{path}` is missing field `{field}`")]
     MissingField { path: String, field: String },
     #[error("runtime record at `{path}` contains unknown field `{field}`")]
@@ -666,33 +664,17 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
             }
             RuntimeValue::Seq(values) => {
                 self.u8(12)?;
-                let values = values.clone().into_values();
                 self.len(values.len())?;
-                for value in &values {
-                    self.value(value)?;
+                for ordinal in 0..values.len() {
+                    self.value(&values.value_at(ordinal))?;
                 }
                 Ok(())
             }
             RuntimeValue::Record(fields) => {
                 self.u8(13)?;
                 self.len(fields.len())?;
-                let mut fields = fields.iter().collect::<Vec<_>>();
-                fields.sort_unstable_by(|left, right| left.name().cmp(right.name()));
-                if fields
-                    .windows(2)
-                    .any(|pair| pair[0].name() == pair[1].name())
-                {
-                    return Err(RuntimeSchemaError::DuplicateField {
-                        path: "$".to_owned(),
-                        field: fields
-                            .windows(2)
-                            .find(|pair| pair[0].name() == pair[1].name())
-                            .expect("duplicate was just detected")[0]
-                            .name()
-                            .to_owned(),
-                    });
-                }
                 for field in fields {
+                    self.var_u32(field.field().get().get())?;
                     self.string(field.name())?;
                     self.value(field.value())?;
                 }
@@ -1184,8 +1166,7 @@ impl<'a> SchemaValidationState<'a> {
                 }
             }
             (RuntimeTypeSchema::Bytes { .. }, RuntimeValue::Seq(sequence)) => {
-                let values = sequence.clone().into_values();
-                self.validate_sequence(&RuntimeTypeSchema::U8, &values, path, depth)
+                self.validate_sequence(&RuntimeTypeSchema::U8, sequence, path, depth)
             }
             (RuntimeTypeSchema::Option(inner), value @ RuntimeValue::Variant { .. }) => {
                 match value.builtin_variant_case() {
@@ -1209,12 +1190,10 @@ impl<'a> SchemaValidationState<'a> {
                 }
             }
             (RuntimeTypeSchema::Seq(inner), RuntimeValue::Seq(sequence)) => {
-                let values = sequence.clone().into_values();
-                self.validate_sequence(inner, &values, path, depth)
+                self.validate_sequence(inner, sequence, path, depth)
             }
             (RuntimeTypeSchema::Map { key, value }, RuntimeValue::Seq(sequence)) => {
-                let values = sequence.clone().into_values();
-                self.validate_map(key, value, &values, path, depth)
+                self.validate_map(key, value, sequence, path, depth)
             }
             (RuntimeTypeSchema::Record { fields, .. }, RuntimeValue::Record(values)) => {
                 self.validate_record(fields, values, path, depth)
@@ -1259,7 +1238,7 @@ impl<'a> SchemaValidationState<'a> {
         &mut self,
         key: &'a RuntimeTypeSchema,
         value: &'a RuntimeTypeSchema,
-        entries: &[RuntimeValue],
+        entries: &crate::value::RuntimeSeq,
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
@@ -1268,12 +1247,13 @@ impl<'a> SchemaValidationState<'a> {
                 budget: "sequence_items",
             });
         }
-        for (index, entry) in entries.iter().enumerate() {
-            let RuntimeValue::Tuple(items) = entry else {
-                return Err(type_error(path, "map entry tuple", entry));
+        for index in 0..entries.len() {
+            let entry = entries.value_at(index);
+            let RuntimeValue::Tuple(items) = &entry else {
+                return Err(type_error(path, "map entry tuple", &entry));
             };
             if items.len() != 2 {
-                return Err(type_error(path, "two-item map entry tuple", entry));
+                return Err(type_error(path, "two-item map entry tuple", &entry));
             }
             self.validate(key, &items[0], &format!("{path}[{index}].key"), depth + 1)?;
             self.validate(
@@ -1289,19 +1269,14 @@ impl<'a> SchemaValidationState<'a> {
     fn validate_record(
         &mut self,
         fields: &'a [RuntimeSchemaField],
-        values: &[crate::value::RuntimeFieldValue],
+        values: &crate::value::RuntimeRecordValue,
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        let mut actual = BTreeMap::new();
-        for field in values {
-            if actual.insert(field.name(), field.value()).is_some() {
-                return Err(RuntimeSchemaError::DuplicateField {
-                    path: path.to_owned(),
-                    field: field.name().to_owned(),
-                });
-            }
-        }
+        let actual = values
+            .iter()
+            .map(|field| (field.name(), field.value()))
+            .collect::<BTreeMap<_, _>>();
         let expected = fields
             .iter()
             .filter(|field| !field.skip)
@@ -1394,7 +1369,7 @@ impl<'a> SchemaValidationState<'a> {
     fn validate_sequence(
         &mut self,
         schema: &'a RuntimeTypeSchema,
-        values: &[RuntimeValue],
+        values: &crate::value::RuntimeSeq,
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
@@ -1403,8 +1378,13 @@ impl<'a> SchemaValidationState<'a> {
                 budget: "sequence_items",
             });
         }
-        for (index, value) in values.iter().enumerate() {
-            self.validate(schema, value, &format!("{path}[{index}]"), depth + 1)?;
+        for index in 0..values.len() {
+            self.validate(
+                schema,
+                &values.value_at(index),
+                &format!("{path}[{index}]"),
+                depth + 1,
+            )?;
         }
         Ok(())
     }
@@ -1675,5 +1655,101 @@ mod visitor_tests {
                 .as_bytes(),
             blake3::hash(&expected).as_bytes()
         );
+    }
+
+    #[test]
+    fn canonical_records_retain_field_ids_and_declaration_order() {
+        let declared = RuntimeValue::try_record(vec![
+            ("z".to_owned(), RuntimeValue::Bool(true)),
+            ("a".to_owned(), RuntimeValue::Bool(false)),
+        ])
+        .unwrap();
+        let reordered = RuntimeValue::try_record(vec![
+            ("a".to_owned(), RuntimeValue::Bool(false)),
+            ("z".to_owned(), RuntimeValue::Bool(true)),
+        ])
+        .unwrap();
+        let expected = [13, 2, 1, 1, b'z', 2, 1, 2, 1, b'a', 2, 0];
+        assert_eq!(
+            declared.try_canonical_bytes(expected.len()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&declared, expected.len())
+                .unwrap()
+                .as_bytes(),
+            blake3::hash(&expected).as_bytes()
+        );
+        assert_ne!(
+            declared.try_canonical_bytes(32).unwrap(),
+            reordered.try_canonical_bytes(32).unwrap()
+        );
+        assert!(declared.try_canonical_bytes(expected.len() - 1).is_err());
+        assert!(canonical_runtime_value_digest(&declared, expected.len() - 1).is_err());
+    }
+
+    #[test]
+    fn columnar_records_share_the_logical_row_transcript() {
+        let row = RuntimeValue::try_record(vec![
+            ("z".to_owned(), RuntimeValue::Bool(true)),
+            ("a".to_owned(), RuntimeValue::Bool(false)),
+        ])
+        .unwrap();
+        let rows = RuntimeValue::Seq(crate::value::RuntimeSeq::values(vec![row]));
+        let columns = RuntimeValue::Seq(
+            crate::value::RuntimeSeq::record_columns(
+                1,
+                vec![
+                    (
+                        "z".to_owned(),
+                        crate::value::RuntimeSeq::values(vec![RuntimeValue::Bool(true)]),
+                    ),
+                    (
+                        "a".to_owned(),
+                        crate::value::RuntimeSeq::values(vec![RuntimeValue::Bool(false)]),
+                    ),
+                ],
+            )
+            .unwrap(),
+        );
+        let expected = rows.try_canonical_bytes(64).unwrap();
+        assert_eq!(
+            columns.try_canonical_bytes(expected.len()).unwrap(),
+            expected
+        );
+        assert_eq!(
+            canonical_runtime_value_digest(&columns, expected.len())
+                .unwrap()
+                .as_bytes(),
+            blake3::hash(&expected).as_bytes()
+        );
+    }
+
+    #[test]
+    fn canonical_columnar_encoding_checks_budget_before_expanding_rows() {
+        let columns = crate::value::TupleSeq::new(u32::MAX as usize, Vec::new()).unwrap();
+        let value = RuntimeValue::Seq(crate::value::RuntimeSeq::TupleColumns(columns));
+        let expected = super::RuntimeSchemaError::BudgetExceeded {
+            budget: "encoded_bytes",
+        };
+        assert_eq!(value.try_canonical_bytes(5), Err(expected.clone()));
+        assert_eq!(canonical_runtime_value_digest(&value, 5), Err(expected));
+        for schema in [
+            super::RuntimeTypeSchema::Seq(Box::new(super::RuntimeTypeSchema::Unit)),
+            super::RuntimeTypeSchema::Bytes {
+                format: super::RuntimeBytesFormat::Binary,
+            },
+            super::RuntimeTypeSchema::Map {
+                key: Box::new(super::RuntimeTypeSchema::Unit),
+                value: Box::new(super::RuntimeTypeSchema::Unit),
+            },
+        ] {
+            assert_eq!(
+                schema.validate_value(&value, super::RuntimeSchemaLimits::engine_default()),
+                Err(super::RuntimeSchemaError::BudgetExceeded {
+                    budget: "sequence_items"
+                })
+            );
+        }
     }
 }

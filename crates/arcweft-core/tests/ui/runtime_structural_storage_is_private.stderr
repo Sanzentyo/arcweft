@@ -1,0 +1,21 @@
+error[E0451]: field `fields` of struct `RuntimeRecordValue` is private
+ --> tests/ui/runtime_structural_storage_is_private.rs:4:34
+  |
+4 |     let _ = RuntimeRecordValue { fields: Vec::new() };
+  |                                  ^^^^^^ private field
+
+error[E0451]: fields `len` and `fields` of struct `RecordSeq` are private
+ --> tests/ui/runtime_structural_storage_is_private.rs:5:25
+  |
+5 |     let _ = RecordSeq { len: 0, fields: Vec::new() };
+  |                         ^^^     ^^^^^^ private field
+  |                         |
+  |                         private field
+
+error[E0451]: fields `len` and `columns` of struct `TupleSeq` are private
+ --> tests/ui/runtime_structural_storage_is_private.rs:6:24
+  |
+6 |     let _ = TupleSeq { len: 0, columns: Vec::new() };
+  |                        ^^^     ^^^^^^^ private field
+  |                        |
+  |                        private field

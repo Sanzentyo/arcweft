@@ -331,29 +331,22 @@ impl AwbcRuntimeValueSnapshot {
                     .collect::<Result<_, _>>()?,
             ),
             Self::Seq(value) => RuntimeValue::Seq(Self::sequence_into_live(value)?),
-            Self::Record(fields) => RuntimeValue::Record(
-                fields
+            Self::Record(fields) => {
+                let fields = fields
                     .into_iter()
-                    .enumerate()
-                    .map(|(ordinal, field)| {
-                        let expected =
-                            super::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
-                                .map_err(|error| {
-                                    AwbcRuntimeValueSnapshotError::new(error.to_string())
-                                })?;
-                        if field.field != expected {
-                            return Err(AwbcRuntimeValueSnapshotError::new(
-                                "AWBC record field identity does not match its ordinal",
-                            ));
-                        }
+                    .map(|field| {
                         Ok(super::RuntimeFieldValue::new_accepted(
                             field.field,
                             field.name,
                             field.value.into_runtime_value()?,
                         ))
                     })
-                    .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
-            ),
+                    .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?;
+                RuntimeValue::Record(
+                    super::RuntimeRecordValue::try_from_fields(fields)
+                        .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
+                )
+            }
             Self::NominalRecord(value) => {
                 RuntimeValue::NominalRecord(Self::nominal_into_live(value)?)
             }
@@ -496,7 +489,7 @@ impl AwbcRuntimeValueSnapshot {
                 .map_err(|error| AwbcRuntimeValueSnapshotError::new(error.to_string()))?,
             ),
             AwbcRuntimeSeqSnapshot::RecordColumns { len, fields } => RuntimeSeq::RecordColumns(
-                RecordSeq::try_from_accepted_fields(
+                RecordSeq::try_from_fields(
                     usize::try_from(len).map_err(|_| {
                         AwbcRuntimeValueSnapshotError::new(
                             "AWBC record sequence length does not fit this platform",
@@ -504,20 +497,12 @@ impl AwbcRuntimeValueSnapshot {
                     })?,
                     fields
                         .into_iter()
-                        .enumerate()
-                        .map(|(ordinal, field)| {
-                            let expected = super::RuntimeRecordFieldId::try_from_zero_based_ordinal(
-                                ordinal,
-                            )
-                            .map_err(|error| {
-                                AwbcRuntimeValueSnapshotError::new(error.to_string())
-                            })?;
-                            if field.field != expected {
-                                return Err(AwbcRuntimeValueSnapshotError::new(
-                                    "AWBC record sequence field identity does not match its ordinal",
-                                ));
-                            }
-                            Ok((field.name, Self::sequence_into_live(field.values)?))
+                        .map(|field| {
+                            Ok(super::RecordSeqField::new_accepted(
+                                field.field,
+                                field.name,
+                                Self::sequence_into_live(field.values)?,
+                            ))
                         })
                         .collect::<Result<_, AwbcRuntimeValueSnapshotError>>()?,
                 )

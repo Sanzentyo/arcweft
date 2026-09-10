@@ -510,31 +510,9 @@ fn normalize_runtime_value(
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeSeq::values)
             .map(RuntimeValue::Seq),
-        RuntimeValue::Record(fields) => {
-            if let Some(pair) = fields
-                .windows(2)
-                .find(|pair| pair[0].name() >= pair[1].name())
-            {
-                return Err(CharacterDialogueValueError::Field {
-                    field: "typed_value",
-                    reason: format!(
-                        "anonymous record fields are not in canonical order near `{}`",
-                        pair[1].name()
-                    ),
-                });
-            }
-            let fields = fields
-                .into_iter()
-                .map(|field| {
-                    let name = field.name().to_owned();
-                    normalize_runtime_value(field.value().clone()).map(|value| (name, value))
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            RuntimeValue::try_record(fields).map_err(|error| CharacterDialogueValueError::Field {
-                field: "typed_value",
-                reason: error.to_string(),
-            })
-        }
+        RuntimeValue::Record(fields) => fields
+            .try_map_values(normalize_runtime_value)
+            .map(RuntimeValue::Record),
         RuntimeValue::NominalRecord(record) => {
             let type_id = record.type_id().clone();
             let layout = record.layout();
@@ -602,7 +580,9 @@ pub(super) fn empty_runtime_value(
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::Tuple),
         RuntimeValue::Seq(_) => Ok(RuntimeValue::Seq(RuntimeSeq::values(Vec::new()))),
-        RuntimeValue::Record(_) => Ok(RuntimeValue::Record(Vec::new())),
+        RuntimeValue::Record(_) => Ok(RuntimeValue::Record(
+            arcweft_core::value::RuntimeRecordValue::default(),
+        )),
         RuntimeValue::NominalRecord(record) => record
             .fields()
             .iter()

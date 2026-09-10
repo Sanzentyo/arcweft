@@ -324,7 +324,7 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
         panic!("style remains anonymous");
     };
     assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].name(), "beta");
+    assert_eq!(fields.fields()[0].name(), "beta");
 }
 
 #[test]
@@ -747,7 +747,7 @@ fn structured_paths_and_values_enforce_depth_8_and_total_leaves_256() {
 }
 
 #[test]
-fn typed_values_normalize_nested_negative_zero_and_reject_record_reordering() {
+fn typed_values_normalize_nested_negative_zero_and_preserve_record_order() {
     let layout = TypeLayoutHash::from_bytes([24; 32]);
     let value = CharacterDialogueTypedValue::try_new(
         None,
@@ -762,27 +762,20 @@ fn typed_values_normalize_nested_negative_zero_and_reject_record_reordering() {
     let RuntimeValue::Record(fields) = value.value() else {
         panic!("record");
     };
-    let RuntimeValue::Tuple(values) = fields[0].value() else {
+    let RuntimeValue::Tuple(values) = fields.fields()[0].value() else {
         panic!("tuple");
     };
     assert!(matches!(&values[0], RuntimeValue::F32(value) if value.to_bits() == 0));
     assert!(matches!(&values[1], RuntimeValue::F64(value) if value.to_bits() == 0));
 
-    assert!(matches!(
-        CharacterDialogueTypedValue::try_new(
-            None,
-            layout,
-            RuntimeValue::try_record(vec![
-                ("beta".to_owned(), RuntimeValue::Bool(true)),
-                ("alpha".to_owned(), RuntimeValue::Bool(false)),
-            ])
-            .expect("test record fields are unique"),
-        ),
-        Err(CharacterDialogueValueError::Field {
-            field: "typed_value",
-            ..
-        })
-    ));
+    let record = RuntimeValue::try_record(vec![
+        ("beta".to_owned(), RuntimeValue::Bool(true)),
+        ("alpha".to_owned(), RuntimeValue::Bool(false)),
+    ])
+    .expect("test record fields are unique");
+    let typed = CharacterDialogueTypedValue::try_new(None, layout, record.clone())
+        .expect("declaration order remains valid");
+    assert_eq!(typed.value(), &record);
 }
 
 #[test]

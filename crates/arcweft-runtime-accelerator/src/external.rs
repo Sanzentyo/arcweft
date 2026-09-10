@@ -934,7 +934,7 @@ fn runtime_record_fields<'a>(
     context: &str,
 ) -> Result<&'a [arcweft_core::value::RuntimeFieldValue], RuntimeEvalError> {
     match value {
-        RuntimeValue::Record(fields) => Ok(fields),
+        RuntimeValue::Record(fields) => Ok(fields.fields()),
         other => Err(data_runtime_error(
             "data.decode",
             format!(

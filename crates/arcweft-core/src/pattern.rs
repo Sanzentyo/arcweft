@@ -2020,7 +2020,7 @@ fn runtime_value_matches_type_inner(
             runtime_tuple_matches_type(plan, types, values, depth)
         }
         (RuntimePlanTypeProjection::Record(fields), RuntimeValue::Record(values)) => {
-            runtime_record_matches_type(plan, fields, values, depth)
+            runtime_record_matches_type(plan, fields, values.fields(), depth)
         }
         (RuntimePlanTypeProjection::Choice(types), value) => {
             runtime_choice_matches_type(plan, types, value, depth)

@@ -1,54 +1,35 @@
 use super::{
-    DenseSeq, DenseSeqKind, DenseSeqStorage, RecordSeq, RecordSeqField, RuntimeEntityReference,
-    RuntimeEvalError, RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut,
-    RuntimeFieldValue, RuntimeISizeValue, RuntimeInt, RuntimeRecordAdmissionError,
-    RuntimeRecordFieldId, RuntimeSeq, RuntimeSeqError, RuntimeUInt, RuntimeUSizeValue,
-    RuntimeValue, TupleSeq, materialize_i64_sequence, runtime_sequence_dense_i8,
+    DenseSeq, DenseSeqKind, DenseSeqStorage, RuntimeEntityReference, RuntimeEvalError,
+    RuntimeExactInteger, RuntimeExactIntegerSlice, RuntimeExactIntegerSliceMut, RuntimeISizeValue,
+    RuntimeInt, RuntimeRecordFieldId, RuntimeRecordValue, RuntimeSeq, RuntimeSeqError, RuntimeUInt,
+    RuntimeUSizeValue, RuntimeValue, materialize_i64_sequence, runtime_sequence_dense_i8,
     runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i128,
     runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
     runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_value_label,
 };
 use crate::plan::{RuntimePureInputType, RuntimePureOutputType};
 use crate::time::LogicalDuration;
-use std::collections::BTreeSet;
+use serde::{Deserialize, Deserializer, Serialize, de};
 
-impl RuntimeValue {
-    pub fn try_record(
-        fields_in_authored_order: Vec<(String, RuntimeValue)>,
-    ) -> Result<Self, RuntimeRecordAdmissionError> {
-        preflight_anonymous_record_field_count(fields_in_authored_order.len())?;
-        let mut fields = Vec::with_capacity(fields_in_authored_order.len());
-        let mut names = BTreeSet::new();
-        for (ordinal, (name, value)) in fields_in_authored_order.into_iter().enumerate() {
-            if !names.insert(name.clone()) {
-                return Err(RuntimeRecordAdmissionError::DuplicateName { name });
-            }
-            let field = accepted_anonymous_record_field_id(ordinal, &name)?;
-            fields.push(RuntimeFieldValue::new_accepted(field, name, value));
-        }
-        Ok(Self::Record(fields))
-    }
+/// Columnar storage for a sequence of homogeneous tuple values.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct TupleSeq {
+    len: usize,
+    columns: Vec<RuntimeSeq>,
 }
 
-fn preflight_anonymous_record_field_count(
-    actual: usize,
-) -> Result<(), RuntimeRecordAdmissionError> {
-    if actual > u32::MAX as usize {
-        return Err(RuntimeRecordAdmissionError::TooManyFields);
-    }
-    Ok(())
+/// Columnar storage for a sequence of homogeneous record values.
+#[derive(Clone, Debug, PartialEq, Serialize)]
+pub struct RecordSeq {
+    len: usize,
+    fields: Vec<RecordSeqField>,
 }
 
-fn accepted_anonymous_record_field_id(
-    ordinal: usize,
-    name: &str,
-) -> Result<RuntimeRecordFieldId, RuntimeRecordAdmissionError> {
-    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
-        RuntimeRecordAdmissionError::InvalidFieldIdentity {
-            name: name.to_owned(),
-            source,
-        }
-    })
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub struct RecordSeqField {
+    field: RuntimeRecordFieldId,
+    name: String,
+    values: RuntimeSeq,
 }
 
 impl TupleSeq {
@@ -129,24 +110,13 @@ impl RecordSeq {
         rows: usize,
         fields_in_accepted_order: Vec<(String, RuntimeSeq)>,
     ) -> Result<Self, RuntimeSeqError> {
-        preflight_record_sequence_field_count(fields_in_accepted_order.len())?;
+        RuntimeRecordValue::check_field_count(fields_in_accepted_order.len())?;
         let mut fields = Vec::with_capacity(fields_in_accepted_order.len());
-        let mut names = BTreeSet::new();
         for (ordinal, (name, values)) in fields_in_accepted_order.into_iter().enumerate() {
-            let field = accepted_record_sequence_field_id(ordinal, &name)?;
-            if values.len() != rows {
-                return Err(RuntimeSeqError::ColumnLength {
-                    ordinal,
-                    expected: rows,
-                    actual: values.len(),
-                });
-            }
-            if !names.insert(name.clone()) {
-                return Err(RuntimeSeqError::DuplicateRecordField { field: name });
-            }
+            let field = RuntimeRecordValue::field_identity_at(ordinal, &name)?;
             fields.push(RecordSeqField::new_accepted(field, name, values));
         }
-        Ok(Self { len: rows, fields })
+        Self::try_from_fields(rows, fields)
     }
 
     pub const fn len(&self) -> usize {
@@ -173,27 +143,8 @@ impl RecordSeq {
     }
 
     fn into_values(self) -> Vec<RuntimeValue> {
-        let row_count = self.len;
-        let fields = self
-            .fields
-            .into_iter()
-            .map(|field| (field.field(), field.name().to_owned(), field.into_values()))
-            .collect::<Vec<_>>();
-        (0..row_count)
-            .map(|row| {
-                RuntimeValue::Record(
-                    fields
-                        .iter()
-                        .map(|(field, name, values)| {
-                            RuntimeFieldValue::new_accepted(
-                                *field,
-                                name.clone(),
-                                values.value_at(row),
-                            )
-                        })
-                        .collect(),
-                )
-            })
+        (0..self.len)
+            .map(|row| RuntimeValue::Record(RuntimeRecordValue::from_sequence_row(&self, row)))
             .collect()
     }
 
@@ -216,46 +167,52 @@ impl RecordSeq {
     }
 
     fn value_at(&self, index: usize) -> RuntimeValue {
-        assert!(
-            index < self.len,
-            "record column sequence index out of bounds"
-        );
-        RuntimeValue::Record(
-            self.fields
-                .iter()
-                .map(|field| {
-                    RuntimeFieldValue::new_accepted(
-                        field.field(),
-                        field.name().to_owned(),
-                        field.values().value_at(index),
-                    )
-                })
-                .collect(),
-        )
+        RuntimeValue::Record(RuntimeRecordValue::from_sequence_row(self, index))
     }
-}
 
-fn preflight_record_sequence_field_count(actual: usize) -> Result<(), RuntimeSeqError> {
-    if actual > u32::MAX as usize {
-        return Err(RuntimeSeqError::TooManyRecordFields {
-            actual,
-            maximum: u32::MAX,
-        });
-    }
-    Ok(())
-}
-
-fn accepted_record_sequence_field_id(
-    ordinal: usize,
-    name: &str,
-) -> Result<RuntimeRecordFieldId, RuntimeSeqError> {
-    RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
-        RuntimeSeqError::InvalidRecordFieldIdentity {
-            ordinal,
-            field: name.to_owned(),
-            source,
+    pub(super) fn try_from_fields(
+        rows: usize,
+        fields: Vec<RecordSeqField>,
+    ) -> Result<Self, RuntimeSeqError> {
+        let mut admission = super::record::RecordFieldAdmission::new(fields.len())?;
+        for (ordinal, field) in fields.iter().enumerate() {
+            if field.values().len() != rows {
+                return Err(RuntimeSeqError::ColumnLength {
+                    ordinal,
+                    expected: rows,
+                    actual: field.values().len(),
+                });
+            }
+            admission.admit(field.field(), field.name())?;
         }
-    })
+        Ok(Self { len: rows, fields })
+    }
+}
+
+impl<'de> Deserialize<'de> for TupleSeq {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Columns {
+            len: usize,
+            columns: Vec<RuntimeSeq>,
+        }
+        let columns = Columns::deserialize(deserializer)?;
+        Self::new(columns.len, columns.columns).map_err(de::Error::custom)
+    }
+}
+
+impl<'de> Deserialize<'de> for RecordSeq {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Columns {
+            len: usize,
+            fields: Vec<RecordSeqField>,
+        }
+        let columns = Columns::deserialize(deserializer)?;
+        Self::try_from_fields(columns.len, columns.fields).map_err(de::Error::custom)
+    }
 }
 
 impl RecordSeqField {
@@ -282,22 +239,18 @@ impl RecordSeqField {
     pub const fn values(&self) -> &RuntimeSeq {
         &self.values
     }
-
-    pub(crate) fn into_values(self) -> RuntimeSeq {
-        self.values
-    }
 }
 
 #[cfg(test)]
 mod record_admission_boundary_tests {
     use super::*;
-    use crate::value::RuntimeRecordFieldIdError;
+    use crate::value::{RuntimeFieldValue, RuntimeRecordAdmissionError, RuntimeRecordFieldIdError};
 
     #[test]
     #[cfg(target_pointer_width = "64")]
     fn anonymous_record_count_preflight_rejects_unrepresentable_field_count() {
         assert_eq!(
-            preflight_anonymous_record_field_count(u32::MAX as usize + 1),
+            RuntimeRecordValue::check_field_count(u32::MAX as usize + 1),
             Err(RuntimeRecordAdmissionError::TooManyFields)
         );
     }
@@ -305,7 +258,7 @@ mod record_admission_boundary_tests {
     #[test]
     fn anonymous_record_identity_mapping_preserves_the_failed_field_name() {
         assert_eq!(
-            accepted_anonymous_record_field_id(u32::MAX as usize, "overflow"),
+            RuntimeRecordValue::field_identity_at(u32::MAX as usize, "overflow"),
             Err(RuntimeRecordAdmissionError::InvalidFieldIdentity {
                 name: "overflow".to_owned(),
                 source: RuntimeRecordFieldIdError::OrdinalOverflow,
@@ -314,53 +267,88 @@ mod record_admission_boundary_tests {
     }
 
     #[test]
-    #[cfg(target_pointer_width = "64")]
-    fn record_sequence_count_preflight_rejects_unrepresentable_field_count() {
-        let actual = u32::MAX as usize + 1;
+    fn record_sequence_uses_the_shared_field_name_rules() {
+        let empty = || RuntimeSeq::values(Vec::new());
+        let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         assert_eq!(
-            preflight_record_sequence_field_count(actual),
-            Err(RuntimeSeqError::TooManyRecordFields {
-                actual,
-                maximum: u32::MAX,
-            })
+            RecordSeq::try_from_accepted_fields(0, vec![(String::new(), empty())]),
+            Err(RuntimeSeqError::RecordFields(
+                RuntimeRecordAdmissionError::EmptyName { field: first }
+            ))
+        );
+        assert_eq!(
+            RecordSeq::try_from_accepted_fields(
+                0,
+                vec![("same".to_owned(), empty()), ("same".to_owned(), empty())]
+            ),
+            Err(RuntimeSeqError::RecordFields(
+                RuntimeRecordAdmissionError::DuplicateName {
+                    name: "same".to_owned()
+                }
+            ))
         );
     }
 
     #[test]
-    fn record_sequence_identity_mapping_preserves_ordinal_and_name() {
-        let ordinal = u32::MAX as usize;
+    fn columnar_deserialization_validates_layout_and_rectangular_shape() {
+        let seq = RecordSeq::try_from_accepted_fields(
+            1,
+            vec![("z".to_owned(), RuntimeSeq::values(vec![RuntimeValue::Unit]))],
+        )
+        .unwrap();
+        let encoded = serde_json::to_value(&seq).unwrap();
         assert_eq!(
-            accepted_record_sequence_field_id(ordinal, "overflow"),
-            Err(RuntimeSeqError::InvalidRecordFieldIdentity {
-                ordinal,
-                field: "overflow".to_owned(),
-                source: RuntimeRecordFieldIdError::OrdinalOverflow,
-            })
+            serde_json::from_value::<RecordSeq>(encoded.clone()).unwrap(),
+            seq
         );
+        for (field, value) in [
+            ("field", serde_json::json!(2)),
+            ("name", serde_json::json!("")),
+            ("values", serde_json::json!({"Values": []})),
+        ] {
+            let mut malformed = encoded.clone();
+            malformed["fields"][0][field] = value;
+            assert!(serde_json::from_value::<RecordSeq>(malformed).is_err());
+        }
+        let tuple = TupleSeq::new(1, vec![RuntimeSeq::values(vec![RuntimeValue::Unit])]).unwrap();
+        let mut encoded = serde_json::to_value(&tuple).unwrap();
+        assert_eq!(
+            serde_json::from_value::<TupleSeq>(encoded.clone()).unwrap(),
+            tuple
+        );
+        encoded["len"] = serde_json::json!(2);
+        assert!(serde_json::from_value::<TupleSeq>(encoded).is_err());
     }
 
     #[test]
-    fn columnarization_does_not_repair_rows_with_different_field_identities() {
+    fn record_storage_rejects_wrong_field_identity_before_columnarization() {
         let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap();
         let second = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap();
-        let rows = vec![
-            vec![RuntimeFieldValue::new_accepted(
-                first,
-                "same".to_owned(),
-                RuntimeValue::i32(1),
-            )],
-            vec![RuntimeFieldValue::new_accepted(
+        assert_eq!(
+            RuntimeRecordValue::try_from_fields(vec![RuntimeFieldValue::new_accepted(
                 second,
                 "same".to_owned(),
                 RuntimeValue::i32(2),
-            )],
-        ];
+            )]),
+            Err(RuntimeRecordAdmissionError::FieldOrder {
+                expected: first,
+                actual: second
+            })
+        );
+    }
+
+    #[test]
+    fn columnarization_preserves_rows_with_different_valid_layouts() {
+        let rows = ["first", "second"]
+            .map(|name| {
+                RuntimeRecordValue::try_new(vec![(name.to_owned(), RuntimeValue::Unit)]).unwrap()
+            })
+            .to_vec();
         let expected = rows
             .iter()
             .cloned()
             .map(RuntimeValue::Record)
             .collect::<Vec<_>>();
-
         assert_eq!(super::super::record_rows_to_columnar(rows), Err(expected));
     }
 

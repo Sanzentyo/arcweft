@@ -92,7 +92,7 @@ use std::collections::BTreeMap;
 use std::convert::Infallible;
 
 fn runtime_record_get<'a>(
-    fields: &'a [RuntimeFieldValue],
+    fields: &'a arcweft_core::value::RuntimeRecordValue,
     name: &str,
 ) -> Result<&'a RuntimeValue, String> {
     fields
@@ -102,7 +102,10 @@ fn runtime_record_get<'a>(
         .ok_or_else(|| format!("record is missing `{name}`"))
 }
 
-fn runtime_record_string(fields: &[RuntimeFieldValue], name: &str) -> Result<String, String> {
+fn runtime_record_string(
+    fields: &arcweft_core::value::RuntimeRecordValue,
+    name: &str,
+) -> Result<String, String> {
     match runtime_record_get(fields, name)? {
         RuntimeValue::String(value) => Ok(value.clone()),
         RuntimeValue::EntityRef(value) => Ok(value.runtime_label()),

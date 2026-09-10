@@ -6,6 +6,7 @@ fn core_identity_boundaries_are_compile_time_closed() {
     cases.compile_fail("tests/ui/runtime_ownership_raw_identity_constructors_are_private.rs");
     cases.compile_fail("tests/ui/runtime_nominal_record_field_expr_is_private.rs");
     cases.compile_fail("tests/ui/runtime_record_carriers_are_private.rs");
+    cases.compile_fail("tests/ui/runtime_structural_storage_is_private.rs");
     cases.compile_fail("tests/ui/record_seq_new_is_absent.rs");
     cases.compile_fail("tests/ui/record_columns_rejects_raw_carriers.rs");
     cases.compile_fail("tests/ui/runtime_flow_invocation_is_affine.rs");

@@ -1118,10 +1118,10 @@ fn runtime_value_to_header_pair(value: &RuntimeValue) -> Option<(String, String)
             runtime_value_to_string(&items[1]),
         )),
         RuntimeValue::Record(fields) => {
-            let key = record_field(fields, "key")
-                .or_else(|| record_field(fields, "name"))
+            let key = record_field(fields.fields(), "key")
+                .or_else(|| record_field(fields.fields(), "name"))
                 .map(runtime_value_to_string)?;
-            let value = record_field(fields, "value").map(runtime_value_to_string)?;
+            let value = record_field(fields.fields(), "value").map(runtime_value_to_string)?;
             Some((key, value))
         }
         _ => None,
