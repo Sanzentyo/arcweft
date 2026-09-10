@@ -33,6 +33,7 @@ it is not waived by this model.
 | `SourceProbeResult` and `SourceProbeOutcome` | A probe returns an actual `TypeKind`, semantic branch and selected evidence, or rejects | There is no authority for a still-correlated nested application and its existential completion obligations |
 | `ConstraintPath` | Owns bindings, effect constraints, pending equations, choice derivation and source trace | This remains the lower constraint authority; a second constructor-specific solver would duplicate it |
 | `PreparedCallGraph` | Owns issuer-qualified selected/unselected call nodes, source-site membership and affine deltas | It preserves prepared application evidence, but currently does not retain unresolved nested applications as members of the parent's solve |
+| `PreparedFunctionValueOriginQuery` | Returns one `PreparedFunctionValueOriginEvidence` with one producer and capture row | A specialization of a value with multiple possible origins needs complete origin evidence; one selected producer cannot stand for the set |
 | `runtime_type_at` | Hashes each input as a standalone semantic type; Function parameters call `runtime_type` again, without their function binder | A valid bound descendant is rejected at empty lexical depth during runtime projection |
 | `RuntimeTypeShape` and `RuntimePlanTypeProjection` | Function contains only parameter and result children; array length is concrete; no bound reference or incoming scope is represented | A closed function scheme cannot reach the current type graph faithfully |
 | `RuntimeValue` | Function and ProjectContinuation are distinct payloads; the continuation owns immutable prefix values and a typed ABI but no ordinary callable activation | A prefix accepted as a callback cannot be repaired by widening value matching alone |
@@ -281,3 +282,159 @@ archive was adjudicated. Workspace tests, whole-workspace check/Clippy,
 doctests and Tier 2 were not repeated for these added regression probes; this
 does not change the outstanding full-goal validation requirements. The failing
 positive tests remain enabled and are not counted as passing execution evidence.
+
+## Application model investigation at the next accepted cut
+
+Inspected on 2026-09-10 at clean `main`,
+`22c5a64ef15e1561d5ac4177015a371efafa4605`, matching `origin/main`. The subsequent
+test additions below are dirty changes at that base. The
+[execution-plan admission cut](2026-09-10-call-execution-admission.md) is complete;
+the coupled model remains under review and is not `READY_FOR_IMPLEMENTATION`.
+
+### Consequences of the current owners
+
+`CandidateConstraintDriver` exclusively owns its lower transaction, the mutable
+work session and the analyzer callback client. `with_callback` exposes the
+client and work session while the lower `ProbeTicket` only lends an expected
+hint. `SourceProbeResult` contains an actual type, semantic branch and selected
+evidence. `TypeConstraintParameterScope` contains one `OpenedGenericScope`.
+These are actual ownership constraints on the pending-source protocol, not
+just missing expected-type arguments. A child contribution must be admitted
+with its originating source, scope and affine checkpoint evidence before the
+parent lower can consume its equations. Passing another mutable solver into a
+callback or accepting arbitrary foreign inference IDs would evade that join.
+
+The protocol must also represent a source whose callee or member lookup needs
+a type head learned from another source. Its continuation must own typed
+preparation state and wait for lower-issued evidence, then resume that state.
+It cannot restart a whole authored argument. Callback resumption still charges
+actual physical work; no pending contribution is an accepted checked value,
+an executable expression or permission to retain an analyzer checkpoint open
+across unrelated callbacks. Existing source close, fatal ordering and
+materialization transactions remain required.
+
+`select_prepared_candidates` ranks accepted candidates by exact matches,
+declared exact matches, unchecked/open supplies, omitted parameters and
+standard/adapter authority. That rank belongs to a call choice. The completed
+component must preserve those local choices and their correlations. Summing
+the ranks of different calls or comparing independent child choices in source
+order changes the result. The precise component preference/ambiguity rule and
+its consuming lower/driver API still need closure; the existing root-candidate
+score is not itself that rule.
+
+`RuntimeProjectCallPlan` owns its caller's callee expression and physical
+operand expressions as well as logical materialization, attached/default
+stage and Continue/Invoke outcome. `RuntimeProjectCallSiteTable` additionally
+owns the caller's result pattern. Neither is a reusable callable value: moving
+one of those site IDs into a value would retain another caller's evaluation
+and destination. `RuntimeFunctionValue` currently names a concrete structured
+site or AWBC function, while `RuntimeProjectContinuation` has lineage,
+remaining-function type and prefix values but no ordinary application plan.
+
+The selected runtime ownership requirement is to separate caller evaluation
+and result destination from reusable callable application. The application
+authority must retain current group, exact retained-value ABI,
+current-logical input ABI, optional default stage and Continue/Invoke outcome.
+Direct ProjectCall and function-value application must consume that same
+authority. A nonterminal application returns a new immutable value at the next
+group; a terminal one enters the existing same-fiber function frame. A generic
+scheme receives its closed application target through checked specialization.
+It cannot reserve an open or synthetic FunctionSite merely to fit the current
+value payload. This establishes the required split; exact final Rust fields,
+program-owned identities and all backend/restore joins remain decision 2 above.
+
+`EffectRow` currently contains a concrete set plus one `EffectRowTail`, and its
+constraint environment stores one-variable covered edges and lower/upper
+bounds. `GenericEffectReference::{Free, Bound, Inference}` already exists, but
+that namespace is not the row's variable owner. Replacing `Unknown` with an
+empty set or adding a second callback variable does not express a union of
+independent dependencies. The final row algebra must define both unions and
+their inclusion constraints. In particular, a required effect below a union
+of multiple unknown rows does not identify which row receives it; allocation
+by iteration order is invalid. Declaration-owned implicit quantifiers, local
+existentials, inherited bindings and residual binder constraints must be
+reconciled before this representation is migrated.
+
+`RuntimeTypeSchema` is a persistence/data schema, including `Named(String)`;
+it is not a representation of abstract function-body type terms. The current
+runtime type projection's nominal branch requires a concrete nominal/layout
+pair, while its Function branch omits both binder and effect row. Scoped
+function descendants therefore need exact nominal application and payload
+evidence without inventing a concrete persistent layout. This must be closed
+against the accepted nominal graph and its real runtime/data owners; neither
+discarding the binder nor extending the persistence schema with another
+ad hoc type universe is selected. The existing semantic type encoder already
+commits incoming binders, so its scoped identity authority should be preserved.
+
+The full 708-line ProjectCall `FINAL_CONTRACT.md` was read at this stage, as
+were amendment sections 3.2 and the remaining 3.5 callback protocol. Their
+source-order, default, return-frame, same-fiber suspension and program-bound
+restore requirements are retained. The accepted Rust nominal gap review was
+also compared with the current core schema. This is additional reconciliation,
+not a claim that the remaining shapes/matrices or the full amendment are closed.
+
+### Nonterminal callback execution probe
+
+The added source has no generic or inferred effect parameter:
+
+```arcw
+fn sum(first: i64)(second: i64)(third: i64) -> i64 { first + second + third }
+fn advance(handler: i64 -> (i64 -> i64 effects {}) effects {}, value: i64) -> (i64 -> i64 effects {}) {
+    handler(value)
+}
+flow main() -> i64 {
+    let prefix = sum(1i64)
+    let left = advance(prefix, 20i64)
+    let right = advance(prefix, 30i64)
+    return left(21i64) + right(11i64)
+}
+```
+
+Both uses retain the same initial prefix and produce different second-group
+values; each final application must return 42, for a total of 84. The sema
+test requires all six applications and their expression plans to agree. The
+paired engine tests require the real returns through their existing native
+and AWBC harnesses.
+
+| Performed command | Result |
+| --- | --- |
+| `cargo test -p arcweft-lang-sema --lib --all-features final_analysis::tests::callable_values::callback_returns_a_nonterminal_prefix -- --exact` | Passed: 1 test, 773 filtered; all six selected applications retain executable plans |
+| `cargo test -p arcweft-compiler --test callable_execution --all-features callback_returns_a_nonterminal_prefix -- --nocapture` | Failed: 0 passed / 2 failed, 76 filtered; native reports an expected runtime function but receives `project-continuation/1`; AWBC traps with `TypeMismatch` at function application for the same value |
+
+Both engine cases reach actual execution, unlike the earlier ordinary
+correlated-source probes. The two commands ran sequentially with normal Cargo
+concurrency, taking 29.54 s including compilation. Logs are in
+`.arcweft-local/validation/2026-09-10-callable-application-model/`.
+An initial test insertion was inside another fixture's raw source string;
+formatter rejected the Rust before any test ran. The insertion was corrected,
+and the reported commands ran against the valid final test file.
+
+No production Rust is changed by this probe. The new positive engine tests
+remain enabled. The previous 22 failing callable cases and nine sema failures
+were not rerun by these exact commands, and these results do not establish
+completion of the coupled request or any later convergence stage.
+
+The test-only review passed `cargo fmt --all -- --check`,
+`cargo clippy -p arcweft-lang-sema -p arcweft-compiler --all-targets --all-features`
+and `cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking`
+in 29.58 s combined. Existing Clippy warnings remain. The structural audit
+reports 95 packages, 2,260 Rust files, 310 review triggers and zero blocking
+violations. No generated structural reports were retained. The changed test
+owners are `callable_execution.rs` at 634 LOC / 16,248 bytes (base 616 LOC)
+and `callable_values.rs` at 241 LOC / 7,495 bytes (base 207 LOC). Both keep the
+existing semantic/execution harness and remain below their review triggers;
+no production owner, public API, dependency, feature or facade changed.
+
+`source-inputs.json` in this stage's local validation directory records paths,
+byte lengths and SHA-256 for 15 inspected production inputs (812,589 bytes).
+ZIP re-enumeration again found 71 archives / 4,802,433 bytes, with no path,
+size or SHA-256 difference from the preceding admission cut. No frozen
+package was edited. Whole-workspace tests/check/Clippy, doctests and Tier 2
+were not repeated for these test and investigation changes; their immediately
+preceding production results remain in the admission record, including all
+known failures and unexecuted later tiers.
+
+Documentation review resolved all 27 relative links in the changed investigation
+and request. `git diff --check` passed. This is a test/evidence cut; it records
+the reusable-application boundary and leaves the coupled model's open decisions
+explicit rather than publishing an incomplete implementation contract.

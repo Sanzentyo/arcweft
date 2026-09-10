@@ -205,3 +205,37 @@ flow main() -> i64 {
         CheckedExpressionResolution::Closure(_)
     )));
 }
+
+#[test]
+fn callback_returns_a_nonterminal_prefix() {
+    let fixture = fixture(
+        r#"
+fn sum(first: i64)(second: i64)(third: i64) -> i64 { first + second + third }
+fn advance(handler: i64 -> (i64 -> i64 effects {}) effects {}, value: i64) -> (i64 -> i64 effects {}) {
+    handler(value)
+}
+flow main() -> i64 {
+    let prefix = sum(1i64)
+    let left = advance(prefix, 20i64)
+    let right = advance(prefix, 30i64)
+    return left(21i64) + right(11i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("a callback may return the next curried group");
+    assert_eq!(analysis.calls().count(), 6);
+    for (owner, call) in analysis.calls() {
+        let application = call
+            .selected_application()
+            .expect("every call has a selected application");
+        assert_eq!(
+            analysis
+                .execution_projection()
+                .plan(owner)
+                .expect("every selected call is executable")
+                .call_application(),
+            Some(application.digest()),
+        );
+    }
+}

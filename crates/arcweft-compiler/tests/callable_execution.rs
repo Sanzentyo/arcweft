@@ -139,6 +139,24 @@ flow main() -> i64 { return twice(42i64) }
 );
 
 callable_case!(
+    callback_returns_a_nonterminal_prefix,
+    r#"
+fn sum(first: i64)(second: i64)(third: i64) -> i64 { first + second + third }
+fn advance(handler: i64 -> (i64 -> i64 effects {}) effects {}, value: i64) -> (i64 -> i64 effects {}) {
+    handler(value)
+}
+flow main() -> i64 {
+    let prefix = sum(1i64)
+    let left = advance(prefix, 20i64)
+    let right = advance(prefix, 30i64)
+    return left(21i64) + right(11i64)
+}
+"#,
+    RuntimeValue::i64(84),
+    "84"
+);
+
+callable_case!(
     character_factory_branches_keep_both_selected_calls,
     r#"
 pub character alice {}
