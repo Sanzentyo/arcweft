@@ -681,23 +681,14 @@ pub struct RuntimeCheckedVariantCase {
 
 /// One declaration-ordered field in a checked structural record.
 ///
-/// `diagnostic_name` is retained for record construction and diagnostics, but
-/// semantic equality and checked-type identity are owned only by the accepted
-/// field coordinate and its recursive type.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+/// The accepted coordinate, source-order name, and recursive type all
+/// participate in equality, checked-type identity, and value admission.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeCheckedRecordField {
     field: RuntimeRecordFieldId,
     diagnostic_name: String,
     ty: RuntimeCheckedType,
 }
-
-impl PartialEq for RuntimeCheckedRecordField {
-    fn eq(&self, other: &Self) -> bool {
-        self.field == other.field && self.ty == other.ty
-    }
-}
-
-impl Eq for RuntimeCheckedRecordField {}
 
 impl RuntimeCheckedRecordField {
     #[must_use]
@@ -1097,6 +1088,7 @@ impl RuntimeCheckedType {
                 values.len() == fields.len()
                     && values.iter().zip(fields).all(|(value, field)| {
                         value.field() == field.field
+                            && value.name() == field.diagnostic_name
                             && field
                                 .ty
                                 .accepts_value_at_depth(value.value(), depth + 1)
@@ -1274,6 +1266,7 @@ fn write_checked_type_identity(
             encoder.write_len(fields.len());
             for field in fields {
                 encoder.write_u32(field.field.zero_based());
+                encoder.write_str(&field.diagnostic_name);
                 write_checked_type_identity(encoder, &field.ty);
             }
         }
@@ -2270,7 +2263,7 @@ mod tests {
     }
 
     #[test]
-    fn checked_structural_record_uses_field_coordinates_not_diagnostic_names() {
+    fn checked_structural_record_requires_field_coordinates_names_and_types() {
         let first = RuntimeRecordFieldId::try_from_zero_based_ordinal(0).expect("first field");
         let second = RuntimeRecordFieldId::try_from_zero_based_ordinal(1).expect("second field");
         let original = RuntimeCheckedType::try_record([
@@ -2290,22 +2283,23 @@ mod tests {
             ),
             (second, "right".to_owned(), RuntimeCheckedType::Bool),
         ])
-        .expect("diagnostically renamed checked record");
-        assert_eq!(original, renamed);
-        assert_eq!(
+        .expect("renamed checked record");
+        assert_ne!(original, renamed);
+        assert_ne!(
             original.semantic_identity_digest(),
             renamed.semantic_identity_digest()
         );
 
         let value = RuntimeValue::try_record(vec![
-            ("runtime-left".to_owned(), RuntimeValue::i64(7)),
-            ("runtime-right".to_owned(), RuntimeValue::Bool(true)),
+            ("z".to_owned(), RuntimeValue::i64(7)),
+            ("a".to_owned(), RuntimeValue::Bool(true)),
         ])
         .expect("runtime record uses the same declaration coordinates");
         assert!(original.accepts_value(&value));
+        assert!(!renamed.accepts_value(&value));
         let wrong_type = RuntimeValue::try_record(vec![
-            ("runtime-left".to_owned(), RuntimeValue::u64(7)),
-            ("runtime-right".to_owned(), RuntimeValue::Bool(true)),
+            ("z".to_owned(), RuntimeValue::u64(7)),
+            ("a".to_owned(), RuntimeValue::Bool(true)),
         ])
         .expect("structurally valid record with the wrong first type");
         assert!(!original.accepts_value(&wrong_type));

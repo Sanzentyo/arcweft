@@ -117,12 +117,12 @@ fn awbc_record_roundtrip_preserves_ordered_ids_and_recursive_types() {
 }
 
 #[test]
-fn awbc_record_diagnostic_renames_do_not_change_semantic_identity_or_equality() {
+fn awbc_record_field_renames_change_checked_identity_and_equality() {
     let original = checked_record_after_roundtrip("first", "pair");
     let renamed = checked_record_after_roundtrip("renamed-first", "renamed-pair");
 
-    assert_eq!(original, renamed);
-    assert_eq!(
+    assert_ne!(original, renamed);
+    assert_ne!(
         original.semantic_identity_digest(),
         renamed.semantic_identity_digest()
     );

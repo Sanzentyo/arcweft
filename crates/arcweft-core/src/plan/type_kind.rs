@@ -248,19 +248,11 @@ pub enum RuntimePlanTypeProjection<R> {
     Agent(RuntimeAgentTypeProjection<R>),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePlanRecordField<R> {
     diagnostic_name: String,
     ty: R,
 }
-
-impl<R: PartialEq> PartialEq for RuntimePlanRecordField<R> {
-    fn eq(&self, other: &Self) -> bool {
-        self.ty == other.ty
-    }
-}
-
-impl<R: Eq> Eq for RuntimePlanRecordField<R> {}
 
 impl<R> RuntimePlanRecordField<R> {
     pub fn new(diagnostic_name: impl Into<String>, ty: R) -> Self {

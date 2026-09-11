@@ -178,6 +178,12 @@ Records store `{ public_id?, fields: [{ name, ty }] }`; variants store
 `{ public_id?, cases: [{ name, payload? }] }`. The layout digest covers the
 runtime representation for all type tags, not source-language spelling.
 
+Structural record contracts retain declaration-order field coordinates and
+names. A field's coordinate, exact name, and recursive type participate in
+checked-contract equality and identity. Value admission requires the same
+field count, coordinates, names, and order as the descriptor. Renaming or
+reordering fields changes this contract even when their child types are equal.
+
 `AwbcConstant` stores exact value bits: signed/unsigned integers use 16-byte
 little-endian payloads plus width kind; floats use IEEE bit patterns; aggregate
 constants reference other constants; records/variants include their type ID;
