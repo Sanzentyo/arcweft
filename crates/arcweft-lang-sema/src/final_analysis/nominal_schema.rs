@@ -253,6 +253,7 @@ pub struct RuntimeProjectNominalProjection {
 pub struct RuntimeProjectRecordFieldProjection {
     runtime_field: RuntimeRecordFieldId,
     declaration_ordinal: u32,
+    name: ModuleSegment,
     ty: TypeKind,
     field_type: SemanticTypeDigest,
 }
@@ -299,6 +300,10 @@ impl RuntimeProjectFieldProjection<'_> {
 }
 
 impl RuntimeProjectRecordFieldProjection {
+    pub const fn name(&self) -> &ModuleSegment {
+        &self.name
+    }
+
     pub const fn runtime_field(&self) -> RuntimeRecordFieldId {
         self.runtime_field
     }
@@ -1083,6 +1088,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
                         Ok::<_, NominalSchemaProjectionError>(RuntimeProjectRecordFieldProjection {
                             runtime_field,
                             declaration_ordinal,
+                            name: field.name().clone(),
                             ty,
                             field_type,
                         })

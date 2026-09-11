@@ -138,7 +138,7 @@ use arcweft_lang_sema::{
         CheckedValueResolution, CheckedVariantOwner, CheckedVariantOwnerKind,
         CheckedVariantResolution, FinalAnalysisImplicitCallableBody, FinalAnalysisTryView,
         FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaPath,
-        NominalSchemaProjectionError,
+        NominalSchemaProjectionError, RuntimeProjectNominalKind,
     },
     registration::RegisteredSemanticWorld,
     types::{
@@ -4770,24 +4770,17 @@ fn runtime_nominal_record_under(
                 semantic_type: nominal.identity(),
             },
         })?;
-    let arcweft_data::TypeShape::Record { fields, .. } = projection.shape() else {
+    if projection.kind() != RuntimeProjectNominalKind::Record {
         return Err(RuntimeSemanticProjectionError::Type {
             reason: format!("checked nominal record `{name}` is not a struct"),
         });
-    };
-    if fields.len() != projection.record_fields().len() {
-        return Err(RuntimeSemanticProjectionError::Type {
-            reason: format!(
-                "checked nominal record `{name}` has an incomplete cached field relation"
-            ),
-        });
     }
     let resolved = runtime_nominal(nominal, analysis)?;
-    let projected_fields = fields
+    let projected_fields = projection
+        .record_fields()
         .iter()
-        .zip(projection.record_fields())
         .enumerate()
-        .map(|(ordinal, (shape, field))| {
+        .map(|(ordinal, field)| {
             if usize::try_from(field.declaration_ordinal()).ok() != Some(ordinal)
                 || usize::try_from(field.runtime_field().zero_based()).ok() != Some(ordinal)
             {
@@ -4804,11 +4797,11 @@ fn runtime_nominal_record_under(
                 }
             })?;
             Ok((
-                shape.rust_name.clone(),
+                field.name().as_str().to_owned(),
                 normalized,
                 RuntimeNominalRecordLayoutField::new(
                     field.runtime_field(),
-                    Some(shape.rust_name.clone()),
+                    Some(field.name().as_str().to_owned()),
                     checked_type,
                 ),
             ))

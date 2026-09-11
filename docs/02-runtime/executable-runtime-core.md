@@ -184,6 +184,11 @@ checked-contract equality and identity. Value admission requires the same
 field count, coordinates, names, and order as the descriptor. Renaming or
 reordering fields changes this contract even when their child types are equal.
 
+The sealed semantic field projection owns the source name, declaration
+coordinate, runtime field ID, and instantiated type together. Compiler record
+emission reads that complete relation directly when constructing executable
+fields and layout descriptors.
+
 For builtin variants, the core case registry owns payload presence and Tuple
 arity. Runtime-plan type admission requires every payload-bearing case to use
 the registry's one-item Tuple wrapper. Option and Result also require that

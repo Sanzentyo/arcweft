@@ -72,6 +72,41 @@ fn generic_argument_limit_is_per_application_across_siblings() {
         .expect("two sibling applications may each exactly consume the per-application limit");
 }
 
+#[test]
+fn runtime_record_fields_retain_source_names_order_and_instantiated_types() {
+    let fixture = fixture(
+        concat!(
+            "struct Named<T> { zeta: T, alpha: bool }\n",
+            "fn named(value: Named<i64>) -> Named<i64> { value }\n",
+        ),
+        None,
+    );
+    let report = analyze(&fixture).expect("accepted record declaration");
+    let nominal = checked(&fixture, &report, "Named");
+    let projection = report
+        .runtime_nominal_projection(nominal.identity())
+        .expect("complete runtime field relation");
+    let fields = projection
+        .record_fields()
+        .iter()
+        .map(|field| {
+            (
+                field.runtime_field().zero_based(),
+                field.declaration_ordinal(),
+                field.name().as_str(),
+                field.ty(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        fields,
+        [
+            (0, 0, "zeta", &TypeKind::I64),
+            (1, 1, "alpha", &TypeKind::Bool)
+        ]
+    );
+}
+
 fn checked(fixture: &Fixture, report: &FinalSemanticAnalysis, name: &str) -> CheckedProjectNominal {
     let TypeKind::ProjectNominal(nominal) = project_nominal_expression_type(report, name) else {
         panic!("project nominal helper returned a non-project type")
