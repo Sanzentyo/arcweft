@@ -1081,54 +1081,56 @@ impl Wire for RuntimeTypeSchema {
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
-        let offset = reader.offset();
-        Ok(match reader.read_u8()? {
-            0 => Self::Unit,
-            1 => Self::Bool,
-            2 => Self::I8,
-            3 => Self::I16,
-            4 => Self::I32,
-            5 => Self::I64,
-            6 => Self::I128,
-            7 => Self::ISize,
-            8 => Self::U8,
-            9 => Self::U16,
-            10 => Self::U32,
-            11 => Self::U64,
-            12 => Self::U128,
-            13 => Self::USize,
-            14 => Self::F32,
-            15 => Self::F64,
-            16 => Self::String,
-            17 => Self::Char,
-            18 => Self::Bytes {
-                format: RuntimeBytesFormat::read_wire(reader)?,
-            },
-            19 => Self::Option(Box::new(Self::read_wire(reader)?)),
-            20 => Self::Seq(Box::new(Self::read_wire(reader)?)),
-            21 => Self::Map {
-                key: Box::new(Self::read_wire(reader)?),
-                value: Box::new(Self::read_wire(reader)?),
-            },
-            22 => Self::Record {
-                name: String::read_wire(reader)?,
-                fields: Vec::<RuntimeSchemaField>::read_wire(reader)?,
-                deny_unknown_fields: bool::read_wire(reader)?,
-            },
-            23 => Self::Enum {
-                name: String::read_wire(reader)?,
-                variants: Vec::<RuntimeSchemaVariant>::read_wire(reader)?,
-                tag: RuntimeEnumTagStyle::read_wire(reader)?,
-                repr: Option::<RuntimeEnumRepr>::read_wire(reader)?,
-            },
-            24 => Self::Named(String::read_wire(reader)?),
-            tag => {
-                return Err(AwbcCodecError::UnknownTag {
-                    kind: "runtime type schema",
-                    tag,
-                    offset,
-                });
-            }
+        reader.read_nested(|reader| {
+            let offset = reader.offset();
+            Ok(match reader.read_u8()? {
+                0 => Self::Unit,
+                1 => Self::Bool,
+                2 => Self::I8,
+                3 => Self::I16,
+                4 => Self::I32,
+                5 => Self::I64,
+                6 => Self::I128,
+                7 => Self::ISize,
+                8 => Self::U8,
+                9 => Self::U16,
+                10 => Self::U32,
+                11 => Self::U64,
+                12 => Self::U128,
+                13 => Self::USize,
+                14 => Self::F32,
+                15 => Self::F64,
+                16 => Self::String,
+                17 => Self::Char,
+                18 => Self::Bytes {
+                    format: RuntimeBytesFormat::read_wire(reader)?,
+                },
+                19 => Self::Option(Box::new(Self::read_wire(reader)?)),
+                20 => Self::Seq(Box::new(Self::read_wire(reader)?)),
+                21 => Self::Map {
+                    key: Box::new(Self::read_wire(reader)?),
+                    value: Box::new(Self::read_wire(reader)?),
+                },
+                22 => Self::Record {
+                    name: String::read_wire(reader)?,
+                    fields: Vec::<RuntimeSchemaField>::read_wire(reader)?,
+                    deny_unknown_fields: bool::read_wire(reader)?,
+                },
+                23 => Self::Enum {
+                    name: String::read_wire(reader)?,
+                    variants: Vec::<RuntimeSchemaVariant>::read_wire(reader)?,
+                    tag: RuntimeEnumTagStyle::read_wire(reader)?,
+                    repr: Option::<RuntimeEnumRepr>::read_wire(reader)?,
+                },
+                24 => Self::Named(String::read_wire(reader)?),
+                tag => {
+                    return Err(AwbcCodecError::UnknownTag {
+                        kind: "runtime type schema",
+                        tag,
+                        offset,
+                    });
+                }
+            })
         })
     }
 }
@@ -1424,3 +1426,6 @@ mod limit_wire_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod nesting_tests;

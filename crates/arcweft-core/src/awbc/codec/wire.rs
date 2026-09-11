@@ -273,10 +273,7 @@ impl<'a> Reader<'a> {
     ) -> Result<Vec<String>, AwbcCodecError> {
         let len = self.read_len()?;
         Self::check_limit("strings", len, limit)?;
-        self.enter_nesting()?;
-        let result = (0..len).map(|_| String::read_wire(self)).collect();
-        self.leave_nesting();
-        result
+        self.read_nested(|reader| (0..len).map(|_| String::read_wire(reader)).collect())
     }
 
     pub(super) fn read_items<T: Wire>(&mut self, len: usize) -> Result<Vec<T>, AwbcCodecError> {
@@ -286,8 +283,15 @@ impl<'a> Reader<'a> {
             .ok_or(AwbcCodecError::LengthOverflow)?;
         Self::check_limit("collection_items", next, self.budget.collection_items)?;
         self.collection_items = next;
+        self.read_nested(|reader| (0..len).map(|_| T::read_wire(reader)).collect())
+    }
+
+    pub(super) fn read_nested<T>(
+        &mut self,
+        read: impl FnOnce(&mut Self) -> Result<T, AwbcCodecError>,
+    ) -> Result<T, AwbcCodecError> {
         self.enter_nesting()?;
-        let result = (0..len).map(|_| T::read_wire(self)).collect();
+        let result = read(self);
         self.leave_nesting();
         result
     }
