@@ -169,7 +169,6 @@ pub use nominal_schema::{
     NominalProjectionLimitKind, NominalSchemaPath, NominalSchemaPathStep,
     NominalSchemaProjectionError, RuntimeProjectFieldProjection, RuntimeProjectNominalKind,
     RuntimeProjectNominalProjection, RuntimeProjectVariantCaseProjection,
-    project_runtime_type_schema,
 };
 pub(crate) use nominal_semantic::{
     ProjectNominalSemanticCatalog, ProjectNominalSemanticDefinition,

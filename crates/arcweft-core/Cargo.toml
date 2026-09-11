@@ -11,6 +11,7 @@ default = []
 
 [dependencies]
 arcweft-character.workspace = true
+arcweft-data.workspace = true
 arcweft-manifest-model.workspace = true
 arcweft-id = { workspace = true }
 arcweft-interaction-model.workspace = true
@@ -22,7 +23,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-data = { workspace = true }
 arcweft-codec-binary = { workspace = true }
 arcweft-codec-cbor = { workspace = true }
 arcweft-codec-json = { workspace = true }

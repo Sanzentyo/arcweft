@@ -2,14 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 use arcweft_core::{
-    entry::{
-        RuntimeBytesFormat, RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeNominalTypeId,
-        RuntimeSchemaField, RuntimeSchemaVariant, RuntimeTypeSchema, TypeLayoutHash,
-    },
+    entry::{RuntimeNominalTypeId, RuntimeTypeSchema, TypeLayoutHash},
     pattern::RuntimeSemanticTypeId,
     value::RuntimeRecordFieldId,
 };
-use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape};
+use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
     identity::TypeId,
     project::HirExpressionTypeRootProjection,
@@ -1143,7 +1140,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
         let semantic_identity = RuntimeSemanticTypeId::from_bytes(*checked.identity().as_bytes());
         let shape = NominalSchemaExpander::new(self.symbols, self.types, self.control)
             .schema_checked_after_root(declaration, checked.arguments(), budget)?;
-        let schema = project_runtime_type_schema(&shape);
+        let schema = RuntimeTypeSchema::from(&shape);
         let runtime_name = runtime_project_nominal_name(checked.declaration());
         let nominal = RuntimeNominalTypeId::try_new(runtime_name.clone()).map_err(|error| {
             NominalSchemaProjectionError::InvalidRuntimeIdentity {
@@ -2192,123 +2189,6 @@ fn runtime_project_nominal_name(id: &ProjectNominalDeclarationId) -> String {
         id.world().package().as_str(),
         id.module()
     )
-}
-
-/// Projects the accepted semantic data-shape algebra into the canonical core
-/// runtime schema algebra.
-///
-/// This is the sole cross-layer projection used by Entry and nominal runtime
-/// layout construction. Callers must not retain a second shape-to-schema
-/// mapping or derive layout identity from presentation text.
-#[must_use]
-pub fn project_runtime_type_schema(shape: &TypeShape) -> RuntimeTypeSchema {
-    match shape {
-        TypeShape::Unit => RuntimeTypeSchema::Unit,
-        TypeShape::Bool => RuntimeTypeSchema::Bool,
-        TypeShape::I8 => RuntimeTypeSchema::I8,
-        TypeShape::I16 => RuntimeTypeSchema::I16,
-        TypeShape::I32 => RuntimeTypeSchema::I32,
-        TypeShape::I64 => RuntimeTypeSchema::I64,
-        TypeShape::I128 => RuntimeTypeSchema::I128,
-        TypeShape::Isize => RuntimeTypeSchema::ISize,
-        TypeShape::U8 => RuntimeTypeSchema::U8,
-        TypeShape::U16 => RuntimeTypeSchema::U16,
-        TypeShape::U32 => RuntimeTypeSchema::U32,
-        TypeShape::U64 => RuntimeTypeSchema::U64,
-        TypeShape::U128 => RuntimeTypeSchema::U128,
-        TypeShape::Usize => RuntimeTypeSchema::USize,
-        TypeShape::F32 => RuntimeTypeSchema::F32,
-        TypeShape::F64 => RuntimeTypeSchema::F64,
-        TypeShape::String => RuntimeTypeSchema::String,
-        TypeShape::Char => RuntimeTypeSchema::Char,
-        TypeShape::Bytes { format } => RuntimeTypeSchema::Bytes {
-            format: project_bytes_format(*format),
-        },
-        TypeShape::Option(inner) => {
-            RuntimeTypeSchema::Option(Box::new(project_runtime_type_schema(inner)))
-        }
-        TypeShape::Seq(inner) => {
-            RuntimeTypeSchema::Seq(Box::new(project_runtime_type_schema(inner)))
-        }
-        TypeShape::Map { key, value } => RuntimeTypeSchema::Map {
-            key: Box::new(project_runtime_type_schema(key)),
-            value: Box::new(project_runtime_type_schema(value)),
-        },
-        TypeShape::Record {
-            name,
-            fields,
-            policy,
-        } => RuntimeTypeSchema::Record {
-            name: name.clone(),
-            fields: fields
-                .iter()
-                .map(|field| RuntimeSchemaField {
-                    rust_name: field.rust_name.clone(),
-                    wire_name: field.wire_name.clone(),
-                    schema: project_runtime_type_schema(&field.shape),
-                    has_default: field.has_default,
-                    skip: field.skip,
-                    bytes_format: field.bytes_format.map(project_bytes_format),
-                })
-                .collect(),
-            deny_unknown_fields: policy.deny_unknown_fields,
-        },
-        TypeShape::Enum {
-            name,
-            variants,
-            tag,
-            repr,
-        } => RuntimeTypeSchema::Enum {
-            name: name.clone(),
-            variants: variants
-                .iter()
-                .map(|variant| RuntimeSchemaVariant {
-                    rust_name: variant.rust_name.clone(),
-                    wire_name: variant.wire_name.clone(),
-                    payload: variant.payload.as_ref().map(project_runtime_type_schema),
-                    discriminant: variant.discriminant,
-                })
-                .collect(),
-            tag: match tag {
-                EnumTagStyle::External => RuntimeEnumTagStyle::External,
-                EnumTagStyle::Internal { tag } => {
-                    RuntimeEnumTagStyle::Internal { tag: tag.clone() }
-                }
-                EnumTagStyle::Adjacent { tag, content } => RuntimeEnumTagStyle::Adjacent {
-                    tag: tag.clone(),
-                    content: content.clone(),
-                },
-            },
-            repr: repr.map(project_enum_repr),
-        },
-        TypeShape::Named(name) => RuntimeTypeSchema::Named(name.clone()),
-    }
-}
-
-const fn project_bytes_format(format: BytesFormat) -> RuntimeBytesFormat {
-    match format {
-        BytesFormat::Binary => RuntimeBytesFormat::Binary,
-        BytesFormat::Base64 => RuntimeBytesFormat::Base64,
-        BytesFormat::Hex => RuntimeBytesFormat::Hex,
-        BytesFormat::Array => RuntimeBytesFormat::Array,
-    }
-}
-
-const fn project_enum_repr(repr: EnumRepr) -> RuntimeEnumRepr {
-    match repr {
-        EnumRepr::I8 => RuntimeEnumRepr::I8,
-        EnumRepr::I16 => RuntimeEnumRepr::I16,
-        EnumRepr::I32 => RuntimeEnumRepr::I32,
-        EnumRepr::I64 => RuntimeEnumRepr::I64,
-        EnumRepr::I128 => RuntimeEnumRepr::I128,
-        EnumRepr::Isize => RuntimeEnumRepr::ISize,
-        EnumRepr::U8 => RuntimeEnumRepr::U8,
-        EnumRepr::U16 => RuntimeEnumRepr::U16,
-        EnumRepr::U32 => RuntimeEnumRepr::U32,
-        EnumRepr::U64 => RuntimeEnumRepr::U64,
-        EnumRepr::U128 => RuntimeEnumRepr::U128,
-        EnumRepr::Usize => RuntimeEnumRepr::USize,
-    }
 }
 
 impl<'a> NominalSchemaExpander<'a> {
