@@ -7,6 +7,8 @@ use crate::value::{RuntimeEntityReference, RuntimeInt, RuntimePayload, RuntimeUI
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
+
+mod encoding;
 /// Runtime-verifiable persistent data shape.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeTypeSchema {
@@ -268,10 +270,10 @@ pub enum RuntimeSchemaError {
 
 impl RuntimeTypeSchema {
     pub fn try_layout_hash(&self) -> Result<TypeLayoutHash, RuntimeSchemaError> {
-        let bytes = self
-            .canonical_bytes()
-            .ok_or(RuntimeSchemaError::SchemaEncodingOverflow)?;
-        Ok(TypeLayoutHash::from_bytes(blake3::hash(&bytes).into()))
+        canonical_schema_layout_hash(self, usize::MAX).map_err(|error| match error {
+            RuntimeSchemaError::Encoding { .. } => RuntimeSchemaError::SchemaEncodingOverflow,
+            error => error,
+        })
     }
 
     pub fn validate_payload(
@@ -338,12 +340,43 @@ impl RuntimeTypeSchema {
         state.validate(self, value, "$", 0)?;
         canonical_runtime_value_digest(value, limits.platform_encoded_bytes())
     }
+}
 
-    fn canonical_bytes(&self) -> Option<Vec<u8>> {
-        let mut bytes = CanonicalSchemaBytes::new();
-        bytes.schema(self)?;
-        Some(bytes.finish())
-    }
+#[cfg(test)]
+fn canonical_schema_bytes(
+    schema: &RuntimeTypeSchema,
+    max_encoded_bytes: usize,
+) -> Result<Vec<u8>, RuntimeSchemaError> {
+    let mut sink = CanonicalBytesSink::default();
+    visit_schema_document(schema, max_encoded_bytes, &mut sink)?;
+    Ok(sink.finish())
+}
+
+fn canonical_schema_layout_hash(
+    schema: &RuntimeTypeSchema,
+    max_encoded_bytes: usize,
+) -> Result<TypeLayoutHash, RuntimeSchemaError> {
+    let mut sink = CanonicalBlake3Sink::default();
+    visit_schema_document(schema, max_encoded_bytes, &mut sink)?;
+    Ok(TypeLayoutHash::from_bytes(sink.finish()))
+}
+
+fn visit_schema_document<S: CanonicalSink + ?Sized>(
+    schema: &RuntimeTypeSchema,
+    max_encoded_bytes: usize,
+    sink: &mut S,
+) -> Result<(), RuntimeSchemaError> {
+    let mut writer = CanonicalWriter {
+        sink,
+        max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
+            RuntimeSchemaError::BudgetExceeded {
+                budget: "encoded_bytes",
+            }
+        })?,
+    };
+    writer.extend(b"arcweft.nominal-schema\0")?;
+    writer.var_u32(1)?;
+    encoding::schema(schema, &mut writer)
 }
 
 fn validate_nominal_identity(
@@ -384,10 +417,10 @@ pub(crate) fn canonical_runtime_value_digest(
     Ok(RuntimeValueDigest::from_bytes(sink.finish()))
 }
 
-/// Private sink boundary for the one canonical `RuntimeValue` transcript.
-/// Bytes and direct BLAKE3 consumers share the same exhaustive visitor and
-/// bounded write accounting.
-trait CanonicalRuntimeValueSink {
+/// Private byte boundary shared by canonical schema and value transcripts.
+/// Each algebra has one exhaustive visitor; bytes and direct BLAKE3 consumers
+/// use the same primitive encoding and bounded write accounting.
+trait CanonicalSink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError>;
     fn bytes_written(&self) -> u64;
 }
@@ -404,7 +437,7 @@ impl CanonicalBytesSink {
     }
 }
 
-impl CanonicalRuntimeValueSink for CanonicalBytesSink {
+impl CanonicalSink for CanonicalBytesSink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
         self.bytes.extend_from_slice(bytes);
         self.bytes_written = self
@@ -437,7 +470,7 @@ impl CanonicalBlake3Sink {
     }
 }
 
-impl CanonicalRuntimeValueSink for CanonicalBlake3Sink {
+impl CanonicalSink for CanonicalBlake3Sink {
     fn write(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
         self.hasher.update(bytes);
         self.bytes_written = self
@@ -460,12 +493,12 @@ impl CanonicalRuntimeValueSink for CanonicalBlake3Sink {
 
 /// Visits one `RuntimeValue` through the canonical, bounded encoder and writes
 /// the resulting transcript to a caller-owned private sink.
-fn visit_runtime_value<S: CanonicalRuntimeValueSink + ?Sized>(
+fn visit_runtime_value<S: CanonicalSink + ?Sized>(
     value: &RuntimeValue,
     max_encoded_bytes: usize,
     sink: &mut S,
 ) -> Result<(), RuntimeSchemaError> {
-    let mut visitor = CanonicalRuntimeValueVisitor {
+    let mut visitor = CanonicalWriter {
         sink,
         max_encoded_bytes: u64::try_from(max_encoded_bytes).map_err(|_| {
             RuntimeSchemaError::BudgetExceeded {
@@ -476,12 +509,12 @@ fn visit_runtime_value<S: CanonicalRuntimeValueSink + ?Sized>(
     visitor.value(value)
 }
 
-struct CanonicalRuntimeValueVisitor<'a, S: CanonicalRuntimeValueSink + ?Sized> {
+struct CanonicalWriter<'a, S: CanonicalSink + ?Sized> {
     sink: &'a mut S,
     max_encoded_bytes: u64,
 }
 
-impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> {
+impl<S: CanonicalSink + ?Sized> CanonicalWriter<'_, S> {
     fn extend(&mut self, bytes: &[u8]) -> Result<(), RuntimeSchemaError> {
         let len = u64::try_from(bytes.len()).map_err(|_| RuntimeSchemaError::BudgetExceeded {
             budget: "encoded_bytes",
@@ -911,164 +944,6 @@ impl<S: CanonicalRuntimeValueSink + ?Sized> CanonicalRuntimeValueVisitor<'_, S> 
                 self.u8(owner.semantic_tag())
             }
         }
-    }
-}
-
-struct CanonicalSchemaBytes(Vec<u8>);
-
-impl CanonicalSchemaBytes {
-    fn new() -> Self {
-        let mut bytes = Self(Vec::with_capacity(256));
-        bytes.0.extend_from_slice(b"arcweft.nominal-schema\0");
-        bytes.var_u32(1);
-        bytes
-    }
-
-    fn finish(self) -> Vec<u8> {
-        self.0
-    }
-
-    fn u8(&mut self, value: u8) {
-        self.0.push(value);
-    }
-
-    fn bool(&mut self, value: bool) {
-        self.u8(u8::from(value));
-    }
-
-    fn var_u32(&mut self, value: u32) {
-        let (bytes, length) = encode_u32(value);
-        self.0.extend_from_slice(&bytes[..length]);
-    }
-
-    fn i128(&mut self, value: i128) {
-        self.0.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn len(&mut self, value: usize) -> Option<()> {
-        self.var_u32(u32::try_from(value).ok()?);
-        Some(())
-    }
-
-    fn string(&mut self, value: &str) -> Option<()> {
-        self.len(value.len())?;
-        self.0.extend_from_slice(value.as_bytes());
-        Some(())
-    }
-
-    fn option<T>(
-        &mut self,
-        value: Option<&T>,
-        encode: impl FnOnce(&mut Self, &T) -> Option<()>,
-    ) -> Option<()> {
-        if let Some(value) = value {
-            self.u8(1);
-            encode(self, value)
-        } else {
-            self.u8(0);
-            Some(())
-        }
-    }
-
-    fn schema(&mut self, schema: &RuntimeTypeSchema) -> Option<()> {
-        match schema {
-            RuntimeTypeSchema::Unit => self.u8(1),
-            RuntimeTypeSchema::Bool => self.u8(2),
-            RuntimeTypeSchema::I8 => self.u8(3),
-            RuntimeTypeSchema::I16 => self.u8(4),
-            RuntimeTypeSchema::I32 => self.u8(5),
-            RuntimeTypeSchema::I64 => self.u8(6),
-            RuntimeTypeSchema::I128 => self.u8(7),
-            RuntimeTypeSchema::ISize => self.u8(8),
-            RuntimeTypeSchema::U8 => self.u8(9),
-            RuntimeTypeSchema::U16 => self.u8(10),
-            RuntimeTypeSchema::U32 => self.u8(11),
-            RuntimeTypeSchema::U64 => self.u8(12),
-            RuntimeTypeSchema::U128 => self.u8(13),
-            RuntimeTypeSchema::USize => self.u8(14),
-            RuntimeTypeSchema::F32 => self.u8(15),
-            RuntimeTypeSchema::F64 => self.u8(16),
-            RuntimeTypeSchema::String => self.u8(17),
-            RuntimeTypeSchema::Char => self.u8(18),
-            RuntimeTypeSchema::Bytes { format } => {
-                self.u8(19);
-                self.u8(format.tag());
-            }
-            RuntimeTypeSchema::Option(inner) => {
-                self.u8(20);
-                self.schema(inner)?;
-            }
-            RuntimeTypeSchema::Seq(inner) => {
-                self.u8(21);
-                self.schema(inner)?;
-            }
-            RuntimeTypeSchema::Map { key, value } => {
-                self.u8(22);
-                self.schema(key)?;
-                self.schema(value)?;
-            }
-            RuntimeTypeSchema::Record {
-                name,
-                fields,
-                deny_unknown_fields,
-            } => {
-                self.u8(23);
-                self.string(name)?;
-                self.bool(*deny_unknown_fields);
-                self.len(fields.len())?;
-                for field in fields {
-                    self.string(&field.rust_name)?;
-                    self.string(&field.wire_name)?;
-                    self.schema(&field.schema)?;
-                    self.bool(field.has_default);
-                    self.bool(field.skip);
-                    self.option(field.bytes_format.as_ref(), |bytes, format| {
-                        bytes.u8(format.tag());
-                        Some(())
-                    })?;
-                }
-            }
-            RuntimeTypeSchema::Enum {
-                name,
-                variants,
-                tag,
-                repr,
-            } => {
-                self.u8(24);
-                self.string(name)?;
-                match tag {
-                    RuntimeEnumTagStyle::External => self.u8(1),
-                    RuntimeEnumTagStyle::Internal { tag } => {
-                        self.u8(2);
-                        self.string(tag)?;
-                    }
-                    RuntimeEnumTagStyle::Adjacent { tag, content } => {
-                        self.u8(3);
-                        self.string(tag)?;
-                        self.string(content)?;
-                    }
-                }
-                self.option(repr.as_ref(), |bytes, repr| {
-                    bytes.u8(repr.tag());
-                    Some(())
-                })?;
-                self.len(variants.len())?;
-                for variant in variants {
-                    self.string(&variant.rust_name)?;
-                    self.string(&variant.wire_name)?;
-                    self.option(variant.payload.as_ref(), Self::schema)?;
-                    self.option(variant.discriminant.as_ref(), |bytes, value| {
-                        bytes.i128(*value);
-                        Some(())
-                    })?;
-                }
-            }
-            RuntimeTypeSchema::Named(name) => {
-                self.u8(25);
-                self.string(name)?;
-            }
-        }
-        Some(())
     }
 }
 
@@ -1519,7 +1394,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
 #[cfg(test)]
 mod visitor_tests {
     use super::{
-        CanonicalRuntimeValueSink, canonical_runtime_value_bytes, canonical_runtime_value_digest,
+        CanonicalSink, canonical_runtime_value_bytes, canonical_runtime_value_digest,
         visit_runtime_value,
     };
     use crate::value::RuntimeValue;
@@ -1529,7 +1404,7 @@ mod visitor_tests {
         bytes_written: u64,
     }
 
-    impl CanonicalRuntimeValueSink for DigestSink {
+    impl CanonicalSink for DigestSink {
         fn write(&mut self, bytes: &[u8]) -> Result<(), super::RuntimeSchemaError> {
             self.hasher.update(bytes);
             self.bytes_written += u64::try_from(bytes.len()).expect("test bytes fit u64");
@@ -1607,7 +1482,10 @@ mod visitor_tests {
         let mut expected = b"arcweft.nominal-schema\0".to_vec();
         expected.extend_from_slice(&[1, 25, 0xac, 0x02]);
         expected.extend_from_slice(&[b'x'; 300]);
-        assert_eq!(schema.canonical_bytes().unwrap(), expected);
+        assert_eq!(
+            super::canonical_schema_bytes(&schema, expected.len()).unwrap(),
+            expected
+        );
         assert_eq!(
             schema.try_layout_hash().unwrap().as_bytes(),
             blake3::hash(&expected).as_bytes()
