@@ -435,6 +435,13 @@ impl RuntimeBuiltinVariantCaseSchema {
     pub const fn has_payload(self) -> bool {
         self.has_payload
     }
+
+    /// Payload-bearing builtin cases use a one-item Tuple at the value and
+    /// checked-type boundaries. Unit cases have no payload or Tuple wrapper.
+    #[must_use]
+    pub(crate) const fn payload_arity(self) -> Option<usize> {
+        if self.has_payload { Some(1) } else { None }
+    }
 }
 
 /// Semantic identity of one case in a core-owned builtin variant.
@@ -604,6 +611,15 @@ impl RuntimeBuiltinVariantIdentity {
         }
     }
 
+    /// Number of unary payload item types in canonical case order.
+    #[must_use]
+    pub fn payload_count(self) -> usize {
+        self.cases()
+            .iter()
+            .filter(|case| case.has_payload())
+            .count()
+    }
+
     /// Resolves a semantic case coordinate to its canonical source ordinal
     /// and schema row.
     #[must_use]
@@ -648,6 +664,10 @@ pub enum RuntimeBuiltinVariantTypeError {
     },
     #[error("builtin variant case {case:?} has the wrong payload presence")]
     InvalidPayloadPresence {
+        case: RuntimeBuiltinVariantCaseIdentity,
+    },
+    #[error("builtin variant case {case:?} requires a one-item Tuple payload type")]
+    InvalidPayloadTuple {
         case: RuntimeBuiltinVariantCaseIdentity,
     },
 }
@@ -920,6 +940,14 @@ impl RuntimeCheckedType {
             .map(|(schema, payload)| {
                 if schema.has_payload() != payload.is_some() {
                     return Err(RuntimeBuiltinVariantTypeError::InvalidPayloadPresence {
+                        case: schema.identity(),
+                    });
+                }
+                if let Some(payload) = &payload
+                    && !matches!(payload, Self::Tuple(items)
+                        if Some(items.len()) == schema.payload_arity())
+                {
+                    return Err(RuntimeBuiltinVariantTypeError::InvalidPayloadTuple {
                         case: schema.identity(),
                     });
                 }
@@ -2345,6 +2373,53 @@ mod tests {
             ),
             Err(RuntimeBuiltinVariantValueError::InvalidPayloadPresence)
         );
+    }
+
+    #[test]
+    fn builtin_checked_types_require_the_same_tuple_abi_as_runtime_values() {
+        for owner in [
+            RuntimeBuiltinVariantIdentity::Option,
+            RuntimeBuiltinVariantIdentity::Result,
+            RuntimeBuiltinVariantIdentity::AgentResourceBody,
+            RuntimeBuiltinVariantIdentity::AgentBinaryEncoding,
+            RuntimeBuiltinVariantIdentity::CaptureFormat,
+            RuntimeBuiltinVariantIdentity::CaptureKind,
+            RuntimeBuiltinVariantIdentity::PointerButton,
+        ] {
+            let payloads: Vec<_> = owner
+                .cases()
+                .iter()
+                .map(|case| {
+                    case.has_payload()
+                        .then(|| RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Unit]))
+                })
+                .collect();
+            let checked = RuntimeCheckedType::try_builtin_variant(owner, payloads.clone()).unwrap();
+            for (index, case) in owner.cases().iter().enumerate() {
+                let value = RuntimeValue::try_builtin_variant(
+                    case.identity(),
+                    case.has_payload().then_some(RuntimeValue::Unit),
+                )
+                .unwrap();
+                assert!(checked.accepts_value(&value));
+                if case.has_payload() {
+                    for malformed in [
+                        RuntimeCheckedType::Unit,
+                        RuntimeCheckedType::Tuple(vec![]),
+                        RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Unit; 2]),
+                    ] {
+                        let mut candidate = payloads.clone();
+                        candidate[index] = Some(malformed);
+                        assert_eq!(
+                            RuntimeCheckedType::try_builtin_variant(owner, candidate),
+                            Err(RuntimeBuiltinVariantTypeError::InvalidPayloadTuple {
+                                case: case.identity(),
+                            })
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

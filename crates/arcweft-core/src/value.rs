@@ -1195,9 +1195,9 @@ impl RuntimeValue {
             return None;
         };
         let schema = owner.case_at(*ordinal)?;
-        let payload = match (schema.has_payload(), payload.as_deref()) {
-            (false, None) => None,
-            (true, Some(Self::Tuple(fields))) if fields.len() == 1 => fields.first(),
+        let payload = match (schema.payload_arity(), payload.as_deref()) {
+            (None, None) => None,
+            (Some(arity), Some(Self::Tuple(fields))) if fields.len() == arity => fields.first(),
             _ => return None,
         };
         (name == schema.name()).then_some((schema.identity(), payload))
@@ -1225,10 +1225,10 @@ impl RuntimeValue {
                 payload,
             });
         };
-        let payload = match (schema.has_payload(), payload) {
-            (false, None) => None,
-            (true, Some(payload)) => match *payload {
-                Self::Tuple(mut fields) if fields.len() == 1 => fields.pop(),
+        let payload = match (schema.payload_arity(), payload) {
+            (None, None) => None,
+            (Some(arity), Some(payload)) => match *payload {
+                Self::Tuple(mut fields) if fields.len() == arity => fields.pop(),
                 payload => {
                     return Err(Self::Variant {
                         owner: RuntimeVariantIdentity::Builtin(owner),
