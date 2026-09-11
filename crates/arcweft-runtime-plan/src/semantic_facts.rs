@@ -19,7 +19,8 @@ use std::{
 
 use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::entry::{
-    RuntimeCallableId, RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash,
+    RuntimeCallableId, RuntimeIdentityError, RuntimeNominalRecordShape, RuntimeNominalTypeId,
+    TypeLayoutHash,
 };
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{
@@ -2112,12 +2113,14 @@ pub enum RuntimeNominalRecordFactError {
         expected: TypeLayoutHash,
         actual: TypeLayoutHash,
     },
+    #[error("project record fact requires a named record layout, received {actual:?}")]
+    SourceShape { actual: RuntimeNominalRecordShape },
     #[error("nominal record fact has {actual} normalized fields, expected {expected}")]
     FieldCount { expected: usize, actual: usize },
-    #[error("nominal record field {ordinal} resolved as `{actual}`, expected `{expected}`")]
+    #[error("nominal record field {ordinal} resolved as `{actual}`, expected {expected:?}")]
     FieldName {
         ordinal: usize,
-        expected: String,
+        expected: Option<String>,
         actual: String,
     },
     #[error("nominal record field `{name}` has a different checked projection")]
@@ -2155,6 +2158,11 @@ impl RuntimeResolvedNominalRecord {
                 actual: layout.layout(),
             });
         }
+        if layout.shape() != RuntimeNominalRecordShape::Record {
+            return Err(RuntimeNominalRecordFactError::SourceShape {
+                actual: layout.shape(),
+            });
+        }
         let fields = fields
             .into_iter()
             .map(|(name, ty)| RuntimeResolvedNominalRecordField { name, ty })
@@ -2167,10 +2175,10 @@ impl RuntimeResolvedNominalRecord {
             });
         }
         for (ordinal, (field, accepted)) in fields.iter().zip(layout.fields()).enumerate() {
-            if field.name != accepted.name() {
+            if Some(field.name.as_str()) != accepted.name() {
                 return Err(RuntimeNominalRecordFactError::FieldName {
                     ordinal,
-                    expected: accepted.name().to_owned(),
+                    expected: accepted.name().map(str::to_owned),
                     actual: field.name.clone(),
                 });
             }

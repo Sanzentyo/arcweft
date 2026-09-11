@@ -857,6 +857,44 @@ fn assignment_nominal(
     )
 }
 
+#[test]
+fn nominal_record_fact_requires_the_project_record_source_shape() {
+    use arcweft_core::entry::RuntimeNominalRecordShape;
+    use arcweft_core::value::RuntimeNominalRecordLayout;
+
+    let project = project_fixture("nominal-record-shape", "struct Point {}\n");
+    let executable = project.analysis_view().expect("project view");
+    let (_, module) = executable.modules().next().expect("root module");
+    let nominal = assignment_nominal(&project, module, "nominal-record-shape");
+    for shape in [
+        RuntimeNominalRecordShape::Record,
+        RuntimeNominalRecordShape::Unit,
+        RuntimeNominalRecordShape::Tuple,
+    ] {
+        let layout = RuntimeNominalRecordLayout::try_from_checked_projection(
+            nominal.runtime_nominal_id(),
+            nominal.identity(),
+            nominal.layout(),
+            shape,
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("valid empty layout");
+        let result = super::RuntimeResolvedNominalRecord::try_new(
+            nominal.clone(),
+            Arc::new(layout),
+            Vec::new(),
+        );
+        if shape == RuntimeNominalRecordShape::Record {
+            assert!(result.is_ok());
+        } else {
+            assert!(
+                matches!(result, Err(super::RuntimeNominalRecordFactError::SourceShape { actual }) if actual == shape)
+            );
+        }
+    }
+}
+
 fn local_owners(project: &HirProject) -> Vec<arcweft_lang_hir::identity::LocalId> {
     runtime_reachability(project).locals().collect()
 }

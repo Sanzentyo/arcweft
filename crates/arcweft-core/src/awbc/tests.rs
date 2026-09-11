@@ -2949,6 +2949,18 @@ fn nominal_record_bytes_and_never_types_roundtrip_and_project_exactly() {
         .unwrap();
 
     assert_eq!(
+        layout.shape(),
+        crate::entry::RuntimeNominalRecordShape::Record
+    );
+    for (ordinal, name) in ["alpha", "zeta"].into_iter().enumerate() {
+        let field = &layout.fields()[ordinal];
+        assert_eq!(field.name(), Some(name));
+        assert_eq!(
+            field.field(),
+            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).unwrap()
+        );
+    }
+    assert_eq!(
         layout.fields()[0].checked_type(),
         &RuntimeCheckedType::Bytes
     );

@@ -4,6 +4,7 @@ use super::schema::{
     AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
     AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
+use crate::entry::RuntimeNominalRecordShape;
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::pattern::{
     RuntimeBuiltinVariantIdentity, RuntimeCheckedRecordTypeError, RuntimeCheckedType,
@@ -11,8 +12,8 @@ use crate::pattern::{
     RuntimeSemanticTypeId,
 };
 use crate::value::{
-    RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeRecordFieldId,
-    RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeNominalRecordLayoutField,
+    RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
 };
 use std::collections::BTreeSet;
 use thiserror::Error;
@@ -163,21 +164,33 @@ impl AwbcProgram {
             .collect::<Result<Vec<_>, _>>()?;
         let fields = fields
             .iter()
-            .map(|field| {
+            .enumerate()
+            .map(|(ordinal, field)| {
                 let name = self.strings.get(field.name.index()).cloned().ok_or(
                     AwbcTypeProjectionError::StringOutOfBounds {
                         index: field.name.0,
                         role: "nominal record field name",
                     },
                 )?;
+                let identity = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(
+                    |source| AwbcTypeProjectionError::InvalidNominalRecordLayout {
+                        source: RuntimeNominalRecordLayoutError::InvalidFieldIdentity {
+                            ordinal,
+                            source,
+                        },
+                    },
+                )?;
                 self.checked_type_at_depth(field.ty, 0, &mut visiting)
-                    .map(|checked| (name, checked))
+                    .map(|checked| {
+                        RuntimeNominalRecordLayoutField::new(identity, Some(name), checked)
+                    })
             })
             .collect::<Result<Vec<_>, _>>()?;
         RuntimeNominalRecordLayout::try_from_checked_projection(
             nominal,
             row.semantic_identity(),
             TypeLayoutHash::from_bytes(*layout),
+            RuntimeNominalRecordShape::Record,
             arguments,
             fields,
         )

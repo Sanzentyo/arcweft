@@ -1,19 +1,22 @@
 //! Nominal runtime record identity and ordered field storage.
 
-use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use crate::entry::{
+    RuntimeNominalRecordShape, RuntimeNominalRecordShapeError, RuntimeNominalTypeId, TypeLayoutHash,
+};
 use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::value::RuntimeValue;
 use crate::value::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeSet;
 use thiserror::Error;
 
 /// Immutable executable field layout for one checked nominal record.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(try_from = "NominalRecordLayoutInput")]
 pub struct RuntimeNominalRecordLayout {
     nominal: RuntimeNominalTypeId,
     semantic_identity: RuntimeSemanticTypeId,
     layout: TypeLayoutHash,
+    shape: RuntimeNominalRecordShape,
     arguments: Box<[RuntimeCheckedType]>,
     fields: Box<[RuntimeNominalRecordLayoutField]>,
 }
@@ -21,7 +24,8 @@ pub struct RuntimeNominalRecordLayout {
 /// One defining-order field in an executable nominal record layout.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeNominalRecordLayoutField {
-    name: String,
+    field: RuntimeRecordFieldId,
+    name: Option<String>,
     checked_type: RuntimeCheckedType,
 }
 
@@ -32,14 +36,46 @@ pub enum RuntimeNominalRecordLayoutError {
         "nominal record layout has {actual} fields, exceeding the {maximum}-field identity space"
     )]
     TooManyFields { actual: usize, maximum: u32 },
-    #[error("nominal record layout contains duplicate field `{name}`")]
-    DuplicateFieldName { name: String },
-    #[error("nominal record layout field {ordinal} (`{name}`) has invalid identity")]
+    #[error("nominal record layout has an invalid source shape: {source}")]
+    Shape {
+        source: RuntimeNominalRecordShapeError,
+    },
+    #[error("nominal record layout field {ordinal} has invalid identity")]
     InvalidFieldIdentity {
         ordinal: usize,
-        name: String,
         source: RuntimeRecordFieldIdError,
     },
+    #[error("nominal record layout field {ordinal} has identity {actual:?}, expected {expected:?}")]
+    FieldIdentity {
+        ordinal: usize,
+        expected: RuntimeRecordFieldId,
+        actual: RuntimeRecordFieldId,
+    },
+}
+
+#[derive(Deserialize)]
+struct NominalRecordLayoutInput {
+    nominal: RuntimeNominalTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
+    layout: TypeLayoutHash,
+    shape: RuntimeNominalRecordShape,
+    arguments: Vec<RuntimeCheckedType>,
+    fields: Vec<RuntimeNominalRecordLayoutField>,
+}
+
+impl TryFrom<NominalRecordLayoutInput> for RuntimeNominalRecordLayout {
+    type Error = RuntimeNominalRecordLayoutError;
+
+    fn try_from(input: NominalRecordLayoutInput) -> Result<Self, Self::Error> {
+        Self::try_from_checked_projection(
+            input.nominal,
+            input.semantic_identity,
+            input.layout,
+            input.shape,
+            input.arguments,
+            input.fields,
+        )
+    }
 }
 
 impl RuntimeNominalRecordLayout {
@@ -48,8 +84,9 @@ impl RuntimeNominalRecordLayout {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
         layout: TypeLayoutHash,
+        shape: RuntimeNominalRecordShape,
         arguments: Vec<RuntimeCheckedType>,
-        fields_in_layout_order: Vec<(String, RuntimeCheckedType)>,
+        fields_in_layout_order: Vec<RuntimeNominalRecordLayoutField>,
     ) -> Result<Self, RuntimeNominalRecordLayoutError> {
         if fields_in_layout_order.len() > u32::MAX as usize {
             return Err(RuntimeNominalRecordLayoutError::TooManyFields {
@@ -58,34 +95,31 @@ impl RuntimeNominalRecordLayout {
             });
         }
 
-        let mut names = BTreeSet::new();
-        for (name, _) in &fields_in_layout_order {
-            if !names.insert(name.as_str()) {
-                return Err(RuntimeNominalRecordLayoutError::DuplicateFieldName {
-                    name: name.clone(),
+        shape
+            .validate_field_names(fields_in_layout_order.iter().map(|field| field.name()))
+            .map_err(|source| RuntimeNominalRecordLayoutError::Shape { source })?;
+
+        for (ordinal, field) in fields_in_layout_order.iter().enumerate() {
+            let expected =
+                RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
+                    RuntimeNominalRecordLayoutError::InvalidFieldIdentity { ordinal, source }
+                })?;
+            if field.field() != expected {
+                return Err(RuntimeNominalRecordLayoutError::FieldIdentity {
+                    ordinal,
+                    expected,
+                    actual: field.field(),
                 });
             }
-        }
-
-        for (ordinal, (name, _)) in fields_in_layout_order.iter().enumerate() {
-            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
-                RuntimeNominalRecordLayoutError::InvalidFieldIdentity {
-                    ordinal,
-                    name: name.clone(),
-                    source,
-                }
-            })?;
         }
 
         Ok(Self {
             nominal,
             semantic_identity,
             layout,
+            shape,
             arguments: arguments.into_boxed_slice(),
-            fields: fields_in_layout_order
-                .into_iter()
-                .map(|(name, checked_type)| RuntimeNominalRecordLayoutField { name, checked_type })
-                .collect(),
+            fields: fields_in_layout_order.into_boxed_slice(),
         })
     }
 
@@ -105,6 +139,12 @@ impl RuntimeNominalRecordLayout {
     #[must_use]
     pub const fn layout(&self) -> TypeLayoutHash {
         self.layout
+    }
+
+    /// Source shape, retained even when the field inventory is empty.
+    #[must_use]
+    pub const fn shape(&self) -> RuntimeNominalRecordShape {
+        self.shape
     }
 
     /// Ordered checked generic arguments for this exact nominal instance.
@@ -129,13 +169,12 @@ impl RuntimeNominalRecordLayout {
         self.fields.is_empty()
     }
 
-    /// Derives the accepted field identity for one defining-order ordinal.
+    /// Returns the admitted field identity for one defining-order ordinal.
     #[must_use]
     pub fn field_id(&self, zero_based_ordinal: usize) -> Option<RuntimeRecordFieldId> {
-        if zero_based_ordinal >= self.fields.len() {
-            return None;
-        }
-        RuntimeRecordFieldId::try_from_zero_based_ordinal(zero_based_ordinal).ok()
+        self.fields
+            .get(zero_based_ordinal)
+            .map(|field| field.field())
     }
 
     #[must_use]
@@ -153,12 +192,11 @@ impl RuntimeNominalRecordLayout {
         &self,
         name: &str,
     ) -> Option<(RuntimeRecordFieldId, &RuntimeNominalRecordLayoutField)> {
-        let (ordinal, field) = self
+        let field = self
             .fields
             .iter()
-            .enumerate()
-            .find(|(_, field)| field.name == name)?;
-        self.field_id(ordinal).map(|identity| (identity, field))
+            .find(|field| field.name() == Some(name))?;
+        Some((field.field(), field))
     }
 
     /// Closed checked predicate corresponding to this descriptor.
@@ -175,8 +213,26 @@ impl RuntimeNominalRecordLayout {
 
 impl RuntimeNominalRecordLayoutField {
     #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn new(
+        field: RuntimeRecordFieldId,
+        name: Option<String>,
+        checked_type: RuntimeCheckedType,
+    ) -> Self {
+        Self {
+            field,
+            name,
+            checked_type,
+        }
+    }
+
+    #[must_use]
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     #[must_use]
@@ -211,15 +267,10 @@ pub enum RuntimeNominalRecordError {
     },
     #[error("nominal record has {actual} fields, expected {expected}")]
     FieldCount { expected: usize, actual: usize },
-    #[error("nominal record layout ordinal {ordinal} has invalid field identity")]
-    InvalidFieldIdentity {
-        ordinal: usize,
-        source: RuntimeRecordFieldIdError,
-    },
-    #[error("nominal record field {field:?} (`{name}`) does not satisfy {expected:?}")]
+    #[error("nominal record field {field:?} ({name:?}) does not satisfy {expected:?}")]
     FieldType {
         field: RuntimeRecordFieldId,
-        name: String,
+        name: Option<String>,
         expected: Box<RuntimeCheckedType>,
     },
 }
@@ -371,15 +422,11 @@ fn validate_layout_fields(
             actual: fields.len(),
         });
     }
-    for (ordinal, (field_layout, value)) in layout.fields().iter().zip(fields).enumerate() {
-        let field =
-            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).map_err(|source| {
-                RuntimeNominalRecordError::InvalidFieldIdentity { ordinal, source }
-            })?;
+    for (field_layout, value) in layout.fields().iter().zip(fields) {
         if !field_layout.checked_type().accepts_value(value) {
             return Err(RuntimeNominalRecordError::FieldType {
-                field,
-                name: field_layout.name().to_owned(),
+                field: field_layout.field(),
+                name: field_layout.name().map(str::to_owned),
                 expected: Box::new(field_layout.checked_type().clone()),
             });
         }
@@ -392,26 +439,54 @@ mod tests {
     use super::*;
     use std::sync::Arc;
 
-    fn layout(fields: Vec<(String, RuntimeCheckedType)>) -> RuntimeNominalRecordLayout {
+    fn field(
+        ordinal: usize,
+        name: Option<&str>,
+        ty: RuntimeCheckedType,
+    ) -> RuntimeNominalRecordLayoutField {
+        RuntimeNominalRecordLayoutField::new(
+            RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal).expect("field identity"),
+            name.map(str::to_owned),
+            ty,
+        )
+    }
+
+    fn try_layout(
+        shape: RuntimeNominalRecordShape,
+        fields: Vec<RuntimeNominalRecordLayoutField>,
+    ) -> Result<RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError> {
         RuntimeNominalRecordLayout::try_from_checked_projection(
             RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
             RuntimeSemanticTypeId::from_bytes([3; 32]),
             TypeLayoutHash::from_bytes([5; 32]),
+            shape,
             Vec::new(),
             fields,
+        )
+    }
+
+    fn layout(fields: Vec<(String, RuntimeCheckedType)>) -> RuntimeNominalRecordLayout {
+        try_layout(
+            RuntimeNominalRecordShape::Record,
+            fields
+                .into_iter()
+                .enumerate()
+                .map(|(ordinal, (name, ty))| field(ordinal, Some(&name), ty))
+                .collect(),
         )
         .expect("accepted layout")
     }
 
     #[test]
-    fn nominal_layout_preserves_defining_order_and_derives_field_ids() {
+    fn nominal_layout_preserves_defining_order_and_field_ids() {
         let layout = layout(vec![
             ("alpha".to_owned(), RuntimeCheckedType::Bool),
             ("zeta".to_owned(), RuntimeCheckedType::String),
         ]);
 
-        assert_eq!(layout.fields()[0].name(), "alpha");
-        assert_eq!(layout.fields()[1].name(), "zeta");
+        assert_eq!(layout.shape(), RuntimeNominalRecordShape::Record);
+        assert_eq!(layout.fields()[0].name(), Some("alpha"));
+        assert_eq!(layout.fields()[1].name(), Some("zeta"));
         assert_eq!(layout.field_id(0).map(|field| field.get().get()), Some(1));
         assert_eq!(layout.field_id(1).map(|field| field.get().get()), Some(2));
         assert_eq!(
@@ -434,24 +509,127 @@ mod tests {
 
     #[test]
     fn nominal_layout_rejects_first_duplicate_name() {
-        let error = RuntimeNominalRecordLayout::try_from_checked_projection(
-            RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
-            RuntimeSemanticTypeId::from_bytes([3; 32]),
-            TypeLayoutHash::from_bytes([5; 32]),
-            Vec::new(),
+        let error = try_layout(
+            RuntimeNominalRecordShape::Record,
             vec![
-                ("value".to_owned(), RuntimeCheckedType::Bool),
-                ("value".to_owned(), RuntimeCheckedType::String),
+                field(0, Some("value"), RuntimeCheckedType::Bool),
+                field(1, Some("value"), RuntimeCheckedType::String),
             ],
         )
         .expect_err("duplicate field names reject");
 
         assert_eq!(
             error,
-            RuntimeNominalRecordLayoutError::DuplicateFieldName {
-                name: "value".to_owned()
+            RuntimeNominalRecordLayoutError::Shape {
+                source: RuntimeNominalRecordShapeError::DuplicateFieldName {
+                    ordinal: 1,
+                    name: "value".to_owned(),
+                },
             }
         );
+    }
+
+    #[test]
+    fn nominal_layout_retains_empty_and_unnamed_source_shapes() {
+        for shape in [
+            RuntimeNominalRecordShape::Unit,
+            RuntimeNominalRecordShape::Tuple,
+            RuntimeNominalRecordShape::Record,
+        ] {
+            let layout = try_layout(shape, vec![]).expect("empty shape");
+            assert_eq!(layout.shape(), shape);
+            let encoded = serde_json::to_vec(&layout).expect("encode");
+            assert_eq!(
+                serde_json::from_slice::<RuntimeNominalRecordLayout>(&encoded).expect("decode"),
+                layout
+            );
+        }
+        for shape in [
+            RuntimeNominalRecordShape::Tuple,
+            RuntimeNominalRecordShape::Newtype,
+        ] {
+            let layout = try_layout(shape, vec![field(0, None, RuntimeCheckedType::Bool)])
+                .expect("unnamed shape");
+            assert_eq!(layout.shape(), shape);
+            assert!(layout.field_by_name("0").is_none());
+            assert_eq!(
+                layout
+                    .field_by_id(layout.field_id(0).expect("id"))
+                    .expect("field")
+                    .name(),
+                None
+            );
+            let value = RuntimeNominalRecordValue::try_from_accepted_layout(
+                &layout,
+                vec![RuntimeValue::Bool(true)],
+            )
+            .expect("accepted value");
+            value
+                .validate_against_layout(&layout)
+                .expect("revalidated value");
+            assert!(matches!(
+                RuntimeNominalRecordValue::try_from_accepted_layout(
+                    &layout,
+                    vec![RuntimeValue::Unit]
+                ),
+                Err(RuntimeNominalRecordError::FieldType { name: None, .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn nominal_layout_rejects_source_shape_and_field_identity_mismatches() {
+        for (shape, fields) in [
+            (
+                RuntimeNominalRecordShape::Unit,
+                vec![field(0, None, RuntimeCheckedType::Bool)],
+            ),
+            (RuntimeNominalRecordShape::Newtype, vec![]),
+            (
+                RuntimeNominalRecordShape::Tuple,
+                vec![field(0, Some("value"), RuntimeCheckedType::Bool)],
+            ),
+            (
+                RuntimeNominalRecordShape::Record,
+                vec![field(0, None, RuntimeCheckedType::Bool)],
+            ),
+            (
+                RuntimeNominalRecordShape::Record,
+                vec![field(0, Some(""), RuntimeCheckedType::Bool)],
+            ),
+        ] {
+            assert!(matches!(
+                try_layout(shape, fields),
+                Err(RuntimeNominalRecordLayoutError::Shape { .. })
+            ));
+        }
+        for ordinals in [[1, 0], [0, 0], [0, 2]] {
+            let fields = ordinals
+                .into_iter()
+                .map(|ordinal| field(ordinal, None, RuntimeCheckedType::Bool))
+                .collect();
+            assert!(matches!(
+                try_layout(RuntimeNominalRecordShape::Tuple, fields),
+                Err(RuntimeNominalRecordLayoutError::FieldIdentity { .. })
+            ));
+        }
+    }
+
+    #[test]
+    fn nominal_layout_deserialization_uses_the_same_admission_boundary() {
+        let layout = layout(vec![("value".to_owned(), RuntimeCheckedType::Bool)]);
+        let encoded = serde_json::to_value(&layout).expect("encode");
+        let mut wrong_id = encoded.clone();
+        wrong_id["fields"][0]["field"] =
+            serde_json::to_value(RuntimeRecordFieldId::try_from_zero_based_ordinal(1).expect("id"))
+                .expect("encode id");
+        assert!(serde_json::from_value::<RuntimeNominalRecordLayout>(wrong_id).is_err());
+        let mut wrong_shape = encoded.clone();
+        wrong_shape["shape"] = serde_json::json!("Unit");
+        assert!(serde_json::from_value::<RuntimeNominalRecordLayout>(wrong_shape).is_err());
+        let mut wrong_name = encoded;
+        wrong_name["fields"][0]["name"] = serde_json::Value::Null;
+        assert!(serde_json::from_value::<RuntimeNominalRecordLayout>(wrong_name).is_err());
     }
 
     #[test]

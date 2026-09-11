@@ -51,7 +51,7 @@ use arcweft_character::{
     },
 };
 use arcweft_core::{
-    entry::RuntimeNominalTypeId,
+    entry::{RuntimeNominalRecordShape, RuntimeNominalTypeId},
     pattern::RuntimeOpaqueTypeProducerId,
     plan::{
         FlowRuntimeId, RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
@@ -64,9 +64,9 @@ use arcweft_core::{
     time::LogicalDuration,
     value::{
         RuntimeHandleKind, RuntimeInt, RuntimeIntrinsic, RuntimeNominalRecordLayout,
-        RuntimeNominalRecordLayoutError, RuntimeOpaquePersistence, RuntimeOpaqueValueClass,
-        RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
-        RuntimeValue, runtime_sequence_from_literal_values,
+        RuntimeNominalRecordLayoutError, RuntimeNominalRecordLayoutField, RuntimeOpaquePersistence,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUInt,
+        RuntimeUnsignedIntWidth, RuntimeValue, runtime_sequence_from_literal_values,
     },
 };
 use arcweft_dialogue::{
@@ -4803,7 +4803,15 @@ fn runtime_nominal_record_under(
                     reason: reason.to_string(),
                 }
             })?;
-            Ok((shape.rust_name.clone(), normalized, checked_type))
+            Ok((
+                shape.rust_name.clone(),
+                normalized,
+                RuntimeNominalRecordLayoutField::new(
+                    field.runtime_field(),
+                    Some(shape.rust_name.clone()),
+                    checked_type,
+                ),
+            ))
         })
         .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
     let projected_arguments = nominal
@@ -4821,10 +4829,11 @@ fn runtime_nominal_record_under(
         resolved.runtime_nominal_id(),
         resolved.identity(),
         resolved.layout(),
+        RuntimeNominalRecordShape::Record,
         projected_arguments,
         projected_fields
             .iter()
-            .map(|(name, _, checked)| (name.clone(), checked.clone()))
+            .map(|(_, _, field)| field.clone())
             .collect(),
     )
     .map(Arc::new)

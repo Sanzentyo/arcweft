@@ -9,6 +9,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
 mod encoding;
+mod record_shape;
+
+pub use record_shape::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
+
 /// Runtime-verifiable persistent data shape.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeTypeSchema {
