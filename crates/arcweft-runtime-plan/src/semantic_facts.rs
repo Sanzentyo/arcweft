@@ -821,11 +821,16 @@ impl RuntimeNormalizedType {
             return Err(self.unsupported(path, shape));
         }
         Ok(match self.shape() {
-            RuntimeTypeShape::Sequence { item, .. } | RuntimeTypeShape::Array { item, .. } => {
-                RuntimeCheckedType::Sequence(Box::new(
+            RuntimeTypeShape::Sequence { item, .. } => RuntimeCheckedType::Sequence(Box::new(
+                item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
+            )),
+            RuntimeTypeShape::Array { item, length } => RuntimeCheckedType::Array {
+                item: Box::new(
                     item.checked_type_at(&path.pushed(RuntimeTypeProjectionStep::SequenceItem))?,
-                ))
-            }
+                ),
+                length: u64::try_from(*length)
+                    .expect("usize fits the u64 Arcweft runtime-plan contract"),
+            },
             RuntimeTypeShape::ProjectNominal { nominal, arguments } => {
                 RuntimeCheckedType::Nominal {
                     nominal: nominal.runtime_nominal_id(),

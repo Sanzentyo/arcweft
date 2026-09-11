@@ -228,7 +228,6 @@ impl From<RuntimeOwnershipError> for CheckedOwnershipError {
             RuntimeOwnershipError::WorkLimit => Self::WorkLimit,
             RuntimeOwnershipError::Rejected { .. }
             | RuntimeOwnershipError::CarrierMismatch { .. }
-            | RuntimeOwnershipError::ArrayLengthMismatch { .. }
             | RuntimeOwnershipError::Canonical { .. }
             | RuntimeOwnershipError::Snapshot { .. }
             | RuntimeOwnershipError::GenericScope { .. }
@@ -378,12 +377,6 @@ pub(crate) enum RuntimeOwnershipError {
     },
     #[error("runtime value at {path} does not satisfy its checked carrier")]
     CarrierMismatch { path: RuntimeOwnershipPath },
-    #[error("array carrier at {path} has length {actual}, expected {expected}")]
-    ArrayLengthMismatch {
-        path: RuntimeOwnershipPath,
-        expected: u64,
-        actual: usize,
-    },
     #[error("canonical runtime value failed at {path}: {source}")]
     Canonical {
         path: RuntimeOwnershipPath,
@@ -430,7 +423,6 @@ impl RuntimeOwnershipError {
             Self::Rejected { path, .. }
             | Self::GenericScope { path, .. }
             | Self::CarrierMismatch { path }
-            | Self::ArrayLengthMismatch { path, .. }
             | Self::Canonical { path, .. }
             | Self::Snapshot { path, .. }
             | Self::BuiltinVariantSchema { path, .. }
@@ -449,7 +441,6 @@ impl RuntimeOwnershipError {
             Self::WorkLimit
             | Self::GenericScope { .. }
             | Self::CarrierMismatch { .. }
-            | Self::ArrayLengthMismatch { .. }
             | Self::Canonical { .. }
             | Self::Snapshot { .. }
             | Self::BuiltinVariantSchema { .. }
@@ -458,11 +449,8 @@ impl RuntimeOwnershipError {
     }
 }
 
-/// Semantic sequence shape retained in addition to core's checked item type.
-///
-/// Core's [`RuntimeCheckedType::Sequence`] is the carrier authority.  This
-/// small wrapper retains the source sequence family and the exact array
-/// length, which are semantic constraints not represented by that core type.
+/// Source sequence family and recursive ownership evidence. Projection to the
+/// core checked type retains fixed array lengths for common value admission.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) enum RuntimeSequenceOwnershipProjection {
     Vec(Box<RuntimeOwnershipProjection>),
@@ -480,17 +468,6 @@ impl RuntimeSequenceOwnershipProjection {
             Self::Vec(item) | Self::Array { item, .. } | Self::Slice(item) | Self::Seq(item) => {
                 item
             }
-        }
-    }
-
-    #[allow(
-        dead_code,
-        reason = "live array carrier validation is published in Cut 5"
-    )]
-    fn array_length(&self) -> Option<u64> {
-        match self {
-            Self::Array { length, .. } => Some(*length),
-            Self::Vec(_) | Self::Slice(_) | Self::Seq(_) => None,
         }
     }
 }
@@ -526,7 +503,19 @@ impl RuntimeOwnershipProjection {
             Self::Sequence(sequence) => {
                 let item_path = path.pushed(RuntimeOwnershipPathSegment::SequenceItem);
                 let item = sequence.item().checked_type_at(&item_path)?;
-                Ok(RuntimeCheckedType::Sequence(Box::new(item)))
+                Ok(match sequence {
+                    RuntimeSequenceOwnershipProjection::Array { length, .. } => {
+                        RuntimeCheckedType::Array {
+                            item: Box::new(item),
+                            length: *length,
+                        }
+                    }
+                    RuntimeSequenceOwnershipProjection::Vec(_)
+                    | RuntimeSequenceOwnershipProjection::Slice(_)
+                    | RuntimeSequenceOwnershipProjection::Seq(_) => {
+                        RuntimeCheckedType::Sequence(Box::new(item))
+                    }
+                })
             }
             Self::Need(_) => Err(RuntimeOwnershipError::rejected(
                 path,
@@ -544,23 +533,6 @@ impl RuntimeOwnershipProjection {
         let checked = self.checked_type_at(path)?;
         if !checked.accepts_value(value) {
             return Err(RuntimeOwnershipError::CarrierMismatch { path: path.clone() });
-        }
-        if let Self::Sequence(sequence) = self
-            && let Some(expected) = sequence.array_length()
-        {
-            let actual = match value {
-                RuntimeValue::Seq(sequence) => sequence.len(),
-                _ => {
-                    return Err(RuntimeOwnershipError::CarrierMismatch { path: path.clone() });
-                }
-            };
-            if actual != usize::try_from(expected).unwrap_or(usize::MAX) {
-                return Err(RuntimeOwnershipError::ArrayLengthMismatch {
-                    path: path.clone(),
-                    expected,
-                    actual,
-                });
-            }
         }
         if let Self::Nominal {
             checked,
@@ -1956,6 +1928,7 @@ fn validate_variant_cases(
         | RuntimeCheckedType::EntityReference
         | RuntimeCheckedType::Bytes
         | RuntimeCheckedType::Sequence(_)
+        | RuntimeCheckedType::Array { .. }
         | RuntimeCheckedType::Tuple(_)
         | RuntimeCheckedType::Record(_)
         | RuntimeCheckedType::Choice(_)
@@ -2093,11 +2066,33 @@ mod tests {
                 len: ArrayLength::Const(2),
             })
             .expect("array admission");
+        array
+            .validate_live_value(&RuntimeValue::Seq(RuntimeSeq::values(vec![
+                RuntimeValue::Bool(true),
+                RuntimeValue::Bool(false),
+            ])))
+            .expect("exact array length and item types");
         assert!(matches!(
             array.validate_live_value(&RuntimeValue::Seq(RuntimeSeq::values(vec![
                 RuntimeValue::Bool(true),
             ]))),
-            Err(RuntimeOwnershipError::ArrayLengthMismatch { .. })
+            Err(RuntimeOwnershipError::CarrierMismatch { .. })
+        ));
+        let nested = classifier
+            .classify(&TypeKind::Vec(Box::new(TypeKind::Array {
+                item: Box::new(TypeKind::Bool),
+                len: ArrayLength::Const(2),
+            })))
+            .expect("nested array admission");
+        let row =
+            |length| RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Bool(true); length]));
+        nested
+            .validate_live_value(&RuntimeValue::Seq(RuntimeSeq::values(vec![row(2), row(2)])))
+            .expect("every nested array has its exact length");
+        assert!(matches!(
+            nested
+                .validate_live_value(&RuntimeValue::Seq(RuntimeSeq::values(vec![row(2), row(1)]))),
+            Err(RuntimeOwnershipError::CarrierMismatch { .. })
         ));
     }
 

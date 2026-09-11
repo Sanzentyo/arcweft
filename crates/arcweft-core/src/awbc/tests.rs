@@ -1,4 +1,5 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
+mod array;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,
     FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension, FiberSuspensionReason,

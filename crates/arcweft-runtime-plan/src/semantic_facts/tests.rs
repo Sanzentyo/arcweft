@@ -1993,6 +1993,26 @@ fn complete_checked_composites_retain_their_exact_checked_predicate() {
 }
 
 #[test]
+fn normalized_array_projection_retains_its_exact_length() {
+    let normalized = normalized_type(
+        0x95,
+        RuntimeTypeShape::Array {
+            item: Box::new(unit_type()),
+            length: 2,
+        },
+    );
+    let expected = RuntimeCheckedType::Array {
+        item: Box::new(RuntimeCheckedType::Unit),
+        length: 2,
+    };
+    assert_eq!(normalized.checked_type().unwrap(), expected);
+    assert!(matches!(
+        normalized.runtime_plan_type_seed().unwrap().projection(),
+        RuntimePlanTypeProjection::Array { length: 2, .. }
+    ));
+}
+
+#[test]
 fn opaque_and_nominal_checked_results_remain_atomic_checked_types() {
     let opaque_identity = RuntimeSemanticTypeId::from_bytes([0xa0; 32]);
     let producer = RuntimeOpaqueTypeProducerId::try_new("fixture.runtime-plan.atomic-opaque")

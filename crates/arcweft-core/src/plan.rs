@@ -342,10 +342,15 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Progress => Some(RuntimeCheckedType::Progress),
             RuntimePlanTypeProjection::EntityReference => Some(RuntimeCheckedType::EntityReference),
             RuntimePlanTypeProjection::AgentValue => Some(RuntimeCheckedType::AgentValue),
-            RuntimePlanTypeProjection::Sequence { item, .. }
-            | RuntimePlanTypeProjection::Array { item, .. } => self
+            RuntimePlanTypeProjection::Sequence { item, .. } => self
                 .checked_type_inner(*item, memo, visiting)?
                 .map(|item| RuntimeCheckedType::Sequence(Box::new(item))),
+            RuntimePlanTypeProjection::Array { item, length } => self
+                .checked_type_inner(*item, memo, visiting)?
+                .map(|item| RuntimeCheckedType::Array {
+                    item: Box::new(item),
+                    length: *length,
+                }),
             RuntimePlanTypeProjection::ProjectNominal {
                 nominal,
                 layout,

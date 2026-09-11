@@ -12,6 +12,9 @@ use arcweft_core::pattern::{
 use arcweft_core::plan::{RuntimeAgentTypeProjection, RuntimePlan, RuntimePlanTypeProjection};
 use arcweft_core::runtime_id::{RuntimeLocalDeclarationId, RuntimePlanTypeId};
 
+#[cfg(test)]
+mod tests;
+
 /// Lowers runtime patterns into executable AWBC pattern graph nodes.
 pub(crate) fn lower_pattern(
     inventory: &mut AwbcInventory,
@@ -538,6 +541,10 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Sequence(item) => {
             AwbcRuntimeTypeShape::Sequence(intern_runtime_type(inventory, item))
         }
+        RuntimeCheckedType::Array { item, length } => AwbcRuntimeTypeShape::Array {
+            item: intern_runtime_type(inventory, item),
+            length: *length,
+        },
         RuntimeCheckedType::Tuple(items) => AwbcRuntimeTypeShape::Tuple(
             items
                 .iter()

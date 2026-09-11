@@ -263,6 +263,12 @@ impl AwbcProgram {
                 .checked_type_at_depth(*item, depth + 1, visiting)
                 .map(Box::new)
                 .map(RuntimeCheckedType::Sequence),
+            AwbcRuntimeTypeShape::Array { item, length } => self
+                .checked_type_at_depth(*item, depth + 1, visiting)
+                .map(|item| RuntimeCheckedType::Array {
+                    item: Box::new(item),
+                    length: *length,
+                }),
             AwbcRuntimeTypeShape::Tuple(items) => items
                 .iter()
                 .map(|item| self.checked_type_at_depth(*item, depth + 1, visiting))
@@ -311,7 +317,6 @@ impl AwbcProgram {
             | AwbcRuntimeTypeShape::TensorF64
             | AwbcRuntimeTypeShape::Range(_)
             | AwbcRuntimeTypeShape::Iterator(_)
-            | AwbcRuntimeTypeShape::Array { .. }
             | AwbcRuntimeTypeShape::Map { .. }
             | AwbcRuntimeTypeShape::Need(_)
             | AwbcRuntimeTypeShape::Task(_)

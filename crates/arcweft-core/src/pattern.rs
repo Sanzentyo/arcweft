@@ -841,6 +841,11 @@ pub enum RuntimeCheckedType {
     AgentValue,
     Bytes,
     Sequence(Box<RuntimeCheckedType>),
+    /// A fixed-length sequence whose item predicate applies to every element.
+    Array {
+        item: Box<RuntimeCheckedType>,
+        length: u64,
+    },
     Tuple(Vec<RuntimeCheckedType>),
     Record(Box<[RuntimeCheckedRecordField]>),
     Choice(Vec<RuntimeCheckedType>),
@@ -1073,6 +1078,14 @@ impl RuntimeCheckedType {
                 .into_values()
                 .iter()
                 .all(|value| item.accepts_value_at_depth(value, depth + 1)),
+            (RuntimeValue::Seq(sequence), Self::Array { item, length }) => {
+                u64::try_from(sequence.len()) == Ok(*length)
+                    && sequence
+                        .clone()
+                        .into_values()
+                        .iter()
+                        .all(|value| item.accepts_value_at_depth(value, depth + 1))
+            }
             (RuntimeValue::Tuple(values), Self::Tuple(items)) => {
                 values.len() == items.len()
                     && values
@@ -1241,6 +1254,11 @@ fn write_checked_type_identity(
         RuntimeCheckedType::Sequence(inner) => {
             encoder.write_tag(13);
             write_checked_type_identity(encoder, inner);
+        }
+        RuntimeCheckedType::Array { item, length } => {
+            encoder.write_tag(24);
+            encoder.write_u64(*length);
+            write_checked_type_identity(encoder, item);
         }
         RuntimeCheckedType::Tuple(items) => {
             encoder.write_tag(14);
