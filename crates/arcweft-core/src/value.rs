@@ -18,6 +18,9 @@ use std::{fmt, sync::Arc};
 use thiserror::Error;
 
 mod agent;
+pub(crate) use agent::{
+    RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
+};
 mod awbc_save;
 mod env;
 mod expression_locals;

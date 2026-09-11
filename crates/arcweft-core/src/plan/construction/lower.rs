@@ -1,5 +1,8 @@
 //! Recursive admission from semantic seeds into the sole executable carriers.
 
+#[cfg(test)]
+mod agent_tests;
+
 use std::collections::BTreeSet;
 
 use crate::audio::RuntimeAudioCommand;
@@ -20,7 +23,8 @@ use crate::task::{
 };
 use crate::value::{
     RuntimeAgentConstructor, RuntimeAgentExpr, RuntimeAgentFieldOwner, RuntimeAgentFieldResult,
-    RuntimeAgentFieldValue, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
+    RuntimeAgentFieldValue, RuntimeAgentSignatureError, RuntimeAgentTypeContext,
+    RuntimeAgentTypeOperand, RuntimeBinaryOp, RuntimeCallArgument, RuntimeCallArgumentMode,
     RuntimeExpr, RuntimeExprKind, RuntimeExprMatchArm, RuntimeFieldProjection,
     RuntimeNominalRecordExpr, RuntimeRange, RuntimeRecordFieldId, RuntimeRecordFieldIdError,
     RuntimeReductionProducer, RuntimeSignedIntWidth, RuntimeStandardMapFamily, RuntimeUnaryOp,
@@ -28,13 +32,12 @@ use crate::value::{
 };
 
 use super::super::{
-    ChoiceRuntimeOption, FlowOp, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
-    RuntimeBuiltinIteratorEvidence, RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget,
-    RuntimeFunctionInputBinding, RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind,
-    RuntimeHostCallTarget, RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence,
-    RuntimeIteratorWitnessExecutable, RuntimeLineOperation, RuntimeMatchArm,
-    RuntimePlanRecordField, RuntimePlanSequenceKind, RuntimePlanTypeProjection,
-    RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
+    ChoiceRuntimeOption, FlowOp, RuntimeAgentTypeProjection, RuntimeBuiltinIteratorEvidence,
+    RuntimeBuiltinIteratorFamily, RuntimeDialogueResultTarget, RuntimeFunctionInputBinding,
+    RuntimeFunctionInputSource, RuntimeFunctionSiteBodyKind, RuntimeHostCallTarget,
+    RuntimeIteratorEvidence, RuntimeIteratorWitnessEvidence, RuntimeIteratorWitnessExecutable,
+    RuntimeLineOperation, RuntimeMatchArm, RuntimePlanRecordField, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection, RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode,
 };
 use super::{
     RuntimeAgentExprSeed, RuntimeAudioCommandSeed, RuntimeBuiltinIteratorEvidenceSeed,
@@ -48,6 +51,52 @@ use super::{
     RuntimePatternSeedKind, RuntimePlanBuildError, RuntimePlanBuilder, RuntimeRecordFieldSeedId,
     RuntimeStreamMatchArmSeed, RuntimeStreamOpSeed, RuntimeStreamPlanSeed,
 };
+
+impl RuntimeAgentTypeContext for RuntimePlanBuilder {
+    type Type = RuntimePlanTypeId;
+
+    fn is_string(&self, ty: Self::Type) -> bool {
+        matches!(self.projection(ty), Ok(RuntimePlanTypeProjection::String))
+    }
+
+    fn is_entity_reference(&self, ty: Self::Type) -> bool {
+        matches!(
+            self.projection(ty),
+            Ok(RuntimePlanTypeProjection::EntityReference)
+        )
+    }
+
+    fn is_u32(&self, ty: Self::Type) -> bool {
+        matches!(
+            self.projection(ty),
+            Ok(RuntimePlanTypeProjection::Unsigned(
+                RuntimeUnsignedIntWidth::U32
+            ))
+        )
+    }
+
+    fn agent_type(&self, ty: Self::Type) -> Option<RuntimeAgentTypeProjection<Self::Type>> {
+        match self.projection(ty).ok()? {
+            RuntimePlanTypeProjection::Agent(agent) => Some(agent.clone()),
+            _ => None,
+        }
+    }
+
+    fn sequence_type(&self, ty: Self::Type) -> Option<(Self::Type, Option<u64>)> {
+        match self.projection(ty).ok()? {
+            RuntimePlanTypeProjection::Sequence { item, .. } => Some((*item, None)),
+            RuntimePlanTypeProjection::Array { item, length } => Some((*item, Some(*length))),
+            _ => None,
+        }
+    }
+
+    fn tuple_type(&self, ty: Self::Type) -> Option<&[Self::Type]> {
+        match self.projection(ty).ok()? {
+            RuntimePlanTypeProjection::Tuple(items) => Some(items),
+            _ => None,
+        }
+    }
+}
 
 impl RuntimePlanBuilder {
     pub(super) fn lower_pattern_seed(
@@ -1498,13 +1547,6 @@ impl RuntimePlanBuilder {
         ))
     }
 
-    fn is_u32(&self, ty: RuntimePlanTypeId) -> Result<bool, RuntimePlanBuildError> {
-        Ok(matches!(
-            self.projection(ty)?,
-            RuntimePlanTypeProjection::Unsigned(RuntimeUnsignedIntWidth::U32)
-        ))
-    }
-
     fn agent_field_owner_matches(
         &self,
         ty: RuntimePlanTypeId,
@@ -1682,194 +1724,54 @@ impl RuntimePlanBuilder {
             .into_iter()
             .map(|operand| self.lower_expression(operand))
             .collect::<Result<Vec<_>, _>>()?;
-        self.validate_agent_result(constructor, result_ty)?;
-        self.validate_agent_operands(constructor, &operands)?;
-        RuntimeAgentExpr::try_from_admitted_constructor(constructor, choice, operands)
-            .map_err(|_| RuntimePlanBuildError::InvalidAgentExpression { constructor })
+        self.admit_agent_expression(result_ty, constructor, choice, operands)
     }
 
-    fn validate_agent_result(
+    fn admit_agent_expression(
         &self,
-        constructor: RuntimeAgentConstructor,
         result_ty: RuntimePlanTypeId,
-    ) -> Result<(), RuntimePlanBuildError> {
-        let valid = match self.projection(result_ty)? {
-            RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::Probe(_)) => {
-                constructor.result_type() == RuntimeAgentOperationalType::Probe
-            }
-            RuntimePlanTypeProjection::Agent(agent) => {
-                agent.operational_type() == constructor.result_type()
-            }
-            _ => false,
-        };
-        if valid {
-            Ok(())
-        } else {
-            Err(RuntimePlanBuildError::InvalidAgentResultType {
-                constructor,
-                actual: result_ty,
-            })
-        }
-    }
-
-    fn validate_agent_operands(
-        &self,
         constructor: RuntimeAgentConstructor,
-        operands: &[RuntimeExpr],
-    ) -> Result<(), RuntimePlanBuildError> {
-        use RuntimeAgentConstructor as Constructor;
-
-        if !matches!(
-            constructor,
-            Constructor::PredicateAll | Constructor::PredicateAny
-        ) && !constructor.accepts_operand_count(operands.len())
-        {
-            return Err(RuntimePlanBuildError::InvalidAgentExpression { constructor });
-        }
-        match constructor {
-            Constructor::ChoiceAction | Constructor::CaptureViewport | Constructor::Diagnostics => {
-            }
-            Constructor::CaptureLayer
-            | Constructor::CaptureObject
-            | Constructor::ProbeSignal
-            | Constructor::ProbeMetric => {
-                self.require_agent_operand(constructor, 0, operands[0].ty(), |projection| {
-                    matches!(
-                        projection,
-                        RuntimePlanTypeProjection::String
-                            | RuntimePlanTypeProjection::EntityReference
-                    )
-                })?;
-            }
-            Constructor::StatePath | Constructor::ObservationPath => {
-                self.require_agent_operand(constructor, 0, operands[0].ty(), |projection| {
-                    matches!(projection, RuntimePlanTypeProjection::String)
-                })?;
-            }
-            Constructor::ProbeState => {
-                self.require_agent_type(
-                    constructor,
-                    0,
-                    operands[0].ty(),
-                    RuntimeAgentOperationalType::DebugStatePath,
-                )?;
-            }
-            Constructor::ProbeObservation => {
-                self.require_agent_type(
-                    constructor,
-                    0,
-                    operands[0].ty(),
-                    RuntimeAgentOperationalType::ObservationFieldPath,
-                )?;
-            }
-            Constructor::PredicateExists => self.require_first_agent_type(
-                constructor,
-                operands,
-                RuntimeAgentOperationalType::Probe,
-            )?,
-            Constructor::PredicateActionEnabled => self.require_first_agent_type(
-                constructor,
-                operands,
-                RuntimeAgentOperationalType::ActionTarget,
-            )?,
-            Constructor::PredicateDiagnosticsHasError => self.require_first_agent_type(
-                constructor,
-                operands,
-                RuntimeAgentOperationalType::Diagnostics,
-            )?,
-            Constructor::PredicateNot => self.require_first_agent_type(
-                constructor,
-                operands,
-                RuntimeAgentOperationalType::Predicate,
-            )?,
-            Constructor::PredicateAll | Constructor::PredicateAny => {
-                for (index, operand) in operands.iter().enumerate() {
-                    self.require_agent_type(
-                        constructor,
-                        index,
-                        operand.ty(),
-                        RuntimeAgentOperationalType::Predicate,
-                    )?;
-                }
-            }
-            Constructor::PredicateEq
-            | Constructor::PredicateNotEq
-            | Constructor::PredicateGreater
-            | Constructor::PredicateGreaterOrEqual
-            | Constructor::PredicateLess
-            | Constructor::PredicateLessOrEqual => {
-                self.validate_agent_comparison_operands(constructor, operands)?;
-            }
-            Constructor::ViewportPoint => {
-                for (index, operand) in operands.iter().enumerate() {
-                    if !self.is_u32(operand.ty())? {
-                        return Err(RuntimePlanBuildError::InvalidAgentOperandType {
+        choice: Option<crate::entry::RuntimeCommandTargetId>,
+        operands: Vec<RuntimeExpr>,
+    ) -> Result<RuntimeAgentExpr, RuntimePlanBuildError> {
+        let operand_types = choice
+            .as_ref()
+            .map(RuntimeAgentTypeOperand::Choice)
+            .into_iter()
+            .chain(
+                operands
+                    .iter()
+                    .map(|operand| RuntimeAgentTypeOperand::Typed(operand.ty())),
+            )
+            .collect::<Vec<_>>();
+        constructor
+            .validate_types(self, result_ty, &operand_types)
+            .map_err(|error| match error {
+                RuntimeAgentSignatureError::OperandType { operand } => match operand_types[operand]
+                {
+                    RuntimeAgentTypeOperand::Typed(actual) => {
+                        RuntimePlanBuildError::InvalidAgentOperandType {
                             constructor,
-                            operand: index,
-                            actual: operand.ty(),
-                        });
+                            operand,
+                            actual,
+                        }
+                    }
+                    RuntimeAgentTypeOperand::Choice(_) => {
+                        RuntimePlanBuildError::InvalidAgentExpression { constructor }
+                    }
+                },
+                RuntimeAgentSignatureError::OperandCount { .. } => {
+                    RuntimePlanBuildError::InvalidAgentExpression { constructor }
+                }
+                RuntimeAgentSignatureError::ResultType => {
+                    RuntimePlanBuildError::InvalidAgentResultType {
+                        constructor,
+                        actual: result_ty,
                     }
                 }
-            }
-        }
-        Ok(())
-    }
-
-    fn validate_agent_comparison_operands(
-        &self,
-        constructor: RuntimeAgentConstructor,
-        operands: &[RuntimeExpr],
-    ) -> Result<(), RuntimePlanBuildError> {
-        let probe_item = match self.projection(operands[0].ty())? {
-            RuntimePlanTypeProjection::Agent(RuntimeAgentTypeProjection::Probe(item)) => *item,
-            _ => {
-                return Err(RuntimePlanBuildError::InvalidAgentOperandType {
-                    constructor,
-                    operand: 0,
-                    actual: operands[0].ty(),
-                });
-            }
-        };
-        require_same("Agent comparison value", probe_item, operands[1].ty())
-    }
-
-    fn require_first_agent_type(
-        &self,
-        constructor: RuntimeAgentConstructor,
-        operands: &[RuntimeExpr],
-        expected: RuntimeAgentOperationalType,
-    ) -> Result<(), RuntimePlanBuildError> {
-        self.require_agent_type(constructor, 0, operands[0].ty(), expected)
-    }
-
-    fn require_agent_operand(
-        &self,
-        constructor: RuntimeAgentConstructor,
-        operand: usize,
-        actual: RuntimePlanTypeId,
-        accepts: impl FnOnce(&RuntimePlanTypeProjection<RuntimePlanTypeId>) -> bool,
-    ) -> Result<(), RuntimePlanBuildError> {
-        if accepts(self.projection(actual)?) {
-            Ok(())
-        } else {
-            Err(RuntimePlanBuildError::InvalidAgentOperandType {
-                constructor,
-                operand,
-                actual,
-            })
-        }
-    }
-
-    fn require_agent_type(
-        &self,
-        constructor: RuntimeAgentConstructor,
-        operand: usize,
-        actual: RuntimePlanTypeId,
-        expected: RuntimeAgentOperationalType,
-    ) -> Result<(), RuntimePlanBuildError> {
-        self.require_agent_operand(constructor, operand, actual, |projection| {
-            matches!(projection, RuntimePlanTypeProjection::Agent(agent) if agent.operational_type() == expected)
-        })
+            })?;
+        RuntimeAgentExpr::try_from_admitted_constructor(constructor, choice, operands)
+            .map_err(|_| RuntimePlanBuildError::InvalidAgentExpression { constructor })
     }
 }
 

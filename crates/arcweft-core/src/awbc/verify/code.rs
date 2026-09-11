@@ -9,17 +9,19 @@ use super::structure::{
     types_compatible,
 };
 use crate::awbc::schema::{
-    AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant, AwbcDialogueValueRole, AwbcDropPolicy,
-    AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole, AwbcFunctionFlag, AwbcFunctionKind,
-    AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcPatternRest, AwbcProgram,
-    AwbcProjectCallAttachedPresence, AwbcProjectCallCaptureSource, AwbcProjectCallInput,
-    AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization, AwbcProjectCallOutcome,
-    AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcRuntimeTypeShape, AwbcSafePointKind,
-    AwbcScopeId, AwbcSignatureId, AwbcTerminator, AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp,
-    AwbcUnsignedIntKind, AwbcVariantIdentity,
+    AwbcAgentTypeShape, AwbcBinaryOp, AwbcBindMode, AwbcBlockId, AwbcConstant,
+    AwbcDialogueValueRole, AwbcDropPolicy, AwbcEffectSetId, AwbcFrameLayout, AwbcFrameSlotRole,
+    AwbcFunctionFlag, AwbcFunctionKind, AwbcInstruction, AwbcPattern, AwbcPatternId,
+    AwbcPatternRest, AwbcProgram, AwbcProjectCallAttachedPresence, AwbcProjectCallCaptureSource,
+    AwbcProjectCallInput, AwbcProjectCallOperandMode, AwbcProjectCallOrdinaryMaterialization,
+    AwbcProjectCallOutcome, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType,
+    AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
+    AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
+use crate::plan::RuntimeAgentTypeProjection;
 use crate::value::{
-    RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeDialogueOpaqueRole,
+    RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
+    RuntimeAgentTypeContext, RuntimeAgentTypeOperand, RuntimeDialogueOpaqueRole,
     RuntimeReductionProducer,
 };
 use std::collections::{BTreeSet, VecDeque};
@@ -539,33 +541,30 @@ fn apply_instruction(
             constructor,
             operands,
         } => {
-            if !constructor.accepts_operand_count(operands.len()) {
-                return Err(AwbcVerifyError::InvalidInvariant {
-                    at,
-                    message: format!(
-                        "Agent constructor {constructor:?} rejects {} operand(s)",
-                        operands.len()
-                    ),
-                });
-            }
-            for (ordinal, operand) in operands.iter().enumerate() {
-                let ty = read_register(verifier, function, block, *operand, state)?;
-                if !agent_operand_type_is_valid(program, *constructor, ordinal, ty) {
-                    return Err(AwbcVerifyError::InvalidInvariant {
-                        at: at.clone(),
-                        message: format!(
-                            "Agent constructor {constructor:?} rejects operand {ordinal} runtime type"
-                        ),
-                    });
-                }
-            }
+            let operand_types = operands
+                .iter()
+                .map(|operand| {
+                    read_register(verifier, function, block, *operand, state)
+                        .map(RuntimeAgentTypeOperand::Typed)
+                })
+                .collect::<Result<Vec<_>, _>>()?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
-            match runtime_shape(program, dst_ty) {
-                Some(AwbcRuntimeTypeShape::Agent(actual))
-                    if actual.operational_type() == constructor.result_type() => {}
-                Some(AwbcRuntimeTypeShape::Dynamic) => {}
-                _ => return invalid_type(&at, "Agent constructor destination"),
-            }
+            constructor
+                .validate_types(program, dst_ty, &operand_types)
+                .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: match error {
+                        RuntimeAgentSignatureError::OperandCount { actual } => format!(
+                            "Agent constructor {constructor:?} rejects {actual} operand(s)"
+                        ),
+                        RuntimeAgentSignatureError::OperandType { operand } => format!(
+                            "Agent constructor {constructor:?} rejects operand {operand} runtime type"
+                        ),
+                        RuntimeAgentSignatureError::ResultType => {
+                            "Agent constructor destination".to_owned()
+                        }
+                    },
+                })?;
             write_register(verifier, function, block, *dst, state)?;
         }
         AwbcInstruction::MakeReductionUnchanged {
@@ -1368,104 +1367,53 @@ fn apply_instruction(
     Ok(())
 }
 
-fn agent_operand_type_is_valid(
-    program: &AwbcProgram,
-    constructor: crate::value::RuntimeAgentConstructor,
-    ordinal: usize,
-    ty: AwbcTypeId,
-) -> bool {
-    use crate::plan::RuntimeAgentOperationalType as AgentType;
-    use crate::value::RuntimeAgentConstructor as Constructor;
+impl RuntimeAgentTypeContext for AwbcProgram {
+    type Type = AwbcTypeId;
 
-    let Some(ty) = runtime_shape(program, ty) else {
-        return false;
-    };
-    if matches!(ty, AwbcRuntimeTypeShape::Dynamic) {
-        return true;
+    fn is_string(&self, ty: Self::Type) -> bool {
+        matches!(runtime_shape(self, ty), Some(AwbcRuntimeTypeShape::String))
     }
-    match constructor {
-        Constructor::CaptureViewport | Constructor::Diagnostics => false,
-        Constructor::ChoiceAction | Constructor::CaptureLayer | Constructor::CaptureObject => {
-            matches!(
-                ty,
-                AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::EntityRef
-            )
-        }
-        Constructor::StatePath | Constructor::ObservationPath => {
-            matches!(ty, AwbcRuntimeTypeShape::String)
-        }
-        Constructor::ProbeSignal | Constructor::ProbeMetric => {
-            matches!(
-                ty,
-                AwbcRuntimeTypeShape::String | AwbcRuntimeTypeShape::EntityRef
-            )
-        }
-        Constructor::ProbeState => agent_operational_type_is(ty, AgentType::DebugStatePath),
-        Constructor::ProbeObservation => {
-            agent_operational_type_is(ty, AgentType::ObservationFieldPath)
-        }
-        Constructor::PredicateExists => agent_operational_type_is(ty, AgentType::Probe),
-        Constructor::PredicateActionEnabled => {
-            agent_operational_type_is(ty, AgentType::ActionTarget)
-        }
-        Constructor::PredicateDiagnosticsHasError => {
-            agent_operational_type_is(ty, AgentType::Diagnostics)
-        }
-        Constructor::PredicateAll | Constructor::PredicateAny => {
-            agent_predicate_collection_operand_type_is_valid(program, ty)
-        }
-        Constructor::PredicateNot => agent_operational_type_is(ty, AgentType::Predicate),
-        Constructor::PredicateEq
-        | Constructor::PredicateNotEq
-        | Constructor::PredicateGreater
-        | Constructor::PredicateGreaterOrEqual
-        | Constructor::PredicateLess
-        | Constructor::PredicateLessOrEqual => {
-            ordinal != 0 || agent_operational_type_is(ty, AgentType::Probe)
-        }
-        Constructor::ViewportPoint => {
-            matches!(
-                ty,
-                AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32)
-                    | AwbcRuntimeTypeShape::Dynamic
-            )
+
+    fn is_entity_reference(&self, ty: Self::Type) -> bool {
+        matches!(
+            runtime_shape(self, ty),
+            Some(AwbcRuntimeTypeShape::EntityRef)
+        )
+    }
+
+    fn is_u32(&self, ty: Self::Type) -> bool {
+        matches!(
+            runtime_shape(self, ty),
+            Some(AwbcRuntimeTypeShape::UInt(AwbcUnsignedIntKind::U32))
+        )
+    }
+
+    fn agent_type(&self, ty: Self::Type) -> Option<RuntimeAgentTypeProjection<Self::Type>> {
+        match runtime_shape(self, ty)? {
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(item)) => {
+                Some(RuntimeAgentTypeProjection::Probe(*item))
+            }
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(kind)) => {
+                RuntimeAgentTypeProjection::try_leaf(*kind)
+            }
+            _ => None,
         }
     }
-}
 
-fn agent_predicate_collection_operand_type_is_valid(
-    program: &AwbcProgram,
-    ty: &AwbcRuntimeTypeShape,
-) -> bool {
-    use crate::plan::RuntimeAgentOperationalType as AgentType;
-
-    let predicate_item = |ty: AwbcTypeId| {
-        runtime_shape(program, ty).is_some_and(|ty| {
-            matches!(ty, AwbcRuntimeTypeShape::Dynamic)
-                || agent_operational_type_is(ty, AgentType::Predicate)
-        })
-    };
-    match ty {
-        AwbcRuntimeTypeShape::Agent(agent) if agent.operational_type() == AgentType::Predicate => {
-            true
+    fn sequence_type(&self, ty: Self::Type) -> Option<(Self::Type, Option<u64>)> {
+        match runtime_shape(self, ty)? {
+            AwbcRuntimeTypeShape::Sequence(item) => Some((*item, None)),
+            AwbcRuntimeTypeShape::Array { item, length } => Some((*item, Some(*length))),
+            _ => None,
         }
-        AwbcRuntimeTypeShape::Dynamic => true,
-        AwbcRuntimeTypeShape::Sequence(item) => predicate_item(*item),
-        AwbcRuntimeTypeShape::Tuple(items) => {
-            !items.is_empty() && items.iter().copied().all(predicate_item)
-        }
-        _ => false,
     }
-}
 
-fn agent_operational_type_is(
-    ty: &AwbcRuntimeTypeShape,
-    expected: crate::plan::RuntimeAgentOperationalType,
-) -> bool {
-    matches!(
-        ty,
-        AwbcRuntimeTypeShape::Agent(actual) if actual.operational_type() == expected
-    )
+    fn tuple_type(&self, ty: Self::Type) -> Option<&[Self::Type]> {
+        match runtime_shape(self, ty)? {
+            AwbcRuntimeTypeShape::Tuple(items) => Some(items),
+            _ => None,
+        }
+    }
 }
 
 fn apply_terminator(

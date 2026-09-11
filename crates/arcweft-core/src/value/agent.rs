@@ -14,6 +14,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 mod semantic;
+mod signature;
+
+pub(crate) use signature::{
+    RuntimeAgentSignatureError, RuntimeAgentTypeContext, RuntimeAgentTypeOperand,
+};
 
 /// One deterministic Agent expression retained by the runtime plan.
 #[derive(Clone, Debug, PartialEq)]
@@ -872,70 +877,7 @@ impl RuntimeAgentConstructor {
         Self::DECODE[tag as usize]
     }
 
-    #[must_use]
-    pub const fn result_type(self) -> RuntimeAgentOperationalType {
-        match self {
-            Self::ChoiceAction => RuntimeAgentOperationalType::ActionTarget,
-            Self::CaptureViewport | Self::CaptureLayer | Self::CaptureObject => {
-                RuntimeAgentOperationalType::CaptureTarget
-            }
-            Self::StatePath => RuntimeAgentOperationalType::DebugStatePath,
-            Self::ObservationPath => RuntimeAgentOperationalType::ObservationFieldPath,
-            Self::ProbeSignal | Self::ProbeMetric | Self::ProbeState | Self::ProbeObservation => {
-                RuntimeAgentOperationalType::Probe
-            }
-            Self::Diagnostics => RuntimeAgentOperationalType::Diagnostics,
-            Self::PredicateExists
-            | Self::PredicateActionEnabled
-            | Self::PredicateDiagnosticsHasError
-            | Self::PredicateAll
-            | Self::PredicateAny
-            | Self::PredicateNot
-            | Self::PredicateEq
-            | Self::PredicateNotEq
-            | Self::PredicateGreater
-            | Self::PredicateGreaterOrEqual
-            | Self::PredicateLess
-            | Self::PredicateLessOrEqual => RuntimeAgentOperationalType::Predicate,
-            Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
-        }
-    }
-
-    #[must_use]
-    pub const fn accepts_operand_count(self, count: usize) -> bool {
-        match self {
-            Self::CaptureViewport | Self::Diagnostics => count == 0,
-            Self::ChoiceAction
-            | Self::CaptureLayer
-            | Self::CaptureObject
-            | Self::StatePath
-            | Self::ObservationPath
-            | Self::ProbeSignal
-            | Self::ProbeMetric
-            | Self::ProbeState
-            | Self::ProbeObservation
-            | Self::PredicateExists
-            | Self::PredicateActionEnabled
-            | Self::PredicateDiagnosticsHasError
-            | Self::PredicateNot => count == 1,
-            Self::PredicateEq
-            | Self::PredicateNotEq
-            | Self::PredicateGreater
-            | Self::PredicateGreaterOrEqual
-            | Self::PredicateLess
-            | Self::PredicateLessOrEqual
-            | Self::ViewportPoint => count == 2,
-            Self::PredicateAll | Self::PredicateAny => count >= 1,
-        }
-    }
-
-    /// Validates fixed and scalar constructor arity before materialization.
-    /// Predicate collection cardinality is owned by `AgentPredicateOperands`.
-    fn validate_fixed_operand_count(
-        self,
-        count: usize,
-    ) -> Result<(), RuntimeAgentConstructionError> {
-        debug_assert!(!matches!(self, Self::PredicateAll | Self::PredicateAny));
+    fn validate_operand_count(self, count: usize) -> Result<(), RuntimeAgentConstructionError> {
         if self.accepts_operand_count(count) {
             Ok(())
         } else {
@@ -955,12 +897,7 @@ impl RuntimeAgentExpr {
     ) -> Result<Self, RuntimeAgentConstructionError> {
         use RuntimeAgentConstructor as Constructor;
 
-        if !matches!(
-            constructor,
-            Constructor::PredicateAll | Constructor::PredicateAny
-        ) {
-            constructor.validate_fixed_operand_count(operands.len())?;
-        }
+        constructor.validate_operand_count(operands.len() + usize::from(choice.is_some()))?;
         if matches!(constructor, RuntimeAgentConstructor::ChoiceAction) != choice.is_some() {
             return Err(RuntimeAgentConstructionError::InvalidExpressionChoice { constructor });
         }
@@ -1480,12 +1417,7 @@ impl RuntimeAgentValue {
     ) -> Result<Self, RuntimeAgentConstructionError> {
         use RuntimeAgentConstructor as Constructor;
 
-        if !matches!(
-            constructor,
-            Constructor::PredicateAll | Constructor::PredicateAny
-        ) {
-            constructor.validate_fixed_operand_count(operands.len())?;
-        }
+        constructor.validate_operand_count(operands.len())?;
         let mut operands = operands.into_iter();
         Ok(match constructor {
             Constructor::ChoiceAction => construct_choice_action(constructor, &mut operands)?,
