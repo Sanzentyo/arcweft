@@ -1,5 +1,11 @@
 # Callable convergence: correlated sources and first-class function values
 
+The [2026-09-11 design development record](2026-09-11-callable-component-design.md)
+supersedes the tentative choices below for correlated sources, scheme transport,
+effect completion and callable states. It is not a returned package or readiness
+award. In particular, known closed schemes may pass through a generic identity;
+the blanket monotype-slot prohibition below is a superseded proposal.
+
 The [in-progress scope-owner implementation](2026-09-10-correlated-call-scope-owner.md)
 records the path-owned lower boundary, current validation and the remaining
 source-protocol, ranking and residual-scope decisions. It does not change this
