@@ -7,7 +7,9 @@ use std::{
 
 use thiserror::Error;
 
-use crate::pattern::RuntimeSemanticTypeId;
+use crate::pattern::{
+    RuntimeBuiltinVariantCaseIdentity, RuntimeBuiltinVariantIdentity, RuntimeSemanticTypeId,
+};
 use crate::runtime_id::RuntimePlanTypeId;
 
 use super::{RuntimeAgentTypeProjection, RuntimePlanTypeClass, RuntimePlanTypeProjection};
@@ -249,8 +251,6 @@ pub enum RuntimePlanTypeResolutionError {
         ty: RuntimePlanTypeId,
         source: crate::pattern::RuntimeCheckedRecordTypeError,
     },
-    #[error("runtime plan type {ty} has a non-canonical payload for builtin case {ordinal}")]
-    InvalidBuiltinVariantPayload { ty: RuntimePlanTypeId, ordinal: u32 },
 }
 
 /// Sole internal issuer for one plan's semantic type declaration identities.
@@ -510,6 +510,65 @@ fn rewrite_projection(
     })
 }
 
+impl RuntimePlanTypeDeclaration {
+    /// The builtin registry owns payload presence and Tuple arity. Option and
+    /// Result additionally correlate the Tuple child with their declared item.
+    fn validate_builtin_payloads(
+        &self,
+        ty: RuntimePlanTypeId,
+        rows: &[Self],
+    ) -> Result<(), RuntimePlanTypeTableError> {
+        let owner = match self.projection() {
+            RuntimePlanTypeProjection::Option { .. } => RuntimeBuiltinVariantIdentity::Option,
+            RuntimePlanTypeProjection::Result { .. } => RuntimeBuiltinVariantIdentity::Result,
+            RuntimePlanTypeProjection::BuiltinVariant { owner, .. } => *owner,
+            _ => return Ok(()),
+        };
+        let invalid = || RuntimePlanTypeTableError::InvalidBuiltinVariantSchema {
+            semantic_identity: self.semantic_identity(),
+        };
+        for (ordinal, schema) in owner.cases().iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).map_err(|_| invalid())?;
+            let case = self
+                .select_variant_case(ty, None, ordinal)
+                .map_err(|_| invalid())?;
+            match (schema.payload_arity(), case.payload()) {
+                (None, None) => {}
+                (Some(arity), Some(payload)) => {
+                    let payload = declaration_index(payload)
+                        .and_then(|index| rows.get(index))
+                        .ok_or_else(invalid)?;
+                    let RuntimePlanTypeProjection::Tuple(items) = payload.projection() else {
+                        return Err(invalid());
+                    };
+                    let expected_item = match (self.projection(), schema.identity()) {
+                        (
+                            RuntimePlanTypeProjection::Option { item, .. },
+                            RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                        ) => Some(item),
+                        (
+                            RuntimePlanTypeProjection::Result { value, .. },
+                            RuntimeBuiltinVariantCaseIdentity::ResultOk,
+                        ) => Some(value),
+                        (
+                            RuntimePlanTypeProjection::Result { error, .. },
+                            RuntimeBuiltinVariantCaseIdentity::ResultErr,
+                        ) => Some(error),
+                        _ => None,
+                    };
+                    if items.len() != arity
+                        || expected_item.is_some_and(|item| items.first() != Some(item))
+                    {
+                        return Err(invalid());
+                    }
+                }
+                _ => return Err(invalid()),
+            }
+        }
+        Ok(())
+    }
+}
+
 fn validate_candidate_graph(
     rows: &[RuntimePlanTypeDeclaration],
 ) -> Result<(), RuntimePlanTypeTableError> {
@@ -586,6 +645,9 @@ fn validate_candidate_graph(
             return Err(RuntimePlanTypeTableError::IdentityExhausted);
         };
         return Err(RuntimePlanTypeTableError::Cycle { semantic_identity });
+    }
+    for (index, row) in rows.iter().enumerate() {
+        row.validate_builtin_payloads(plan_type_id_for_index(index)?, rows)?;
     }
     Ok(())
 }

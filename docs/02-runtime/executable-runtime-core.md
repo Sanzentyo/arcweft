@@ -184,6 +184,13 @@ checked-contract equality and identity. Value admission requires the same
 field count, coordinates, names, and order as the descriptor. Renaming or
 reordering fields changes this contract even when their child types are equal.
 
+For builtin variants, the core case registry owns payload presence and Tuple
+arity. Runtime-plan type admission requires every payload-bearing case to use
+the registry's one-item Tuple wrapper. Option and Result also require that
+Tuple's child reference to match the corresponding declared type argument.
+Invalid definitions reject the candidate batch before publication; finite
+checked predicates are projected from these admitted rows.
+
 `AwbcConstant` stores exact value bits: signed/unsigned integers use 16-byte
 little-endian payloads plus width kind; floats use IEEE bit patterns; aggregate
 constants reference other constants; records/variants include their type ID;

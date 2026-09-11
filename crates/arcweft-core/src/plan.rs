@@ -372,23 +372,12 @@ impl RuntimePlan {
             RuntimePlanTypeProjection::Choice(items) => self
                 .checked_children(items, memo, visiting)?
                 .map(RuntimeCheckedType::Choice),
-            RuntimePlanTypeProjection::Result {
-                value,
-                error,
-                value_payload,
-                error_payload,
-            } => self.checked_result_type(
-                ty,
-                *value,
-                *error,
-                *value_payload,
-                *error_payload,
-                memo,
-                visiting,
-            )?,
-            RuntimePlanTypeProjection::Option { item, some_payload } => {
-                self.checked_option_type(ty, *item, *some_payload, memo, visiting)?
+            RuntimePlanTypeProjection::Result { value, error, .. } => {
+                self.checked_result_type(*value, *error, memo, visiting)?
             }
+            RuntimePlanTypeProjection::Option { item, .. } => self
+                .checked_type_inner(*item, memo, visiting)?
+                .map(|item| RuntimeCheckedType::Option(Box::new(item))),
             RuntimePlanTypeProjection::BuiltinVariant { owner, cases } => {
                 self.checked_builtin_variant_type(*owner, cases, memo, visiting)?
             }
@@ -471,11 +460,8 @@ impl RuntimePlan {
 
     fn checked_result_type(
         &self,
-        ty: crate::runtime_id::RuntimePlanTypeId,
         value: crate::runtime_id::RuntimePlanTypeId,
         error: crate::runtime_id::RuntimePlanTypeId,
-        value_payload: crate::runtime_id::RuntimePlanTypeId,
-        error_payload: crate::runtime_id::RuntimePlanTypeId,
         memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
         visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
     ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
@@ -485,48 +471,10 @@ impl RuntimePlan {
         let Some(error) = self.checked_type_inner(error, memo, visiting)? else {
             return Ok(None);
         };
-        let Some(value_payload) = self.checked_type_inner(value_payload, memo, visiting)? else {
-            return Ok(None);
-        };
-        let Some(error_payload) = self.checked_type_inner(error_payload, memo, visiting)? else {
-            return Ok(None);
-        };
-        if value_payload != RuntimeCheckedType::Tuple(vec![value.clone()]) {
-            return Err(
-                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 0 },
-            );
-        }
-        if error_payload != RuntimeCheckedType::Tuple(vec![error.clone()]) {
-            return Err(
-                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 1 },
-            );
-        }
         Ok(Some(RuntimeCheckedType::Result {
             ok: Box::new(value),
             error: Box::new(error),
         }))
-    }
-
-    fn checked_option_type(
-        &self,
-        ty: crate::runtime_id::RuntimePlanTypeId,
-        item: crate::runtime_id::RuntimePlanTypeId,
-        some_payload: crate::runtime_id::RuntimePlanTypeId,
-        memo: &mut BTreeMap<crate::runtime_id::RuntimePlanTypeId, Option<RuntimeCheckedType>>,
-        visiting: &mut BTreeSet<crate::runtime_id::RuntimePlanTypeId>,
-    ) -> Result<Option<RuntimeCheckedType>, RuntimePlanTypeResolutionError> {
-        let Some(item) = self.checked_type_inner(item, memo, visiting)? else {
-            return Ok(None);
-        };
-        let Some(some_payload) = self.checked_type_inner(some_payload, memo, visiting)? else {
-            return Ok(None);
-        };
-        if some_payload != RuntimeCheckedType::Tuple(vec![item.clone()]) {
-            return Err(
-                RuntimePlanTypeResolutionError::InvalidBuiltinVariantPayload { ty, ordinal: 0 },
-            );
-        }
-        Ok(Some(RuntimeCheckedType::Option(Box::new(item))))
     }
 
     fn checked_builtin_variant_type(
