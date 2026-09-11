@@ -904,8 +904,8 @@ impl RuntimePlanBuilder {
             require_same("nominal record field", expected, value.ty())?;
             lowered.push((field, value));
         }
-        for ordinal in 0..domain.fields().len() {
-            let field = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
+        for field in domain.fields() {
+            let field = field.field();
             if !seen.contains(&field) {
                 return Err(RuntimePlanBuildError::MissingRecordField { owner, field });
             }
@@ -925,16 +925,15 @@ impl RuntimePlanBuilder {
         let ordinal = usize::try_from(field.zero_based()).map_err(|_| {
             RuntimePlanBuildError::RecordFieldIdentity(RuntimeRecordFieldIdError::OrdinalOverflow)
         })?;
-        let admitted = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)?;
-        let field_ty = domain
-            .fields()
-            .get(ordinal)
-            .map(super::super::RuntimeNominalRecordDomainField::ty)
-            .ok_or(RuntimePlanBuildError::UnknownRecordField {
-                owner,
-                ordinal: field.zero_based(),
-            })?;
-        Ok((admitted, field_ty))
+        let field =
+            domain
+                .fields()
+                .get(ordinal)
+                .ok_or(RuntimePlanBuildError::UnknownRecordField {
+                    owner,
+                    ordinal: field.zero_based(),
+                })?;
+        Ok((field.field(), field.ty()))
     }
 
     fn resolve_pattern_record_field(
@@ -5081,9 +5080,20 @@ mod tests {
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
                 [RuntimeNominalRecordDomainSeed::new(
                     identity(1),
+                    crate::entry::RuntimeNominalRecordShape::Record,
                     [
-                        RuntimeNominalRecordDomainFieldSeed::new("first", identity(2)),
-                        RuntimeNominalRecordDomainFieldSeed::new("second", identity(2)),
+                        RuntimeNominalRecordDomainFieldSeed::new(
+                            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0)
+                                .unwrap(),
+                            Some("first".to_owned()),
+                            identity(2),
+                        ),
+                        RuntimeNominalRecordDomainFieldSeed::new(
+                            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
+                                .unwrap(),
+                            Some("second".to_owned()),
+                            identity(2),
+                        ),
                     ],
                 )],
                 [],

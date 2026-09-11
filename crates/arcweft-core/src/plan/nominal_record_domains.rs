@@ -4,28 +4,37 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
+use crate::entry::{RuntimeNominalRecordShape, RuntimeNominalRecordShapeError};
 use crate::pattern::RuntimeSemanticTypeId;
 use crate::runtime_id::RuntimePlanTypeId;
+use crate::value::RuntimeRecordFieldId;
 
 /// One semantic field supplied by the accepted external lowerer.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeNominalRecordDomainFieldSeed {
-    name: String,
+    field: RuntimeRecordFieldId,
+    name: Option<String>,
     ty: RuntimeSemanticTypeId,
 }
 
 impl RuntimeNominalRecordDomainFieldSeed {
     #[must_use]
-    pub fn new(name: impl Into<String>, ty: RuntimeSemanticTypeId) -> Self {
-        Self {
-            name: name.into(),
-            ty,
-        }
+    pub fn new(
+        field: RuntimeRecordFieldId,
+        name: Option<String>,
+        ty: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self { field, name, ty }
     }
 
     #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     #[must_use]
@@ -38,6 +47,7 @@ impl RuntimeNominalRecordDomainFieldSeed {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeNominalRecordDomainSeed {
     owner: RuntimeSemanticTypeId,
+    shape: RuntimeNominalRecordShape,
     fields: Box<[RuntimeNominalRecordDomainFieldSeed]>,
 }
 
@@ -45,10 +55,12 @@ impl RuntimeNominalRecordDomainSeed {
     #[must_use]
     pub fn new(
         owner: RuntimeSemanticTypeId,
+        shape: RuntimeNominalRecordShape,
         fields: impl IntoIterator<Item = RuntimeNominalRecordDomainFieldSeed>,
     ) -> Self {
         Self {
             owner,
+            shape,
             fields: fields.into_iter().collect::<Vec<_>>().into_boxed_slice(),
         }
     }
@@ -56,6 +68,11 @@ impl RuntimeNominalRecordDomainSeed {
     #[must_use]
     pub const fn owner(&self) -> RuntimeSemanticTypeId {
         self.owner
+    }
+
+    #[must_use]
+    pub const fn shape(&self) -> RuntimeNominalRecordShape {
+        self.shape
     }
 
     #[must_use]
@@ -67,14 +84,20 @@ impl RuntimeNominalRecordDomainSeed {
 /// One defining-order field whose type is owned by the same plan type table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeNominalRecordDomainField {
-    name: String,
+    field: RuntimeRecordFieldId,
+    name: Option<String>,
     ty: RuntimePlanTypeId,
 }
 
 impl RuntimeNominalRecordDomainField {
     #[must_use]
-    pub fn name(&self) -> &str {
-        &self.name
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    #[must_use]
+    pub fn name(&self) -> Option<&str> {
+        self.name.as_deref()
     }
 
     #[must_use]
@@ -88,19 +111,22 @@ impl RuntimeNominalRecordDomainField {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeNominalRecordDomain {
     owner: RuntimePlanTypeId,
+    shape: RuntimeNominalRecordShape,
     fields: Box<[RuntimeNominalRecordDomainField]>,
 }
 
 impl RuntimeNominalRecordDomain {
     pub(crate) fn from_admitted_parts(
         owner: RuntimePlanTypeId,
-        fields: impl IntoIterator<Item = (String, RuntimePlanTypeId)>,
+        shape: RuntimeNominalRecordShape,
+        fields: impl IntoIterator<Item = (RuntimeRecordFieldId, Option<String>, RuntimePlanTypeId)>,
     ) -> Self {
         Self {
             owner,
+            shape,
             fields: fields
                 .into_iter()
-                .map(|(name, ty)| RuntimeNominalRecordDomainField { name, ty })
+                .map(|(field, name, ty)| RuntimeNominalRecordDomainField { field, name, ty })
                 .collect::<Vec<_>>()
                 .into_boxed_slice(),
         }
@@ -109,6 +135,43 @@ impl RuntimeNominalRecordDomain {
     #[must_use]
     pub const fn owner(&self) -> RuntimePlanTypeId {
         self.owner
+    }
+
+    #[must_use]
+    pub const fn shape(&self) -> RuntimeNominalRecordShape {
+        self.shape
+    }
+
+    fn validate(&self) -> Result<(), RuntimeNominalRecordDomainError> {
+        if self.fields.len() > u32::MAX as usize {
+            return Err(RuntimeNominalRecordDomainError::TooManyFields {
+                owner: self.owner,
+                actual: self.fields.len(),
+            });
+        }
+        self.shape
+            .validate_field_names(
+                self.fields
+                    .iter()
+                    .map(RuntimeNominalRecordDomainField::name),
+            )
+            .map_err(|source| RuntimeNominalRecordDomainError::Shape {
+                owner: self.owner,
+                source,
+            })?;
+        for (ordinal, field) in self.fields.iter().enumerate() {
+            let expected = RuntimeRecordFieldId::try_from_zero_based_ordinal(ordinal)
+                .expect("field count was bounded before deriving IDs");
+            if field.field != expected {
+                return Err(RuntimeNominalRecordDomainError::FieldIdentity {
+                    owner: self.owner,
+                    ordinal,
+                    expected,
+                    actual: field.field,
+                });
+            }
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -156,13 +219,21 @@ pub(crate) struct PreparedRuntimeNominalRecordDomainBatch {
 pub enum RuntimeNominalRecordDomainError {
     #[error("nominal-record owner type {owner} has conflicting field domains")]
     ConflictingDomain { owner: RuntimePlanTypeId },
-    #[error("nominal-record owner type {owner} contains duplicate field `{name}`")]
-    DuplicateFieldName {
+    #[error("nominal-record owner type {owner} has an invalid shape: {source}")]
+    Shape {
         owner: RuntimePlanTypeId,
-        name: String,
+        #[source]
+        source: RuntimeNominalRecordShapeError,
     },
-    #[error("nominal-record owner type {owner} contains an empty field name")]
-    EmptyFieldName { owner: RuntimePlanTypeId },
+    #[error(
+        "nominal-record owner type {owner} field {ordinal} has ID {actual}, expected {expected}"
+    )]
+    FieldIdentity {
+        owner: RuntimePlanTypeId,
+        ordinal: usize,
+        expected: RuntimeRecordFieldId,
+        actual: RuntimeRecordFieldId,
+    },
     #[error("nominal-record owner type {owner} has too many fields: {actual}")]
     TooManyFields {
         owner: RuntimePlanTypeId,
@@ -195,7 +266,7 @@ impl RuntimeNominalRecordDomainTableBuilder {
         let mut unique = Vec::<RuntimeNominalRecordDomain>::new();
         let mut unique_by_owner = BTreeMap::<RuntimePlanTypeId, usize>::new();
         for domain in &domains {
-            validate_domain(domain)?;
+            domain.validate()?;
             if let Some(index) = unique_by_owner.get(&domain.owner).copied() {
                 if unique[index] != *domain {
                     return Err(RuntimeNominalRecordDomainError::ConflictingDomain {
@@ -233,30 +304,4 @@ impl RuntimeNominalRecordDomainTableBuilder {
             domains: self.domains,
         }
     }
-}
-
-fn validate_domain(
-    domain: &RuntimeNominalRecordDomain,
-) -> Result<(), RuntimeNominalRecordDomainError> {
-    if domain.fields.len() > u32::MAX as usize {
-        return Err(RuntimeNominalRecordDomainError::TooManyFields {
-            owner: domain.owner,
-            actual: domain.fields.len(),
-        });
-    }
-    let mut names = std::collections::BTreeSet::new();
-    for field in &domain.fields {
-        if field.name.is_empty() {
-            return Err(RuntimeNominalRecordDomainError::EmptyFieldName {
-                owner: domain.owner,
-            });
-        }
-        if !names.insert(field.name.as_str()) {
-            return Err(RuntimeNominalRecordDomainError::DuplicateFieldName {
-                owner: domain.owner,
-                name: field.name.clone(),
-            });
-        }
-    }
-    Ok(())
 }

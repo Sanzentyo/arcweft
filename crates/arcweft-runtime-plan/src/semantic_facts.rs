@@ -6825,14 +6825,22 @@ impl RuntimePlanSemanticFacts {
     /// Complete plan-owned nominal-record schemas. Repeated owners are
     /// retained so the sole builder can reject conflicting projections.
     pub fn runtime_plan_nominal_record_domain_seeds(&self) -> Vec<RuntimeNominalRecordDomainSeed> {
-        let project = |record: &RuntimeResolvedNominalRecord| {
-            RuntimeNominalRecordDomainSeed::new(
-                record.nominal().identity(),
-                record.fields().iter().map(|field| {
-                    RuntimeNominalRecordDomainFieldSeed::new(field.name(), field.ty().identity())
-                }),
-            )
-        };
+        let project =
+            |record: &RuntimeResolvedNominalRecord| {
+                RuntimeNominalRecordDomainSeed::new(
+                    record.nominal().identity(),
+                    record.layout().shape(),
+                    record.fields().iter().zip(record.layout().fields()).map(
+                        |(field, accepted)| {
+                            RuntimeNominalRecordDomainFieldSeed::new(
+                                accepted.field(),
+                                accepted.name().map(str::to_owned),
+                                field.ty().identity(),
+                            )
+                        },
+                    ),
+                )
+            };
         let mut domains = self
             .nominal_records
             .values()

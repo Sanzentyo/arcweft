@@ -10,6 +10,9 @@ use thiserror::Error;
 mod lower;
 mod seed;
 
+#[cfg(test)]
+mod nominal_domains_tests;
+
 use lower::{function_input_scope, require_same};
 use seed::RuntimePlanConstructionIssuer;
 pub use seed::{
@@ -2413,13 +2416,16 @@ fn rewrite_record_domain(
         .iter()
         .map(|field| {
             Ok((
-                field.name().to_owned(),
+                field.field(),
+                field.name().map(str::to_owned),
                 resolve_semantic_type(types, field.ty())?,
             ))
         })
         .collect::<Result<Vec<_>, RuntimePlanBuildError>>()?;
     Ok(RuntimeNominalRecordDomain::from_admitted_parts(
-        owner, fields,
+        owner,
+        seed.shape(),
+        fields,
     ))
 }
 
@@ -2553,9 +2559,18 @@ mod tests {
         let mut builder = RuntimePlanBuilder::new();
         let invalid = RuntimeNominalRecordDomainSeed::new(
             identity(1),
+            crate::entry::RuntimeNominalRecordShape::Record,
             [
-                RuntimeNominalRecordDomainFieldSeed::new("value", identity(2)),
-                RuntimeNominalRecordDomainFieldSeed::new("value", identity(2)),
+                RuntimeNominalRecordDomainFieldSeed::new(
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                    Some("value".to_owned()),
+                    identity(2),
+                ),
+                RuntimeNominalRecordDomainFieldSeed::new(
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1).unwrap(),
+                    Some("value".to_owned()),
+                    identity(2),
+                ),
             ],
         );
         assert!(matches!(
@@ -2566,14 +2581,19 @@ mod tests {
                 []
             ),
             Err(RuntimePlanBuildError::NominalRecordDomain(
-                RuntimeNominalRecordDomainError::DuplicateFieldName { .. }
+                RuntimeNominalRecordDomainError::Shape {
+                    source: crate::entry::RuntimeNominalRecordShapeError::DuplicateFieldName { .. },
+                    ..
+                }
             ))
         ));
 
         let valid = RuntimeNominalRecordDomainSeed::new(
             identity(1),
+            crate::entry::RuntimeNominalRecordShape::Record,
             [RuntimeNominalRecordDomainFieldSeed::new(
-                "value",
+                crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                Some("value".to_owned()),
                 identity(2),
             )],
         );

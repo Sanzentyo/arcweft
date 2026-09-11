@@ -490,7 +490,12 @@ fn native_project_call_evaluates_rest_operands_once_in_source_order() {
             ],
             [RuntimeNominalRecordDomainSeed::new(
                 state_ty,
-                [RuntimeNominalRecordDomainFieldSeed::new("value", u32_ty)],
+                crate::entry::RuntimeNominalRecordShape::Record,
+                [RuntimeNominalRecordDomainFieldSeed::new(
+                    crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0).unwrap(),
+                    Some("value".to_owned()),
+                    u32_ty,
+                )],
             )],
             [],
         )

@@ -2838,9 +2838,20 @@ mod tests {
                 [RuntimeLocalDeclarationSeed::new(identity(2))],
                 [RuntimeNominalRecordDomainSeed::new(
                     identity(1),
+                    crate::entry::RuntimeNominalRecordShape::Record,
                     [
-                        RuntimeNominalRecordDomainFieldSeed::new("alpha", identity(2)),
-                        RuntimeNominalRecordDomainFieldSeed::new("zeta", identity(3)),
+                        RuntimeNominalRecordDomainFieldSeed::new(
+                            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(0)
+                                .unwrap(),
+                            Some("alpha".to_owned()),
+                            identity(2),
+                        ),
+                        RuntimeNominalRecordDomainFieldSeed::new(
+                            crate::value::RuntimeRecordFieldId::try_from_zero_based_ordinal(1)
+                                .unwrap(),
+                            Some("zeta".to_owned()),
+                            identity(3),
+                        ),
                     ],
                 )],
                 [],
