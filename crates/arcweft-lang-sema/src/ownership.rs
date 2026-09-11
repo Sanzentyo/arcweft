@@ -1034,7 +1034,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             TypeKind::DebugStatePath => {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::DebugStatePath)?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::DebugStatePath,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::DebugStatePath,
                 ))
             }
             TypeKind::ObservationFieldPath => {
@@ -1043,12 +1043,12 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     RuntimeAgentOperationalType::ObservationFieldPath,
                 )?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::ObservationFieldPath,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::ObservationFieldPath,
                 ))
             }
             TypeKind::Ref(_) => checked(RuntimeCheckedType::EntityReference),
             TypeKind::Probe(result) => {
-                self.classify_at(
+                let result = self.classify_at(
                     result,
                     &path.pushed(RuntimeOwnershipPathSegment::ProbeResult),
                     OwnershipTraversal::child_depth(depth)?,
@@ -1056,13 +1056,17 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 )?;
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::Probe)?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::Probe,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::Probe(Box::new(
+                        result.projection().checked_type_at(
+                            &path.pushed(RuntimeOwnershipPathSegment::ProbeResult),
+                        )?,
+                    )),
                 ))
             }
             TypeKind::Predicate => {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::Predicate)?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::Predicate,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::Predicate,
                 ))
             }
             TypeKind::AgentValue => checked(RuntimeCheckedType::AgentValue),
@@ -1089,13 +1093,13 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             TypeKind::ActionTarget => {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::ActionTarget)?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::ActionTarget,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::ActionTarget,
                 ))
             }
             TypeKind::CaptureTarget => {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::CaptureTarget)?;
                 checked(RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::CaptureTarget,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::CaptureTarget,
                 ))
             }
             TypeKind::AgentBuiltin(builtin) => {
@@ -1642,7 +1646,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::Diagnostics)?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
-                        RuntimeAgentOperationalType::Diagnostics,
+                        arcweft_core::plan::RuntimeAgentTypeProjection::Diagnostics,
                     )),
                 ))
             }
@@ -1650,7 +1654,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::ViewportPoint)?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
-                        RuntimeAgentOperationalType::ViewportPoint,
+                        arcweft_core::plan::RuntimeAgentTypeProjection::ViewportPoint,
                     )),
                 ))
             }
@@ -1658,7 +1662,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::BinaryResourceBody)?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
-                        RuntimeAgentOperationalType::BinaryResourceBody,
+                        arcweft_core::plan::RuntimeAgentTypeProjection::BinaryResourceBody,
                     )),
                 ))
             }
@@ -1666,7 +1670,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 record_agent_evidence(traversal, RuntimeAgentOperationalType::BinaryData)?;
                 Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                     RuntimeOwnershipProjection::Checked(RuntimeCheckedType::Agent(
-                        RuntimeAgentOperationalType::BinaryData,
+                        arcweft_core::plan::RuntimeAgentTypeProjection::BinaryData,
                     )),
                 ))
             }
@@ -1708,7 +1712,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 ])),
                 Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::String])),
                 Some(RuntimeCheckedType::Tuple(vec![RuntimeCheckedType::Agent(
-                    RuntimeAgentOperationalType::BinaryResourceBody,
+                    arcweft_core::plan::RuntimeAgentTypeProjection::BinaryResourceBody,
                 )])),
             ],
         )
@@ -1944,6 +1948,31 @@ fn validate_variant_cases(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn probe_ownership_keeps_its_checked_result_type() {
+        let classifier = RuntimeProducerArgumentClassifier::for_test();
+        for result in [TypeKind::Bool, TypeKind::String] {
+            let expected = classifier
+                .classify(&result)
+                .unwrap()
+                .projection()
+                .checked_type_at(&RuntimeOwnershipPath::root())
+                .unwrap();
+            let admitted = classifier
+                .classify(&TypeKind::Probe(Box::new(result)))
+                .unwrap();
+            assert_eq!(
+                admitted
+                    .projection()
+                    .checked_type_at(&RuntimeOwnershipPath::root())
+                    .unwrap(),
+                RuntimeCheckedType::Agent(arcweft_core::plan::RuntimeAgentTypeProjection::Probe(
+                    Box::new(expected)
+                ))
+            );
+        }
+    }
     use crate::effect_row::EffectRow;
     use arcweft_core::value::{RuntimeInt, RuntimeSeq, RuntimeUInt};
 

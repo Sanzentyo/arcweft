@@ -419,7 +419,15 @@ impl RuntimePlan {
                     })
                 }
             }
-            RuntimePlanTypeProjection::Agent(agent) => checked_agent_type(agent),
+            RuntimePlanTypeProjection::Agent(agent) => {
+                let checked = agent
+                    .clone()
+                    .try_map(|child| self.checked_type_inner(child, memo, visiting))?;
+                checked
+                    .try_map(|child| child.map(Box::new).ok_or(()))
+                    .ok()
+                    .map(RuntimeCheckedType::Agent)
+            }
             RuntimePlanTypeProjection::Range(_)
             | RuntimePlanTypeProjection::Iterator(_)
             | RuntimePlanTypeProjection::Map { .. }
@@ -639,13 +647,6 @@ pub enum RuntimePlanArtifactError {
         existing: crate::effect::RuntimeArtifactFingerprint,
         artifact: crate::effect::RuntimeArtifactFingerprint,
     },
-}
-
-fn checked_agent_type(
-    agent: &RuntimeAgentTypeProjection<crate::runtime_id::RuntimePlanTypeId>,
-) -> Option<RuntimeCheckedType> {
-    (!matches!(agent, RuntimeAgentTypeProjection::Probe(_)))
-        .then(|| RuntimeCheckedType::Agent(agent.operational_type()))
 }
 
 /// Runtime identifier for a lowered flow.

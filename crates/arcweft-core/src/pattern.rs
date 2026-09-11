@@ -868,7 +868,7 @@ pub enum RuntimeCheckedType {
         error: Box<RuntimeCheckedType>,
     },
     Option(Box<RuntimeCheckedType>),
-    Agent(crate::plan::RuntimeAgentOperationalType),
+    Agent(crate::plan::RuntimeAgentTypeProjection<Box<Self>>),
 }
 
 impl RuntimeCheckedType {
@@ -1139,9 +1139,11 @@ impl RuntimeCheckedType {
                 self.accepts_builtin_variant_at_depth(value, depth)
             }
             (RuntimeValue::Agent(value), Self::Agent(expected)) => {
-                value.operational_type() == *expected
+                value.operational_type() == expected.operational_type()
             }
-            (RuntimeValue::Record(_), Self::Agent(expected)) => expected.accepts_protocol_record(),
+            (RuntimeValue::Record(_), Self::Agent(expected)) => {
+                expected.operational_type().accepts_protocol_record()
+            }
             _ => false,
         }
     }
@@ -1338,7 +1340,10 @@ fn write_checked_type_identity(
         }
         RuntimeCheckedType::Agent(agent) => {
             encoder.write_tag(21);
-            encoder.write_u8(agent.semantic_tag());
+            encoder.write_u8(agent.operational_type().semantic_tag());
+            if let crate::plan::RuntimeAgentTypeProjection::Probe(result) = agent {
+                write_checked_type_identity(encoder, result);
+            }
         }
         RuntimeCheckedType::AgentValue => encoder.write_tag(22),
     }
@@ -2459,7 +2464,7 @@ mod tests {
                         }
                         RuntimeBuiltinVariantCaseIdentity::AgentResourceBodyBytesBase64 => {
                             RuntimeCheckedType::Agent(
-                                crate::plan::RuntimeAgentOperationalType::BinaryResourceBody,
+                                crate::plan::RuntimeAgentTypeProjection::BinaryResourceBody,
                             )
                         }
                         _ => {

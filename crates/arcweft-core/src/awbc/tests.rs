@@ -1,4 +1,5 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
+mod agent_projection;
 mod array;
 use super::fiber::{
     AwbcFiberStateSnapshot, FiberAwaitTarget, FiberResumeTarget, FiberReturnContinuation,

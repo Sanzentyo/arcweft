@@ -2257,21 +2257,21 @@ mod tests {
         )])
         .expect("fixture protocol record is valid");
         assert!(
-            RuntimeCheckedType::Agent(RuntimeAgentOperationalType::CaptureReference)
+            RuntimeCheckedType::Agent(crate::plan::RuntimeAgentTypeProjection::CaptureReference)
                 .accepts_value(&protocol_record)
         );
         assert!(
-            !RuntimeCheckedType::Agent(RuntimeAgentOperationalType::ActionTarget)
+            !RuntimeCheckedType::Agent(crate::plan::RuntimeAgentTypeProjection::ActionTarget)
                 .accepts_value(&protocol_record)
         );
 
         let viewport = RuntimeValue::Agent(RuntimeAgentValue::ViewportPoint { x: 10, y: 20 });
         assert!(
-            RuntimeCheckedType::Agent(RuntimeAgentOperationalType::ViewportPoint)
+            RuntimeCheckedType::Agent(crate::plan::RuntimeAgentTypeProjection::ViewportPoint)
                 .accepts_value(&viewport)
         );
         assert!(
-            !RuntimeCheckedType::Agent(RuntimeAgentOperationalType::Observation)
+            !RuntimeCheckedType::Agent(crate::plan::RuntimeAgentTypeProjection::Observation)
                 .accepts_value(&viewport)
         );
     }

@@ -1854,19 +1854,30 @@ fn every_agent_shape_selects_its_closed_operational_family() {
             RuntimeAgentTypeShape::ProjectGraphSummary,
             RuntimeAgentOperationalType::ProjectGraphSummary,
         ),
+        (
+            RuntimeAgentTypeShape::BinaryResourceBody,
+            RuntimeAgentOperationalType::BinaryResourceBody,
+        ),
+        (
+            RuntimeAgentTypeShape::BinaryData,
+            RuntimeAgentOperationalType::BinaryData,
+        ),
     ];
 
     for (index, (shape, operational)) in cases.into_iter().enumerate() {
         let marker = u8::try_from(index + 1).expect("bounded Agent type fixture");
-        let identity = RuntimeSemanticTypeId::from_bytes([marker; 32]);
         let normalized = normalized_type(marker, RuntimeTypeShape::Agent(shape));
+        let expected = match operational {
+            RuntimeAgentOperationalType::Probe => {
+                arcweft_core::plan::RuntimeAgentTypeProjection::Probe(Box::new(
+                    RuntimeCheckedType::Unit,
+                ))
+            }
+            leaf => arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(leaf).unwrap(),
+        };
         assert_eq!(
             normalized.checked_type(),
-            Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
-                semantic_identity: identity,
-                path: super::RuntimeTypeProjectionPath::root(),
-                shape: RuntimeUnsupportedTypeShape::Agent(operational),
-            })
+            Ok(RuntimeCheckedType::Agent(expected))
         );
         assert_eq!(
             normalized
@@ -1883,6 +1894,13 @@ fn nested_operational_descendants_select_their_outer_composite_family() {
     let result_error = unit_type();
     let option_item = unsupported_range_type();
     let cases = vec![
+        (
+            RuntimeTypeShape::Agent(RuntimeAgentTypeShape::Probe(Box::new(
+                unsupported_range_type(),
+            ))),
+            RuntimeTypeProjectionStep::AgentProbeValue,
+            RuntimeOperationalType::Agent(RuntimeAgentOperationalType::Probe),
+        ),
         (
             RuntimeTypeShape::Sequence {
                 kind: RuntimeSequenceKind::Vec,

@@ -16,6 +16,7 @@ use crate::awbc::schema::{
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles};
 use crate::pattern::RuntimeOpaqueTypeAdmission;
+use crate::plan::RuntimeAgentTypeProjection;
 use crate::value::RuntimeDialogueOpaqueRole;
 use arcweft_id::EffectId;
 use std::cmp::Ordering;
@@ -294,6 +295,14 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 })?;
             }
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(kind)) => {
+                if RuntimeAgentTypeProjection::<()>::try_leaf(*kind).is_none() {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "Agent leaf type requires a result child".to_owned(),
+                    });
+                }
+            }
             AwbcRuntimeTypeShape::Unit
             | AwbcRuntimeTypeShape::Bool
             | AwbcRuntimeTypeShape::Int(_)
@@ -312,7 +321,6 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeTypeShape::MatrixF64
             | AwbcRuntimeTypeShape::TensorF32
             | AwbcRuntimeTypeShape::TensorF64
-            | AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(_))
             | AwbcRuntimeTypeShape::Dynamic => {}
         }
     }

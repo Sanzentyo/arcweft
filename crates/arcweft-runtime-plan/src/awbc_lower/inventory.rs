@@ -663,7 +663,9 @@ impl AwbcInventory {
             AwbcRuntimeTypeShape::Bytes => RuntimeCheckedType::Bytes,
             AwbcRuntimeTypeShape::Never => RuntimeCheckedType::Never,
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
-                RuntimeCheckedType::Agent(*agent)
+                RuntimeCheckedType::Agent(arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(
+                    *agent,
+                )?)
             }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_)) => return None,
             AwbcRuntimeTypeShape::Dynamic => {

@@ -290,7 +290,7 @@ impl<R> RuntimePlanRecordField<R> {
 }
 
 /// Agent-owned projection with the generic `Probe<T>` descendant preserved.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeAgentTypeProjection<R> {
     DebugStatePath,
     ObservationFieldPath,
@@ -553,7 +553,11 @@ fn try_map_boxed<R, T, E>(
 }
 
 impl<R> RuntimeAgentTypeProjection<R> {
-    fn try_map<T, E>(
+    /// Transforms the retained Probe result without changing its Agent owner.
+    ///
+    /// # Errors
+    /// Returns the mapper's error when translating the Probe result fails.
+    pub fn try_map<T, E>(
         self,
         mut map: impl FnMut(R) -> Result<T, E>,
     ) -> Result<RuntimeAgentTypeProjection<T>, E> {
@@ -591,6 +595,47 @@ impl<R> RuntimeAgentTypeProjection<R> {
             Self::RagError => RuntimeAgentTypeProjection::RagError,
             Self::BinaryResourceBody => RuntimeAgentTypeProjection::BinaryResourceBody,
             Self::BinaryData => RuntimeAgentTypeProjection::BinaryData,
+        })
+    }
+
+    /// Constructs an Agent type with no generic result. A Probe requires its
+    /// result child and cannot be represented by a leaf row.
+    #[must_use]
+    pub const fn try_leaf(kind: RuntimeAgentOperationalType) -> Option<Self> {
+        Some(match kind {
+            RuntimeAgentOperationalType::DebugStatePath => Self::DebugStatePath,
+            RuntimeAgentOperationalType::ObservationFieldPath => Self::ObservationFieldPath,
+            RuntimeAgentOperationalType::Probe => return None,
+            RuntimeAgentOperationalType::Predicate => Self::Predicate,
+            RuntimeAgentOperationalType::Observation => Self::Observation,
+            RuntimeAgentOperationalType::ObservedObject => Self::ObservedObject,
+            RuntimeAgentOperationalType::BoundingBox => Self::BoundingBox,
+            RuntimeAgentOperationalType::ActionName => Self::ActionName,
+            RuntimeAgentOperationalType::ActionTarget => Self::ActionTarget,
+            RuntimeAgentOperationalType::ActionResult => Self::ActionResult,
+            RuntimeAgentOperationalType::DataFormat => Self::DataFormat,
+            RuntimeAgentOperationalType::DataShape => Self::DataShape,
+            RuntimeAgentOperationalType::EntityMetadata => Self::EntityMetadata,
+            RuntimeAgentOperationalType::SourceAnchor => Self::SourceAnchor,
+            RuntimeAgentOperationalType::SourcePosition => Self::SourcePosition,
+            RuntimeAgentOperationalType::ProjectGraphNeighborhood => Self::ProjectGraphNeighborhood,
+            RuntimeAgentOperationalType::ProjectGraphSymbol => Self::ProjectGraphSymbol,
+            RuntimeAgentOperationalType::ProjectGraphEdge => Self::ProjectGraphEdge,
+            RuntimeAgentOperationalType::ProjectFlowControlSummary => {
+                Self::ProjectFlowControlSummary
+            }
+            RuntimeAgentOperationalType::ProjectGraphSummary => Self::ProjectGraphSummary,
+            RuntimeAgentOperationalType::CaptureTarget => Self::CaptureTarget,
+            RuntimeAgentOperationalType::CaptureReference => Self::CaptureReference,
+            RuntimeAgentOperationalType::Resource => Self::Resource,
+            RuntimeAgentOperationalType::RagContextPack => Self::RagContextPack,
+            RuntimeAgentOperationalType::ObservedObjectId => Self::ObservedObjectId,
+            RuntimeAgentOperationalType::Diagnostics => Self::Diagnostics,
+            RuntimeAgentOperationalType::WaitError => Self::WaitError,
+            RuntimeAgentOperationalType::ViewportPoint => Self::ViewportPoint,
+            RuntimeAgentOperationalType::RagError => Self::RagError,
+            RuntimeAgentOperationalType::BinaryResourceBody => Self::BinaryResourceBody,
+            RuntimeAgentOperationalType::BinaryData => Self::BinaryData,
         })
     }
 

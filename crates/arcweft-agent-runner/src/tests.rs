@@ -133,7 +133,7 @@ fn controller_resource_body_checked_type() -> RuntimeCheckedType {
         Some(RuntimeCheckedType::AgentValue),
         Some(RuntimeCheckedType::String),
         Some(RuntimeCheckedType::Agent(
-            RuntimeAgentOperationalType::BinaryResourceBody,
+            arcweft_core::plan::RuntimeAgentTypeProjection::BinaryResourceBody,
         )),
     ];
     RuntimeCheckedType::Variant {
@@ -235,7 +235,12 @@ fn controller_type(marker: u8) -> RuntimeSemanticTypeId {
 }
 
 fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
-    let agent = |kind| RuntimeCheckedType::Agent(kind);
+    let agent = |kind| {
+        RuntimeCheckedType::Agent(
+            arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(kind)
+                .expect("fixture Agent leaf has no Probe result"),
+        )
+    };
     match marker {
         STRING_TY => RuntimeCheckedType::String,
         U32_TY => RuntimeCheckedType::Unsigned(arcweft_core::value::RuntimeUnsignedIntWidth::U32),
@@ -249,7 +254,11 @@ fn controller_checked_type(marker: u8) -> RuntimeCheckedType {
         ENTITY_METADATA_TY => agent(RuntimeAgentOperationalType::EntityMetadata),
         PROJECT_NEIGHBORHOOD_TY => agent(RuntimeAgentOperationalType::ProjectGraphNeighborhood),
         OBSERVATION_TY => agent(RuntimeAgentOperationalType::Observation),
-        PROBE_BOOL_TY => agent(RuntimeAgentOperationalType::Probe),
+        PROBE_BOOL_TY => {
+            RuntimeCheckedType::Agent(arcweft_core::plan::RuntimeAgentTypeProjection::Probe(
+                Box::new(RuntimeCheckedType::Bool),
+            ))
+        }
         PREDICATE_TY => agent(RuntimeAgentOperationalType::Predicate),
         CAPTURE_RESULT_TY => RuntimeCheckedType::Result {
             ok: Box::new(controller_checked_type(CAPTURE_REFERENCE_TY)),
@@ -504,7 +513,10 @@ fn agent_task_outcome(response_ty: u8) -> TaskOutcomeContract {
         _ => panic!("fixture response type {response_ty} has no Agent task outcome"),
     };
     TaskOutcomeContract::new(RuntimeCheckedType::Result {
-        ok: Box::new(RuntimeCheckedType::Agent(ready)),
+        ok: Box::new(RuntimeCheckedType::Agent(
+            arcweft_core::plan::RuntimeAgentTypeProjection::try_leaf(ready)
+                .expect("task outcome fixture has a leaf Agent owner"),
+        )),
         error: Box::new(RuntimeCheckedType::String),
     })
 }

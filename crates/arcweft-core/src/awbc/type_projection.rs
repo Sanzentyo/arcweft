@@ -11,6 +11,7 @@ use crate::pattern::{
     RuntimeCheckedVariantCase, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
     RuntimeSemanticTypeId,
 };
+use crate::plan::RuntimeAgentTypeProjection;
 use crate::value::{
     RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError, RuntimeNominalRecordLayoutField,
     RuntimeRecordFieldId, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
@@ -308,10 +309,16 @@ impl AwbcProgram {
                 self.checked_variant_row(ty, row, depth, visiting)
             }
             AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(agent)) => {
-                Ok(RuntimeCheckedType::Agent(*agent))
+                RuntimeAgentTypeProjection::try_leaf(*agent)
+                    .map(RuntimeCheckedType::Agent)
+                    .ok_or(AwbcTypeProjectionError::UnsupportedCheckedType { index: ty.0 })
             }
-            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(_))
-            | AwbcRuntimeTypeShape::MatrixF32
+            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Probe(result)) => self
+                .checked_type_at_depth(*result, depth + 1, visiting)
+                .map(|result| {
+                    RuntimeCheckedType::Agent(RuntimeAgentTypeProjection::Probe(Box::new(result)))
+                }),
+            AwbcRuntimeTypeShape::MatrixF32
             | AwbcRuntimeTypeShape::MatrixF64
             | AwbcRuntimeTypeShape::TensorF32
             | AwbcRuntimeTypeShape::TensorF64

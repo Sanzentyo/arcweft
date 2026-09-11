@@ -29,11 +29,11 @@ use arcweft_core::pattern::{
     RuntimeOpaqueTypeProducerId,
 };
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeAgentOperationalType, RuntimeAgentTypeProjection,
-    RuntimeBuiltinIteratorFamily, RuntimeDialogueValueRole, RuntimeLineId,
-    RuntimeNominalRecordDomainFieldSeed, RuntimeNominalRecordDomainSeed, RuntimePlanRecordField,
-    RuntimePlanSequenceKind, RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode,
-    RuntimeVariantCaseSeed, RuntimeVariantDomainSeed,
+    FlowRuntimeId, RuntimeAgentTypeProjection, RuntimeBuiltinIteratorFamily,
+    RuntimeDialogueValueRole, RuntimeLineId, RuntimeNominalRecordDomainFieldSeed,
+    RuntimeNominalRecordDomainSeed, RuntimePlanRecordField, RuntimePlanSequenceKind,
+    RuntimePlanTypeProjection, RuntimePlanTypeSeed, RuntimeReceiverMode, RuntimeVariantCaseSeed,
+    RuntimeVariantDomainSeed,
 };
 use arcweft_core::runtime_id::RuntimeDialogueValueSlotId;
 use arcweft_core::step::RuntimeHostCallMode;
@@ -344,7 +344,6 @@ pub enum RuntimeUnsupportedTypeShape {
     Shared,
     Reference,
     Function,
-    Agent(RuntimeAgentOperationalType),
 }
 
 /// Invalid retained identity on a checked project nominal fact.
@@ -1008,8 +1007,12 @@ impl RuntimeNormalizedType {
             | RuntimeTypeShape::Function { .. } => {
                 unreachable!("leaf and unsupported shapes returned before recursive projection")
             }
-            RuntimeTypeShape::Agent(_) => {
-                unreachable!("Agent shapes returned before recursive projection")
+            RuntimeTypeShape::Agent(agent) => {
+                RuntimeCheckedType::Agent(agent.try_project(|result| {
+                    result
+                        .checked_type_at(&path.pushed(RuntimeTypeProjectionStep::AgentProbeValue))
+                        .map(Box::new)
+                })?)
             }
         })
     }
@@ -1063,19 +1066,24 @@ fn unsupported_runtime_shape(shape: &RuntimeTypeShape) -> Option<RuntimeUnsuppor
         RuntimeTypeShape::Shared(_) => Some(RuntimeUnsupportedTypeShape::Shared),
         RuntimeTypeShape::Reference(_) => Some(RuntimeUnsupportedTypeShape::Reference),
         RuntimeTypeShape::Function { .. } => Some(RuntimeUnsupportedTypeShape::Function),
-        RuntimeTypeShape::Agent(agent) => {
-            Some(RuntimeUnsupportedTypeShape::Agent(agent.operational_type()))
-        }
         _ => None,
     }
 }
 
 impl RuntimeAgentTypeShape {
     fn runtime_plan_projection(&self) -> RuntimeAgentTypeProjection<RuntimeSemanticTypeId> {
-        match self {
+        self.try_project(|value| Ok::<_, std::convert::Infallible>(value.identity()))
+            .unwrap_or_else(|impossible| match impossible {})
+    }
+
+    fn try_project<R, E>(
+        &self,
+        mut project: impl FnMut(&RuntimeNormalizedType) -> Result<R, E>,
+    ) -> Result<RuntimeAgentTypeProjection<R>, E> {
+        Ok(match self {
             Self::DebugStatePath => RuntimeAgentTypeProjection::DebugStatePath,
             Self::ObservationFieldPath => RuntimeAgentTypeProjection::ObservationFieldPath,
-            Self::Probe(value) => RuntimeAgentTypeProjection::Probe(value.identity()),
+            Self::Probe(value) => RuntimeAgentTypeProjection::Probe(project(value)?),
             Self::Predicate => RuntimeAgentTypeProjection::Predicate,
             Self::Observation => RuntimeAgentTypeProjection::Observation,
             Self::ObservedObject => RuntimeAgentTypeProjection::ObservedObject,
@@ -1106,45 +1114,7 @@ impl RuntimeAgentTypeShape {
             Self::ProjectGraphSummary => RuntimeAgentTypeProjection::ProjectGraphSummary,
             Self::BinaryResourceBody => RuntimeAgentTypeProjection::BinaryResourceBody,
             Self::BinaryData => RuntimeAgentTypeProjection::BinaryData,
-        }
-    }
-
-    const fn operational_type(&self) -> RuntimeAgentOperationalType {
-        match self {
-            Self::DebugStatePath => RuntimeAgentOperationalType::DebugStatePath,
-            Self::ObservationFieldPath => RuntimeAgentOperationalType::ObservationFieldPath,
-            Self::Probe(_) => RuntimeAgentOperationalType::Probe,
-            Self::Predicate => RuntimeAgentOperationalType::Predicate,
-            Self::Observation => RuntimeAgentOperationalType::Observation,
-            Self::ObservedObject => RuntimeAgentOperationalType::ObservedObject,
-            Self::BoundingBox => RuntimeAgentOperationalType::BoundingBox,
-            Self::ActionName => RuntimeAgentOperationalType::ActionName,
-            Self::ActionTarget => RuntimeAgentOperationalType::ActionTarget,
-            Self::ActionResult => RuntimeAgentOperationalType::ActionResult,
-            Self::DataFormat => RuntimeAgentOperationalType::DataFormat,
-            Self::DataShape => RuntimeAgentOperationalType::DataShape,
-            Self::EntityMetadata => RuntimeAgentOperationalType::EntityMetadata,
-            Self::SourceAnchor => RuntimeAgentOperationalType::SourceAnchor,
-            Self::ProjectGraphNeighborhood => RuntimeAgentOperationalType::ProjectGraphNeighborhood,
-            Self::ProjectGraphSymbol => RuntimeAgentOperationalType::ProjectGraphSymbol,
-            Self::ProjectGraphEdge => RuntimeAgentOperationalType::ProjectGraphEdge,
-            Self::CaptureTarget => RuntimeAgentOperationalType::CaptureTarget,
-            Self::CaptureReference => RuntimeAgentOperationalType::CaptureReference,
-            Self::Resource => RuntimeAgentOperationalType::Resource,
-            Self::RagContextPack => RuntimeAgentOperationalType::RagContextPack,
-            Self::ObservedObjectId => RuntimeAgentOperationalType::ObservedObjectId,
-            Self::Diagnostics => RuntimeAgentOperationalType::Diagnostics,
-            Self::WaitError => RuntimeAgentOperationalType::WaitError,
-            Self::ViewportPoint => RuntimeAgentOperationalType::ViewportPoint,
-            Self::RagError => RuntimeAgentOperationalType::RagError,
-            Self::SourcePosition => RuntimeAgentOperationalType::SourcePosition,
-            Self::ProjectFlowControlSummary => {
-                RuntimeAgentOperationalType::ProjectFlowControlSummary
-            }
-            Self::ProjectGraphSummary => RuntimeAgentOperationalType::ProjectGraphSummary,
-            Self::BinaryResourceBody => RuntimeAgentOperationalType::BinaryResourceBody,
-            Self::BinaryData => RuntimeAgentOperationalType::BinaryData,
-        }
+        })
     }
 }
 

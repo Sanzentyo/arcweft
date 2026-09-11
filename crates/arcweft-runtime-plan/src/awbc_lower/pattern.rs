@@ -629,9 +629,12 @@ pub(crate) fn intern_runtime_type(
                 },
             ],
         },
-        RuntimeCheckedType::Agent(agent) => {
-            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(*agent))
-        }
+        RuntimeCheckedType::Agent(agent) => AwbcRuntimeTypeShape::Agent(match agent {
+            RuntimeAgentTypeProjection::Probe(result) => {
+                AwbcAgentTypeShape::Probe(intern_runtime_type(inventory, result))
+            }
+            _ => AwbcAgentTypeShape::Leaf(agent.operational_type()),
+        }),
     };
     let semantic_identity = match ty {
         RuntimeCheckedType::Nominal {
