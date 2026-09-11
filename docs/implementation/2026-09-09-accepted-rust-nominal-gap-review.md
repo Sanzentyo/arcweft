@@ -64,3 +64,12 @@ as the accepted dependency order. This review closes the early gap inspection,
 not the implementation. It does not authorize a second nominal catalog,
 weakened restore admission, compatibility reader, contract version change, or
 early structural ownership success. No design amendment was selected here.
+
+## Follow-up schema reconciliation
+
+The [2026-09-11 argument reconciliation](2026-09-11-nominal-graph-argument-reconciliation.md)
+closes an omission found during C1 preparation: the inert schema definition must
+retain ordered generic argument schemas, including unused arguments, for the
+existing plan and layout consumers. It also preserves the current shared checked
+variant owner and argument fields. This supplements the accepted schema sketch;
+it does not rewrite the historical inspection above or complete C1-C6.
