@@ -1,46 +1,50 @@
 # Review requests and packages
 
-For ZIP intake, integrity checks, extraction, and storage, use
-[README.md](README.md). A request-only wording edit does not trigger archive
-intake. Root Git/permission rules and documentation authority still apply.
+Use [README.md](README.md) for actual ZIP intake/extraction, not for every request
+wording edit. Root autonomy, task priority, and Git rules apply.
 
-## Scope and evidence
+## Scope and authority
 
-Read the complete active request and applicable contract/package, plus its
-current intake decision. Follow primary/parent/predecessor references that supply
-inherited acceptance criteria, precedence, or a decision affecting this task;
-include those requirements in the acceptance map. Inspect all affected production
-consumers, not every unrelated consumer ever named in the sequence. If an
-inheritance boundary is unclear, resolve it rather than silently dropping scope.
+Read the full active request and applicable contract, plus the intake decision.
+Follow parent/predecessor references that supply inherited requirements or
+precedence until the acceptance scope is closed. Inspect all affected consumers,
+not every file ever named in the sequence. Preserve mutually constraining
+requirements; selective context is not reduced acceptance.
 
-Use current repository evidence; a filename, sequence number, or `FINAL` suffix
-is not readiness evidence. Do not restore a superseded package expression or
-redesign accepted, validated substrate without a concrete repository-evidenced
-flaw. Use full Git SHAs, not Jujutsu identities, even if an old request asks for
-both. Distinguish observed local state from connector-only remote evidence.
+A filename, sequence number, or `FINAL` suffix does not establish readiness.
+Reconcile stale package expressions with current user direction, maintained
+contracts, and production evidence. Keep accepted validated substrate unless a
+concrete flaw or an explicit redesign task warrants changing it. Do not use
+historical wording as a veto on an authorized correction. Use full Git SHAs and
+distinguish observed local state from connector-only remote evidence.
 
-## Completion boundaries
+## Finish the assigned work
 
-Design-only work must not edit production code, tests, fixtures, manifests,
-branches, patches, PRs, or implementation overlays. Complete the requested design
-and artifact; implementation requires an implementation assignment.
+An implementation assignment includes resolving ordinary design gaps and
+integrating the complete authority; it does not need a separate design approval
+for each missing detail. Choose and document the coherent solution instead of
+returning another request for a repository-resolvable question.
 
-For readiness adjudication, close every result-changing decision and satisfy the
-request's complete evidence contract. Use `READY_FOR_IMPLEMENTATION` only with
-those decisions closed and `OPEN_QUESTIONS.md` exactly `none` when required.
-Large investigation is not a `NOT_READY` reason: resolve what current evidence
-can decide, and name genuinely external unresolved authority precisely.
+Design-only work ends with the complete design and requested artifact, without
+production code, tests, fixtures, manifests, branches, patches, PRs, or overlays.
+Produce a requested ZIP even when compilation or runtime validation is unavailable;
+put the actual validation scope and limitations inside it. Artifact delivery,
+design readiness, and tested implementation are separate claims.
 
-Do not split mutually constraining decisions into an easy subset or introduce
-compatibility wrappers, dual readers, reparsing, source gates, or removed-syntax
-diagnostics for unreleased contracts. Preserve archive/extracted mirror bytes;
-edit maintained navigation and intake decisions, not returned historical evidence.
+For readiness, close all result-changing decisions and satisfy the active
+request's evidence contract. Use `READY_FOR_IMPLEMENTATION` only when supported;
+`OPEN_QUESTIONS.md` is exactly `none` only when required and true. Never mark a
+missing decision closed to avoid asking, or mark a large investigation blocked
+merely because it is large. Apply the root rule for genuinely unresolved facts,
+intent, or permissions, and continue independent work.
 
-## Follow-up requests
+## Follow-ups and retained evidence
 
-Create an independently usable Markdown file in `requests/` before presenting
-its name; provide its repository path and link it from the relevant intake or
-state note. Preserve the parent sequence and include the split reason, exact
-decisions, precedence, non-goals, affected consumers, implementation order, tests,
-constraints, and output archive. Split only semantically independent topics;
-request size or implementation convenience is not sufficient.
+A follow-up request serves a genuinely external decision or an explicitly
+separate assignment, not a stopping point for technical work already delegated.
+Before presenting one, create its independently usable file in `requests/` and
+link it from the relevant note. Preserve the parent sequence; include the exact
+decision, split reason, precedence, scope, consumers, required evidence, and output.
+Split only semantically independent topics, not a convenient compilable subset.
+Preserve retained archives and their extracted mirror bytes; change maintained
+navigation and adjudication outside them, never the returned historical evidence.

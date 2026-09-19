@@ -1,107 +1,135 @@
 # Agent workflow and task prompts
 
-Maintained guidance for authoring repository instructions, task prompts, and
-handoffs. This is an on-demand reference, not an additional startup checklist.
-Root/scoped `AGENTS.md` and the linked operational policies own their rules;
-this document does not replace domain contracts or expand permissions.
+On-demand guidance for instruction maintenance and difficult handoffs, not a
+startup checklist. The [root instructions](../../AGENTS.md) own task priority,
+default autonomy, product invariants, and Git permissions.
 
-## Choose the smallest relevant context, not the smallest implementation
+## Delegate outcomes, not a sequence of approvals
 
-Begin with the requested outcome, applicable instructions, and the current
-owner/contract. Expand the inspected surface when a dependency, consumer,
-acceptance criterion, or conflict requires it. Completing one typed authority
-can require a broad migration; selective reading is not permission to omit
-mutually constraining requirements.
+An implementation request delegates ordinary design and integration choices as
+well as editing. Infer routine omitted details from the user's goal, maintained
+contracts, and current owners. Choose a complete solution; do not ask the user to
+pick between technically adequate designs merely to avoid responsibility.
+Document a material tradeoff where it affects later work, then proceed.
 
-For package work, read the active request and applicable contract completely;
-follow inherited requirements and precedence until the acceptance scope is
-closed. Use [review intake](../reviews/README.md) for archive identity and
-readiness rather than reprocessing the historical archive tree on every task.
+This includes necessary owner methods, cross-crate consumer migrations, dependency
+and feature changes consistent with project policy, tests, fixtures, generated
+artifacts, maintained documentation, and repairs caused by the change. The scope
+is the complete requested result, not unlimited repository improvement. Review-only
+and design-only remain distinct assignments; "continue" preserves the established
+goal and mode unless the user changes them.
 
-For a continuation, compare the task note's base with current Git state. Reopen
-changed instructions/contracts and relevant implementation/evidence, not the
-whole document stack by default. Never reinstate an obsolete model merely
-because a compressed conversation summary described it.
+Current explicit user direction supersedes repository process defaults and skill
+guidance, within higher-priority instructions and actual tool authorization.
+An instruction document is not an independent stakeholder with veto power.
+Read applicable Rust skills completely as required; do not confuse full skill
+reading with loading every linked library. Do not edit frozen skill copies in
+returned packages to pretend an external installed skill has been updated.
 
-## Make completion and permission distinct
+## What does and does not need a question
 
-A useful task states its outcome, authoritative input, non-goals, observable
-acceptance, and delivery boundary. Routine investigation, implementation choices,
-local validation, and change-caused repairs stay within that scope. Finishing a
-first patch is not completion; passing an unrelated test is not acceptance.
+Ordinary uncertainty is part of the job. Inspect the relevant evidence, choose a
+reasonable interpretation consistent with the goal, and proceed. Missing prose,
+a large migration, multiple designs, a failing regression test, and a mismatch
+between an old package and a later accepted contract do not inherently require
+approval. Resolve precedence and technical facts rather than treating every
+conflict as an unavailable external authority.
 
-An analysis-only request ends with findings; a design-only request ends with its
-complete design/artifact, not a production patch. User-data loss, unresolved
-external authority, conflicting accepted contracts, new external side effects,
-and forbidden Git operations remain real boundaries. Isolate a blocked decision
-and finish independent work; do not mask a blocker with a speculative fallback.
+A question is warranted only when the remaining answer is material and cannot
+be established from accessible evidence or authority already granted: for example,
+competing user intentions, an unspecified destructive external operation, or a
+specific permission the user explicitly reserved. Previously granted permission
+does not need to be granted again. Do not invent warnings or approval checklists
+for speculative harms of ordinary repository development.
 
-Select checks through [test-execution-policy.md](test-execution-policy.md).
-Evidence can be reused only with the relevant inputs unchanged. Report passed,
-failed, blocked, and not-run checks separately; do not manufacture a green
-milestone from an unavailable environment.
+Repository-main-only work, a requested local hold, and explicit restrictions in
+user-provided skills remain real choices to honor, not evidence that all Git or
+Rust operations are dangerous. Tool approval, production deployment, spending,
+credential/access-control changes, and loss of user data are not authorized just
+by asking for a code change. Apply actual scope instead of a blanket ask-first rule.
 
-## Reusable prompt shapes
+When a rule really prevents progress, identify the affected action and cite the
+exact file/section and relevant requirement, or name the missing external fact.
+Distinguish its wording from your interpretation. Continue independent work and
+ask only the consequential unresolved question; do not re-ask a settled one.
 
-Use only the relevant shape; replace bracketed fields with task facts. These
-are examples, not mandatory forms or extra steps for a small edit.
+## Resolve design work instead of exporting it
 
-### Implementation
+Current code shows implementation state; maintained specifications and accepted
+contracts show the target. Neither historical package wording nor an existing
+implementation is automatically the final design. A concrete flaw within an
+authorized correction/redesign can require changing a maintained contract;
+explain the choice and migrate all affected producers, consumers, and evidence.
+Do not silently override a requirement the current user intended to retain.
+
+Use a follow-up request only for genuinely outside authority or a separate
+assignment, not to transfer an unfinished technical decision back to the user.
+A design-only ZIP still closes every mutually constraining design decision and
+states its actual validation. Lack of a compiler does not excuse omitting the
+ZIP, and successful ZIP creation does not prove runtime implementation readiness.
+Use [review intake](../reviews/README.md) for actual package work.
+
+## Validation and continuation
+
+Choose evidence by the [test policy](test-execution-policy.md), not by an impulse
+to run every available command. Preserve required behavioral coverage, reuse
+unchanged passes, repair real regressions, and finish once sufficient evidence
+exists. Do not turn every completed check into a reason to look for a new gate.
+
+After compaction, compare current Git with the existing goal, contract, changed
+paths, and recorded evidence. Reopen changed or missing context, not all historical
+packages. Continue the next unresolved acceptance item; neither compaction nor a
+completed intermediate commit needs a new "continue" from the user. Maintain one
+useful task note when needed, not a ledger for every small action.
+
+## Prompt examples
+
+These examples are optional; a short request with established context is valid.
+Do not ask the user to fill a template before beginning ordinary work.
+
+### Implementation or correction
 
 ```text
-Implement [outcome] against [maintained contract or accepted request].
-Done means [observable behavior and affected consumer migration], selected
-validation, and fixes for failures caused by this change. Non-goals: [scope].
-Continue through that result, not just the first patch. Follow repository Git
-and permission rules; report exact evidence and unresolved external blockers.
+Complete [outcome] against [contract/context]. Resolve the necessary technical
+choices, migrate affected consumers, and fix regressions. Deliver the coherent
+change with evidence for [observable acceptance]. Non-goals: [actual exclusions].
 ```
 
-### Continue accepted work
+### Continuation
 
 ```text
-Continue [goal] from [current task note]. Reconcile its base and remaining
-acceptance criteria with live Git state. Preserve accepted, validated substrate
-unless a concrete defect requires correction. Finish [remaining outcome];
-reuse unchanged evidence and stop at that outcome, not at a compaction boundary.
+Continue [goal/current note] to its remaining acceptance criteria. Reconcile
+live Git state, reuse valid evidence, and finish without stopping at the first
+patch or next commit. Keep the established implementation/design-only mode.
 ```
 
 ### Design only
 
 ```text
-Design [boundary] for [active request and inherited acceptance criteria].
-Deliver [artifact] with all mutually constraining decisions closed, current
-consumer traceability, and validation requirements. Do not edit production.
-Identify any genuinely external unresolved authority precisely; do not split
-one semantic authority merely to return an easier partial package.
+Design [boundary] and return [artifact]. Close the mutually constraining choices
+against current owners and inherited requirements. Keep production unchanged;
+include exactly what was and was not validated inside the requested ZIP.
 ```
 
-## Skill and instruction maintenance
+## Maintain instructions by observed value
 
-Keep `AGENTS.md` for durable repository constraints and short task-specific
-routing. Keep dated progress in implementation notes, command matrices in their
-existing policy, and archive details in the intake guide. Do not duplicate an
-existing authority in a new skill merely to make it discoverable.
+Keep durable product invariants and actual permissions in their owning policy;
+remove obsolete model-workarounds rather than move them into another mandatory
+file. Skills should add recurring repository-specific value with a narrow trigger
+and on-demand references, not duplicate the root instructions or teach routine
+coding. Generic process advice must not outrank the user's explicit task.
 
-Add a skill only for a recurring workflow with repository-specific value.
-Its description should name the operation and its narrow trigger, not everything
-related to a language or subsystem. For example: "Verify a returned Arcweft
-contract ZIP for intake or readiness adjudication" is narrower than "Use for
-all Arcweft design, Rust, and documentation work."
+For instruction changes, review representative outcomes and stop decisions,
+including false stops as well as unwanted actions. Check a simple edit, a broad
+owner migration, a resolvable contract mismatch, a real permission boundary,
+continuation, and requested artifact delivery. This is a policy review, not a
+source-spelling CI gate or a claim that model performance has been measured.
+Use a new rule only for an actual unmet requirement or observed failure.
 
-A skill root routes to only the references/scripts needed for the selected
-workflow. Keep integrity requirements and completion criteria, but omit generic
-coding tutorials, repeated exhortations, and prescribed step-by-step itineraries
-that do not protect an actual boundary. Repository instructions are shared by
-multiple models: do not hard-code a model identity or assume a particular model
-makes approval or verification unnecessary.
-
-Check a proposed instruction change with representative tasks: a documentation
-typo, focused Rust fix, cross-crate contract change, ZIP intake, resumed work,
-and design-only assignment. Review whether each selects relevant context,
-preserves all applicable acceptance gates, and stops only at the correct
-boundary. These are review scenarios, not a keyword-based CI gate or proof of
-agent performance. Add a rule for an observed failure, not speculative coverage.
-
-Background: OpenAI's
+Sources: OpenAI's
 [Rethinking skills and prompts for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
-(2026-09-11). The repository-specific boundaries above remain authoritative.
+(2026-09-11) and the supplemental
+[model guidance](https://developers.openai.com/api/docs/guides/latest-model).
+These motivate removing obsolete scaffolding; the concrete delegation and
+validation boundaries here are Arcweft policy decisions, not claims of model
+infallibility or permission supplied by a model name.

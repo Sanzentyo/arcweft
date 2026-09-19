@@ -1,119 +1,113 @@
 # Test execution policy
 
-This is the current validation-selection authority for Arcweft. The Justfile is
-the executable command authority. Historical timings and the older detailed
-command inventory are retained under `test-profiling/`.
+This policy selects validation by affected behavior and unresolved risk.
+[Justfile](../../Justfile) and [just/verify.just](../../just/verify.just) own the
+executable recipes. A push, a compaction, or the word "Rust" does not by itself
+require a workspace run. Explicit task/contract acceptance checks remain required.
 
-## General rules
+## Select evidence, then finish
 
-- Match validation to the changed behavior and risk. Do not run the full
-  workspace after every small edit.
-- Keep the Cargo feature combination stable within a slice so the result is
-  comparable and `target/` growth remains bounded.
-- Prefer exact test names or narrow crate-owned groups over broad substring
-  filters that accidentally select slow matrices.
-- Record commands actually run, pass/fail status, and intentionally skipped
-  tiers. A planned command is not evidence.
-- Do not preserve obsolete production behavior to satisfy a stale test. Update
-  expectations and deterministic fixtures to the selected final contract.
+Exercise the changed invariant and its affected consumers. Use existing meaningful
+coverage where sufficient; add a regression when a bug or new behavior lacks it.
+Do not add tests that merely mirror implementation syntax for a reversible,
+low-impact edit. Parser families still need success, malformed, recovery-span,
+and ambiguity coverage; codecs and public boundaries need their observable
+round-trip/rejection/compile evidence where affected.
 
-Ordinary local checks and tests with disposable fixtures may be executed and
-change-caused failures fixed without asking at each step. This is not permission
-for production access, user-data changes, device access, external-service writes,
-or system-wide installation/privilege changes. Inspect those targets' actual needs.
+Run appropriate local checks, fix change-caused failures, and rerun affected
+checks without asking for each step. Ordinary dependency resolution and build
+artifacts in the existing development environment are part of this workflow.
+Tests that access real devices, external services, credentials, or non-disposable
+user data depend on their actual authorization; do not declare every test safe
+or ask about every test merely because some may have external effects.
 
-## Reusing evidence within a cut
+Select a stable feature/target combination and exact test names or owner groups.
+Broaden or repeat only for changed inputs, failures, unresolved coverage, or an
+applicable acceptance requirement. Once the evidence is sufficient, deliver the
+result instead of starting another speculative verification loop.
 
-Select required gates from the changed behavior and the rules below. An already
-passed invocation can satisfy overlapping edit/review/push requirements when its
-relevant source, tests/fixtures, manifests/lockfile, feature/target selection,
-toolchain, and environment are unchanged. Record the original command/result and
-revision or patch identity; do not relabel it as a new run. A compaction or a
-commit of identical tested bytes alone does not invalidate the result.
+## Scope of checks
 
-Rerun affected checks after relevant inputs change, when evidence is missing,
-when a result is flaky, or when integration with newer `main` can affect it.
-A failed or not-run command never satisfies a gate. Reuse does not waive the
-workspace, Tier 2, or structural triggers below. Do not invoke an aggregate and
-all its constituent commands again just to repeat the same evidence.
+- **Isolated Rust implementation:** changed-crate checks, meaningful owner tests,
+  and Clippy on affected packages with `--all-targets` and relevant features.
+  Format changed Rust. No automatic workspace or Tier 2 run for pushing this cut.
+- **Shared semantics or workspace integration:** changes to shared language,
+  runtime, serialized/public contracts with broad consumer impact, workspace-wide
+  build settings, or dependency/features affecting shared consumers require
+  `cargo check --workspace --all-targets --all-features`,
+  `cargo clippy --workspace --all-targets --all-features`, and
+  `just test-workspace`, plus affected contract tests. File/crate count alone is
+  not this trigger; a private rename or leaf-only dependency change can use its
+  affected dependency/consumer closure.
+- **Specialized surfaces:** select affected CLI integration tests, crate doctests
+  for executable/public API documentation, `just verify-vendor-glyphon` for that
+  fork or its adapter contract, and generated-artifact checks for changed
+  generators/data. A prose-only Rust documentation correction need not run every
+  workspace doctest. Use the full named matrix for an explicitly requested
+  milestone or a change affecting that entire surface.
+- **Structure:** use [structural-audit-policy.md](structural-audit-policy.md).
+  A relevant blocking dependency/ownership violation must be fixed; a small
+  Rust edit or an existing size warning is not a blanket scanner trigger.
 
-The workspace `test` profile keeps line-table debug information for backtraces.
-This reduces test artifact size and compiler memory pressure without changing
-optimization, debug assertions, overflow checks, or Cargo's normal concurrency.
-The `dev` profile retains full debug information. When debugging test variables,
-temporarily set `CARGO_PROFILE_TEST_DEBUG=2` for that invocation, then restore
-the normal profile for the rest of the validation slice. See the
-[Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html#debug)
-for the debug-information levels.
+These are selection rules, not four consecutive steps. `just test-fast`,
+`just test-rich-text`, and `just test-cli-native` are available bundles, not
+mandatory additions to equivalent owner tests. Use `just verify` or
+`just verify-full` only when their whole coverage is warranted. Do not run a
+bundle and all its constituent commands again for the same inputs.
 
-## Tight loop
+## Tier 2 and environment-sensitive evidence
 
-Use the smallest direct evidence for the changed owner:
+Run the matching narrow Tier 2 targets when changing MCP protocol/resource URIs,
+subprocess stdio, Agent observe, capture lifetime/readback, auxiliary attachments,
+visual output, or production-limit boundaries covered by ignored tests.
 
-- changed-crate `cargo check`;
-- exact focused unit or integration tests; and
-- the narrow parser/sema/runtime/render/codec test family that owns the rule.
+Use exhaustive `just test-tier2` for a milestone requiring it or when changes to
+shared scheduling, lifetime, rendering, or protocol machinery can affect multiple
+Tier 2 families and narrower coverage cannot establish the contract. A cross-crate
+edit somewhere on a runtime path is not enough on its own. State the affected
+families and why a broader run was selected or unrelated families were excluded;
+a short validation note suffices, not a separate approval or risk document.
 
-Use `just test-fast` for the short core/render-text/text-layout/native-player
-smoke route. Use `just test-rich-text` or `just test-cli-native` only when that
-surface is touched.
+Use the pinned platform/artifact procedure when native visual acceptance requires
+it; the retained reference is
+[test execution measurements](test-profiling/test-execution-measurements-2026-06-12-to-2026-07-10.md).
 
-## Reviewable Rust cut
+## Reuse and failure handling
 
-At a coherent Rust cut, run:
+Reuse a recorded pass when its relevant source, tests/fixtures, manifests/lockfile,
+features/target, toolchain, and environment are unchanged. Preserve the original
+command, result, and revision/patch identity; never present reuse as a new run.
+Committing the tested bytes or resuming after compaction does not invalidate them.
+Rerun after relevant changes, integration with newer `main`, flakiness, or missing
+evidence. A failed, blocked, or not-run check is not a pass.
 
-1. focused tests for every changed behavior;
-2. `cargo check --workspace --all-targets --all-features` when the cut crosses
-   crates or public contracts;
-3. `cargo clippy --workspace --all-targets --all-features` when feasible;
-4. `just structure-audit-gate` when required by `structural-audit-policy.md`;
-   it also performs screening, so a separate identical screening is unnecessary; and
-5. the matching runtime/render/Agent/MCP/capture tier described below.
+Diagnose a failure rather than asking whether to fix a regression from this task.
+Do not lower assertions, bypass a gate, or restore obsolete behavior merely to
+make tests pass. Identify pre-existing failures with actual baseline evidence
+where practical; do not assert they are pre-existing just because they seem
+unrelated. An unresolved change-caused failure blocks acceptance of that behavior.
 
-Use `cargo fmt` for changed Rust. Use `just verify` when the cut is broad enough
-to require formatter, Clippy, workspace-fast tests, and generated JLREQ data
-together.
-
-## Main push cut
-
-- Run `just test-workspace` for normal Rust mainline cuts unless the change is
-  docs-only or demonstrably cannot affect Rust behavior.
-- Use `just test-cli-check` or exact `check.rs` tests for ordinary CLI behavior.
-  Use `just test-cli-check-full` only when the full CLI integration matrix is
-  explicitly warranted.
-- Run `just test-doc` when Rust documentation comments, doctest examples, or
-  public API documentation changed, or for an explicit milestone.
-- Run `just verify-vendor-glyphon` when the vendored glyphon fork or its
-  adapter-facing contract changed.
-
-## Tier 2
-
-Tier 2 covers ignored or environment-sensitive MCP stdio, broad Agent observe,
-auxiliary native capture, and exact visual-golden paths.
-
-Run the matching narrow Tier 2 target when a cut changes Agent MCP protocol,
-resource URIs, subprocess stdio, capture lifetime/readback, native auxiliary
-attachments, or bounded visual output.
-
-Run exhaustive `just test-tier2` before completing a cut when both are true:
-
-1. it spans multiple crates or materially changes a public contract; and
-2. it affects a runtime, render, Agent, MCP, or capture path.
-
-An isolated small public-API edit is not Tier 2 solely because it is public.
-For milestone native visual handoff, use the pinned Windows environment and
-artifact procedure retained in
-`test-profiling/test-execution-measurements-2026-06-12-to-2026-07-10.md`.
+A missing platform, permission, or toolchain blocks that check, not unrelated
+implementation/design or a requested artifact. Complete feasible work and report
+exactly which acceptance remains unverified. Do not promote "not run" to complete,
+or publish unvalidated production WIP under the coherent-cut rule.
 
 ## Documentation-only cuts
 
-For instruction, request, or stable-documentation-only changes, validate links,
-formatting, repository status, `git diff --check`, and any schema/example
-consistency directly affected by the edit. Rust workspace tests and Tier 2 are
-not required unless the documentation change accompanies Rust behavior.
+Review changed content, links, formatting, and affected schema/example consistency;
+check repository status and `git diff --check`. Only validate executable examples
+when the edit affects them. Instructions and prose alone do not require Rust,
+Clippy, Tier 2, or structural-scanner execution.
 
-For connector-only documentation edits, validate the pinned before/after content
-and changed links, check whitespace on that diff, and verify the published
-commit's paths/blob identities and non-forced ref update. Report that these were
-connector/scratch-content checks, not validation in a local repository checkout.
-Do not claim local dirty/clean state or runtime tests that were not observed.
+For connector-only edits, use pinned before/after content, whitespace and changed
+link checks, then verify the published commit's changed paths/blob identities,
+parent, and non-forced ref update. Report scratch-content/remote evidence, not a
+local checkout's dirty/clean state. Documentation checks are not behavioral tests.
+
+## Existing test profile
+
+The workspace test profile retains line-table debug information; `dev` retains
+full debug information. For variable-level test debugging, temporarily use
+`CARGO_PROFILE_TEST_DEBUG=2` for that invocation. Do not change profiles, Cargo
+concurrency, or feature selection as an incidental testing optimization. See the
+[Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html#debug).

@@ -4,28 +4,25 @@ Repository structure is part of the implementation result. Compilation and
 test success alone do not prove that ownership, dependency direction, and file
 responsibilities are acceptable.
 
-## Audit triggers
+## When to audit
 
-Run the canonical audit when any of the following applies:
+Run the canonical scanner for a requested Rust/workspace structural audit or a
+material change to dependency direction, crate ownership, public contract,
+features, root exports, mixed I/O ownership, or repeated cross-layer projections.
+A naming/prose fix and the fact that a commit will be pushed do not trigger a
+repository-wide structural pass.
 
-- the task requests architecture, dependency, duplication, naming,
-  test-structure, or maintainability review;
-- a production Rust file exceeds 1,200 physical LOC or grows by more than 300
-  physical LOC in one coherent cut;
-- a `lib.rs` or `main.rs` exceeds 1,000 physical LOC;
-- an integration-test file exceeds 2,500 physical LOC;
-- a maintained production owner above 1,200 LOC contains embedded test-module
-  source that may indicate test/production responsibility coupling;
-- a workspace dependency, public contract, root re-export, Cargo feature, or
-  crate boundary changes materially;
-- one cut combines orchestration with transport, persistence, rendering,
-  protocol conversion, pixel processing, or platform I/O;
-- the same boundary type, identifier, payload, or conversion appears in
-  multiple crates; or
-- a manual field projection, statistics delta, descriptor inventory, schema
-  mapping, or equivalent repeated mapping is added or extended.
+For a changed owner's new size/growth trigger below, review that owner's
+responsibility and dependencies; run the scanner when current measurements or
+the dependency graph are needed to resolve the review. More than 300 physical
+LOC of growth in one cut also triggers this owner review. An unchanged historical
+warning does not require re-auditing unrelated owners or splitting a cohesive
+algorithm. Reuse a recorded disposition when its relevant responsibilities,
+state, dependencies, API, and test boundaries remain unchanged.
 
-Run the audit at reviewable Rust push cuts even when only warnings are expected.
+Do not ask for permission to repair an in-scope ownership defect. Complete the
+real producer/consumer migration and remove the duplicate authority. A scanner
+warning is not permission to widen public APIs solely to split a file.
 
 ## Required measurement
 
@@ -50,8 +47,9 @@ source rather than mixing it into production hotspot rankings.
 ## Ownership review
 
 `SIZE001`, `SIZE002`, and `TEST001` start an ownership review. They do not prove
-a structural error. For each touched or newly crossed trigger, inspect and
-record:
+a structural error. For each new trigger or materially changed ownership
+boundary, inspect and record the relevant evidence (one concise disposition per
+owner is sufficient):
 
 - the named owner and its cohesive responsibility;
 - state ownership and whether unrelated state clusters have accumulated;
@@ -104,8 +102,8 @@ nonzero when a typed blocking violation exists. LOC review triggers remain
 visible in both commands without becoming numeric gates. These are alternative
 entry points, not a mandatory two-command sequence: use the gate for acceptance;
 it includes screening. Reuse unchanged evidence as described in
-[test-execution-policy.md](test-execution-policy.md). Audit triggers, ownership
-review dispositions, and blocking criteria above are unchanged by this reuse.
+[test-execution-policy.md](test-execution-policy.md). Reuse does not turn a missing
+measurement or an unresolved structural defect into a pass.
 
 Use `--write docs/implementation/structure-audits/<task>` when retained report
 files materially support the cut. Retained output includes file owner and

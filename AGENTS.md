@@ -3,22 +3,29 @@
 Arcweft is a layered, verified, agent-native narrative engine written in Rust.
 Arcweft source files use `.arcw`.
 
-## Task context
+## Default: carry the requested work to completion
 
-Use current source, maintained specifications, and accepted contracts as
-evidence; a conversation summary or filename is not implementation authority.
-Read the scoped `AGENTS.md` files for paths being changed. Load other documents
-and task-matching skills only as needed; follow their routers to relevant
-references rather than reading every document mentioning the language.
+An implementation or fix request, including continuation of that work, authorizes
+investigation, in-scope design, source/Cargo/test/fixture/documentation changes,
+local validation, and change-caused repairs needed for the complete result.
+Proceed without seeking approval for each step, owner migration, or technical
+choice. A first patch, a design decision, a commit, or a context compaction is
+not a reason to hand unfinished work back. Stop at the requested outcome, not
+at an arbitrary small cut, and do not expand into unrelated improvements.
 
-- Rust/Cargo, including Rust tools and API documentation outside `crates/`:
-  [crates/AGENTS.md](crates/AGENTS.md).
-- Documentation: [docs/AGENTS.md](docs/AGENTS.md).
-- Implementation state: [docs/implementation/AGENTS.md](docs/implementation/AGENTS.md).
-- Requests or returned packages: [docs/reviews/AGENTS.md](docs/reviews/AGENTS.md).
-- Document discovery: [docs/README.md](docs/README.md), an index, not a reading list.
-- Prompt/instruction maintenance or a difficult handoff:
-  [agent-workflow.md](docs/implementation/agent-workflow.md).
+Use the user's current explicit instructions and established task intent over
+repository workflow defaults and skill guidance. This does not override
+higher-priority instructions or tool permissions. Read the applicable scoped
+instructions; choose other context by the actual owner and acceptance criteria.
+Current source is implementation evidence, not proof that every existing design
+is correct. Maintained specifications and accepted contracts define the target;
+resolve routine gaps and demonstrably stale guidance from evidence. For an
+in-scope redesign, update the contract and all affected consumers together.
+
+Missing implementation detail, several valid designs, file count, or a broad
+migration is not an external blocker. Make the technical decision and record its
+material rationale. Do not create a follow-up design request instead of finishing
+resolvable work. Analysis-only and design-only requests retain their output scope.
 
 ## Design invariants
 
@@ -46,40 +53,46 @@ references rather than reading every document mentioning the language.
   checks, lints, deterministic artifacts, and structured dependency graphs.
   Source spelling and file placement are review aids, not acceptance gates.
 
-## Work and completion
+## Real boundaries, not routine approval gates
 
-Derive completion from the requested outcome and full applicable contract, not
-from the first compiling subset. Complete the coherent change, affected consumer
-migration, selected validation, and change-caused fixes without stopping after a
-first implementation. Do not freeze temporary scaffolding or split one semantic
-authority merely to make a smaller cut. Stop when the requested outcome is met;
-do not add unrelated improvements.
+Ask only when a material decision cannot be resolved from available evidence
+and needs the user's intent, unavailable external facts, or an authorization
+not already granted. Respect explicit user restrictions. Preserve user changes;
+overlapping edits need intervention only when they cannot be reconciled without
+losing or choosing between the user's intentions. Dirty state alone is not a
+blocker. Do not invent approval flows for hypothetical risk.
 
-Resolve in-scope design choices from repository evidence. Do not invent an
-external contract or silently override an accepted one. When missing external
-information, conflicting authorities, permissions, or overlapping user edits
-block a decision, isolate that blocker and continue independent in-scope work.
-Record the exact unresolved decision and, when needed, a usable design request.
-Analysis-only and design-only tasks do not authorize production edits.
+When one operation is blocked, continue independent in-scope work. Name the
+specific missing fact/permission or conflicting requirement, its source, and the
+affected action; do not label a judgment call as a mandatory rule. An unavailable
+test environment limits validation claims, not all investigation or delivery.
+Never hide a failed required check or call unverified behavior complete.
 
-## Git and permissions
+## Git and delivery
 
-Git is the sole VCS authority; record full commit SHAs, not Jujutsu identities.
-Inspect current `main` and preserve user changes. Use the existing checkout;
-no new branch, worktree, checkout, or switch away from `main` without an explicit
-request for that operation. Dirty state is not permission to discard or move WIP.
-If the requested edit cannot preserve it, stop that edit and seek direction.
+Git is the sole VCS authority; record full commit SHAs. Inspect current `main`
+and work on it in the existing checkout. Do not create another branch, worktree,
+or checkout, or switch away from `main`, unless the user requests that operation.
+This is an explicit workflow choice, not an inherent danger of those operations.
+Do not discard/move unrelated WIP or use destructive Git operations without an
+explicit request for the exact operation and verified targets.
 
-Stage explicit paths/hunks and inspect the staged diff. At a validated, coherent
-cut, commit and push unless the user requested a local hold. Do not combine
-unrelated goals or publish speculative WIP. Destructive Git operations require
-an explicit request for the exact operation and verified targets.
+At a coherent cut, inspect explicit staged paths/hunks, complete the applicable
+validation, and commit/push without another approval round unless the user
+requested a local hold. A commit boundary is not a request for permission to
+continue the same goal. Do not publish speculative WIP or mix unrelated goals.
+For requested connector edits, inspect a pinned remote base and the complete
+diff, publish with a non-forced fast-forward, and reconcile a moving head rather
+than overwrite it. Do not claim to know an unobserved local working tree.
 
-For explicitly requested GitHub-connector edits, use remote `main`, inspect a
-pinned base and the complete proposed diff, and publish one coherent commit with
-a non-forced fast-forward. Recheck a moving head and reconcile changes rather
-than overwriting them. Do not claim to know an unobserved local working tree.
+Report the delivered result and actual evidence, with failures, unavailable
+checks, remaining work, and material deviations distinguished. Keep durable task
+state in `docs/implementation/`, not in instructions or stable design chapters.
 
-Report the result, validation actually performed, failed/blocked/not-run checks,
-remaining work, non-goals, and design deviations. Keep task state in
-`docs/implementation/`, not in instructions or stable specification chapters.
+## References by task
+
+- Rust/Cargo, including tools and API docs: [crates/AGENTS.md](crates/AGENTS.md).
+- Documentation: [docs/AGENTS.md](docs/AGENTS.md); [index](docs/README.md).
+- Evidence/handoffs: [implementation instructions](docs/implementation/AGENTS.md).
+- Requests/ZIPs: [review instructions](docs/reviews/AGENTS.md).
+- Instruction maintenance: [agent workflow](docs/implementation/agent-workflow.md).

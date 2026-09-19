@@ -1,30 +1,31 @@
 # Implementation evidence instructions
 
-Keep operational policies distinct from dated implementation state; neither
-silently replaces a stable language/runtime contract.
+Keep operational policy, dated implementation evidence, and stable design
+contracts distinct. Root autonomy and completion rules apply here.
 
-A new state note records its date, inspected full Git SHA, and observed local
-working-tree state. For connector-only work, say local state is unobserved and
-record the remote base instead. Identify an older replaced state note with
-`Supersedes`; retain the original as historical evidence.
+Keep a durable note when acceptance, a nontrivial design decision, package intake,
+a genuine blocker, or later continuation needs it. A small completed edit does
+not require a new ledger or status document. Reuse the current task note; do not
+create a hierarchy for each edit, checkpoint, or commit.
 
-Record performed work, passed/failed/blocked/not-run validation, relevant exact
-test counts, non-goals, design deviations, and unresolved decisions. Plans,
-nearby implementations, private substrate, and unvalidated edits are not
-completion evidence. Link any blocker request that exists; do not invent a
-request path or redesign accepted substrate without evidence.
+A state note gives its date, inspected full Git SHA, and observed working-tree
+state. For connector-only work, record the remote base and say local state is
+unobserved. Mark replaced current decisions with `Supersedes` while retaining the
+old note as historical evidence.
 
-For a handoff or compaction checkpoint, keep the current goal, accepted contract
-references, base SHA and changed paths, completed evidence, remaining acceptance
-criteria, and next action in the current task note. Update that note rather than
-creating a new status hierarchy for each small edit. Reconcile it against live
-Git state on resume; a summary is a locator, not authority.
+Record the result and actual passed/failed/blocked/not-run evidence, relevant
+counts, unresolved acceptance, and material deviations. Planned work, nearby
+implementations, and unvalidated substrate are not completion evidence. Include
+a blocker request only when one is genuinely needed; documenting a resolvable
+question does not discharge the implementation or design assignment.
 
-Use [test-execution-policy.md](test-execution-policy.md) for validation and
-[structural-audit-policy.md](structural-audit-policy.md) for triggered ownership
-reviews and generated-report placement. Record the named owner, cohesive
-responsibility, reviewed state/dependency/API/test boundaries, and decomposition
-or cohesion disposition; LOC reduction alone is not a design result.
+On continuation, reconcile the existing goal, contract references, base/changed
+paths, evidence, and next action with live Git. Resume remaining work without a
+new approval round or a blanket re-audit. Reuse valid evidence and reopen only
+what changed or is needed to resolve uncertainty.
 
-Keep progress and package ledgers here, not in instructions or stable chapters.
-When maintaining prompts or skills, use [agent-workflow.md](agent-workflow.md).
+Use [test policy](test-execution-policy.md) and
+[structural policy](structural-audit-policy.md) for their affected boundaries.
+Keep any required ownership disposition concise and tied to the changed owner;
+LOC reduction is not a design result. Instruction-maintenance details belong in
+[agent workflow](agent-workflow.md), not every task's startup context.

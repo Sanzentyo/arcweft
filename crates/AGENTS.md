@@ -2,7 +2,10 @@
 
 This is the Rust/Cargo policy for the workspace, including Rust tools, build
 scripts, tests, benches, and Rust API documentation outside `crates/`.
-Repository-wide design, Git, and completion rules live in the root instructions.
+Repository-wide autonomy, design, and Git rules live in the root instructions.
+Read every applicable Rust skill completely before Rust/Cargo work, including
+Rust-facing documentation. Full skill reading does not require loading unrelated
+reference libraries or restarting unchanged reading after each edit.
 
 ## Task-specific references
 
@@ -12,7 +15,7 @@ Repository-wide design, Git, and completion rules live in the root instructions.
   and affected syntax, HIR, sema, runtime-plan, verifier, compiler, and tooling
   consumers. A Rust-only wording fix does not require a language survey.
 - Validation selection: [test policy](../docs/implementation/test-execution-policy.md).
-- Structural changes and reviewable Rust push cuts:
+- Ownership/dependency changes or a triggered structural review:
   [structural policy](../docs/implementation/structural-audit-policy.md).
 
 ## Ownership and APIs
@@ -58,12 +61,14 @@ record that intent.
 
 ## Evidence
 
-Use the test policy once to select the cut's evidence; do not copy its command
-matrix here. Run focused tests in the edit loop and the applicable mainline,
-workspace, lint, and structural gates at the coherent cut. Ordinary local checks
-and disposable-fixture tests may be run, fixed, and rerun without per-step
-approval. Do not infer that device, external-service, or user-data tests are
-disposable; apply the selected target's actual boundary.
+Select meaningful evidence through the test policy. Ordinary local builds,
+disposable-fixture tests, and necessary dependency resolution in the existing
+development environment do not need per-step approval. Run relevant checks,
+repair change-caused failures, and finish; broaden testing for an actual affected
+boundary, failure, or unresolved concern, not merely because this is a push cut.
+Existing coverage can suffice for low-impact changes; do not add tests that only
+mirror code spelling. Device/service/user-data operations follow their actual
+authorization, not an assumption that every test is disposable.
 
 No automated source-spelling/file-placement gates, including ones requested by
 older packages. Replace them with typed behavior, codec round trips, compile-fail
@@ -71,7 +76,8 @@ or parser/compiler rejection evidence, lints, deterministic artifact comparison,
 or Cargo dependency graphs; delete checks with no observable invariant.
 One-off source inspection is a review aid, not behavior evidence or a new gate.
 
-Add focused tests for new crates and stable boundaries. Parser-family changes
+Add meaningful coverage for new crates, behavior, and stable boundaries not
+already covered. Parser-family changes
 cover success, malformed input, recovery spans, and ambiguity; use explicit
 CST/AST nodes and document grammar/recovery decisions. Snapshots/goldens are
 appropriate when the artifact itself is the contract. Structural LOC triggers
