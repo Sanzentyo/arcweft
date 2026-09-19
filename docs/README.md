@@ -4,6 +4,8 @@
 
 ## 読み方
 
+以下は全体像を知るための案内です。個別作業では対象の章と適用される指示を参照し、毎回すべてを通読する必要はありません。
+
 1. [全体アーキテクチャ](00-overview/architecture.md)
 2. [命名・拡張子・公開識別子](00-overview/naming.md)
 3. [決定事項と設計原則](00-overview/decisions.md)
@@ -75,7 +77,10 @@
 - [Owner-local events and derived values example](examples/hooks-memoization.md)
 - [USB and Virtual Controller example](examples/usb-and-virtual-controller.md)
 
+## エージェント運用
+
+プロンプト・指示の保守や作業再開の整理には [Agent workflow](implementation/agent-workflow.md)、検証範囲の選択には [Test execution policy](implementation/test-execution-policy.md)、返却 ZIP の取り込みには [Review package intake](reviews/README.md) を参照してください。これらは該当作業の参照先であり、全作業共通の必読文書ではありません。
+
 ## Documentation conventions
 
 - [Code Fence Policy](00-overview/code-fences.md)
-

@@ -1,145 +1,78 @@
 # Rust workspace instructions
 
-These instructions apply to `crates/` and are the common Rust/Cargo policy for
-the whole workspace when referenced by the root `AGENTS.md`.
+This is the Rust/Cargo policy for the workspace, including Rust tools, build
+scripts, tests, benches, and Rust API documentation outside `crates/`.
+Repository-wide design, Git, and completion rules live in the root instructions.
 
-## Required context
+## Task-specific references
 
-- Read every applicable Rust skill completely before editing Rust, Cargo,
-  build scripts, tests, benches, Rust tools, or Rust-facing documentation.
-- Before changing a dependency, feature, public boundary, facade export, or
-  cross-crate type owner, read `docs/00-overview/crate-map.md`.
-- Before changing language behavior, read the applicable maintained chapter
-  under `docs/01-language/` and reconcile syntax, HIR, sema, runtime-plan,
-  verifier, compiler, and tooling consumers that own that behavior.
-- Follow `docs/implementation/test-execution-policy.md` for validation scope
-  and `docs/implementation/structural-audit-policy.md` for structure gates.
+- Dependency, feature, public boundary, facade export, or cross-crate owner
+  changes: [crate map](../docs/00-overview/crate-map.md).
+- Language behavior: the relevant maintained chapter in `docs/01-language/`
+  and affected syntax, HIR, sema, runtime-plan, verifier, compiler, and tooling
+  consumers. A Rust-only wording fix does not require a language survey.
+- Validation selection: [test policy](../docs/implementation/test-execution-policy.md).
+- Structural changes and reviewable Rust push cuts:
+  [structural policy](../docs/implementation/structural-audit-policy.md).
 
-## Architecture and ownership
+## Ownership and APIs
 
-- Preserve `syntax -> HIR -> sema -> runtime-plan/verify -> tooling` dependency
-  direction. Use the crate map as the detailed authority rather than copying
-  each crate's responsibilities here.
-- Keep runtime/data core and data-format crates Sans I/O. Filesystem, network,
-  clocks, processes, platform storage, GPU, audio, and device access belong in
-  host or adapter crates.
-- Keep syntax parser-only. It may own lossless CST, attached/surface syntax,
-  expression/type/pattern parsing, source ranges, recovery, and syntax lints;
-  it must not own HIR lowering, semantic checks, runtime plans, or verifier
-  policy.
-- Put backend-specific dependencies behind adapter crates and feature flags.
-- Use a facade crate for broad application-facing preludes. In non-facade
-  crates, prefer responsibility modules and narrow visibility over broad root
-  re-exports.
-- Prefer `module.rs` with a same-named child directory. Do not introduce new
-  `mod.rs` files.
-- Keep public API deliberate, documented, and no wider than its consumers
-  require.
-- Select a coherent complete domain model before comparing simplicity. Treat
-  simplicity as a tie-breaker only between models that express the same full
-  domain, ownership, invariants, and consumer needs; do not minimize the type,
-  variant, module, or migration count by collapsing distinct domain roles.
-  When several special cases are projections of one rule, express the rule on
-  the owning schema or typed context and delete the special-case paths even
-  when that requires a broad producer/consumer migration.
-- Do not leave workspace-external directories that look like active crates,
-  tests, or fixtures. Remove obsolete migration scratch; retain historical
-  material under documentation only when explicitly useful.
+- Preserve `syntax -> HIR -> sema -> runtime-plan/verify -> tooling` direction;
+  the crate map owns the details. Syntax owns parsing, lossless CST, surface
+  syntax, ranges, recovery, and syntax lints, not lowering or semantic policy.
+- Runtime/data core and data formats remain Sans I/O. Filesystem, network,
+  clocks, processes, storage, GPU, audio, and devices belong to hosts/adapters.
+  Backend dependencies stay optional in adapters, out of lower-layer defaults.
+- Use a facade for broad application preludes. Elsewhere use responsibility
+  modules, narrow visibility, and deliberate documented public APIs. Prefer
+  `module.rs` plus its child directory; do not introduce `mod.rs`.
+- Use `From`/`TryFrom` for context-free conversions. Allocation, interning,
+  diagnostics, policy, and shared-state conversion belong to named owning
+  contexts. Do not add free-standing conversion helpers, extension traits, or
+  wrappers merely to avoid completing an Arcweft-owned type.
+- Keep one-use error conversions inline unless extraction names a reusable
+  domain rule or stable structured diagnostic. Use `thiserror` unless the
+  boundary requires manual implementation; preserve kinds, ranges, anchors,
+  and related evidence.
+- Typed schemas/registries express general rules. A closed enum represents its
+  exhaustive domain algebra, not a collection of builtin or nominal examples.
+  Simplicity only distinguishes equally complete models; it does not justify
+  collapsing distinct domain roles.
 
-## Deletion-driven migration
+## Migration and Cargo
 
-- Remove obsolete internal variants, types, helpers, dispatch branches, and
-  readers as soon as a coherent final replacement is ready. Let compile errors
-  enumerate the consumers that must migrate.
-- Do not leave migration counters, zero-use compatibility types, deprecated
-  aliases, V2 wrappers, optional fallbacks, or negative source-spelling tests
-  after the old production path is physically gone.
-- Do not preserve removed language syntax. A temporary spelling-specific
-  diagnostic may exist only during deletion; remove it and its exact-code test
-  before completing the cut unless released compatibility explicitly requires
-  it.
-- Do not preserve an obsolete production model merely to satisfy stale tests.
-  Update the tests and deterministic fixtures to the selected final authority.
+Delete replaced internal variants, helpers, readers, aliases, counters, and
+fallbacks, and migrate all affected consumers. Remove transitional removed-syntax
+diagnostics and exact-code tests before completing an unreleased migration.
+Update stale tests/fixtures to the final contract, not production to obsolete
+expectations. Do not leave scratch directories looking like active crates,
+tests, or fixtures; retain history only where useful under documentation.
 
-## APIs, conversions, and errors
+Centralize dependencies in root `[workspace.dependencies]`; members inherit with
+`workspace = true`. Document concrete standalone-fixture exceptions. Keep
+features stable within a validation slice; exercise extra combinations when the
+changed path warrants them. Do not set Cargo `--jobs`, `-j`, or `CARGO_BUILD_JOBS`
+for ordinary builds/checks/lints or a single test command. An explicit count is
+allowed only to coordinate intentionally parallel independent test commands;
+record that intent.
 
-- Prefer typed APIs over strings and sentinels.
-- For context-free conversions, prefer `From` or `TryFrom`. Put domain behavior
-  on the owning type, and put allocation, interning, diagnostics, policy, or
-  shared-state conversion on a named lowering/inventory/verifier/adapter
-  context.
-- Do not create a free-standing `{source}_to_{target}` helper, an extension
-  trait, or a wrapper merely to avoid completing the owning type.
-- Keep a one-use `map_err`, `ok_or_else`, `match`, or small error conversion
-  inline. Extract a helper only when it names a real reusable domain rule or
-  centralizes stable structured diagnostics.
-- Use `thiserror` for workspace error types unless a concrete boundary requires
-  a manual implementation. Preserve structured kinds, ranges, anchors, and
-  related evidence.
-- Do not hard-code one builtin, enum variant, or nominal name when shared
-  grammar or a typed registry can express the rule.
-- Do not use a closed enum as a bag of examples. Its variants must form the
-  exhaustive domain algebra owned at that layer; otherwise move the behavior
-  into the schema, registry, or typed policy that actually distinguishes the
-  cases.
+## Evidence
 
-## Cargo and modules
+Use the test policy once to select the cut's evidence; do not copy its command
+matrix here. Run focused tests in the edit loop and the applicable mainline,
+workspace, lint, and structural gates at the coherent cut. Ordinary local checks
+and disposable-fixture tests may be run, fixed, and rerun without per-step
+approval. Do not infer that device, external-service, or user-data tests are
+disposable; apply the selected target's actual boundary.
 
-- Centralize workspace dependency locations in root `[workspace.dependencies]`.
-  Member manifests inherit workspace crates with `workspace = true`; document
-  any concrete exception for an excluded standalone fixture.
-- Keep feature combinations stable during a validation slice. Use an extra
-  feature combination only when it directly exercises the changed path and
-  record why.
-- Keep backend dependencies optional and out of lower-level default features.
-- Add focused tests for each new crate or stable subsystem boundary.
-- Use deterministic snapshot/golden tests only when the artifact itself is the
-  contract.
+No automated source-spelling/file-placement gates, including ones requested by
+older packages. Replace them with typed behavior, codec round trips, compile-fail
+or parser/compiler rejection evidence, lints, deterministic artifact comparison,
+or Cargo dependency graphs; delete checks with no observable invariant.
+One-off source inspection is a review aid, not behavior evidence or a new gate.
 
-## Validation evidence
-
-- Do not add source gates: automated checks must not pass or fail by searching
-  checked-in implementation or documentation for symbol spellings, snippets,
-  module paths, or file placement.
-- Replace an existing source gate with typed behavior, codec round trips,
-  compile-fail evidence, parser/compiler rejection, lints, generated-artifact
-  comparison, or a structured Cargo dependency graph. Delete a gate without
-  replacement when it protects no observable invariant.
-- One-off source inspection during review is allowed; it is not acceptance
-  evidence and must not become a test or structural-audit rule.
-- This source-gate prohibition supersedes older requests and implementation
-  notes that prescribe source spelling as acceptance evidence.
-- Use focused changed-crate checks and exact tests during the tight loop. At a
-  reviewable Rust cut, run the applicable workspace check, Clippy, workspace
-  test, Tier 2, and structural gates selected by the test policy.
-- Run `cargo fmt` for changed Rust. Use
-  `cargo clippy --workspace --all-targets --all-features` when the selected cut
-  calls for the workspace lint gate.
-- Record every command actually run, its result, and deliberately skipped slow
-  tiers. Planned validation is not completed evidence.
-
-## Structure
-
-- Treat ownership and decomposition as part of correctness. Compilation alone
-  is insufficient for dependency, public-contract, manual-projection, or
-  cross-layer changes.
-- Run the canonical audit at the triggers defined in
-  `docs/implementation/structural-audit-policy.md`:
-
-```bash
-cargo +nightly -Zscript tools/structure-audit.rs --root .
-```
-
-- Do not split cohesive algorithms solely to meet a numeric target. Above an
-  upper LOC review trigger, name the owner and responsibility and record either
-  a decomposition action based on real boundaries or an explicit cohesion
-  justification; LOC alone is not a structural failure.
-
-## Parser changes
-
-- Treat maintained grammar documentation as the language authority. Prefer
-  explicit CST/AST nodes, structured recovery, and source spans over strings.
-- Cover complete syntax families with success, malformed, recovery-span, and
-  ambiguity tests.
-- Document public parser/AST APIs concisely. Comments should explain grammar,
-  ambiguity, and recovery decisions rather than restating control flow.
+Add focused tests for new crates and stable boundaries. Parser-family changes
+cover success, malformed input, recovery spans, and ambiguity; use explicit
+CST/AST nodes and document grammar/recovery decisions. Snapshots/goldens are
+appropriate when the artifact itself is the contract. Structural LOC triggers
+require ownership review, not arbitrary splitting of cohesive algorithms.

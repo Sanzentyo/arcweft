@@ -1,138 +1,85 @@
 # AGENTS.md — Arcweft Engine
 
-## Start here
-
 Arcweft is a layered, verified, agent-native narrative engine written in Rust.
-Arcweft source files use the `.arcw` extension.
+Arcweft source files use `.arcw`.
 
-- Work from the latest accepted `main` and inspect the current Git state before
-  changing files.
-- Read `docs/README.md` and every more-specific `AGENTS.md` that applies to the
-  paths being changed. Deeper instructions add to or override this file within
-  their directory scope.
-- Before changing Rust, Cargo manifests, build scripts, Rust tests, benches,
-  Rust tools, or Rust-facing documentation, read every applicable Rust skill
-  completely and follow it.
-- Treat current source, maintained stable documentation, and accepted design
-  contracts as evidence. Conversation summaries and filenames are not
-  implementation authority.
+## Task context
 
-## Repository-wide invariants
+Use current source, maintained specifications, and accepted contracts as
+evidence; a conversation summary or filename is not implementation authority.
+Read the scoped `AGENTS.md` files for paths being changed. Load other documents
+and task-matching skills only as needed; follow their routers to relevant
+references rather than reading every document mentioning the language.
 
-- Preserve the documented layer direction. Lower layers must not depend on
-  higher layers, and Sans-I/O crates must remain Sans I/O.
-- Prefer one final typed authority. Do not add parallel models, dual readers,
-  fallback resolvers, source-string reconstruction, or copied side tables.
-- Select the coherent final architecture from domain ownership, layer
-  direction, invariants, and complete consumer needs. Do not use minimum patch
-  size, minimum type count, minimum migration, implementation cost, or
-  short-term speed as an architecture-selection criterion. A small change is
-  acceptable only as a consequence of already selecting the complete final
-  authority; it must not leave an ad hoc exception, deferred ownership
-  decision, or foreseeable replacement path.
-- When one defect exposes a missing general boundary, repair that boundary and
-  migrate all affected producers and consumers. Do not accumulate
-  case-specific flags, enum variants, helper branches, or validation rules for
-  examples that belong to one typed schema, algebra, registry, state machine,
-  or sealed evidence model.
-- Replace unreleased internal contracts directly with the selected final
-  model. Compatibility requires evidence of a released artifact, persisted
-  user data, an external consumer, or an explicit user requirement.
-- Use deletion-driven migration: remove obsolete types, variants, functions,
-  helpers, and success branches once their final replacement is available, then
-  fix every exposed consumer. Do not repair an old path that is scheduled for
-  deletion.
-- When an Arcweft-owned enum or boundary type lacks domain behavior, add that
-  behavior to the owning type or its legitimate context when dependency
-  direction permits. Avoid scattered match helpers, extension traits, and
-  stringly wrappers.
-- Represent language and runtime rules generically through typed grammar,
-  registries, schemas, and identities. Do not hard-code one spelling or one
-  nominal type when the rule is general.
-- Validate through typed APIs, executable behavior, codecs, compile checks,
-  lints, deterministic generated artifacts, and structured dependency graphs.
-  Source spelling and file placement are review aids, not acceptance evidence.
-- Do not pass Cargo an explicit job count (`--jobs`, `-j`, or
-  `CARGO_BUILD_JOBS`) for ordinary builds, checks, lints, or a single test
-  command. Let Cargo select its normal concurrency. An explicit count is
-  permitted only when intentionally coordinating independent test commands in
-  parallel, and that parallel intent must be stated in the validation record.
-- Prefer deterministic runtime and build behavior.
-- Keep every Arcweft-owned version marker fixed at `1`. This includes schema,
-  codec, wire, protocol, ABI, save, snapshot, cache, digest-domain,
-  generated-source, and equivalent contract versions. Evolve unreleased
-  shapes in place: do not bump a version, add `V2`/`V3` types or domains,
-  retain an old reader/writer, or treat the replaced shape as a legacy format.
-  When an active cut touches an existing non-`1` marker, reconcile that
-  boundary to `1` instead of incrementing it. A compatibility exception
-  requires explicit user direction backed by a released artifact, persisted
-  user data, or a known external consumer.
-- Do not use `unsafe` unless it is isolated behind a clearly named boundary
-  with a documented invariant.
-- Preserve user changes. Do not reset, discard, overwrite, or broadly move a
-  dirty working tree to make an unrelated task easier.
+- Rust/Cargo, including Rust tools and API documentation outside `crates/`:
+  [crates/AGENTS.md](crates/AGENTS.md).
+- Documentation: [docs/AGENTS.md](docs/AGENTS.md).
+- Implementation state: [docs/implementation/AGENTS.md](docs/implementation/AGENTS.md).
+- Requests or returned packages: [docs/reviews/AGENTS.md](docs/reviews/AGENTS.md).
+- Document discovery: [docs/README.md](docs/README.md), an index, not a reading list.
+- Prompt/instruction maintenance or a difficult handoff:
+  [agent-workflow.md](docs/implementation/agent-workflow.md).
 
-## Git-only workflow
+## Design invariants
 
-Git is the sole version-control authority for this repository.
+- Preserve layer direction and Sans-I/O boundaries. Select the complete domain
+  model from ownership, invariants, and all affected consumer needs, not minimum
+  patch size, type count, migration cost, or short-term speed.
+- Keep one final typed authority. Put behavior on its owning type or legitimate
+  context; express general rules through typed grammar, schemas, registries,
+  identities, or state machines. Repair the general boundary and migrate all
+  affected producers/consumers, rather than adding example-specific exceptions,
+  parallel models, copied side tables, fallback resolvers, or source reconstruction.
+- Replace unreleased internal contracts directly and delete obsolete paths when
+  their final replacement is available. Do not repair a path slated for deletion
+  or retain dual readers. Compatibility needs a released artifact, persisted user
+  data, a known external consumer, or an explicit user requirement.
+- Keep every Arcweft-owned contract version marker at `1`, including schemas,
+  codecs, wire/protocol/ABI, saves, snapshots, caches, digest domains, and generated
+  source. Evolve shapes in place; no `V2`/`V3` types/domains or legacy readers.
+  Reconcile a touched non-`1` marker to `1`. A compatibility exception needs
+  explicit user direction backed by released artifacts, user data, or an external
+  consumer.
+- Prefer deterministic runtime/build behavior. Isolate any `unsafe` behind a
+  named boundary with a documented invariant.
+- Establish behavior through typed APIs, executable tests, codecs, compile
+  checks, lints, deterministic artifacts, and structured dependency graphs.
+  Source spelling and file placement are review aids, not acceptance gates.
 
-- Use `git status`, `git diff`, `git log`, `git show`, and related Git commands.
-  Do not use Jujutsu, record Jujutsu change IDs, or require matching Git and
-  Jujutsu identities. Repository evidence uses the full Git commit SHA.
-- Work only in the existing repository checkout on `main`. Stage explicit
-  paths or hunks and inspect `git diff --cached` before commit.
-- Do not create an additional Git worktree, workspace checkout, task branch,
-  or other branch, and do not switch away from `main`, unless the user
-  explicitly requests that exact operation. Independent, parallel, risky, or
-  long-running work and protected WIP do not by themselves authorize a
-  worktree or branch.
-- If existing dirty state cannot be preserved while working directly on
-  `main`, stop and ask the user for direction instead of creating a worktree or
-  branch.
-- Do not push speculative WIP refs. Do not mix unrelated goals in one commit or
-  carry an independently completed policy, request, or implementation cut into
-  the next goal.
-- At a reviewable cut point, validate, commit, and push autonomously unless the
-  user explicitly asks to hold changes locally. A cut is a coherent result, not
-  every edit and not a bag of unrelated work.
-- Never use destructive Git operations such as `git reset --hard` or forced
-  checkout to dispose of changes unless the user explicitly requests that exact
-  operation and the targets have been verified.
+## Work and completion
 
-## Scope and completion
+Derive completion from the requested outcome and full applicable contract, not
+from the first compiling subset. Complete the coherent change, affected consumer
+migration, selected validation, and change-caused fixes without stopping after a
+first implementation. Do not freeze temporary scaffolding or split one semantic
+authority merely to make a smaller cut. Stop when the requested outcome is met;
+do not add unrelated improvements.
 
-- For package- or brief-driven work, derive acceptance criteria from the full
-  source package and compare them with current implementation evidence. Do not
-  redefine completion around the easiest implemented subset.
-- If a required boundary remains underdesigned, do not guess it. Record the
-  exact non-goal or blocker in `docs/implementation/` and create an independently
-  throwable request under `docs/reviews/requests/` when design work is needed.
-- Do not define a subcut around the smallest compilable subset when that would
-  freeze temporary scaffolding or split one semantic authority across cuts.
-  Cut boundaries must remain reviewable, but architecture and acceptance are
-  determined by the complete final model.
-- Keep transient progress and task-specific checklists out of this file and out
-  of stable design chapters.
-- Do not hide failures. Distinguish passed, failed, blocked, and not-run
-  validation.
+Resolve in-scope design choices from repository evidence. Do not invent an
+external contract or silently override an accepted one. When missing external
+information, conflicting authorities, permissions, or overlapping user edits
+block a decision, isolate that blocker and continue independent in-scope work.
+Record the exact unresolved decision and, when needed, a usable design request.
+Analysis-only and design-only tasks do not authorize production edits.
 
-## Scoped instructions
+## Git and permissions
 
-- Rust, Cargo, tests, benches, and workspace structure: `crates/AGENTS.md`.
-  Treat it as the workspace Rust policy even for applicable Rust files outside
-  `crates/`.
-- Documentation authority and stable design: `docs/AGENTS.md`.
-- Current implementation evidence and validation records:
-  `docs/implementation/AGENTS.md`.
-- Review requests, returned ZIPs, and package intake:
-  `docs/reviews/AGENTS.md`.
+Git is the sole VCS authority; record full commit SHAs, not Jujutsu identities.
+Inspect current `main` and preserve user changes. Use the existing checkout;
+no new branch, worktree, checkout, or switch away from `main` without an explicit
+request for that operation. Dirty state is not permission to discard or move WIP.
+If the requested edit cannot preserve it, stop that edit and seek direction.
 
-## Final report
+Stage explicit paths/hunks and inspect the staged diff. At a validated, coherent
+cut, commit and push unless the user requested a local hold. Do not combine
+unrelated goals or publish speculative WIP. Destructive Git operations require
+an explicit request for the exact operation and verified targets.
 
-Report only what the current task established:
+For explicitly requested GitHub-connector edits, use remote `main`, inspect a
+pinned base and the complete proposed diff, and publish one coherent commit with
+a non-forced fast-forward. Recheck a moving head and reconcile changes rather
+than overwriting them. Do not claim to know an unobserved local working tree.
 
-- changed files or inspected scope;
-- validation actually run and its result;
-- failures, blocked validation, and intentionally skipped tiers;
-- remaining work and explicit non-goals; and
-- design deviations, if any.
+Report the result, validation actually performed, failed/blocked/not-run checks,
+remaining work, non-goals, and design deviations. Keep task state in
+`docs/implementation/`, not in instructions or stable specification chapters.

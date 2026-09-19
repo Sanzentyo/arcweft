@@ -17,6 +17,26 @@ command inventory are retained under `test-profiling/`.
 - Do not preserve obsolete production behavior to satisfy a stale test. Update
   expectations and deterministic fixtures to the selected final contract.
 
+Ordinary local checks and tests with disposable fixtures may be executed and
+change-caused failures fixed without asking at each step. This is not permission
+for production access, user-data changes, device access, external-service writes,
+or system-wide installation/privilege changes. Inspect those targets' actual needs.
+
+## Reusing evidence within a cut
+
+Select required gates from the changed behavior and the rules below. An already
+passed invocation can satisfy overlapping edit/review/push requirements when its
+relevant source, tests/fixtures, manifests/lockfile, feature/target selection,
+toolchain, and environment are unchanged. Record the original command/result and
+revision or patch identity; do not relabel it as a new run. A compaction or a
+commit of identical tested bytes alone does not invalidate the result.
+
+Rerun affected checks after relevant inputs change, when evidence is missing,
+when a result is flaky, or when integration with newer `main` can affect it.
+A failed or not-run command never satisfies a gate. Reuse does not waive the
+workspace, Tier 2, or structural triggers below. Do not invoke an aggregate and
+all its constituent commands again just to repeat the same evidence.
+
 The workspace `test` profile keeps line-table debug information for backtraces.
 This reduces test artifact size and compiler memory pressure without changing
 optimization, debug assertions, overflow checks, or Cargo's normal concurrency.
@@ -46,8 +66,8 @@ At a coherent Rust cut, run:
 2. `cargo check --workspace --all-targets --all-features` when the cut crosses
    crates or public contracts;
 3. `cargo clippy --workspace --all-targets --all-features` when feasible;
-4. `just structure-audit` when required by `structural-audit-policy.md`, plus
-   `just structure-audit-gate` before accepting a structure-gated cut; and
+4. `just structure-audit-gate` when required by `structural-audit-policy.md`;
+   it also performs screening, so a separate identical screening is unnecessary; and
 5. the matching runtime/render/Agent/MCP/capture tier described below.
 
 Use `cargo fmt` for changed Rust. Use `just verify` when the cut is broad enough
@@ -91,3 +111,9 @@ For instruction, request, or stable-documentation-only changes, validate links,
 formatting, repository status, `git diff --check`, and any schema/example
 consistency directly affected by the edit. Rust workspace tests and Tier 2 are
 not required unless the documentation change accompanies Rust behavior.
+
+For connector-only documentation edits, validate the pinned before/after content
+and changed links, check whitespace on that diff, and verify the published
+commit's paths/blob identities and non-forced ref update. Report that these were
+connector/scratch-content checks, not validation in a local repository checkout.
+Do not claim local dirty/clean state or runtime tests that were not observed.

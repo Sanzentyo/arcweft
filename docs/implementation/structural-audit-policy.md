@@ -101,7 +101,11 @@ just structure-audit-gate
 
 The first command performs non-writing screening. The second additionally exits
 nonzero when a typed blocking violation exists. LOC review triggers remain
-visible in both commands without becoming numeric gates.
+visible in both commands without becoming numeric gates. These are alternative
+entry points, not a mandatory two-command sequence: use the gate for acceptance;
+it includes screening. Reuse unchanged evidence as described in
+[test-execution-policy.md](test-execution-policy.md). Audit triggers, ownership
+review dispositions, and blocking criteria above are unchanged by this reuse.
 
 Use `--write docs/implementation/structure-audits/<task>` when retained report
 files materially support the cut. Retained output includes file owner and

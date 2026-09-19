@@ -1,77 +1,46 @@
-# Review request and package instructions
+# Review requests and packages
 
-Read `docs/reviews/README.md` before handling a request or returned archive.
-These rules apply to `requests/`, `packages/`, `designs/`, and ZIPs dropped into
-the review inbox.
+For ZIP intake, integrity checks, extraction, and storage, use
+[README.md](README.md). A request-only wording edit does not trigger archive
+intake. Root Git/permission rules and documentation authority still apply.
 
-## Repository evidence
+## Scope and evidence
 
-- Git is the only version-control authority. Record the full inspected Git
-  commit SHA and dirty/clean state; do not request or record a Jujutsu change
-  ID. This Git-only rule supersedes older request text that asks for matching
-  Git/Jujutsu identities.
-- Read the complete current request, its primary and parent requests, the intake
-  note, every selected predecessor, and every maintained production consumer
-  named by them. A filename, sequence label, or `FINAL` suffix is not evidence.
-- Current production and maintained documentation may reveal that an old
-  package expression is superseded. Do not force production back to it without
-  a concrete flaw in the current authority.
+Read the complete active request and applicable contract/package, plus its
+current intake decision. Follow primary/parent/predecessor references that supply
+inherited acceptance criteria, precedence, or a decision affecting this task;
+include those requirements in the acceptance map. Inspect all affected production
+consumers, not every unrelated consumer ever named in the sequence. If an
+inheritance boundary is unclear, resolve it rather than silently dropping scope.
 
-## ZIP intake
+Use current repository evidence; a filename, sequence number, or `FINAL` suffix
+is not readiness evidence. Do not restore a superseded package expression or
+redesign accepted, validated substrate without a concrete repository-evidenced
+flaw. Use full Git SHAs, not Jujutsu identities, even if an old request asks for
+both. Distinguish observed local state from connector-only remote evidence.
 
-- Treat a directly attached ZIP or an unclassified ZIP under `docs/reviews/`
-  as intake. Enumerate review ZIPs again when resuming package work and at each
-  reviewable push cut.
-- Verify SHA-256, byte length, member set, internal manifest, member hashes,
-  request copies, `FINAL_STATUS`, `OPEN_QUESTIONS`, schemas, matrices,
-  traceability, and repository evidence before adjudicating readiness.
-- Keep every sidecar inside the returned ZIP. Do not require adjacent summary,
-  status, hash, or manifest files.
-- Keep throwable Markdown requests in `requests/`, retained source archives in
-  `packages/zips/`, their searchable extracted contents in
-  `packages/<zip-basename>/`, and reusable accepted material in a
-  sequence-named `designs/` directory. Within each design directory, retain
-  source archives in `zips/` and place their searchable extracted contents in
-  that same design directory after safe collision checking.
-- Treat extracted package and design files as frozen mirrors of their retained
-  ZIP members. Historical request copies, ledgers, and other returned evidence
-  may therefore preserve paths that were current when the ZIP was produced;
-  update maintained navigation instead of rewriting those mirrored files.
-- Record an external archive's verified path and hash in its implementation
-  intake note when copying the binary into Git is not useful.
+## Completion boundaries
 
-## Readiness and design-only work
+Design-only work must not edit production code, tests, fixtures, manifests,
+branches, patches, PRs, or implementation overlays. Complete the requested design
+and artifact; implementation requires an implementation assignment.
 
-- A design-only assignment must not edit production code, tests, fixtures,
-  manifests, branches, patches, PRs, or implementation overlays.
-- Use `READY_FOR_IMPLEMENTATION` only when every result-changing decision is
-  closed and `OPEN_QUESTIONS.md` is exactly `none` as required by the request.
-- Do not return `NOT_READY` merely because repository investigation is large.
-  Continue the same assignment and close every decision current Git evidence
-  can resolve. Reserve `NOT_READY` for a genuinely external unresolved
-  authority and identify it exactly.
-- A broad sequence request is not implementation-ready design by itself. Split
-  underdesigned topics into follow-up requests only after identifying their
-  final authority boundaries. Topics that can change one another's production
-  result must be designed and adjudicated together even when that produces a
-  larger request; do not make an easiest subset implementation-ready by
-  excluding a mutually constraining decision.
-- Do not introduce compatibility aliases, wrappers, dual readers, migration
-  maps, source-string reparsing, source gates, removed-syntax diagnostics, or
-  implementation overlays for unreleased contracts.
+For readiness adjudication, close every result-changing decision and satisfy the
+request's complete evidence contract. Use `READY_FOR_IMPLEMENTATION` only with
+those decisions closed and `OPEN_QUESTIONS.md` exactly `none` when required.
+Large investigation is not a `NOT_READY` reason: resolve what current evidence
+can decide, and name genuinely external unresolved authority precisely.
+
+Do not split mutually constraining decisions into an easy subset or introduce
+compatibility wrappers, dual readers, reparsing, source gates, or removed-syntax
+diagnostics for unreleased contracts. Preserve archive/extracted mirror bytes;
+edit maintained navigation and intake decisions, not returned historical evidence.
 
 ## Follow-up requests
 
-- Do not give the user a throwable request name until its independently usable
-  Markdown file exists in `requests/`. Always provide the repository path.
-- Preserve the parent sequence when assigning a child number. Include the split
-  reason, exact decisions required, precedence, non-goals, consumer inventory,
-  implementation order, required tests, constraints, and exact output archive.
-- Group topics whenever they share one result-changing authority or must be
-  designed together to avoid incompatible contracts. Split only after proving
-  semantic independence; request size and implementation convenience do not
-  justify separating mutually constraining decisions.
-- State that accepted and validated substrate must not be redesigned without a
-  concrete repository-evidenced flaw.
-- Link every blocker request from the relevant implementation intake or status
-  note.
+Create an independently usable Markdown file in `requests/` before presenting
+its name; provide its repository path and link it from the relevant intake or
+state note. Preserve the parent sequence and include the split reason, exact
+decisions, precedence, non-goals, affected consumers, implementation order, tests,
+constraints, and output archive. Split only semantically independent topics;
+request size or implementation convenience is not sufficient.

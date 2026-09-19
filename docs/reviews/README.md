@@ -24,21 +24,40 @@ for them. Returned sidecars belong inside the ZIP rather than beside it.
 
 ## Intake procedure
 
-At task start and at every reviewable push cut point:
+Apply intake when the task concerns a returned ZIP, package readiness, or
+package-driven implementation. It is not a prerequisite for unrelated code,
+documentation, or instruction edits.
 
-1. enumerate `docs/reviews/**/*.zip`, including the inbox root and
-   `packages/zips/`;
-2. compute each archive's SHA-256 and compare it with
-   `docs/implementation/*reviews-zip-intake*.md` and package-specific intake
-   notes;
-3. inspect the archive's request, final contract, manifest, implementation
-   status, validation evidence, and explicit non-goals;
-4. classify it as implementation-ready, active, blocked by a named request,
-   superseded/duplicate, or invalid as delivered;
-5. move an inspected inbox ZIP unchanged to `docs/reviews/packages/zips/`,
-   safely extract its contents to
-   `docs/reviews/packages/<zip-basename>/`, and record its hash, state,
-   dependencies, and next action in the intake ledger.
+At the start/resume and reviewable push cut of package work, check the review
+inbox and archive paths changed since the last recorded intake revision. On the
+first intake, or without a trustworthy baseline, enumerate the review archive
+inventory once. Include repository-root ZIPs and active attachments. Use the
+ledger and immutable Git blob identities to locate new, changed, unclassified,
+and task-selected packages; do not rehash/reopen every unchanged historical ZIP.
+Dirty, untracked, attached, or externally stored bytes are not proven unchanged
+by a filename, timestamp, or committed blob identity: hash those bytes before use.
+
+For each package requiring intake:
+
+1. Compute SHA-256 and byte length; compare with the relevant intake record.
+   Inspect member paths before extraction; reject traversal, absolute/escaping
+   paths, unsafe links, and colliding destinations without overwriting user files.
+2. Verify the member set, internal manifest and member hashes, request copies,
+   `FINAL_STATUS`, `OPEN_QUESTIONS`, schemas, matrices, traceability, repository
+   evidence, validation claims, and non-goals required by its request.
+3. Classify as implementation-ready, active, blocked by a named request,
+   superseded/duplicate, or invalid as delivered. Integrity alone does not prove
+   readiness: reconcile the complete applicable contract with current consumers.
+4. Retain an inspected inbox ZIP unchanged in `packages/zips/` when repository
+   retention is intentional, safely extract to `packages/<zip-basename>/`, and
+   record the archive hash, Git blob identity when available, inspected revision,
+   classification, dependencies, and next action in the package intake note.
+
+A prior integrity check can be reused only for the same verified bytes; a prior
+readiness decision also needs unchanged applicable contracts and consumer
+assumptions. Re-evaluate affected readiness when those change, even if the ZIP
+bytes do not. Missing identity/evidence means verify again, not assume success.
+Do not move, extract, or reclassify unrelated historical packages as side work.
 
 The archive filename is not evidence that a package is final or implementable.
 One ZIP may have at most one implementation worker. Independent design

@@ -1,51 +1,33 @@
 # Documentation instructions
 
-Read `docs/README.md` before changing documentation. Keep each kind of document
-in its authority layer.
+Use [README.md](README.md) to locate an unfamiliar authority; a local edit does
+not require reading the whole index or unrelated chapters.
 
-## Authority
+## Authority and placement
 
-- `00-overview/` through `05-build-and-security/` are maintained stable design
-  and specification chapters.
-- `schemas/` owns wire, manifest, bytecode, bundle, save, trace, and other
-  serialized contract documentation.
-- `examples/` illustrates maintained behavior but does not override a stable
-  specification or production typed API.
-- `implementation/` records dated implementation state, validation evidence,
-  non-goals, blockers, and handoff details.
-- `reviews/` owns independently throwable requests, returned packages, intake
-  decisions, and retained design material.
-- Historical implementation notes and requests are evidence of their time;
-  they do not outrank current production, maintained stable documentation, or a
-  later accepted contract.
+- `00-overview/` through `05-build-and-security/`: maintained design/specification.
+- `schemas/`: serialized contracts; `examples/`: illustrations, not overriding
+  specifications or typed production APIs.
+- `implementation/`: operational policies, dated state, validation, and handoffs.
+- `reviews/`: requests, returned packages, intake decisions, and retained design.
 
-## Editing rules
+Historical notes and requests do not outrank current production, maintained
+specifications, or later accepted contracts. Preserve frozen package mirrors and
+historical evidence, including old paths and VCS identities. Correct actual
+historical errors explicitly rather than silently modernizing the record.
 
-- Put transient progress only in `implementation/`. Do not add completion
-  percentages, current task lists, local change IDs, or temporary blockers to
-  stable design chapters.
-- Update stable chapters when the selected design itself changes. Record the
-  concrete implementation and validation state separately.
-- Distinguish performed, passed, failed, blocked, and not-run work. Never write
-  a planned command as completed evidence.
-- Use full Git commit SHAs for repository revisions. Current documentation must
-  not require Jujutsu identities. Leave old Jujutsu references in historical
-  notes unchanged unless correcting a factual error in that historical record.
-- When renaming or moving a maintained document, update every maintained link
-  in the same cut. Do not preserve the old path as a compatibility duplicate.
-- Keep normative schemas and examples synchronized when the schema changes.
-- Do not use documentation source scans as automated acceptance gates.
+Update the stable chapter when design changes and record implementation evidence
+separately. Keep progress, task ordering, percentages, and temporary blockers out
+of stable chapters and `AGENTS.md`. Synchronize affected normative schemas and
+examples. On a move/rename, update maintained links in the same cut, without a
+compatibility duplicate.
 
-## Formatting
+Prefer links to an existing authority over copied rules and command tables.
+Use `arcw`, `rust`, `json`, `toml`, `bash`, and `text` fence labels for the
+respective languages, commands, and plain inventories/diagrams.
 
-Use these code-fence labels consistently:
-
-- Arcweft DSL: `arcw`
-- Rust: `rust`
-- JSON: `json`
-- TOML: `toml`
-- shell commands: `bash`
-- plain diagrams and inventories: `text`
-
-Prefer links to existing detailed authorities over copying long command,
-threshold, crate-map, or package-workflow tables into multiple documents.
+For docs-only validation use the corresponding section of
+[test-execution-policy.md](implementation/test-execution-policy.md), not the
+Rust workspace gate. Do not turn documentation/source scans into behavioral
+acceptance tests. Instruction edits must preserve domain constraints and exact
+permission boundaries; shortening is not itself evidence of better behavior.
