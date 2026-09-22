@@ -195,6 +195,9 @@ the registry's one-item Tuple wrapper. Option and Result also require that
 Tuple's child reference to match the corresponding declared type argument.
 Invalid definitions reject the candidate batch before publication; finite
 checked predicates are projected from these admitted rows.
+AWBC table verification and checked-type projection apply the same registry
+rules before consuming payloads. Optional field and callable consumers resolve
+the payload's item through the owning program, including the Tuple container.
 
 `AwbcConstant` stores exact value bits: signed/unsigned integers use 16-byte
 little-endian payloads plus width kind; floats use IEEE bit patterns; aggregate

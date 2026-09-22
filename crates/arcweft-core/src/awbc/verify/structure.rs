@@ -11,7 +11,7 @@ use crate::awbc::schema::{
     AwbcFunctionKind, AwbcLineTaskNode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRoute,
     AwbcRouteBindingSource, AwbcRouteSegment, AwbcRuntimeType, AwbcRuntimeTypeShape,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
-    AwbcTypeId, AwbcVariantIdentity,
+    AwbcTypeId,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles};
@@ -105,6 +105,13 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
     let mut semantic_identities = BTreeSet::new();
     for (index, ty) in program.runtime_types.iter().enumerate() {
         let at = format!("runtime type {index}");
+        let type_id =
+            AwbcTypeId(
+                u32::try_from(index).map_err(|_| AwbcVerifyError::InvalidInvariant {
+                    at: at.clone(),
+                    message: "runtime type index exceeds u32".to_owned(),
+                })?,
+            );
         if !semantic_identities.insert(ty.semantic_identity()) {
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
@@ -171,31 +178,12 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 arguments,
                 cases,
             } => {
-                if let AwbcVariantIdentity::Nominal { public_id, .. } = owner {
-                    check_string(program, *public_id, &at)?;
-                }
-                for argument in arguments {
-                    check_index(
-                        program.runtime_types.len(),
-                        argument.0,
-                        "runtime_types",
-                        &at,
-                    )?;
-                }
-                let mut names = BTreeSet::new();
-                for case in cases {
-                    check_string(program, case.name, &at)?;
-                    if let Some(payload) = case.payload {
-                        check_index(program.runtime_types.len(), payload.0, "runtime_types", &at)?;
-                    }
-                    if !names.insert(case.name) {
-                        return Err(AwbcVerifyError::InvalidInvariant {
-                            at: at.clone(),
-                            message: "variant type contains duplicate case names".to_owned(),
-                        });
-                    }
-                }
-                verify_builtin_variant_schema(program, owner, arguments, cases, &at)?;
+                program
+                    .validate_variant_fields(type_id, owner, arguments, cases)
+                    .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: error.to_string(),
+                    })?;
             }
             AwbcRuntimeTypeShape::Choice(alternatives) => {
                 for alternative in alternatives {
@@ -585,34 +573,6 @@ fn verify_constant_graph_from(
     }
     visiting.remove(&id);
     complete.insert(id);
-    Ok(())
-}
-
-fn verify_builtin_variant_schema(
-    program: &AwbcProgram,
-    owner: &AwbcVariantIdentity,
-    arguments: &[AwbcTypeId],
-    cases: &[crate::awbc::schema::AwbcVariantCase],
-    at: &str,
-) -> Result<(), AwbcVerifyError> {
-    let valid = match owner {
-        AwbcVariantIdentity::Nominal { .. } => true,
-        AwbcVariantIdentity::Builtin(owner) => {
-            arguments.is_empty()
-                && cases.len() == owner.cases().len()
-                && cases.iter().zip(owner.cases()).all(|(case, expected)| {
-                    program.strings.get(case.name.index()).map(String::as_str)
-                        == Some(expected.name())
-                        && case.payload.is_some() == expected.has_payload()
-                })
-        }
-    };
-    if !valid {
-        return Err(AwbcVerifyError::InvalidInvariant {
-            at: at.to_owned(),
-            message: "builtin variant owner has a non-canonical case schema".to_owned(),
-        });
-    }
     Ok(())
 }
 

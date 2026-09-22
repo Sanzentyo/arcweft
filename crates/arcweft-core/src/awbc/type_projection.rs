@@ -1,5 +1,7 @@
 //! Projection from verified AWBC type rows to native runtime owners.
 
+mod variant;
+
 use super::schema::{
     AwbcAgentTypeShape, AwbcProgram, AwbcRecordField, AwbcRuntimeType, AwbcRuntimeTypeShape,
     AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
@@ -46,6 +48,8 @@ pub enum AwbcTypeProjectionError {
     CheckedTypeDepth,
     #[error("AWBC built-in variant runtime type {index} has an invalid checked shape")]
     InvalidBuiltinVariant { index: u32 },
+    #[error("AWBC variant runtime type {index} has an empty or duplicate name at case {ordinal}")]
+    InvalidVariantCaseName { index: u32, ordinal: usize },
     #[error("AWBC nominal-record descriptor is invalid: {source}")]
     InvalidNominalRecordLayout {
         source: RuntimeNominalRecordLayoutError,
@@ -428,6 +432,7 @@ impl AwbcProgram {
             depth,
             visiting,
         } = projection;
+        self.validate_variant_fields(ty, owner, arguments, cases)?;
         let projected_arguments = self.checked_children(arguments, depth, visiting)?;
         let projected = cases
             .iter()

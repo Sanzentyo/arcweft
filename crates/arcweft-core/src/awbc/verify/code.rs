@@ -18,6 +18,7 @@ use crate::awbc::schema::{
     AwbcRuntimeTypeShape, AwbcSafePointKind, AwbcScopeId, AwbcSignatureId, AwbcTerminator,
     AwbcTraitReceiverMode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
+use crate::pattern::RuntimeBuiltinVariantCaseIdentity;
 use crate::plan::RuntimeAgentTypeProjection;
 use crate::value::{
     RuntimeAgentField, RuntimeAgentFieldResult, RuntimeAgentFieldValue, RuntimeAgentSignatureError,
@@ -647,21 +648,17 @@ fn apply_instruction(
                         let destination = runtime_shape(program, dst_ty);
                         let destination_matches = match label {
                             "ratio" => matches!(destination, Some(AwbcRuntimeTypeShape::F32)),
-                            "label" => matches!(
-                                destination,
-                                Some(AwbcRuntimeTypeShape::Variant {
-                                    owner: crate::awbc::schema::AwbcVariantIdentity::Builtin(
-                                        crate::pattern::RuntimeBuiltinVariantIdentity::Option
-                                    ),
-                                    cases,
-                                    ..
-                                }) if cases.first().and_then(|case| case.payload).is_some_and(|item| {
+                            "label" => program
+                                .builtin_variant_payload_item(
+                                    dst_ty,
+                                    RuntimeBuiltinVariantCaseIdentity::OptionSome,
+                                )
+                                .is_some_and(|item| {
                                     matches!(
                                         runtime_shape(program, item),
                                         Some(AwbcRuntimeTypeShape::String)
                                     )
-                                })
-                            ),
+                                }),
                             _ => false,
                         };
                         if !destination_matches {
@@ -687,26 +684,21 @@ fn apply_instruction(
                             RuntimeAgentFieldResult::Required(value) => {
                                 agent_field_value_destination_matches(program, destination, value)
                             }
-                            RuntimeAgentFieldResult::Optional(value) => match destination {
-                                Some(AwbcRuntimeTypeShape::Variant {
-                                    owner:
-                                        crate::awbc::schema::AwbcVariantIdentity::Builtin(
-                                            crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-                                        ),
-                                    cases,
-                                    ..
-                                }) => cases.first().and_then(|case| case.payload).is_some_and(
-                                    |item| {
-                                        agent_field_value_destination_matches(
-                                            program,
-                                            runtime_shape(program, item),
-                                            value,
+                            RuntimeAgentFieldResult::Optional(value) => {
+                                is_dynamic(destination)
+                                    || program
+                                        .builtin_variant_payload_item(
+                                            dst_ty,
+                                            RuntimeBuiltinVariantCaseIdentity::OptionSome,
                                         )
-                                    },
-                                ),
-                                Some(AwbcRuntimeTypeShape::Dynamic) => true,
-                                _ => false,
-                            },
+                                        .is_some_and(|item| {
+                                            agent_field_value_destination_matches(
+                                                program,
+                                                runtime_shape(program, item),
+                                                value,
+                                            )
+                                        })
+                            }
                         };
                         if !destination_matches {
                             return invalid_type(&at, "Agent field projection destination");
@@ -2314,34 +2306,6 @@ fn is_sequence_or_tuple_of(program: &AwbcProgram, ty: AwbcTypeId, item: AwbcType
     }
 }
 
-/// Returns the item type of the canonical AWBC `Option<T>` representation.
-///
-/// Builtin variant payloads use the same single-field tuple carrier as the
-/// checked runtime value (`Option::Some` stores `Tuple([T])`).  The tuple is
-/// part of the type authority; treating the payload row itself as `T` would
-/// admit a shape that cannot be materialized by the runtime value owner.
-fn project_call_option_item(program: &AwbcProgram, ty: AwbcTypeId) -> Option<AwbcTypeId> {
-    let Some(AwbcRuntimeTypeShape::Variant {
-        owner: AwbcVariantIdentity::Builtin(crate::pattern::RuntimeBuiltinVariantIdentity::Option),
-        arguments,
-        cases,
-    }) = runtime_shape(program, ty)
-    else {
-        return None;
-    };
-    if !arguments.is_empty() || cases.len() != 2 {
-        return None;
-    }
-    if cases[0].payload.is_none() || cases[1].payload.is_some() {
-        return None;
-    }
-    let payload = cases[0].payload?;
-    let Some(AwbcRuntimeTypeShape::Tuple(items)) = runtime_shape(program, payload) else {
-        return None;
-    };
-    (items.len() == 1).then_some(items[0])
-}
-
 fn verify_project_call_attached(
     verifier: &Verifier<'_, '_>,
     function: usize,
@@ -2381,7 +2345,10 @@ fn verify_project_call_attached(
         }
         AwbcProjectCallAttachedPresence::OptionalPresent
         | AwbcProjectCallAttachedPresence::OptionalOmitted => {
-            let Some(item) = project_call_option_item(program, attached.abi_ty) else {
+            let Some(item) = program.builtin_variant_payload_item(
+                attached.abi_ty,
+                RuntimeBuiltinVariantCaseIdentity::OptionSome,
+            ) else {
                 return invalid_type(at, "optional attached ABI must be the builtin Option type");
             };
             require_project_call_compatible(program, attached.abi_ty, attached.binding_ty, at)?;
@@ -2406,7 +2373,10 @@ fn verify_project_call_attached(
             }
         }
         AwbcProjectCallAttachedPresence::DefaultedPresent => {
-            let Some(item) = project_call_option_item(program, attached.abi_ty) else {
+            let Some(item) = program.builtin_variant_payload_item(
+                attached.abi_ty,
+                RuntimeBuiltinVariantCaseIdentity::OptionSome,
+            ) else {
                 return invalid_type(at, "defaulted attached ABI must be the builtin Option type");
             };
             require_project_call_compatible(program, item, attached.binding_ty, at)?;
@@ -2425,7 +2395,10 @@ fn verify_project_call_attached(
             insert_project_call_source(sources, index, call.operands.len(), at)?;
         }
         AwbcProjectCallAttachedPresence::DefaultedOmitted { default } => {
-            let Some(item) = project_call_option_item(program, attached.abi_ty) else {
+            let Some(item) = program.builtin_variant_payload_item(
+                attached.abi_ty,
+                RuntimeBuiltinVariantCaseIdentity::OptionSome,
+            ) else {
                 return invalid_type(at, "defaulted attached ABI must be the builtin Option type");
             };
             require_project_call_compatible(program, item, attached.binding_ty, at)?;

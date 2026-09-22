@@ -991,23 +991,21 @@ fn project_call_defaulted_omitted_runs_default_once_then_target() {
 #[test]
 fn project_call_rejects_flat_option_payload_in_attached_default_abi() {
     let mut program = project_call_default_program();
+    let AwbcRuntimeTypeShape::Variant {
+        owner,
+        arguments,
+        mut cases,
+    } = program.runtime_types[2].shape().clone()
+    else {
+        unreachable!()
+    };
+    cases[0].payload = Some(AwbcTypeId(0));
     program.runtime_types[2] = runtime_type(
         3,
         AwbcRuntimeTypeShape::Variant {
-            owner: AwbcVariantIdentity::Builtin(
-                crate::pattern::RuntimeBuiltinVariantIdentity::Option,
-            ),
-            arguments: Vec::new(),
-            cases: vec![
-                AwbcVariantCase {
-                    name: AwbcStringId(1),
-                    payload: Some(AwbcTypeId(0)),
-                },
-                AwbcVariantCase {
-                    name: AwbcStringId(2),
-                    payload: None,
-                },
-            ],
+            owner,
+            arguments,
+            cases,
         },
     );
     let error = program
@@ -1016,7 +1014,7 @@ fn project_call_rejects_flat_option_payload_in_attached_default_abi() {
     assert!(matches!(
         error,
         AwbcVerifyError::InvalidInvariant { message, .. }
-            if message.contains("builtin variant owner has a non-canonical case schema")
+            if message.as_str() == super::type_projection::AwbcTypeProjectionError::InvalidBuiltinVariant { index: 2 }.to_string().as_str()
     ));
 }
 
@@ -2635,19 +2633,13 @@ fn verifier_rejects_incorrect_agent_field_destination_type() {
     );
 }
 
-#[test]
-fn verifier_requires_option_destination_for_optional_agent_fields() {
+fn optional_string_field_program(owner: AwbcRuntimeTypeShape, label: &str) -> AwbcProgram {
     let mut program = minimal_program();
     program
         .strings
-        .extend(["parent_id".to_owned(), "Some".to_owned(), "None".to_owned()]);
+        .extend([label.to_owned(), "Some".to_owned(), "None".to_owned()]);
     program.runtime_types = vec![
-        runtime_type(
-            1,
-            AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
-                RuntimeAgentOperationalType::ObservedObject,
-            )),
-        ),
+        runtime_type(1, owner),
         runtime_type(2, AwbcRuntimeTypeShape::String),
         runtime_type(
             3,
@@ -2659,7 +2651,7 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
                 cases: vec![
                     AwbcVariantCase {
                         name: AwbcStringId(2),
-                        payload: Some(AwbcTypeId(1)),
+                        payload: Some(AwbcTypeId(4)),
                     },
                     AwbcVariantCase {
                         name: AwbcStringId(3),
@@ -2669,6 +2661,7 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
             },
         ),
         runtime_type(4, AwbcRuntimeTypeShape::Bool),
+        runtime_type(5, AwbcRuntimeTypeShape::Tuple(vec![AwbcTypeId(1)])),
     ];
     program.signatures[0].params = vec![AwbcTypeId(0)];
     program.frame_layouts[0] = AwbcFrameLayout {
@@ -2695,7 +2688,17 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
     }];
     program.blocks[0].instructions = AwbcTableRange::new(0, 1);
     program.canonicalize_string_table();
+    program
+}
 
+#[test]
+fn verifier_requires_option_destination_for_optional_agent_fields() {
+    let mut program = optional_string_field_program(
+        AwbcRuntimeTypeShape::Agent(AwbcAgentTypeShape::Leaf(
+            RuntimeAgentOperationalType::ObservedObject,
+        )),
+        "parent_id",
+    );
     program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect("optional parent identity projects into Option<String>");
@@ -2709,6 +2712,45 @@ fn verifier_requires_option_destination_for_optional_agent_fields() {
         AwbcVerifyError::InvalidInvariant { ref message, .. }
             if message == "Agent field projection destination"
     ));
+}
+
+#[test]
+fn progress_label_projects_through_the_registered_option_payload() {
+    let program = optional_string_field_program(AwbcRuntimeTypeShape::Progress, "label");
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .unwrap();
+    for label in [None, Some("working".to_owned())] {
+        let progress = crate::value::Progress::new(0.5).unwrap();
+        let progress = match &label {
+            Some(label) => progress.with_label(label),
+            None => progress,
+        };
+        let value = RuntimeValue::Progress(progress);
+        let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 64).unwrap();
+        fiber
+            .bind_function_argument_values(&program, &[value])
+            .unwrap();
+        super::vm::step(
+            &program,
+            &mut fiber,
+            super::vm::VmStepOptions {
+                max_instructions: 1,
+            },
+        )
+        .unwrap();
+        let expected = label.map_or_else(RuntimeValue::option_none, |label| {
+            RuntimeValue::option_some(RuntimeValue::String(label))
+        });
+        assert_eq!(
+            fiber
+                .active_frame()
+                .unwrap()
+                .register(AwbcRegisterId(1))
+                .unwrap(),
+            &expected
+        );
+    }
 }
 
 #[test]
@@ -3934,7 +3976,7 @@ fn verifier_rejects_non_canonical_builtin_variant_schema() {
         matches!(
             &error,
             AwbcVerifyError::InvalidInvariant { message, .. }
-                if message == "builtin variant owner has a non-canonical case schema"
+                if message.as_str() == super::type_projection::AwbcTypeProjectionError::InvalidBuiltinVariant { index: 2 }.to_string().as_str()
         ),
         "{error:?}"
     );
