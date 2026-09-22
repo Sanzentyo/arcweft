@@ -1390,7 +1390,7 @@ impl RuntimeDialogueOpaqueRole {
             Self::Character => "DialogueCharacter",
             Self::Content => "DialogueContent",
             Self::Occurrence => "DialogueOccurrenceId",
-            Self::Stage => "DialogueStage",
+            Self::Stage => "DialogueOccurrenceStage",
             Self::Reveal => "DialogueReveal",
             Self::Action => "DialogueAction",
         }

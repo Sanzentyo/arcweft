@@ -957,7 +957,7 @@ pub struct StoryDialogue {
     character: DialogueCharacter
     content: DialogueContent
     occurrence: DialogueOccurrenceId
-    stage: DialogueStage
+    stage: DialogueOccurrenceStage
     reveal: DialogueReveal
     primary_action: DialogueAction
 }

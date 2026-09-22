@@ -97,6 +97,11 @@ custom named line arguments
 Each field is validated through its typed schema. A callee spelling, alias, or
 display label is never reconstructed into Character identity.
 
+The View's current occurrence lifecycle has type `DialogueOccurrenceStage`.
+Its `stage` field retains the runtime occurrence state, while the configuration
+role `DialogueStage` belongs to the reusable character configuration. Their
+semantic identities, opaque owners, and persistence contracts are distinct.
+
 ## View projection
 
 Dialogue presentation remains a persistent authored View mount. The target

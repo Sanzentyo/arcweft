@@ -28,7 +28,8 @@ pub const DIALOGUE_CONTENT_TYPE: &str = "DialogueContent";
 pub const DIALOGUE_OCCURRENCE_ID_TYPE: &str = "DialogueOccurrenceId";
 
 /// Current lifecycle stage of one active dialogue occurrence.
-pub const DIALOGUE_STAGE_TYPE: &str = "DialogueStage";
+pub const DIALOGUE_OCCURRENCE_STAGE_TYPE: &str =
+    DialogueRuntimeValueRole::Stage.standard_type_name();
 
 /// Current typed reveal state exposed to the authored View.
 pub const DIALOGUE_REVEAL_TYPE: &str = "DialogueReveal";
@@ -101,7 +102,7 @@ impl DialogueProjectionCoordinate {
             Self::Character(_) => TypeKind::Named(DIALOGUE_CHARACTER_TYPE.to_owned()),
             Self::Content => TypeKind::Named(DIALOGUE_CONTENT_TYPE.to_owned()),
             Self::Occurrence => TypeKind::Named(DIALOGUE_OCCURRENCE_ID_TYPE.to_owned()),
-            Self::Stage => TypeKind::Named(DIALOGUE_STAGE_TYPE.to_owned()),
+            Self::Stage => TypeKind::Named(DIALOGUE_OCCURRENCE_STAGE_TYPE.to_owned()),
             Self::Reveal => TypeKind::Named(DIALOGUE_REVEAL_TYPE.to_owned()),
             Self::PrimaryAction => TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
         }

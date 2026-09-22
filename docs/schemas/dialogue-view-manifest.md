@@ -16,7 +16,7 @@ does not create a second dialogue-specific presentation entity.
       "speaker": "String",
       "content": "DialogueContent",
       "occurrence": "DialogueOccurrenceId",
-      "stage": "DialogueStage",
+      "stage": "DialogueOccurrenceStage",
       "reveal": "DialogueReveal",
       "primary_action": "DialogueAction"
     }

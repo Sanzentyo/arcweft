@@ -293,3 +293,29 @@ generic function boundaries (`dialogue-role-sema-tests.log`). The full
 convergence goal and required workspace integration remain active. Earlier
 workspace check/Clippy/test failures at the removed host-adapter opaque producer
 are not claimed repaired by this cut.
+
+## Occurrence-stage namespace delivery — 2026-09-22
+
+Inspected main/origin at `7e06d60009dcda046f032a1682a6850828725cb2`.
+The authored configuration role and the live View stage previously shared the
+source name DialogueStage despite different producers and persistence rules.
+The occurrence role is now DialogueOccurrenceStage. Core owns its canonical
+name; sema's constant/projections/standard world, the LSP source fixture, the
+View chapter and manifest use it. The existing Stage enum and stage field
+coordinates stay the same. The configuration role retains DialogueStage.
+
+This cut contains those six implementation/document paths, the selected
+CharacterDialogue namespace paragraph, and this evidence. New role registration,
+producer tuple/policy/body admission, and the core nominal graph work are still
+preserved WIP. The semantic identity changes with the canonical occurrence name
+under the unreleased version-one contract; no alias or old reader is retained.
+
+Evidence in the preserved checkout: 17 opaque/View/codec/save tests pass in
+`dialogue-occurrence-stage-delivery-tests.log`; sema all-target/all-feature check
+passes; the selected CharacterDialogue/role tests pass 13/13. Sema Clippy passes
+with 1,265 lib and 1,459 lib-test warnings (1,247 duplicated), recorded in
+`dialogue-unblocked-sema-clippy.log`. Its complete unit suite is 829 pass / 24
+fail in function-value/currying/contextual inference work, not a full success.
+The LSP fixture was migrated but not executed: runtime-plan dependency checking
+currently fails at the missing source-graph proof argument (final_flow.rs:964).
+No new dependency, feature, instruction rule or build artifact is included.

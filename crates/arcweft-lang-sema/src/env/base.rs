@@ -20,7 +20,7 @@ use crate::callable::{
 };
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
-    DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE, DIALOGUE_STAGE_TYPE,
+    DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_OCCURRENCE_STAGE_TYPE, DIALOGUE_REVEAL_TYPE,
     DialogueCharacterProjection, DialogueProjectionCoordinate, DialogueRuntimeValueRole,
     DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_TYPE,
 };
@@ -1064,7 +1064,7 @@ impl TypeCheckEnv {
             DialogueRuntimeValueRole::Occurrence,
         )
         .with_standard_runtime_nominal_record(
-            DIALOGUE_STAGE_TYPE,
+            DIALOGUE_OCCURRENCE_STAGE_TYPE,
             std::iter::empty::<(String, TypeKind)>(),
             DialogueRuntimeValueRole::Stage,
         )
@@ -1109,7 +1109,7 @@ impl TypeCheckEnv {
                 ),
                 (
                     DialogueProjectionCoordinate::Stage.field().to_owned(),
-                    TypeKind::Named(DIALOGUE_STAGE_TYPE.to_owned()),
+                    TypeKind::Named(DIALOGUE_OCCURRENCE_STAGE_TYPE.to_owned()),
                 ),
                 (
                     DialogueProjectionCoordinate::Reveal.field().to_owned(),

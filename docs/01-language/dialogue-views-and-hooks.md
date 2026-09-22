@@ -25,7 +25,7 @@ content, occurrence and stage identity, reveal state, and typed primary action.
 | `speaker` | `String` |
 | `content` | `DialogueContent` |
 | `occurrence` | `DialogueOccurrenceId` |
-| `stage` | `DialogueStage` |
+| `stage` | `DialogueOccurrenceStage` |
 | `reveal` | `DialogueReveal` |
 | `primary_action` | `DialogueAction` |
 
@@ -158,7 +158,7 @@ pub struct PhoneDialogueView {
     speaker: String
     content: DialogueContent
     occurrence: DialogueOccurrenceId
-    stage: DialogueStage
+    stage: DialogueOccurrenceStage
     reveal: DialogueReveal
     primary_action: DialogueAction
 }
