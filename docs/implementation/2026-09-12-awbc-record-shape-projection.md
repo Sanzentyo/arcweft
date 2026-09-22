@@ -342,3 +342,40 @@ only the Result consumer, its standalone test and this evidence.
 The larger root/program admission migration and source graph transport remain
 uncommitted required work. This cut does not claim complete reducer result ABI,
 source nominal lowering, workspace validation, or whole-goal acceptance.
+
+## Stable Project type identity delivery — 2026-09-23
+
+Inspected main/origin at ceebaa5d29a7fe341c41fbccfd5183405bcd43e0.
+The two checked-type encoders included the entire source-set revision in a
+Project nominal identity. A reducer body-only edit consequently changed the
+source graph layout and Entry binding, despite unchanged declarations and data.
+Project nominal identity now retains its world/package, module, owner path,
+kind, name and ordered arguments without the ambient source revision. Revision
+continues to belong to the exact accepted declaration/generation checks. The
+version-one encoding evolves in place; there is no legacy reader or alias.
+
+The new regression establishes stable identity/layout after an implementation
+edit, rejects that foreign-revision checked declaration even after a same-key
+cache hit, and observes a changed layout after a field type change while the
+declaration identity stays stable. Both encoder paths have the same rule.
+
+Actual evidence in the preserved checkout: the focused regression passes;
+compiler Entry tests pass 17/17, including the former body-only binding failure
+and a new constructor-free nested Event payload test; source iterator tests
+pass 2/2; bundle runtime resource codecs pass 10/10. Logs use the
+source-stable- prefix in the existing ignored validation directory. Full sema
+unit tests are 830 pass / 24 fail, with the exact same failure names as the
+previous higher-order/contextual-inference baseline. Six-crate all-target /
+all-feature Clippy passes (core, sema, runtime-plan, compiler, bundle and
+runtime-driver), with existing and reported warnings; this is not warning-free
+or workspace-wide Clippy acceptance. Workspace all-target/all-feature check
+still fails at host-adapter's removed AdapterRustType::opaque_producer call.
+
+The structural gate reports 95 packages, 2,341 Rust files, 1,286,397 physical
+Rust LOC, 310 review triggers and zero blockers. The digest owner still defines
+one checked-type grammar; the paired encoders share the nominal identity rule.
+No dependency, feature, runtime catalog or generation-bypass API was added.
+The selected cut contains only the two digest hunks, the focused regression
+and this evidence. No separate staged-index build is claimed. Root/program
+admission, source graph transport/definition closure and consumer migrations
+remain preserved WIP; their passing tests do not imply whole-goal completion.

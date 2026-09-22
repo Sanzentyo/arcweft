@@ -258,7 +258,9 @@ impl ArrayLengthCanonicalEncoder {
         self.string(id.world().package().as_str())?;
         self.string(id.world().root_document().as_str())?;
         self.string(id.world().profile())?;
-        self.digest(id.revision().as_source_set().as_bytes());
+        // The declaration's accepted revision is provenance, checked by the
+        // owning semantic generation. Unrelated source bodies cannot change
+        // this type's identity; its definition graph commits data layout.
         self.module_path(id.module())?;
         self.tag(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,
@@ -1062,8 +1064,8 @@ impl Encoder {
 
     fn project_nominal_declaration(&mut self, id: &ProjectNominalDeclarationId) {
         self.project_world(id.world());
-        self.bytes
-            .write_bytes(id.revision().as_source_set().as_bytes());
+        // Match the checked-byte grammar above: generation admission owns
+        // revision checks independently of stable type identity.
         self.module_path(id.module());
         self.byte(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,

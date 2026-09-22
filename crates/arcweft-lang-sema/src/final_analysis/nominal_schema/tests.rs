@@ -701,3 +701,61 @@ fn projection_failure_precedence_uses_semantic_digest_not_insertion_order() {
             if nominal == expected_nominal
     ));
 }
+
+#[test]
+fn stable_nominal_identity_does_not_admit_another_source_generation() {
+    let source = "struct State { value: i64 }\nfn keep(value: State) -> State { value }\n";
+    let before_fixture = fixture(source, None);
+    let before = analyze(&before_fixture).unwrap();
+    let before_type = checked(&before_fixture, &before, "State");
+    let after_fixture = fixture(
+        &source.replace("{ value }", "{ let marker = 1i64; value }"),
+        None,
+    );
+    let after = analyze(&after_fixture).unwrap();
+    let after_type = checked(&after_fixture, &after, "State");
+    assert_eq!(before_type.identity(), after_type.identity());
+    assert_ne!(
+        before_type.declaration().revision(),
+        after_type.declaration().revision()
+    );
+    assert_eq!(
+        before
+            .runtime_nominal_projection(before_type.identity())
+            .unwrap()
+            .layout(),
+        after
+            .runtime_nominal_projection(after_type.identity())
+            .unwrap()
+            .layout()
+    );
+
+    let cancellation = AtomicBool::new(false);
+    let mut context = context(
+        &before_fixture,
+        &before,
+        &cancellation,
+        NominalResolutionLimits::PRODUCTION,
+        aggregate_limits(2),
+    );
+    context.project_checked(&before_type).unwrap();
+    assert_eq!(
+        context.project_checked(&after_type),
+        Err(NominalSchemaProjectionError::GenerationMismatch)
+    );
+
+    let changed_fixture = fixture(&source.replace("value: i64", "value: bool"), None);
+    let changed = analyze(&changed_fixture).unwrap();
+    let changed_type = checked(&changed_fixture, &changed, "State");
+    assert_eq!(before_type.identity(), changed_type.identity());
+    assert_ne!(
+        before
+            .runtime_nominal_projection(before_type.identity())
+            .unwrap()
+            .layout(),
+        changed
+            .runtime_nominal_projection(changed_type.identity())
+            .unwrap()
+            .layout()
+    );
+}
