@@ -379,3 +379,26 @@ The selected cut contains only the two digest hunks, the focused regression
 and this evidence. No separate staged-index build is claimed. Root/program
 admission, source graph transport/definition closure and consumer migrations
 remain preserved WIP; their passing tests do not imply whole-goal completion.
+
+## Rust callable overload registration repair — 2026-09-23
+
+An actual multi-function Rust ADT compiler fixture failed registration with
+NonContiguousOverloads: bool_node had overload 4 although it was the first
+callable at that path. AdapterManifest assigned ordinals across the entire Rust
+manifest. Ordinals now follow each adapter callable path, including earlier
+Rust package publications and explicitly declared adapter functions. Separate
+paths start at zero; repeated paths continue their existing inventory.
+
+The focused cut contains the two manifest implementation hunks, a standalone
+primitive-returning regression for interleaved paths across two Rust packages,
+and this evidence. Opaque-carrier removal and the structural Rust normalization
+migration remain separate uncommitted work. No branch or worktree was created.
+
+Validation against the current working tree: cargo test -p
+arcweft-adapter-context --all-features passed 25 tests (23 unit, two integration;
+zero doctests); cargo clippy -p arcweft-adapter-context --all-targets --all-features
+passed without warnings. Changed Rust was formatted and the staged whitespace
+check passed. Logs: rust-overloads-adapter-tests.log and rust-overloads-clippy.log
+in the ignored 2026-09-11-effect-row-formulas validation directory. The separate
+Rust compiler integration test also passed after this fix. These focused checks
+do not replace the still-required full convergence checks; the goal stays active.

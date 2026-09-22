@@ -712,13 +712,27 @@ impl AdapterManifest {
                 decl,
             });
         }
-        for (overload, function) in manifest.functions.iter().enumerate() {
+        let mut next_overloads = BTreeMap::new();
+        for path in self
+            .functions
+            .iter()
+            .map(AdapterFunction::path)
+            .chain(self.rust_functions.iter().map(AdapterRustFunction::path))
+        {
+            *next_overloads.entry(path.clone()).or_insert(0_usize) += 1;
+        }
+        for function in &manifest.functions {
+            let path =
+                AdapterCallablePath::single(AdapterCallableName::try_new(function.name.clone())?);
+            let overload = next_overloads.entry(path.clone()).or_insert(0);
             self.rust_functions.push(adapter_rust_function(
                 package.clone(),
                 &self.rust_package_mounts,
-                overload,
+                path,
+                *overload,
                 function,
             )?);
+            *overload += 1;
         }
         self.rust_packages.insert(package_id, package);
         Ok(self)
@@ -795,12 +809,13 @@ impl AdapterManifest {
 fn adapter_rust_function(
     package: ArcweftRustPackage,
     mounts: &AdapterRustPackageMountTable,
+    path: AdapterCallablePath,
     overload: usize,
     function: &ArcweftRustFunction,
 ) -> Result<AdapterRustFunction, AdapterManifestModelError> {
     Ok(AdapterRustFunction {
         package,
-        path: AdapterCallablePath::single(AdapterCallableName::try_new(function.name.clone())?),
+        path,
         overload: AdapterCallableOverloadIndex::try_from_usize(overload)?,
         rust_path: function.rust_path.clone(),
         signature: adapter_function_signature(
