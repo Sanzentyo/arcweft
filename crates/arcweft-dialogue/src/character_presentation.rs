@@ -8,7 +8,6 @@ use arcweft_character::{
         CharacterPresentationSemanticDigest,
     },
 };
-use arcweft_core::entry::TypeLayoutHash;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
@@ -18,7 +17,6 @@ pub enum CharacterPresentationTargetEvidence {
     Exact(CharacterId),
     RuntimeCharacterDialogue {
         contract: CharacterDialogueContractIdentity,
-        layout: TypeLayoutHash,
     },
 }
 
@@ -30,7 +28,6 @@ enum CharacterPresentationTargetEvidenceWire {
     },
     RuntimeCharacterDialogue {
         contract: CharacterDialogueContractIdentity,
-        layout: TypeLayoutHash,
     },
 }
 
@@ -43,10 +40,9 @@ impl Serialize for CharacterPresentationTargetEvidence {
             Self::Exact(character) => CharacterPresentationTargetEvidenceWire::Exact {
                 character: character.clone(),
             },
-            Self::RuntimeCharacterDialogue { contract, layout } => {
+            Self::RuntimeCharacterDialogue { contract } => {
                 CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
                     contract: *contract,
-                    layout: *layout,
                 }
             }
         }
@@ -64,10 +60,9 @@ impl<'de> Deserialize<'de> for CharacterPresentationTargetEvidence {
                 CharacterPresentationTargetEvidenceWire::Exact { character } => {
                     Self::Exact(character)
                 }
-                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
-                    contract,
-                    layout,
-                } => Self::RuntimeCharacterDialogue { contract, layout },
+                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue { contract } => {
+                    Self::RuntimeCharacterDialogue { contract }
+                }
             },
         )
     }
@@ -98,8 +93,6 @@ pub enum CheckedCharacterPresentationPlanError {
     },
     #[error("runtime CharacterDialogue contract does not match the checked target")]
     CharacterContractMismatch,
-    #[error("runtime CharacterDialogue layout does not match the checked target")]
-    CharacterLayoutMismatch,
     #[error("Character `{character}` is absent from the accepted presentation catalog")]
     UnknownCharacter { character: CharacterId },
 }
@@ -148,7 +141,7 @@ mod tests {
             CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
         },
     };
-    use arcweft_core::entry::{RuntimeValueDigest, TypeLayoutHash};
+    use arcweft_core::entry::RuntimeValueDigest;
 
     #[test]
     fn exact_target_binds_both_catalog_digests() {
@@ -170,16 +163,27 @@ mod tests {
     }
 
     #[test]
-    fn runtime_target_retains_nominal_contract_and_layout_only() {
+    fn runtime_target_retains_the_opaque_dialogue_contract() {
         let contract = CharacterDialogueContractIdentity::new(
             RuntimeValueDigest::from_bytes([3; 32]),
             RuntimeValueDigest::from_bytes([4; 32]),
             RuntimeValueDigest::from_bytes([5; 32]),
             RuntimeValueDigest::from_bytes([6; 32]),
         );
-        let layout = TypeLayoutHash::from_bytes([7; 32]);
-        let target =
-            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { contract, layout };
+        let target = CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { contract };
+        let wire = serde_json::to_value(&target).unwrap();
+        assert_eq!(
+            serde_json::from_value::<CharacterPresentationTargetEvidence>(wire.clone()).unwrap(),
+            target
+        );
+        let mut removed_shape = wire;
+        removed_shape
+            .as_object_mut()
+            .unwrap()
+            .insert("layout".to_owned(), serde_json::to_value([7; 32]).unwrap());
+        assert!(
+            serde_json::from_value::<CharacterPresentationTargetEvidence>(removed_shape).is_err()
+        );
         let generation = CharacterPresentationCatalogGeneration::new(
             CharacterPresentationCatalogRevision::INITIAL,
             CharacterPresentationSemanticDigest::from_bytes([8; 32]),

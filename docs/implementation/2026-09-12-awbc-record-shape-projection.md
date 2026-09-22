@@ -260,3 +260,36 @@ Full goal acceptance remains unproven. Continue the source/producer and
 program-bound value migrations under the current autonomy instructions;
 the existing design material is evidence, not a reason to wait for another
 assignment or create a replacement design request.
+
+## Presentation target layout removal — 2026-09-22
+
+Inspected main and origin/main at
+`560baa52ce9901acf03a6f854bf29139111e9b63` with preserved convergence WIP.
+This independent delivery removes the obsolete root layout from
+`CharacterPresentationTargetEvidence::RuntimeCharacterDialogue`, its strict
+wire representation and the unused layout-mismatch diagnostic. The retained
+contract and both presentation catalog digests are unchanged. The runtime
+consumer matches the target family and does not read a layout. The owner test
+now exercises wire round-trip and rejection of the removed layout field.
+
+Validation in the current preserved checkout (not an isolated index build):
+
+- `cargo test -p arcweft-dialogue --all-features`: 40 passed (32 unit,
+  4 integration, 4 doctests), `dialogue-tuple-delivery-tests.log`, exit 0.
+- `cargo clippy -p arcweft-dialogue --all-targets --all-features`:
+  `dialogue-tuple-clippy-final.log`, exit 0. Dialogue has 2 library size warnings
+  and 3 test warnings including those 2; dependency warnings remain.
+- The structure gate passed: 95 packages, 2,337 Rust files, 1,285,403 physical
+  Rust LOC, 312 review triggers, 0 blockers; `dialogue-tuple-structure-gate.log`.
+- Formatting and whitespace checks passed. No dependency or feature changed.
+
+Only this presentation owner, the corresponding maintained specification
+paragraph and this evidence section belong to the cut. The larger in-flight
+Dialogue producer migration and core program/type admission work remain
+uncommitted. Their local tests do not establish operational compiler/bundle
+publication. Sema all-target/all-feature check passed; its selected Dialogue
+suite has 11 passes and 2 unresolved `OpenEffectRow` failures at ordinary and
+generic function boundaries (`dialogue-role-sema-tests.log`). The full
+convergence goal and required workspace integration remain active. Earlier
+workspace check/Clippy/test failures at the removed host-adapter opaque producer
+are not claimed repaired by this cut.

@@ -165,3 +165,10 @@ The existing production migration is intentionally direct:
 
 No intermediate successful reader or executable compatibility surface is part
 of this design.
+
+## Runtime presentation target
+
+Character presentation target evidence retains the dialogue contract and the
+presentation catalog's semantic and locale-policy digests. It carries no root
+layout hash: the exact opaque CharacterDialogue owner has no project-record
+layout. The serialized target rejects the removed layout field.
