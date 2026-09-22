@@ -752,19 +752,12 @@ enum ParsedReducerResult {
 }
 
 fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
-    let Some((case, Some(_))) = value.builtin_variant_case() else {
+    let Ok((case, Some(payload))) = value.try_into_builtin_variant_case() else {
         return Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned());
     };
-    let RuntimeValue::Variant {
-        payload: Some(payload),
-        ..
-    } = value
-    else {
-        unreachable!("admitted reducer Result case carries a payload")
-    };
     match case {
-        RuntimeBuiltinVariantCaseIdentity::ResultOk => parse_reduction(*payload),
-        RuntimeBuiltinVariantCaseIdentity::ResultErr => parse_reducer_error(*payload),
+        RuntimeBuiltinVariantCaseIdentity::ResultOk => parse_reduction(payload),
+        RuntimeBuiltinVariantCaseIdentity::ResultErr => parse_reducer_error(payload),
         _ => Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned()),
     }
 }
@@ -1213,3 +1206,6 @@ mod save_blocker_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod reducer_result_tests;

@@ -319,3 +319,26 @@ fail in function-value/currying/contextual inference work, not a full success.
 The LSP fixture was migrated but not executed: runtime-plan dependency checking
 currently fails at the missing source-graph proof argument (final_flow.rs:964).
 No new dependency, feature, instruction rule or build artifact is included.
+
+## Canonical reducer Result delivery — 2026-09-22
+
+Inspected main/origin at df19f953bd34778161595d5649ffd6b4c5929b09.
+The root reducer previously validated a builtin Result case but then passed its
+outer one-item Tuple to the Reduction reader. Correct Result::Ok(Reduction)
+therefore failed. It now consumes the existing canonical builtin-case API and
+passes the inner item. No alternate Result encoding or fallback is retained.
+
+The independent regression accepts an admitted Reduction in canonical Ok and
+rejects the bare value, Option wrapper, and an extra Tuple wrapper. The focused
+root command passes 6 tests in root-canonical-result-delivery-tests.log,
+including that regression and the five program-admission tests in preserved
+WIP. Earlier full core tests pass in root-program-admission-core-full.log;
+core all-target/all-feature Clippy passes with 128 lib and 155 lib-test warnings
+(127 duplicated) in root-program-admission-core-clippy.log. That full run and
+Clippy preceded the new standalone regression. Tests ran in the preserved
+checkout; no separate staged-index build is claimed. The selected diff contains
+only the Result consumer, its standalone test and this evidence.
+
+The larger root/program admission migration and source graph transport remain
+uncommitted required work. This cut does not claim complete reducer result ABI,
+source nominal lowering, workspace validation, or whole-goal acceptance.
