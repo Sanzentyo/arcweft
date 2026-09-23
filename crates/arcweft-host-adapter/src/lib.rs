@@ -4,19 +4,12 @@
 //! network, or OS integration belongs in adapter crates or application hosts.
 
 use arcweft_adapter_context::manifest::{
-    AdapterEnvironmentOwnerId, AdapterHostCall, AdapterManifest, AdapterNominalOwner,
-    AdapterNominalPathSegment, AdapterNominalTypeRef, AdapterTypeKind,
+    AdapterHostCall, AdapterManifest, AdapterNominalOwner, AdapterTypeKind,
 };
-use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
-    RuntimeSemanticTypeIdentityEncoder, runtime_standard_opaque_type,
-};
+use arcweft_core::pattern::{RuntimeSemanticTypeId, RuntimeSemanticTypeIdentityEncoder};
 use arcweft_core::step::RuntimeHostCallMode;
-use arcweft_core::task::{HostTaskRequest, NamedHostArg, TaskId, TaskSpec};
-use arcweft_core::value::{
-    RuntimeOpaquePersistence, RuntimeOpaqueValueClass, RuntimePayload, RuntimeSignedIntWidth,
-    RuntimeUnsignedIntWidth, RuntimeValue,
-};
+use arcweft_core::task::{BoundTaskOutcome, HostTaskRequest, NamedHostArg, TaskId, TaskSpec};
+use arcweft_core::value::{RuntimePayload, RuntimeValue};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 use thiserror::Error;
@@ -30,13 +23,14 @@ pub trait HostAdapter: Send + Sync + std::fmt::Debug {
     ///
     /// Adapters that need asynchronous or host-main-thread work should
     /// override [`Self::submit`] instead.
-    fn complete(&self, _task: &TaskSpec) -> Option<HostTaskOutcome> {
+    fn complete(&self, _task: &TaskSpec, _outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
         None
     }
 
     /// Starts one task and reports whether it completed or remains pending.
-    fn submit(&self, task: &TaskSpec) -> Option<HostTaskSubmission> {
-        self.complete(task).map(HostTaskSubmission::Completed)
+    fn submit(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskSubmission> {
+        self.complete(task, outcome)
+            .map(HostTaskSubmission::Completed)
     }
 
     /// Drains adapter-owned completions produced since the last call.
@@ -100,7 +94,7 @@ struct RegisteredHostCall {
 struct RegisteredHostCallContract {
     digest: arcweft_adapter_context::manifest::HostCallContractDigest,
     mode: RuntimeHostCallMode,
-    result: RuntimeCheckedType,
+    result: RuntimeSemanticTypeId,
 }
 
 /// Result and accounting returned by one concrete adapter call.
@@ -154,7 +148,7 @@ pub enum HostAdapterError {
     )]
     MissingHostCallImplementations { host_call_ids: Vec<String> },
     #[error(
-        "host call `{host_call_id}` from adapter `{adapter}` has an invalid runtime result contract: {error}"
+        "host call `{host_call_id}` from adapter `{adapter}` has an invalid result contract: {error}"
     )]
     InvalidHostCallResultContract {
         adapter: String,
@@ -165,26 +159,11 @@ pub enum HostAdapterError {
     Pump { adapter: String, message: String },
 }
 
-/// Invalid projection from a manifest result type into the closed runtime
-/// host-result vocabulary.
+/// Invalid result shape in a manifest host-call contract.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum HostCallRuntimeTypeError {
-    #[error("Need is an execution modality and may appear only as the outer host-call result")]
+    #[error("Need may appear only as the outer host-call result")]
     NestedNeed,
-    #[error("standard nominal `{path}` has no registered runtime carrier")]
-    UnknownStandardNominal { path: String },
-    #[error("environment nominal `{path}` is not declared by this adapter")]
-    UnknownEnvironmentNominal { path: String },
-    #[error("Rust nominal `{path}` is not declared by package `{package}`")]
-    UnknownRustNominal { package: String, path: String },
-    #[error("nominal `{path}` has {actual} type arguments, expected {expected}")]
-    NominalArity {
-        path: String,
-        expected: usize,
-        actual: usize,
-    },
-    #[error("opaque runtime producer `{producer}` is not a valid runtime identity")]
-    InvalidOpaqueProducer { producer: String },
 }
 
 impl HostCallPolicy {
@@ -283,30 +262,39 @@ impl HostAdapterRegistry {
         self.calls.get(id).map(|call| call.contract.digest)
     }
 
+    /// Returns the manifest-owned semantic identity of one host-call result.
+    pub fn host_call_result_type(&self, id: &str) -> Option<RuntimeSemanticTypeId> {
+        self.calls.get(id).map(|call| call.contract.result)
+    }
+
     /// Checks the runtime result predicate against the exact selected manifest
-    /// signature before dispatch. The witness was projected and sealed once
-    /// when its owning adapter was registered.
+    /// signature before dispatch. The result identity was sealed once when its
+    /// owning adapter was registered.
     pub fn host_call_accepts_runtime_result(
         &self,
         id: &str,
         mode: RuntimeHostCallMode,
-        result: &RuntimeCheckedType,
+        result: RuntimeSemanticTypeId,
     ) -> bool {
         self.calls
             .get(id)
-            .is_some_and(|call| call.contract.mode == mode && &call.contract.result == result)
+            .is_some_and(|call| call.contract.mode == mode && call.contract.result == result)
     }
 
     /// Starts a task through the concrete adapter registered for its host-call id.
-    pub fn submit(&self, task: &TaskSpec) -> Option<HostTaskSubmission> {
+    pub fn submit(
+        &self,
+        task: &TaskSpec,
+        outcome: &BoundTaskOutcome,
+    ) -> Option<HostTaskSubmission> {
         self.calls
             .get(&task.request.host_call_id())
-            .and_then(|call| call.adapter.submit(task))
+            .and_then(|call| call.adapter.submit(task, outcome))
     }
 
     /// Synchronous helper. Pending work returns `None`.
-    pub fn dispatch(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
-        match self.submit(task)? {
+    pub fn dispatch(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+        match self.submit(task, outcome)? {
             HostTaskSubmission::Completed(outcome) => Some(outcome),
             HostTaskSubmission::Pending => None,
         }
@@ -361,181 +349,55 @@ impl HostAdapterRegistry {
 }
 
 impl RegisteredHostCallContract {
-    fn seal(
-        manifest: &AdapterManifest,
-        call: &AdapterHostCall,
-    ) -> Result<Self, HostCallRuntimeTypeError> {
-        let (mode, declared) = match call.signature().return_type() {
+    fn seal(call: &AdapterHostCall) -> Result<Self, HostCallRuntimeTypeError> {
+        let (mode, result) = match call.signature().return_type() {
             AdapterTypeKind::Need { item } => (RuntimeHostCallMode::Suspend, item.as_ref()),
-            declared @ (AdapterTypeKind::Unit
-            | AdapterTypeKind::Bool
-            | AdapterTypeKind::I8
-            | AdapterTypeKind::I16
-            | AdapterTypeKind::I32
-            | AdapterTypeKind::I64
-            | AdapterTypeKind::I128
-            | AdapterTypeKind::ISize
-            | AdapterTypeKind::U8
-            | AdapterTypeKind::U16
-            | AdapterTypeKind::U32
-            | AdapterTypeKind::U64
-            | AdapterTypeKind::U128
-            | AdapterTypeKind::USize
-            | AdapterTypeKind::F32
-            | AdapterTypeKind::F64
-            | AdapterTypeKind::String
-            | AdapterTypeKind::Char
-            | AdapterTypeKind::Vec { .. }
-            | AdapterTypeKind::Seq { .. }
-            | AdapterTypeKind::Option { .. }
-            | AdapterTypeKind::Result { .. }
-            | AdapterTypeKind::Tuple { .. }
-            | AdapterTypeKind::Nominal { .. }) => (RuntimeHostCallMode::Immediate, declared),
+            result => (RuntimeHostCallMode::Immediate, result),
         };
+        ensure_no_nested_need(result)?;
         Ok(Self {
             digest: call.contract_digest(),
             mode,
-            result: project_adapter_runtime_type(manifest, declared)?,
+            result: adapter_type_semantic_identity(result),
         })
     }
 }
 
-fn project_adapter_runtime_type(
-    manifest: &AdapterManifest,
-    declared: &AdapterTypeKind,
-) -> Result<RuntimeCheckedType, HostCallRuntimeTypeError> {
-    Ok(match declared {
-        AdapterTypeKind::Unit => RuntimeCheckedType::Unit,
-        AdapterTypeKind::Bool => RuntimeCheckedType::Bool,
-        AdapterTypeKind::I8 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I8),
-        AdapterTypeKind::I16 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I16),
-        AdapterTypeKind::I32 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I32),
-        AdapterTypeKind::I64 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I64),
-        AdapterTypeKind::I128 => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::I128),
-        AdapterTypeKind::ISize => RuntimeCheckedType::Signed(RuntimeSignedIntWidth::ISize),
-        AdapterTypeKind::U8 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U8),
-        AdapterTypeKind::U16 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U16),
-        AdapterTypeKind::U32 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U32),
-        AdapterTypeKind::U64 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U64),
-        AdapterTypeKind::U128 => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::U128),
-        AdapterTypeKind::USize => RuntimeCheckedType::Unsigned(RuntimeUnsignedIntWidth::USize),
-        AdapterTypeKind::F32 => RuntimeCheckedType::F32,
-        AdapterTypeKind::F64 => RuntimeCheckedType::F64,
-        AdapterTypeKind::String => RuntimeCheckedType::String,
-        AdapterTypeKind::Char => RuntimeCheckedType::Char,
-        AdapterTypeKind::Vec { item } | AdapterTypeKind::Seq { item } => {
-            RuntimeCheckedType::Sequence(Box::new(project_adapter_runtime_type(manifest, item)?))
+fn ensure_no_nested_need(ty: &AdapterTypeKind) -> Result<(), HostCallRuntimeTypeError> {
+    match ty {
+        AdapterTypeKind::Need { .. } => Err(HostCallRuntimeTypeError::NestedNeed),
+        AdapterTypeKind::Vec { item }
+        | AdapterTypeKind::Seq { item }
+        | AdapterTypeKind::Option { item } => ensure_no_nested_need(item),
+        AdapterTypeKind::Result { ok, error } => {
+            ensure_no_nested_need(ok)?;
+            ensure_no_nested_need(error)
         }
-        AdapterTypeKind::Option { item } => {
-            RuntimeCheckedType::Option(Box::new(project_adapter_runtime_type(manifest, item)?))
-        }
-        AdapterTypeKind::Result { ok, error } => RuntimeCheckedType::Result {
-            ok: Box::new(project_adapter_runtime_type(manifest, ok)?),
-            error: Box::new(project_adapter_runtime_type(manifest, error)?),
-        },
-        AdapterTypeKind::Tuple { items } => RuntimeCheckedType::Tuple(
-            items
-                .iter()
-                .map(|item| project_adapter_runtime_type(manifest, item))
-                .collect::<Result<Vec<_>, _>>()?,
-        ),
-        AdapterTypeKind::Need { .. } => return Err(HostCallRuntimeTypeError::NestedNeed),
-        AdapterTypeKind::Nominal { nominal } => RuntimeCheckedType::Opaque {
-            owner: project_adapter_nominal_owner(manifest, nominal)?,
-        },
-    })
-}
-
-fn project_adapter_nominal_owner(
-    manifest: &AdapterManifest,
-    nominal: &AdapterNominalTypeRef,
-) -> Result<RuntimeOpaqueTypeOwner, HostCallRuntimeTypeError> {
-    let path = nominal_path_label(nominal);
-    let (expected_arity, producer, value_class, persistence) = match nominal.owner() {
-        AdapterNominalOwner::Standard => {
-            let segments = nominal
-                .path()
-                .segments()
-                .iter()
-                .map(AdapterNominalPathSegment::as_str)
-                .collect::<Vec<_>>();
-            let spec = runtime_standard_opaque_type(&segments).ok_or_else(|| {
-                HostCallRuntimeTypeError::UnknownStandardNominal { path: path.clone() }
-            })?;
-            (
-                usize::from(spec.arity()),
-                spec.producer(),
-                spec.value_class(),
-                spec.persistence(),
-            )
-        }
-        AdapterNominalOwner::Environment { owner: expected } => {
-            if expected != &AdapterEnvironmentOwnerId::for_adapter(manifest.id()) {
-                return Err(HostCallRuntimeTypeError::UnknownEnvironmentNominal { path });
-            }
-            let declaration = manifest
-                .nominal_declarations()
-                .iter()
-                .find(|declaration| declaration.path() == nominal.path())
-                .ok_or_else(|| HostCallRuntimeTypeError::UnknownEnvironmentNominal {
-                    path: path.clone(),
-                })?;
-            (
-                usize::from(declaration.arity()),
-                declaration.opaque_producer().as_str(),
-                RuntimeOpaqueValueClass::Plain,
-                RuntimeOpaquePersistence::ConstantAndSnapshot,
-            )
-        }
-        AdapterNominalOwner::RustPackage { package } => {
-            let declaration = manifest
-                .rust_types()
-                .iter()
-                .find(|declared| {
-                    declared.package().id == *package && declared.accepted_path() == nominal.path()
-                })
-                .ok_or_else(|| HostCallRuntimeTypeError::UnknownRustNominal {
-                    package: package.as_str().to_owned(),
-                    path: path.clone(),
-                })?;
-            (
-                declaration.decl().parameters.len(),
-                declaration.opaque_producer().as_str(),
-                RuntimeOpaqueValueClass::Plain,
-                RuntimeOpaquePersistence::ConstantAndSnapshot,
-            )
-        }
-    };
-    if expected_arity != nominal.arguments().len() {
-        return Err(HostCallRuntimeTypeError::NominalArity {
-            path,
-            expected: expected_arity,
-            actual: nominal.arguments().len(),
-        });
+        AdapterTypeKind::Tuple { items } => items.iter().try_for_each(ensure_no_nested_need),
+        AdapterTypeKind::Nominal { nominal } => nominal
+            .arguments()
+            .iter()
+            .try_for_each(ensure_no_nested_need),
+        AdapterTypeKind::Unit
+        | AdapterTypeKind::Bool
+        | AdapterTypeKind::I8
+        | AdapterTypeKind::I16
+        | AdapterTypeKind::I32
+        | AdapterTypeKind::I64
+        | AdapterTypeKind::I128
+        | AdapterTypeKind::ISize
+        | AdapterTypeKind::U8
+        | AdapterTypeKind::U16
+        | AdapterTypeKind::U32
+        | AdapterTypeKind::U64
+        | AdapterTypeKind::U128
+        | AdapterTypeKind::USize
+        | AdapterTypeKind::F32
+        | AdapterTypeKind::F64
+        | AdapterTypeKind::String
+        | AdapterTypeKind::Char
+        | AdapterTypeKind::Bytes => Ok(()),
     }
-    let producer = RuntimeOpaqueTypeProducerId::try_new(producer).map_err(|_| {
-        HostCallRuntimeTypeError::InvalidOpaqueProducer {
-            producer: producer.to_owned(),
-        }
-    })?;
-    Ok(RuntimeOpaqueTypeOwner::exact_with(
-        producer,
-        adapter_type_semantic_identity(&AdapterTypeKind::Nominal {
-            nominal: nominal.clone(),
-        }),
-        value_class,
-        persistence,
-    ))
-}
-
-fn nominal_path_label(nominal: &AdapterNominalTypeRef) -> String {
-    nominal
-        .path()
-        .segments()
-        .iter()
-        .map(AdapterNominalPathSegment::as_str)
-        .collect::<Vec<_>>()
-        .join("::")
 }
 
 fn adapter_type_semantic_identity(ty: &AdapterTypeKind) -> RuntimeSemanticTypeId {
@@ -566,6 +428,7 @@ fn encode_adapter_semantic_type(
         AdapterTypeKind::F64 => encoder.write_tag(15),
         AdapterTypeKind::String => encoder.write_tag(16),
         AdapterTypeKind::Char => encoder.write_tag(17),
+        AdapterTypeKind::Bytes => encoder.write_tag(18),
         AdapterTypeKind::Vec { item } => {
             encoder.write_tag(48);
             encode_adapter_semantic_type(encoder, item);
@@ -648,12 +511,13 @@ impl HostAdapterRegistryBuilder {
                     second_adapter: adapter_id,
                 });
             }
-            let contract = RegisteredHostCallContract::seal(adapter.manifest(), host_call)
-                .map_err(|error| HostAdapterError::InvalidHostCallResultContract {
+            let contract = RegisteredHostCallContract::seal(host_call).map_err(|error| {
+                HostAdapterError::InvalidHostCallResultContract {
                     adapter: adapter_id.clone(),
                     host_call_id: host_call_id.clone(),
                     error,
-                })?;
+                }
+            })?;
             self.calls.insert(
                 host_call_id,
                 RegisteredHostCall {
@@ -833,11 +697,16 @@ fn runtime_value_kind(value: &RuntimeValue) -> &'static str {
 mod tests {
     use super::*;
     use arcweft_adapter_context::{
-        manifest::{AdapterHostCall, AdapterManifest},
+        manifest::{
+            AdapterCallableGroupIndex, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
+            AdapterParameterGroup,
+        },
         standard,
     };
+    use arcweft_core::pattern::RuntimeCheckedType;
     use arcweft_core::task::{
-        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskPolicy, TaskPriority,
+        CancelScopeId, HostTaskRequest, TaskClass, TaskId, TaskKey, TaskOutcomeContract,
+        TaskPolicy, TaskPriority,
     };
 
     #[derive(Debug)]
@@ -853,10 +722,18 @@ mod tests {
             &self.manifest
         }
 
-        fn complete(&self, task: &TaskSpec) -> Option<HostTaskOutcome> {
-            (task.request.host_call_id() == self.host_call_id).then(|| HostTaskOutcome {
-                completion: HostTaskCompletion::Ready(self.result.clone()),
-                metrics: HostTaskMetrics::default(),
+        fn complete(&self, task: &TaskSpec, outcome: &BoundTaskOutcome) -> Option<HostTaskOutcome> {
+            (task.request.host_call_id() == self.host_call_id).then(|| {
+                let completion = outcome
+                    .try_payload(self.result.value().clone())
+                    .map_or_else(
+                        |error| HostTaskCompletion::Failed(error.to_string()),
+                        HostTaskCompletion::Ready,
+                    );
+                HostTaskOutcome {
+                    completion,
+                    metrics: HostTaskMetrics::default(),
+                }
             })
         }
 
@@ -878,7 +755,13 @@ mod tests {
             .build();
 
         let task = task("fixture", "echo");
-        let outcome = registry.dispatch(&task).expect("adapter handles task");
+        let bound = task
+            .outcome
+            .bind_standalone()
+            .expect("test task has a standalone outcome contract");
+        let outcome = registry
+            .dispatch(&task, &bound)
+            .expect("adapter handles task");
 
         let HostTaskCompletion::Ready(value) = outcome.completion else {
             panic!("task succeeds");
@@ -966,6 +849,7 @@ mod tests {
         let owner = arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
             nominal,
             semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([7; 32]),
+            layout: arcweft_core::entry::TypeLayoutHash::from_bytes([8; 32]),
         };
         let request = HostTaskRequest::custom(
             "fixture",
@@ -997,86 +881,24 @@ mod tests {
     }
 
     #[test]
-    fn manifest_runtime_result_witness_covers_the_closed_recursive_algebra() {
-        let manifest = standard::native_file_manifest();
-        let virtual_path = manifest.host_calls()[0].signature().groups()[0].parameters()[0]
-            .ty()
-            .clone();
-        let closed = [
-            AdapterTypeKind::Unit,
-            AdapterTypeKind::Bool,
-            AdapterTypeKind::I8,
-            AdapterTypeKind::I16,
-            AdapterTypeKind::I32,
-            AdapterTypeKind::I64,
-            AdapterTypeKind::I128,
-            AdapterTypeKind::ISize,
-            AdapterTypeKind::U8,
-            AdapterTypeKind::U16,
-            AdapterTypeKind::U32,
-            AdapterTypeKind::U64,
-            AdapterTypeKind::U128,
-            AdapterTypeKind::USize,
-            AdapterTypeKind::F32,
-            AdapterTypeKind::F64,
-            AdapterTypeKind::String,
-            AdapterTypeKind::Char,
-            AdapterTypeKind::Vec {
-                item: Box::new(AdapterTypeKind::Option {
-                    item: Box::new(AdapterTypeKind::U16),
-                }),
-            },
-            AdapterTypeKind::Seq {
-                item: Box::new(AdapterTypeKind::String),
-            },
-            AdapterTypeKind::Result {
-                ok: Box::new(AdapterTypeKind::Tuple {
-                    items: vec![AdapterTypeKind::I32, AdapterTypeKind::Bool].into_boxed_slice(),
-                }),
-                error: Box::new(virtual_path),
-            },
-        ];
-        for declared in closed {
-            project_adapter_runtime_type(&manifest, &declared)
-                .unwrap_or_else(|error| panic!("{declared:?} failed projection: {error}"));
-        }
-        assert_eq!(
-            project_adapter_runtime_type(
-                &manifest,
-                &AdapterTypeKind::Option {
-                    item: Box::new(AdapterTypeKind::Need {
-                        item: Box::new(AdapterTypeKind::String),
-                    }),
-                },
-            ),
-            Err(HostCallRuntimeTypeError::NestedNeed),
-        );
-    }
-
-    #[test]
-    fn registered_need_nominal_result_requires_exact_mode_and_opaque_owner() {
+    fn registered_host_call_contract_uses_digest_mode_and_result_semantic_identity() {
         let manifest = standard::native_file_manifest();
         let call = &manifest.host_calls()[0];
-        let sealed = RegisteredHostCallContract::seal(&manifest, call)
-            .expect("the standard file result contract is closed");
+        let (expected_mode, result_type) = match call.signature().return_type() {
+            AdapterTypeKind::Need { item } => (RuntimeHostCallMode::Suspend, item.as_ref()),
+            result => (RuntimeHostCallMode::Immediate, result),
+        };
+        let expected_digest = call.contract_digest();
+        let expected_result = adapter_type_semantic_identity(result_type);
+        let need_identity = adapter_type_semantic_identity(call.signature().return_type());
+        assert_ne!(expected_result, need_identity);
+
+        let sealed = RegisteredHostCallContract::seal(call)
+            .expect("standard file result contract has no nested Need");
+        assert_eq!(sealed.digest, expected_digest);
         assert_eq!(sealed.mode, RuntimeHostCallMode::Suspend);
-        let RuntimeCheckedType::Result { error, .. } = &sealed.result else {
-            panic!("file read carries its exact Result execution value")
-        };
-        let RuntimeCheckedType::Opaque { owner } = error.as_ref() else {
-            panic!("file domain error is its manifest nominal")
-        };
-        let tampered = RuntimeCheckedType::Result {
-            ok: Box::new(RuntimeCheckedType::String),
-            error: Box::new(RuntimeCheckedType::Opaque {
-                owner: RuntimeOpaqueTypeOwner::producer_wide_with(
-                    owner.producer().clone(),
-                    owner.semantic_identity(),
-                    owner.value_class(),
-                    owner.persistence(),
-                ),
-            }),
-        };
+        assert_eq!(sealed.result, expected_result);
+
         let registry = HostAdapterRegistry::builder()
             .register(StaticAdapter {
                 manifest,
@@ -1084,29 +906,90 @@ mod tests {
                 result: RuntimePayload::from("unused"),
                 parallel: false,
             })
-            .expect("standard manifest seals")
+            .expect("standard manifest registers")
             .build();
 
+        assert_eq!(
+            registry.host_call_contract("fs.read_text"),
+            Some(expected_digest)
+        );
+        assert_eq!(
+            registry.host_call_result_type("fs.read_text"),
+            Some(expected_result)
+        );
         assert!(registry.host_call_accepts_runtime_result(
             "fs.read_text",
-            RuntimeHostCallMode::Suspend,
-            &sealed.result,
+            expected_mode,
+            expected_result,
         ));
         assert!(!registry.host_call_accepts_runtime_result(
             "fs.read_text",
             RuntimeHostCallMode::Immediate,
-            &sealed.result,
+            expected_result,
         ));
         assert!(!registry.host_call_accepts_runtime_result(
             "fs.read_text",
-            RuntimeHostCallMode::Suspend,
-            &tampered,
+            expected_mode,
+            need_identity,
         ));
     }
 
+    #[test]
+    fn registry_rejects_nested_need_in_manifest_host_call_result() {
+        let signature = AdapterFunctionSignature::try_new(
+            vec![
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(0).expect("initial group index fits"),
+                    Vec::new(),
+                )
+                .expect("empty initial group is valid"),
+            ],
+            AdapterTypeKind::Option {
+                item: Box::new(AdapterTypeKind::Need {
+                    item: Box::new(AdapterTypeKind::String),
+                }),
+            },
+        )
+        .expect("signature shape is valid");
+        let manifest = AdapterManifest::new("fixture", "Fixture").with_host_call(
+            AdapterHostCall::with_signature("fixture.nested", signature, []),
+        );
+        let error = HostAdapterRegistry::builder()
+            .register(StaticAdapter {
+                manifest,
+                host_call_id: "fixture.nested".to_owned(),
+                result: RuntimePayload::from("unused"),
+                parallel: false,
+            })
+            .expect_err("Need remains an outer host-call modality");
+
+        assert_eq!(
+            error,
+            HostAdapterError::InvalidHostCallResultContract {
+                adapter: "fixture".to_owned(),
+                host_call_id: "fixture.nested".to_owned(),
+                error: HostCallRuntimeTypeError::NestedNeed,
+            }
+        );
+    }
+
     fn manifest(id: &str, host_call_id: &str) -> AdapterManifest {
-        AdapterManifest::new(id, id)
-            .with_host_call(AdapterHostCall::new(host_call_id.to_owned(), []))
+        let signature = AdapterFunctionSignature::try_new(
+            vec![
+                AdapterParameterGroup::try_new(
+                    AdapterCallableGroupIndex::try_from_usize(0).expect("initial group index fits"),
+                    Vec::new(),
+                )
+                .expect("empty initial group is valid"),
+            ],
+            AdapterTypeKind::String,
+        )
+        .expect("fixture signature is valid");
+        AdapterManifest::new(id, id).with_host_call(AdapterHostCall::with_signature(
+            host_call_id.to_owned(),
+            signature,
+            [],
+        ))
     }
 
     fn task(capability: &str, operation: &str) -> TaskSpec {
@@ -1119,5 +1002,6 @@ mod tests {
             TaskPolicy::JoinSameKey,
             HostTaskRequest::custom(capability, operation, []),
         )
+        .with_outcome(TaskOutcomeContract::new(RuntimeCheckedType::String))
     }
 }
