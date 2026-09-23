@@ -92,7 +92,9 @@ fn encoding_visits_constants_effects_and_exact_depth_before_finishing() {
             crate::effects::EffectSet::from_labels(["fs.read", "fs.write"]).expect("effects"),
         ),
     );
-    let mut exact = EncodingBudget::new(9, 3);
+    // Six type/constant occurrences plus the complete ten-token membership
+    // grammar for a closed row with two named label classes.
+    let mut exact = EncodingBudget::new(16, 3);
     assert_eq!(
         ty.semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut exact)
             .expect("exact bound"),
@@ -108,16 +110,23 @@ fn encoding_visits_constants_effects_and_exact_depth_before_finishing() {
             (Type, 3),
             (Const, 3),
             (Effect, 2),
+            (Effect, 2),
+            (Effect, 2),
+            (Effect, 2),
             (Effect, 3),
-            (Effect, 3)
+            (Effect, 2),
+            (Effect, 2),
+            (Effect, 3),
+            (Effect, 2),
+            (Effect, 2),
         ]
     );
-    let mut limited = EncodingBudget::new(8, 3);
+    let mut limited = EncodingBudget::new(15, 3);
     assert!(matches!(
         ty.semantic_identity_digest_in_scope_with_control(&GenericScope::default(), &mut limited),
         Err(TypeProjectionError::Control(EncodingStop::Nodes)),
     ));
-    assert_eq!(limited.nodes.len(), 8);
+    assert_eq!(limited.nodes.len(), 15);
     assert_eq!(limited.bindings, 0);
 }
 
@@ -182,7 +191,7 @@ fn effect_row_identity_uses_the_same_borrowed_version_one_encoding() {
         let mut type_budget = EncodingBudget::new(100, 3);
         let mut row_budget = EncodingBudget::new(100, 3);
         assert_eq!(
-            row.semantic_identity_digest(),
+            row.semantic_identity_digest().expect("canonical row"),
             ty.semantic_identity_digest().expect("canonical function")
         );
         assert_eq!(
@@ -318,8 +327,8 @@ fn nested_scopes_and_payload_hashes_keep_version_one_identity() {
             .expect("root identity")
             .as_bytes(),
         &[
-            32, 198, 75, 26, 128, 87, 70, 74, 191, 29, 239, 213, 206, 229, 68, 122, 224, 117, 46,
-            52, 192, 4, 25, 235, 212, 168, 137, 17, 115, 98, 232, 153,
+            186, 104, 146, 70, 255, 139, 151, 158, 14, 99, 109, 209, 229, 143, 87, 17, 59, 29, 174,
+            219, 8, 131, 128, 58, 122, 25, 199, 199, 34, 155, 238, 47,
         ]
     );
     assert_eq!(

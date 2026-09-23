@@ -3,17 +3,18 @@
 //! This carrier contains declaration origins and lexical slots only. An active
 //! application's issuer is consulted during the transition and is never saved.
 
-use std::collections::BTreeMap;
-
 use super::super::super::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericParameterKind, GenericScope,
-    GenericScopeError, GenericTypeReference, TypeKind,
+    ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference,
+    GenericParameterKind, GenericScope, GenericScopeError, GenericTypeReference, TypeKind,
 };
+use super::super::application::ConstraintApplicationScope;
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
+use super::super::normalization::project_type;
 use super::super::references::{self, ConstraintReferenceMap};
 use super::super::{
-    ConstraintDomain, TypeConstraintConstEligibility, TypeConstraintError,
-    TypeConstraintParameterEligibility,
+    ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, TypeConstraintConstEligibility,
+    TypeConstraintError, TypeConstraintInvariant, TypeConstraintParameterEligibility,
+    TypeConstraintProjectionInvariant, TypeConstraintRejection,
 };
 
 #[cfg(test)]
@@ -24,35 +25,72 @@ pub(super) struct ResidualGenericBinder {
     scope: GenericScope,
     type_origins: Box<[GenericTypeReference]>,
     const_origins: Box<[GenericConstReference]>,
+    effect_origins: Box<[GenericEffectReference]>,
 }
 
 impl ResidualGenericBinder {
-    pub(super) fn for_path<A: TypeConstraintAccounting, D: ConstraintDomain>(
-        bindings: &BTreeMap<GenericTypeReference, TypeKind>,
-        const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
-        context: &TypeConstraintContext<'_, A, D>,
+    pub(super) fn reify_effect_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        predicate: &crate::effect_row::EffectPredicate,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<crate::effect_row::EffectPredicate, TypeConstraintError> {
+        self.map_effect_predicate(predicate, path, application, context, Direction::Reify)
+    }
+
+    pub(super) fn reopen_effect_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        predicate: &crate::effect_row::EffectPredicate,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<crate::effect_row::EffectPredicate, TypeConstraintError> {
+        self.map_effect_predicate(predicate, path, application, context, Direction::Reopen)
+    }
+
+    fn map_effect_predicate<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        predicate: &crate::effect_row::EffectPredicate,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+        direction: Direction,
+    ) -> Result<crate::effect_row::EffectPredicate, TypeConstraintError> {
+        let mapping = ResidualReferenceMap {
+            residual: self,
+            outer_depth: context.lexical_scope().binders().len(),
+            direction,
+        };
+        context.with_binder(self.binder(), |context| {
+            predicate.map_references(context, &mut |reference, context| {
+                mapping.effect_reference(reference, application, path, context)
+            })
+        })
+    }
+
+    pub(super) fn for_application<D: ConstraintDomain>(
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
     ) -> Result<Self, TypeConstraintError> {
-        let type_origins = context
-            .parameter_scope
+        let scope = application.parameters();
+        let type_origins = scope
             .iter()
             .filter_map(|(parameter, eligibility)| {
                 (*eligibility == TypeConstraintParameterEligibility::FutureEligible
-                    && context
-                        .parameter_scope
+                    && scope
                         .type_reference(parameter)
-                        .is_some_and(|reference| !bindings.contains_key(&reference)))
+                        .is_some_and(|reference| !path.bindings.contains_key(&reference)))
                 .then(|| parameter.clone())
             })
             .collect::<Box<[_]>>();
-        let const_origins = context
-            .parameter_scope
+        let const_origins = scope
             .const_iter()
             .filter_map(|(parameter, eligibility)| {
                 (*eligibility == TypeConstraintConstEligibility::FutureEligible
-                    && context
-                        .parameter_scope
+                    && scope
                         .const_reference(parameter)
-                        .is_some_and(|reference| !const_bindings.contains_key(&reference)))
+                        .is_some_and(|reference| !path.const_bindings.contains_key(&reference)))
                 .then(|| parameter.clone())
             })
             .collect::<Box<[_]>>();
@@ -68,10 +106,29 @@ impl ResidualGenericBinder {
                 count: const_origins.len(),
             }
         })?;
+        let effect_origins = scope
+            .effect_contract()
+            .variables()
+            .filter(|row| {
+                row.eligibility() == crate::effect_row::EffectConstraintEligibility::FutureEligible
+            })
+            .map(|row| row.variable().clone())
+            .collect::<Box<[_]>>();
+        let effects = u32::try_from(effect_origins.len()).map_err(|_| {
+            GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Effect,
+                count: effect_origins.len(),
+            }
+        })?;
         Ok(Self {
-            scope: GenericScope::default().with_binder(GenericBinder::new(types, const_lengths, 0)),
+            scope: GenericScope::default().with_binder(GenericBinder::new(
+                types,
+                const_lengths,
+                effects,
+            )),
             type_origins,
             const_origins,
+            effect_origins,
         })
     }
 
@@ -109,9 +166,56 @@ impl ResidualGenericBinder {
             .and_then(|slot| u16::try_from(slot).ok())
     }
 
+    pub(super) fn contains_effect(&self, parameter: &GenericEffectReference) -> bool {
+        self.effect_origins.binary_search(parameter).is_ok()
+    }
+
+    pub(super) fn effect_slot(&self, parameter: &GenericEffectReference) -> Option<u32> {
+        self.effect_origins
+            .binary_search(parameter)
+            .ok()
+            .and_then(|slot| u32::try_from(slot).ok())
+    }
+
+    pub(super) fn reify_effect_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        row: &crate::effect_row::EffectRow,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<crate::effect_row::EffectRow, TypeConstraintError> {
+        let mapping = ResidualReferenceMap {
+            residual: self,
+            outer_depth: context.lexical_scope().binders().len(),
+            direction: Direction::Reify,
+        };
+        context.with_binder(self.binder(), |context| {
+            references::map_effect_row(row, &mapping, application, path, context)
+        })
+    }
+
+    pub(super) fn reopen_effect_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        row: &crate::effect_row::EffectRow,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<crate::effect_row::EffectRow, TypeConstraintError> {
+        let mapping = ResidualReferenceMap {
+            residual: self,
+            outer_depth: context.lexical_scope().binders().len(),
+            direction: Direction::Reopen,
+        };
+        context.with_binder(self.binder(), |context| {
+            references::map_effect_row(row, &mapping, application, path, context)
+        })
+    }
+
     pub(super) fn reify_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
         let mapping = ResidualReferenceMap {
@@ -120,13 +224,41 @@ impl ResidualGenericBinder {
             direction: Direction::Reify,
         };
         context.with_binder(self.binder(), |context| {
-            references::map_type(ty, &mapping, context)
+            references::map_type(ty, &mapping, application, path, context)
+        })
+    }
+
+    pub(super) fn validate_reified_future_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        context.with_binder(self.binder(), |context| {
+            let projected = project_type(
+                ty,
+                path.projection_view(),
+                ConstraintClosurePolicy::ProjectionFuture,
+                context,
+            )?;
+            if projected.value != *ty || !projected.remaining.is_empty() {
+                return Err(TypeConstraintError::Invariant(
+                    TypeConstraintInvariant::Projection(
+                        TypeConstraintProjectionInvariant::Mismatch(
+                            TypeConstraintRejection::UnresolvedType,
+                        ),
+                    ),
+                ));
+            }
+            Ok(())
         })
     }
 
     pub(super) fn reify_length<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         length: &ArrayLength,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
         let mapping = ResidualReferenceMap {
@@ -135,13 +267,15 @@ impl ResidualGenericBinder {
             direction: Direction::Reify,
         };
         context.with_binder(self.binder(), |context| {
-            references::map_length(length, &mapping, context)
+            references::map_length(length, &mapping, application, path, context)
         })
     }
 
     pub(super) fn reopen_type<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<TypeKind, TypeConstraintError> {
         let mapping = ResidualReferenceMap {
@@ -150,13 +284,15 @@ impl ResidualGenericBinder {
             direction: Direction::Reopen,
         };
         context.with_binder(self.binder(), |context| {
-            references::map_type(ty, &mapping, context)
+            references::map_type(ty, &mapping, application, path, context)
         })
     }
 
     pub(super) fn reopen_length<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         length: &ArrayLength,
+        path: &ConstraintPath<D>,
+        application: &ConstraintApplicationScope<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ArrayLength, TypeConstraintError> {
         let mapping = ResidualReferenceMap {
@@ -165,7 +301,7 @@ impl ResidualGenericBinder {
             direction: Direction::Reopen,
         };
         context.with_binder(self.binder(), |context| {
-            references::map_length(length, &mapping, context)
+            references::map_length(length, &mapping, application, path, context)
         })
     }
 }
@@ -199,12 +335,14 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
     fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericTypeReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericTypeReference, TypeConstraintError> {
         match (self.direction, reference) {
             (Direction::Reify, GenericTypeReference::Inference(_)) => {
-                let parameter = context
-                    .parameter_scope
+                let parameter = application
+                    .parameters()
                     .type_declaration(reference)
                     .ok_or_else(|| references::type_out_of_scope(reference))?;
                 let slot = self
@@ -237,8 +375,8 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
                         .type_origins
                         .get(usize::from(parameter.slot()))
                         .ok_or_else(|| references::type_out_of_scope(reference))?;
-                    context
-                        .parameter_scope
+                    application
+                        .parameters()
                         .type_reference(origin)
                         .ok_or_else(|| references::type_out_of_scope(reference))
                 } else if parameter.depth() < depth {
@@ -252,7 +390,7 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
             }
             _ => {
                 context
-                    .parameter_eligibility(reference)
+                    .parameter_eligibility(reference, path.projection_view())
                     .ok_or_else(|| references::type_out_of_scope(reference))?;
                 Ok(reference.clone())
             }
@@ -262,12 +400,14 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
     fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericConstReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericConstReference, TypeConstraintError> {
         match (self.direction, reference) {
             (Direction::Reify, GenericConstReference::Inference(_)) => {
-                let parameter = context
-                    .parameter_scope
+                let parameter = application
+                    .parameters()
                     .const_declaration(reference)
                     .ok_or_else(|| references::const_out_of_scope(reference))?;
                 let slot = self
@@ -300,8 +440,8 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
                         .const_origins
                         .get(usize::from(parameter.slot()))
                         .ok_or_else(|| references::const_out_of_scope(reference))?;
-                    context
-                        .parameter_scope
+                    application
+                        .parameters()
                         .const_reference(origin)
                         .ok_or_else(|| references::const_out_of_scope(reference))
                 } else if parameter.depth() < depth {
@@ -315,8 +455,72 @@ impl ConstraintReferenceMap for ResidualReferenceMap<'_> {
             }
             _ => {
                 context
-                    .const_parameter_eligibility(reference)
+                    .const_parameter_eligibility(reference, path.projection_view())
                     .ok_or_else(|| references::const_out_of_scope(reference))?;
+                Ok(reference.clone())
+            }
+        }
+    }
+    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        reference: &GenericEffectReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericEffectReference, TypeConstraintError> {
+        match (self.direction, reference) {
+            (Direction::Reify, GenericEffectReference::Inference(_)) => {
+                let parameter = application
+                    .parameters()
+                    .effect_declaration(reference)
+                    .ok_or_else(|| references::effect_out_of_scope(reference))?;
+                let slot = self
+                    .residual
+                    .effect_origins
+                    .binary_search(parameter)
+                    .ok()
+                    .and_then(|slot| u32::try_from(slot).ok())
+                    .ok_or_else(|| references::effect_out_of_scope(reference))?;
+                Ok(context
+                    .lexical_scope()
+                    .bound_effect(self.residual_depth(context.lexical_scope())?, slot)?)
+            }
+            (Direction::Reopen, GenericEffectReference::Inference(_)) => {
+                Err(GenericScopeError::EscapedInference {
+                    kind: GenericParameterKind::Effect,
+                }
+                .into())
+            }
+            (Direction::Reopen, GenericEffectReference::Bound(parameter))
+                if !self.residual.binder().is_empty() =>
+            {
+                context
+                    .lexical_scope()
+                    .bound_effect(parameter.depth(), parameter.slot())?;
+                let depth = self.residual_depth(context.lexical_scope())?;
+                if parameter.depth() == depth {
+                    let origin = self
+                        .residual
+                        .effect_origins
+                        .get(usize::try_from(parameter.slot()).expect("effect slots fit usize"))
+                        .ok_or_else(|| references::effect_out_of_scope(reference))?;
+                    application
+                        .parameters()
+                        .effect_reference(origin)
+                        .ok_or_else(|| references::effect_out_of_scope(reference))
+                } else if parameter.depth() < depth {
+                    Ok(reference.clone())
+                } else {
+                    Err(GenericScopeError::UnknownDepth {
+                        depth: parameter.depth(),
+                    }
+                    .into())
+                }
+            }
+            _ => {
+                context
+                    .effect_eligibility(reference, path.projection_view())
+                    .ok_or_else(|| references::effect_out_of_scope(reference))?;
                 Ok(reference.clone())
             }
         }

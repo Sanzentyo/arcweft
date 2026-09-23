@@ -367,13 +367,14 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(FinalSemanticAnalysisError::from)?;
                 }
             }
-            for (_, item) in module.items() {
+            for (owner, item) in module.items() {
                 if region.is_some() {
                     continue;
                 }
                 let mut locals = BTreeMap::new();
                 let mut patterns = BTreeMap::new();
                 seed_item_parameter_types(
+                    owner,
                     item,
                     PatternSeedContext {
                         module,
@@ -381,6 +382,7 @@ impl Analyzer<'_, '_, '_> {
                         symbols: self.symbols,
                         environment: self.catalogs.world.environment().typecheck_env(),
                     },
+                    self.catalogs.world.environment().callable_catalog(),
                     &mut locals,
                     &mut patterns,
                 )?;

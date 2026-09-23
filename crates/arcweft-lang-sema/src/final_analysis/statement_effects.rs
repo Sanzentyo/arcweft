@@ -203,6 +203,7 @@ impl PreparedExecutionEffectCatalog {
     }
 }
 
+#[derive(Clone, Copy)]
 pub(crate) struct PreparedExecutionEffectInput<'a> {
     pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     pub(crate) topology: &'a HirProjectEvaluationTopology,
@@ -220,10 +221,63 @@ pub(crate) fn prepare_execution_effects(
     PreparedExecutionEffectSealer::new(input)?.seal()
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct PreparedDeclarationExecutionEffectInput<'a> {
+    pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
+    pub(crate) topology: &'a HirProjectEvaluationTopology,
+    pub(crate) selected: &'a arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
+    pub(crate) expressions: &'a [(ExprId, PreparedExpressionFact)],
+    pub(crate) statements: &'a [(StmtId, PreparedStatementPayload)],
+    pub(crate) control: FinalSemanticAnalysisControl<'a>,
+}
+
+/// Runs the same typed execution fold for a completed declaration prerequisite.
+/// Its result remains private graph evidence until final project validation.
+pub(crate) fn prepare_declaration_execution_effects(
+    input: PreparedDeclarationExecutionEffectInput<'_>,
+) -> Result<PreparedExecutionEffectCatalog, FinalSemanticAnalysisError> {
+    let declaration = input.selected.declaration().clone();
+    PreparedExecutionEffectSealer::from_facts(
+        input.modules,
+        input.topology,
+        PreparedEffectSelection::Declaration(input.selected),
+        input.expressions,
+        input.statements,
+        input.control,
+    )?
+    .seal_declaration(&declaration)
+}
+
+#[derive(Clone, Copy)]
+enum PreparedEffectSelection<'a> {
+    Project(&'a CheckedSelectedExpressionGraph),
+    Declaration(&'a arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph),
+}
+
+impl PreparedEffectSelection<'_> {
+    fn owners(&self) -> Box<dyn Iterator<Item = ExprId> + '_> {
+        match self {
+            Self::Project(graph) => Box::new(graph.owners()),
+            Self::Declaration(graph) => Box::new(graph.expression_owners()),
+        }
+    }
+
+    fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
+        match self {
+            Self::Project(graph) => graph.expression_edges(owner),
+            Self::Declaration(graph) => graph.expression_edges(owner),
+        }
+    }
+
+    fn owns_fx_definition(&self, declaration: &CallableDeclarationKey) -> bool {
+        matches!(self, Self::Project(graph) if graph.owns_fx_definition(declaration))
+    }
+}
+
 struct PreparedExecutionEffectSealer<'a> {
     modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     topology: &'a HirProjectEvaluationTopology,
-    selected: &'a CheckedSelectedExpressionGraph,
+    selected: PreparedEffectSelection<'a>,
     expression_facts: BTreeMap<ExprId, &'a PreparedExpressionFact>,
     statement_facts: BTreeMap<StmtId, &'a PreparedStatementPayload>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
@@ -239,8 +293,26 @@ struct PreparedExecutionEffectSealer<'a> {
 
 impl<'a> PreparedExecutionEffectSealer<'a> {
     fn new(input: PreparedExecutionEffectInput<'a>) -> Result<Self, FinalSemanticAnalysisError> {
+        Self::from_facts(
+            input.modules,
+            input.topology,
+            PreparedEffectSelection::Project(input.selected),
+            input.expressions,
+            input.statements,
+            input.control,
+        )
+    }
+
+    fn from_facts(
+        modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
+        topology: &'a HirProjectEvaluationTopology,
+        selection: PreparedEffectSelection<'a>,
+        expressions: &'a [(ExprId, PreparedExpressionFact)],
+        statements: &'a [(StmtId, PreparedStatementPayload)],
+        control: FinalSemanticAnalysisControl<'a>,
+    ) -> Result<Self, FinalSemanticAnalysisError> {
         let mut expression_facts = BTreeMap::new();
-        for (owner, fact) in input.expressions {
+        for (owner, fact) in expressions {
             if expression_facts.insert(*owner, fact).is_some() {
                 return Err(FinalSemanticAnalysisError::DuplicateFact {
                     family: super::SemanticFactFamily::Expression,
@@ -248,14 +320,14 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             }
         }
         let mut statement_facts = BTreeMap::new();
-        for (owner, fact) in input.statements {
+        for (owner, fact) in statements {
             if statement_facts.insert(*owner, fact).is_some() {
                 return Err(FinalSemanticAnalysisError::DuplicateFact {
                     family: super::SemanticFactFamily::Statement,
                 });
             }
         }
-        let selected = input.selected.owners().collect::<BTreeSet<_>>();
+        let selected = selection.owners().collect::<BTreeSet<_>>();
         if selected
             .iter()
             .any(|owner| !expression_facts.contains_key(owner))
@@ -272,9 +344,9 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             return Err(FinalSemanticAnalysisError::UnexpectedExpressionFact { owner });
         }
         Ok(Self {
-            modules: input.modules,
-            topology: input.topology,
-            selected: input.selected,
+            modules,
+            topology,
+            selected: selection,
             expression_facts,
             statement_facts,
             expression_rows: BTreeMap::new(),
@@ -285,7 +357,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             items: BTreeMap::new(),
             closures: BTreeMap::new(),
             active_declaration: None,
-            control: input.control,
+            control,
         })
     }
 
@@ -330,6 +402,28 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 self.items.insert(entry.item(), item_row);
             }
         }
+        self.finish()
+    }
+
+    fn seal_declaration(
+        mut self,
+        declaration: &CallableDeclarationKey,
+    ) -> Result<PreparedExecutionEffectCatalog, FinalSemanticAnalysisError> {
+        let topology = self
+            .topology
+            .declaration(declaration)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        self.active_declaration = Some(declaration.clone());
+        let mut row = PreparedExecutionEffectRow::default();
+        for root in topology.body().roots() {
+            row.union_with(&self.fold_body(root.projection())?);
+        }
+        self.active_declaration = None;
+        self.declarations.insert(declaration.clone(), row);
+        self.finish()
+    }
+
+    fn finish(mut self) -> Result<PreparedExecutionEffectCatalog, FinalSemanticAnalysisError> {
         for owner in self.selected.owners().collect::<Vec<_>>() {
             self.seal_expression(owner)?;
         }
@@ -1002,7 +1096,11 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 Ok(CompletedStatementEffectFold::evaluated_effect(
                     child_effects,
                     effect.application().clone(),
-                    application.core().effects().concrete().clone(),
+                    application
+                        .core()
+                        .effects()
+                        .closed_value()
+                        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
                 ))
             }
             CheckedStatementPayload::Structural
@@ -1039,7 +1137,13 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         if application.core().site().expression() != owner {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        effects.union_with(application.core().effects().concrete());
+        effects.union_with(
+            &application
+                .core()
+                .effects()
+                .closed_value()
+                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+        );
         Ok(())
     }
 
@@ -1055,7 +1159,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 .declaration_effects
                 .get(declaration)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if actual.concrete() != completed {
+            if actual.closed_value().as_ref() != Some(completed) {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
@@ -1090,7 +1194,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 .callables
                 .closure_at_source(source)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if row.concrete() != effects {
+            if row.closed_value().as_ref() != Some(effects) {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }

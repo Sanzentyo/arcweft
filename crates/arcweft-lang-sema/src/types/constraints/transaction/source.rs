@@ -1,30 +1,31 @@
 //! Source trace transitions from probing to normalized materialization evidence.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::sync::Arc;
 
-use crate::{
-    effect_row::EffectSubstitution,
-    types::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind},
-};
+use crate::{effect_row::EffectSubstitution, types::TypeKind};
 
 use super::super::context::{TypeConstraintAccounting, TypeConstraintContext};
+use super::super::normalization::ConstraintProjectionView;
+use super::{ConstraintApplicationId, ConstraintApplicationScopes};
 
 #[cfg(test)]
 mod tests;
 use super::{
     CheckedConstraintSourceProjection, ConstraintClosurePolicy, ConstraintDomain,
-    PreparedConstraintSourceProjection, StoredSourceSelection, TypeConstraintError,
+    ConstraintResultProjection, ConstraintSourceId, PreparedConstraintSourceProjection,
+    PreparedSourceOrdinal, StoredSourceSelection, TypeConstraintError,
     TypeConstraintSourceProtocolInvariant, project_type, protocol_error,
 };
 
 pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDomain> {
-    pub(super) source: D::Source,
-    pub(super) source_ordinal: u32,
+    pub(super) source: ConstraintSourceId<D::Source>,
+    pub(super) source_ordinal: PreparedSourceOrdinal,
     pub(super) branch: Arc<D::ProbeSemanticBranch>,
     pub(super) selection: StoredSourceSelection<D>,
     pub(super) prepared_source_projection: PreparedConstraintSourceProjection,
     pub(super) value_expected: Option<TypeKind>,
     pub(super) actual: TypeKind,
+    pub(super) result_origin: Option<ConstraintResultProjection<D>>,
 }
 
 /// The selected source's type and constant references are closed against the
@@ -32,14 +33,152 @@ pub(in crate::types::constraints) struct ActiveConstraintProbe<D: ConstraintDoma
 /// binders retain their own owners. Residual callee quantifiers belong to the
 /// continuation result, not to an already evaluated operand.
 pub(crate) struct ClosedConstraintProbe<D: ConstraintDomain> {
-    source: D::Source,
-    source_ordinal: u32,
+    source: ConstraintSourceId<D::Source>,
+    source_ordinal: PreparedSourceOrdinal,
     branch: Arc<D::ProbeSemanticBranch>,
     selection: ClosedSourceSelection<D>,
     prepared_source_projection: PreparedConstraintSourceProjection,
+    result_origin: Option<ConstraintResultProjection<D>>,
     actual: TypeKind,
     source_projection: CheckedConstraintSourceProjection,
 }
+
+/// A completed component trace keeps the application selected by its result.
+/// Consumers of that application's argument mapping see only its own sources;
+/// nested application evidence remains owned by the same trace.
+pub(crate) struct ClosedConstraintSourceTrace<D: ConstraintDomain> {
+    application: ConstraintApplicationId,
+    applications: Arc<ConstraintApplicationScopes<D>>,
+    sources: Box<[ClosedConstraintProbe<D>]>,
+}
+
+impl<D: ConstraintDomain> ClosedConstraintSourceTrace<D> {
+    pub(in crate::types::constraints) fn equal_with<A: TypeConstraintAccounting>(
+        &self,
+        other: &Self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<bool, TypeConstraintError> {
+        if self.domain_application(self.application) != other.domain_application(other.application)
+            || self.sources.len() != other.sources.len()
+        {
+            return Ok(false);
+        }
+        for (left, right) in self.sources.iter().zip(&other.sources) {
+            context.enter_node()?;
+            if self.domain_application(left.source.application())
+                != other.domain_application(right.source.application())
+                || left.source.local() != right.source.local()
+                || left.source_ordinal.ordinal != right.source_ordinal.ordinal
+                || left.branch != right.branch
+                || !self.same_result_origin(left, other, right)
+                || left.prepared_source_projection != right.prepared_source_projection
+                || !super::super::normalization::completed_types_equal(
+                    &left.actual,
+                    &right.actual,
+                    context,
+                )?
+            {
+                return Ok(false);
+            }
+            match (&left.selection, &right.selection) {
+                (ClosedSourceSelection::Unchecked, ClosedSourceSelection::Unchecked) => {}
+                (
+                    ClosedSourceSelection::Checked {
+                        alternative: left_alternative,
+                        evidence: left_evidence,
+                        expected: left_expected,
+                    },
+                    ClosedSourceSelection::Checked {
+                        alternative: right_alternative,
+                        evidence: right_evidence,
+                        expected: right_expected,
+                    },
+                ) if left_alternative == right_alternative
+                    && left_evidence == right_evidence
+                    && super::super::normalization::completed_types_equal(
+                        left_expected,
+                        right_expected,
+                        context,
+                    )? => {}
+                _ => return Ok(false),
+            }
+            // The lower seal derives this constructor from the actual above.
+            // Any map key it contains has already been admitted by that fold.
+            if left.source_projection != right.source_projection {
+                return Ok(false);
+            }
+        }
+        Ok(true)
+    }
+
+    pub(in crate::types::constraints) fn new(
+        application: ConstraintApplicationId,
+        applications: Arc<ConstraintApplicationScopes<D>>,
+        sources: Box<[ClosedConstraintProbe<D>]>,
+    ) -> Self {
+        Self {
+            application,
+            applications,
+            sources,
+        }
+    }
+
+    pub(crate) fn selected(&self) -> impl Iterator<Item = &ClosedConstraintProbe<D>> {
+        self.sources
+            .iter()
+            .filter(|source| source.source().application() == self.application)
+    }
+
+    pub(crate) fn all(&self) -> &[ClosedConstraintProbe<D>] {
+        &self.sources
+    }
+
+    pub(in crate::types::constraints) fn domain_application(
+        &self,
+        opening: ConstraintApplicationId,
+    ) -> D::Application {
+        self.applications
+            .require_application(opening)
+            .expect("completed trace retains its admitted application authority")
+            .application()
+    }
+
+    fn same_result_origin(
+        &self,
+        left: &ClosedConstraintProbe<D>,
+        other: &Self,
+        right: &ClosedConstraintProbe<D>,
+    ) -> bool {
+        match (&left.result_origin, &right.result_origin) {
+            (None, None) => true,
+            (Some(left), Some(right)) => {
+                self.domain_application(left.application())
+                    == other.domain_application(right.application())
+                    && left.key() == right.key()
+            }
+            (None, Some(_)) | (Some(_), None) => false,
+        }
+    }
+}
+
+impl<D: ConstraintDomain> PartialEq for ClosedConstraintSourceTrace<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.domain_application(self.application) == other.domain_application(other.application)
+            && self.sources.len() == other.sources.len()
+            && self
+                .sources
+                .iter()
+                .zip(&other.sources)
+                .all(|(left, right)| {
+                    self.domain_application(left.source.application())
+                        == other.domain_application(right.source.application())
+                        && left.same_observation_except_origin(right)
+                        && self.same_result_origin(left, other, right)
+                })
+    }
+}
+
+impl<D: ConstraintDomain> Eq for ClosedConstraintSourceTrace<D> {}
 
 pub(crate) enum ClosedSourceSelection<D: ConstraintDomain> {
     Unchecked,
@@ -58,27 +197,27 @@ pub(in crate::types::constraints) enum ConstraintProbe<D: ConstraintDomain> {
 impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
     fn close<A: TypeConstraintAccounting>(
         self,
-        bindings: &BTreeMap<GenericTypeReference, TypeKind>,
-        const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+        view: ConstraintProjectionView<'_, D>,
         effects: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
+        view.applications()
+            .require_application(self.source.application())?;
+        if self.source_ordinal.application != self.source.application() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Outcome,
+            ));
+        }
         let mut project = |ty: &TypeKind| {
-            project_type(
-                ty,
-                bindings,
-                const_bindings,
-                ConstraintClosurePolicy::ProjectionClosed,
-                context,
-            )?
-            .value
-            .substitute_effect_rows(effects)
-            .map_err(|_| {
-                super::super::effect_invariant(
-                    super::super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                    None,
-                )
-            })
+            project_type(ty, view, ConstraintClosurePolicy::ProjectionClosed, context)?
+                .value
+                .substitute_effect_rows(effects)
+                .map_err(|_error| {
+                    super::super::effect_invariant(
+                        super::super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                        None,
+                    )
+                })
         };
         let actual = project(&self.actual)?;
         let source_projection =
@@ -116,6 +255,7 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
             branch: self.branch,
             selection,
             prepared_source_projection: self.prepared_source_projection,
+            result_origin: self.result_origin,
             actual,
             source_projection,
         })
@@ -125,23 +265,13 @@ impl<D: ConstraintDomain> ActiveConstraintProbe<D> {
 impl<D: ConstraintDomain> ConstraintProbe<D> {
     pub(super) fn close<A: TypeConstraintAccounting>(
         self,
-        bindings: &BTreeMap<GenericTypeReference, TypeKind>,
-        const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+        view: ConstraintProjectionView<'_, D>,
         effects: &EffectSubstitution,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ClosedConstraintProbe<D>, TypeConstraintError> {
         match self {
-            Self::Active(probe) => probe.close(bindings, const_bindings, effects, context),
+            Self::Active(probe) => probe.close(view, effects, context),
             Self::Closed(_) => Err(protocol_error(
-                TypeConstraintSourceProtocolInvariant::Outcome,
-            )),
-        }
-    }
-
-    pub(super) fn closed(&self) -> Result<&ClosedConstraintProbe<D>, TypeConstraintError> {
-        match self {
-            Self::Closed(probe) => Ok(probe),
-            Self::Active(_) => Err(protocol_error(
                 TypeConstraintSourceProtocolInvariant::Outcome,
             )),
         }
@@ -156,14 +286,14 @@ impl<D: ConstraintDomain> ConstraintProbe<D> {
         }
     }
 
-    pub(super) const fn source(&self) -> D::Source {
+    pub(super) const fn source(&self) -> ConstraintSourceId<D::Source> {
         match self {
             Self::Active(probe) => probe.source,
             Self::Closed(probe) => probe.source,
         }
     }
 
-    pub(super) const fn ordinal(&self) -> u32 {
+    pub(super) const fn ordinal(&self) -> PreparedSourceOrdinal {
         match self {
             Self::Active(probe) => probe.source_ordinal,
             Self::Closed(probe) => probe.source_ordinal,
@@ -172,13 +302,31 @@ impl<D: ConstraintDomain> ConstraintProbe<D> {
 }
 
 impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
-    pub(crate) const fn source(&self) -> D::Source {
+    /// Application identity is compared by the owning trace. A replay has a
+    /// fresh opening, but must preserve this source's schema and observation.
+    fn same_observation(&self, other: &Self) -> bool {
+        self.same_observation_except_origin(other) && self.result_origin == other.result_origin
+    }
+
+    fn same_observation_except_origin(&self, other: &Self) -> bool {
+        self.source.local() == other.source.local()
+            && self.source_ordinal.ordinal == other.source_ordinal.ordinal
+            && self.branch == other.branch
+            && self.selection == other.selection
+            && self.prepared_source_projection == other.prepared_source_projection
+            && self.actual == other.actual
+            && self.source_projection == other.source_projection
+    }
+    pub(crate) const fn source(&self) -> ConstraintSourceId<D::Source> {
         self.source
     }
-    pub(super) const fn ordinal(&self) -> u32 {
+    pub(in crate::types::constraints) const fn source_ref(&self) -> &ConstraintSourceId<D::Source> {
+        &self.source
+    }
+    pub(super) const fn ordinal(&self) -> PreparedSourceOrdinal {
         self.source_ordinal
     }
-    pub(super) fn branch(&self) -> &Arc<D::ProbeSemanticBranch> {
+    pub(in crate::types::constraints) fn branch(&self) -> &Arc<D::ProbeSemanticBranch> {
         &self.branch
     }
     pub(crate) const fn actual(&self) -> &TypeKind {
@@ -198,6 +346,10 @@ impl<D: ConstraintDomain> ClosedConstraintProbe<D> {
     }
     pub(crate) const fn source_projection(&self) -> &CheckedConstraintSourceProjection {
         &self.source_projection
+    }
+
+    pub(crate) fn result_origin(&self) -> Option<&ConstraintResultProjection<D>> {
+        self.result_origin.as_ref()
     }
 }
 
@@ -229,6 +381,7 @@ impl<D: ConstraintDomain> Clone for ActiveConstraintProbe<D> {
             prepared_source_projection: self.prepared_source_projection,
             value_expected: self.value_expected.clone(),
             actual: self.actual.clone(),
+            result_origin: self.result_origin.clone(),
         }
     }
 }
@@ -240,6 +393,7 @@ impl<D: ConstraintDomain> PartialEq for ActiveConstraintProbe<D> {
             && self.branch == other.branch
             && self.selection == other.selection
             && self.prepared_source_projection == other.prepared_source_projection
+            && self.result_origin == other.result_origin
             && self.value_expected == other.value_expected
             && self.actual == other.actual
     }
@@ -297,6 +451,7 @@ impl<D: ConstraintDomain> Clone for ClosedConstraintProbe<D> {
             branch: Arc::clone(&self.branch),
             selection: self.selection.clone(),
             prepared_source_projection: self.prepared_source_projection,
+            result_origin: self.result_origin.clone(),
             actual: self.actual.clone(),
             source_projection: self.source_projection.clone(),
         }
@@ -307,11 +462,7 @@ impl<D: ConstraintDomain> PartialEq for ClosedConstraintProbe<D> {
     fn eq(&self, other: &Self) -> bool {
         self.source == other.source
             && self.source_ordinal == other.source_ordinal
-            && self.branch == other.branch
-            && self.selection == other.selection
-            && self.prepared_source_projection == other.prepared_source_projection
-            && self.actual == other.actual
-            && self.source_projection == other.source_projection
+            && self.same_observation(other)
     }
 }
 

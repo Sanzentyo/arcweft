@@ -2,16 +2,18 @@
 
 use std::collections::BTreeSet;
 
-use super::super::{ArrayLength, TypeCompatibilityFailure, TypeCompatibilityPolicy, TypeKind};
-use crate::effect_row::EffectConstraintEnvironmentError;
+use super::super::{
+    ArrayLength, GenericConstReference, GenericTypeReference, TypeCompatibilityFailure,
+    TypeCompatibilityPolicy, TypeKind,
+};
 use crate::types::constraints::context::{TypeConstraintAccounting, TypeConstraintContext};
 use crate::types::constraints::transaction::ConstraintPath;
 use crate::types::constraints::{
-    ChoiceDerivationStep, ChoiceForkRole, ConstraintDomain, TypeConstraintAbort,
-    TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
-    TypeConstraintParameterEligibility, TypeConstraintRejection, TypeConstraintShape,
-    TypeConstraintSourceProtocolInvariant, map_effect_environment_error, seal_path, seal_type,
-    validate_type,
+    ChoiceDerivationStep, ChoiceForkRole, ConstAliasResolution, ConstraintDomain,
+    TypeAliasResolution, TypeConstraintAbort, TypeConstraintConstEligibility, TypeConstraintError,
+    TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintRejection,
+    TypeConstraintShape, TypeConstraintSourceProtocolInvariant, resolve_const_alias,
+    resolve_type_alias, seal_path, seal_type, validate_type,
 };
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -125,14 +127,10 @@ where
         return Ok(Some(path));
     }
     let path = seal_path(path, context)?;
-    let effects = path
-        .effects
-        .substitution()
-        .map_err(map_effect_environment_error)?;
+    let effects = path.effects.substitution(context)?;
     let projected_pattern = seal_type(
         pattern,
-        &path.bindings,
-        &path.const_bindings,
+        path.projection_view(),
         &mut BTreeSet::new(),
         context,
     )?
@@ -145,8 +143,7 @@ where
     })?;
     let projected_actual = seal_type(
         actual,
-        &path.bindings,
-        &path.const_bindings,
+        path.projection_view(),
         &mut BTreeSet::new(),
         context,
     )?
@@ -390,6 +387,100 @@ where
     )
 }
 
+fn resolve_type_parameter<A, D>(
+    parameter: &GenericTypeReference,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<TypeAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if matches!(parameter, GenericTypeReference::Bound(_)) {
+        Ok(TypeAliasResolution::Parameter(parameter.clone()))
+    } else {
+        resolve_type_alias(parameter, path, context)
+    }
+}
+
+fn type_parameter_eligibility<A, D>(
+    parameter: &GenericTypeReference,
+    path: &ConstraintPath<D>,
+    context: &TypeConstraintContext<'_, A, D>,
+) -> Result<TypeConstraintParameterEligibility, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if matches!(parameter, GenericTypeReference::Bound(_)) {
+        return Ok(TypeConstraintParameterEligibility::Rigid);
+    }
+    context
+        .parameter_eligibility(parameter, path.projection_view())
+        .ok_or_else(|| {
+            TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                crate::types::constraints::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
+                    parameter: parameter.clone(),
+                },
+            ))
+        })
+}
+
+fn bind_type_parameter<A, D>(
+    parameter: &GenericTypeReference,
+    value: &TypeKind,
+    path: ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if matches!(
+        type_parameter_eligibility(parameter, &path, context)?,
+        TypeConstraintParameterEligibility::Rigid
+    ) {
+        return Ok(Vec::new());
+    }
+    let shape = value.constraint_shape();
+    context
+        .add_binding(path, parameter.clone(), value, shape)
+        .map(|path| path.into_iter().collect())
+}
+
+fn relate_generic_parameters<A, D>(
+    pattern: &GenericTypeReference,
+    actual: &GenericTypeReference,
+    path: ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    acceptance: ConstraintAcceptance,
+) -> Result<Vec<ConstraintPath<D>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if pattern == actual {
+        return Ok(vec![path]);
+    }
+    let pattern_eligibility = type_parameter_eligibility(pattern, &path, context)?;
+    let actual_eligibility = type_parameter_eligibility(actual, &path, context)?;
+    let pattern_active = pattern_eligibility != TypeConstraintParameterEligibility::Rigid;
+    let actual_active = actual_eligibility != TypeConstraintParameterEligibility::Rigid;
+    let target = match acceptance {
+        ConstraintAcceptance::PatternAcceptsActual if pattern_active => (pattern, actual),
+        ConstraintAcceptance::ActualAcceptsPattern if actual_active => (actual, pattern),
+        _ if pattern_active => (pattern, actual),
+        _ if actual_active => (actual, pattern),
+        _ => return Ok(Vec::new()),
+    };
+    bind_type_parameter(
+        target.0,
+        &TypeKind::GenericParam(target.1.clone()),
+        path,
+        context,
+    )
+}
+
 fn relate_entered_with_policy<A, D>(
     pattern: &TypeKind,
     actual: &TypeKind,
@@ -410,46 +501,101 @@ where
             TypeConstraintRejection::UnresolvedType,
         ));
     }
-    context.validate_type_header(pattern_shape)?;
-    context.validate_type_header(actual_shape)?;
+    context.validate_type_header(pattern_shape, path.projection_view())?;
+    context.validate_type_header(actual_shape, path.projection_view())?;
+
+    let pattern_alias = match pattern_shape {
+        TypeConstraintShape::Generic(parameter) => {
+            Some(resolve_type_parameter(parameter, &path, context)?)
+        }
+        _ => None,
+    };
+    let actual_alias = match actual_shape {
+        TypeConstraintShape::Generic(parameter) => {
+            Some(resolve_type_parameter(parameter, &path, context)?)
+        }
+        _ => None,
+    };
+    let mut cycle = match (&pattern_alias, &actual_alias) {
+        (Some(TypeAliasResolution::Cycle(left)), Some(TypeAliasResolution::Cycle(right))) => {
+            left.iter().chain(right.iter()).cloned().collect::<Vec<_>>()
+        }
+        (Some(TypeAliasResolution::Cycle(parameters)), _)
+        | (_, Some(TypeAliasResolution::Cycle(parameters))) => parameters.to_vec(),
+        _ => Vec::new(),
+    };
+    if !cycle.is_empty() {
+        cycle.sort();
+        cycle.dedup();
+        let mut path = path;
+        for parameter in cycle {
+            path.deferred_cycles.parameters.insert(parameter.into());
+        }
+        return Ok(vec![path]);
+    }
+    let (pattern_value, pattern_changed) = match (pattern_shape, pattern_alias) {
+        (
+            TypeConstraintShape::Generic(original),
+            Some(TypeAliasResolution::Parameter(parameter)),
+        ) => {
+            let changed = &parameter != original;
+            (TypeKind::GenericParam(parameter), changed)
+        }
+        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
+            (value, true)
+        }
+        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
+            unreachable!("cycles handled above")
+        }
+        (_, None) => (pattern.clone(), false),
+        _ => unreachable!("generic shape has an alias resolution"),
+    };
+    let (actual_value, actual_changed) = match (actual_shape, actual_alias) {
+        (
+            TypeConstraintShape::Generic(original),
+            Some(TypeAliasResolution::Parameter(parameter)),
+        ) => {
+            let changed = &parameter != original;
+            (TypeKind::GenericParam(parameter), changed)
+        }
+        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Structure(value))) => {
+            (value, true)
+        }
+        (TypeConstraintShape::Generic(_), Some(TypeAliasResolution::Cycle(_))) => {
+            unreachable!("cycles handled above")
+        }
+        (_, None) => (actual.clone(), false),
+        _ => unreachable!("generic shape has an alias resolution"),
+    };
+    if pattern_changed || actual_changed {
+        return relate_with_policy(&pattern_value, &actual_value, path, context, acceptance);
+    }
 
     // Bottom contributes no binding, but unresolved descendants in the
     // expected shape still cannot reach a selected seal.
     if matches!(actual_shape, TypeConstraintShape::Never) {
-        validate_type(pattern, context)?;
+        validate_type(pattern, path.projection_view(), context)?;
         return Ok(vec![path]);
     }
 
-    if let TypeConstraintShape::Generic(parameter) = pattern_shape {
-        if matches!(actual_shape, TypeConstraintShape::Generic(candidate) if candidate == parameter)
+    match (pattern_shape, actual_shape) {
+        (TypeConstraintShape::Generic(pattern), TypeConstraintShape::Generic(actual)) => {
+            return relate_generic_parameters(pattern, actual, path, context, acceptance);
+        }
+        (TypeConstraintShape::Generic(parameter), _)
+            if type_parameter_eligibility(parameter, &path, context)?
+                != TypeConstraintParameterEligibility::Rigid =>
         {
-            return Ok(vec![path]);
+            return bind_type_parameter(parameter, &actual_value, path, context);
         }
-        if matches!(
-            context.parameter_eligibility(parameter),
-            Some(TypeConstraintParameterEligibility::Rigid)
-        ) {
-            // A rigid enclosing parameter is an exact atom, not a
-            // candidate-owned variable. A non-identical equation prunes
-            // only this branch so a surrounding Choice can still select a
-            // valid alternative.
-            return Ok(Vec::new());
+        (_, TypeConstraintShape::Generic(parameter)) => {
+            if type_parameter_eligibility(parameter, &path, context)?
+                != TypeConstraintParameterEligibility::Rigid
+            {
+                return bind_type_parameter(parameter, &pattern_value, path, context);
+            }
         }
-        if let Some(bound) = path.bindings.get(parameter).cloned() {
-            let bound_shape = bound.constraint_shape();
-            return relate_entered_with_policy(
-                &bound,
-                actual,
-                bound_shape,
-                actual_shape,
-                path,
-                context,
-                acceptance,
-            );
-        }
-        return context
-            .add_binding(path, parameter.clone(), actual, actual_shape)
-            .map(|path| path.into_iter().collect());
+        _ => {}
     }
 
     match (pattern_shape, actual_shape) {
@@ -489,7 +635,7 @@ where
                 }
                 (Some(_), None) => Ok(vec![path]),
                 (None, Some(found)) => {
-                    validate_type(found, context)?;
+                    validate_type(found, path.projection_view(), context)?;
                     Ok(vec![path])
                 }
                 (None, None) => Ok(vec![path]),
@@ -529,7 +675,9 @@ where
                 len: found_len,
             },
         ) => {
-            let Some(path) = relate_array_lengths(expected_len, found_len, path, context)? else {
+            let Some(path) =
+                relate_array_lengths(expected_len, found_len, path, context, acceptance)?
+            else {
                 return Ok(Vec::new());
             };
             relate_with_policy(expected, found, path, context, acceptance)
@@ -630,11 +778,11 @@ where
                     };
                     match path
                         .effects
-                        .constrain_subset(actual_effects, permitted_effects)
+                        .constrain_subset(actual_effects, permitted_effects, context)
                     {
                         Ok(()) => effect_paths.push(path),
-                        Err(EffectConstraintEnvironmentError::MissingEffects { .. }) => {}
-                        Err(error) => return Err(map_effect_environment_error(error)),
+                        Err(TypeConstraintError::Rejected(_)) => {}
+                        Err(error) => return Err(error),
                     }
                 }
                 relate_many(
@@ -667,9 +815,48 @@ where
     }
 }
 
-fn relate_array_lengths<A, D>(
-    expected: &ArrayLength,
-    found: &ArrayLength,
+fn resolve_const_parameter<A, D>(
+    parameter: &GenericConstReference,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if matches!(parameter, GenericConstReference::Bound(_)) {
+        Ok(ConstAliasResolution::Parameter(parameter.clone()))
+    } else {
+        resolve_const_alias(parameter, path, context)
+    }
+}
+
+fn const_parameter_eligibility<A, D>(
+    parameter: &GenericConstReference,
+    path: &ConstraintPath<D>,
+    context: &TypeConstraintContext<'_, A, D>,
+) -> Result<TypeConstraintConstEligibility, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if matches!(parameter, GenericConstReference::Bound(_)) {
+        return Ok(TypeConstraintConstEligibility::Rigid);
+    }
+    context
+        .const_parameter_eligibility(parameter, path.projection_view())
+        .ok_or_else(|| {
+            TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
+                crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                    parameter: parameter.clone(),
+                },
+            ))
+        })
+}
+
+fn bind_const_parameter<A, D>(
+    parameter: &GenericConstReference,
+    value: &ArrayLength,
     path: ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
@@ -677,8 +864,95 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    if matches!(
+        const_parameter_eligibility(parameter, &path, context)?,
+        TypeConstraintConstEligibility::Rigid
+    ) {
+        return Ok(None);
+    }
+    context.add_const_binding(path, parameter.clone(), value)
+}
+
+fn relate_const_parameters<A, D>(
+    pattern: &GenericConstReference,
+    actual: &GenericConstReference,
+    path: ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    acceptance: ConstraintAcceptance,
+) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    if pattern == actual {
+        return Ok(Some(path));
+    }
+    let pattern_active = const_parameter_eligibility(pattern, &path, context)?
+        != TypeConstraintConstEligibility::Rigid;
+    let actual_active = const_parameter_eligibility(actual, &path, context)?
+        != TypeConstraintConstEligibility::Rigid;
+    let (parameter, value) = match acceptance {
+        ConstraintAcceptance::PatternAcceptsActual if pattern_active => {
+            (pattern, ArrayLength::Generic(actual.clone()))
+        }
+        ConstraintAcceptance::ActualAcceptsPattern if actual_active => {
+            (actual, ArrayLength::Generic(pattern.clone()))
+        }
+        _ if pattern_active => (pattern, ArrayLength::Generic(actual.clone())),
+        _ if actual_active => (actual, ArrayLength::Generic(pattern.clone())),
+        _ => return Ok(None),
+    };
+    context.add_const_binding(path, parameter.clone(), &value)
+}
+
+fn relate_array_lengths<A, D>(
+    expected: &ArrayLength,
+    found: &ArrayLength,
+    path: ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    acceptance: ConstraintAcceptance,
+) -> Result<Option<ConstraintPath<D>>, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
     context.enter_node()?;
-    match (expected, found) {
+    let expected = match expected {
+        ArrayLength::Generic(parameter) => resolve_const_parameter(parameter, &path, context)?,
+        value => ConstAliasResolution::Value(value.clone()),
+    };
+    let found = match found {
+        ArrayLength::Generic(parameter) => resolve_const_parameter(parameter, &path, context)?,
+        value => ConstAliasResolution::Value(value.clone()),
+    };
+    let mut cycle = match (&expected, &found) {
+        (ConstAliasResolution::Cycle(left), ConstAliasResolution::Cycle(right)) => {
+            left.iter().chain(right.iter()).cloned().collect::<Vec<_>>()
+        }
+        (ConstAliasResolution::Cycle(parameters), _)
+        | (_, ConstAliasResolution::Cycle(parameters)) => parameters.to_vec(),
+        _ => Vec::new(),
+    };
+    if !cycle.is_empty() {
+        cycle.sort();
+        cycle.dedup();
+        let mut path = path;
+        for parameter in cycle {
+            path.deferred_cycles.parameters.insert(parameter.into());
+        }
+        return Ok(Some(path));
+    }
+    let expected = match expected {
+        ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
+        ConstAliasResolution::Value(value) => value,
+        ConstAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
+    };
+    let found = match found {
+        ConstAliasResolution::Parameter(parameter) => ArrayLength::Generic(parameter),
+        ConstAliasResolution::Value(value) => value,
+        ConstAliasResolution::Cycle(_) => unreachable!("cycles handled above"),
+    };
+    match (&expected, &found) {
         (ArrayLength::Error(_) | ArrayLength::Inferred, _)
         | (_, ArrayLength::Error(_) | ArrayLength::Inferred) => {
             Err(TypeConstraintRejection::UnresolvedType.into())
@@ -686,55 +960,14 @@ where
         (ArrayLength::Const(expected), ArrayLength::Const(found)) => {
             Ok((expected == found).then_some(path))
         }
-        (ArrayLength::Generic(expected), ArrayLength::Generic(found)) if expected == found => {
-            context
-                .const_parameter_eligibility(expected)
-                .ok_or_else(|| {
-                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                            parameter: expected.clone(),
-                        },
-                    ))
-                })?;
-            Ok(Some(path))
+        (ArrayLength::Generic(expected), ArrayLength::Generic(found)) => {
+            relate_const_parameters(expected, found, path, context, acceptance)
         }
         (ArrayLength::Generic(parameter), found) => {
-            let eligibility = context
-                .const_parameter_eligibility(parameter)
-                .ok_or_else(|| {
-                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                            parameter: parameter.clone(),
-                        },
-                    ))
-                })?;
-            if matches!(eligibility, TypeConstraintConstEligibility::Rigid) {
-                return Ok(None);
-            }
-            if let ArrayLength::Generic(found) = found {
-                context
-                    .const_parameter_eligibility(found)
-                    .ok_or_else(|| {
-                        TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                            crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                                parameter: found.clone(),
-                            },
-                        ))
-                    })?;
-            }
-            context.add_const_binding(path, parameter.clone(), found)
+            bind_const_parameter(parameter, found, path, context)
         }
-        (ArrayLength::Const(_), ArrayLength::Generic(found)) => {
-            context
-                .const_parameter_eligibility(found)
-                .ok_or_else(|| {
-                    TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
-                        crate::types::constraints::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
-                            parameter: found.clone(),
-                        },
-                    ))
-                })?;
-            Ok(None)
+        (found, ArrayLength::Generic(parameter)) => {
+            bind_const_parameter(parameter, found, path, context)
         }
     }
 }

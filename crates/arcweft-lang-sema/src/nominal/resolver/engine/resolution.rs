@@ -846,9 +846,9 @@ impl Resolver<'_, '_> {
             .try_instantiate(arguments)
             .expect("accepted catalog records retain valid semantics and checked arity");
         match record.semantics() {
-            AcceptedNominalSemantics::Opaque(_) => {
+            AcceptedNominalSemantics::Opaque(_) | AcceptedNominalSemantics::RustAdt => {
                 let TypeKind::AcceptedNominal(accepted) = &instantiated else {
-                    unreachable!("opaque accepted records instantiate as accepted nominals")
+                    unreachable!("opaque and Rust ADT records instantiate as accepted nominals")
                 };
                 (
                     instantiated.clone(),
@@ -921,6 +921,7 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Slice
             | BuiltinTypeConstructor::Seq
             | BuiltinTypeConstructor::Option
+            | BuiltinTypeConstructor::DataShape
             | BuiltinTypeConstructor::Probe
             | BuiltinTypeConstructor::ThreadHandle
             | BuiltinTypeConstructor::Shared
@@ -995,6 +996,7 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::Slice => TypeKind::Slice(Box::new(inner)),
             BuiltinTypeConstructor::Seq => TypeKind::Seq(Box::new(inner)),
             BuiltinTypeConstructor::Option => TypeKind::Option(Box::new(inner)),
+            BuiltinTypeConstructor::DataShape => TypeKind::DataShape(Box::new(inner)),
             BuiltinTypeConstructor::Probe => TypeKind::Probe(Box::new(inner)),
             BuiltinTypeConstructor::ThreadHandle => TypeKind::ThreadHandle(Box::new(inner)),
             BuiltinTypeConstructor::Shared => TypeKind::Shared(Box::new(inner)),

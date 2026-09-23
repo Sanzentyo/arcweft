@@ -41,10 +41,13 @@ pub enum LanguageIntrinsicGenericOwner {
     OnDrop,
     SignalWrite,
     MetricWrite,
+    DataShape,
+    DataEncode,
+    DataDecode,
 }
 
 impl LanguageIntrinsicGenericOwner {
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 23] = [
         Self::OptionConstructor,
         Self::ResultConstructor,
         Self::StandardMap(StandardMapFamily::Vec),
@@ -65,6 +68,9 @@ impl LanguageIntrinsicGenericOwner {
         Self::OnDrop,
         Self::SignalWrite,
         Self::MetricWrite,
+        Self::DataShape,
+        Self::DataEncode,
+        Self::DataDecode,
     ];
 
     /// Canonical version-1 semantic tag owned by this closed family.
@@ -82,6 +88,9 @@ impl LanguageIntrinsicGenericOwner {
             Self::OnDrop => 17,
             Self::SignalWrite => 18,
             Self::MetricWrite => 19,
+            Self::DataShape => 20,
+            Self::DataEncode => 21,
+            Self::DataDecode => 22,
         }
     }
 
@@ -96,7 +105,10 @@ impl LanguageIntrinsicGenericOwner {
             | Self::DropOptional
             | Self::OnDrop
             | Self::SignalWrite
-            | Self::MetricWrite => (1, 0),
+            | Self::MetricWrite
+            | Self::DataShape
+            | Self::DataEncode
+            | Self::DataDecode => (1, 0),
             Self::ResultConstructor => (2, 0),
             Self::StandardMap(family) => family.generic_arity(),
         }
@@ -116,6 +128,9 @@ impl LanguageIntrinsicGenericOwner {
             Self::OnDrop => "language.on-drop",
             Self::SignalWrite => "language.signal-write",
             Self::MetricWrite => "language.metric-write",
+            Self::DataShape => "language.data-shape",
+            Self::DataEncode => "language.data-encode",
+            Self::DataDecode => "language.data-decode",
         }
     }
 }
@@ -124,12 +139,11 @@ impl LanguageIntrinsicGenericOwner {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DetachedGenericOwnerId(u64);
 
-/// Shared declaration coordinate used by the distinct type and constant
-/// parameter identity wrappers below.
+/// Shared declaration coordinate, with the ordinal width owned by each kind.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct GenericParameterCoordinate {
+struct GenericParameterCoordinate<Ordinal = u16> {
     owner: Arc<GenericParameterOwnerId>,
-    ordinal: u16,
+    ordinal: Ordinal,
 }
 
 /// Declaration-relative identity of one generic type parameter.
@@ -144,6 +158,11 @@ pub struct GenericTypeParameterId(GenericParameterCoordinate);
 /// parameter (or vice versa) at a semantic boundary.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct GenericConstParameterId(GenericParameterCoordinate);
+
+/// Declaration-relative identity of an implicit or declared effect parameter.
+/// Application-local inference and anonymous bound slots use different types.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct GenericEffectParameterId(GenericParameterCoordinate<u32>);
 
 /// Instantiation of one source-backed project struct or enum declaration.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -239,7 +258,36 @@ impl GenericConstParameterId {
     }
 }
 
-fn generic_source_label(owner: &GenericParameterOwnerId, ordinal: u16, prefix: &str) -> String {
+impl GenericEffectParameterId {
+    /// Creates one logical declaration coordinate; schema admission separately
+    /// proves that the owner has this effect parameter.
+    pub fn new(owner: GenericParameterOwnerId, ordinal: u32) -> Self {
+        Self(GenericParameterCoordinate {
+            owner: Arc::new(owner),
+            ordinal,
+        })
+    }
+
+    /// Exact declaration or explicitly supplied detached owner.
+    pub fn owner(&self) -> &GenericParameterOwnerId {
+        self.0.owner.as_ref()
+    }
+
+    /// Position in the owner's effect-parameter inventory.
+    pub const fn ordinal(&self) -> u32 {
+        self.0.ordinal
+    }
+
+    pub(crate) fn source_label(&self) -> String {
+        generic_source_label(self.owner(), self.ordinal(), "$effect")
+    }
+}
+
+fn generic_source_label(
+    owner: &GenericParameterOwnerId,
+    ordinal: impl std::fmt::Display,
+    prefix: &str,
+) -> String {
     let owner = match owner {
         GenericParameterOwnerId::Callable(owner) => {
             format!("{}::{}::{}", owner.package(), owner.module(), owner.name())

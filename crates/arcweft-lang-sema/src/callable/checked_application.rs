@@ -15,9 +15,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::{
-    effect_row::{
-        EffectRow, EffectRowError, EffectRowTail, EffectSubstitution, EffectVar, EffectVarIssuer,
-    },
+    effect_row::{EffectRow, EffectRowError, EffectSubstitution},
     semantic_coordinate::{
         CheckedBindingCoordinateEvidence, CheckedExpressionCoordinateEvidence, CheckedSemanticPath,
         StableCheckedBindingCoordinate, StableCheckedValueCoordinate,
@@ -43,13 +41,12 @@ use super::{
     DropCallableId, EquivalentCallableSource, FloatWidth, FunctionValueOrdinal,
     FxSourceConstructor, IntegerMethodId, LanguageCallableFamily, LineContextMethodId,
     LineScheduleCallableId, MathCallableId, OpenArgumentId, OptionConstructorKind,
-    PreparedCallableEffectInstantiationEvidence, PreparedCaptureIdentityRow,
-    PreparedDialogueCalleeIdentity, PreparedFunctionValueOriginIdentity,
-    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableIdentity,
-    PresentationCallableId, PresentationHandleMethodId, ProbeComparisonOperator,
-    PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind, SignatureOrigin,
-    StageMethodId, StdFloatCallableId, StdFloatOperation, TypeReceiverInstantiation,
-    VariantPayloadRequirement, VectorDimensions,
+    PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
+    PreparedFunctionValueOriginIdentity, PreparedResolvedCallableDefinitionSealInput,
+    PreparedResolvedCallableIdentity, PresentationCallableId, PresentationHandleMethodId,
+    ProbeComparisonOperator, PromotionCallableId, ResolvedCharacterOwner, ResultConstructorKind,
+    SignatureOrigin, StageMethodId, StdFloatCallableId, StdFloatOperation,
+    TypeReceiverInstantiation, VariantPayloadRequirement, VectorDimensions,
 };
 
 const RESOLVED_CALLABLE_DOMAIN: &[u8] = b"arcweft.lang.resolved-callable.v1\0";
@@ -561,19 +558,7 @@ impl From<super::CallableInstantiation> for ResolvedCallableBaseInstantiation {
 pub struct ResolvedCallableBase {
     authority: Arc<ResolvedCallableAuthority>,
     instantiation: ResolvedCallableBaseInstantiation,
-    effect_instantiation: super::CheckedCallableEffectInstantiation,
     digest: ResolvedCallableDigest,
-}
-
-/// Move-only C-seal permission to prove that one raw execution source maps to
-/// an exact checked parameter effect position. It borrows the already sealed
-/// base and stores only typed coordinates/projections, never a second schema
-/// or projected type authority.
-pub(crate) struct CheckedCallableEffectProjectionToken<'a> {
-    base: &'a ResolvedCallableBase,
-    coordinate: CallableParameterCoordinate,
-    expected: super::ParameterExpectedTypeProjection,
-    source_projection: CheckedConstraintSourceProjection,
 }
 
 pub(crate) struct CheckedCaptureSignatureSeal {
@@ -612,7 +597,6 @@ impl ResolvedCallableBase {
             identity,
             origin,
             checked,
-            effect_instantiation,
             instantiation,
             equivalent_sources,
             authority,
@@ -635,8 +619,6 @@ impl ResolvedCallableBase {
         encoder.digest(checked.schema().semantic_digest().as_bytes());
         encoder.base_instantiation(&instantiation)?;
         let digest = ResolvedCallableDigest(encoder.finish());
-        let checked_effect_issuer = EffectVarIssuer::for_checked_callable(digest.as_bytes());
-        let effect_instantiation = effect_instantiation.into_checked(checked_effect_issuer);
         Ok(Arc::new(Self {
             authority: Arc::new(ResolvedCallableAuthority {
                 stable,
@@ -647,7 +629,6 @@ impl ResolvedCallableBase {
                 equivalent_sources,
             }),
             instantiation,
-            effect_instantiation,
             digest,
         }))
     }
@@ -657,9 +638,6 @@ impl ResolvedCallableBase {
     }
     pub const fn instantiation(&self) -> &ResolvedCallableBaseInstantiation {
         &self.instantiation
-    }
-    pub(crate) const fn effect_instantiation(&self) -> &super::CheckedCallableEffectInstantiation {
-        &self.effect_instantiation
     }
     pub const fn digest(&self) -> ResolvedCallableDigest {
         self.digest
@@ -704,24 +682,8 @@ impl ResolvedCallableBase {
         projected_function_type_with_terminal_effects(
             self.schema(),
             self.base_call_group(),
-            &self.effect_instantiation,
             invocation,
         )
-    }
-
-    pub(crate) fn issue_parameter_effect_projection(
-        &self,
-        coordinate: CallableParameterCoordinate,
-        expected: &super::ParameterExpectedTypeProjection,
-        source_projection: &CheckedConstraintSourceProjection,
-    ) -> Result<CheckedCallableEffectProjectionToken<'_>, CallConstraintInvariant> {
-        self.project_parameter_type(coordinate)?;
-        Ok(CheckedCallableEffectProjectionToken {
-            base: self,
-            coordinate,
-            expected: expected.clone(),
-            source_projection: source_projection.clone(),
-        })
     }
 
     /// Formal parameter type projected by this exact checked callable owner.
@@ -731,8 +693,9 @@ impl ResolvedCallableBase {
         &self,
         coordinate: CallableParameterCoordinate,
     ) -> Result<TypeKind, CallConstraintInvariant> {
-        self.effect_instantiation
-            .project_parameter(self.schema(), coordinate)?
+        self.schema()
+            .parameter_type(coordinate)
+            .cloned()
             .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
     }
 
@@ -740,6 +703,7 @@ impl ResolvedCallableBase {
         &self,
         current: CallableGroupIndex,
         solution: &FrozenCallTypeSolution,
+        terminal_effects: &EffectRow,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
         let next = CallableGroupIndex::try_from_usize(
             current
@@ -754,48 +718,18 @@ impl ResolvedCallableBase {
         ) || self.schema().group(next).is_none()
         {
             return match self.schema().result_schema() {
-                CallableResultSchema::Value(_) => self
-                    .effect_instantiation
-                    .project_result(self.schema())
-                    .and_then(|result| solution.instantiate_result(&result))
+                CallableResultSchema::Value(result) => solution
+                    .instantiate_result(result)
                     .map(CallableResultSchema::Value),
                 CallableResultSchema::ContentEmission(operation) => {
                     Ok(CallableResultSchema::ContentEmission(*operation))
                 }
             };
         } else {
-            return remaining_function_type(self.schema(), next, &self.effect_instantiation)
+            return remaining_function_type(self.schema(), next, terminal_effects)
                 .and_then(|result| solution.instantiate_result(&result))
                 .map(CallableResultSchema::Value);
         }
-    }
-}
-
-impl CheckedCallableEffectProjectionToken<'_> {
-    pub(crate) fn seal_actual(
-        self,
-        actual: &TypeKind,
-        solution: &FrozenCallTypeSolution,
-    ) -> Result<TypeKind, CallConstraintInvariant> {
-        let source = self
-            .base
-            .schema()
-            .group(self.coordinate.group())
-            .and_then(|group| group.parameter(self.coordinate.parameter()))
-            .and_then(|parameter| parameter.declared_type())
-            .ok_or(CallConstraintInvariant::MalformedSchemaInventory)?;
-        let projected = self.base.project_parameter_type(self.coordinate)?;
-        let source = self
-            .source_projection
-            .compose_expected(&self.expected.apply_to(source));
-        let projected = self
-            .source_projection
-            .compose_expected(&self.expected.apply_to(&projected));
-        let projected_actual = self
-            .base
-            .effect_instantiation
-            .seal_source_actual(&source, &projected, actual)?;
-        solution.complete_value(&projected_actual)
     }
 }
 
@@ -918,7 +852,6 @@ pub(crate) struct FrozenCallTypeSolutionSeed {
     schema: CallableSignatureSchemaDigest,
     completed_group: CallableGroupIndex,
     solution: Arc<TypeConstraintSolution>,
-    effect_instantiation: PreparedCallableEffectInstantiationEvidence,
 }
 
 impl FrozenCallTypeSolutionSeed {
@@ -926,13 +859,11 @@ impl FrozenCallTypeSolutionSeed {
         schema: CallableSignatureSchemaDigest,
         completed_group: CallableGroupIndex,
         solution: Arc<TypeConstraintSolution>,
-        effect_instantiation: PreparedCallableEffectInstantiationEvidence,
     ) -> Self {
         Self {
             schema,
             completed_group,
             solution,
-            effect_instantiation,
         }
     }
 }
@@ -947,21 +878,6 @@ pub struct CheckedDeferredContinuationParameter {
 pub struct CheckedDeferredContinuationConstParameter {
     parameter: GenericConstReference,
     first_remaining_group: CallableGroupIndex,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedCallEffectBinding {
-    variable: EffectVar,
-    value: EffectRow,
-}
-
-impl CheckedCallEffectBinding {
-    pub const fn variable(&self) -> EffectVar {
-        self.variable
-    }
-    pub const fn value(&self) -> &EffectRow {
-        &self.value
-    }
 }
 
 impl CheckedDeferredContinuationParameter {
@@ -988,7 +904,6 @@ pub struct FrozenCallTypeSolution {
     schema: CallableSignatureSchemaDigest,
     completed_group: CallableGroupIndex,
     solution: Arc<TypeConstraintSolution>,
-    effect_bindings: Box<[CheckedCallEffectBinding]>,
     deferred: Box<[CheckedDeferredContinuationParameter]>,
     deferred_consts: Box<[CheckedDeferredContinuationConstParameter]>,
     digest: FrozenCallTypeSolutionDigest,
@@ -1000,7 +915,10 @@ impl std::fmt::Debug for FrozenCallTypeSolution {
             .field("base", &self.base)
             .field("schema", &self.schema)
             .field("completed_group", &self.completed_group)
-            .field("effect_binding_count", &self.effect_bindings.len())
+            .field(
+                "effect_binding_count",
+                &self.solution.effect_bindings().len(),
+            )
             .field("deferred_count", &self.deferred.len())
             .field("deferred_const_count", &self.deferred_consts.len())
             .field("digest", &self.digest)
@@ -1030,26 +948,7 @@ impl FrozenCallTypeSolution {
         {
             return Err(CallConstraintInvariant::PreparedSchemaMismatch);
         }
-        if !seed
-            .effect_instantiation
-            .matches_checked(base.effect_instantiation())
-        {
-            return Err(CallConstraintInvariant::PreparedEffectInstantiationMismatch);
-        }
-        let authorized_ordinals = base
-            .effect_instantiation()
-            .variables()
-            .map(EffectVar::index)
-            .collect::<BTreeSet<_>>();
-        let solution = Arc::new(
-            seed.solution
-                .checked_rebind_effect_issuer(
-                    seed.effect_instantiation.issuer(),
-                    base.effect_instantiation().issuer(),
-                    &authorized_ordinals,
-                )
-                .map_err(|_| CallConstraintInvariant::PreparedEffectInstantiationMismatch)?,
-        );
+        let solution = seed.solution;
         let implicit_extension_group = match base.instantiation() {
             ResolvedCallableBaseInstantiation::Extension { group, .. } => Some(*group),
             _ => None,
@@ -1129,26 +1028,6 @@ impl FrozenCallTypeSolution {
         if const_bindings.windows(2).any(|rows| rows[0].0 >= rows[1].0) {
             return Err(CallConstraintInvariant::PreparedDeferredMismatch);
         }
-        let mut effect_bindings = solution
-            .effect_bindings()
-            .map(|(variable, value)| CheckedCallEffectBinding {
-                variable: *variable,
-                value: value.clone(),
-            })
-            .collect::<Vec<_>>();
-        effect_bindings.sort_by(|left, right| {
-            left.variable
-                .issuer()
-                .as_bytes()
-                .cmp(right.variable.issuer().as_bytes())
-                .then_with(|| left.variable.index().cmp(&right.variable.index()))
-        });
-        if effect_bindings.windows(2).any(|rows| {
-            rows[0].variable.issuer() == rows[1].variable.issuer()
-                && rows[0].variable.index() == rows[1].variable.index()
-        }) {
-            return Err(CallConstraintInvariant::PreparedDeferredMismatch);
-        }
         let mut encoder = CheckedCallCanonicalEncoder::new(FROZEN_SOLUTION_DOMAIN);
         encoder.digest(base.digest().as_bytes());
         encoder.digest(seed.schema.as_bytes());
@@ -1165,12 +1044,17 @@ impl FrozenCallTypeSolution {
             encoder.bytes(parameter)?;
             encoder.bytes(value)?;
         }
-        encoder.count(effect_bindings.len())?;
-        for binding in &effect_bindings {
-            encoder.digest(binding.variable().issuer().as_bytes());
-            encoder.u32(binding.variable().index());
-            encoder.effect_row(binding.value())?;
+        encoder.count(solution.effect_bindings().len())?;
+        for (parameter, value) in solution.effect_bindings() {
+            encoder.digest(parameter.semantic_identity_digest()?.as_bytes());
+            encoder.digest(value.semantic_identity_digest()?.as_bytes());
         }
+        encoder.digest(
+            solution
+                .effect_predicate()
+                .semantic_identity_digest()?
+                .as_bytes(),
+        );
         encoder.count(deferred.len())?;
         for row in &deferred {
             encoder.tag(2);
@@ -1198,7 +1082,6 @@ impl FrozenCallTypeSolution {
             schema: seed.schema,
             completed_group: seed.completed_group,
             solution,
-            effect_bindings: effect_bindings.into_boxed_slice(),
             deferred: deferred.into_boxed_slice(),
             deferred_consts: deferred_consts.into_boxed_slice(),
             digest,
@@ -1214,8 +1097,15 @@ impl FrozenCallTypeSolution {
     pub const fn completed_group(&self) -> CallableGroupIndex {
         self.completed_group
     }
-    pub fn effect_bindings(&self) -> &[CheckedCallEffectBinding] {
-        &self.effect_bindings
+    pub fn effect_bindings(
+        &self,
+    ) -> impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedEffectReferenceView<'_>,
+            crate::types::ScopedEffectRowView<'_>,
+        ),
+    > {
+        self.solution.effect_bindings()
     }
     pub fn deferred(&self) -> &[CheckedDeferredContinuationParameter] {
         &self.deferred
@@ -1247,22 +1137,14 @@ impl FrozenCallTypeSolution {
             .to_quantified_type()?)
     }
 
-    /// Source values are already type/const-normalized by source completion.
+    /// Source values are already normalized by source completion.
     /// Their free declarations belong to the caller and must not be treated
     /// as this application's formal slots, even in recursive calls.
     pub(crate) fn complete_value(
         &self,
         ty: &TypeKind,
     ) -> Result<TypeKind, CallConstraintInvariant> {
-        let effects = EffectSubstitution::from_rows(
-            self.effect_bindings
-                .iter()
-                .map(|row| (row.variable(), row.value().clone())),
-        );
-        let value = ty
-            .substitute_effect_rows(&effects)
-            .map_err(crate::types::TypeInstantiationError::from)?;
-        Ok(crate::types::ScopedTypeView::at_root(&value).to_root_type()?)
+        Ok(crate::types::ScopedTypeView::at_root(ty).to_root_type()?)
     }
 
     pub(crate) fn type_bindings(
@@ -1297,9 +1179,9 @@ impl FrozenCallTypeSolution {
         row: &EffectRow,
     ) -> Result<crate::effects::EffectSet, EffectRowError> {
         let substitutions = EffectSubstitution::from_rows(
-            self.effect_bindings
-                .iter()
-                .map(|binding| (binding.variable(), binding.value().clone())),
+            self.solution
+                .effect_bindings()
+                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
         );
         row.resolve(&substitutions)
     }
@@ -1307,7 +1189,9 @@ impl FrozenCallTypeSolution {
     /// Returns whether every type/const parameter required by later callable
     /// groups is closed at this application boundary.
     pub fn is_fully_instantiated(&self) -> bool {
-        self.deferred.is_empty() && self.deferred_consts.is_empty()
+        self.deferred.is_empty()
+            && self.deferred_consts.is_empty()
+            && !self.solution.has_residual_effects()
     }
 
     pub(crate) fn visit_types<E>(
@@ -2231,7 +2115,7 @@ pub struct CheckedCallApplicationCore {
     digest: CheckedCallApplicationCoreDigest,
 }
 
-pub(crate) struct CheckedCallApplicationCoreSeal {
+pub(crate) struct CheckedCallApplicationCoreSeal<'a> {
     pub(crate) site: CheckedCallApplicationSite,
     pub(crate) current_group: CallableGroupIndex,
     pub(crate) candidates: CheckedCandidateInventory,
@@ -2240,6 +2124,7 @@ pub(crate) struct CheckedCallApplicationCoreSeal {
     pub(crate) callee: CheckedCallCalleeExecution,
     pub(crate) execution: CheckedCallExecutionProjectionSeal,
     pub(crate) effects: EffectRow,
+    pub(crate) terminal_effects: &'a EffectRow,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -2304,14 +2189,17 @@ impl CheckedCallConsumerAdmission {
         selected: &ResolvedCallable,
         current_group: CallableGroupIndex,
         solution: &FrozenCallTypeSolution,
+        terminal_effects: &EffectRow,
     ) -> Result<Self, CallConstraintInvariant> {
         match input {
             CheckedCallConsumerAdmissionSeal::Ordinary => Ok(Self::Ordinary),
             CheckedCallConsumerAdmissionSeal::ViewFxProducer { runtime_parameters } => {
                 let result_is_fx = matches!(
-                    selected
-                        .base()
-                        .result_schema_for_group(current_group, solution),
+                    selected.base().result_schema_for_group(
+                        current_group,
+                        solution,
+                        terminal_effects
+                    ),
                     Ok(CallableResultSchema::Value(TypeKind::CompileTimeFx(_)))
                 );
                 if !result_is_fx {
@@ -2391,7 +2279,7 @@ impl CheckedCallConsumerAdmission {
 
 impl CheckedCallApplicationCore {
     pub(crate) fn seal(
-        input: CheckedCallApplicationCoreSeal,
+        input: CheckedCallApplicationCoreSeal<'_>,
     ) -> Result<Arc<Self>, CallConstraintInvariant> {
         let selected = input.candidates.selected();
         if input.solution.base() != selected.base().digest()
@@ -2421,6 +2309,7 @@ impl CheckedCallApplicationCore {
             selected,
             input.current_group,
             &input.solution,
+            input.terminal_effects,
         )?;
         let execution = CheckedCallExecutionProjection::seal(
             input.execution,
@@ -2690,9 +2579,11 @@ impl CheckedCallApplication {
     pub(crate) fn seal(
         core: Arc<CheckedCallApplicationCore>,
         expected: CheckedCallResultSeal,
+        terminal_effects: &EffectRow,
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
-        let projected = base.result_schema_for_group(core.current_group(), core.solution())?;
+        let projected =
+            base.result_schema_for_group(core.current_group(), core.solution(), terminal_effects)?;
         let result = match (base.next_group_for(core.current_group()), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {
@@ -3537,30 +3428,17 @@ fn expected_for_alternative(
 fn remaining_function_type(
     schema: &CallableSignatureSchema,
     first_group: CallableGroupIndex,
-    effects: &super::CheckedCallableEffectInstantiation,
+    invocation: &EffectRow,
 ) -> Result<TypeKind, CallConstraintInvariant> {
-    let invocation = effects.project_invocation_effects(schema)?;
-    projected_function_type_with_terminal_effects(schema, first_group, effects, &invocation)
+    projected_function_type_with_terminal_effects(schema, first_group, invocation)
 }
 
 fn projected_function_type_with_terminal_effects(
     schema: &CallableSignatureSchema,
     first_group: CallableGroupIndex,
-    effects: &super::CheckedCallableEffectInstantiation,
     invocation: &EffectRow,
 ) -> Result<TypeKind, CallConstraintInvariant> {
-    schema
-        .project_function_type_from_group(
-            first_group,
-            invocation,
-            || effects.project_result(schema),
-            |coordinate, _| {
-                effects
-                    .project_parameter(schema, coordinate)?
-                    .ok_or(CallConstraintInvariant::MalformedSchemaInventory)
-            },
-        )
-        .map_err(CallConstraintInvariant::from)
+    schema.declared_function_type_from_group(first_group, invocation)
 }
 
 fn schema_function_type(
@@ -4294,31 +4172,7 @@ impl CheckedCallCanonicalEncoder {
     }
 
     fn effect_row(&mut self, effects: &EffectRow) -> Result<(), CallConstraintInvariant> {
-        match effects.tail() {
-            EffectRowTail::Unknown => {
-                self.tag(0);
-                self.tag(0);
-            }
-            EffectRowTail::Closed => {
-                self.tag(1);
-                self.tag(0);
-            }
-            EffectRowTail::Variable(variable) => {
-                self.tag(2);
-                self.tag(1);
-                self.u32(variable.index());
-            }
-        }
-        let mut concrete = effects
-            .concrete()
-            .iter()
-            .map(|effect| effect.semantic_digest())
-            .collect::<Vec<_>>();
-        concrete.sort_unstable();
-        self.count(concrete.len())?;
-        for effect in concrete {
-            self.digest(effect.as_bytes());
-        }
+        self.digest(effects.semantic_identity_digest()?.as_bytes());
         Ok(())
     }
 }

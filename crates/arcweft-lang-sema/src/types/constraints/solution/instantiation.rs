@@ -6,15 +6,18 @@
 
 use thiserror::Error;
 
-use crate::effect_row::{EffectRow, EffectRowError, EffectVar};
+use crate::effect_row::{EffectRow, EffectRowError};
 use crate::types::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericParameterKind, GenericScope,
-    GenericScopeError, GenericTypeReference, ScopedArrayLengthView, ScopedConstReferenceView,
-    ScopedTypeReferenceView, ScopedTypeView, TypeKind, TypeProjectionControl, TypeProjectionError,
-    TypeProjectionNodeKind,
+    ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference,
+    GenericParameterKind, GenericScope, GenericScopeError, GenericTypeReference,
+    ScopedArrayLengthView, ScopedConstReferenceView, ScopedEffectReferenceView,
+    ScopedEffectRowView, ScopedTypeReferenceView, ScopedTypeView, TypeKind, TypeProjectionControl,
+    TypeProjectionError, TypeProjectionNodeKind,
 };
 
-use crate::types::projection_control::{UnmeteredTypeProjection, visit_effect_row};
+use crate::types::projection_control::{
+    EffectProjectionControl, UnmeteredTypeProjection, visit_effect_predicate, visit_effect_row,
+};
 
 use super::{
     CheckedConstArgumentBinding, CheckedEffectArgumentBinding, CheckedTypeArgumentBinding,
@@ -32,6 +35,10 @@ pub enum TypeInstantiationError {
     UnboundType { parameter: GenericTypeReference },
     #[error("constant parameter has no closed instance binding: {parameter:?}")]
     UnboundConst { parameter: GenericConstReference },
+    #[error("effect parameter has no closed instance binding: {parameter:?}")]
+    UnboundEffect { parameter: GenericEffectReference },
+    #[error("closed effect arguments do not satisfy the application's effect constraints")]
+    UnsatisfiedEffectConstraint,
     #[error("application still owns residual generic quantifiers: {binder:?}")]
     Residual { binder: GenericBinder },
     #[error("unresolved semantic type reached closed instance projection")]
@@ -76,23 +83,34 @@ impl TypeConstraintSolution {
         }
         let empty = ClosedTypeInstantiation::default();
         let caller = enclosing.unwrap_or(&empty);
+        if !self.effect_predicate.is_unconstrained() {
+            visit_effect_predicate(control, &self.effect_predicate, 1)?;
+            let predicate = self.effect_predicate.try_substitute_variables(
+                &mut EffectProjectionControl { control, depth: 1 },
+                &mut |reference, adapter| {
+                    let reference = super::template::keep_effect(reference, self.residual.scope())?;
+                    let value = caller.effect_binding(&reference).ok_or(
+                        TypeInstantiationError::UnboundEffect {
+                            parameter: reference,
+                        },
+                    )?;
+                    visit_effect_row(adapter.control, value, 1)?;
+                    Ok(value.clone())
+                },
+            )?;
+            if !predicate.is_unconstrained() {
+                return Err(TypeInstantiationError::UnsatisfiedEffectConstraint.into());
+            }
+        }
         let bindings = self
             .bindings()
             .map(|(parameter, value)| {
                 control
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
-                // Effect variables have their own issuer namespace. Resolve
-                // the completed application's rows before caller closure;
-                // type/const declaration keys are never reapplied here.
                 Ok(CheckedTypeArgumentBinding::new(
                     parameter.value().clone(),
-                    caller.project_type_with_control(
-                        value.value(),
-                        &GenericScope::default(),
-                        Some(self),
-                        control,
-                    )?,
+                    caller.project_type_with_control(value.value(), value.scope(), control)?,
                 ))
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
@@ -124,8 +142,12 @@ impl TypeConstraintSolution {
                     .visit_binding()
                     .map_err(TypeProjectionError::Control)?;
                 Ok(CheckedEffectArgumentBinding::new(
-                    *variable,
-                    EffectRow::closed(caller.project_effect_row_with_control(value, 1, control)?),
+                    variable.value().clone(),
+                    EffectRow::closed(caller.project_effect_row_with_control(
+                        value.value(),
+                        1,
+                        control,
+                    )?),
                 ))
             })
             .collect::<Result<Box<[_]>, TypeProjectionError<C::Error>>>()?;
@@ -164,10 +186,14 @@ impl ClosedTypeInstantiation {
 
     pub(crate) fn effect_bindings(
         &self,
-    ) -> impl ExactSizeIterator<Item = (&crate::effect_row::EffectVar, &EffectRow)> {
-        self.effect_bindings
-            .iter()
-            .map(|row| (&row.variable, &row.value))
+    ) -> impl ExactSizeIterator<Item = (ScopedEffectReferenceView<'_>, ScopedEffectRowView<'_>)>
+    {
+        self.effect_bindings.iter().map(|row| {
+            (
+                ScopedEffectReferenceView::sealed(&row.variable, &self.template_scope),
+                ScopedEffectRowView::at_root(&row.value),
+            )
+        })
     }
 
     pub(crate) fn instantiate_type(
@@ -183,7 +209,7 @@ impl ClosedTypeInstantiation {
         ty: &TypeKind,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
-        self.project_type_with_control(ty, &self.template_scope, None, control)
+        self.project_type_with_control(ty, &self.template_scope, control)
     }
 
     pub(crate) fn instantiate_array_length(
@@ -219,9 +245,9 @@ impl ClosedTypeInstantiation {
         row.resolve_with(|variable| self.effect_binding(variable), |_| Ok(()))
     }
 
-    fn effect_binding(&self, variable: EffectVar) -> Option<&EffectRow> {
+    fn effect_binding(&self, variable: &GenericEffectReference) -> Option<&EffectRow> {
         self.effect_bindings
-            .binary_search_by_key(&variable, |row| row.variable)
+            .binary_search_by(|row| row.variable.cmp(variable))
             .ok()
             .map(|index| &self.effect_bindings[index].value)
     }
@@ -242,7 +268,6 @@ impl ClosedTypeInstantiation {
         &self,
         ty: &TypeKind,
         incoming: &GenericScope,
-        effect_overlay: Option<&TypeConstraintSolution>,
         control: &mut C,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
         super::template::map_term_with_control(
@@ -281,24 +306,25 @@ impl ClosedTypeInstantiation {
             &|length, scope, _, depth, control| {
                 self.project_length_with_control(length, incoming, scope, depth, control)
             },
-            &|row, depth, control| {
-                let projected = match effect_overlay {
-                    Some(overlay) => {
-                        let row = row.resolve_partial_with(
-                            |variable| {
-                                overlay
-                                    .effect_bindings
-                                    .binary_search_by_key(&variable, |row| row.variable)
-                                    .ok()
-                                    .map(|index| &overlay.effect_bindings[index].value)
-                            },
-                            |row| visit_effect_row(control, row, depth),
-                        )?;
-                        self.project_effect_row_with_control(&row, depth, control)?
-                    }
-                    None => self.project_effect_row_with_control(row, depth, control)?,
-                };
-                Ok(EffectRow::closed(projected))
+            &|row, source, target, depth, control| {
+                super::template::map_effects_with_control(
+                    row,
+                    depth,
+                    control,
+                    &|reference, control| {
+                        if let Some(parameter) = reference.template_key(incoming, source)? {
+                            let replacement = self
+                                .effect_binding(&parameter)
+                                .ok_or(TypeInstantiationError::UnboundEffect { parameter })?;
+                            visit_effect_row(control, replacement, depth)?;
+                            return Ok(replacement.clone());
+                        }
+                        Ok(EffectRow::open(
+                            crate::effects::EffectSet::new(),
+                            super::template::keep_effect(reference, target)?,
+                        ))
+                    },
+                )
             },
         )
     }

@@ -31,9 +31,9 @@ use arcweft_lang_hir::dialogue_application::HirAttachedContentApplicationFamily;
 /// from final-HIR structure and already checked child facts.
 ///
 /// This operation never reads source text. For an unresolved dot path it
-/// always performs the typed project value lookup first. Only a definitive
-/// `Absent` result, combined with the absence of a staged value resolution,
-/// permits the retained nominal receiver to be projected.
+/// always performs the typed project value lookup first. A registered
+/// namespace binding remains a path authority; real local and project values
+/// retain value-first lookup before the retained nominal receiver is projected.
 pub(crate) fn prepare_final_call_callee<'a, P, U>(
     authority: CallResolverAuthority<'a>,
     expression: ExprId,
@@ -389,6 +389,21 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
             Some(CheckedExpressionResolution::Value(_))
         )
     });
+    let namespace_binding = checked
+        .and_then(PreparedExpressionFact::checked_resolution)
+        .and_then(|resolution| match resolution {
+            CheckedExpressionResolution::Value(CheckedValueResolution::Registered(value)) => {
+                value.environment_binding()
+            }
+            _ => None,
+        })
+        .is_some_and(|binding| {
+            authority
+                .world()
+                .environment()
+                .typecheck_env()
+                .is_namespace_binding(binding)
+        });
 
     let project_lookup = match expression.kind() {
         HirExprKind::Path(HirPathValue::Resolved(path)) => {
@@ -453,7 +468,7 @@ fn prepare_unresolved_dot_callee<'a, P, U>(
                 });
             }
         }
-        Some(ProjectValueLookup::Absent) if !staged_value => {
+        Some(ProjectValueLookup::Absent) if !staged_value || namespace_binding => {
             if let Some(path) = prepare_language_free_dot_path(
                 authority.world().environment().callable_catalog(),
                 value_receiver,

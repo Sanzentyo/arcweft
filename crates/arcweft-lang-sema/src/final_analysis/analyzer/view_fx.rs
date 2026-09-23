@@ -92,8 +92,8 @@ impl Analyzer<'_, '_, '_> {
             _ => {
                 let CallableResultSchema::Value(TypeKind::CompileTimeFx(
                     CompileTimeFxType::Registered(definition),
-                )) = candidate
-                    .result_schema_for_group(group_index)
+                )) = self
+                    .source_result_schema_for_group(owner, candidate, group_index)
                     .map_err(|_| AnalyzerExpressionError::rejected(owner))?
                 else {
                     return Ok(overrides);

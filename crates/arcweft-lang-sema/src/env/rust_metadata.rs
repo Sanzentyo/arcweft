@@ -1,5 +1,11 @@
 //! Source-backed Rust nominal metadata and its accepted immutable catalog.
 
+mod join;
+mod names;
+pub(crate) use join::JoinedRustMetadata;
+pub use join::{RustMetadataJoinError, RustMetadataJoinErrorKind};
+pub use names::{RustMetadataNameProblem, RustMetadataNameScope};
+
 use std::collections::BTreeMap;
 
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
@@ -8,11 +14,14 @@ use arcweft_source::SourceSpan;
 use crate::{
     callable::{RustItemPath, RustPackageProvenance},
     registration::{EnvironmentPublicationItemId, EnvironmentTypeProjectionNode},
-    types::{AcceptedNominalType, GenericTypeParameterId, TypeKind},
+    types::{
+        AcceptedNominalType, GenericTypeParameterId, TypeInstantiationError, TypeKind,
+        TypeProjectionControl, TypeProjectionError,
+    },
 };
 
 use super::{
-    EnumVariantPayload, EnvironmentEnumRecordField,
+    EnumVariantPayload, EnvironmentRecordField,
     nominal::{AcceptedNominalId, RustPackageId},
 };
 
@@ -29,7 +38,7 @@ pub struct RustTypeParameterPublicationInput {
 pub enum RustStructMetadataInput {
     Unit,
     Tuple(Box<[EnvironmentTypeProjectionNode]>),
-    Record(Box<[(String, EnvironmentTypeProjectionNode)]>),
+    Record(Box<[EnvironmentRecordField<EnvironmentTypeProjectionNode>]>),
 }
 
 /// Source-backed Rust enum variant awaiting type projection.
@@ -38,6 +47,8 @@ pub struct RustVariantMetadataInput {
     name: String,
     payload: RustVariantPayloadInput,
     source: SourceSpan,
+    wire_name: Option<String>,
+    discriminant: Option<i128>,
 }
 
 /// Source-backed Rust enum payload awaiting type projection.
@@ -45,7 +56,7 @@ pub struct RustVariantMetadataInput {
 pub enum RustVariantPayloadInput {
     Unit,
     Tuple(Box<[EnvironmentTypeProjectionNode]>),
-    Record(Box<[(String, EnvironmentTypeProjectionNode)]>),
+    Record(Box<[EnvironmentRecordField<EnvironmentTypeProjectionNode>]>),
 }
 
 /// Source-backed Rust nominal shape awaiting accepted-world projection.
@@ -73,6 +84,7 @@ pub struct RustTypeMetadataPublicationInput {
     parameters: Box<[RustTypeParameterPublicationInput]>,
     kind: RustTypeMetadataPublicationKind,
     source: SourceSpan,
+    data_policy: arcweft_rust_abi::ArcweftRustDataTypePolicy,
 }
 
 /// Stable declaration and Rust provenance identity for one metadata publication.
@@ -99,6 +111,7 @@ pub struct AcceptedRustTypeMetadataCatalog {
 /// One accepted Rust nominal metadata declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AcceptedRustTypeMetadata {
+    item: EnvironmentPublicationItemId,
     id: AcceptedNominalId,
     package: RustPackageId,
     package_provenance: RustPackageProvenance,
@@ -106,17 +119,20 @@ pub struct AcceptedRustTypeMetadata {
     parameters: Box<[GenericTypeParameterId]>,
     kind: AcceptedRustTypeMetadataKind,
     source: SourceSpan,
+    data_policy: arcweft_rust_abi::ArcweftRustDataTypePolicy,
 }
 
 /// One accepted Rust nominal shape after substituting an exact instantiation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct InstantiatedRustTypeMetadata {
+    item: EnvironmentPublicationItemId,
     id: AcceptedNominalId,
     package: RustPackageId,
     package_provenance: RustPackageProvenance,
     rust_item: RustItemPath,
     kind: AcceptedRustTypeMetadataKind,
     source: SourceSpan,
+    data_policy: arcweft_rust_abi::ArcweftRustDataTypePolicy,
 }
 
 /// Accepted Rust nominal shape with semantic type templates.
@@ -129,7 +145,7 @@ pub enum AcceptedRustTypeMetadataKind {
         /// Variants retain the declaration order supplied by the Rust
         /// metadata producer.  Variant ordinals are semantic, so this must
         /// not be normalized through a key-sorting map.
-        variants: Box<[(String, EnumVariantPayload)]>,
+        variants: Box<[AcceptedRustVariantMetadata]>,
     },
     Newtype {
         inner: TypeKind,
@@ -141,7 +157,56 @@ pub enum AcceptedRustTypeMetadataKind {
 pub enum AcceptedRustStructShape {
     Unit,
     Tuple(Box<[TypeKind]>),
-    Record(Box<[(String, TypeKind)]>),
+    Record(Box<[EnvironmentRecordField]>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcceptedRustVariantMetadata {
+    name: String,
+    wire_name: String,
+    discriminant: Option<i128>,
+    payload: EnumVariantPayload,
+}
+
+impl AcceptedRustVariantMetadata {
+    pub fn new(name: impl Into<String>, payload: EnumVariantPayload) -> Self {
+        let name = name.into();
+        Self {
+            wire_name: name.clone(),
+            name,
+            discriminant: None,
+            payload,
+        }
+    }
+    pub fn with_wire_policy(
+        mut self,
+        wire_name: impl Into<String>,
+        discriminant: Option<i128>,
+    ) -> Self {
+        self.wire_name = wire_name.into();
+        self.discriminant = discriminant;
+        self
+    }
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+    pub fn wire_name(&self) -> &str {
+        &self.wire_name
+    }
+    pub const fn discriminant(&self) -> Option<i128> {
+        self.discriminant
+    }
+    pub const fn payload(&self) -> &EnumVariantPayload {
+        &self.payload
+    }
+}
+
+/// Exact source default request. The accepted callable catalog supplies the
+/// executable proof for the fully instantiated field type.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum RustFieldDefault {
+    Trait,
+    Function(RustItemPath),
 }
 
 impl RustTypeParameterPublicationInput {
@@ -172,7 +237,25 @@ impl RustVariantMetadataInput {
             name,
             payload,
             source,
+            wire_name: None,
+            discriminant: None,
         }
+    }
+
+    pub fn with_wire_policy(
+        mut self,
+        wire_name: Option<String>,
+        discriminant: Option<i128>,
+    ) -> Self {
+        self.wire_name = wire_name;
+        self.discriminant = discriminant;
+        self
+    }
+    pub fn wire_name(&self) -> &str {
+        self.wire_name.as_deref().unwrap_or(&self.name)
+    }
+    pub const fn discriminant(&self) -> Option<i128> {
+        self.discriminant
     }
 
     pub fn name(&self) -> &str {
@@ -195,6 +278,14 @@ impl RustTypeMetadataPublicationInput {
         kind: RustTypeMetadataPublicationKind,
         source: SourceSpan,
     ) -> Self {
+        let data_policy = arcweft_rust_abi::ArcweftRustDataTypePolicy::standard(
+            identity
+                .rust_item
+                .as_str()
+                .rsplit("::")
+                .next()
+                .expect("non-empty Rust path"),
+        );
         Self {
             item: identity.item,
             id: identity.id,
@@ -204,7 +295,21 @@ impl RustTypeMetadataPublicationInput {
             parameters: parameters.into(),
             kind,
             source,
+            data_policy,
         }
+    }
+
+    pub fn with_data_policy(
+        mut self,
+        policy: Option<arcweft_rust_abi::ArcweftRustDataTypePolicy>,
+    ) -> Self {
+        if let Some(policy) = policy {
+            self.data_policy = policy;
+        }
+        self
+    }
+    pub const fn data_policy(&self) -> &arcweft_rust_abi::ArcweftRustDataTypePolicy {
+        &self.data_policy
     }
 
     pub const fn item(&self) -> &EnvironmentPublicationItemId {
@@ -271,6 +376,7 @@ impl AcceptedRustTypeMetadataCatalog {
         let mut by_id = BTreeMap::new();
         let mut package_claims = BTreeMap::<RustPackageId, RustPackageProvenance>::new();
         for record in records {
+            record.kind.validate_names(&record.id)?;
             if let Some(first) = package_claims.get(record.package()) {
                 if first != record.package_provenance() {
                     return Err(
@@ -308,6 +414,18 @@ impl AcceptedRustTypeMetadataCatalog {
         &self,
         nominal: &AcceptedNominalType,
     ) -> Result<InstantiatedRustTypeMetadata, RustMetadataInstantiationError> {
+        self.instantiate_with_control(nominal, &mut crate::types::UnmeteredTypeProjection)
+    }
+
+    /// Substitutes one exact instance using the caller's transaction budget.
+    pub fn instantiate_with_control<C: TypeProjectionControl>(
+        &self,
+        nominal: &AcceptedNominalType,
+        control: &mut C,
+    ) -> Result<InstantiatedRustTypeMetadata, RustMetadataInstantiationError<C::Error>> {
+        control
+            .check()
+            .map_err(RustMetadataInstantiationError::Control)?;
         let metadata = self.by_id.get(nominal.declaration()).ok_or_else(|| {
             RustMetadataInstantiationError::UnknownNominal {
                 id: nominal.declaration().clone(),
@@ -323,39 +441,72 @@ impl AcceptedRustTypeMetadataCatalog {
         let substitutions = metadata
             .parameters
             .iter()
-            .cloned()
-            .zip(nominal.arguments().iter().cloned())
+            .zip(nominal.arguments())
             .collect::<BTreeMap<_, _>>();
+        let kind = metadata
+            .kind
+            .try_map_types(&mut |ty| {
+                ty.instantiate_type_parameters_with_control(&substitutions, control)
+            })
+            .map_err(|error| match error {
+                TypeProjectionError::Instantiation(error) => {
+                    RustMetadataInstantiationError::Type(error)
+                }
+                TypeProjectionError::Control(error) => {
+                    RustMetadataInstantiationError::Control(error)
+                }
+            })?;
         Ok(InstantiatedRustTypeMetadata {
+            item: metadata.item.clone(),
             id: metadata.id.clone(),
             package: metadata.package.clone(),
             package_provenance: metadata.package_provenance.clone(),
             rust_item: metadata.rust_item.clone(),
-            kind: metadata.kind.substitute(&substitutions),
+            kind,
             source: metadata.source.clone(),
+            data_policy: metadata.data_policy.clone(),
         })
     }
 }
 
 impl AcceptedRustTypeMetadata {
     pub(crate) fn new(
-        id: AcceptedNominalId,
-        package: RustPackageId,
-        package_provenance: RustPackageProvenance,
-        rust_item: RustItemPath,
+        identity: RustTypeMetadataPublicationIdentity,
         parameters: impl Into<Box<[GenericTypeParameterId]>>,
         kind: AcceptedRustTypeMetadataKind,
         source: SourceSpan,
     ) -> Self {
+        let data_policy = arcweft_rust_abi::ArcweftRustDataTypePolicy::standard(
+            identity
+                .rust_item
+                .as_str()
+                .rsplit("::")
+                .next()
+                .expect("non-empty Rust path"),
+        );
         Self {
-            id,
-            package,
-            package_provenance,
-            rust_item,
+            item: identity.item,
+            id: identity.id,
+            package: identity.package,
+            package_provenance: identity.package_provenance,
+            rust_item: identity.rust_item,
             parameters: parameters.into(),
             kind,
             source,
+            data_policy,
         }
+    }
+
+    pub(crate) fn with_data_policy(
+        mut self,
+        policy: arcweft_rust_abi::ArcweftRustDataTypePolicy,
+    ) -> Self {
+        self.data_policy = policy;
+        self
+    }
+
+    pub const fn item(&self) -> &EnvironmentPublicationItemId {
+        &self.item
     }
 
     pub const fn id(&self) -> &AcceptedNominalId {
@@ -388,6 +539,12 @@ impl AcceptedRustTypeMetadata {
 }
 
 impl InstantiatedRustTypeMetadata {
+    pub const fn data_policy(&self) -> &arcweft_rust_abi::ArcweftRustDataTypePolicy {
+        &self.data_policy
+    }
+    pub const fn item(&self) -> &EnvironmentPublicationItemId {
+        &self.item
+    }
     pub const fn id(&self) -> &AcceptedNominalId {
         &self.id
     }
@@ -414,44 +571,49 @@ impl InstantiatedRustTypeMetadata {
 }
 
 impl AcceptedRustTypeMetadataKind {
-    fn substitute(&self, substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>) -> Self {
-        match self {
+    fn try_map_types<E>(
+        &self,
+        map: &mut impl FnMut(&TypeKind) -> Result<TypeKind, E>,
+    ) -> Result<Self, E> {
+        Ok(match self {
             Self::Struct { shape } => Self::Struct {
-                shape: shape.substitute(substitutions),
+                shape: shape.try_map_types(map)?,
             },
             Self::Enum { variants } => Self::Enum {
                 variants: variants
                     .iter()
-                    .map(|(name, payload)| {
-                        (name.clone(), substitute_variant(payload, substitutions))
+                    .map(|variant| {
+                        Ok(AcceptedRustVariantMetadata::new(
+                            variant.name.clone(),
+                            variant.payload.try_map_types(map)?,
+                        )
+                        .with_wire_policy(variant.wire_name.clone(), variant.discriminant))
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Result<Vec<_>, E>>()?
                     .into_boxed_slice(),
             },
-            Self::Newtype { inner } => Self::Newtype {
-                inner: inner.substitute_type_parameters(substitutions),
-            },
-        }
+            Self::Newtype { inner } => Self::Newtype { inner: map(inner)? },
+        })
     }
 }
 
 impl AcceptedRustStructShape {
-    fn substitute(&self, substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>) -> Self {
-        match self {
+    fn try_map_types<E>(
+        &self,
+        map: &mut impl FnMut(&TypeKind) -> Result<TypeKind, E>,
+    ) -> Result<Self, E> {
+        Ok(match self {
             Self::Unit => Self::Unit,
-            Self::Tuple(items) => Self::Tuple(
-                items
-                    .iter()
-                    .map(|item| item.substitute_type_parameters(substitutions))
-                    .collect(),
-            ),
+            Self::Tuple(items) => {
+                Self::Tuple(items.iter().map(&mut *map).collect::<Result<_, _>>()?)
+            }
             Self::Record(fields) => Self::Record(
                 fields
                     .iter()
-                    .map(|(name, ty)| (name.clone(), ty.substitute_type_parameters(substitutions)))
-                    .collect(),
+                    .map(|field| field.try_map_type(&mut *map))
+                    .collect::<Result<_, E>>()?,
             ),
-        }
+        })
     }
 }
 
@@ -463,7 +625,11 @@ impl AcceptedRustTypeMetadataDigest {
 
 /// Failure to instantiate metadata for one exact accepted Rust nominal.
 #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
-pub enum RustMetadataInstantiationError {
+pub enum RustMetadataInstantiationError<E: std::error::Error + 'static = std::convert::Infallible> {
+    #[error("Rust metadata instantiation was aborted: {0}")]
+    Control(#[source] E),
+    #[error(transparent)]
+    Type(#[from] TypeInstantiationError),
     #[error("accepted Rust metadata does not contain nominal `{id:?}`")]
     UnknownNominal { id: AcceptedNominalId },
     #[error("accepted Rust nominal expects {expected} argument(s), but received {actual}")]
@@ -481,18 +647,15 @@ pub enum AcceptedRustTypeMetadataCatalogError {
     GenericScope(#[from] crate::types::GenericScopeError),
     #[error("accepted Rust metadata contains duplicate nominal `{id:?}`")]
     DuplicateNominal { id: AcceptedNominalId },
-    #[error("accepted Rust metadata `{id:?}` contains duplicate variant `{variant}`")]
-    DuplicateVariant {
-        id: AcceptedNominalId,
-        variant: String,
-    },
     #[error(
-        "accepted Rust metadata `{id:?}` variant `{variant}` contains duplicate record field `{field}`"
+        "accepted Rust metadata {id:?} has invalid {scope:?} member {ordinal} `{name}`: {problem:?}"
     )]
-    DuplicateVariantRecordField {
+    InvalidName {
         id: AcceptedNominalId,
-        variant: String,
-        field: String,
+        scope: RustMetadataNameScope,
+        ordinal: usize,
+        name: String,
+        problem: RustMetadataNameProblem,
     },
     #[error("Rust package `{package}` has conflicting version or metadata-hash claims")]
     PackageProvenanceConflict {
@@ -502,30 +665,24 @@ pub enum AcceptedRustTypeMetadataCatalogError {
     },
 }
 
-fn substitute_variant(
-    payload: &EnumVariantPayload,
-    substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
-) -> EnumVariantPayload {
-    match payload {
-        EnumVariantPayload::Unit => EnumVariantPayload::Unit,
-        EnumVariantPayload::Tuple(items) => EnumVariantPayload::Tuple(
-            items
-                .iter()
-                .map(|item| item.substitute_type_parameters(substitutions))
-                .collect(),
-        ),
-        EnumVariantPayload::Record(fields) => EnumVariantPayload::Record(
-            fields
-                .iter()
-                .map(|field| {
-                    EnvironmentEnumRecordField::new(
-                        field.name(),
-                        field.ty().substitute_type_parameters(substitutions),
-                    )
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
-        ),
+impl EnumVariantPayload {
+    fn try_map_types<E>(
+        &self,
+        map: &mut impl FnMut(&TypeKind) -> Result<TypeKind, E>,
+    ) -> Result<Self, E> {
+        Ok(match self {
+            Self::Unit => Self::Unit,
+            Self::Tuple(items) => {
+                Self::Tuple(items.iter().map(&mut *map).collect::<Result<_, _>>()?)
+            }
+            Self::Record(fields) => Self::Record(
+                fields
+                    .iter()
+                    .map(|field| field.try_map_type(&mut *map))
+                    .collect::<Result<Vec<_>, E>>()?
+                    .into_boxed_slice(),
+            ),
+        })
     }
 }
 
@@ -536,6 +693,7 @@ fn metadata_catalog_digest(
     hasher.update(b"arcweft.accepted-rust-metadata.v1\0");
     hash_len(&mut hasher, records.len());
     for record in records.values() {
+        hasher.update(&record.item.semantic_digest());
         hasher.update(record.id.semantic_digest().as_bytes());
         hash_str(&mut hasher, record.package.as_str());
         hash_str(&mut hasher, record.package_provenance.version());
@@ -546,6 +704,7 @@ fn metadata_catalog_digest(
             hash_type(&mut hasher, &TypeKind::generic_parameter(parameter.clone()))?;
         }
         hash_metadata_kind(&mut hasher, &record.kind)?;
+        hasher.update(&record.data_policy.canonical_bytes());
         hash_source(&mut hasher, &record.source);
     }
     Ok(AcceptedRustTypeMetadataDigest(
@@ -574,9 +733,10 @@ fn hash_metadata_kind(
                 AcceptedRustStructShape::Record(fields) => {
                     hasher.update(&[2]);
                     hash_len(hasher, fields.len());
-                    for (name, ty) in fields {
-                        hash_str(hasher, name);
-                        hash_type(hasher, ty)?;
+                    for field in fields {
+                        hash_str(hasher, field.name());
+                        hash_type(hasher, field.ty())?;
+                        hash_field_default(hasher, field);
                     }
                 }
             }
@@ -584,9 +744,19 @@ fn hash_metadata_kind(
         AcceptedRustTypeMetadataKind::Enum { variants } => {
             hasher.update(&[1]);
             hash_len(hasher, variants.len());
-            for (name, payload) in variants {
-                hash_str(hasher, name);
-                match payload {
+            for variant in variants {
+                hash_str(hasher, variant.name());
+                hash_str(hasher, variant.wire_name());
+                match variant.discriminant() {
+                    None => {
+                        hasher.update(&[0]);
+                    }
+                    Some(value) => {
+                        hasher.update(&[1]);
+                        hasher.update(&value.to_le_bytes());
+                    }
+                }
+                match variant.payload() {
                     EnumVariantPayload::Unit => {
                         hasher.update(&[0]);
                     }
@@ -603,6 +773,7 @@ fn hash_metadata_kind(
                         for field in fields {
                             hash_str(hasher, field.name());
                             hash_type(hasher, field.ty())?;
+                            hash_field_default(hasher, field);
                         }
                     }
                 }
@@ -622,6 +793,24 @@ fn hash_type(
 ) -> Result<(), crate::types::GenericScopeError> {
     hasher.update(ty.semantic_identity_digest()?.as_bytes());
     Ok(())
+}
+
+fn hash_field_default(hasher: &mut blake3::Hasher, field: &EnvironmentRecordField) {
+    hash_str(hasher, field.wire_name());
+    hasher.update(&[field.bytes_format().map_or(0, |format| format as u8 + 1)]);
+    hasher.update(&[u8::from(field.skip())]);
+    match field.data_default() {
+        None => {
+            hasher.update(&[0]);
+        }
+        Some(RustFieldDefault::Trait) => {
+            hasher.update(&[1]);
+        }
+        Some(RustFieldDefault::Function(path)) => {
+            hasher.update(&[2]);
+            hash_str(hasher, path.as_str());
+        }
+    }
 }
 
 fn hash_source(hasher: &mut blake3::Hasher, source: &SourceSpan) {
@@ -688,12 +877,14 @@ mod tests {
         assert_eq!(
             variants
                 .iter()
-                .map(|(name, _)| name.as_str())
+                .map(|variant| variant.name())
                 .collect::<Vec<_>>(),
             ["Bronze", "Custom"]
         );
         assert_eq!(
-            variants.iter().position(|(name, _)| name == "Custom"),
+            variants
+                .iter()
+                .position(|variant| variant.name() == "Custom"),
             Some(1),
             "the ordinal is the source declaration ordinal"
         );
@@ -747,22 +938,23 @@ mod tests {
         let parameter =
             GenericTypeParameterId::new(GenericParameterOwnerId::AcceptedNominal(id.clone()), 0);
         let record = AcceptedRustTypeMetadata::new(
-            id.clone(),
-            RustPackageId::try_new("tooling").expect("package"),
-            RustPackageProvenance::try_new("tooling", "1.0.0", None).expect("provenance"),
-            RustItemPath::try_new("tooling::Envelope").expect("Rust item"),
+            metadata_identity(&id, "1.0.0", "tooling::Envelope"),
             [parameter.clone()],
             AcceptedRustTypeMetadataKind::Struct {
                 shape: AcceptedRustStructShape::Record(
-                    [("value".to_owned(), TypeKind::generic_parameter(parameter))]
-                        .into_iter()
-                        .collect(),
+                    [EnvironmentRecordField::new(
+                        "value",
+                        TypeKind::generic_parameter(parameter),
+                    )]
+                    .into_iter()
+                    .collect(),
                 ),
             },
             source("metadata://tooling/envelope", "Envelope<T>"),
         );
         let catalog =
             AcceptedRustTypeMetadataCatalog::try_new([record]).expect("generic metadata catalog");
+        let item = catalog.get(&id).unwrap().item().clone();
         let before = catalog.digest();
         let instantiated = catalog
             .instantiate(&AcceptedNominalType::new(id, [TypeKind::I32]))
@@ -771,9 +963,146 @@ mod tests {
             instantiated.kind(),
             AcceptedRustTypeMetadataKind::Struct {
                 shape: AcceptedRustStructShape::Record(fields)
-            } if fields.as_ref() == [("value".to_owned(), TypeKind::I32)]
+            } if fields.as_ref() == [EnvironmentRecordField::new("value", TypeKind::I32)]
         ));
         assert_eq!(catalog.digest(), before);
+        assert_eq!(instantiated.item(), &item);
+    }
+
+    #[test]
+    fn member_names_are_validated_in_every_metadata_namespace() {
+        let id = accepted_id("tooling", "Names");
+        for (names, ordinal, problem) in [
+            (vec![""], 0, RustMetadataNameProblem::Empty),
+            (
+                vec!["member", "member"],
+                1,
+                RustMetadataNameProblem::Duplicate { first: 0 },
+            ),
+        ] {
+            let cases = [
+                (
+                    AcceptedRustTypeMetadataKind::Struct {
+                        shape: AcceptedRustStructShape::Record(
+                            names
+                                .iter()
+                                .map(|name| EnvironmentRecordField::new(*name, TypeKind::I32))
+                                .collect(),
+                        ),
+                    },
+                    RustMetadataNameScope::StructFields,
+                ),
+                (
+                    AcceptedRustTypeMetadataKind::Enum {
+                        variants: names
+                            .iter()
+                            .map(|name| {
+                                AcceptedRustVariantMetadata::new(*name, EnumVariantPayload::Unit)
+                            })
+                            .collect(),
+                    },
+                    RustMetadataNameScope::Variants,
+                ),
+                (
+                    AcceptedRustTypeMetadataKind::Enum {
+                        variants: Box::new([AcceptedRustVariantMetadata::new(
+                            "Case".to_owned(),
+                            EnumVariantPayload::Record(
+                                names
+                                    .iter()
+                                    .map(|name| EnvironmentRecordField::new(*name, TypeKind::I32))
+                                    .collect(),
+                            ),
+                        )]),
+                    },
+                    RustMetadataNameScope::VariantFields { variant: 0 },
+                ),
+            ];
+            for (kind, scope) in cases {
+                let error =
+                    AcceptedRustTypeMetadataCatalog::try_new([metadata_with_kind(&id, kind, [])])
+                        .unwrap_err();
+                assert!(
+                    matches!(error, AcceptedRustTypeMetadataCatalogError::InvalidName { scope: actual_scope, ordinal: actual_ordinal, problem: actual_problem, .. }
+                    if actual_scope == scope && actual_ordinal == ordinal && actual_problem == problem)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn generic_expansion_charges_each_copy_and_keeps_the_catalog_on_abort() {
+        #[derive(Clone, Debug, Eq, thiserror::Error, PartialEq)]
+        #[error("fixture projection budget exhausted")]
+        struct Exhausted;
+        struct Budget {
+            maximum: u64,
+            visited: u64,
+        }
+        impl TypeProjectionControl for Budget {
+            type Error = Exhausted;
+            fn check(&mut self) -> Result<(), Exhausted> {
+                Ok(())
+            }
+            fn visit_node(
+                &mut self,
+                _: crate::types::TypeProjectionNodeKind,
+                _: u64,
+            ) -> Result<(), Exhausted> {
+                self.visited += 1;
+                if self.visited > self.maximum {
+                    Err(Exhausted)
+                } else {
+                    Ok(())
+                }
+            }
+            fn visit_binding(&mut self) -> Result<(), Exhausted> {
+                self.visit_node(crate::types::TypeProjectionNodeKind::Type, 1)
+            }
+        }
+        let id = accepted_id("tooling", "Repeated");
+        let parameter =
+            GenericTypeParameterId::new(GenericParameterOwnerId::AcceptedNominal(id.clone()), 0);
+        let catalog = AcceptedRustTypeMetadataCatalog::try_new([AcceptedRustTypeMetadata::new(
+            metadata_identity(&id, "1.0.0", "tooling::Repeated"),
+            [parameter.clone()],
+            AcceptedRustTypeMetadataKind::Struct {
+                shape: AcceptedRustStructShape::Tuple(
+                    vec![TypeKind::generic_parameter(parameter); 3].into(),
+                ),
+            },
+            source("metadata://tooling/repeated", "Repeated<T>"),
+        )])
+        .unwrap();
+        let nominal =
+            AcceptedNominalType::new(id, [TypeKind::Tuple(vec![TypeKind::Bool, TypeKind::I32])]);
+        let digest = catalog.digest();
+        let mut counted = Budget {
+            maximum: u64::MAX,
+            visited: 0,
+        };
+        let expected = catalog
+            .instantiate_with_control(&nominal, &mut counted)
+            .unwrap();
+        let mut one_less = Budget {
+            maximum: counted.visited - 1,
+            visited: 0,
+        };
+        assert!(matches!(
+            catalog.instantiate_with_control(&nominal, &mut one_less),
+            Err(RustMetadataInstantiationError::Control(Exhausted))
+        ));
+        let mut exact = Budget {
+            maximum: counted.visited,
+            visited: 0,
+        };
+        assert_eq!(
+            catalog
+                .instantiate_with_control(&nominal, &mut exact)
+                .unwrap(),
+            expected
+        );
+        assert_eq!(catalog.digest(), digest);
     }
 
     fn assert_digest_changes(
@@ -795,10 +1124,7 @@ mod tests {
         inner: TypeKind,
     ) -> AcceptedRustTypeMetadata {
         AcceptedRustTypeMetadata::new(
-            accepted_id(package, name),
-            RustPackageId::try_new(package).expect("package"),
-            RustPackageProvenance::try_new(package, version, None).expect("provenance"),
-            RustItemPath::try_new(rust_item).expect("Rust item"),
+            metadata_identity(&accepted_id(package, name), version, rust_item),
             [],
             AcceptedRustTypeMetadataKind::Newtype { inner },
             source(
@@ -818,11 +1144,11 @@ mod tests {
             _ => panic!("test metadata owner is a Rust package"),
         };
         AcceptedRustTypeMetadata::new(
-            id.clone(),
-            package.clone(),
-            RustPackageProvenance::try_new(package.as_str(), "1.0.0", None).expect("provenance"),
-            RustItemPath::try_new(format!("{}::{}", package, id.canonical_path()))
-                .expect("Rust item"),
+            metadata_identity(
+                id,
+                "1.0.0",
+                &format!("{}::{}", package, id.canonical_path()),
+            ),
             parameters,
             kind,
             source("metadata://tooling/type", "type metadata"),
@@ -835,10 +1161,34 @@ mod tests {
     ) -> AcceptedRustTypeMetadata {
         let variants = names
             .into_iter()
-            .map(|name| (name.to_owned(), EnumVariantPayload::Unit))
+            .map(|name| AcceptedRustVariantMetadata::new(name, EnumVariantPayload::Unit))
             .collect::<Vec<_>>()
             .into_boxed_slice();
         metadata_with_kind(id, AcceptedRustTypeMetadataKind::Enum { variants }, [])
+    }
+
+    fn metadata_identity(
+        id: &AcceptedNominalId,
+        version: &str,
+        rust_item: &str,
+    ) -> RustTypeMetadataPublicationIdentity {
+        let AcceptedNominalOwnerId::RustPackage(package) = id.owner() else {
+            panic!("test metadata owner is a Rust package")
+        };
+        let rust_item = RustItemPath::try_new(rust_item).expect("Rust item");
+        RustTypeMetadataPublicationIdentity::new(
+            EnvironmentPublicationItemId::RustType {
+                adapter: crate::callable::AdapterPackageId::try_new("fixture.metadata")
+                    .expect("adapter"),
+                package: package.clone(),
+                rust_item: rust_item.clone(),
+                accepted_path: id.canonical_path().clone(),
+            },
+            id.clone(),
+            package.clone(),
+            RustPackageProvenance::try_new(package.as_str(), version, None).expect("provenance"),
+            rust_item,
+        )
     }
 
     fn accepted_id(package: &str, name: &str) -> AcceptedNominalId {

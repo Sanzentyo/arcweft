@@ -4,8 +4,14 @@ use std::convert::Infallible;
 
 use thiserror::Error;
 
-use super::{GenericScopeError, TypeInstantiationError};
-use crate::effect_row::{EffectRow, EffectRowError, EffectRowTail};
+use super::{GenericEffectReference, GenericScopeError, TypeInstantiationError};
+use crate::{
+    effect_row::{
+        DecisionControl, DecisionEncoding, DecisionWork, EffectRow, EffectRowError,
+        MembershipEncoding,
+    },
+    effects::EffectId,
+};
 
 /// Structural occurrence visited before it is copied or projected.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -88,25 +94,81 @@ pub(in crate::types) fn visit_effect_row<C: TypeProjectionControl>(
     row: &EffectRow,
     depth: u64,
 ) -> Result<(), TypeProjectionError<C::Error>> {
-    control.check().map_err(TypeProjectionError::Control)?;
-    control
-        .visit_node(TypeProjectionNodeKind::Effect, depth)
-        .map_err(TypeProjectionError::Control)?;
-    if row.concrete().is_empty() && matches!(row.tail(), EffectRowTail::Closed) {
-        return Ok(());
+    row.encode(&mut EffectProjectionVisitor { control, depth })
+}
+
+pub(in crate::types) fn visit_effect_predicate<C: TypeProjectionControl>(
+    control: &mut C,
+    predicate: &crate::effect_row::EffectPredicate,
+    depth: u64,
+) -> Result<(), TypeProjectionError<C::Error>> {
+    predicate.encode(&mut EffectProjectionVisitor { control, depth })
+}
+
+/// Decision construction uses the same consumer-owned control as type folds.
+pub(in crate::types) struct EffectProjectionControl<'a, C> {
+    pub(in crate::types) control: &'a mut C,
+    pub(in crate::types) depth: u64,
+}
+
+impl<C: TypeProjectionControl> DecisionControl for EffectProjectionControl<'_, C> {
+    type Error = TypeProjectionError<C::Error>;
+
+    fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+        self.control.check().map_err(TypeProjectionError::Control)?;
+        self.control
+            .visit_node(TypeProjectionNodeKind::Effect, self.depth)
+            .map_err(TypeProjectionError::Control)
     }
-    let child_depth = depth
-        .checked_add(1)
-        .ok_or(TypeInstantiationError::DepthOverflow)?;
-    for _ in row.concrete().iter() {
-        control
-            .visit_node(TypeProjectionNodeKind::Effect, child_depth)
-            .map_err(TypeProjectionError::Control)?;
+}
+
+/// The row owner supplies its complete canonical graph grammar. This visitor
+/// admits every structural token and atom without reconstructing a row or
+/// allocating an encoded copy of it.
+struct EffectProjectionVisitor<'a, C> {
+    control: &'a mut C,
+    depth: u64,
+}
+
+impl<C: TypeProjectionControl> EffectProjectionVisitor<'_, C> {
+    fn visit(&mut self, depth: u64) -> Result<(), TypeProjectionError<C::Error>> {
+        self.control.check().map_err(TypeProjectionError::Control)?;
+        self.control
+            .visit_node(TypeProjectionNodeKind::Effect, depth)
+            .map_err(TypeProjectionError::Control)
     }
-    if !matches!(row.tail(), EffectRowTail::Closed) {
-        control
-            .visit_node(TypeProjectionNodeKind::Effect, child_depth)
-            .map_err(TypeProjectionError::Control)?;
+
+    fn visit_atom(&mut self) -> Result<(), TypeProjectionError<C::Error>> {
+        let depth = self
+            .depth
+            .checked_add(1)
+            .ok_or(TypeInstantiationError::DepthOverflow)?;
+        self.visit(depth)
     }
-    Ok(())
+}
+
+impl<C: TypeProjectionControl> DecisionEncoding<GenericEffectReference>
+    for EffectProjectionVisitor<'_, C>
+{
+    type Error = TypeProjectionError<C::Error>;
+
+    fn tag(&mut self, _: u8) -> Result<(), Self::Error> {
+        self.visit(self.depth)
+    }
+
+    fn count(&mut self, _: usize) -> Result<(), Self::Error> {
+        self.visit(self.depth)
+    }
+
+    fn variable(&mut self, _: &GenericEffectReference) -> Result<(), Self::Error> {
+        self.visit_atom()
+    }
+}
+
+impl<C: TypeProjectionControl> MembershipEncoding<GenericEffectReference>
+    for EffectProjectionVisitor<'_, C>
+{
+    fn effect(&mut self, _: &EffectId) -> Result<(), Self::Error> {
+        self.visit_atom()
+    }
 }

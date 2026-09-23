@@ -1319,6 +1319,7 @@ mod final_call_accounting_tests {
             .expect("reserved candidate session");
         let outcome = session
             .with_driver::<crate::types::NoConstraintClient, _, _>(
+                (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
                 |mut driver| {
@@ -1332,7 +1333,7 @@ mod final_call_accounting_tests {
                 },
             )
             .expect("prepared initialization");
-        assert_eq!(outcome.solution.bindings().len(), 0);
+        assert_eq!(outcome.component.selected().solution().bindings().len(), 0);
         let committed = work.type_constraint_report.work();
         assert!(committed > 0);
         assert_eq!(
@@ -1352,6 +1353,7 @@ mod final_call_accounting_tests {
             .expect("reserved candidate session");
         assert!(matches!(
             session.with_driver::<crate::types::NoConstraintClient, _, _>(
+                (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
                 |_driver| (),
@@ -1394,6 +1396,7 @@ mod final_call_accounting_tests {
             .expect("reserved candidate session");
         session
             .with_driver::<crate::types::NoConstraintClient, _, _>(
+                (),
                 super::super::constraints::tests::no_constraint_initialization(),
                 crate::types::NoConstraintClient,
                 |mut driver| {

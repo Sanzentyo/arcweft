@@ -1,4 +1,4 @@
-use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape};
+use arcweft_core::entry::TypeLayoutHash;
 use arcweft_lang_hir::{
     item::HirRoutePathSegment,
     symbol::{CallableDeclarationId, CallablePackageId},
@@ -65,7 +65,12 @@ pub(super) enum CanonicalAtomic {
     Unit,
     Never,
     DataFormat,
-    DataShape,
+    DataValue,
+    DataError,
+    DataErrorKind,
+    DataPath,
+    DataPathSegment,
+    DataMapKind,
     AgentValue,
     TextCluster,
     Duration,
@@ -94,6 +99,7 @@ pub(super) enum CanonicalConstructor {
     Probe,
     ThreadHandle,
     Shared,
+    DataShape,
 }
 
 impl CanonicalType {
@@ -182,7 +188,12 @@ impl CanonicalAtomic {
             Self::Unit => "Unit",
             Self::Never => "Never",
             Self::DataFormat => "DataFormat",
-            Self::DataShape => "DataShape",
+            Self::DataValue => "DataValue",
+            Self::DataError => "DataError",
+            Self::DataErrorKind => "DataErrorKind",
+            Self::DataPath => "DataPath",
+            Self::DataPathSegment => "DataPathSegment",
+            Self::DataMapKind => "DataMapKind",
             Self::AgentValue => "AgentValue",
             Self::TextCluster => "TextCluster",
             Self::Duration => "Duration",
@@ -214,6 +225,7 @@ impl CanonicalConstructor {
             Self::Probe => "Probe",
             Self::ThreadHandle => "ThreadHandle",
             Self::Shared => "Shared",
+            Self::DataShape => "DataShape",
         }
     }
 }
@@ -279,13 +291,13 @@ pub(super) struct CanonicalFlowContract {
     pub(super) suspension: CanonicalFlowSuspension,
 }
 
-pub(super) fn nominal_schema(shape: &TypeShape) -> NominalSchemaDigest {
-    NominalSchemaDigest::from_bytes(blake3::hash(&nominal_schema_bytes(shape)).into())
+pub(super) fn nominal_schema(layout: TypeLayoutHash) -> NominalSchemaDigest {
+    NominalSchemaDigest::from_bytes(blake3::hash(&nominal_schema_bytes(layout)).into())
 }
 
-fn nominal_schema_bytes(shape: &TypeShape) -> Vec<u8> {
+fn nominal_schema_bytes(layout: TypeLayoutHash) -> Vec<u8> {
     let mut bytes = CanonicalBytes::domain(b"arcweft.nominal-schema\0");
-    bytes.type_shape(shape);
+    bytes.fixed(layout.as_bytes());
     bytes.finish()
 }
 
@@ -485,19 +497,11 @@ impl CanonicalBytes {
         self.0.push(value);
     }
 
-    fn bool(&mut self, value: bool) {
-        self.u8(u8::from(value));
-    }
-
     fn u32(&mut self, value: u32) {
         self.0.extend_from_slice(&value.to_le_bytes());
     }
 
     fn u64(&mut self, value: u64) {
-        self.0.extend_from_slice(&value.to_le_bytes());
-    }
-
-    fn i128(&mut self, value: i128) {
         self.0.extend_from_slice(&value.to_le_bytes());
     }
 
@@ -552,113 +556,6 @@ impl CanonicalBytes {
         for parameter in target.parameters() {
             self.u32(parameter.coordinate().position());
             self.fixed(parameter.semantic_type().as_bytes());
-        }
-    }
-
-    fn type_shape(&mut self, shape: &TypeShape) {
-        match shape {
-            TypeShape::Unit => self.u8(1),
-            TypeShape::Bool => self.u8(2),
-            TypeShape::I8 => self.u8(3),
-            TypeShape::I16 => self.u8(4),
-            TypeShape::I32 => self.u8(5),
-            TypeShape::I64 => self.u8(6),
-            TypeShape::I128 => self.u8(7),
-            TypeShape::Isize => self.u8(8),
-            TypeShape::U8 => self.u8(9),
-            TypeShape::U16 => self.u8(10),
-            TypeShape::U32 => self.u8(11),
-            TypeShape::U64 => self.u8(12),
-            TypeShape::U128 => self.u8(13),
-            TypeShape::Usize => self.u8(14),
-            TypeShape::F32 => self.u8(15),
-            TypeShape::F64 => self.u8(16),
-            TypeShape::String => self.u8(17),
-            TypeShape::Char => self.u8(18),
-            TypeShape::Bytes { format } => {
-                self.u8(19);
-                self.u8(bytes_format_tag(*format));
-            }
-            TypeShape::Option(inner) => {
-                self.u8(20);
-                self.type_shape(inner);
-            }
-            TypeShape::Seq(inner) => {
-                self.u8(21);
-                self.type_shape(inner);
-            }
-            TypeShape::Map { key, value } => {
-                self.u8(22);
-                self.type_shape(key);
-                self.type_shape(value);
-            }
-            TypeShape::Record {
-                name,
-                fields,
-                policy,
-            } => {
-                self.u8(23);
-                self.string(name);
-                self.bool(policy.deny_unknown_fields);
-                self.fields(fields);
-            }
-            TypeShape::Enum {
-                name,
-                variants,
-                tag,
-                repr,
-            } => {
-                self.u8(24);
-                self.string(name);
-                self.enum_tag(tag);
-                self.option(repr.as_ref(), |bytes, repr| bytes.u8(enum_repr_tag(*repr)));
-                self.variants(variants);
-            }
-            TypeShape::Named(name) => {
-                self.u8(25);
-                self.string(name);
-            }
-        }
-    }
-
-    fn fields(&mut self, fields: &[FieldShape]) {
-        self.len(fields.len());
-        for field in fields {
-            self.string(&field.rust_name);
-            self.string(&field.wire_name);
-            self.type_shape(&field.shape);
-            self.bool(field.has_default);
-            self.bool(field.skip);
-            self.option(field.bytes_format.as_ref(), |bytes, format| {
-                bytes.u8(bytes_format_tag(*format));
-            });
-        }
-    }
-
-    fn variants(&mut self, variants: &[VariantShape]) {
-        self.len(variants.len());
-        for variant in variants {
-            self.string(&variant.rust_name);
-            self.string(&variant.wire_name);
-            self.option(variant.payload.as_ref(), Self::type_shape);
-            self.option(variant.discriminant.as_ref(), |bytes, value| {
-                bytes.i128(*value);
-            });
-        }
-    }
-
-    fn enum_tag(&mut self, tag: &EnumTagStyle) {
-        match tag {
-            EnumTagStyle::External => self.u8(1),
-            EnumTagStyle::Internal { tag } => {
-                self.u8(2);
-                self.string(tag);
-            }
-            EnumTagStyle::Adjacent { tag, content } => {
-                self.u8(3);
-                self.string(tag);
-                self.string(content);
-            }
         }
     }
 
@@ -808,7 +705,6 @@ const fn canonical_atomic_tag(atomic: CanonicalAtomic) -> u8 {
         CanonicalAtomic::Unit => 19,
         CanonicalAtomic::Never => 20,
         CanonicalAtomic::DataFormat => 21,
-        CanonicalAtomic::DataShape => 22,
         CanonicalAtomic::AgentValue => 23,
         CanonicalAtomic::TextCluster => 24,
         CanonicalAtomic::Duration => 25,
@@ -817,6 +713,12 @@ const fn canonical_atomic_tag(atomic: CanonicalAtomic) -> u8 {
         CanonicalAtomic::ReducerError => 28,
         CanonicalAtomic::AgentError => 29,
         CanonicalAtomic::ArcError => 30,
+        CanonicalAtomic::DataValue => 31,
+        CanonicalAtomic::DataError => 32,
+        CanonicalAtomic::DataErrorKind => 33,
+        CanonicalAtomic::DataPath => 34,
+        CanonicalAtomic::DataPathSegment => 35,
+        CanonicalAtomic::DataMapKind => 36,
     }
 }
 
@@ -838,32 +740,7 @@ const fn canonical_constructor_tag(constructor: CanonicalConstructor) -> u8 {
         CanonicalConstructor::Probe => 17,
         CanonicalConstructor::ThreadHandle => 18,
         CanonicalConstructor::Shared => 19,
-    }
-}
-
-const fn bytes_format_tag(format: BytesFormat) -> u8 {
-    match format {
-        BytesFormat::Binary => 1,
-        BytesFormat::Base64 => 2,
-        BytesFormat::Hex => 3,
-        BytesFormat::Array => 4,
-    }
-}
-
-const fn enum_repr_tag(repr: EnumRepr) -> u8 {
-    match repr {
-        EnumRepr::I8 => 1,
-        EnumRepr::I16 => 2,
-        EnumRepr::I32 => 3,
-        EnumRepr::I64 => 4,
-        EnumRepr::I128 => 5,
-        EnumRepr::Isize => 6,
-        EnumRepr::U8 => 7,
-        EnumRepr::U16 => 8,
-        EnumRepr::U32 => 9,
-        EnumRepr::U64 => 10,
-        EnumRepr::U128 => 11,
-        EnumRepr::Usize => 12,
+        CanonicalConstructor::DataShape => 20,
     }
 }
 
@@ -952,8 +829,11 @@ mod tests {
     #[test]
     fn canonical_domain_version_and_contract_bytes_are_exact() {
         let mut expected_nominal = domain(b"arcweft.nominal-schema\0");
-        expected_nominal.push(2);
-        assert_eq!(nominal_schema_bytes(&TypeShape::Bool), expected_nominal);
+        expected_nominal.extend_from_slice(&[2; 32]);
+        assert_eq!(
+            nominal_schema_bytes(TypeLayoutHash::from_bytes([2; 32])),
+            expected_nominal
+        );
 
         let callable = CanonicalCallableContract {
             signature: empty_signature(),

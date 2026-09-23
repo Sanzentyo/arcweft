@@ -48,8 +48,8 @@ pub use self::runtime_semantic_owners::{
 pub use self::selected_expressions::{
     HirRuntimeCallCalleeDisposition, HirRuntimeExpressionProjection, HirRuntimeValueRetention,
     HirSelectedCallArgument, HirSelectedCallExpressionDisposition,
-    HirSelectedCallExpressionInventory, HirSelectedExpressionGraph,
-    HirSelectedExpressionInventoryError,
+    HirSelectedCallExpressionInventory, HirSelectedDeclarationExpressionGraph,
+    HirSelectedExpressionGraph, HirSelectedExpressionInventoryError,
 };
 pub use self::semantic_paths::{
     HirAcceptedItemFamily, HirBindingSite, HirCaptureEvaluationIndex, HirCaptureEvaluationRow,

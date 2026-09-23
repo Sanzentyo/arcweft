@@ -24,7 +24,9 @@ use thiserror::Error;
 
 use crate::{
     callable::RegisteredCallableCatalog,
-    character_dialogue::CharacterDialogueCustomFieldRegistry,
+    character_dialogue::{
+        CharacterDialogueCustomFieldRegistry, CharacterDialogueRuntimeRoleRegistry,
+    },
     env::{
         AcceptedRustTypeMetadataCatalog, TypeCheckEnv,
         identity::EnvironmentBindingId,
@@ -129,6 +131,7 @@ pub struct ProofReturnRegistrationPrelude {
     pub(crate) generation: Arc<HirProofReturnProjectGeneration>,
     pub(crate) symbols: Arc<ProjectSymbolTable>,
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
+    pub(crate) character_dialogue_roles: Arc<CharacterDialogueRuntimeRoleRegistry>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) statement_ingress: RegisteredStatementIngressTypes,
     pub(crate) compile_time_scalars: RegisteredCompileTimeScalarTypes,
@@ -417,6 +420,7 @@ pub struct CharacterInventoryDescriptorV1 {
 #[derive(Clone, Debug)]
 pub struct RegisteredTypeCheckEnv {
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
+    pub(crate) character_dialogue_roles: Arc<CharacterDialogueRuntimeRoleRegistry>,
     pub(crate) character_dialogue_fields: Arc<CharacterDialogueCustomFieldRegistry>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
@@ -450,6 +454,23 @@ pub struct AcceptedNominalWorldStamp {
     world: ProjectSymbolWorldId,
     revision: ProjectSymbolRevision,
     catalog_digest: AcceptedNominalCatalogDigest,
+}
+
+/// Identity of the Rust metadata joined by a completed environment registration.
+/// It is freshness evidence for projection, never part of a type's layout.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub struct AcceptedRustProjectionStamp {
+    environment: RegisteredEnvironmentDigest,
+    rust_metadata: crate::env::rust_metadata::AcceptedRustTypeMetadataDigest,
+}
+
+impl AcceptedRustProjectionStamp {
+    pub const fn environment(self) -> RegisteredEnvironmentDigest {
+        self.environment
+    }
+    pub const fn rust_metadata(self) -> crate::env::rust_metadata::AcceptedRustTypeMetadataDigest {
+        self.rust_metadata
+    }
 }
 
 /// Source evidence for one visible or intentionally inaccessible nominal.
@@ -1554,6 +1575,13 @@ impl RegisteredTypeCheckEnv {
         &self.rust_metadata
     }
 
+    pub fn accepted_rust_projection_stamp(&self) -> AcceptedRustProjectionStamp {
+        AcceptedRustProjectionStamp {
+            environment: self.environment_digest,
+            rust_metadata: self.rust_metadata.digest(),
+        }
+    }
+
     /// Exact nominal world accepted before and retained with callable publication.
     pub fn nominal_world(&self) -> &AcceptedNominalWorld {
         &self.nominal_world
@@ -1561,6 +1589,10 @@ impl RegisteredTypeCheckEnv {
 
     pub fn character_dialogue_fields(&self) -> &CharacterDialogueCustomFieldRegistry {
         &self.character_dialogue_fields
+    }
+
+    pub fn character_dialogue_roles(&self) -> &CharacterDialogueRuntimeRoleRegistry {
+        &self.character_dialogue_roles
     }
 
     pub fn world(&self) -> &ProjectSymbolWorldId {

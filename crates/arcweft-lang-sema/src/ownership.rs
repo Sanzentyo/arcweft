@@ -9,7 +9,7 @@
 use std::collections::BTreeSet;
 
 use arcweft_core::{
-    entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest, TypeLayoutHash},
+    entry::{RuntimeSchemaError, RuntimeSchemaLimits, RuntimeValueDigest},
     pattern::{
         RuntimeBuiltinVariantIdentity, RuntimeBuiltinVariantTypeError,
         RuntimeCheckedRecordTypeError, RuntimeCheckedType, RuntimeCheckedVariantCase,
@@ -18,7 +18,7 @@ use arcweft_core::{
     plan::RuntimeAgentOperationalType,
     value::{
         AwbcRuntimeValueSnapshot, AwbcRuntimeValueSnapshotError, RuntimeOpaquePersistence,
-        RuntimeOpaqueValueClass, RuntimePayload, RuntimeRecordFieldId, RuntimeValue,
+        RuntimeOpaqueValueClass, RuntimeRecordFieldId, RuntimeValue,
     },
 };
 use arcweft_lang_hir::symbol::ProjectSymbolTable;
@@ -30,7 +30,10 @@ use crate::{
         RegisteredSemanticWorld,
         nominal::{AcceptedNominalOwnerId, AcceptedNominalSemantics},
     },
-    final_analysis::{FinalSemanticAnalysis, RuntimeProjectNominalKind},
+    final_analysis::{
+        FinalSemanticAnalysis, RuntimeNominalGraphProjectionError,
+        RuntimeNominalGraphProjectionLimits, RuntimeProjectNominalKind,
+    },
     types::{
         AcceptedNominalType, AgentBuiltinType, ArrayLength, CharacterNominalFamily,
         CharacterNominalType, EntityKind, GenericScopeError, HandleState, IteratorStateKind,
@@ -231,6 +234,7 @@ impl From<RuntimeOwnershipError> for CheckedOwnershipError {
             | RuntimeOwnershipError::Canonical { .. }
             | RuntimeOwnershipError::Snapshot { .. }
             | RuntimeOwnershipError::GenericScope { .. }
+            | RuntimeOwnershipError::NominalSchemaProjection { .. }
             | RuntimeOwnershipError::BuiltinVariantSchema { .. }
             | RuntimeOwnershipError::VariantPayloadSchema { .. } => Self::Rejected,
         }
@@ -263,6 +267,7 @@ pub(crate) enum RuntimeOwnershipPathSegment {
     ResultError,
     OptionItem,
     ProbeResult,
+    DataShapeItem,
     AcceptedNominalArgument(u32),
     ProjectNominalMember(u32),
 }
@@ -307,6 +312,9 @@ impl std::fmt::Display for RuntimeOwnershipPath {
                 RuntimeOwnershipPathSegment::ResultError => formatter.write_str(".error")?,
                 RuntimeOwnershipPathSegment::OptionItem => formatter.write_str(".some")?,
                 RuntimeOwnershipPathSegment::ProbeResult => formatter.write_str(".probe")?,
+                RuntimeOwnershipPathSegment::DataShapeItem => {
+                    formatter.write_str(".data_shape")?;
+                }
                 RuntimeOwnershipPathSegment::AcceptedNominalArgument(index) => {
                     write!(formatter, ".nominal[{index}]")?;
                 }
@@ -364,6 +372,12 @@ impl std::fmt::Display for RuntimeOwnershipRejection {
 pub(crate) enum RuntimeOwnershipError {
     #[error("checked ownership exceeded its configured work limit")]
     WorkLimit,
+    #[error("runtime nominal schema failed at {path}: {source}")]
+    NominalSchemaProjection {
+        path: RuntimeOwnershipPath,
+        #[source]
+        source: Box<RuntimeNominalGraphProjectionError>,
+    },
     #[error("runtime type identity has an invalid generic scope at {path}: {source}")]
     GenericScope {
         path: RuntimeOwnershipPath,
@@ -421,6 +435,7 @@ impl RuntimeOwnershipError {
         match self {
             Self::WorkLimit => panic!("work-limit errors do not own a semantic path"),
             Self::Rejected { path, .. }
+            | Self::NominalSchemaProjection { path, .. }
             | Self::GenericScope { path, .. }
             | Self::CarrierMismatch { path }
             | Self::Canonical { path, .. }
@@ -439,6 +454,7 @@ impl RuntimeOwnershipError {
         match self {
             Self::Rejected { reason, .. } => Some(*reason),
             Self::WorkLimit
+            | Self::NominalSchemaProjection { .. }
             | Self::GenericScope { .. }
             | Self::CarrierMismatch { .. }
             | Self::Canonical { .. }
@@ -481,8 +497,8 @@ pub(crate) enum RuntimeOwnershipProjection {
     Sequence(RuntimeSequenceOwnershipProjection),
     Nominal {
         checked: RuntimeCheckedType,
-        schema: arcweft_core::entry::RuntimeTypeSchema,
-        layout: TypeLayoutHash,
+        graph: std::sync::Arc<arcweft_core::entry::RuntimeNominalSchemaGraph>,
+        identity: RuntimeSemanticTypeId,
     },
     Text {
         checked: RuntimeCheckedType,
@@ -530,53 +546,21 @@ impl RuntimeOwnershipProjection {
         value: &RuntimeValue,
         path: &RuntimeOwnershipPath,
     ) -> Result<(), RuntimeOwnershipError> {
+        if let Self::Nominal {
+            graph, identity, ..
+        } = self
+        {
+            return graph
+                .accepts_value(*identity, value, RuntimeSchemaLimits::engine_default())
+                .map(|_| ())
+                .map_err(|_| RuntimeOwnershipError::CarrierMismatch { path: path.clone() });
+        }
         let checked = self.checked_type_at(path)?;
         if !checked.accepts_value(value) {
             return Err(RuntimeOwnershipError::CarrierMismatch { path: path.clone() });
         }
-        if let Self::Nominal {
-            checked,
-            schema,
-            layout,
-        } = self
-        {
-            let nominal = match checked {
-                RuntimeCheckedType::Nominal { nominal, .. }
-                | RuntimeCheckedType::Variant {
-                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
-                    ..
-                } => nominal,
-                RuntimeCheckedType::Variant { .. } => {
-                    unreachable!("nominal projection always carries a nominal variant owner")
-                }
-                _ => unreachable!("nominal projection always carries a nominal checked type"),
-            };
-            return validate_nominal_schema(schema, value, nominal, *layout, path);
-        }
         Ok(())
     }
-}
-
-#[allow(
-    dead_code,
-    reason = "live nominal carrier validation is published in Cut 5"
-)]
-fn validate_nominal_schema(
-    schema: &arcweft_core::entry::RuntimeTypeSchema,
-    value: &RuntimeValue,
-    nominal: &arcweft_core::entry::RuntimeNominalTypeId,
-    layout: TypeLayoutHash,
-    path: &RuntimeOwnershipPath,
-) -> Result<(), RuntimeOwnershipError> {
-    schema
-        .validate_nominal_payload(
-            &RuntimePayload(value.clone()),
-            nominal,
-            layout,
-            RuntimeSchemaLimits::engine_default(),
-        )
-        .map(|_| ())
-        .map_err(|_| RuntimeOwnershipError::CarrierMismatch { path: path.clone() })
 }
 
 /// Private proof that a `Need` payload type was semantically selected.  The
@@ -772,7 +756,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         analysis: &'a FinalSemanticAnalysis,
         world: &'a RegisteredSemanticWorld,
     ) -> Result<Self, RuntimeOwnershipError> {
-        if !analysis.matches_symbol_lease(world.symbols()) {
+        if !analysis.matches_registered_world(world) {
             return Err(RuntimeOwnershipError::rejected(
                 &RuntimeOwnershipPath::root(),
                 RuntimeOwnershipRejection::StaleAuthority,
@@ -1070,6 +1054,21 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                 ))
             }
             TypeKind::AgentValue => checked(RuntimeCheckedType::AgentValue),
+            TypeKind::DataValue
+            | TypeKind::DataError
+            | TypeKind::DataErrorKind
+            | TypeKind::DataPath
+            | TypeKind::DataPathSegment
+            | TypeKind::DataMapKind => self.classify_standard_data_type(ty, path, traversal),
+            TypeKind::DataShape(inner) => {
+                self.classify_at(
+                    inner,
+                    &path.pushed(RuntimeOwnershipPathSegment::DataShapeItem),
+                    OwnershipTraversal::child_depth(depth)?,
+                    traversal,
+                )?;
+                rejected(RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner)
+            }
             TypeKind::AgentResourceBody => self.classify_resource_body(path, traversal),
             TypeKind::Observation
             | TypeKind::ObservedObject
@@ -1077,7 +1076,6 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             | TypeKind::ActionName
             | TypeKind::ActionResult
             | TypeKind::DataFormat
-            | TypeKind::DataShape
             | TypeKind::AgentEntityMetadata
             | TypeKind::AgentSourceAnchor
             | TypeKind::AgentProjectGraphNeighborhood
@@ -1327,6 +1325,54 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         }
     }
 
+    fn classify_standard_data_type(
+        &self,
+        ty: &TypeKind,
+        path: &RuntimeOwnershipPath,
+        traversal: &mut OwnershipTraversal,
+    ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
+        let Some((analysis, world, _)) = self.authority() else {
+            return Err(RuntimeOwnershipError::rejected(
+                path,
+                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+            ));
+        };
+        let limits = RuntimeNominalGraphProjectionLimits {
+            max_type_nodes: traversal
+                .limits
+                .max_type_nodes
+                .saturating_sub(traversal.type_nodes),
+            max_nominal_edges: traversal
+                .limits
+                .max_nominal_edges
+                .saturating_sub(traversal.nominal_edges),
+            max_active_nominal_depth: traversal
+                .limits
+                .max_active_nominal_depth
+                .saturating_sub(traversal.active_nominals.len() as u64),
+            ..RuntimeNominalGraphProjectionLimits::PRODUCTION
+        };
+        analysis
+            .project_runtime_nominal_graph(world, ty, limits)
+            .map_err(|source| match source {
+                RuntimeNominalGraphProjectionError::Limit { .. } => {
+                    RuntimeOwnershipError::WorkLimit
+                }
+                RuntimeNominalGraphProjectionError::StaleGeneration => {
+                    RuntimeOwnershipError::rejected(path, RuntimeOwnershipRejection::StaleAuthority)
+                }
+                source => RuntimeOwnershipError::NominalSchemaProjection {
+                    path: path.clone(),
+                    source: Box::new(source),
+                },
+            })?;
+
+        Err(RuntimeOwnershipError::rejected(
+            path,
+            RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+        ))
+    }
+
     fn classify_sequence(
         &self,
         item: &TypeKind,
@@ -1485,6 +1531,7 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                         owner: RuntimeVariantIdentity::Nominal {
                             nominal: projected.nominal().clone(),
                             semantic_identity: identity,
+                            layout: projected.layout(),
                         },
                         arguments,
                         cases,
@@ -1499,8 +1546,8 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
             Ok(RuntimeProducerArgumentAdmission::SnapshotClone(
                 RuntimeOwnershipProjection::Nominal {
                     checked,
-                    schema: projected.schema().clone(),
-                    layout: projected.layout(),
+                    graph: std::sync::Arc::clone(projected.graph()),
+                    identity,
                 },
             ))
         })();
@@ -1515,23 +1562,12 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
         depth: u64,
         traversal: &mut OwnershipTraversal,
     ) -> Result<RuntimeProducerArgumentAdmission, RuntimeOwnershipError> {
-        let Some((_, world, _)) = self.authority() else {
+        let Some((analysis, world, _)) = self.authority() else {
             return Err(RuntimeOwnershipError::rejected(
                 path,
                 RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
             ));
         };
-        for (ordinal, argument) in nominal.arguments().iter().enumerate() {
-            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
-            self.classify_at(
-                argument,
-                &path.pushed(RuntimeOwnershipPathSegment::AcceptedNominalArgument(
-                    ordinal,
-                )),
-                OwnershipTraversal::child_depth(depth)?,
-                traversal,
-            )?;
-        }
         let record = world
             .environment()
             .nominal_catalog()
@@ -1546,6 +1582,57 @@ impl<'a> RuntimeProducerArgumentClassifier<'a> {
                     RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
                 )
             })?;
+        if matches!(record.semantics(), AcceptedNominalSemantics::RustAdt) {
+            let limits = RuntimeNominalGraphProjectionLimits {
+                max_type_nodes: traversal
+                    .limits
+                    .max_type_nodes
+                    .saturating_sub(traversal.type_nodes),
+                max_nominal_edges: traversal
+                    .limits
+                    .max_nominal_edges
+                    .saturating_sub(traversal.nominal_edges),
+                max_active_nominal_depth: traversal
+                    .limits
+                    .max_active_nominal_depth
+                    .saturating_sub(traversal.active_nominals.len() as u64),
+                ..RuntimeNominalGraphProjectionLimits::PRODUCTION
+            };
+            analysis
+                .project_accepted_rust_nominal(world, nominal, limits)
+                .map_err(|source| match source {
+                    RuntimeNominalGraphProjectionError::Limit { .. } => {
+                        RuntimeOwnershipError::WorkLimit
+                    }
+                    RuntimeNominalGraphProjectionError::StaleGeneration => {
+                        RuntimeOwnershipError::rejected(
+                            path,
+                            RuntimeOwnershipRejection::StaleAuthority,
+                        )
+                    }
+                    source => RuntimeOwnershipError::NominalSchemaProjection {
+                        path: path.clone(),
+                        source: Box::new(source),
+                    },
+                })?;
+            // C2 reuses the final graph. Structural retention remains closed
+            // until plan admission and program-bound snapshot restoration exist.
+            return Err(RuntimeOwnershipError::rejected(
+                path,
+                RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
+            ));
+        }
+        for (ordinal, argument) in nominal.arguments().iter().enumerate() {
+            let ordinal = u32::try_from(ordinal).unwrap_or(u32::MAX);
+            self.classify_at(
+                argument,
+                &path.pushed(RuntimeOwnershipPathSegment::AcceptedNominalArgument(
+                    ordinal,
+                )),
+                OwnershipTraversal::child_depth(depth)?,
+                traversal,
+            )?;
+        }
         let AcceptedNominalSemantics::Opaque(carrier) = record.semantics() else {
             return Err(RuntimeOwnershipError::rejected(
                 path,
@@ -1932,6 +2019,7 @@ fn validate_variant_cases(
         | RuntimeCheckedType::EntityReference
         | RuntimeCheckedType::Bytes
         | RuntimeCheckedType::Sequence(_)
+        | RuntimeCheckedType::Map { .. }
         | RuntimeCheckedType::Array { .. }
         | RuntimeCheckedType::Tuple(_)
         | RuntimeCheckedType::Record(_)
@@ -2300,6 +2388,32 @@ mod tests {
                 effects: EffectRow::closed(crate::effects::EffectSet::new()),
             },
             RuntimeOwnershipRejection::FunctionValueRequiresCertificate,
+        );
+    }
+
+    #[test]
+    fn data_shape_ownership_visits_its_typed_child() {
+        let function = TypeKind::Function {
+            binder: crate::types::GenericBinder::EMPTY,
+            params: vec![TypeKind::I32],
+            return_type: Box::new(TypeKind::Unit),
+            effects: EffectRow::closed(crate::effects::EffectSet::new()),
+        };
+        let error = RuntimeProducerArgumentClassifier::for_test()
+            .classify(&TypeKind::DataShape(Box::new(function)))
+            .expect_err("the shape must visit its represented type before runtime admission");
+        assert_eq!(
+            error.rejection(),
+            Some(RuntimeOwnershipRejection::FunctionValueRequiresCertificate)
+        );
+        assert_eq!(
+            error.path().segments(),
+            &[RuntimeOwnershipPathSegment::DataShapeItem]
+        );
+
+        rejected(
+            TypeKind::DataShape(Box::new(TypeKind::I32)),
+            RuntimeOwnershipRejection::MissingRuntimeSnapshotOwner,
         );
     }
 }

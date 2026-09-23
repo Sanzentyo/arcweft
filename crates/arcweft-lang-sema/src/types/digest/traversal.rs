@@ -112,7 +112,7 @@ impl Encoder {
         Ok(SemanticTypeDigest(*encoder.finish()?.as_bytes()))
     }
 
-    fn scoped<C, E>(
+    pub(super) fn scoped<C, E>(
         scope: &GenericScope,
         control: &mut C,
         binding: &impl Fn(&mut C) -> Result<(), E>,

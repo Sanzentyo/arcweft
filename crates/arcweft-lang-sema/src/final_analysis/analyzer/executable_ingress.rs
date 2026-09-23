@@ -223,7 +223,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(proofs)
     }
 
-    fn complete_ingress_declaration(
+    pub(super) fn complete_ingress_declaration(
         &mut self,
         declaration: &PreparedExecutableDeclaration,
         ingress: &PreparedExecutableIngressFacts,

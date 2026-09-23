@@ -1,12 +1,8 @@
 //! Declaration-owned generic substitution for semantic types.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
-use crate::effect_row::{
-    EffectIssuerRebindError, EffectRow, EffectRowError, EffectRowTail, EffectSubstitution,
-    EffectVar, EffectVarIssuer,
-};
-use crate::effects::EffectSet;
+use crate::effect_row::{EffectRowError, EffectSubstitution};
 
 use super::{
     AcceptedNominalType, EntityType, GenericTypeParameterId, GenericTypeReference, OpenNominalType,
@@ -64,6 +60,7 @@ fn contains_generic_parameter_where(
         TypeKind::Range(inner)
         | TypeKind::Probe(inner)
         | TypeKind::Vec(inner)
+        | TypeKind::DataShape(inner)
         | TypeKind::Slice(inner)
         | TypeKind::Seq(inner)
         | TypeKind::Need(inner)
@@ -171,7 +168,12 @@ fn atomic_contains_generic_parameter(
         | TypeKind::ActionResult
         | TypeKind::AgentValue
         | TypeKind::DataFormat
-        | TypeKind::DataShape
+        | TypeKind::DataValue
+        | TypeKind::DataError
+        | TypeKind::DataErrorKind
+        | TypeKind::DataPath
+        | TypeKind::DataPathSegment
+        | TypeKind::DataMapKind
         | TypeKind::AgentEntityMetadata
         | TypeKind::AgentSourceAnchor
         | TypeKind::AgentProjectGraphNeighborhood
@@ -205,6 +207,7 @@ fn atomic_contains_generic_parameter(
         | TypeKind::Slice(_)
         | TypeKind::Seq(_)
         | TypeKind::Option(_)
+        | TypeKind::DataShape(_)
         | TypeKind::ThreadHandle(_)
         | TypeKind::Shared(_)
         | TypeKind::DialogueLine(_)
@@ -382,6 +385,7 @@ impl TypeKind {
             Self::Range(inner) => Self::Range(Box::new(recurse(inner)?)),
             Self::Probe(inner) => Self::Probe(Box::new(recurse(inner)?)),
             Self::Vec(inner) => Self::Vec(Box::new(recurse(inner)?)),
+            Self::DataShape(inner) => Self::DataShape(Box::new(recurse(inner)?)),
             Self::Slice(inner) => Self::Slice(Box::new(recurse(inner)?)),
             Self::Seq(inner) => Self::Seq(Box::new(recurse(inner)?)),
             Self::Need(inner) => Self::Need(Box::new(recurse(inner)?)),
@@ -437,12 +441,23 @@ impl TypeKind {
                 params,
                 return_type,
                 effects,
-            } => Self::function_with_binder(
-                *binder,
-                params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
-                recurse(return_type)?,
-                effects.resolve_partial(substitutions)?,
-            ),
+            } => {
+                let effects = match effects.resolve_partial(substitutions) {
+                    Ok(effects) => effects,
+                    // Structural type projection cannot resolve an unknown
+                    // source effect row. Preserve that authority as unknown;
+                    // only effect constraints or a concrete consumer may
+                    // require it to close.
+                    Err(EffectRowError::UnknownRow) => crate::effect_row::EffectRow::unknown(),
+                    Err(error) => return Err(error),
+                };
+                Self::function_with_binder(
+                    *binder,
+                    params.iter().map(recurse).collect::<Result<Vec<_>, _>>()?,
+                    recurse(return_type)?,
+                    effects,
+                )
+            }
             Self::Projection {
                 subject,
                 trait_name,
@@ -463,33 +478,6 @@ impl TypeKind {
             }
             other => other.clone(),
         })
-    }
-
-    pub(crate) fn checked_rebind_effect_rows(
-        &self,
-        prepared: EffectVarIssuer,
-        checked: EffectVarIssuer,
-        authorized_ordinals: &BTreeSet<u32>,
-    ) -> Result<Self, EffectIssuerRebindError> {
-        let substitutions =
-            EffectSubstitution::from_rows(authorized_ordinals.iter().map(|ordinal| {
-                (
-                    EffectVar::issued(prepared, *ordinal),
-                    EffectRow::open(EffectSet::new(), EffectVar::issued(checked, *ordinal)),
-                )
-            }));
-        let rebound = self
-            .substitute_effect_rows(&substitutions)
-            .map_err(|error| match error {
-                EffectRowError::UnknownRow => EffectIssuerRebindError::UnknownRow,
-                EffectRowError::UnboundVariable { .. }
-                | EffectRowError::ConflictingBinding { .. }
-                | EffectRowError::CyclicBinding { .. } => {
-                    unreachable!("fresh one-step issuer rebind cannot conflict or cycle")
-                }
-            })?;
-        validate_rebound_effect_rows(&rebound, prepared, checked, authorized_ordinals)?;
-        Ok(rebound)
     }
 
     fn substitute_nominal_type_parameters(
@@ -527,6 +515,7 @@ impl TypeKind {
         let substitute = |inner: &Self| Box::new(inner.substitute_type_parameters(substitutions));
         Some(match self {
             Self::Vec(inner) => Self::Vec(substitute(inner)),
+            Self::DataShape(inner) => Self::DataShape(substitute(inner)),
             Self::Seq(inner) => Self::Seq(substitute(inner)),
             Self::Slice(inner) => Self::Slice(substitute(inner)),
             Self::Range(inner) => Self::Range(substitute(inner)),
@@ -558,92 +547,6 @@ fn variant_payload_contains_generic(
             }
         })
         .is_err()
-}
-
-fn validate_rebound_effect_rows(
-    ty: &TypeKind,
-    prepared: EffectVarIssuer,
-    checked: EffectVarIssuer,
-    authorized_ordinals: &BTreeSet<u32>,
-) -> Result<(), EffectIssuerRebindError> {
-    let validate_children = |children: &[TypeKind]| {
-        children.iter().try_for_each(|child| {
-            validate_rebound_effect_rows(child, prepared, checked, authorized_ordinals)
-        })
-    };
-    match ty {
-        TypeKind::Function {
-            params,
-            return_type,
-            effects,
-            ..
-        } => {
-            match effects.tail() {
-                EffectRowTail::Closed => {}
-                EffectRowTail::Unknown => return Err(EffectIssuerRebindError::UnknownRow),
-                EffectRowTail::Variable(variable)
-                    if variable.issuer() == checked
-                        && authorized_ordinals.contains(&variable.index()) => {}
-                EffectRowTail::Variable(variable) if variable.issuer() == prepared => {
-                    return Err(EffectIssuerRebindError::UnauthorizedVariable { variable });
-                }
-                EffectRowTail::Variable(variable) => {
-                    return Err(EffectIssuerRebindError::ForeignVariable { variable });
-                }
-            }
-            validate_children(params)?;
-            validate_rebound_effect_rows(return_type, prepared, checked, authorized_ordinals)
-        }
-        TypeKind::Range(inner)
-        | TypeKind::Probe(inner)
-        | TypeKind::Vec(inner)
-        | TypeKind::Slice(inner)
-        | TypeKind::Seq(inner)
-        | TypeKind::Need(inner)
-        | TypeKind::Option(inner)
-        | TypeKind::ThreadHandle(inner)
-        | TypeKind::Shared(inner)
-        | TypeKind::DialogueLine(inner)
-        | TypeKind::MetaType(inner)
-        | TypeKind::BorrowRef { inner, .. }
-        | TypeKind::IteratorState { item: inner, .. }
-        | TypeKind::Array { item: inner, .. } => {
-            validate_rebound_effect_rows(inner, prepared, checked, authorized_ordinals)
-        }
-        TypeKind::FixedVector(vector) => {
-            validate_rebound_effect_rows(vector.component(), prepared, checked, authorized_ordinals)
-        }
-        TypeKind::Ref(entity) => entity.value().map_or(Ok(()), |value| {
-            validate_rebound_effect_rows(value, prepared, checked, authorized_ordinals)
-        }),
-        TypeKind::Map { key, value, .. }
-        | TypeKind::Stream {
-            item: key,
-            error: value,
-        }
-        | TypeKind::Parser {
-            item: key,
-            error: value,
-        }
-        | TypeKind::Result {
-            ok: key,
-            error: value,
-        } => {
-            validate_rebound_effect_rows(key, prepared, checked, authorized_ordinals)?;
-            validate_rebound_effect_rows(value, prepared, checked, authorized_ordinals)
-        }
-        TypeKind::ProjectNominal(nominal) => validate_children(nominal.arguments()),
-        TypeKind::AcceptedNominal(nominal) => validate_children(nominal.arguments()),
-        TypeKind::OpenNominal(nominal) => validate_children(nominal.arguments()),
-        TypeKind::Projection { subject, .. } => {
-            validate_rebound_effect_rows(subject, prepared, checked, authorized_ordinals)
-        }
-        TypeKind::Tuple(items) | TypeKind::Choice(items) => validate_children(items),
-        TypeKind::VariantPayload(payload) => payload.visit_types(&mut |field| {
-            validate_rebound_effect_rows(field, prepared, checked, authorized_ordinals)
-        }),
-        _ => Ok(()),
-    }
 }
 
 fn observe_type_parameters(
@@ -921,6 +824,30 @@ mod tests {
                 error: Box::new(TypeKind::generic_parameter(untouched)),
             }
         );
+    }
+
+    #[test]
+    fn structural_effect_substitution_preserves_unknown_rows() {
+        use crate::effect_row::{EffectRow, EffectSubstitution};
+
+        let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(71));
+        let variable: crate::types::GenericEffectReference =
+            crate::types::GenericEffectParameterId::new(owner, 0).into();
+        let function = TypeKind::function_with_effects(
+            [],
+            TypeKind::I64,
+            EffectRow::open(crate::effects::EffectSet::new(), variable.clone()),
+        );
+        let substitutions = EffectSubstitution::from_rows([(variable, EffectRow::unknown())]);
+
+        let projected = function
+            .substitute_effect_rows(&substitutions)
+            .expect("unknown effect authority is carried through structural substitution");
+        let TypeKind::Function { effects, .. } = projected else {
+            panic!("substituted type remains a function")
+        };
+        assert!(!effects.is_known());
+        assert!(!effects.is_empty());
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use crate::effect_row::{EffectRow, EffectRowTail};
+use crate::effect_row::EffectRow;
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_id::closed_enum::ClosedEnumDomainId;
@@ -50,14 +50,15 @@ pub use generics::{
     GenericConstReference, GenericEffectReference, GenericParameterKind, GenericScope,
     GenericScopeError, GenericTypeReference, InferenceConstParameter, InferenceEffectParameter,
     InferenceTypeParameter, ScopedArrayLengthView, ScopedConstReferenceView,
+    ScopedEffectPredicateView, ScopedEffectReferenceView, ScopedEffectRowView,
     ScopedTypeReferenceView, ScopedTypeView, ScopedView,
 };
 pub(crate) use match_domain::{MatchDomainFamily, MatchDomainInvalidity};
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
-    AcceptedNominalType, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
-    GenericTypeParameterId, LanguageIntrinsicGenericOwner, OpenNominalType, ProjectNominalType,
-    TypePoisonId,
+    AcceptedNominalType, DetachedGenericOwnerId, GenericConstParameterId, GenericEffectParameterId,
+    GenericParameterOwnerId, GenericTypeParameterId, LanguageIntrinsicGenericOwner,
+    OpenNominalType, ProjectNominalType, TypePoisonId,
 };
 pub(crate) use project_nominal_visit::visit_project_nominals;
 pub(crate) use projection_control::UnmeteredTypeProjection;
@@ -1002,7 +1003,14 @@ pub enum TypeKind {
     ActionResult,
     AgentValue,
     DataFormat,
-    DataShape,
+    /// Opaque data codec shape witness carrying the exact encoded value type.
+    DataShape(Box<TypeKind>),
+    DataValue,
+    DataError,
+    DataErrorKind,
+    DataPath,
+    DataPathSegment,
+    DataMapKind,
     AgentEntityMetadata,
     AgentSourceAnchor,
     AgentProjectGraphNeighborhood,
@@ -1194,6 +1202,7 @@ impl TypeKind {
                 format!("{family:?}IteratorState<{}>", item.source_label())
             }
             Self::Vec(inner) => format!("Vec<{}>", inner.source_label()),
+            Self::DataShape(inner) => format!("DataShape<{}>", inner.source_label()),
             Self::Array { item, len } => format!("Array<{}, {len}>", item.source_label()),
             Self::Slice(inner) => format!("[{}]", inner.source_label()),
             Self::Seq(inner) => format!("Seq<{}>", inner.source_label()),
@@ -1353,7 +1362,12 @@ impl TypeKind {
             Self::ActionResult => "ActionResult",
             Self::AgentValue => "AgentValue",
             Self::DataFormat => "DataFormat",
-            Self::DataShape => "DataShape",
+            Self::DataValue => "DataValue",
+            Self::DataError => "DataError",
+            Self::DataErrorKind => "DataErrorKind",
+            Self::DataPath => "DataPath",
+            Self::DataPathSegment => "DataPathSegment",
+            Self::DataMapKind => "DataMapKind",
             Self::AgentEntityMetadata => "AgentEntityMetadata",
             Self::AgentSourceAnchor => "AgentSourceAnchor",
             Self::AgentProjectGraphNeighborhood => "AgentProjectGraphNeighborhood",
@@ -1582,7 +1596,12 @@ impl TypeKind {
             "char" => Self::Char,
             "Bytes" => Self::Bytes,
             "DataFormat" => Self::DataFormat,
-            "DataShape" => Self::DataShape,
+            "DataValue" => Self::DataValue,
+            "DataError" => Self::DataError,
+            "DataErrorKind" => Self::DataErrorKind,
+            "DataPath" => Self::DataPath,
+            "DataPathSegment" => Self::DataPathSegment,
+            "DataMapKind" => Self::DataMapKind,
             "AgentValue" => Self::AgentValue,
             "TextCluster" => Self::TextCluster,
             "Duration" => Self::Duration,
@@ -1715,11 +1734,7 @@ mod entity_kind_tests {
 }
 
 fn function_effect_row_label(effects: &EffectRow) -> Option<String> {
-    match effects.tail() {
-        EffectRowTail::Unknown => None,
-        EffectRowTail::Closed if effects.concrete().is_empty() => None,
-        EffectRowTail::Closed | EffectRowTail::Variable(_) => Some(effects.display_label()),
-    }
+    (effects.is_known() && !effects.is_empty()).then(|| effects.display_label())
 }
 
 impl EntityType {

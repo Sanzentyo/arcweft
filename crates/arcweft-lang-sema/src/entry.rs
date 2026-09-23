@@ -10,7 +10,6 @@ use std::{
 };
 
 use arcweft_core::entry::{FlowParameterCoordinate, RuntimeNominalTypeId, TypeLayoutHash};
-use arcweft_data::TypeShape;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::{
     expr::HirExprKind,
@@ -308,8 +307,8 @@ impl CheckedFlowId {
     }
 }
 
-pub(crate) fn nominal_schema_digest(shape: &TypeShape) -> NominalSchemaDigest {
-    digest::nominal_schema(shape)
+pub(crate) fn nominal_schema_digest(layout: TypeLayoutHash) -> NominalSchemaDigest {
+    digest::nominal_schema(layout)
 }
 
 impl fmt::Display for CheckedEntryId {

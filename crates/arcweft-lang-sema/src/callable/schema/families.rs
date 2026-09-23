@@ -19,6 +19,7 @@ use crate::{
     },
 };
 use arcweft_character::id::CharacterId;
+use arcweft_interaction_model::dialogue::CharacterDialogueRuntimeRole as DialogueRole;
 use arcweft_lang_syntax::reference::BorrowKind;
 
 use super::{
@@ -59,7 +60,8 @@ pub(in crate::callable) fn dialogue_schema(
     id: DialogueCallableId,
     context: DialogueSchemaContext<'_>,
 ) -> Result<CallableSignatureSchema, CallableSchemaError> {
-    if !id.supports_callee(context.callee) {
+    if !id.supports_callee(context.callee) || context.roles.world() != context.custom_fields.world()
+    {
         return Err(CallableSchemaError::FamilyInvariant {
             family: crate::callable::CallableFamily::Dialogue,
             code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
@@ -89,7 +91,7 @@ pub(in crate::callable) fn dialogue_schema(
             DialogueCallableId::CharacterReconfigure,
             DialogueCalleeIdentity::CharacterDialogue { character },
         ) => {
-            let mut parameters = character_dialogue_patch_parameters(character);
+            let mut parameters = character_dialogue_patch_parameters(character, context.roles);
             if context.patch_context == CharacterDialoguePatchContext::ImmediateContentApplication {
                 let next = parameters.len();
                 parameters.push(parameter_with_consumer(
@@ -323,6 +325,7 @@ fn content_parameter_type(
 
 fn character_dialogue_patch_parameters(
     character: &CharacterDialogueCharacterType,
+    roles: &crate::character_dialogue::CharacterDialogueRuntimeRoleRegistry,
 ) -> Vec<CallableParameter> {
     let mut parameters = Vec::new();
     if let CharacterDialogueCharacterType::Exact(character) = character {
@@ -342,22 +345,22 @@ fn character_dialogue_patch_parameters(
         ),
         (
             "stage",
-            TypeKind::Named("DialogueStage".to_owned()),
+            roles.semantic_type(DialogueRole::Stage).clone(),
             CharacterDialogueFieldCoordinate::Stage,
         ),
         (
             "portrait",
-            TypeKind::Named("DialoguePortrait".to_owned()),
+            roles.semantic_type(DialogueRole::Portrait).clone(),
             CharacterDialogueFieldCoordinate::Portrait,
         ),
         (
             "focus",
-            TypeKind::Named("DialogueFocus".to_owned()),
+            roles.semantic_type(DialogueRole::Focus).clone(),
             CharacterDialogueFieldCoordinate::Focus,
         ),
         (
             "cleanup",
-            TypeKind::Named("DialogueCleanup".to_owned()),
+            roles.semantic_type(DialogueRole::Cleanup).clone(),
             CharacterDialogueFieldCoordinate::Cleanup,
         ),
         (
@@ -372,20 +375,17 @@ fn character_dialogue_patch_parameters(
         ),
         (
             "hooks",
-            TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned()))),
+            TypeKind::Seq(Box::new(roles.semantic_type(DialogueRole::Hook).clone())),
             CharacterDialogueFieldCoordinate::Hooks,
         ),
         (
             "style",
-            TypeKind::Choice(vec![
-                TypeKind::entity_ref(EntityKind::Style),
-                TypeKind::Named("RichTextStyle".to_owned()),
-            ]),
+            roles.semantic_type(DialogueRole::Style).clone(),
             CharacterDialogueFieldCoordinate::Style,
         ),
         (
             "rich_text",
-            TypeKind::Named("RichTextStyle".to_owned()),
+            roles.semantic_type(DialogueRole::RichText).clone(),
             CharacterDialogueFieldCoordinate::RichText,
         ),
         (
@@ -416,6 +416,7 @@ fn character_dialogue_patch_parameters(
 /// have no concrete character owner, so every visible field is supply-only
 /// and unknown names are rejected by the closed argument policy.
 fn content_call_parameters(context: DialogueSchemaContext<'_>) -> Vec<CallableParameter> {
+    let roles = context.roles;
     let fixed = [
         (
             "voice",
@@ -424,22 +425,22 @@ fn content_call_parameters(context: DialogueSchemaContext<'_>) -> Vec<CallablePa
         ),
         (
             "stage",
-            TypeKind::Named("DialogueStage".to_owned()),
+            roles.semantic_type(DialogueRole::Stage).clone(),
             CharacterDialogueFieldCoordinate::Stage,
         ),
         (
             "portrait",
-            TypeKind::Named("DialoguePortrait".to_owned()),
+            roles.semantic_type(DialogueRole::Portrait).clone(),
             CharacterDialogueFieldCoordinate::Portrait,
         ),
         (
             "focus",
-            TypeKind::Named("DialogueFocus".to_owned()),
+            roles.semantic_type(DialogueRole::Focus).clone(),
             CharacterDialogueFieldCoordinate::Focus,
         ),
         (
             "cleanup",
-            TypeKind::Named("DialogueCleanup".to_owned()),
+            roles.semantic_type(DialogueRole::Cleanup).clone(),
             CharacterDialogueFieldCoordinate::Cleanup,
         ),
         (
@@ -454,20 +455,17 @@ fn content_call_parameters(context: DialogueSchemaContext<'_>) -> Vec<CallablePa
         ),
         (
             "hooks",
-            TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned()))),
+            TypeKind::Seq(Box::new(roles.semantic_type(DialogueRole::Hook).clone())),
             CharacterDialogueFieldCoordinate::Hooks,
         ),
         (
             "style",
-            TypeKind::Choice(vec![
-                TypeKind::entity_ref(EntityKind::Style),
-                TypeKind::Named("RichTextStyle".to_owned()),
-            ]),
+            roles.semantic_type(DialogueRole::Style).clone(),
             CharacterDialogueFieldCoordinate::Style,
         ),
         (
             "rich_text",
-            TypeKind::Named("RichTextStyle".to_owned()),
+            roles.semantic_type(DialogueRole::RichText).clone(),
             CharacterDialogueFieldCoordinate::RichText,
         ),
         (

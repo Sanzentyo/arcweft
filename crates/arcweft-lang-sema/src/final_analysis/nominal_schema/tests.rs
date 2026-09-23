@@ -1,16 +1,12 @@
 //! Focused construction tests for the C2.2a nominal projection context.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::atomic::{AtomicBool, Ordering},
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use arcweft_data::TypeShape;
+use arcweft_core::entry::{RuntimeNominalSchemaBody, RuntimeTypeSchema};
 
 use super::{
-    NominalProjectionLimitKind, NominalProjectionRequest, NominalSchemaExpander, NominalSchemaPath,
-    NominalSchemaProjectionError, ProjectionBudget, RuntimeNominalProjectionContext,
-    RuntimeNominalProjectionRequestInventory,
+    NominalProjectionLimitKind, NominalProjectionRequest, NominalSchemaProjectionError,
+    ProjectionBudget, RuntimeNominalProjectionContext, RuntimeNominalProjectionRequestInventory,
 };
 use crate::{
     final_analysis::{
@@ -21,10 +17,7 @@ use crate::{
         NominalAggregationLimitKind, NominalAggregationLimits, NominalResolutionLimitKind,
         NominalResolutionLimits,
     },
-    types::{
-        DetachedGenericOwnerId, GenericParameterOwnerId, GenericTypeParameterId,
-        SemanticTypeDigest, TypeKind,
-    },
+    types::{SemanticTypeDigest, TypeKind},
 };
 
 fn projection_fixture() -> Fixture {
@@ -148,6 +141,8 @@ fn context<'a>(
     aggregate: NominalAggregationLimits,
 ) -> RuntimeNominalProjectionContext<'a> {
     RuntimeNominalProjectionContext::new(
+        Some(fixture.registered.environment()),
+        Some(report.semantic_shapes()),
         fixture.symbols.as_ref(),
         report.accepted_types(),
         root,
@@ -363,39 +358,6 @@ fn cancellation_and_checked_overflow_precede_cache_or_descent() {
 }
 
 #[test]
-fn generic_substitution_cycle_is_typed_and_leaves_no_cache_row() {
-    let fixture = projection_fixture();
-    let report = analyze(&fixture).expect("projection fixture final analysis");
-    let cancellation = AtomicBool::new(false);
-    let control = FinalSemanticAnalysisControl::new(&cancellation);
-    let expander =
-        NominalSchemaExpander::new(fixture.symbols.as_ref(), report.accepted_types(), control);
-    let parameter = GenericTypeParameterId::new(
-        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(7)),
-        0,
-    );
-    let substitutions = BTreeMap::from([(
-        parameter.clone(),
-        TypeKind::generic_parameter(parameter.clone()),
-    )]);
-    let mut budget = ProjectionBudget::new(NominalResolutionLimits::PRODUCTION);
-
-    assert_eq!(
-        expander.type_shape(
-            &TypeKind::generic_parameter(parameter.clone()),
-            &substitutions,
-            &mut BTreeSet::new(),
-            &mut BTreeSet::new(),
-            &mut budget,
-        ),
-        Err(NominalSchemaProjectionError::CyclicGenericSubstitution {
-            path: NominalSchemaPath::default(),
-            parameter,
-        })
-    );
-}
-
-#[test]
 fn checked_request_generation_owner_arity_and_identity_precedence_is_typed() {
     let primary_fixture = projection_fixture();
     let report = analyze(&primary_fixture).expect("projection fixture final analysis");
@@ -461,7 +423,7 @@ fn checked_request_generation_owner_arity_and_identity_precedence_is_typed() {
 }
 
 #[test]
-fn retained_shape_recursive_name_layout_and_identity_are_checked() {
+fn retained_graph_recursive_reference_layout_and_identity_are_checked() {
     let fixture = projection_fixture();
     let report = analyze(&fixture).expect("projection fixture final analysis");
     let first = checked(&fixture, &report, "First");
@@ -486,15 +448,32 @@ fn retained_shape_recursive_name_layout_and_identity_are_checked() {
         .clone();
     let recursive = context
         .project_checked(&node)
-        .expect("legal recursive declaration uses a named schema leaf")
+        .expect("legal recursive declaration retains an exact graph edge")
         .clone();
 
-    assert!(matches!(first_projection.shape(), TypeShape::Record { .. }));
+    assert!(matches!(
+        first_projection
+            .graph()
+            .definition(first_projection.semantic_identity())
+            .unwrap()
+            .body(),
+        RuntimeNominalSchemaBody::Record { .. }
+    ));
     assert_ne!(first_projection.layout(), second_projection.layout());
-    let TypeShape::Record { fields, .. } = recursive.shape() else {
-        panic!("recursive Node remains one retained record shape")
+    let RuntimeNominalSchemaBody::Record { fields, .. } = recursive
+        .graph()
+        .definition(recursive.semantic_identity())
+        .unwrap()
+        .body()
+    else {
+        panic!("recursive Node remains one retained record definition")
     };
-    assert!(matches!(&fields[0].shape, TypeShape::Option(_)));
+    let RuntimeTypeSchema::Builtin(option) = fields[0].schema() else {
+        panic!("Node.next retains the builtin Option schema");
+    };
+    assert!(
+        matches!(&option.payloads()[0], RuntimeTypeSchema::NominalRef(identity) if identity.semantic_identity() == recursive.semantic_identity())
+    );
 
     let forged = CheckedProjectNominal::new(
         first.declaration().clone(),

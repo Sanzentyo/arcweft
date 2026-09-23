@@ -5,6 +5,8 @@
 //! evidence; the lower owner derives every checked projection and expected
 //! type from the prepared source constraint.
 
+use super::ConstraintSourceId;
+
 use std::sync::Arc;
 
 use super::super::{ArrayLength, MapKind, TypeKind};
@@ -21,7 +23,8 @@ pub(crate) struct NoConstraintClient;
 /// equality.  The lower transaction stores them behind private `Arc` trace
 /// cells, so a callback does not have to make semantic values `Copy`, `Clone`,
 /// or `Ord` merely to let a frontier fork.
-pub(crate) trait ConstraintDomain {
+pub(crate) trait ConstraintDomain: 'static {
+    type Application: Copy + Ord;
     type Source: Copy + Ord;
     type AlternativeIndex: Copy + Eq + Ord;
     type EvidenceRule: Eq;
@@ -61,6 +64,7 @@ pub(crate) trait ConstraintDomain {
 
 #[cfg(test)]
 impl ConstraintDomain for NoConstraintClient {
+    type Application = ();
     type Source = ();
     type AlternativeIndex = ();
     type EvidenceRule = ();
@@ -503,6 +507,7 @@ pub(crate) enum ProjectedExpectedHint<'h> {
     Parametric {
         expected: &'h TypeKind,
         unbound: &'h [super::ConstraintGenericParameterId],
+        scope_lease: &'h super::ImportedGenericParameterScopeLease,
     },
 }
 
@@ -554,7 +559,7 @@ impl<S, C> SourceError<S, C> {
 }
 
 /// Which prepared schema row a checked callback selected.
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum SourceProbeSelection<A, E> {
     Unchecked,
     Checked { alternative: A, evidence: E },
@@ -562,18 +567,22 @@ pub(crate) enum SourceProbeSelection<A, E> {
 
 /// Probe result carrying only actual type, semantic branch, and typed evidence.
 /// Expected types and source constructors never cross the callback boundary.
-#[derive(Eq, PartialEq)]
 pub(crate) struct SourceProbeResult<D: ConstraintDomain> {
-    actual: TypeKind,
-    canonical_branch: D::ProbeSemanticBranch,
-    selection: SourceProbeSelection<D::AlternativeIndex, D::ObservedEvidence>,
+    actual: SourceProbeTerm<D>,
+    canonical_branch: Arc<D::ProbeSemanticBranch>,
+    selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
+}
+
+pub(crate) enum SourceProbeTerm<D: ConstraintDomain> {
+    Type(TypeKind),
+    Result(super::transaction::ConstraintResultProjection<D>),
 }
 
 impl<D: ConstraintDomain> SourceProbeResult<D> {
     pub(crate) fn unchecked(actual: TypeKind, canonical_branch: D::ProbeSemanticBranch) -> Self {
         Self {
-            actual,
-            canonical_branch,
+            actual: SourceProbeTerm::Type(actual),
+            canonical_branch: Arc::new(canonical_branch),
             selection: SourceProbeSelection::Unchecked,
         }
     }
@@ -585,29 +594,40 @@ impl<D: ConstraintDomain> SourceProbeResult<D> {
         evidence: D::ObservedEvidence,
     ) -> Self {
         Self {
-            actual,
-            canonical_branch,
+            actual: SourceProbeTerm::Type(actual),
+            canonical_branch: Arc::new(canonical_branch),
             selection: SourceProbeSelection::Checked {
                 alternative,
-                evidence,
+                evidence: Arc::new(evidence),
             },
+        }
+    }
+
+    pub(crate) fn projection(
+        result: super::transaction::ConstraintResultProjection<D>,
+        canonical_branch: Arc<D::ProbeSemanticBranch>,
+        selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
+    ) -> Self {
+        Self {
+            actual: SourceProbeTerm::Result(result),
+            canonical_branch,
+            selection,
         }
     }
 
     pub(crate) fn into_parts(
         self,
     ) -> (
-        TypeKind,
-        D::ProbeSemanticBranch,
-        SourceProbeSelection<D::AlternativeIndex, D::ObservedEvidence>,
+        SourceProbeTerm<D>,
+        Arc<D::ProbeSemanticBranch>,
+        SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
     ) {
         (self.actual, self.canonical_branch, self.selection)
     }
 }
 
-#[derive(Eq, PartialEq)]
 pub(crate) enum SourceProbeOutcome<D: ConstraintDomain> {
-    Accepted(SourceProbeResult<D>),
+    Accepted(super::transaction::SourceProbeContribution<D>),
     Rejected(D::SourceErrorCause),
 }
 
@@ -621,77 +641,114 @@ pub(crate) enum MaterializationOutcome<S, V, C> {
 /// carry every semantic choice and lower-derived type; unchecked rows retain
 /// the physical projection and actual type but no alternative or expected
 /// type.
-pub(crate) enum MaterializedSourceRequest<'h, D: ConstraintDomain> {
-    Unchecked {
-        source: D::Source,
-        source_projection: &'h CheckedConstraintSourceProjection,
-        actual: &'h TypeKind,
-        canonical_branch: &'h D::ProbeSemanticBranch,
-    },
-    Checked {
-        source: D::Source,
-        alternative: D::AlternativeIndex,
-        evidence: &'h D::CheckedEvidence,
-        source_projection: &'h CheckedConstraintSourceProjection,
-        actual: &'h TypeKind,
-        expected: &'h TypeKind,
-        canonical_branch: &'h D::ProbeSemanticBranch,
-    },
+pub(crate) struct MaterializedSourceRequest<'h, D: ConstraintDomain> {
+    component: &'h super::CompletedConstraintComponent<D>,
+    source: &'h super::ClosedConstraintProbe<D>,
+}
+
+/// The exact child application result that supplied a parent source's actual
+/// type. Both references come from the same completed component; callers do
+/// not reconstruct a child from its source expression or result schema.
+pub(crate) struct CompletedResultProjectionView<'h, D: ConstraintDomain> {
+    application_id: D::Application,
+    application: &'h super::CompletedConstraintApplication<D::Projection>,
+    projection: &'h super::KeyedConstraintProjection<D::Projection>,
+}
+
+impl<'h, D: ConstraintDomain> CompletedResultProjectionView<'h, D> {
+    pub(crate) const fn application_id(&self) -> D::Application {
+        self.application_id
+    }
+
+    pub(crate) const fn application(
+        &self,
+    ) -> &'h super::CompletedConstraintApplication<D::Projection> {
+        self.application
+    }
+
+    pub(crate) const fn projection(&self) -> &'h super::KeyedConstraintProjection<D::Projection> {
+        self.projection
+    }
 }
 
 impl<'h, D: ConstraintDomain> MaterializedSourceRequest<'h, D> {
-    pub(crate) const fn source(&self) -> &D::Source {
-        match self {
-            Self::Unchecked { source, .. } | Self::Checked { source, .. } => source,
-        }
+    pub(super) fn from_component(
+        component: &'h super::CompletedConstraintComponent<D>,
+        ordinal: usize,
+    ) -> Option<Self> {
+        Some(Self {
+            component,
+            source: component.sources().all().get(ordinal)?,
+        })
+    }
+
+    pub(crate) const fn component(&self) -> &'h super::CompletedConstraintComponent<D> {
+        self.component
+    }
+
+    /// The owner of this source can be a child of the component's selected
+    /// application. It is obtained from the sealed trace, never from a caller.
+    pub(crate) fn application_id(&self) -> D::Application {
+        self.component
+            .sources()
+            .domain_application(self.source.source().application())
+    }
+
+    pub(crate) fn application(&self) -> &'h super::CompletedConstraintApplication<D::Projection> {
+        self.component
+            .application(self.application_id())
+            .expect("completed source retains its admitted application")
+    }
+
+    pub(crate) const fn source(&self) -> &ConstraintSourceId<D::Source> {
+        self.source.source_ref()
     }
 
     pub(crate) const fn expected(&self) -> Option<&'h TypeKind> {
-        match self {
-            Self::Unchecked { .. } => None,
-            Self::Checked { expected, .. } => Some(*expected),
-        }
+        self.source.final_expected()
     }
 
     pub(crate) const fn alternative(&self) -> Option<D::AlternativeIndex> {
-        match self {
-            Self::Unchecked { .. } => None,
-            Self::Checked { alternative, .. } => Some(*alternative),
-        }
+        self.source.selection().alternative()
     }
 
     pub(crate) fn evidence(&self) -> Option<&'h D::CheckedEvidence> {
-        match self {
-            Self::Unchecked { .. } => None,
-            Self::Checked { evidence, .. } => Some(*evidence),
-        }
+        self.source.selection().evidence()
     }
 
     pub(crate) const fn actual(&self) -> &'h TypeKind {
-        match self {
-            Self::Unchecked { actual, .. } | Self::Checked { actual, .. } => *actual,
-        }
+        self.source.actual()
     }
 
     pub(crate) const fn source_projection(&self) -> &'h CheckedConstraintSourceProjection {
-        match self {
-            Self::Unchecked {
-                source_projection, ..
-            }
-            | Self::Checked {
-                source_projection, ..
-            } => source_projection,
-        }
+        self.source.source_projection()
     }
 
-    pub(crate) const fn canonical_branch(&self) -> &'h D::ProbeSemanticBranch {
-        match self {
-            Self::Unchecked {
-                canonical_branch, ..
-            }
-            | Self::Checked {
-                canonical_branch, ..
-            } => canonical_branch,
+    pub(crate) fn canonical_branch(&self) -> &'h D::ProbeSemanticBranch {
+        self.source.branch()
+    }
+
+    /// Returns the exact completed child result which produced this source,
+    /// when the source was observed from a nested call result.
+    pub(crate) fn result_projection(&self) -> Option<CompletedResultProjectionView<'h, D>> {
+        let origin = self.source.result_origin()?;
+        let application_id = self
+            .component
+            .sources()
+            .domain_application(origin.application());
+        let application = self.component.application(application_id)?;
+        let mut projections = application
+            .projections()
+            .iter()
+            .filter(|projection| projection.key() == origin.key());
+        let projection = projections.next()?;
+        if projections.next().is_some() {
+            return None;
         }
+        Some(CompletedResultProjectionView {
+            application_id,
+            application,
+            projection,
+        })
     }
 }

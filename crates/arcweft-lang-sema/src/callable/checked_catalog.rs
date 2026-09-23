@@ -13,7 +13,7 @@ use arcweft_lang_hir::{
 use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 
 use crate::{
-    effect_row::{EffectRow, EffectRowError, EffectRowTail, EffectSubsetError, EffectSubstitution},
+    effect_row::{EffectRow, EffectRowError, EffectSubsetError, EffectSubstitution},
     effects::EffectSet,
     final_analysis::{
         CheckedExecutableControlRole, CheckedFunctionExecution, CheckedOrdinaryFunctionEmission,
@@ -237,7 +237,7 @@ impl CallableEffectContract {
         if clauses.is_empty() && typed_tail_source.is_none() {
             return Err(EffectContractBuildError::MissingAuthoredSource);
         }
-        if matches!(row.tail(), EffectRowTail::Unknown) {
+        if !row.is_known() {
             return Err(EffectContractBuildError::UnknownAuthoredTail);
         }
         let anchor = clauses
@@ -685,47 +685,47 @@ impl CheckedCallableFacts {
     }
 
     pub fn ordinary_function_emission(&self) -> Option<CheckedOrdinaryFunctionEmission> {
-        self.ordinary_function_emission_with_effects(self.exposed_row().concrete())
+        self.ordinary_function_emission_for_purity(self.exposed_row().is_empty())
     }
 
     pub fn ordinary_function_emission_with_effects(
         &self,
         effects: &EffectSet,
     ) -> Option<CheckedOrdinaryFunctionEmission> {
+        self.ordinary_function_emission_for_purity(effects.is_empty())
+    }
+
+    fn ordinary_function_emission_for_purity(
+        &self,
+        is_pure: bool,
+    ) -> Option<CheckedOrdinaryFunctionEmission> {
         let CheckedCallableExecution::Runtime(execution) = &self.execution else {
             return None;
         };
-        Some(
-            match (execution, self.suspension, effects.is_empty(), self.control) {
-                (
-                    CheckedFunctionExecution::DirectFrame,
-                    CheckedSuspensionRole::NonSuspending,
-                    true,
-                    CheckedExecutableControlRole::ExpressionCompatible,
-                ) => CheckedOrdinaryFunctionEmission::ExpressionFunctionSite,
-                (
-                    CheckedFunctionExecution::DirectFrame,
-                    CheckedSuspensionRole::NonSuspending,
-                    false,
-                    _,
-                )
-                | (
-                    CheckedFunctionExecution::DirectFrame,
-                    CheckedSuspensionRole::MaySuspend,
-                    _,
-                    _,
-                )
-                | (
-                    CheckedFunctionExecution::DirectFrame,
-                    CheckedSuspensionRole::NonSuspending,
-                    true,
-                    CheckedExecutableControlRole::FlowRequired,
-                ) => CheckedOrdinaryFunctionEmission::ExecutableFunctionSite,
-                (CheckedFunctionExecution::StreamFactory { .. }, _, _, _) => {
-                    CheckedOrdinaryFunctionEmission::StreamFactoryUnsupported
-                }
-            },
-        )
+        Some(match (execution, self.suspension, is_pure, self.control) {
+            (
+                CheckedFunctionExecution::DirectFrame,
+                CheckedSuspensionRole::NonSuspending,
+                true,
+                CheckedExecutableControlRole::ExpressionCompatible,
+            ) => CheckedOrdinaryFunctionEmission::ExpressionFunctionSite,
+            (
+                CheckedFunctionExecution::DirectFrame,
+                CheckedSuspensionRole::NonSuspending,
+                false,
+                _,
+            )
+            | (CheckedFunctionExecution::DirectFrame, CheckedSuspensionRole::MaySuspend, _, _)
+            | (
+                CheckedFunctionExecution::DirectFrame,
+                CheckedSuspensionRole::NonSuspending,
+                true,
+                CheckedExecutableControlRole::FlowRequired,
+            ) => CheckedOrdinaryFunctionEmission::ExecutableFunctionSite,
+            (CheckedFunctionExecution::StreamFactory { .. }, _, _, _) => {
+                CheckedOrdinaryFunctionEmission::StreamFactoryUnsupported
+            }
+        })
     }
 
     pub const fn attached_content(&self) -> Option<&CheckedCallableAttachedContentParameter> {
@@ -1784,7 +1784,10 @@ impl CheckedCallableCatalogBuilder {
             EffectRow::check_subset(&actual, permitted, &mut staged_substitution)
                 .map_err(|error| CheckedCallableCatalogBuildError::EffectSubset(Box::new(error)))?;
         }
-        let forbidden = actual.concrete().intersection(contract.forbidden());
+        let forbidden = actual
+            .closed_value()
+            .expect("resolved actual row")
+            .intersection(contract.forbidden());
         if !forbidden.is_empty() {
             return Err(CheckedCallableCatalogBuildError::ForbiddenEffects(
                 forbidden,
@@ -2469,7 +2472,7 @@ fn validate_attached_content_interface(
     match (parameter.presence(), attached.default()) {
         (CallableParameterPresence::Defaulted, Some(default))
             if default.result() == result.semantic_identity_digest()?
-                && matches!(default.effects().tail(), EffectRowTail::Closed) =>
+                && default.effects().is_closed() =>
         {
             Ok(())
         }
@@ -2669,17 +2672,5 @@ fn encode_visibility(
 }
 
 fn encode_row(encoder: &mut super::digest::CanonicalEncoder, row: &EffectRow) {
-    encoder.usize(row.concrete().len());
-    for effect in row.concrete().iter() {
-        encoder.string(effect.as_str());
-    }
-    match row.tail() {
-        EffectRowTail::Closed => encoder.tag(0),
-        EffectRowTail::Variable(variable) => {
-            encoder.tag(1);
-            encoder.bytes(variable.issuer().as_bytes());
-            encoder.u32(variable.index());
-        }
-        EffectRowTail::Unknown => encoder.tag(2),
-    }
+    encoder.effect_row(row);
 }

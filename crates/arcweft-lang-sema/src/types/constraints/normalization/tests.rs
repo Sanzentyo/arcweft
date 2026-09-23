@@ -1,9 +1,10 @@
+use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::atomic::AtomicBool,
 };
 
-use super::{occurs_in_type, types_equal};
+use super::{completed_types_equal, occurs_in_type, validate_type};
 use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
@@ -16,13 +17,13 @@ use crate::{
             TypeConstraintConstEligibility, TypeConstraintError, TypeConstraintInvariant,
             TypeConstraintParameterEligibility, TypeConstraintParameterScope,
             TypeConstraintParameterScopeInvariant, TypeConstraintRejection,
-            context::{LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits},
+            context::{LocalConstraintAccounting, TypeConstraintLimits},
             relate_selected_call,
         },
     },
 };
 
-type TestContext<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
+type TestContext<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
 fn context(
     scope: TypeConstraintParameterScope,
@@ -69,15 +70,19 @@ fn nested_function() -> TypeKind {
 #[test]
 fn equality_enters_function_type_and_constant_binders() {
     let cancellation = AtomicBool::new(false);
-    let mut context = context(empty_scope(), &cancellation, 256);
+    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
     let left = nested_function();
     let right = nested_function();
-    assert!(types_equal(&left, &right, &mut context).expect("bound references are in scope"));
+    validate_type(&left, path.projection_view(), &mut context).expect("left binder scope");
+    validate_type(&right, path.projection_view(), &mut context).expect("right binder scope");
+    assert!(
+        completed_types_equal(&left, &right, &mut context).expect("bound references are in scope")
+    );
     assert!(context.lexical_scope().binders().is_empty());
 }
 
 #[test]
-fn equality_and_selected_relation_reject_escaped_type_and_length_references() {
+fn validation_and_selected_relation_reject_escaped_type_and_length_references() {
     let source_scope = GenericScope::default().with_binder(GenericBinder::new(1, 1, 0));
     let escaped_type = source_scope.bound_type(0, 0).expect("source type slot");
     let escaped_const = source_scope
@@ -101,11 +106,14 @@ fn equality_and_selected_relation_reject_escaped_type_and_length_references() {
             },
         ),
     ] {
-        let mut context = context(empty_scope(), &cancellation, 256);
+        let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
         let error =
             TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(expected));
-        assert_eq!(types_equal(&ty, &ty, &mut context), Err(error.clone()));
-        let path = context.start_path().expect("empty path");
+        assert_eq!(
+            validate_type(&ty, path.projection_view(), &mut context),
+            Err(error.clone())
+        );
+        let path = context.fork_path(&path).expect("empty path");
         assert_eq!(
             relate_selected_call(
                 &ty,
@@ -133,21 +141,23 @@ fn occurs_check_visits_nested_binders_and_restores_the_enclosing_scope() {
     )])
     .expect("template parameter");
     let cancellation = AtomicBool::new(false);
-    let mut context = context(scope, &cancellation, 256);
-    let target = context
-        .parameter_scope
+    let (mut context, path) = context(scope, &cancellation, 256).into_path();
+    let target = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter).clone().into())
         .expect("active type");
     let nested = nested_function();
     assert!(
-        !occurs_in_type(&nested, &target, &BTreeMap::new(), &mut context)
+        !occurs_in_type(&nested, &target, path.projection_view(), &mut context)
             .expect("function-local variables are rigid")
     );
     assert!(context.lexical_scope().binders().is_empty());
 
     let cycle = TypeKind::Tuple(vec![nested, TypeKind::GenericParam(target.clone())]);
     assert!(
-        occurs_in_type(&cycle, &target, &BTreeMap::new(), &mut context)
+        occurs_in_type(&cycle, &target, path.projection_view(), &mut context)
             .expect("the active type occurs after the nested function")
     );
     assert!(context.lexical_scope().binders().is_empty());
@@ -156,10 +166,10 @@ fn occurs_check_visits_nested_binders_and_restores_the_enclosing_scope() {
 #[test]
 fn function_comparison_restores_scope_after_budget_failure() {
     let cancellation = AtomicBool::new(false);
-    let mut context = context(empty_scope(), &cancellation, 1);
+    let (mut context, _) = context(empty_scope(), &cancellation, 1).into_parts();
     let function = nested_function();
     assert_eq!(
-        types_equal(&function, &function, &mut context),
+        completed_types_equal(&function, &function, &mut context),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
             actual: 2,
             limit: 1,
@@ -169,15 +179,15 @@ fn function_comparison_restores_scope_after_budget_failure() {
 }
 
 #[test]
-fn equal_unresolved_array_lengths_do_not_establish_type_equality() {
+fn unresolved_array_lengths_cannot_reach_completed_type_comparison() {
     let cancellation = AtomicBool::new(false);
-    let mut context = context(empty_scope(), &cancellation, 256);
+    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
     let unresolved = TypeKind::Array {
         item: Box::new(TypeKind::Bool),
         len: ArrayLength::Inferred,
     };
     assert_eq!(
-        types_equal(&unresolved, &unresolved, &mut context),
+        validate_type(&unresolved, path.projection_view(), &mut context),
         Err(TypeConstraintError::Rejected(
             TypeConstraintRejection::UnresolvedType
         )),
@@ -242,12 +252,11 @@ fn const_inventory(count: u16) -> (TypeConstraintParameterScope, Vec<GenericCons
 #[test]
 fn projection_preserves_nested_function_binders() {
     let cancellation = AtomicBool::new(false);
-    let mut context = context(empty_scope(), &cancellation, 256);
+    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
     let function = nested_function();
     let projected = super::project_type(
         &function,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
         &mut context,
     )
@@ -255,6 +264,29 @@ fn projection_preserves_nested_function_binders() {
     assert_eq!(projected.value, function);
     assert!(projected.remaining.is_empty());
     assert!(context.lexical_scope().binders().is_empty());
+}
+
+#[test]
+fn projection_future_preserves_unknown_function_effects_without_closing_them() {
+    let cancellation = AtomicBool::new(false);
+    let (mut context, path) = context(empty_scope(), &cancellation, 256).into_path();
+    let function = TypeKind::function_with_effects([], TypeKind::I64, EffectRow::unknown());
+
+    let projected = super::project_type(
+        &function,
+        path.projection_view(),
+        super::ConstraintClosurePolicy::ProjectionFuture,
+        &mut context,
+    )
+    .expect("future projection preserves an unresolved source effect row");
+
+    assert_eq!(projected.value, function);
+    assert!(projected.remaining.is_empty());
+    let TypeKind::Function { effects, .. } = projected.value else {
+        panic!("projected source remains a function type")
+    };
+    assert!(!effects.is_known());
+    assert_eq!(effects.display_label(), "unknown");
 }
 
 #[test]
@@ -273,11 +305,12 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
                 .chain([TypeKind::I64]),
         )
         .collect::<BTreeMap<_, _>>();
-    let mut type_context = context(scope, &cancellation, 10_001);
+    let (mut type_context, mut type_context_path) =
+        context(scope, &cancellation, 10_001).into_path();
+    type_context_path.bindings = bindings;
     let projected = super::project_type(
         &TypeKind::GenericParam(parameters[0].clone()),
-        &bindings,
-        &BTreeMap::new(),
+        type_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
         &mut type_context,
     )
@@ -303,10 +336,12 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
                 .chain([ArrayLength::Const(37)]),
         )
         .collect::<BTreeMap<_, _>>();
-    let mut const_context = context(scope, &cancellation, 10_001);
+    let (mut const_context, mut const_context_path) =
+        context(scope, &cancellation, 10_001).into_path();
+    const_context_path.const_bindings = bindings;
     let projected = super::project_const_argument(
         &ArrayLength::Generic(parameters[0].clone()),
-        &bindings,
+        const_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
         &mut const_context,
     )
@@ -319,19 +354,19 @@ fn projection_follows_long_type_and_constant_aliases_with_exact_node_admission()
 fn projection_rebuilds_deep_types_and_rejects_exhausted_work_before_the_leaf() {
     let cancellation = AtomicBool::new(false);
     let mut ty = (0..10_000).fold(TypeKind::I64, |ty, _| TypeKind::Vec(Box::new(ty)));
-    let mut complete_context = context(empty_scope(), &cancellation, 10_001);
+    let (mut complete_context, complete_context_path) =
+        context(empty_scope(), &cancellation, 10_001).into_path();
     let complete = super::project_type(
         &ty,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        complete_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
         &mut complete_context,
     );
-    let mut limited_context = context(empty_scope(), &cancellation, 32);
+    let (mut limited_context, limited_context_path) =
+        context(empty_scope(), &cancellation, 32).into_path();
     let limited = super::project_type(
         &ty,
-        &BTreeMap::new(),
-        &BTreeMap::new(),
+        limited_context_path.projection_view(),
         super::ConstraintClosurePolicy::ProjectionClosed,
         &mut limited_context,
     );
@@ -367,14 +402,14 @@ fn projection_restores_enclosing_scope_and_seeded_guards_after_nested_abort() {
     let seed = BTreeSet::from([parameters[1].clone()]);
     let mut visiting = seed.clone();
     let mut remaining = BTreeSet::new();
-    let mut context = context(scope, &cancellation, 2);
+    let (mut context, mut path) = context(scope, &cancellation, 2).into_path();
+    path.bindings = bindings;
     let outer = GenericBinder::new(1, 1, 0);
     context
         .with_binder(outer, |context| {
             let projected = super::project_type_inner(
                 &TypeKind::GenericParam(parameters[0].clone()),
-                &bindings,
-                &BTreeMap::new(),
+                path.projection_view(),
                 super::ConstraintClosurePolicy::ProjectionClosed,
                 context,
                 &mut visiting,
@@ -416,11 +451,11 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
     ] {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
-        let mut context = context(scope.clone(), &cancellation, 16);
+        let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
+        path.bindings = bindings.clone();
         let result = super::project_type_inner(
             &TypeKind::GenericParam(parameters[0].clone()),
-            &bindings,
-            &BTreeMap::new(),
+            path.projection_view(),
             policy,
             &mut context,
             &mut visiting,
@@ -466,10 +501,11 @@ fn projection_cycle_policy_preserves_caller_guards_for_both_parameter_kinds() {
     ] {
         let mut visiting = seed.clone();
         let mut remaining = BTreeSet::new();
-        let mut context = context(scope.clone(), &cancellation, 16);
+        let (mut context, mut path) = context(scope.clone(), &cancellation, 16).into_path();
+        path.const_bindings = bindings.clone();
         let result = super::project_array_length(
             &ArrayLength::Generic(parameters[0].clone()),
-            &bindings,
+            path.projection_view(),
             policy,
             &mut context,
             &mut visiting,
@@ -508,14 +544,13 @@ fn projection_validates_array_length_before_descending_into_the_item() {
         )),
         len: ArrayLength::Inferred,
     };
-    let mut context = context(empty_scope(), &cancellation, 2);
+    let (mut context, path) = context(empty_scope(), &cancellation, 2).into_path();
     assert_eq!(
         super::project_type(
             &ty,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            path.projection_view(),
             super::ConstraintClosurePolicy::ProjectionClosed,
-            &mut context,
+            &mut context
         ),
         Err(TypeConstraintError::Rejected(
             TypeConstraintRejection::UnresolvedType

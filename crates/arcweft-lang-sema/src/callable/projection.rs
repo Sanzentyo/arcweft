@@ -1,6 +1,6 @@
 //! Accepted-world projection of source-backed environment inputs.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::SourceSpan;
@@ -9,12 +9,13 @@ use crate::{
     env::{
         EnumVariantPayload,
         identity::EnvironmentBindingId,
-        nominal::{AcceptedNominalId, AcceptedNominalInstantiationError, AcceptedNominalOwnerId},
+        nominal::{AcceptedNominalId, AcceptedNominalInstantiationError},
         rust_metadata::{
             AcceptedRustStructShape, AcceptedRustTypeMetadata, AcceptedRustTypeMetadataCatalog,
-            AcceptedRustTypeMetadataCatalogError, AcceptedRustTypeMetadataKind,
-            RustStructMetadataInput, RustTypeMetadataPublicationInput,
-            RustTypeMetadataPublicationKind, RustVariantMetadataInput, RustVariantPayloadInput,
+            AcceptedRustTypeMetadataCatalogError, AcceptedRustTypeMetadataKind, JoinedRustMetadata,
+            RustStructMetadataInput, RustTypeMetadataPublicationIdentity,
+            RustTypeMetadataPublicationInput, RustTypeMetadataPublicationKind,
+            RustVariantMetadataInput, RustVariantPayloadInput,
         },
     },
     nominal::{NominalAggregationLimits, NominalResolutionLimitKind, NominalResolutionLimits},
@@ -79,10 +80,6 @@ pub enum EnvironmentPublicationProjectionErrorKind {
     UnboundMetadataTypeParameter {
         owner: AcceptedNominalId,
         index: ArcweftRustTypeParameterIndex,
-    },
-    MetadataOwnerMismatch {
-        declaration: AcceptedNominalId,
-        package: crate::env::nominal::RustPackageId,
     },
     RustMetadataCatalog {
         error: AcceptedRustTypeMetadataCatalogError,
@@ -296,94 +293,26 @@ impl AcceptedNominalWorld {
         Ok(bindings)
     }
 
-    /// Projects one stable batch of Rust ADT declarations against this exact
-    /// accepted nominal world.
-    pub fn try_project_rust_metadata(
-        &self,
-        inputs: &[RustTypeMetadataPublicationInput],
-        nominal_limits: NominalResolutionLimits,
-        _aggregation_limits: NominalAggregationLimits,
-    ) -> Result<AcceptedRustTypeMetadataCatalog, EnvironmentPublicationProjectionReport> {
-        let records = inputs
-            .iter()
-            .map(|input| self.project_rust_metadata_record(input, nominal_limits))
-            .collect::<Result<Vec<_>, _>>()?;
-
-        AcceptedRustTypeMetadataCatalog::try_new(records).map_err(|error| {
-            let Some(input) = inputs.first() else {
-                return EnvironmentPublicationProjectionReport::omitted();
-            };
-            EnvironmentPublicationProjectionReport::one(type_diagnostic(
-                input.item(),
-                EnvironmentTypeSiteRoot::RustNewtypeInner,
-                &[],
-                input.source(),
-                EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog { error },
-            ))
-        })
-    }
-
     fn project_rust_metadata_record(
         &self,
         input: &RustTypeMetadataPublicationInput,
         nominal_limits: NominalResolutionLimits,
     ) -> Result<AcceptedRustTypeMetadata, EnvironmentPublicationProjectionReport> {
-        if input.package_provenance().name() != input.package().as_str()
-            || !matches!(
-                input.id().owner(),
-                AcceptedNominalOwnerId::RustPackage(package) if package == input.package()
-            )
-        {
-            return Err(EnvironmentPublicationProjectionReport::one(
-                type_diagnostic(
-                    input.item(),
-                    EnvironmentTypeSiteRoot::RustNewtypeInner,
-                    &[],
-                    input.source(),
-                    EnvironmentPublicationProjectionErrorKind::MetadataOwnerMismatch {
-                        declaration: input.id().clone(),
-                        package: input.package().clone(),
-                    },
-                ),
-            ));
-        }
-
-        let accepted = self.accepted_record(input.id()).map_err(|error| {
-            EnvironmentPublicationProjectionReport::one(nominal_lookup_diagnostic(
-                input.item(),
-                EnvironmentTypeSiteRoot::RustNewtypeInner,
-                &[],
-                input.source(),
-                error,
-            ))
-        })?;
-        if usize::from(accepted.arity()) != input.parameters().len() {
-            return Err(EnvironmentPublicationProjectionReport::one(
-                type_diagnostic(
-                    input.item(),
-                    EnvironmentTypeSiteRoot::RustNewtypeInner,
-                    &[],
-                    input.source(),
-                    EnvironmentPublicationProjectionErrorKind::WrongArity {
-                        nominal: input.id().clone(),
-                        expected: accepted.arity(),
-                        actual: input.parameters().len(),
-                    },
-                ),
-            ));
-        }
-
         let (parameters, binder) = metadata_binder(input)?;
         let kind = self.project_rust_metadata_kind(input, &binder, nominal_limits)?;
         Ok(AcceptedRustTypeMetadata::new(
-            input.id().clone(),
-            input.package().clone(),
-            input.package_provenance().clone(),
-            input.rust_item().clone(),
+            RustTypeMetadataPublicationIdentity::new(
+                input.item().clone(),
+                input.id().clone(),
+                input.package().clone(),
+                input.package_provenance().clone(),
+                input.rust_item().clone(),
+            ),
             parameters,
             kind,
             input.source().clone(),
-        ))
+        )
+        .with_data_policy(input.data_policy().clone()))
     }
 
     fn project_rust_metadata_kind(
@@ -448,19 +377,18 @@ impl AcceptedNominalWorld {
                 .map(|fields| AcceptedRustStructShape::Tuple(fields.into_boxed_slice())),
             RustStructMetadataInput::Record(fields) => fields
                 .iter()
-                .map(|(name, field)| {
-                    Ok((
-                        name.clone(),
+                .map(|field| {
+                    field.try_map_type(|ty| {
                         self.project_metadata_type(
-                            field,
+                            ty,
                             input.item(),
                             EnvironmentTypeSiteRoot::RustStructRecordField {
-                                field: name.clone(),
+                                field: field.name().to_owned(),
                             },
                             limits,
                             binder,
-                        )?,
-                    ))
+                        )
+                    })
                 })
                 .collect::<Result<Vec<_>, EnvironmentPublicationProjectionReport>>()
                 .map(|fields| AcceptedRustStructShape::Record(fields.into_boxed_slice())),
@@ -473,30 +401,24 @@ impl AcceptedNominalWorld {
         variants: &[RustVariantMetadataInput],
         binder: &MetadataBinder,
         limits: NominalResolutionLimits,
-    ) -> Result<Box<[(String, EnumVariantPayload)]>, EnvironmentPublicationProjectionReport> {
-        let mut names = BTreeSet::new();
-        let mut projected = Vec::with_capacity(variants.len());
-        for variant in variants {
-            let payload = self.project_rust_variant_payload(input, variant, binder, limits)?;
-            if !names.insert(variant.name().to_owned()) {
-                return Err(EnvironmentPublicationProjectionReport::one(
-                    type_diagnostic(
-                        input.item(),
-                        EnvironmentTypeSiteRoot::RustNewtypeInner,
-                        &[],
-                        variant.source(),
-                        EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog {
-                            error: AcceptedRustTypeMetadataCatalogError::DuplicateVariant {
-                                id: input.id().clone(),
-                                variant: variant.name().to_owned(),
-                            },
-                        },
-                    ),
-                ));
-            }
-            projected.push((variant.name().to_owned(), payload));
-        }
-        Ok(projected.into_boxed_slice())
+    ) -> Result<
+        Box<[crate::env::rust_metadata::AcceptedRustVariantMetadata]>,
+        EnvironmentPublicationProjectionReport,
+    > {
+        variants
+            .iter()
+            .map(|variant| {
+                self.project_rust_variant_payload(input, variant, binder, limits)
+                    .map(|payload| {
+                        crate::env::rust_metadata::AcceptedRustVariantMetadata::new(
+                            variant.name(),
+                            payload,
+                        )
+                        .with_wire_policy(variant.wire_name(), variant.discriminant())
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(Vec::into_boxed_slice)
     }
 
     fn project_rust_variant_payload(
@@ -537,43 +459,22 @@ impl AcceptedNominalWorld {
             RustVariantPayloadInput::Record(fields) => {
                 let projected = fields
                     .iter()
-                    .map(|(name, field)| {
-                        Ok((
-                            name.clone(),
+                    .map(|field| {
+                        field.try_map_type(|ty| {
                             self.project_metadata_type(
-                                field,
+                                ty,
                                 input.item(),
                                 EnvironmentTypeSiteRoot::RustEnumRecordField {
                                     variant: variant.name().to_owned(),
-                                    field: name.clone(),
+                                    field: field.name().to_owned(),
                                 },
                                 limits,
                                 binder,
-                            )?,
-                        ))
+                            )
+                        })
                     })
                     .collect::<Result<Vec<_>, EnvironmentPublicationProjectionReport>>()?;
-                EnumVariantPayload::record(projected).map_err(|error| {
-                    let crate::env::EnumVariantPayloadBuildError::DuplicateRecordField { name } =
-                        error;
-                    EnvironmentPublicationProjectionReport::one(type_diagnostic(
-                        input.item(),
-                        EnvironmentTypeSiteRoot::RustEnumRecordField {
-                            variant: variant.name().to_owned(),
-                            field: name.clone(),
-                        },
-                        &[],
-                        variant.source(),
-                        EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog {
-                            error:
-                                AcceptedRustTypeMetadataCatalogError::DuplicateVariantRecordField {
-                                    id: input.id().clone(),
-                                    variant: variant.name().to_owned(),
-                                    field: name,
-                                },
-                        },
-                    ))
-                })
+                Ok(EnumVariantPayload::Record(projected.into_boxed_slice()))
             }
         }
     }
@@ -829,6 +730,7 @@ impl<'a> TypeProjector<'a> {
             EnvironmentTypeProjectionKind::F64 => Ok(TypeKind::F64),
             EnvironmentTypeProjectionKind::String => Ok(TypeKind::String),
             EnvironmentTypeProjectionKind::Char => Ok(TypeKind::Char),
+            EnvironmentTypeProjectionKind::Bytes => Ok(TypeKind::Bytes),
             EnvironmentTypeProjectionKind::Vec(child) => self
                 .boxed_child(child, EnvironmentTypeSiteStep::VecItem, next_depth)
                 .map(TypeKind::Vec),
@@ -1209,4 +1111,43 @@ fn nominal_instantiation_diagnostic(
         }
     };
     type_diagnostic(item, root, steps, source, kind)
+}
+
+impl JoinedRustMetadata<'_, '_> {
+    /// Projects one stable batch of Rust ADT declarations against this exact
+    /// accepted nominal world.
+    pub(crate) fn project(
+        self,
+    ) -> Result<AcceptedRustTypeMetadataCatalog, EnvironmentPublicationProjectionReport> {
+        let nominal_limits = self.nominal_limits();
+        let inputs = self.inputs();
+        let records = inputs
+            .iter()
+            .map(|input| {
+                self.world()
+                    .project_rust_metadata_record(input, nominal_limits)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+
+        AcceptedRustTypeMetadataCatalog::try_new(records).map_err(|error| {
+            let input = match &error {
+                AcceptedRustTypeMetadataCatalogError::InvalidName { id, .. }
+                | AcceptedRustTypeMetadataCatalogError::DuplicateNominal { id } => {
+                    inputs.iter().find(|input| input.id() == id)
+                }
+                AcceptedRustTypeMetadataCatalogError::PackageProvenanceConflict {
+                    package, ..
+                } => inputs.iter().find(|input| input.package() == package),
+                AcceptedRustTypeMetadataCatalogError::GenericScope(_) => inputs.first(),
+            }
+            .expect("catalog errors refer to the joined source publications");
+            EnvironmentPublicationProjectionReport::one(type_diagnostic(
+                input.item(),
+                EnvironmentTypeSiteRoot::RustNewtypeInner,
+                &[],
+                input.source(),
+                EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog { error },
+            ))
+        })
+    }
 }

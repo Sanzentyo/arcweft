@@ -19,6 +19,31 @@ use super::{
     items::{SourceCallableShell, checked_catalog_error},
 };
 impl Analyzer<'_, '_, '_> {
+    pub(super) fn prepare_declaration_statement_effects(
+        &self,
+        selected: &arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
+    ) -> Result<Vec<(super::StmtId, PreparedStatementPayload)>, FinalSemanticAnalysisError> {
+        // This is a borrowed prerequisite projection. Final statement sealing
+        // still consumes the original affine iteration inventory exactly once.
+        let mut iterations = self.facts.iteration_facts().clone();
+        let mut statements = Vec::new();
+        for module in self.modules.values() {
+            for (owner, statement) in module.statements() {
+                if selected.contains_statement(owner) {
+                    let payload = self.checked_statement_fact(
+                        module,
+                        owner,
+                        statement.scope(),
+                        statement.kind(),
+                        &mut iterations,
+                    )?;
+                    statements.push((owner, payload));
+                }
+            }
+        }
+        Ok(statements)
+    }
+
     pub(super) fn analyze_statements(
         &mut self,
         input: &mut FinalSemanticAnalysisInput,

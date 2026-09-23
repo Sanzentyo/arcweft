@@ -38,7 +38,7 @@ use super::calls::{
     AnalyzerDetachedCandidateRecord, AnalyzerDetachedConsideredCandidate,
     AnalyzerDetachedUnselectedCall, AnalyzerDetachedUnselectedOutcome, AnalyzerPreparedCallGraph,
     AnalyzerPreparedCalleeExpression, AnalyzerPreparedExpressionResolution, final_call_effects,
-    final_callable_effects,
+    final_callable_effect_row, final_callable_effects,
 };
 
 pub(super) struct DetachedAnalyzerCallGraph {
@@ -452,9 +452,10 @@ fn checked_value_receiver_source(
 ) -> Result<(), FinalSemanticAnalysisError> {
     let source_identity = super::calls::AnalyzerCallConstraintSource::Receiver { source };
     let mut rows = record
-        .closed_sources
-        .iter()
-        .filter(|closed| closed.source() == source_identity);
+        .component
+        .sources()
+        .selected()
+        .filter(|closed| closed.source().local() == source_identity);
     let closed = rows.next().ok_or_else(|| {
         final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
     })?;
@@ -548,19 +549,12 @@ fn validate_checked_parameter_actual(
             let alternative = selection.alternative().ok_or_else(|| {
                 final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
             })?;
-            let alternative = rule
-                .alternative(alternative.get() as usize)
+            rule.alternative(alternative.get() as usize)
                 .ok_or_else(|| {
                     final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
                 })?;
-            selected
-                .base()
-                .issue_parameter_effect_projection(
-                    coordinate,
-                    alternative.expected(),
-                    source_projection,
-                )
-                .and_then(|token| token.seal_actual(actual, solution))
+            solution
+                .complete_value(actual)
                 .map_err(|error| final_call_seal_error(location, error))?
         }
         CallableParameterAdmission::UncheckedSupply => actual.clone(),
@@ -723,14 +717,17 @@ fn checked_execution_projection(
                 };
                 let closed = if metadata.is_some() || text_proxy_type_coordinate.is_some() {
                     record
-                        .closed_sources
-                        .iter()
-                        .find(|closed| closed.source() == source_identity)
+                        .component
+                        .sources()
+                        .selected()
+                        .find(|closed| closed.source().local() == source_identity)
                 } else {
-                    record
-                        .closed_sources
-                        .iter()
-                        .find(|closed| closed.source().same_argument_identity(source_identity))
+                    record.component.sources().selected().find(|closed| {
+                        closed
+                            .source()
+                            .local()
+                            .same_argument_identity(source_identity)
+                    })
                 }
                 .ok_or_else(|| {
                     final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
@@ -967,9 +964,10 @@ fn checked_execution_projection(
             }
         };
         let closed = record
-            .closed_sources
-            .iter()
-            .find(|closed| closed.source() == source_identity)
+            .component
+            .sources()
+            .selected()
+            .find(|closed| closed.source().local() == source_identity)
             .ok_or_else(|| {
                 final_call_seal_error(location, CallConstraintInvariant::MalformedMapperSeal)
             })?;
@@ -1376,6 +1374,7 @@ fn seal_selected_call(
         expressions,
         &site,
     )?;
+    let terminal_effects = final_callable_effect_row(selected, checked_callables)?;
     let effects = final_call_effects(selected, solution.completed_group(), checked_callables)?;
     let consumer = record
         .consumer
@@ -1391,11 +1390,16 @@ fn seal_selected_call(
             callee,
             execution,
             effects,
+            terminal_effects: terminal_effects.as_ref(),
         },
     )
     .map_err(|error| final_call_seal_error(location, error))?;
-    let application = crate::callable::CheckedCallApplication::seal(core, expected_result)
-        .map_err(|error| final_call_seal_error(location, error))?;
+    let application = crate::callable::CheckedCallApplication::seal(
+        core,
+        expected_result,
+        terminal_effects.as_ref(),
+    )
+    .map_err(|error| final_call_seal_error(location, error))?;
     Ok(SealedSelectedCall {
         application,
         expression_resolution: record.expression_resolution,
@@ -1709,7 +1713,12 @@ impl super::Analyzer<'_, '_, '_> {
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed.application.core().effects().concrete().clone(),
+                            effects: sealed
+                                .application
+                                .core()
+                                .effects()
+                                .closed_value()
+                                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
                             callee,
                         };
                         applications.insert(key, sealed.application.clone());
@@ -1759,7 +1768,12 @@ impl super::Analyzer<'_, '_, '_> {
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed.application.core().effects().concrete().clone(),
+                            effects: sealed
+                                .application
+                                .core()
+                                .effects()
+                                .closed_value()
+                                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
                             callee,
                         };
                         applications.insert(key, sealed.application.clone());

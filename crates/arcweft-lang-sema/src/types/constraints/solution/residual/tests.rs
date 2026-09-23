@@ -1,3 +1,4 @@
+use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::{collections::BTreeMap, sync::atomic::AtomicBool};
 
 use crate::{
@@ -11,13 +12,13 @@ use crate::{
             TypeConstraintParameterScope, TypeConstraintSolution,
             context::{
                 LocalConstraintAccounting, TypeConstraintConstParameterScopeRow,
-                TypeConstraintContext, TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
+                TypeConstraintLimits, TypeConstraintTypeParameterScopeRow,
             },
         },
     },
 };
 
-type TestContext<'a> = TypeConstraintContext<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
+type TestContext<'a> = ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, NoConstraintClient>;
 
 fn parameter(slot: u16) -> GenericTypeParameterId {
     GenericTypeParameterId::new(
@@ -55,6 +56,8 @@ fn recursive_scope() -> TypeConstraintParameterScope {
             ),
         ],
         [],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         [],
         [],
     )
@@ -65,19 +68,24 @@ fn recursive_scope() -> TypeConstraintParameterScope {
 fn recursive_binding_to_the_same_declaration_is_free_and_issuer_independent() {
     let cancellation = AtomicBool::new(false);
     let complete = || {
-        let mut context = context(recursive_scope(), &cancellation);
-        let callee = context
-            .parameter_scope
+        let (mut context, mut path) = context(recursive_scope(), &cancellation).into_path();
+        let callee = path
+            .applications
+            .root_scope()
+            .parameters()
             .type_reference(&(parameter(0)).clone().into())
             .expect("template slot");
         let caller = GenericTypeReference::Free(parameter(0));
         assert_ne!(callee, caller);
-        TypeConstraintSolution::complete_path(
-            BTreeMap::from([(callee, TypeKind::GenericParam(caller))]),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            &mut context,
-        )
+        {
+            path.bindings = BTreeMap::from([(callee, TypeKind::GenericParam(caller))]);
+            path.const_bindings = BTreeMap::new();
+            TypeConstraintSolution::complete_application(
+                &path,
+                path.applications.root_id(),
+                &mut context,
+            )
+        }
         .expect("recursive binding is not an occurs cycle")
     };
     let first = complete();
@@ -121,6 +129,8 @@ fn continuation_scope(next: bool) -> TypeConstraintParameterScope {
                 TypeConstraintConstEligibility::FutureEligible
             },
         )],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         (if next { vec![parameter(0)] } else { vec![] })
             .into_iter()
             .map(Into::into),
@@ -130,17 +140,21 @@ fn continuation_scope(next: bool) -> TypeConstraintParameterScope {
 }
 
 fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
-    let mut context = context(continuation_scope(false), cancellation);
+    let (mut context, mut path) = context(continuation_scope(false), cancellation).into_path();
     let local = GenericScope::default()
         .with_binder(GenericBinder::new(1, 0, 0))
         .bound_type(0, 0)
         .expect("function-local bound parameter");
-    let remaining = context
-        .parameter_scope
+    let remaining = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("future type");
-    let remaining_const = context
-        .parameter_scope
+    let remaining_const = path
+        .applications
+        .root_scope()
+        .parameters()
         .const_reference(&(constant()).clone().into())
         .expect("future length");
     let value = TypeKind::function_with_binder(
@@ -156,18 +170,22 @@ fn prefix(cancellation: &AtomicBool) -> TypeConstraintSolution {
         ]),
         EffectRow::closed(crate::effects::EffectSet::new()),
     );
-    TypeConstraintSolution::complete_path(
-        BTreeMap::from([(
-            context
-                .parameter_scope
+    {
+        path.bindings = BTreeMap::from([(
+            path.applications
+                .root_scope()
+                .parameters()
                 .type_reference(&(parameter(0)).clone().into())
                 .expect("bound type"),
             value,
-        )]),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        &mut context,
-    )
+        )]);
+        path.const_bindings = BTreeMap::new();
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect("future references become residual binders")
 }
 
@@ -213,52 +231,62 @@ fn nested_function_binders_preserve_inner_variables_and_bind_future_types_and_le
 fn one_prefix_can_reopen_twice_without_sharing_inference_variables() {
     let cancellation = AtomicBool::new(false);
     let solution = prefix(&cancellation);
-    let mut first = context(continuation_scope(true), &cancellation);
-    let mut second = context(continuation_scope(true), &cancellation);
+    let (mut first, first_path) = context(continuation_scope(true), &cancellation).into_path();
+    let (mut second, second_path) = context(continuation_scope(true), &cancellation).into_path();
     let mut first_path = solution
-        .restore_inherited_path(&mut first)
+        .restore_inherited_path(first_path.applications.root_id(), first_path, &mut first)
         .expect("first opening");
     let mut second_path = solution
-        .restore_inherited_path(&mut second)
+        .restore_inherited_path(second_path.applications.root_id(), second_path, &mut second)
         .expect("second opening");
-    let first_key = first
-        .parameter_scope
+    let first_key = first_path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("first residual variable");
-    let second_key = second
-        .parameter_scope
+    let second_key = second_path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("second residual variable");
     assert_ne!(first_key, second_key);
     first_path.bindings.insert(first_key, TypeKind::I32);
     second_path.bindings.insert(second_key, TypeKind::String);
     first_path.const_bindings.insert(
-        first
-            .parameter_scope
+        first_path
+            .applications
+            .root_scope()
+            .parameters()
             .const_reference(&(constant()).clone().into())
             .expect("length"),
         ArrayLength::Const(3),
     );
     second_path.const_bindings.insert(
-        second
-            .parameter_scope
+        second_path
+            .applications
+            .root_scope()
+            .parameters()
             .const_reference(&(constant()).clone().into())
             .expect("length"),
         ArrayLength::Const(5),
     );
-    let first = TypeConstraintSolution::complete_path(
-        first_path.bindings,
-        first_path.const_bindings,
-        BTreeMap::new(),
-        &mut first,
-    )
+    let first = {
+        TypeConstraintSolution::complete_application(
+            &first_path,
+            first_path.applications.root_id(),
+            &mut first,
+        )
+    }
     .expect("first application closes");
-    let second = TypeConstraintSolution::complete_path(
-        second_path.bindings,
-        second_path.const_bindings,
-        BTreeMap::new(),
-        &mut second,
-    )
+    let second = {
+        TypeConstraintSolution::complete_application(
+            &second_path,
+            second_path.applications.root_id(),
+            &mut second,
+        )
+    }
     .expect("second application closes");
     assert_ne!(first, second);
     for (solution, item, length) in [(&first, TypeKind::I32, 3), (&second, TypeKind::String, 5)] {

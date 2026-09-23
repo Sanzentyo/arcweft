@@ -1,3 +1,4 @@
+use crate::types::constraints::test_support::ConstraintTestSetup;
 use std::{collections::BTreeMap, sync::atomic::AtomicBool};
 
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
         constraints::{
             NoConstraintClient, TypeConstraintError, TypeConstraintParameterEligibility,
             TypeConstraintParameterScope, TypeConstraintRejection, TypeConstraintSolution,
-            context::{LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits},
+            context::{LocalConstraintAccounting, TypeConstraintLimits},
         },
     },
 };
@@ -37,36 +38,45 @@ fn vector_components_open_and_complete_through_the_lower_constraint_authority() 
         ])
         .expect("template parameters");
         let cancellation = AtomicBool::new(false);
-        let mut context =
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        let (mut context, mut path) =
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
                 TypeConstraintLimits::new(256, 128, 32, 16),
                 &cancellation,
                 scope,
-            );
+            )
+            .into_path();
         let opened_vector = context
-            .open_template_type(&vector(
-                dimensions,
-                TypeKind::generic_parameter(parameter(1)),
-            ))
+            .open_template_type(
+                &vector(dimensions, TypeKind::generic_parameter(parameter(1))),
+                &path,
+                path.applications.root_id(),
+            )
             .expect("component opens in the same template scope");
-        let value = context
-            .parameter_scope
+        let value = path
+            .applications
+            .root_scope()
+            .parameters()
             .type_reference(&(parameter(0)).clone().into())
             .expect("value slot");
-        let component = context
-            .parameter_scope
+        let component = path
+            .applications
+            .root_scope()
+            .parameters()
             .type_reference(&(parameter(1)).clone().into())
             .expect("component slot");
         assert_eq!(
             opened_vector,
             vector(dimensions, TypeKind::GenericParam(component.clone()))
         );
-        let solution = TypeConstraintSolution::complete_path(
-            BTreeMap::from([(value, opened_vector), (component, TypeKind::F32)]),
-            BTreeMap::new(),
-            BTreeMap::new(),
-            &mut context,
-        )
+        let solution = {
+            path.bindings = BTreeMap::from([(value, opened_vector), (component, TypeKind::F32)]);
+            path.const_bindings = BTreeMap::new();
+            TypeConstraintSolution::complete_application(
+                &path,
+                path.applications.root_id(),
+                &mut context,
+            )
+        }
         .expect("component alias is normalized before completion");
         let (_, value) = solution
             .bindings()
@@ -85,25 +95,31 @@ fn cyclic_vector_component_is_rejected_before_a_solution_can_publish() {
     )])
     .expect("template parameter");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let reference = context
-        .parameter_scope
+        )
+        .into_path();
+    let reference = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(0)).clone().into())
         .expect("type slot");
-    let error = TypeConstraintSolution::complete_path(
-        BTreeMap::from([(
+    let error = {
+        path.bindings = BTreeMap::from([(
             reference.clone(),
             vector(VectorDimensions::Three, TypeKind::GenericParam(reference)),
-        )]),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        &mut context,
-    )
+        )]);
+        path.const_bindings = BTreeMap::new();
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect_err("a component cycle is not an opaque leaf");
     assert!(matches!(
         error,
@@ -173,17 +189,22 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
     )])
     .expect("callee type parameter");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(4096, 2048, 128, 64),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let expected = context
-        .open_template_type(&error_payload(TypeKind::generic_parameter(parameter(0))))
+        .open_template_type(
+            &error_payload(TypeKind::generic_parameter(parameter(0))),
+            &path,
+            path.applications.root_id(),
+        )
         .expect("open payload owner");
     let actual = error_payload(TypeKind::I64);
-    let path = context.start_path().expect("candidate path");
+    let path = context.fork_path(&path).expect("candidate path");
     let mut paths = relate_selected_call(
         &expected,
         &actual,
@@ -194,12 +215,13 @@ fn payload_relation_infers_parameters_used_only_by_the_owner() {
     .expect("payload relation");
     assert_eq!(paths.len(), 1);
     let path = paths.pop().expect("selected path");
-    let solution = TypeConstraintSolution::complete_path(
-        path.bindings,
-        path.const_bindings,
-        BTreeMap::new(),
-        &mut context,
-    )
+    let solution = {
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect("owner parameter is closed by the relation");
     let (bound, value) = solution.bindings().next().expect("inferred owner argument");
     assert_eq!(bound.value(), &parameter(0).into());
@@ -215,38 +237,46 @@ fn payload_owner_arguments_open_normalize_and_reseal_with_the_fields() {
     ])
     .expect("template parameters");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1024, 512, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let declared = error_payload(TypeKind::generic_parameter(parameter(1)));
     let TypeKind::VariantPayload(before) = &declared else {
         panic!("payload fixture")
     };
     let before = before.try_seal().expect("declaration payload");
     let opened = context
-        .open_template_type(&declared)
+        .open_template_type(&declared, &path, path.applications.root_id())
         .expect("logical owner can contain inference");
     assert!(matches!(
         opened.semantic_identity_digest(),
         Err(crate::types::GenericScopeError::EscapedInference { .. })
     ));
-    let root = context
-        .parameter_scope
+    let root = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(0)).clone().into())
         .expect("result slot");
-    let argument = context
-        .parameter_scope
+    let argument = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(1)).clone().into())
         .expect("owner argument slot");
-    let solution = TypeConstraintSolution::complete_path(
-        BTreeMap::from([(root, opened), (argument, TypeKind::I64)]),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        &mut context,
-    )
+    let solution = {
+        path.bindings = BTreeMap::from([(root, opened), (argument, TypeKind::I64)]);
+        path.const_bindings = BTreeMap::new();
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect("the owner and fields close together");
     let (_, value) = solution
         .bindings()
@@ -283,25 +313,35 @@ fn occurs_check_includes_parameters_used_only_by_the_payload_owner() {
     )])
     .expect("template parameter");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1024, 512, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let opened = context
-        .open_template_type(&error_payload(TypeKind::generic_parameter(parameter(0))))
+        .open_template_type(
+            &error_payload(TypeKind::generic_parameter(parameter(0))),
+            &path,
+            path.applications.root_id(),
+        )
         .expect("logical payload owner");
-    let reference = context
-        .parameter_scope
+    let reference = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(0)).clone().into())
         .expect("type slot");
-    let error = TypeConstraintSolution::complete_path(
-        BTreeMap::from([(reference, opened)]),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        &mut context,
-    )
+    let error = {
+        path.bindings = BTreeMap::from([(reference, opened)]);
+        path.const_bindings = BTreeMap::new();
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect_err("a phantom owner parameter still participates in occurs checks");
     assert!(matches!(
         error,
@@ -332,29 +372,35 @@ fn residual_payload_owner_requires_its_retained_type_and_const_scope() {
     )
     .expect("residual owner parameters");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1024, 512, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let declared = error_payload(TypeKind::Array {
         item: Box::new(TypeKind::generic_parameter(parameter(1))),
         len: ArrayLength::generic_parameter(constant),
     });
     let opened = context
-        .open_template_type(&declared)
+        .open_template_type(&declared, &path, path.applications.root_id())
         .expect("open owner arguments");
-    let root = context
-        .parameter_scope
+    let root = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&(parameter(0)).clone().into())
         .expect("result slot");
-    let solution = TypeConstraintSolution::complete_path(
-        BTreeMap::from([(root, opened)]),
-        BTreeMap::new(),
-        BTreeMap::new(),
-        &mut context,
-    )
+    let solution = {
+        path.bindings = BTreeMap::from([(root, opened)]);
+        path.const_bindings = BTreeMap::new();
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect("future owner arguments become residual bound references");
     let (_, value) = solution.bindings().next().expect("payload binding");
     assert!(value.semantic_identity_digest().is_ok());

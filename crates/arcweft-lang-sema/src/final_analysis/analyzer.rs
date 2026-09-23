@@ -856,6 +856,7 @@ impl<'project, 'catalog, 'control> Analyzer<'project, 'catalog, 'control> {
             self.fx_definitions
                 .take()
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?,
+            super::report::FinalSemanticAnalysisAuthority::Registered(self.catalogs.world.clone()),
             self.control,
         )
     }
@@ -978,6 +979,8 @@ mod callable_effect_graph;
 mod calls;
 #[path = "analyzer/checked_value_program.rs"]
 mod checked_value_program;
+#[path = "analyzer/pending_effects.rs"]
+mod pending_effects;
 pub(super) use calls::AnalyzerPreparedCallGraph;
 pub(crate) use calls::CallAnalysisFailure;
 pub(crate) use expression_error::CallFrameInvariant;

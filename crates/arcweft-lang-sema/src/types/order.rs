@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 
-use crate::effect_row::{EffectRow, EffectRowTail};
+use crate::effect_row::EffectRow;
 
 use super::{
     EntityKind, EntityType, HandleState, IteratorStateKind, MapKind, StageActorHandleType,
@@ -24,6 +24,7 @@ impl TypeKind {
                 (Self::Range(left), Self::Range(right))
                 | (Self::Probe(left), Self::Probe(right))
                 | (Self::Vec(left), Self::Vec(right))
+                | (Self::DataShape(left), Self::DataShape(right))
                 | (Self::Slice(left), Self::Slice(right))
                 | (Self::Seq(left), Self::Seq(right))
                 | (Self::Option(left), Self::Option(right))
@@ -305,29 +306,7 @@ fn entity_kind_ordering(left: &EntityKind, right: &EntityKind) -> Ordering {
 }
 
 fn effect_row_ordering(left: &EffectRow, right: &EffectRow) -> Ordering {
-    left.concrete()
-        .iter()
-        .cmp(right.concrete().iter())
-        .then_with(|| effect_row_tail_ordering(left.tail(), right.tail()))
-}
-
-fn effect_row_tail_ordering(left: EffectRowTail, right: EffectRowTail) -> Ordering {
-    effect_row_tail_tag(left)
-        .cmp(&effect_row_tail_tag(right))
-        .then_with(|| match (left, right) {
-            (EffectRowTail::Variable(left), EffectRowTail::Variable(right)) => {
-                left.index().cmp(&right.index())
-            }
-            _ => Ordering::Equal,
-        })
-}
-
-const fn effect_row_tail_tag(tail: EffectRowTail) -> u8 {
-    match tail {
-        EffectRowTail::Closed => 0,
-        EffectRowTail::Variable(_) => 1,
-        EffectRowTail::Unknown => 2,
-    }
+    left.semantic_cmp(right)
 }
 
 const fn iterator_state_tag(kind: IteratorStateKind) -> u8 {
@@ -438,7 +417,7 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::ActionResult => 33,
         TypeKind::AgentValue => 34,
         TypeKind::DataFormat => 35,
-        TypeKind::DataShape => 36,
+        TypeKind::DataShape(_) => 36,
         TypeKind::AgentEntityMetadata => 37,
         TypeKind::AgentSourceAnchor => 38,
         TypeKind::AgentProjectGraphNeighborhood => 39,
@@ -496,5 +475,11 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::CompileTimeEnum(_) => 91,
         TypeKind::CompileTimeFx(_) => 92,
         TypeKind::FixedVector(_) => 93,
+        TypeKind::DataValue => 94,
+        TypeKind::DataError => 95,
+        TypeKind::DataErrorKind => 96,
+        TypeKind::DataPath => 97,
+        TypeKind::DataPathSegment => 98,
+        TypeKind::DataMapKind => 99,
     }
 }

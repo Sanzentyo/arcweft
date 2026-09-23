@@ -4,7 +4,9 @@ use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use super::{CallablePath, CallableSchemaError, CallableSignatureSchema};
 use crate::{
-    character_dialogue::CharacterDialogueCustomFieldRegistry,
+    character_dialogue::{
+        CharacterDialogueCustomFieldRegistry, CharacterDialogueRuntimeRoleRegistry,
+    },
     types::{CharacterDialogueCharacterType, TypeKind},
 };
 
@@ -44,6 +46,7 @@ pub struct DialogueSchemaContext<'a> {
     pub callee: &'a DialogueCalleeIdentity,
     pub module: &'a CanonicalModulePath,
     pub custom_fields: &'a CharacterDialogueCustomFieldRegistry,
+    pub roles: &'a CharacterDialogueRuntimeRoleRegistry,
     pub patch_context: CharacterDialoguePatchContext,
     pub result: DialogueCallableResultContext<'a>,
 }
@@ -64,6 +67,7 @@ impl PartialEq for DialogueSchemaContext<'_> {
             && self.patch_context == other.patch_context
             && self.result == other.result
             && std::ptr::eq(self.custom_fields, other.custom_fields)
+            && std::ptr::eq(self.roles, other.roles)
     }
 }
 

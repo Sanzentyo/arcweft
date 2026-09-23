@@ -22,16 +22,16 @@ mod traversal;
 use traversal::EncodingTask;
 
 use crate::{
-    effect_row::{EffectRow, EffectRowTail},
+    effect_row::{DecisionEncoding, EffectRow, MembershipEncoding},
     env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId, OpenNominalRuleId},
 };
 
 use super::{
     ArrayLength, CharacterNominalType, CompileTimeCallableType, CompileTimeEnumType,
     CompileTimeFxType, CompileTimeScalarType, EntityKind, GenericConstParameterId,
-    GenericConstReference, GenericParameterKind, GenericParameterOwnerId, GenericScope,
-    GenericScopeError, GenericTypeReference, HandleState, IteratorStateKind, LifetimeScopeKind,
-    MapKind, StageActorHandleType, TypeKind, ViewCallableId,
+    GenericConstReference, GenericEffectReference, GenericParameterKind, GenericParameterOwnerId,
+    GenericScope, GenericScopeError, GenericTypeReference, HandleState, IteratorStateKind,
+    LifetimeScopeKind, MapKind, StageActorHandleType, TypeKind, ViewCallableId,
 };
 
 /// Stable semantic identity of one complete checked type.
@@ -407,25 +407,73 @@ impl super::GenericTypeParameterId {
 impl EffectRow {
     /// Version-1 row identity is the canonical nullary Unit function carrying
     /// this row. Encode that borrowed row without constructing a copied type.
-    pub(crate) fn semantic_identity_digest(&self) -> SemanticTypeDigest {
-        Encoder::effect_identity(self, &mut (), &|(), _, _| {
-            Ok::<(), std::convert::Infallible>(())
-        })
-        .unwrap_or_else(|never| match never {})
+    pub(crate) fn semantic_identity_digest(&self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        self.semantic_identity_digest_in_scope(&GenericScope::default())
+    }
+
+    pub(crate) fn semantic_identity_digest_in_scope(
+        &self,
+        scope: &GenericScope,
+    ) -> Result<SemanticTypeDigest, GenericScopeError> {
+        Encoder::effect_identity(self, scope, &mut (), &|(), _, _| Ok(()), &|()| Ok(()))
     }
 
     pub(crate) fn semantic_identity_digest_with_control<C: super::TypeProjectionControl>(
         &self,
         control: &mut C,
     ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
-        Encoder::effect_identity(self, control, &|control, kind, depth| {
-            control
-                .check()
-                .map_err(super::TypeProjectionError::Control)?;
-            control
-                .visit_node(kind, depth)
-                .map_err(super::TypeProjectionError::Control)
-        })
+        self.semantic_identity_digest_in_scope_with_control(&GenericScope::default(), control)
+    }
+
+    pub(crate) fn semantic_identity_digest_in_scope_with_control<
+        C: super::TypeProjectionControl,
+    >(
+        &self,
+        scope: &GenericScope,
+        control: &mut C,
+    ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
+        Encoder::effect_identity(
+            self,
+            scope,
+            control,
+            &|control, kind, depth| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_node(kind, depth)
+                    .map_err(super::TypeProjectionError::Control)
+            },
+            &|control| {
+                control
+                    .check()
+                    .map_err(super::TypeProjectionError::Control)?;
+                control
+                    .visit_binding()
+                    .map_err(super::TypeProjectionError::Control)
+            },
+        )
+    }
+}
+
+impl crate::effect_row::EffectPredicate {
+    pub(crate) fn semantic_identity_digest_in_scope(
+        &self,
+        scope: &GenericScope,
+    ) -> Result<SemanticTypeDigest, GenericScopeError> {
+        let mut encoder = Encoder::scoped(scope, &mut (), &|()| Ok::<(), GenericScopeError>(()))?;
+        // This root is a universally interpreted predicate, distinct from a
+        // finite effect row and from every runtime type constructor.
+        encoder.tag(97);
+        self.encode(&mut EffectRowTypeEncoding {
+            encoder: &mut encoder,
+            control: &mut (),
+            node: &|_: &mut (), _: super::TypeProjectionNodeKind, _: u64| {
+                Ok::<(), GenericScopeError>(())
+            },
+            depth: 1,
+        })?;
+        Ok(SemanticTypeDigest(*encoder.finish()?.as_bytes()))
     }
 }
 
@@ -448,18 +496,20 @@ struct Encoder {
 }
 
 impl Encoder {
-    fn effect_identity<C, E>(
+    fn effect_identity<C, E: From<GenericScopeError>>(
         row: &EffectRow,
+        scope: &GenericScope,
         control: &mut C,
         node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+        binding: &impl Fn(&mut C) -> Result<(), E>,
     ) -> Result<SemanticTypeDigest, E> {
-        let mut encoder = Self::new(GenericScope::default());
+        let mut encoder = Self::scoped(scope, control, binding)?;
         node(control, super::TypeProjectionNodeKind::Type, 1)?;
         encoder.function_header(super::GenericBinder::EMPTY, 0);
         node(control, super::TypeProjectionNodeKind::Type, 2)?;
         encoder.checked(&RuntimeCheckedType::Unit);
         encoder.effect_row(row, 2, control, node)?;
-        Ok(SemanticTypeDigest(*encoder.bytes.finish().as_bytes()))
+        Ok(SemanticTypeDigest(*encoder.finish()?.as_bytes()))
     }
 
     fn function_header(&mut self, binder: super::GenericBinder, parameters: usize) {
@@ -631,7 +681,10 @@ impl Encoder {
             TypeKind::ActionResult => self.tag(34),
             TypeKind::AgentValue => self.tag(35),
             TypeKind::DataFormat => self.tag(36),
-            TypeKind::DataShape => self.tag(37),
+            TypeKind::DataShape(inner) => {
+                self.tag(37);
+                tasks.push(EncodingTask::Type(inner, child_depth));
+            }
             TypeKind::AgentEntityMetadata => self.tag(38),
             TypeKind::AgentSourceAnchor => self.tag(39),
             TypeKind::AgentProjectGraphNeighborhood => self.tag(40),
@@ -865,6 +918,12 @@ impl Encoder {
                 });
                 tasks.push(EncodingTask::Type(vector.component(), child_depth));
             }
+            TypeKind::DataValue => self.tag(95),
+            TypeKind::DataError => self.tag(96),
+            TypeKind::DataErrorKind => self.tag(97),
+            TypeKind::DataPath => self.tag(98),
+            TypeKind::DataPathSegment => self.tag(99),
+            TypeKind::DataMapKind => self.tag(100),
         }
         Ok(None)
     }
@@ -1029,6 +1088,32 @@ impl Encoder {
         }
     }
 
+    fn generic_effect_parameter(&mut self, reference: &GenericEffectReference) {
+        self.byte(0xE0);
+        match reference {
+            GenericEffectReference::Free(parameter) => {
+                self.byte(0);
+                self.generic_owner(parameter.owner());
+                self.u32(parameter.ordinal());
+            }
+            GenericEffectReference::Bound(parameter) => {
+                if let Err(error) = self.scope.bound_effect(parameter.depth(), parameter.slot()) {
+                    self.error.get_or_insert(error);
+                    return;
+                }
+                self.byte(1);
+                self.u32(parameter.depth());
+                self.u32(parameter.slot());
+            }
+            GenericEffectReference::Inference(_) => {
+                self.error
+                    .get_or_insert(GenericScopeError::EscapedInference {
+                        kind: GenericParameterKind::Effect,
+                    });
+            }
+        }
+    }
+
     fn generic_owner(&mut self, owner: &GenericParameterOwnerId) {
         match owner {
             GenericParameterOwnerId::Callable(id) => {
@@ -1166,45 +1251,13 @@ impl Encoder {
         control: &mut C,
         node: &impl Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
     ) -> Result<(), E> {
-        use super::TypeProjectionNodeKind;
-        node(
+        row.encode(&mut EffectRowTypeEncoding {
+            encoder: self,
             control,
-            TypeProjectionNodeKind::Effect,
-            traversal::depth_u64(depth),
-        )?;
-        self.len(row.concrete().iter().len());
-        for effect in row.concrete().iter() {
-            node(
-                control,
-                TypeProjectionNodeKind::Effect,
-                traversal::depth_u64(depth + 1),
-            )?;
-            self.string(effect.as_str());
-        }
-        match row.tail() {
-            EffectRowTail::Closed => self.byte(0),
-            EffectRowTail::Variable(variable) => {
-                node(
-                    control,
-                    TypeProjectionNodeKind::Effect,
-                    traversal::depth_u64(depth + 1),
-                )?;
-                self.byte(1);
-                self.bytes(variable.issuer().as_bytes());
-                self.u32(variable.index());
-            }
-            EffectRowTail::Unknown => {
-                node(
-                    control,
-                    TypeProjectionNodeKind::Effect,
-                    traversal::depth_u64(depth + 1),
-                )?;
-                self.byte(2);
-            }
-        }
-        Ok(())
+            node,
+            depth: traversal::depth_u64(depth),
+        })
     }
-
     fn character_nominal(&mut self, nominal: &CharacterNominalType) {
         match nominal {
             CharacterNominalType::Look { character } => {
@@ -1342,3 +1395,61 @@ impl Encoder {
 
 #[cfg(test)]
 mod tests;
+
+/// The row owner emits its grammar; this existing type transcript supplies
+/// reference identity and charges each emitted structural occurrence.
+struct EffectRowTypeEncoding<'a, C, N> {
+    encoder: &'a mut Encoder,
+    control: &'a mut C,
+    node: &'a N,
+    depth: u64,
+}
+
+impl<C, E, N> DecisionEncoding<GenericEffectReference> for EffectRowTypeEncoding<'_, C, N>
+where
+    N: Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+{
+    type Error = E;
+    fn tag(&mut self, value: u8) -> Result<(), E> {
+        (self.node)(
+            self.control,
+            super::TypeProjectionNodeKind::Effect,
+            self.depth,
+        )?;
+        self.encoder.byte(value);
+        Ok(())
+    }
+    fn count(&mut self, value: usize) -> Result<(), E> {
+        (self.node)(
+            self.control,
+            super::TypeProjectionNodeKind::Effect,
+            self.depth,
+        )?;
+        self.encoder.len(value);
+        Ok(())
+    }
+    fn variable(&mut self, variable: &GenericEffectReference) -> Result<(), E> {
+        (self.node)(
+            self.control,
+            super::TypeProjectionNodeKind::Effect,
+            self.depth.saturating_add(1),
+        )?;
+        self.encoder.generic_effect_parameter(variable);
+        Ok(())
+    }
+}
+
+impl<C, E, N> MembershipEncoding<GenericEffectReference> for EffectRowTypeEncoding<'_, C, N>
+where
+    N: Fn(&mut C, super::TypeProjectionNodeKind, u64) -> Result<(), E>,
+{
+    fn effect(&mut self, effect: &crate::effects::EffectId) -> Result<(), E> {
+        (self.node)(
+            self.control,
+            super::TypeProjectionNodeKind::Effect,
+            self.depth.saturating_add(1),
+        )?;
+        self.encoder.string(effect.as_str());
+        Ok(())
+    }
+}

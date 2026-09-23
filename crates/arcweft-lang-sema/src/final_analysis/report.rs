@@ -56,6 +56,7 @@ use super::semantic_shapes::AcceptedSemanticShapeCatalog;
 /// Immutable semantic analysis bound to one exact accepted HIR generation.
 #[derive(Clone, Debug)]
 pub struct FinalSemanticAnalysis {
+    authority: FinalSemanticAnalysisAuthority,
     checked_callables: Arc<CheckedCallableCatalog>,
     accepted_roots: Arc<AcceptedSemanticRootCatalog>,
     checked_entries: CheckedEntryCatalog,
@@ -83,6 +84,16 @@ pub struct FinalSemanticAnalysis {
     physical_candidate_argument_evaluations:
         BTreeMap<ExprId, Arc<[PhysicalCandidateArgumentEvaluation]>>,
     work: FinalSemanticAnalysisWork,
+}
+
+/// Retains the actual registration allocations, rather than reconstructing
+/// authority from matching digests. Hand-assembled unit fixtures cannot issue
+/// accepted Rust runtime projections.
+#[derive(Clone, Debug)]
+pub(super) enum FinalSemanticAnalysisAuthority {
+    Registered(crate::registration::RegisteredSemanticWorld),
+    #[cfg(test)]
+    Fixture,
 }
 
 /// Final execution projection for one checked expression.
@@ -1005,6 +1016,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         project_nominals: ProjectNominalSemanticCatalog,
         semantic_shapes: AcceptedSemanticShapeCatalog,
         runtime_nominals: RuntimeNominalProjectionCatalog,
+        authority: FinalSemanticAnalysisAuthority,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<FinalSemanticAnalysis, FinalSemanticAnalysisError> {
         let Self {
@@ -1170,6 +1182,7 @@ impl FinalSemanticAnalysisPostEntryDraft {
         }
         control.check()?;
         let mut analysis = FinalSemanticAnalysis {
+            authority,
             checked_callables,
             accepted_roots,
             checked_entries,
@@ -1559,18 +1572,30 @@ fn validate_checked_entry_references(
 }
 
 impl FinalSemanticAnalysis {
-    #[cfg(test)]
     pub(super) const fn accepted_types(&self) -> &BTreeMap<TypeId, TypeKind> {
         &self.types
     }
 
-    #[allow(
-        dead_code,
-        reason = "used only by the crate-private Cut 2 ownership classifier until Cut 5 publication"
-    )]
     pub(crate) fn matches_symbol_lease(&self, symbols: &ProjectSymbolTable) -> bool {
         symbols.world() == self.hir_generation().symbol_world()
             && *symbols.revision() == self.hir_generation().symbol_revision()
+    }
+
+    pub(crate) fn matches_registered_world(
+        &self,
+        world: &crate::registration::RegisteredSemanticWorld,
+    ) -> bool {
+        match &self.authority {
+            FinalSemanticAnalysisAuthority::Registered(retained) => {
+                std::ptr::eq(retained.symbols(), world.symbols())
+                    && std::ptr::eq(retained.environment(), world.environment())
+                    && self.matches_symbol_lease(world.symbols())
+                    && world.environment().world() == world.symbols().world()
+                    && world.environment().symbol_revision() == world.symbols().revision()
+            }
+            #[cfg(test)]
+            FinalSemanticAnalysisAuthority::Fixture => false,
+        }
     }
 
     /// Validates and publishes a complete semantic generation.
@@ -1669,6 +1694,7 @@ impl FinalSemanticAnalysis {
             AcceptedSemanticShapeCatalog::default(),
             crate::checked_text_proxy::PreparedCheckedTextProxyCatalog::default(),
             super::CheckedFxDefinitionCatalog::default(),
+            FinalSemanticAnalysisAuthority::Fixture,
             control,
         )
         .map_err(FinalSemanticProjectError::into_semantic_fixture_error)
@@ -1688,6 +1714,7 @@ impl FinalSemanticAnalysis {
         semantic_shapes: AcceptedSemanticShapeCatalog,
         text_proxies: crate::checked_text_proxy::PreparedCheckedTextProxyCatalog,
         fx_definitions: super::CheckedFxDefinitionCatalog,
+        authority: FinalSemanticAnalysisAuthority,
         control: FinalSemanticAnalysisControl<'_>,
     ) -> Result<Self, FinalSemanticProjectError> {
         control.check()?;
@@ -1770,7 +1797,14 @@ impl FinalSemanticAnalysis {
             physical_candidate_argument_evaluations,
             executable_suspensions: input.executable_suspensions,
         };
-        super::nominal_schema::seal_nominal_draft(draft, project, symbols, semantic_shapes, control)
+        super::nominal_schema::seal_nominal_draft(
+            draft,
+            project,
+            symbols,
+            semantic_shapes,
+            authority,
+            control,
+        )
     }
 
     /// Rejects reuse with any missing, foreign, or stale module generation.
@@ -1877,6 +1911,19 @@ impl FinalSemanticAnalysis {
             }),
         )
         .map(Some)
+    }
+
+    /// Exact checked closed-enum owner retained by this accepted generation.
+    ///
+    /// Runtime projection uses this for source-owned environment enums whose
+    /// ordered case inventory is part of their nominal ABI. The returned owner
+    /// is borrowed from the accepted semantic-shape catalog; callers cannot
+    /// reconstruct or extend its cases.
+    pub fn accepted_closed_variant_owner(
+        &self,
+        semantic_type: crate::types::SemanticTypeDigest,
+    ) -> Option<&super::CheckedVariantOwner> {
+        self.semantic_shapes().closed_variant(semantic_type)
     }
 
     pub(crate) const fn semantic_shapes(&self) -> &AcceptedSemanticShapeCatalog {

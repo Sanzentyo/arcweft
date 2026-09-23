@@ -43,7 +43,12 @@ macro_rules! atomic_type_kind_pattern {
             | Self::ActionResult
             | Self::AgentValue
             | Self::DataFormat
-            | Self::DataShape
+            | Self::DataValue
+            | Self::DataError
+            | Self::DataErrorKind
+            | Self::DataPath
+            | Self::DataPathSegment
+            | Self::DataMapKind
             | Self::AgentEntityMetadata
             | Self::AgentSourceAnchor
             | Self::AgentProjectGraphNeighborhood
@@ -83,6 +88,7 @@ impl TypeKind {
             Self::Range(inner)
             | Self::Probe(inner)
             | Self::Vec(inner)
+            | Self::DataShape(inner)
             | Self::Slice(inner)
             | Self::Seq(inner)
             | Self::Need(inner)
@@ -142,6 +148,7 @@ impl TypeKind {
             Self::Range(inner)
             | Self::Probe(inner)
             | Self::Vec(inner)
+            | Self::DataShape(inner)
             | Self::Slice(inner)
             | Self::Seq(inner)
             | Self::Need(inner)

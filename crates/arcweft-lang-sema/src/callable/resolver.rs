@@ -1,24 +1,20 @@
 //! Validated callable resolver requests and products.
 
-mod effect_instantiation;
 mod outcome;
 mod preparation;
 mod prepared_identity;
 mod resolution;
 
-pub(crate) use effect_instantiation::{
-    CheckedCallableEffectInstantiation, PreparedCallableEffectInstantiation,
-    PreparedCallableEffectInstantiationEvidence,
-};
 pub use outcome::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, ResolvedCharacterOwner,
     ResolvedNonCallableTarget, SignatureOrigin, TypeReceiverInstantiation, UnknownCallKind,
     UnknownCallTarget,
 };
 pub(crate) use outcome::{
-    DetachedPreparedResolvedCallable, PreparedCallableDefinitionKey, PreparedResolvedCallable,
-    PreparedResolvedCallableDefinition, PreparedResolvedCallableDefinitionBatch,
-    PreparedResolvedCallableDefinitionSealInput, PreparedResolvedCallableDetachArena,
+    CallableProjection, CallableTerminalEffectProjection, DetachedPreparedResolvedCallable,
+    PreparedCallableDefinitionKey, PreparedResolvedCallable, PreparedResolvedCallableDefinition,
+    PreparedResolvedCallableDefinitionBatch, PreparedResolvedCallableDefinitionSealInput,
+    PreparedResolvedCallableDetachArena,
 };
 pub(crate) use outcome::{NonEmptyResolvedCandidates, ResolveCallOutcome, ResolvedCallTarget};
 use preparation::classify_prepared_callee;
@@ -405,6 +401,15 @@ pub(crate) struct PreparedCallInputs {
     mapping: super::PreparedCallArgumentMapping,
     semantic_operands: Box<[PreparedCallSemanticOperand]>,
     attached_content: Option<PreparedCallAttachedContentOperand>,
+    type_application: PreparedCallTypeApplication,
+}
+
+/// Source-resolved explicit type arguments carried into the same candidate
+/// constraint transaction as mapped values and contextual result evidence.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PreparedCallTypeApplication {
+    Absent,
+    Present(Box<[Option<TypeKind>]>),
 }
 
 impl PreparedCallInputs {
@@ -417,7 +422,16 @@ impl PreparedCallInputs {
             mapping,
             semantic_operands,
             attached_content,
+            type_application: PreparedCallTypeApplication::Absent,
         }
+    }
+
+    pub(crate) fn with_type_application(
+        mut self,
+        type_application: PreparedCallTypeApplication,
+    ) -> Self {
+        self.type_application = type_application;
+        self
     }
 
     /// Seals the structural inputs owned by a Dialogue content application.
@@ -511,6 +525,27 @@ impl PreparedCallInputs {
                 (Some(_), Some(PreparedCallAttachedContentOperand::Present { .. })) => true,
                 (None, Some(_)) | (Some(_), None) => false,
             }
+            && self.validates_type_application(candidate)
+    }
+
+    pub(crate) fn validates_type_application(&self, candidate: &PreparedResolvedCallable) -> bool {
+        match &self.type_application {
+            PreparedCallTypeApplication::Absent => true,
+            PreparedCallTypeApplication::Present(arguments) => {
+                let parameters = candidate
+                    .schema()
+                    .generic_inventory()
+                    .types()
+                    .iter()
+                    .filter(|entry| entry.role() == super::CallableSchemaGenericRole::Candidate)
+                    .count();
+                arguments.len() == parameters && arguments.iter().all(Option::is_some)
+            }
+        }
+    }
+
+    pub(crate) const fn type_application(&self) -> &PreparedCallTypeApplication {
+        &self.type_application
     }
 
     pub(crate) fn mapping(&self) -> &super::PreparedCallArgumentMapping {
@@ -1264,22 +1299,35 @@ pub(crate) struct CallResolverContext<'a> {
 ///
 /// The pending form borrows the same consuming catalog transaction that is
 /// later frozen and published. It exposes only structural checked identity and
-/// the exact accepted record pointer needed by resolution; inferred effect
-/// rows remain unavailable until the transaction is complete. This is a build
-/// phase of the final authority, not a second catalog or compatibility reader.
+/// the exact accepted record pointer needed by resolution. Inferred rows may
+/// be borrowed from the live or extracted graph transaction that proved their
+/// body prerequisites; final catalog construction validates those rows again.
+/// This is a build phase of the final authority, not a second catalog.
 #[derive(Clone, Copy)]
 pub(crate) enum CheckedCallResolverAuthority<'a> {
-    Pending(&'a super::CheckedCallableCatalogBuilder),
+    Pending {
+        builder: &'a super::CheckedCallableCatalogBuilder,
+        effects: Option<super::PreparedCallableEffectView<'a>>,
+    },
     Frozen(&'a super::CheckedCallableCatalog),
 }
 
 impl<'a> CheckedCallResolverAuthority<'a> {
+    pub(crate) const fn preparing(
+        builder: &'a super::CheckedCallableCatalogBuilder,
+        effects: super::PreparedCallableEffectView<'a>,
+    ) -> Self {
+        Self::Pending {
+            builder,
+            effects: Some(effects),
+        }
+    }
     fn checked_for_candidate(
         self,
         candidate: &CallableCandidateId,
     ) -> Result<&'a CheckedCallableId, super::CheckedCallableLookupError> {
         match self {
-            Self::Pending(builder) => builder
+            Self::Pending { builder, .. } => builder
                 .pending_by_candidate(candidate)
                 .map(super::checked_catalog::PendingCheckedCallable::id),
             Self::Frozen(catalog) => catalog.checked_for_candidate(candidate),
@@ -1291,7 +1339,7 @@ impl<'a> CheckedCallResolverAuthority<'a> {
         id: &CheckedCallableId,
     ) -> Result<&'a Arc<CallableRecord>, super::CheckedCallableLookupError> {
         match self {
-            Self::Pending(builder) => builder
+            Self::Pending { builder, .. } => builder
                 .pending_by_id(id)
                 .map(super::checked_catalog::PendingCheckedCallable::record),
             Self::Frozen(catalog) => catalog
@@ -1300,16 +1348,63 @@ impl<'a> CheckedCallResolverAuthority<'a> {
         }
     }
 
+    /// Borrows the terminal invocation row from the exact checked authority
+    /// selected for this prepared callable. An authored bound is available
+    /// while the catalog is pending; inferred rows remain identified as
+    /// pending until body analysis supplies them.
+    pub(crate) fn terminal_effects_for<'candidate>(
+        self,
+        candidate: &'candidate PreparedResolvedCallable,
+    ) -> Result<CallableTerminalEffectProjection<'candidate>, super::CheckedCallableLookupError>
+    where
+        'a: 'candidate,
+    {
+        let Some(expected) = candidate.checked() else {
+            return candidate
+                .schema()
+                .effects()
+                .fixed_row()
+                .map(CallableTerminalEffectProjection::Known)
+                .ok_or(super::CheckedCallableLookupError::Missing);
+        };
+        let actual = self.checked_for_candidate(candidate.id())?;
+        if actual != expected {
+            return Err(super::CheckedCallableLookupError::CandidateMismatch);
+        }
+        if let (Some(candidate_record), Ok(authoritative_record)) =
+            (candidate.record(), self.record(expected))
+            && !Arc::ptr_eq(candidate_record, authoritative_record)
+        {
+            return Err(super::CheckedCallableLookupError::RecordPointerMismatch);
+        }
+
+        match self {
+            Self::Pending { builder, effects } => {
+                let pending = builder.pending_by_id(expected)?;
+                let row = pending
+                    .known_exposed_row()
+                    .or_else(|| effects.and_then(|rows| rows.row(expected)));
+                Ok(row.map_or_else(
+                    || CallableTerminalEffectProjection::Pending(expected),
+                    CallableTerminalEffectProjection::Known,
+                ))
+            }
+            Self::Frozen(catalog) => catalog
+                .callable(expected)
+                .map(|facts| CallableTerminalEffectProjection::Known(facts.exposed_row())),
+        }
+    }
+
     fn method(self, key: &ReceiverMethodKey) -> super::CheckedMethodLookup {
         match self {
-            Self::Pending(builder) => builder.method(key),
+            Self::Pending { builder, .. } => builder.method(key),
             Self::Frozen(catalog) => catalog.method(key),
         }
     }
 
     fn exact_method(self, key: &ReceiverMethodKey) -> super::CheckedMethodLookup {
         match self {
-            Self::Pending(builder) => builder.exact_method(key),
+            Self::Pending { builder, .. } => builder.exact_method(key),
             Self::Frozen(catalog) => catalog.exact_method(key),
         }
     }
@@ -1323,7 +1418,10 @@ impl<'a> From<&'a super::CheckedCallableCatalog> for CheckedCallResolverAuthorit
 
 impl<'a> From<&'a super::CheckedCallableCatalogBuilder> for CheckedCallResolverAuthority<'a> {
     fn from(builder: &'a super::CheckedCallableCatalogBuilder) -> Self {
-        Self::Pending(builder)
+        Self::Pending {
+            builder,
+            effects: None,
+        }
     }
 }
 

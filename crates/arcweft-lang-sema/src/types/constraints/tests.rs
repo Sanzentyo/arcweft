@@ -1,4 +1,5 @@
 //! Lower-schema differentials that do not require callable/analyzer wiring.
+use crate::types::constraints::test_support::ConstraintTestSetup;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -17,9 +18,7 @@ use super::{
     ExpectedHint, SourceError, SourcePhase, TypeConstraintConstEligibility,
     TypeConstraintParameterEligibility, TypeConstraintParameterScope,
 };
-use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintVariable, EffectRow, EffectVar, EffectVarIssuer,
-};
+use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable, EffectRow};
 use crate::effects::EffectSet;
 use crate::types::{
     ArrayLength, DetachedGenericOwnerId, GenericConstParameterId, GenericParameterOwnerId,
@@ -76,18 +75,21 @@ fn try_type_only_solution(
             super::context::TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
         }),
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         std::iter::empty(),
         std::iter::empty(),
     )
     .expect("test completed-solution scope is canonical");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(4_096, 2_048, 256, 128),
             &cancellation,
             scope,
-        );
-    TypeConstraintSolution::test_seal_completed(bindings, std::iter::empty(), &mut context)
+        )
+        .into_path();
+    TypeConstraintSolution::test_seal_completed(bindings, &mut path, &mut context)
 }
 
 fn type_only_solution(
@@ -177,19 +179,19 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
         len: super::super::ArrayLength::generic_parameter(constant.clone()),
     };
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     assert!(
         super::normalization::project_type(
             &array,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context,
+            &mut context
         )
         .is_ok()
     );
@@ -201,6 +203,8 @@ fn const_scope_is_kind_separated_and_only_rigid_is_constructible() {
                 constant,
                 TypeConstraintConstEligibility::Rigid,
             )],
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         ),
@@ -227,38 +231,45 @@ fn active_const_alias_chain_closes_before_solution_publication() {
     )
     .expect("const alias scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let solution = TypeConstraintSolution::complete_path(
-        BTreeMap::new(),
-        BTreeMap::from([
+        )
+        .into_path();
+    let solution = {
+        path.bindings = BTreeMap::new();
+        path.const_bindings = BTreeMap::from([
             (
-                context
-                    .parameter_scope
+                path.applications
+                    .root_scope()
+                    .parameters()
                     .const_reference(&(first).clone().into())
                     .expect("first inference slot"),
                 ArrayLength::Generic(
-                    context
-                        .parameter_scope
+                    path.applications
+                        .root_scope()
+                        .parameters()
                         .const_reference(&(second).clone().into())
                         .expect("second inference slot"),
                 ),
             ),
             (
-                context
-                    .parameter_scope
+                path.applications
+                    .root_scope()
+                    .parameters()
                     .const_reference(&(second).clone().into())
                     .expect("second inference slot"),
                 ArrayLength::Const(7),
             ),
-        ]),
-        BTreeMap::new(),
-        &mut context,
-    )
+        ]);
+        TypeConstraintSolution::complete_application(
+            &path,
+            path.applications.root_id(),
+            &mut context,
+        )
+    }
     .expect("active aliases close to one canonical constant");
     assert_eq!(
         solution
@@ -298,12 +309,13 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
     )
     .expect("const alias scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let error = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
@@ -316,7 +328,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
                 ArrayLength::Const(7),
             ),
         ],
-        std::iter::empty(),
+        &mut path,
         &mut context,
     );
     assert!(matches!(
@@ -326,7 +338,7 @@ fn claimed_const_alias_is_rejected_as_noncanonical() {
                 kind: InheritedSolutionInvariantKind::NonCanonical,
                 parameter: Some(found),
             })
-        )) if found == context.parameter_scope.const_reference(&first.into()).expect("claimed first slot").into()
+        )) if found == path.applications.root_scope().parameters().const_reference(&first.into()).expect("claimed first slot").into()
     ));
 }
 
@@ -345,12 +357,13 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
     )
     .expect("self-binding const scope");
     let cancellation = AtomicBool::new(false);
-    let mut self_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut self_context, mut self_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             self_scope,
-        );
+        )
+        .into_path();
     assert!(matches!(
         TypeConstraintSolution::test_seal_completed_with_consts(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
@@ -358,8 +371,8 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
                 self_parameter.clone(),
                 ArrayLength::generic_parameter(self_parameter.clone()),
             )],
-            std::iter::empty(),
-            &mut self_context,
+            &mut self_context_path,
+            &mut self_context
         ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
@@ -385,12 +398,13 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
         ],
     )
     .expect("cyclic const scope");
-    let mut cycle_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut cycle_context, mut cycle_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             cycle_scope,
-        );
+        )
+        .into_path();
     assert!(matches!(
         TypeConstraintSolution::test_seal_completed_with_consts(
             std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
@@ -401,8 +415,8 @@ fn claimed_const_self_binding_and_cycle_are_distinct_invariants() {
                 ),
                 (second.clone(), ArrayLength::generic_parameter(first)),
             ],
-            std::iter::empty(),
-            &mut cycle_context,
+            &mut cycle_context_path,
+            &mut cycle_context
         ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
@@ -428,16 +442,17 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
     )
     .expect("future const scope");
     let cancellation = AtomicBool::new(false);
-    let mut previous_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut previous_context, mut previous_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             previous_scope,
-        );
+        )
+        .into_path();
     let solution = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(9))],
-        std::iter::empty(),
+        &mut previous_context_path,
         &mut previous_context,
     )
     .expect("completed future const binding");
@@ -449,24 +464,32 @@ fn inherited_const_future_becomes_bindable_with_exact_key() {
             parameter.clone(),
             TypeConstraintConstEligibility::Bindable,
         )],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         std::iter::empty::<crate::types::GenericTypeReference>(),
         ([parameter.clone()]).into_iter().map(Into::into),
     )
     .expect("inherited const key scope");
-    let mut next_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut next_context, next_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
-        );
+        )
+        .into_path();
     let path = solution
-        .restore_inherited_path(&mut next_context)
+        .restore_inherited_path(
+            next_context_path.applications.root_id(),
+            next_context_path,
+            &mut next_context,
+        )
         .expect("FutureEligible const becomes Bindable");
     assert_eq!(
         path.const_bindings,
         BTreeMap::from([(
-            next_context
-                .parameter_scope
+            path.applications
+                .root_scope()
+                .parameters()
                 .const_reference(&(parameter).clone().into())
                 .expect("reopened const slot"),
             ArrayLength::Const(9)
@@ -493,19 +516,20 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
     )
     .expect("unexpected const scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let solution = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [
             (first.clone(), ArrayLength::Const(1)),
             (second.clone(), ArrayLength::Const(2)),
         ],
-        std::iter::empty(),
+        &mut path,
         &mut context,
     )
     .expect("complete const rows");
@@ -522,18 +546,21 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
                 TypeConstraintConstEligibility::Bindable,
             ),
         ],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         std::iter::empty::<crate::types::GenericTypeReference>(),
         ([first.clone()]).into_iter().map(Into::into),
     )
     .expect("unexpected-key continuation scope");
-    let mut next_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut next_context, next_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
-        );
+        )
+        .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(&mut next_context),
+        solution.restore_inherited_path(next_context_path.applications.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -553,16 +580,17 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
         ],
     )
     .expect("missing-key source scope");
-    let mut previous_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut previous_context, mut previous_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             previous_scope,
-        );
+        )
+        .into_path();
     let solution = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(first.clone(), ArrayLength::Const(1))],
-        std::iter::empty(),
+        &mut previous_context_path,
         &mut previous_context,
     )
     .expect("complete partial future const rows");
@@ -579,18 +607,21 @@ fn inherited_const_keys_reject_unexpected_and_missing_rows() {
                 TypeConstraintConstEligibility::Bindable,
             ),
         ],
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         std::iter::empty::<crate::types::GenericTypeReference>(),
         ([first, second.clone()]).into_iter().map(Into::into),
     )
     .expect("missing-key continuation scope");
-    let mut next_context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut next_context, next_context_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             next_scope,
-        );
+        )
+        .into_path();
     assert!(matches!(
-        solution.restore_inherited_path(&mut next_context),
+        solution.restore_inherited_path(next_context_path.applications.root_id(), next_context_path, &mut next_context),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -612,16 +643,17 @@ fn completed_const_solution_applies_array_length_parameter() {
     )
     .expect("array-length const scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
+        )
+        .into_path();
     let solution = TypeConstraintSolution::test_seal_completed_with_consts(
         std::iter::empty::<(GenericTypeParameterId, TypeKind)>(),
         [(parameter.clone(), ArrayLength::Const(5))],
-        std::iter::empty(),
+        &mut path,
         &mut context,
     )
     .expect("canonical array-length binding");
@@ -645,7 +677,7 @@ fn completed_const_solution_applies_array_length_parameter() {
 #[test]
 fn source_error_retains_phase_and_expected_hint_is_typed() {
     let expected = TypeKind::I32;
-    let hint = super::ProjectedExpectedHint::Complete(&expected);
+    let hint: super::ProjectedExpectedHint<'_> = super::ProjectedExpectedHint::Complete(&expected);
     assert!(
         matches!(hint, super::ProjectedExpectedHint::Complete(value) if value == &TypeKind::I32)
     );
@@ -659,7 +691,7 @@ fn source_error_retains_phase_and_expected_hint_is_typed() {
 #[test]
 fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_rows() {
     use super::ConstraintAcceptance;
-    use super::context::{TypeConstraintContext, TypeConstraintLimits};
+    use super::context::TypeConstraintLimits;
 
     let rigid = parameter(0);
     let bindable = parameter(1);
@@ -673,7 +705,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
     .expect("unique scope");
     let cancellation = AtomicBool::new(false);
     let mut rigid_transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<
+        ConstraintTestSetup::<
             super::LocalConstraintAccounting<'_>,
             super::NoConstraintClient,
         >::with_scope(
@@ -699,7 +731,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
 
     let foreign = parameter(2);
     let mut foreign_transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<
+        ConstraintTestSetup::<
             super::LocalConstraintAccounting<'_>,
             super::NoConstraintClient,
         >::with_scope(
@@ -726,7 +758,7 @@ fn parameter_scope_classifies_rigid_attempt_out_of_scope_and_terminal_unbound_ro
     ));
 
     let mut incomplete_transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<
+        ConstraintTestSetup::<
             super::LocalConstraintAccounting<'_>,
             super::NoConstraintClient,
         >::with_scope(
@@ -780,14 +812,20 @@ where
     D: ConstraintDomain,
 {
     fn begin(
-        context: TypeConstraintContext<'c, A, D>,
+        setup: ConstraintTestSetup<'c, A, D>,
         inherited: Option<Arc<TypeConstraintSolution>>,
-    ) -> Self {
-        let mut lower = TypeConstraintTransaction::new();
-        let mut context = context;
-        lower
-            .initialize(&mut context, inherited)
-            .expect("valid test initialization");
+    ) -> Self
+    where
+        D::Application: Default,
+    {
+        let (mut context, test_parameters) = setup.into_parts();
+        let lower = TypeConstraintTransaction::initialize(
+            &mut context,
+            D::Application::default(),
+            test_parameters,
+            inherited,
+        )
+        .expect("valid test initialization");
         Self { lower, context }
     }
 
@@ -838,7 +876,7 @@ fn solve_with(
     let cancellation = AtomicBool::new(false);
     let scope = bindable_scope(&[&pattern, &actual]);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             scope,
@@ -851,23 +889,35 @@ fn solve_with(
 
 #[test]
 fn function_relation_is_contravariant_in_parameters_and_covariant_in_effects() {
-    let issuer = EffectVarIssuer::fresh_prepared().expect("test issuer");
-    let variable = EffectVar::issued(issuer, 0);
+    let key: crate::types::GenericEffectReference = crate::types::GenericEffectParameterId::new(
+        GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(803)),
+        0,
+    )
+    .into();
     let effect_scope = TypeConstraintEffectScope::seal_call_scope(
         [EffectConstraintVariable::new(
-            variable,
+            key.clone(),
             EffectConstraintEligibility::Bindable,
         )],
         std::iter::empty(),
     )
     .expect("effect scope");
+    let parameters = TypeConstraintParameterScope::seal_call_scope(
+        crate::types::GenericBinder::EMPTY,
+        [],
+        [],
+        effect_scope,
+        [],
+        [],
+    )
+    .expect("joint parameter scope");
+    let variable = parameters.effect_reference(&key).expect("opened effect");
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scopes(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
-            TypeConstraintParameterScope::empty(),
-            effect_scope,
+            parameters,
         ),
         None,
     );
@@ -891,11 +941,13 @@ fn function_relation_is_contravariant_in_parameters_and_covariant_in_effects() {
 
     assert_eq!(
         solved
-            .solution
+            .component
+            .selected()
+            .solution()
             .effect_bindings()
-            .map(|(variable, value)| (*variable, value.clone()))
+            .map(|(variable, value)| (variable.value().clone(), value.value().clone()))
             .collect::<Vec<_>>(),
-        vec![(variable, EffectRow::closed(actual_effects))]
+        vec![(key, EffectRow::closed(actual_effects))]
     );
 }
 
@@ -934,7 +986,7 @@ fn transitive_bindings_are_sealed_and_move_only() {
             TypeKind::I32,
         ]);
         let mut transaction = TestConstraintTransaction::begin(
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
                 TypeConstraintLimits::new(1_024, 512, 128, 64),
                 &cancellation,
                 bindable_scope(&[&pattern, &actual]),
@@ -943,7 +995,11 @@ fn transitive_bindings_are_sealed_and_move_only() {
         );
         let actual = transaction
             .context
-            .open_template_type(&actual)
+            .open_template_type(
+                &actual,
+                transaction.lower.test_single_path(),
+                transaction.lower.test_single_path().applications.root_id(),
+            )
             .expect("equation RHS uses the same active parameter namespace");
         transaction.constrain(
             &pattern,
@@ -954,7 +1010,9 @@ fn transitive_bindings_are_sealed_and_move_only() {
     }
     .expect("one sealed solution");
     let bindings = outcome
-        .solution
+        .component
+        .selected()
+        .solution()
         .bindings()
         .map(|(parameter, value)| {
             (
@@ -977,13 +1035,35 @@ fn transitive_bindings_are_sealed_and_move_only() {
 fn choice_acceptance_is_branch_local_and_ambiguous_bindings_remain() {
     let first = owned_parameter(2, 0);
     let second = owned_parameter(2, 1);
-    let outcome = solve(
-        TypeKind::Choice(vec![
+    let cancellation = AtomicBool::new(false);
+    let scope = TypeConstraintParameterScope::new([
+        (
+            first.clone(),
+            TypeConstraintParameterEligibility::FutureEligible,
+        ),
+        (
+            second.clone(),
+            TypeConstraintParameterEligibility::FutureEligible,
+        ),
+    ])
+    .expect("the unselected parameter belongs to a future group");
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+    transaction.constrain(
+        &TypeKind::Choice(vec![
             TypeKind::generic_parameter(first),
             TypeKind::generic_parameter(second),
         ]),
-        TypeKind::I32,
+        &TypeKind::I32,
+        ConstraintAcceptance::PatternAcceptsActual,
     );
+    let outcome = transaction.finish();
     assert!(matches!(
         outcome,
         Err(TypeConstraintFailure::Rejected(
@@ -992,6 +1072,347 @@ fn choice_acceptance_is_branch_local_and_ambiguous_bindings_remain() {
             ),
         ))
     ));
+}
+
+#[test]
+fn reciprocal_type_alias_constraints_share_one_representative_before_later_binding() {
+    let first = owned_parameter(203, 0);
+    let second = owned_parameter(203, 1);
+    let scope = TypeConstraintParameterScope::new([
+        (first.clone(), TypeConstraintParameterEligibility::Bindable),
+        (second.clone(), TypeConstraintParameterEligibility::Bindable),
+    ])
+    .expect("both type aliases are in scope");
+    let first_type = TypeKind::GenericParam(
+        scope
+            .type_reference(&first.clone().into())
+            .expect("first inference reference"),
+    );
+    let second_type = TypeKind::GenericParam(
+        scope
+            .type_reference(&second.clone().into())
+            .expect("second inference reference"),
+    );
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+
+    transaction.constrain(
+        &first_type,
+        &second_type,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    transaction.constrain(
+        &second_type,
+        &first_type,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    transaction.constrain(
+        &first_type,
+        &TypeKind::I64,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    let result = TypeKind::Tuple(vec![first_type, second_type]);
+    transaction.request_projection((), &result, TypeConstraintProjectionClosure::Closed);
+
+    let solved = transaction
+        .finish()
+        .expect("equal aliases normalize to one root before binding");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &TypeKind::Tuple(vec![TypeKind::I64, TypeKind::I64])
+    );
+}
+
+#[test]
+fn reciprocal_const_alias_constraints_share_one_representative_before_later_binding() {
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(204));
+    let first = GenericConstParameterId::new(owner.clone(), 0);
+    let second = GenericConstParameterId::new(owner, 1);
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        [],
+        [
+            (first.clone(), TypeConstraintConstEligibility::Bindable),
+            (second.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("both constant aliases are in scope");
+    let first_length = ArrayLength::Generic(
+        scope
+            .const_reference(&first.clone().into())
+            .expect("first inference constant"),
+    );
+    let second_length = ArrayLength::Generic(
+        scope
+            .const_reference(&second.clone().into())
+            .expect("second inference constant"),
+    );
+    let array = |len| TypeKind::Array {
+        item: Box::new(TypeKind::I32),
+        len,
+    };
+    let first_type = array(first_length.clone());
+    let second_type = array(second_length.clone());
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+
+    transaction.constrain(
+        &first_type,
+        &second_type,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    transaction.constrain(
+        &second_type,
+        &first_type,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    let concrete = array(ArrayLength::Const(7));
+    transaction.constrain(
+        &first_type,
+        &concrete,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    let result = TypeKind::Tuple(vec![first_type, second_type]);
+    transaction.request_projection((), &result, TypeConstraintProjectionClosure::Closed);
+
+    let solved = transaction
+        .finish()
+        .expect("equal aliases normalize to one root before binding");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &TypeKind::Tuple(vec![concrete.clone(), concrete])
+    );
+}
+
+#[test]
+fn directional_relation_binds_the_active_actual_when_pattern_is_concrete() {
+    let parent = owned_parameter(205, 0);
+    let scope = TypeConstraintParameterScope::new([(
+        parent.clone(),
+        TypeConstraintParameterEligibility::Bindable,
+    )])
+    .expect("the parent parameter is active");
+    let active = TypeKind::GenericParam(
+        scope
+            .type_reference(&parent.clone().into())
+            .expect("active parent reference"),
+    );
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+
+    transaction.constrain(
+        &TypeKind::I64,
+        &active,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    );
+    transaction.request_projection((), &active, TypeConstraintProjectionClosure::Closed);
+
+    let solved = transaction
+        .finish()
+        .expect("the active acceptor is unified with the concrete pattern");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &TypeKind::I64
+    );
+}
+
+#[test]
+fn a_rigid_actual_is_not_bound_to_a_concrete_pattern() {
+    let rigid = owned_parameter(206, 0);
+    let scope = TypeConstraintParameterScope::new([(
+        rigid.clone(),
+        TypeConstraintParameterEligibility::Rigid,
+    )])
+    .expect("the parameter is rigid");
+    let actual = TypeKind::generic_parameter(rigid.clone());
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(1_024, 512, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+
+    transaction.constrain(
+        &TypeKind::I64,
+        &actual,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    );
+
+    assert!(matches!(
+        transaction.finish(),
+        Err(TypeConstraintFailure::Rejected(
+            TypeConstraintCandidateFailure::Constraint(_)
+        ))
+    ));
+}
+
+#[test]
+fn complementary_result_constraints_bind_the_active_actual_side() {
+    let child_a = owned_parameter(207, 0);
+    let child_b = owned_parameter(207, 1);
+    let parent_a = owned_parameter(208, 0);
+    let parent_b = owned_parameter(208, 1);
+    let scope = TypeConstraintParameterScope::new([
+        (
+            child_a.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        ),
+        (
+            child_b.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        ),
+        (
+            parent_a.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        ),
+        (
+            parent_b.clone(),
+            TypeConstraintParameterEligibility::Bindable,
+        ),
+    ])
+    .expect("child and parent generic parameters are active on this path");
+    let reference = |parameter: &GenericTypeParameterId| {
+        TypeKind::GenericParam(
+            scope
+                .type_reference(&parameter.clone().into())
+                .expect("active generic reference"),
+        )
+    };
+    let child_a = reference(&child_a);
+    let child_b = reference(&child_b);
+    let parent_a = reference(&parent_a);
+    let parent_b = reference(&parent_b);
+    let result = |ok: TypeKind, error: TypeKind| TypeKind::Result {
+        ok: Box::new(ok),
+        error: Box::new(error),
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(2_048, 1_024, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+
+    transaction.constrain(
+        &child_a,
+        &TypeKind::I64,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    transaction.constrain(
+        &result(child_a.clone(), child_b.clone()),
+        &result(parent_a.clone(), parent_b.clone()),
+        ConstraintAcceptance::ActualAcceptsPattern,
+    );
+    transaction.constrain(
+        &parent_b,
+        &TypeKind::String,
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    let projection = TypeKind::Tuple(vec![parent_a, parent_b, child_a, child_b]);
+    transaction.request_projection((), &projection, TypeConstraintProjectionClosure::Closed);
+
+    let solved = transaction
+        .finish()
+        .expect("later parent evidence completes the child result variables");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &TypeKind::Tuple(vec![
+            TypeKind::I64,
+            TypeKind::String,
+            TypeKind::I64,
+            TypeKind::String,
+        ])
+    );
+}
+
+#[test]
+fn array_length_relation_binds_active_variables_on_either_source_side() {
+    let owner = GenericParameterOwnerId::Detached(DetachedGenericOwnerId::new(209));
+    let right = GenericConstParameterId::new(owner.clone(), 0);
+    let left = GenericConstParameterId::new(owner, 1);
+    let scope = TypeConstraintParameterScope::new_with_constants(
+        [],
+        [
+            (right.clone(), TypeConstraintConstEligibility::Bindable),
+            (left.clone(), TypeConstraintConstEligibility::Bindable),
+        ],
+    )
+    .expect("both array lengths are active");
+    let right = ArrayLength::Generic(
+        scope
+            .const_reference(&right.clone().into())
+            .expect("right inference reference"),
+    );
+    let left = ArrayLength::Generic(
+        scope
+            .const_reference(&left.clone().into())
+            .expect("left inference reference"),
+    );
+    let array = |len| TypeKind::Array {
+        item: Box::new(TypeKind::I32),
+        len,
+    };
+    let cancellation = AtomicBool::new(false);
+    let mut transaction = TestConstraintTransaction::begin(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            TypeConstraintLimits::new(2_048, 1_024, 128, 64),
+            &cancellation,
+            scope,
+        ),
+        None,
+    );
+    let concrete_right = array(right.clone());
+    let concrete_left = array(left.clone());
+
+    transaction.constrain(
+        &array(ArrayLength::Const(7)),
+        &concrete_right,
+        ConstraintAcceptance::ActualAcceptsPattern,
+    );
+    transaction.constrain(
+        &concrete_left,
+        &array(ArrayLength::Const(9)),
+        ConstraintAcceptance::PatternAcceptsActual,
+    );
+    let projection = TypeKind::Tuple(vec![concrete_right, concrete_left]);
+    transaction.request_projection((), &projection, TypeConstraintProjectionClosure::Closed);
+
+    let solved = transaction
+        .finish()
+        .expect("either active array-length side can receive exact evidence");
+    assert_eq!(
+        solved.component.selected().projections()[0].value().value(),
+        &TypeKind::Tuple(vec![
+            array(ArrayLength::Const(7)),
+            array(ArrayLength::Const(9))
+        ])
+    );
 }
 
 #[test]
@@ -1098,7 +1519,7 @@ fn rejected_choice_branch_does_not_leak_its_speculative_binding() {
     )])
     .expect("future-eligible branch scope");
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             scope,
@@ -1113,7 +1534,10 @@ fn rejected_choice_branch_does_not_leak_its_speculative_binding() {
     let outcome = transaction
         .finish()
         .expect("the exact second alternative is accepted");
-    assert_eq!(outcome.solution.bindings().count(), 0);
+    assert_eq!(
+        outcome.component.selected().solution().bindings().count(),
+        0
+    );
 }
 
 #[test]
@@ -1126,7 +1550,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
     )])
     .expect("scope");
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(128, 64, 16, 8),
             &cancellation,
             scope,
@@ -1151,7 +1575,7 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
     )])
     .expect("unique scope");
     let mut choice_transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(128, 64, 16, 8),
             &cancellation,
             scope,
@@ -1166,7 +1590,10 @@ fn rigid_scope_is_an_exact_atom_and_nonmatching_choice_branch_is_pruned() {
     let outcome = choice_transaction
         .finish()
         .expect("the concrete alternative remains");
-    assert_eq!(outcome.solution.bindings().count(), 0);
+    assert_eq!(
+        outcome.component.selected().solution().bindings().count(),
+        0
+    );
 }
 
 #[test]
@@ -1179,7 +1606,7 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             TypeConstraintParameterScope::new([(
@@ -1192,7 +1619,11 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     );
     let actual = transaction
         .context
-        .open_template_type(&actual)
+        .open_template_type(
+            &actual,
+            transaction.lower.test_single_path(),
+            transaction.lower.test_single_path().applications.root_id(),
+        )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
         &pattern,
@@ -1202,7 +1633,10 @@ fn acyclic_choice_sibling_survives_a_deferred_cycle() {
     let outcome = transaction
         .finish()
         .expect("the non-cyclic Choice sibling remains");
-    assert_eq!(outcome.solution.bindings().count(), 0);
+    assert_eq!(
+        outcome.component.selected().solution().bindings().count(),
+        0
+    );
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -1261,8 +1695,8 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
         (u.clone(), TypeKind::I32),
     ];
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, mut path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(4096, 2048, 256, 128),
             &cancellation,
             TypeConstraintParameterScope::new([
@@ -1270,13 +1704,16 @@ fn completed_inherited_chain_is_rejected_by_the_solution_owner_without_repair() 
                 (u, TypeConstraintParameterEligibility::Bindable),
             ])
             .expect("claimed completed scope"),
-        );
-    let expected_key = context
-        .parameter_scope
+        )
+        .into_path();
+    let expected_key = path
+        .applications
+        .root_scope()
+        .parameters()
         .type_reference(&t.into())
         .expect("claimed type slot");
     let failure: TypeConstraintFailure<NoConstraintClient> =
-        TypeConstraintSolution::test_seal_completed(expected_rows, [], &mut context)
+        TypeConstraintSolution::test_seal_completed(expected_rows, &mut path, &mut context)
             .expect_err("a non-canonical completed carrier cannot be issued")
             .into();
     assert!(matches!(
@@ -1300,15 +1737,15 @@ fn inherited_rigid_binding_is_an_initialization_invariant() {
     .expect("rigid scope");
     let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]), &[]);
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
+        )
+        .into_parts();
     assert!(matches!(
-        lower.initialize(&mut context, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -1382,6 +1819,8 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
                 ),
             ],
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         ),
@@ -1397,6 +1836,8 @@ fn sealed_call_scope_rejects_unordered_rows_and_invalid_required_keys() {
                 TypeConstraintParameterEligibility::FutureEligible,
             )],
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             ([first]).into_iter().map(Into::into),
             std::iter::empty(),
         ),
@@ -1421,6 +1862,8 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
             crate::types::GenericBinder::EMPTY,
             [row(first.clone()), row(first)],
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         ),
@@ -1433,6 +1876,8 @@ fn sealed_call_scope_distinguishes_duplicate_from_unordered_rows() {
             crate::types::GenericBinder::EMPTY,
             [row(second), row(owned_parameter(1600, 0))],
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         ),
@@ -1452,20 +1897,22 @@ fn required_inherited_missing_key_is_a_behavioral_unclosed_invariant() {
             TypeConstraintParameterEligibility::Bindable,
         )],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([parameter.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("required inherited key scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
+        )
+        .into_parts();
     assert!(matches!(
-        lower.initialize(&mut context, None),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, None),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::Unclosed,
@@ -1492,6 +1939,8 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([required.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -1504,15 +1953,15 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         &[],
     );
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
+        )
+        .into_parts();
     assert!(matches!(
-        lower.initialize(&mut context, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::UnexpectedKey,
@@ -1535,6 +1984,8 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([required.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -1543,15 +1994,15 @@ fn inherited_key_merge_classifies_canonical_extra_and_rigid_extra_exactly() {
         BTreeMap::from([(required, TypeKind::I32), (rigid.clone(), TypeKind::String)]),
         &[],
     );
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let mut lower = TypeConstraintTransaction::<NoConstraintClient>::new();
+        )
+        .into_parts();
     assert!(matches!(
-        lower.initialize(&mut context, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize(&mut context, (), test_parameters, Some(Arc::new(inherited))),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: InheritedSolutionInvariantKind::RigidBinding,
@@ -1578,6 +2029,8 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([bindable.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -1587,7 +2040,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     let inherited = type_only_solution(bindings, &[]);
     let cancellation = AtomicBool::new(false);
     let transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             inherited_scope,
@@ -1599,7 +2052,9 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
         .expect("rigid identity is a valid sealed atom");
     assert!(
         inherited
-            .solution
+            .component
+            .selected()
+            .solution()
             .bindings()
             .any(
                 |(parameter, value)| parameter.value() == &bindable.clone().into()
@@ -1613,7 +2068,7 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
     )])
     .expect("rigid projection scope");
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             rigid_scope,
@@ -1625,10 +2080,13 @@ fn inherited_rigid_atom_and_rigid_projection_self_accept() {
         &TypeKind::generic_parameter(rigid.clone()),
         TypeConstraintProjectionClosure::Closed,
     );
-    let projection = transaction
+    let completed = transaction
         .finish()
-        .expect("rigid projection self-validates")
-        .projections
+        .expect("rigid projection self-validates");
+    let projection = completed
+        .component
+        .selected()
+        .projections()
         .into_iter()
         .next()
         .expect("one rigid projection");
@@ -1666,7 +2124,7 @@ fn strict_final_projections_reject_forbidden_semantic_carriers() {
     for (value, effect_invariant) in forbidden {
         let cancellation = AtomicBool::new(false);
         let mut transaction = TestConstraintTransaction::begin(
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
                 TypeConstraintLimits::new(1_024, 512, 128, 64),
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
@@ -1718,15 +2176,20 @@ fn foreign_binding_value_is_rejected_before_solution_publish() {
         &[],
     );
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
-        );
-    let mut transaction = TypeConstraintTransaction::<NoConstraintClient>::new();
+        )
+        .into_parts();
     assert!(matches!(
-        transaction.initialize(&mut context, Some(Arc::new(inherited))),
+        TypeConstraintTransaction::<NoConstraintClient>::initialize(
+            &mut context,
+            (),
+            test_parameters,
+            Some(Arc::new(inherited))
+        ),
         Err(TypeConstraintInitializationFailure::Invariant(
             TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                 kind: super::InheritedSolutionInvariantKind::OutOfScope,
@@ -1741,16 +2204,20 @@ fn foreign_nested_hint_is_rejected_before_source_callback_boundary() {
     let foreign = owned_parameter(202, 0);
     let expected = TypeKind::Vec(Box::new(TypeKind::generic_parameter(foreign)));
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             TypeConstraintParameterScope::empty(),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -1779,7 +2246,7 @@ fn foreign_equal_generic_self_relation_is_fail_closed() {
     let foreign = owned_parameter(203, 0);
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             TypeConstraintParameterScope::empty(),
@@ -1813,7 +2280,7 @@ fn foreign_array_length_generic_is_fail_closed() {
     };
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             TypeConstraintParameterScope::empty(),
@@ -1848,6 +2315,8 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([first.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -1858,7 +2327,7 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
     );
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(512, 256, 64, 16),
             &cancellation,
             scope,
@@ -1873,7 +2342,9 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
     let outcome = transaction.finish().expect("extended inherited solution");
     assert_eq!(
         outcome
-            .solution
+            .component
+            .selected()
+            .solution()
             .bindings()
             .map(|(parameter, value)| (
                 parameter
@@ -1903,12 +2374,14 @@ fn canonical_inherited_type_extension_normalizes_then_terminal_rejects_unresolve
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([owned_parameter(205, 0)]).into_iter().map(Into::into),
         std::iter::empty(),
     )
     .expect("unresolved extension scope");
     let transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(512, 256, 64, 16),
             &cancellation,
             unresolved_scope,
@@ -1946,6 +2419,8 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([t.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -1971,7 +2446,7 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
     );
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(512, 256, 64, 16),
             &cancellation,
             scope,
@@ -1989,7 +2464,9 @@ fn canonical_inherited_binding_closes_through_current_group_constraint() {
         .expect("current group closes the inherited chain");
     assert_eq!(
         outcome
-            .solution
+            .component
+            .selected()
+            .solution()
             .bindings()
             .map(|(parameter, value)| (
                 parameter
@@ -2013,6 +2490,8 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
             TypeConstraintParameterEligibility::Bindable,
         )],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([parameter.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -2020,7 +2499,7 @@ fn inherited_key_cannot_be_replaced_by_a_later_group_constraint() {
     let inherited = type_only_solution(BTreeMap::from([(parameter.clone(), TypeKind::I32)]), &[]);
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             scope,
@@ -2057,6 +2536,8 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
             ),
         ],
         std::iter::empty(),
+        crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+            .expect("empty effect scope"),
         ([bound.clone()]).into_iter().map(Into::into),
         std::iter::empty(),
     )
@@ -2067,7 +2548,7 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
     );
     let cancellation = AtomicBool::new(false);
     let transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(512, 256, 64, 16),
             &cancellation,
             scope,
@@ -2078,7 +2559,9 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
         .finish()
         .expect("future symbol remains owned by the exact continuation scope");
     let (parameter, value) = outcome
-        .solution
+        .component
+        .selected()
+        .solution()
         .bindings()
         .next()
         .expect("one deferred binding");
@@ -2096,19 +2579,19 @@ fn inherited_future_symbol_survives_for_the_exact_continuation_scope() {
 #[test]
 fn hint_projection_cancellation_is_checked_before_descent() {
     let cancellation = AtomicBool::new(true);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             TypeConstraintParameterScope::empty(),
-        );
+        )
+        .into_path();
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::Vec(Box::new(TypeKind::I32)),
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context,
+            &mut context
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -2117,19 +2600,19 @@ fn hint_projection_cancellation_is_checked_before_descent() {
 #[test]
 fn final_projection_cancellation_is_checked_before_descent() {
     let cancellation = AtomicBool::new(true);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut context, path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 32, 16),
             &cancellation,
             TypeConstraintParameterScope::empty(),
-        );
+        )
+        .into_path();
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            path.projection_view(),
             super::ConstraintClosurePolicy::ProjectionClosed,
-            &mut context,
+            &mut context
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -2138,36 +2621,36 @@ fn final_projection_cancellation_is_checked_before_descent() {
 #[test]
 fn projected_type_node_limit_accepts_exact_and_rejects_one_over() {
     let cancellation = AtomicBool::new(false);
-    let mut exact =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut exact, exact_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1, 1, 1, 1),
             &cancellation,
             TypeConstraintParameterScope::empty(),
-        );
+        )
+        .into_path();
     assert!(
         super::normalization::project_type(
             &TypeKind::I32,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            exact_path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut exact,
+            &mut exact
         )
         .is_ok()
     );
 
-    let mut one_over =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+    let (mut one_over, one_over_path) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1, 0, 1, 1),
             &cancellation,
             TypeConstraintParameterScope::empty(),
-        );
+        )
+        .into_path();
     assert!(matches!(
         super::normalization::project_type(
             &TypeKind::I32,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            one_over_path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut one_over,
+            &mut one_over
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
             actual: 1,
@@ -2212,40 +2695,40 @@ fn concrete_and_generic_array_projection_charge_exactly_three_nodes() {
     ];
     for (array, scope) in cases {
         for policy in policies {
-            let mut exact = TypeConstraintContext::<
+            let (mut exact, exact_path) = ConstraintTestSetup::<
                 LocalConstraintAccounting<'_>,
                 NoConstraintClient,
             >::with_scope(
                 TypeConstraintLimits::new(16, 3, 4, 4),
                 &cancellation,
                 scope.clone(),
-            );
+            )
+            .into_path();
             assert!(
                 super::normalization::project_type(
                     &array,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
+                    exact_path.projection_view(),
                     policy,
-                    &mut exact,
+                    &mut exact
                 )
                 .is_ok()
             );
 
-            let mut one_over = TypeConstraintContext::<
+            let (mut one_over, one_over_path) = ConstraintTestSetup::<
                 LocalConstraintAccounting<'_>,
                 NoConstraintClient,
             >::with_scope(
                 TypeConstraintLimits::new(16, 2, 4, 4),
                 &cancellation,
                 scope.clone(),
-            );
+            )
+            .into_path();
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
+                    one_over_path.projection_view(),
                     policy,
-                    &mut one_over,
+                    &mut one_over
                 ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 3,
@@ -2275,42 +2758,42 @@ fn unresolved_array_length_charges_container_and_header_before_rejection() {
             len: length,
         };
         for policy in policies {
-            let mut exact = TypeConstraintContext::<
+            let (mut exact, exact_path) = ConstraintTestSetup::<
                 LocalConstraintAccounting<'_>,
                 NoConstraintClient,
             >::with_scope(
                 TypeConstraintLimits::new(16, 2, 4, 4),
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
-            );
+            )
+            .into_path();
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
+                    exact_path.projection_view(),
                     policy,
-                    &mut exact,
+                    &mut exact
                 ),
                 Err(TypeConstraintError::Rejected(
                     TypeConstraintRejection::UnresolvedType
                 ))
             ));
 
-            let mut one_over = TypeConstraintContext::<
+            let (mut one_over, one_over_path) = ConstraintTestSetup::<
                 LocalConstraintAccounting<'_>,
                 NoConstraintClient,
             >::with_scope(
                 TypeConstraintLimits::new(16, 1, 4, 4),
                 &cancellation,
                 TypeConstraintParameterScope::empty(),
-            );
+            )
+            .into_path();
             assert!(matches!(
                 super::normalization::project_type(
                     &array,
-                    &BTreeMap::new(),
-                    &BTreeMap::new(),
+                    one_over_path.projection_view(),
                     policy,
-                    &mut one_over,
+                    &mut one_over
                 ),
                 Err(TypeConstraintError::Abort(TypeConstraintAbort::NodeLimit {
                     actual: 2,
@@ -2358,13 +2841,12 @@ fn array_header_observes_cancellation_after_container_charge() {
         cancellation: &cancellation,
         limits: TypeConstraintLimits::new(16, 4, 4, 4),
     };
-    let mut context =
-        TypeConstraintContext::<CancelAfterContainer<'_>, NoConstraintClient>::with_accounting(
+    let (mut context, path) =
+        ConstraintTestSetup::<CancelAfterContainer<'_>, NoConstraintClient>::with_accounting(
             accounting,
             TypeConstraintParameterScope::empty(),
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
+        )
+        .into_path();
     let array = TypeKind::Array {
         item: Box::new(TypeKind::I32),
         len: super::super::ArrayLength::Const(3),
@@ -2372,10 +2854,9 @@ fn array_header_observes_cancellation_after_container_charge() {
     assert!(matches!(
         super::normalization::project_type(
             &array,
-            &BTreeMap::new(),
-            &BTreeMap::new(),
+            path.projection_view(),
             super::ConstraintClosurePolicy::Hint,
-            &mut context,
+            &mut context
         ),
         Err(TypeConstraintError::Abort(TypeConstraintAbort::Cancelled))
     ));
@@ -2390,6 +2871,7 @@ struct SyntheticClient {
 }
 
 impl ConstraintDomain for SyntheticClient {
+    type Application = ();
     type Source = u8;
     type AlternativeIndex = u8;
     type EvidenceRule = u8;
@@ -2426,28 +2908,34 @@ impl ConstraintDomain for SyntheticClient {
 }
 
 impl SyntheticClient {
-    fn probe(&mut self, ticket: &ProbeTicket<Self>) -> ProbeSubmission<Self> {
+    fn probe(&mut self, ticket: &mut ProbeTicket<Self>) -> ProbeSubmission<Self> {
         self.probes.fetch_add(1, Ordering::Relaxed);
         if self.reject_probe {
             return ProbeSubmission::Rejected("probe rejected");
         }
-        ticket.with_hint(|hint| assert!(matches!(hint, ExpectedHint::Alternatives(_))));
-        ProbeSubmission::Accepted(SourceProbeResult::checked(
-            TypeKind::I32,
-            self.probes.load(Ordering::Relaxed) as u8,
-            0,
-            0,
-        ))
+        ticket
+            .input()
+            .with_hint(|hint| assert!(matches!(hint, ExpectedHint::Alternatives(_))));
+        ProbeSubmission::Accepted(
+            ticket
+                .observe(SourceProbeResult::checked(
+                    TypeKind::I32,
+                    self.probes.load(Ordering::Relaxed) as u8,
+                    0,
+                    0,
+                ))
+                .expect("observed source branch"),
+        )
     }
 
     fn materialize(
         &mut self,
-        _ticket: &MaterializationTicket<Self>,
+        ticket: &MaterializationTicket<Self>,
     ) -> ClosedMaterializationSubmission<Self> {
         self.materializations.fetch_add(1, Ordering::Relaxed);
         if self.cancellation.load(Ordering::Relaxed) {
             return ClosedMaterializationSubmission::Rejected {
-                source: 0,
+                source: *ticket.requests().next().expect("source request").source(),
                 cause: "materialize rejected",
             };
         }
@@ -2456,31 +2944,128 @@ impl SyntheticClient {
 }
 
 #[test]
-fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
+fn probe_alternatives_keep_distinct_actuals_branches_and_evidence() {
+    for reversed in [false, true] {
+        let cancellation = AtomicBool::new(false);
+        let (mut context, parameters) =
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::new(
+                TypeConstraintLimits::new(4096, 2048, 128, 128),
+                &cancellation,
+            )
+            .into_parts();
+        let mut transaction =
+            TypeConstraintTransaction::initialize(&mut context, (), parameters, None).unwrap();
+        transaction
+            .begin_prepared_probe(
+                &mut context,
+                PreparedSourceConstraint::checked(
+                    7,
+                    PreparedConstraintSourceProjection::Scalar,
+                    [PreparedSourceAlternative::new(0, 10, TypeKind::I64)],
+                    PreparedSourceAlternative::new(1, 20, TypeKind::String),
+                )
+                .unwrap(),
+                ConstraintAcceptance::PatternAcceptsActual,
+            )
+            .unwrap();
+        let mut first = transaction.next_probe(&mut context).unwrap().unwrap();
+        let input = first.input();
+        let mut second = first.fork(&mut context).unwrap();
+        let first_result = first
+            .observe(SourceProbeResult::checked(TypeKind::I64, 3, 0, 10))
+            .unwrap();
+        let second_result = second
+            .observe(SourceProbeResult::checked(TypeKind::String, 4, 1, 20))
+            .unwrap();
+        let (mut contribution, other) = if reversed {
+            (second_result, first_result)
+        } else {
+            (first_result, second_result)
+        };
+        contribution.append(other).unwrap();
+        transaction
+            .submit_probe(&mut context, input, ProbeSubmission::Accepted(contribution))
+            .unwrap();
+        assert!(transaction.next_probe(&mut context).unwrap().is_none());
+        let mut observed = Vec::new();
+        while let Some(mut ticket) = transaction
+            .next_materialization_ticket(&mut context)
+            .unwrap()
+        {
+            {
+                let mut requests = ticket.requests();
+                let request = requests.next().unwrap();
+                observed.push((
+                    request.alternative(),
+                    *request.canonical_branch(),
+                    request.evidence().copied(),
+                    request.actual().clone(),
+                    request.expected().cloned(),
+                ));
+                assert!(requests.next().is_none());
+            }
+            let closed = close_materialization_ticket(
+                &mut ticket,
+                ClosedMaterializationSubmission::Sealed(7),
+            );
+            transaction
+                .submit_closed_materialization(ticket, closed)
+                .unwrap();
+        }
+        observed.sort_by_key(|row| row.0);
+        assert_eq!(
+            observed,
+            vec![
+                (Some(0), 3, Some(10), TypeKind::I64, Some(TypeKind::I64)),
+                (
+                    Some(1),
+                    4,
+                    Some(20),
+                    TypeKind::String,
+                    Some(TypeKind::String)
+                ),
+            ]
+        );
+    }
+}
+
+fn source_choice_alternatives() -> (
+    super::CompletedCandidateAlternatives<SyntheticClient>,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+) {
     let first = owned_parameter(4, 0);
     let second = owned_parameter(4, 1);
     let probes = Arc::new(AtomicUsize::new(0));
     let materializations = Arc::new(AtomicUsize::new(0));
     let cancellation = AtomicBool::new(false);
     let scope = TypeConstraintParameterScope::new([
-        (first.clone(), TypeConstraintParameterEligibility::Bindable),
-        (second.clone(), TypeConstraintParameterEligibility::Bindable),
+        (
+            first.clone(),
+            TypeConstraintParameterEligibility::FutureEligible,
+        ),
+        (
+            second.clone(),
+            TypeConstraintParameterEligibility::FutureEligible,
+        ),
     ])
     .expect("source test scope");
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
             LocalConstraintAccounting::new(
                 TypeConstraintLimits::new(2_048, 512, 128, 64),
                 &cancellation,
             ),
             scope,
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![
@@ -2509,10 +3094,10 @@ fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
         cancellation: Arc::new(AtomicBool::new(false)),
         reject_probe: false,
     };
-    while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
-        let submission = client.probe(&ticket);
+    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        let submission = client.probe(&mut ticket);
         transaction
-            .submit_probe(&mut context, ticket, submission)
+            .submit_probe(&mut context, ticket.input(), submission)
             .expect("submit probe");
     }
     transaction.request_projection(
@@ -2531,37 +3116,78 @@ fn source_probe_runs_once_per_frontier_row_and_materializes_projection() {
             .submit_closed_materialization(ticket, closed)
             .expect("submit materialization");
     }
-    let outcome = transaction.finish(&mut context);
-    assert!(matches!(
-        outcome,
-        Err(TypeConstraintFailure::Rejected(
-            TypeConstraintCandidateFailure::Constraint(
-                TypeConstraintRejection::AmbiguousSolution { .. },
-            ),
-        ))
-    ));
+    let alternatives = transaction
+        .finish_alternatives(&mut context)
+        .expect("the completed frontier retains both distinct branches");
+    (alternatives, probes, materializations)
+}
+
+#[test]
+fn ranked_frontier_discards_each_loser_before_returning_the_selected_candidate() {
+    let (alternatives, probes, materializations) = source_choice_alternatives();
+    assert_eq!(alternatives.len(), 2);
+    assert_eq!(alternatives.iter().len(), 2);
+    let mut discarded = Vec::new();
+    let selected = alternatives
+        .into_index_with(1, |loser| {
+            assert_eq!(loser.component.sources().all().len(), 1);
+            discarded.push(loser.sealed_branch);
+            Ok::<(), ()>(())
+        })
+        .expect("loser cleanup succeeds")
+        .expect("the requested ranked row exists");
+    assert_eq!(selected.sealed_branch, 7);
+    assert_eq!(discarded, vec![7]);
     assert_eq!(probes.load(Ordering::Relaxed), 2);
     assert_eq!(materializations.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn invalid_frontier_selection_explicitly_discards_every_candidate() {
+    let (alternatives, _, _) = source_choice_alternatives();
+    let candidate_count = alternatives.len();
+    let mut discarded = 0;
+    let selected = alternatives
+        .into_index_with(candidate_count, |_| {
+            discarded += 1;
+            Ok::<(), ()>(())
+        })
+        .expect("cleanup succeeds for all frontier rows");
+    assert!(selected.is_none());
+    assert_eq!(discarded, candidate_count);
+}
+
+#[test]
+fn failed_frontier_cleanup_returns_no_selected_candidate() {
+    let (alternatives, _, _) = source_choice_alternatives();
+    let mut discarded = 0;
+    let result = alternatives.into_index_with(0, |_| {
+        discarded += 1;
+        Err("candidate projection cleanup failed")
+    });
+    assert!(matches!(result, Err("candidate projection cleanup failed")));
+    assert_eq!(discarded, 1);
 }
 
 #[test]
 fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
     let probes = Arc::new(AtomicUsize::new(0));
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
-            LocalConstraintAccounting::new(
-                TypeConstraintLimits::new(256, 128, 16, 8),
-                &cancellation,
-            ),
-            TypeConstraintParameterScope::empty(),
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = ConstraintTestSetup::<
+        LocalConstraintAccounting<'_>,
+        SyntheticClient,
+    >::with_accounting(
+        LocalConstraintAccounting::new(TypeConstraintLimits::new(256, 128, 16, 8), &cancellation),
+        TypeConstraintParameterScope::empty(),
+    )
+    .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -2581,10 +3207,10 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
         cancellation: Arc::new(AtomicBool::new(false)),
         reject_probe: true,
     };
-    while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
-        let submission = client.probe(&ticket);
+    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        let submission = client.probe(&mut ticket);
         transaction
-            .submit_probe(&mut context, ticket, submission)
+            .submit_probe(&mut context, ticket.input(), submission)
             .expect("submit probe");
     }
     let outcome = transaction.finish(&mut context);
@@ -2593,7 +3219,7 @@ fn source_rejection_is_typed_and_does_not_use_fatal_phase() {
         outcome,
         Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(error)))
             if error.phase() == SourcePhase::Probe
-                && error.source() == &1
+                && error.source().local() == 1
                 && error.cause().as_ref() == &["probe rejected"]
     ));
 }
@@ -2603,24 +3229,32 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
     let first = owned_parameter(17, 0);
     let second = owned_parameter(17, 1);
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
             LocalConstraintAccounting::new(
                 TypeConstraintLimits::new(4_096, 1_024, 256, 128).with_source_limits(64, 64),
                 &cancellation,
             ),
             TypeConstraintParameterScope::new([
-                (first.clone(), TypeConstraintParameterEligibility::Bindable),
-                (second.clone(), TypeConstraintParameterEligibility::Bindable),
+                (
+                    first.clone(),
+                    TypeConstraintParameterEligibility::FutureEligible,
+                ),
+                (
+                    second.clone(),
+                    TypeConstraintParameterEligibility::FutureEligible,
+                ),
             ])
             .expect("materialization scope"),
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![
@@ -2644,17 +3278,16 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .expect("begin authored source");
-        while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
             transaction
                 .submit_probe(
                     &mut context,
-                    ticket,
-                    ProbeSubmission::Accepted(SourceProbeResult::checked(
-                        TypeKind::I32,
-                        source,
-                        0,
-                        0,
-                    )),
+                    ticket.input(),
+                    ProbeSubmission::Accepted(
+                        ticket
+                            .observe(SourceProbeResult::checked(TypeKind::I32, source, 0, 0))
+                            .expect("observed source branch"),
+                    ),
                 )
                 .expect("accepted source");
         }
@@ -2665,10 +3298,16 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
         .next_materialization_ticket(&mut context)
         .expect("materialization ticket")
     {
+        let source_id = |local| {
+            ConstraintSourceId::new(
+                ticket.requests().next().unwrap().source().application(),
+                local,
+            )
+        };
         let error = if traces == 0 {
-            SourceError::new(20, SourcePhase::Materialize, "later source")
+            SourceError::new(source_id(20), SourcePhase::Materialize, "later source")
         } else {
-            SourceError::new(10, SourcePhase::Materialize, "earlier source")
+            SourceError::new(source_id(10), SourcePhase::Materialize, "earlier source")
         };
         traces += 1;
         let closed = close_materialization_ticket(
@@ -2682,7 +3321,7 @@ fn materialization_processes_every_trace_and_earliest_source_fatal_wins() {
     assert_eq!(traces, 2, "fatal must not stop later trace materialization");
     match transaction.finish(&mut context) {
         Err(TypeConstraintFailure::FatalSource(error)) => {
-            assert_eq!(error.source(), &10);
+            assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause(), &"earlier source");
         }
         other => panic!("expected earliest authored fatal source, got {other:?}"),
@@ -2697,27 +3336,29 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
         owned_parameter(18, 2),
     ];
     let cancellation = AtomicBool::new(false);
-    let scope = TypeConstraintParameterScope::new(
-        parameters
-            .iter()
-            .cloned()
-            .map(|parameter| (parameter, TypeConstraintParameterEligibility::Bindable)),
-    )
+    let scope = TypeConstraintParameterScope::new(parameters.iter().cloned().map(|parameter| {
+        (
+            parameter,
+            TypeConstraintParameterEligibility::FutureEligible,
+        )
+    }))
     .expect("rejection scope");
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
             LocalConstraintAccounting::new(
                 TypeConstraintLimits::new(4_096, 1_024, 256, 128).with_source_limits(64, 64),
                 &cancellation,
             ),
             scope,
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(
@@ -2744,17 +3385,16 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
                 ConstraintAcceptance::PatternAcceptsActual,
             )
             .expect("begin authored source");
-        while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+        while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
             transaction
                 .submit_probe(
                     &mut context,
-                    ticket,
-                    ProbeSubmission::Accepted(SourceProbeResult::checked(
-                        TypeKind::I32,
-                        source,
-                        0,
-                        0,
-                    )),
+                    ticket.input(),
+                    ProbeSubmission::Accepted(
+                        ticket
+                            .observe(SourceProbeResult::checked(TypeKind::I32, source, 0, 0))
+                            .expect("observed source branch"),
+                    ),
                 )
                 .expect("accepted source");
         }
@@ -2777,6 +3417,10 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
             _ => (20, "other source"),
         };
         traces += 1;
+        let source = ConstraintSourceId::new(
+            ticket.requests().next().unwrap().source().application(),
+            source,
+        );
         let closed = close_materialization_ticket(
             &mut ticket,
             ClosedMaterializationSubmission::Rejected { source, cause },
@@ -2788,7 +3432,7 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
     assert_eq!(traces, 3);
     match transaction.finish(&mut context) {
         Err(TypeConstraintFailure::Rejected(TypeConstraintCandidateFailure::Source(error))) => {
-            assert_eq!(error.source(), &10);
+            assert_eq!(error.source().local(), 10);
             assert_eq!(error.cause().as_ref(), &["first cause", "second cause"]);
         }
         other => panic!("expected earliest source rejection aggregate, got {other:?}"),
@@ -2799,20 +3443,22 @@ fn materialization_rejections_aggregate_only_the_earliest_source() {
 fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
     let materializations = Arc::new(AtomicUsize::new(0));
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, SyntheticClient>::with_accounting(
             LocalConstraintAccounting::new(
                 TypeConstraintLimits::new(1_024, 256, 64, 32).with_source_limits(8, 0),
                 &cancellation,
             ),
             TypeConstraintParameterScope::empty(),
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        );
-    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<SyntheticClient>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::I32,
@@ -2832,12 +3478,16 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("begin probe");
-    while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
         transaction
             .submit_probe(
                 &mut context,
-                ticket,
-                ProbeSubmission::Accepted(SourceProbeResult::checked(TypeKind::I32, 3, 0, 0)),
+                ticket.input(),
+                ProbeSubmission::Accepted(
+                    ticket
+                        .observe(SourceProbeResult::checked(TypeKind::I32, 3, 0, 0))
+                        .expect("observed source branch"),
+                ),
             )
             .expect("accepted source");
     }
@@ -2853,15 +3503,18 @@ fn zero_materialization_limit_precedes_ticket_sealing_and_callback() {
 fn keyed_projection_is_sorted_and_closed_after_unique_pair() {
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::new(TypeConstraintLimits::new(256, 128, 16, 8), &cancellation),
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::new(
+            TypeConstraintLimits::new(256, 128, 16, 8),
+            &cancellation,
+        ),
         None,
     );
     transaction.request_projection((), &TypeKind::I32, TypeConstraintProjectionClosure::Closed);
     let outcome = transaction.finish().expect("closed projection");
-    assert_eq!(outcome.projections.len(), 1);
-    assert_eq!(outcome.projections[0].key(), &());
+    assert_eq!(outcome.component.selected().projections().len(), 1);
+    assert_eq!(outcome.component.selected().projections()[0].key(), &());
     assert_eq!(
-        outcome.projections[0]
+        outcome.component.selected().projections()[0]
             .value()
             .to_root_type()
             .expect("closed value"),
@@ -2873,7 +3526,10 @@ fn keyed_projection_is_sorted_and_closed_after_unique_pair() {
 fn keyed_projection_duplicate_is_a_typed_invariant() {
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::new(TypeConstraintLimits::new(256, 128, 16, 8), &cancellation),
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::new(
+            TypeConstraintLimits::new(256, 128, 16, 8),
+            &cancellation,
+        ),
         None,
     );
     transaction.request_projection((), &TypeKind::I32, TypeConstraintProjectionClosure::Closed);
@@ -2920,7 +3576,7 @@ fn required_candidate_keys_are_rejected_before_closed_projection() {
         ),
     ] {
         let mut transaction = TestConstraintTransaction::begin(
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+            ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
                 TypeConstraintLimits::new(256, 128, 16, 8),
                 &cancellation,
                 scope,
@@ -2952,7 +3608,7 @@ fn closed_projection_rejects_future_eligible_row_with_typed_mismatch() {
     )])
     .expect("projection scope");
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 16, 8),
             &cancellation,
             scope,
@@ -2986,7 +3642,7 @@ fn future_projection_allows_only_future_eligible_rows() {
     )])
     .expect("future scope");
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(256, 128, 16, 8),
             &cancellation,
             scope,
@@ -2999,7 +3655,7 @@ fn future_projection_allows_only_future_eligible_rows() {
         TypeConstraintProjectionClosure::AllowFutureEligible,
     );
     let outcome = transaction.finish().expect("future projection");
-    let value = outcome.projections[0].value();
+    let value = outcome.component.selected().projections()[0].value();
     assert_eq!(
         value.scope().binders(),
         &[crate::types::GenericBinder::new(1, 0, 0)]
@@ -3043,7 +3699,7 @@ fn final_equation_replays_choice_after_later_binding() {
     let actual = TypeKind::I32;
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             bindable_scope(&[&pattern, &actual]),
@@ -3075,7 +3731,7 @@ fn deferred_cycle_is_reported_only_after_close() {
     let actual = TypeKind::Vec(Box::new(TypeKind::generic_parameter(parameter.clone())));
     let cancellation = AtomicBool::new(false);
     let mut transaction = TestConstraintTransaction::begin(
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64),
             &cancellation,
             bindable_scope(&[&pattern, &actual]),
@@ -3084,7 +3740,11 @@ fn deferred_cycle_is_reported_only_after_close() {
     );
     let actual = transaction
         .context
-        .open_template_type(&actual)
+        .open_template_type(
+            &actual,
+            transaction.lower.test_single_path(),
+            transaction.lower.test_single_path().applications.root_id(),
+        )
         .expect("equation RHS uses the same active parameter namespace");
     transaction.constrain(
         &pattern,
@@ -3117,6 +3777,7 @@ struct PreparedSealed(u8);
 struct PreparedDomain;
 
 impl ConstraintDomain for PreparedDomain {
+    type Application = ();
     type Source = u8;
     type AlternativeIndex = u8;
     type EvidenceRule = PreparedRule;
@@ -3158,8 +3819,8 @@ impl ConstraintDomain for PreparedDomain {
 
 fn prepared_context<'a>(
     cancellation: &'a AtomicBool,
-) -> TypeConstraintContext<'a, LocalConstraintAccounting<'a>, PreparedDomain> {
-    TypeConstraintContext::<LocalConstraintAccounting<'a>, PreparedDomain>::with_scope(
+) -> ConstraintTestSetup<'a, LocalConstraintAccounting<'a>, PreparedDomain> {
+    ConstraintTestSetup::<LocalConstraintAccounting<'a>, PreparedDomain>::with_scope(
         TypeConstraintLimits::new(1_024, 512, 128, 64).with_source_limits(64, 64),
         cancellation,
         TypeConstraintParameterScope::empty(),
@@ -3186,11 +3847,14 @@ fn checked_prepared_source(
 #[test]
 fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -3198,11 +3862,11 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("prepared probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("hint projection")
         .expect("one source row");
-    ticket.with_hint(|hint| {
+    ticket.input().with_hint(|hint| {
         let ExpectedHint::Alternatives(rows) = hint else {
             panic!("checked source must expose keyed alternatives")
         };
@@ -3217,13 +3881,17 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::I32,
-                PreparedBranch("tag"),
-                0,
-                PreparedRule::Tag(1),
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::I32,
+                        PreparedBranch("tag"),
+                        0,
+                        PreparedRule::Tag(1),
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("checked evidence accepted");
     assert!(
@@ -3237,10 +3905,7 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
         .expect("materialization ticket")
     {
         let rows = ticket.requests().collect::<Vec<_>>();
-        assert!(matches!(
-            rows[0],
-            MaterializedSourceRequest::Checked { alternative: 0, .. }
-        ));
+        assert_eq!(rows[0].alternative(), Some(0));
         let closed = close_materialization_ticket(
             &mut ticket,
             ClosedMaterializationSubmission::Sealed(PreparedSealed(9)),
@@ -3252,8 +3917,8 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
     let solved = transaction
         .finish(&mut context)
         .expect("prepared source solves");
-    assert_eq!(solved.closed_sources.len(), 1);
-    let row = &solved.closed_sources[0];
+    assert_eq!(solved.component.sources().all().len(), 1);
+    let row = &solved.component.sources().all()[0];
     assert_eq!(row.selection().alternative(), Some(0));
     assert_eq!(row.actual(), &TypeKind::I32);
     assert_eq!(row.final_expected(), Some(&TypeKind::I32));
@@ -3262,11 +3927,14 @@ fn prepared_source_hints_and_checked_evidence_retain_one_selected_alternative() 
 #[test]
 fn rejected_source_projection_retains_exact_lower_relation_authority() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -3280,20 +3948,24 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("prepared probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("probe ticket")
         .expect("one source row");
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::I32,
-                PreparedBranch("mismatch"),
-                0,
-                PreparedRule::Otherwise,
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::I32,
+                        PreparedBranch("mismatch"),
+                        0,
+                        PreparedRule::Otherwise,
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("typed mismatch is retained until lower closes the row");
     assert!(
@@ -3309,7 +3981,7 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
     else {
         panic!("source relation mismatch must retain a typed rejected projection")
     };
-    assert_eq!(rejected.source(), 17);
+    assert_eq!(rejected.source().local(), 17);
     assert_eq!(rejected.alternative(), Some(0));
     assert_eq!(
         rejected.source_projection(),
@@ -3326,11 +3998,14 @@ fn rejected_source_projection_retains_exact_lower_relation_authority() {
 #[test]
 fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![TypeKind::String, TypeKind::Bool]),
@@ -3355,7 +4030,7 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
         )
         .expect("prepared probe starts");
     let mut row = 0_u8;
-    while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
         let (alternative, evidence) = if row == 0 {
             (0, PreparedRule::Tag(1))
         } else {
@@ -3364,13 +4039,17 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
         transaction
             .submit_probe(
                 &mut context,
-                ticket,
-                ProbeSubmission::Accepted(SourceProbeResult::checked(
-                    TypeKind::I32,
-                    PreparedBranch("frontier"),
-                    alternative,
-                    evidence,
-                )),
+                ticket.input(),
+                ProbeSubmission::Accepted(
+                    ticket
+                        .observe(SourceProbeResult::checked(
+                            TypeKind::I32,
+                            PreparedBranch("frontier"),
+                            alternative,
+                            evidence,
+                        ))
+                        .expect("observed source branch"),
+                ),
             )
             .expect("submit frontier row");
         row += 1;
@@ -3391,18 +4070,26 @@ fn one_live_frontier_outranks_a_sibling_source_relation_rejection() {
     let solved = transaction
         .finish(&mut context)
         .expect("one live sibling must keep the ordinary candidate viable");
-    assert_eq!(solved.closed_sources.len(), 1);
-    assert_eq!(solved.closed_sources[0].selection().alternative(), Some(1));
+    assert_eq!(solved.component.sources().all().len(), 1);
+    assert_eq!(
+        solved.component.sources().all()[0]
+            .selection()
+            .alternative(),
+        Some(1)
+    );
 }
 
 #[test]
 fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::Choice(vec![TypeKind::String, TypeKind::Bool]),
@@ -3427,7 +4114,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
         )
         .expect("prepared probe starts");
     let mut row = 0_u8;
-    while let Some(ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
+    while let Some(mut ticket) = transaction.next_probe(&mut context).expect("probe ticket") {
         let (actual, alternative, evidence) = if row == 0 {
             (TypeKind::I32, 0, PreparedRule::Tag(1))
         } else {
@@ -3436,13 +4123,17 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
         transaction
             .submit_probe(
                 &mut context,
-                ticket,
-                ProbeSubmission::Accepted(SourceProbeResult::checked(
-                    actual,
-                    PreparedBranch("frontier mismatch"),
-                    alternative,
-                    evidence,
-                )),
+                ticket.input(),
+                ProbeSubmission::Accepted(
+                    ticket
+                        .observe(SourceProbeResult::checked(
+                            actual,
+                            PreparedBranch("frontier mismatch"),
+                            alternative,
+                            evidence,
+                        ))
+                        .expect("observed source branch"),
+                ),
             )
             .expect("submit frontier row");
         row += 1;
@@ -3454,7 +4145,7 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
     else {
         panic!("all rejected frontiers must retain the deterministic first row")
     };
-    assert_eq!(rejected.source(), 29);
+    assert_eq!(rejected.source().local(), 29);
     assert_eq!(rejected.alternative(), Some(0));
     assert_eq!(rejected.expected(), &TypeKind::String);
     assert_eq!(rejected.actual(), &TypeKind::I32);
@@ -3463,11 +4154,14 @@ fn multiple_frontier_relation_failures_choose_the_first_typed_row() {
 #[test]
 fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -3475,19 +4169,25 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("unchecked probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("unchecked hint projection")
         .expect("one unchecked source row");
-    ticket.with_hint(|hint| assert!(matches!(hint, ExpectedHint::Unchecked)));
+    ticket
+        .input()
+        .with_hint(|hint| assert!(matches!(hint, ExpectedHint::Unchecked)));
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::unchecked(
-                TypeKind::I32,
-                PreparedBranch("unchecked"),
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::unchecked(
+                        TypeKind::I32,
+                        PreparedBranch("unchecked"),
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("unchecked source accepted");
     assert!(
@@ -3501,19 +4201,14 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
         .expect("unchecked materialization ticket")
     {
         let rows = ticket.requests().collect::<Vec<_>>();
-        let MaterializedSourceRequest::Unchecked {
-            source_projection,
-            actual,
-            ..
-        } = rows[0]
-        else {
-            panic!("unchecked source must remain unchecked during materialization")
-        };
+        assert_eq!(rows[0].alternative(), None);
+        assert!(rows[0].evidence().is_none());
+        assert_eq!(rows[0].expected(), None);
         assert_eq!(
-            source_projection,
+            rows[0].source_projection(),
             &CheckedConstraintSourceProjection::Scalar
         );
-        assert_eq!(actual, &TypeKind::I32);
+        assert_eq!(rows[0].actual(), &TypeKind::I32);
         let closed = close_materialization_ticket(
             &mut ticket,
             ClosedMaterializationSubmission::Sealed(PreparedSealed(7)),
@@ -3525,7 +4220,7 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
     let solved = transaction
         .finish(&mut context)
         .expect("unchecked source solves");
-    let [row] = solved.closed_sources.as_ref() else {
+    let [row] = solved.component.sources().all() else {
         panic!("one unchecked closed source")
     };
     assert!(row.selection().is_unchecked());
@@ -3540,11 +4235,14 @@ fn unchecked_source_retains_its_closed_physical_projection_and_actual_type() {
 #[test]
 fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
         8,
         PreparedConstraintSourceProjection::InferSpreadContainer {
@@ -3561,23 +4259,27 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("rest probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("rest hint")
         .expect("one rest row");
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::Array {
-                    item: Box::new(TypeKind::I32),
-                    len: super::super::ArrayLength::Const(3),
-                },
-                PreparedBranch("rest"),
-                0,
-                PreparedRule::Otherwise,
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::Array {
+                            item: Box::new(TypeKind::I32),
+                            len: super::super::ArrayLength::Const(3),
+                        },
+                        PreparedBranch("rest"),
+                        0,
+                        PreparedRule::Otherwise,
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("rest actual accepted");
     assert!(
@@ -3591,18 +4293,15 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
         .expect("rest materialization")
         .expect("rest trace");
     let rows = ticket.requests().collect::<Vec<_>>();
-    assert!(matches!(
-        rows[0],
-        MaterializedSourceRequest::Checked {
-            source_projection: CheckedConstraintSourceProjection::SpreadContainer(
-                CheckedConstraintContainerConstructor::Array {
-                    len: super::super::ArrayLength::Const(3)
-                }
-            ),
-            expected: TypeKind::Array { .. },
-            ..
-        }
-    ));
+    assert_eq!(
+        rows[0].source_projection(),
+        &CheckedConstraintSourceProjection::SpreadContainer(
+            CheckedConstraintContainerConstructor::Array {
+                len: super::super::ArrayLength::Const(3)
+            }
+        )
+    );
+    assert!(matches!(rows[0].expected(), Some(TypeKind::Array { .. })));
     let closed = close_materialization_ticket(
         &mut ticket,
         ClosedMaterializationSubmission::Sealed(PreparedSealed(3)),
@@ -3612,7 +4311,7 @@ fn dynamic_rest_projection_is_derived_from_actual_and_composes_array_length() {
         .expect("rest materialization accepted");
     let solved = transaction.finish(&mut context).expect("rest solves");
     assert_eq!(
-        solved.closed_sources[0].final_expected(),
+        solved.component.sources().all()[0].final_expected(),
         Some(&TypeKind::Array {
             item: Box::new(TypeKind::I32),
             len: super::super::ArrayLength::Const(3),
@@ -3629,16 +4328,20 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     )])
     .expect("bindable actual parameter scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, PreparedDomain>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, PreparedDomain>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64).with_source_limits(64, 64),
             &cancellation,
             scope,
-        );
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
         13,
         PreparedConstraintSourceProjection::InferSpreadContainer {
@@ -3661,26 +4364,34 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("generic rest probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("generic rest hint")
         .expect("one generic rest row");
     let actual = context
-        .open_template_type(&TypeKind::Array {
-            item: Box::new(TypeKind::generic_parameter(parameter.clone())),
-            len: super::super::ArrayLength::Const(5),
-        })
+        .open_template_type(
+            &TypeKind::Array {
+                item: Box::new(TypeKind::generic_parameter(parameter.clone())),
+                len: super::super::ArrayLength::Const(5),
+            },
+            ticket.test_path(),
+            ticket.test_path().applications.root_id(),
+        )
         .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                actual,
-                PreparedBranch("generic-rest"),
-                0,
-                PreparedRule::Otherwise,
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        actual,
+                        PreparedBranch("generic-rest"),
+                        0,
+                        PreparedRule::Otherwise,
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("generic actual relates to item expected");
     assert!(
@@ -3695,25 +4406,20 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
         .expect("generic rest materialization")
         .expect("generic rest trace");
     let requests = ticket.requests().collect::<Vec<_>>();
-    assert!(matches!(
-        requests[0],
-        MaterializedSourceRequest::Checked {
-            actual: TypeKind::Array {
-                item,
+    let array = TypeKind::Array {
+        item: Box::new(TypeKind::I32),
+        len: super::super::ArrayLength::Const(5),
+    };
+    assert_eq!(requests[0].actual(), &array);
+    assert_eq!(requests[0].expected(), Some(&array));
+    assert_eq!(
+        requests[0].source_projection(),
+        &CheckedConstraintSourceProjection::SpreadContainer(
+            CheckedConstraintContainerConstructor::Array {
                 len: super::super::ArrayLength::Const(5)
-            },
-            source_projection: CheckedConstraintSourceProjection::SpreadContainer(
-                CheckedConstraintContainerConstructor::Array {
-                    len: super::super::ArrayLength::Const(5)
-                }
-            ),
-            expected: TypeKind::Array {
-                item: expected_item,
-                len: super::super::ArrayLength::Const(5)
-            },
-            ..
-        } if item.as_ref() == &TypeKind::I32 && expected_item.as_ref() == &TypeKind::I32
-    ));
+            }
+        )
+    );
     let closed = close_materialization_ticket(
         &mut ticket,
         ClosedMaterializationSubmission::Sealed(PreparedSealed(5)),
@@ -3724,7 +4430,7 @@ fn closed_source_rows_normalize_generic_container_actuals_and_headers() {
     let solved = transaction
         .finish(&mut context)
         .expect("generic rest solves");
-    let trace = &solved.closed_sources[0];
+    let trace = &solved.component.sources().all()[0];
     assert_eq!(
         trace.actual(),
         &TypeKind::Array {
@@ -3758,16 +4464,20 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
     )])
     .expect("bindable map-key parameter scope");
     let cancellation = AtomicBool::new(false);
-    let mut context =
-        TypeConstraintContext::<LocalConstraintAccounting<'_>, PreparedDomain>::with_scope(
+    let (mut context, test_parameters) =
+        ConstraintTestSetup::<LocalConstraintAccounting<'_>, PreparedDomain>::with_scope(
             TypeConstraintLimits::new(1_024, 512, 128, 64).with_source_limits(64, 64),
             &cancellation,
             scope,
-        );
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+        )
+        .into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction.constrain(
         &mut context,
         &TypeKind::generic_parameter(parameter.clone()),
@@ -3790,27 +4500,35 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("generic map rest probe starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("generic map rest hint")
         .expect("one generic map rest row");
     let actual = context
-        .open_template_type(&TypeKind::Map {
-            kind: super::super::MapKind::BTree,
-            key: Box::new(TypeKind::generic_parameter(parameter.clone())),
-            value: Box::new(TypeKind::I32),
-        })
+        .open_template_type(
+            &TypeKind::Map {
+                kind: super::super::MapKind::BTree,
+                key: Box::new(TypeKind::generic_parameter(parameter.clone())),
+                value: Box::new(TypeKind::I32),
+            },
+            ticket.test_path(),
+            ticket.test_path().applications.root_id(),
+        )
         .expect("source observation carries an owned active reference");
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                actual,
-                PreparedBranch("generic-map-rest"),
-                0,
-                PreparedRule::Otherwise,
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        actual,
+                        PreparedBranch("generic-map-rest"),
+                        0,
+                        PreparedRule::Otherwise,
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("generic map actual relates to value expected");
     assert!(
@@ -3824,32 +4542,22 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
         .expect("generic map rest materialization")
         .expect("generic map rest trace");
     let requests = ticket.requests().collect::<Vec<_>>();
-    assert!(matches!(
-        requests[0],
-        MaterializedSourceRequest::Checked {
-            actual: TypeKind::Map {
+    let map = TypeKind::Map {
+        kind: super::super::MapKind::BTree,
+        key: Box::new(TypeKind::String),
+        value: Box::new(TypeKind::I32),
+    };
+    assert_eq!(requests[0].actual(), &map);
+    assert_eq!(requests[0].expected(), Some(&map));
+    assert_eq!(
+        requests[0].source_projection(),
+        &CheckedConstraintSourceProjection::SpreadContainer(
+            CheckedConstraintContainerConstructor::MapValue {
                 kind: super::super::MapKind::BTree,
-                key,
-                value
-            },
-            source_projection: CheckedConstraintSourceProjection::SpreadContainer(
-                CheckedConstraintContainerConstructor::MapValue {
-                    kind: super::super::MapKind::BTree,
-                    key: projection_key
-                }
-            ),
-            expected: TypeKind::Map {
-                kind: super::super::MapKind::BTree,
-                key: expected_key,
-                value: expected_value
-            },
-            ..
-        } if key.as_ref() == &TypeKind::String
-            && projection_key.as_ref() == &TypeKind::String
-            && expected_key.as_ref() == &TypeKind::String
-            && value.as_ref() == &TypeKind::I32
-            && expected_value.as_ref() == &TypeKind::I32
-    ));
+                key: Box::new(TypeKind::String),
+            }
+        )
+    );
     let closed = close_materialization_ticket(
         &mut ticket,
         ClosedMaterializationSubmission::Sealed(PreparedSealed(6)),
@@ -3860,7 +4568,7 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
     let solved = transaction
         .finish(&mut context)
         .expect("generic map rest solves");
-    let trace = &solved.closed_sources[0];
+    let trace = &solved.component.sources().all()[0];
     assert_eq!(
         trace.actual(),
         &TypeKind::Map {
@@ -3891,11 +4599,14 @@ fn closed_source_rows_normalize_generic_map_actuals_and_headers() {
 #[test]
 fn otherwise_cannot_shortcut_a_matching_guard() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -3903,20 +4614,24 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("first source starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("first ticket")
         .expect("first row");
     assert!(matches!(
         transaction.submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::I32,
-                PreparedBranch("bad"),
-                1,
-                PreparedRule::Tag(1),
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::I32,
+                        PreparedBranch("bad"),
+                        1,
+                        PreparedRule::Tag(1),
+                    ))
+                    .expect("observed source branch")
+            ),
         ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::SourceProtocol(
@@ -3929,11 +4644,14 @@ fn otherwise_cannot_shortcut_a_matching_guard() {
 #[test]
 fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     transaction
         .begin_prepared_probe(
             &mut context,
@@ -3941,20 +4659,24 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("source starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("ticket")
         .expect("source row");
     transaction
         .submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::I32,
-                PreparedBranch("otherwise"),
-                1,
-                PreparedRule::Tag(2),
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::I32,
+                        PreparedBranch("otherwise"),
+                        1,
+                        PreparedRule::Tag(2),
+                    ))
+                    .expect("observed source branch"),
+            ),
         )
         .expect("nonmatching evidence selects otherwise");
     assert!(
@@ -3968,11 +4690,14 @@ fn otherwise_is_selected_only_when_all_guarded_evidence_is_absent() {
 #[test]
 fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     let prepared = PreparedSourceConstraint::checked(
         11,
         PreparedConstraintSourceProjection::Scalar,
@@ -3990,20 +4715,24 @@ fn duplicate_matching_guards_are_rejected_as_tampered_evidence() {
             ConstraintAcceptance::PatternAcceptsActual,
         )
         .expect("source starts");
-    let ticket = transaction
+    let mut ticket = transaction
         .next_probe(&mut context)
         .expect("ticket")
         .expect("source row");
     assert!(matches!(
         transaction.submit_probe(
             &mut context,
-            ticket,
-            ProbeSubmission::Accepted(SourceProbeResult::checked(
-                TypeKind::I32,
-                PreparedBranch("tampered"),
-                0,
-                PreparedRule::Tag(1),
-            )),
+            ticket.input(),
+            ProbeSubmission::Accepted(
+                ticket
+                    .observe(SourceProbeResult::checked(
+                        TypeKind::I32,
+                        PreparedBranch("tampered"),
+                        0,
+                        PreparedRule::Tag(1),
+                    ))
+                    .expect("observed source branch")
+            ),
         ),
         Err(TypeConstraintError::Invariant(
             TypeConstraintInvariant::SourceProtocol(
@@ -4033,11 +4762,14 @@ fn prepared_source_structurally_owns_otherwise_and_requires_exact_ordinals() {
     ));
 
     let cancellation = AtomicBool::new(false);
-    let mut context = prepared_context(&cancellation);
-    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::new();
-    transaction
-        .initialize(&mut context, None)
-        .expect("valid test initialization");
+    let (mut context, test_parameters) = prepared_context(&cancellation).into_parts();
+    let mut transaction = TypeConstraintTransaction::<PreparedDomain>::initialize(
+        &mut context,
+        (),
+        test_parameters,
+        None,
+    )
+    .expect("valid test initialization");
     let malformed = PreparedSourceConstraint::Checked {
         source: 13,
         source_projection: PreparedConstraintSourceProjection::Scalar,

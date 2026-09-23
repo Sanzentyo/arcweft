@@ -167,8 +167,11 @@ pub use model::{
 pub(crate) use nominal_schema::RuntimeNominalProjectionSeal;
 pub use nominal_schema::{
     NominalProjectionLimitKind, NominalSchemaPath, NominalSchemaPathStep,
-    NominalSchemaProjectionError, RuntimeProjectFieldProjection, RuntimeProjectNominalKind,
-    RuntimeProjectNominalProjection, RuntimeProjectVariantCaseProjection,
+    NominalSchemaProjectionError, RuntimeAcceptedRustNominalKind,
+    RuntimeAcceptedRustNominalProjection, RuntimeNominalGraphProjectionError,
+    RuntimeNominalGraphProjectionLimitKind, RuntimeNominalGraphProjectionLimits,
+    RuntimeProjectFieldProjection, RuntimeProjectNominalKind, RuntimeProjectNominalProjection,
+    RuntimeProjectVariantCaseProjection,
 };
 pub(crate) use nominal_semantic::{
     ProjectNominalSemanticCatalog, ProjectNominalSemanticDefinition,

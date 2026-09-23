@@ -652,13 +652,31 @@ impl Analyzer<'_, '_, '_> {
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             if let EffectPermission::Bounded(row) = contract.permission()
                 && bounded_call_effect_rows
-                    .insert(body.id.clone(), row.concrete().clone())
+                    .insert(
+                        body.id.clone(),
+                        row.closed_value()
+                            .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+                    )
                     .is_some()
             {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
         graph.close_effect_rows(&mut rows, &bounded_call_effect_rows, self.control)?;
+        // Preparation rows were derived within candidate transactions. The
+        // complete selected execution graph must independently confirm every
+        // surviving prerequisite before any checked catalog is published.
+        for (checked, prepared) in self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?
+            .effect_rows()
+            .rows()
+        {
+            if prepared.closed_value().as_ref() != rows.get(checked) {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
+        }
         let mut suspension_rows = staged
             .bodies
             .iter()
@@ -717,10 +735,12 @@ impl Analyzer<'_, '_, '_> {
                     .body_contract()
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 let exposed = match contract.permission() {
-                    EffectPermission::UnboundedInference => inferred,
-                    EffectPermission::Bounded(row) => row.concrete(),
+                    EffectPermission::UnboundedInference => inferred.clone(),
+                    EffectPermission::Bounded(row) => row
+                        .closed_value()
+                        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
                 };
-                Ok((body.id.clone(), exposed.clone()))
+                Ok((body.id.clone(), exposed))
             })
             .collect::<Result<BTreeMap<_, _>, FinalSemanticAnalysisError>>()?;
 

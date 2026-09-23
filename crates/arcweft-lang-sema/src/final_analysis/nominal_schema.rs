@@ -1,28 +1,57 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 use thiserror::Error;
 
+mod accepted_rust;
+mod graph;
+pub use accepted_rust::{RuntimeAcceptedRustNominalKind, RuntimeAcceptedRustNominalProjection};
+pub use graph::{
+    RuntimeNominalGraphProjectionError, RuntimeNominalGraphProjectionLimitKind,
+    RuntimeNominalGraphProjectionLimits,
+};
+
+impl crate::final_analysis::FinalSemanticAnalysis {
+    /// Projects a complete nominal document from this generation's accepted
+    /// source types. The returned proof must still be correlated at plan admission.
+    pub fn project_runtime_nominal_graph(
+        &self,
+        world: &crate::registration::RegisteredSemanticWorld,
+        ty: &crate::types::TypeKind,
+        limits: RuntimeNominalGraphProjectionLimits,
+    ) -> Result<Arc<RuntimeNominalSchemaGraph>, RuntimeNominalGraphProjectionError> {
+        if !self.matches_registered_world(world) {
+            return Err(RuntimeNominalGraphProjectionError::StaleGeneration);
+        }
+        let budget = graph::limits::ProjectionBudget::new(limits)?;
+        graph::NominalGraphProjection::new(
+            Some(world.environment()),
+            world.symbols(),
+            self.accepted_types(),
+            Some(self.semantic_shapes()),
+            budget,
+        )
+        .project_type(ty)
+        .map(Arc::new)
+    }
+}
+
 use arcweft_core::{
-    entry::{RuntimeNominalTypeId, RuntimeTypeSchema, TypeLayoutHash},
+    entry::{RuntimeNominalSchemaGraph, RuntimeNominalTypeId, TypeLayoutHash},
     pattern::RuntimeSemanticTypeId,
     value::RuntimeRecordFieldId,
 };
-use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
     identity::TypeId,
     project::HirExpressionTypeRootProjection,
     symbol::{
         ProjectSymbolTable,
-        nominal::{
-            ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
-            ProjectNominalDeclarationKind,
-        },
+        nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId},
     },
 };
 use arcweft_lang_syntax::ast::module_path::ModuleSegment;
 
 use super::report::{FinalSemanticAnalysisDraft, FinalSemanticAnalysisPostEntryDraft};
 use crate::{
-    env::nominal::AcceptedNominalId,
     final_analysis::{
         CheckedExpression, CheckedExpressionRecordField, CheckedExpressionResolution,
         CheckedFieldSelection, CheckedPattern, CheckedPatternResolution, CheckedProjectNominal,
@@ -42,9 +71,7 @@ use crate::{
     semantic_coordinate::{
         SemanticCoordinateIndex, StablePatternCoordinate, StablePatternCoordinateStep,
     },
-    types::{
-        GenericParameterOwnerId, GenericTypeParameterId, MapKind, SemanticTypeDigest, TypeKind,
-    },
+    types::{SemanticTypeDigest, TypeKind},
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -90,24 +117,14 @@ impl NominalSchemaPath {
     }
 }
 
-/// Generation-bound data-shape projection over already checked nominal types.
-///
-/// Name selection, imports, aliases, arity, and generic argument validation are
-/// owned by the normal semantic nominal resolver. This adapter only projects
-/// its accepted `TypeKind` products into the persistence schema required by an
-/// entry; it never resolves authored paths itself.
-struct NominalSchemaExpander<'a> {
-    symbols: &'a ProjectSymbolTable,
-    types: &'a BTreeMap<TypeId, TypeKind>,
-    control: FinalSemanticAnalysisControl<'a>,
-}
-
 /// Mutable construction authority for project-nominal runtime projections.
 ///
 /// This context exists only while one semantic generation is being prepared.
 /// C2.4 consumes its accepted cache into the final immutable catalog; it is
 /// never retained beside a published [`FinalSemanticAnalysis`].
 pub(crate) struct RuntimeNominalProjectionContext<'a> {
+    environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
+    semantic_shapes: Option<&'a super::AcceptedSemanticShapeCatalog>,
     symbols: &'a ProjectSymbolTable,
     types: &'a BTreeMap<TypeId, TypeKind>,
     root_limits: NominalResolutionLimits,
@@ -135,6 +152,8 @@ pub enum NominalProjectionLimitKind {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum NominalSchemaProjectionError {
+    #[error(transparent)]
+    SourceGraph(Box<RuntimeNominalGraphProjectionError>),
     #[error(transparent)]
     GenericUse(#[from] crate::types::TypeGenericUseError),
     #[error(transparent)]
@@ -197,26 +216,13 @@ pub enum NominalSchemaProjectionError {
         owner: SemanticTypeDigest,
         ordinal: u32,
     },
-    #[error("accepted opaque type has no closed project-nominal schema layout")]
-    OpaqueLeaf {
-        path: NominalSchemaPath,
-        nominal: AcceptedNominalId,
-        semantic_identity: SemanticTypeDigest,
-    },
     #[error("checked type is not a supported closed project-nominal schema leaf")]
     UnsupportedLeaf {
         path: NominalSchemaPath,
         ty: Box<TypeKind>,
     },
-    #[error("project-nominal schema contains a cyclic generic substitution")]
-    CyclicGenericSubstitution {
-        path: NominalSchemaPath,
-        parameter: GenericTypeParameterId,
-    },
     #[error("project nominal `{nominal}` is not a runtime struct or enum")]
     UnsupportedDeclaration { nominal: String },
-    #[error("project nominal `{nominal}` has an invalid runtime identity: {reason}")]
-    InvalidRuntimeIdentity { nominal: String, reason: String },
     #[error("project nominal `{nominal}` has an invalid canonical runtime schema: {reason}")]
     InvalidRuntimeSchema { nominal: String, reason: String },
     #[error("{path}: {reason}")]
@@ -234,13 +240,10 @@ pub enum RuntimeProjectNominalKind {
 /// runtime identity and canonical layout schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimeProjectNominalProjection {
-    declaration: ProjectNominalDeclarationId,
-    owner: arcweft_lang_hir::identity::ItemId,
+    checked: CheckedProjectNominal,
     nominal: RuntimeNominalTypeId,
-    semantic_identity: RuntimeSemanticTypeId,
-    shape: TypeShape,
     layout: TypeLayoutHash,
-    schema: RuntimeTypeSchema,
+    graph: Arc<RuntimeNominalSchemaGraph>,
     kind: RuntimeProjectNominalKind,
     record_fields: Box<[RuntimeProjectRecordFieldProjection]>,
     variant_cases: Box<[RuntimeProjectVariantCaseProjection]>,
@@ -752,12 +755,17 @@ fn projection_semantic_digest(projection: &RuntimeProjectNominalProjection) -> S
 }
 
 impl RuntimeProjectNominalProjection {
+    /// Exact checked source request, including instantiated type arguments.
+    pub const fn checked(&self) -> &CheckedProjectNominal {
+        &self.checked
+    }
+
     pub const fn declaration(&self) -> &ProjectNominalDeclarationId {
-        &self.declaration
+        self.checked.declaration()
     }
 
     pub const fn owner(&self) -> arcweft_lang_hir::identity::ItemId {
-        self.owner
+        self.checked.owner()
     }
 
     pub const fn nominal(&self) -> &RuntimeNominalTypeId {
@@ -765,20 +773,16 @@ impl RuntimeProjectNominalProjection {
     }
 
     pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
-        self.semantic_identity
-    }
-
-    /// Canonical checked data shape retained by the sole projection owner.
-    pub const fn shape(&self) -> &TypeShape {
-        &self.shape
+        RuntimeSemanticTypeId::from_bytes(*self.checked.identity().as_bytes())
     }
 
     pub const fn layout(&self) -> TypeLayoutHash {
         self.layout
     }
 
-    pub const fn schema(&self) -> &RuntimeTypeSchema {
-        &self.schema
+    /// Source-issued reachable definitions, including exact recursive edges.
+    pub const fn graph(&self) -> &Arc<RuntimeNominalSchemaGraph> {
+        &self.graph
     }
 
     pub const fn kind(&self) -> RuntimeProjectNominalKind {
@@ -819,25 +823,10 @@ impl NominalSchemaProjectionError {
 
     fn within_step(self, step: NominalSchemaPathStep) -> Self {
         match self {
-            Self::OpaqueLeaf {
-                path,
-                nominal,
-                semantic_identity,
-            } => Self::OpaqueLeaf {
-                path: path.prepended(step),
-                nominal,
-                semantic_identity,
-            },
             Self::UnsupportedLeaf { path, ty } => Self::UnsupportedLeaf {
                 path: path.prepended(step),
                 ty,
             },
-            Self::CyclicGenericSubstitution { path, parameter } => {
-                Self::CyclicGenericSubstitution {
-                    path: path.prepended(step),
-                    parameter,
-                }
-            }
             other => other,
         }
     }
@@ -949,6 +938,8 @@ fn check_root_limit(
 
 impl<'a> RuntimeNominalProjectionContext<'a> {
     pub(crate) const fn new(
+        environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
+        semantic_shapes: Option<&'a super::AcceptedSemanticShapeCatalog>,
         symbols: &'a ProjectSymbolTable,
         types: &'a BTreeMap<TypeId, TypeKind>,
         root_limits: NominalResolutionLimits,
@@ -956,6 +947,8 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
         control: FinalSemanticAnalysisControl<'a>,
     ) -> Self {
         Self {
+            environment,
+            semantic_shapes,
             symbols,
             types,
             root_limits,
@@ -981,10 +974,8 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
                 )
             });
         }
-        let mut budget = ProjectionBudget::new(self.root_limits);
-        budget.enter_node(self.control)?;
+        let budget = ProjectionBudget::new(self.root_limits);
         if !self.visiting.insert(key) {
-            budget.leave_node();
             return Err(NominalSchemaProjectionError::new(format!(
                 "cyclic projection request for semantic type {key:?}"
             )));
@@ -992,14 +983,12 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
 
         let Some(declaration) = self.symbols.nominal(checked.declaration()) else {
             self.visiting.remove(&key);
-            budget.leave_node();
             return Err(NominalSchemaProjectionError::MissingDeclaration {
                 nominal: checked.declaration().qualified_name(),
             });
         };
-        let projection = self.expand(declaration, checked, &mut budget);
+        let projection = self.expand(declaration, checked, budget);
         self.visiting.remove(&key);
-        budget.leave_node();
         let projection = projection?;
         self.accepted.insert(key, projection);
         self.accepted.get(&key).ok_or_else(|| {
@@ -1059,7 +1048,7 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
         &self,
         declaration: &ProjectNominalDeclaration,
         checked: &CheckedProjectNominal,
-        budget: &mut ProjectionBudget,
+        budget: ProjectionBudget,
     ) -> Result<RuntimeProjectNominalProjection, NominalSchemaProjectionError> {
         let (kind, record_fields, variant_cases) = match declaration.body() {
             ProjectNominalBody::Struct { fields } => {
@@ -1144,30 +1133,27 @@ impl<'a> RuntimeNominalProjectionContext<'a> {
             }
         };
         let semantic_identity = RuntimeSemanticTypeId::from_bytes(*checked.identity().as_bytes());
-        let shape = NominalSchemaExpander::new(self.symbols, self.types, self.control)
-            .schema_checked_after_root(declaration, checked.arguments(), budget)?;
-        let schema = RuntimeTypeSchema::from(&shape);
-        let runtime_name = runtime_project_nominal_name(checked.declaration());
-        let nominal = RuntimeNominalTypeId::try_new(runtime_name.clone()).map_err(|error| {
-            NominalSchemaProjectionError::InvalidRuntimeIdentity {
-                nominal: runtime_name.clone(),
-                reason: error.to_string(),
-            }
-        })?;
-        let layout = schema.try_layout_hash().map_err(|error| {
+        let graph = graph::project_checked_nominal(
+            self.environment,
+            self.symbols,
+            self.types,
+            self.semantic_shapes,
+            checked,
+            budget,
+            self.control,
+        )?;
+        let nominal = RuntimeNominalTypeId::from_checked_digest(*semantic_identity.as_bytes());
+        let layout = graph.try_layout_hash(semantic_identity).map_err(|error| {
             NominalSchemaProjectionError::InvalidRuntimeSchema {
-                nominal: runtime_name,
+                nominal: checked.declaration().qualified_name(),
                 reason: error.to_string(),
             }
         })?;
         Ok(RuntimeProjectNominalProjection {
-            declaration: checked.declaration().clone(),
-            owner: checked.owner(),
+            checked: checked.clone(),
             nominal,
-            semantic_identity,
-            shape,
             layout,
-            schema,
+            graph: Arc::new(graph),
             kind,
             record_fields,
             variant_cases,
@@ -1304,6 +1290,7 @@ pub(super) fn seal_nominal_draft(
     project: crate::final_analysis::HirAnalysisProjectView<'_>,
     symbols: &ProjectSymbolTable,
     semantic_shapes: super::AcceptedSemanticShapeCatalog,
+    authority: super::report::FinalSemanticAnalysisAuthority,
     control: FinalSemanticAnalysisControl<'_>,
 ) -> Result<FinalSemanticAnalysis, FinalSemanticProjectError> {
     let type_roots = project
@@ -1327,6 +1314,14 @@ pub(super) fn seal_nominal_draft(
         RuntimeNominalProjectionRequestInventory::from_prepared(&draft, symbols, &type_roots)?;
     let mut parts = draft.into_parts();
     let context = RuntimeNominalProjectionContext::new(
+        match &authority {
+            super::report::FinalSemanticAnalysisAuthority::Registered(world) => {
+                Some(world.environment())
+            }
+            #[cfg(test)]
+            super::report::FinalSemanticAnalysisAuthority::Fixture => None,
+        },
+        Some(&semantic_shapes),
         symbols,
         &parts.types,
         NominalResolutionLimits::PRODUCTION,
@@ -1434,6 +1429,7 @@ pub(super) fn seal_nominal_draft(
         project_nominals,
         semantic_shapes,
         runtime_nominals,
+        authority,
         control,
     )?)
 }
@@ -2162,7 +2158,7 @@ impl FinalSemanticAnalysis {
             .ok_or(NominalSchemaProjectionError::MissingCachedProjection { semantic_type })?;
         if projection.nominal() != role.runtime_nominal()
             || projection.layout() != role.layout()
-            || &crate::entry::nominal_schema_digest(projection.shape()) != role.schema_digest()
+            || &crate::entry::nominal_schema_digest(projection.layout()) != role.schema_digest()
         {
             return Err(NominalSchemaProjectionError::InvalidEntryNominalRelation {
                 semantic_type,
@@ -2180,330 +2176,6 @@ impl CheckedFieldSelection {
     ) -> Result<Option<RuntimeProjectFieldProjection<'a>>, NominalSchemaProjectionError> {
         analysis.project_runtime_field(self)
     }
-}
-
-fn runtime_project_nominal_name(id: &ProjectNominalDeclarationId) -> String {
-    let local = id
-        .owner_path()
-        .iter()
-        .map(ModuleSegment::as_str)
-        .chain(std::iter::once(id.name().as_str()))
-        .collect::<Vec<_>>()
-        .join(".");
-    format!(
-        "{}::{}::{local}",
-        id.world().package().as_str(),
-        id.module()
-    )
-}
-
-impl<'a> NominalSchemaExpander<'a> {
-    const fn new(
-        symbols: &'a ProjectSymbolTable,
-        types: &'a BTreeMap<TypeId, TypeKind>,
-        control: FinalSemanticAnalysisControl<'a>,
-    ) -> Self {
-        Self {
-            symbols,
-            types,
-            control,
-        }
-    }
-
-    fn schema_checked_after_root(
-        &self,
-        declaration: &ProjectNominalDeclaration,
-        arguments: &[TypeKind],
-        budget: &mut ProjectionBudget,
-    ) -> Result<TypeShape, NominalSchemaProjectionError> {
-        self.schema_with_stack(
-            declaration,
-            arguments,
-            &BTreeMap::new(),
-            &mut BTreeSet::new(),
-            budget,
-        )
-    }
-
-    fn schema_with_stack(
-        &self,
-        declaration: &ProjectNominalDeclaration,
-        arguments: &[TypeKind],
-        inherited: &BTreeMap<GenericTypeParameterId, TypeKind>,
-        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-        budget: &mut ProjectionBudget,
-    ) -> Result<TypeShape, NominalSchemaProjectionError> {
-        if declaration.type_parameters().len() != arguments.len() {
-            return Err(NominalSchemaProjectionError::WrongArity {
-                nominal: declaration.id().qualified_name(),
-                expected: declaration.type_parameters().len(),
-                actual: arguments.len(),
-            });
-        }
-        budget.charge_generic_arguments(arguments.len(), self.control)?;
-        if !stack.insert(declaration.id().clone()) {
-            return Ok(TypeShape::Named(canonical_nominal_name(declaration.id())));
-        }
-
-        let mut substitutions = inherited.clone();
-        for (parameter, argument) in declaration.type_parameters().iter().zip(arguments) {
-            substitutions.insert(
-                GenericTypeParameterId::new(
-                    GenericParameterOwnerId::Nominal(declaration.id().clone()),
-                    parameter.ordinal(),
-                ),
-                argument.clone(),
-            );
-        }
-
-        let result = match declaration.body() {
-            ProjectNominalBody::Struct { fields } => fields
-                .iter()
-                .enumerate()
-                .map(|(ordinal, field)| {
-                    let ordinal = u32::try_from(ordinal)
-                        .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                    self.resolved_shape(field.ty(), &substitutions, stack, budget)
-                        .map_err(|error| {
-                            error.within_step(NominalSchemaPathStep::Field {
-                                ordinal,
-                                name: field.name().clone(),
-                            })
-                        })
-                        .map(|shape| {
-                            FieldShape::new(field.name().as_str(), field.name().as_str(), shape)
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|fields| TypeShape::record(canonical_nominal_name(declaration.id()), fields)),
-            ProjectNominalBody::Enum { variants } => variants
-                .iter()
-                .enumerate()
-                .map(|(ordinal, variant)| {
-                    let ordinal = u32::try_from(ordinal)
-                        .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                    let unit = VariantShape::unit(variant.name().as_str(), variant.name().as_str());
-                    let Some(payload) = variant.payload() else {
-                        return Ok(unit);
-                    };
-                    self.resolved_shape(payload, &substitutions, stack, budget)
-                        .map_err(|error| {
-                            error.within_step(NominalSchemaPathStep::VariantPayload {
-                                ordinal,
-                                name: variant.name().clone(),
-                            })
-                        })
-                        .map(|shape| unit.with_payload(shape))
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|variants| {
-                    TypeShape::enumeration(canonical_nominal_name(declaration.id()), variants)
-                }),
-            ProjectNominalBody::TypeAlias { .. } => Err(NominalSchemaProjectionError::new(
-                "entry data schemas must start from a project struct or enum, not an alias",
-            )),
-        };
-
-        stack.remove(declaration.id());
-        result
-    }
-
-    fn resolved_shape(
-        &self,
-        root: TypeId,
-        substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
-        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-        budget: &mut ProjectionBudget,
-    ) -> Result<TypeShape, NominalSchemaProjectionError> {
-        let ty = self
-            .types
-            .get(&root)
-            .ok_or(NominalSchemaProjectionError::MissingTypeFact { ty: root })?;
-        self.type_shape(ty, substitutions, stack, &mut BTreeSet::new(), budget)
-    }
-
-    fn type_shape(
-        &self,
-        ty: &TypeKind,
-        substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
-        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-        generic_stack: &mut BTreeSet<GenericTypeParameterId>,
-        budget: &mut ProjectionBudget,
-    ) -> Result<TypeShape, NominalSchemaProjectionError> {
-        budget.enter_node(self.control)?;
-        let result = self.type_shape_inner(ty, substitutions, stack, generic_stack, budget);
-        budget.leave_node();
-        result
-    }
-
-    #[expect(
-        clippy::too_many_lines,
-        reason = "schema projection exhaustively maps the closed checked type vocabulary"
-    )]
-    fn type_shape_inner(
-        &self,
-        ty: &TypeKind,
-        substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
-        stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-        generic_stack: &mut BTreeSet<GenericTypeParameterId>,
-        budget: &mut ProjectionBudget,
-    ) -> Result<TypeShape, NominalSchemaProjectionError> {
-        Ok(match ty {
-            TypeKind::Unit => TypeShape::Unit,
-            TypeKind::Bool => TypeShape::Bool,
-            TypeKind::I8 => TypeShape::I8,
-            TypeKind::I16 => TypeShape::I16,
-            TypeKind::I32 => TypeShape::I32,
-            TypeKind::I64 => TypeShape::I64,
-            TypeKind::I128 => TypeShape::I128,
-            TypeKind::ISize => TypeShape::Isize,
-            TypeKind::U8 => TypeShape::U8,
-            TypeKind::U16 => TypeShape::U16,
-            TypeKind::U32 => TypeShape::U32,
-            TypeKind::U64 => TypeShape::U64,
-            TypeKind::U128 => TypeShape::U128,
-            TypeKind::USize => TypeShape::Usize,
-            TypeKind::F32 => TypeShape::F32,
-            TypeKind::F64 => TypeShape::F64,
-            TypeKind::String => TypeShape::String,
-            TypeKind::Char => TypeShape::Char,
-            TypeKind::Bytes => TypeShape::Bytes {
-                format: BytesFormat::Binary,
-            },
-            TypeKind::Option(inner) => TypeShape::option(
-                self.type_shape(inner, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::OptionItem))?,
-            ),
-            TypeKind::Vec(inner) | TypeKind::Seq(inner) => TypeShape::seq(
-                self.type_shape(inner, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::SequenceItem))?,
-            ),
-            TypeKind::Map {
-                kind: MapKind::Ordered | MapKind::Sorted | MapKind::BTree,
-                key,
-                value,
-            } => TypeShape::map(
-                self.type_shape(key, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::MapKey))?,
-                self.type_shape(value, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::MapValue))?,
-            ),
-            TypeKind::ProjectNominal(nominal) => {
-                let declaration = self.symbols.nominal(nominal.declaration()).ok_or_else(|| {
-                    NominalSchemaProjectionError::MissingDeclaration {
-                        nominal: nominal.declaration().qualified_name(),
-                    }
-                })?;
-                self.schema_with_stack(
-                    declaration,
-                    nominal.arguments(),
-                    substitutions,
-                    stack,
-                    budget,
-                )
-                .map_err(|error| {
-                    error.within_step(NominalSchemaPathStep::NestedNominal {
-                        declaration: nominal.declaration().clone(),
-                    })
-                })?
-            }
-            TypeKind::AcceptedNominal(nominal) => {
-                return Err(NominalSchemaProjectionError::OpaqueLeaf {
-                    path: NominalSchemaPath::default(),
-                    nominal: nominal.declaration().clone(),
-                    semantic_identity: ty.semantic_identity_digest()?,
-                });
-            }
-            TypeKind::CompileTimeScalar(_) => {
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(ty.clone()),
-                });
-            }
-            TypeKind::GenericParam(crate::types::GenericTypeReference::Free(parameter)) => {
-                if !generic_stack.insert(parameter.clone()) {
-                    return Err(NominalSchemaProjectionError::CyclicGenericSubstitution {
-                        path: NominalSchemaPath::default(),
-                        parameter: parameter.clone(),
-                    });
-                }
-                let replacement = substitutions.get(parameter).ok_or_else(|| {
-                    NominalSchemaProjectionError::new(format!(
-                        "unbound generic parameter #{} in checked data schema",
-                        parameter.ordinal()
-                    ))
-                })?;
-                let shape =
-                    self.type_shape(replacement, substitutions, stack, generic_stack, budget)?;
-                generic_stack.remove(parameter);
-                shape
-            }
-            TypeKind::GenericParam(_) => {
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(ty.clone()),
-                });
-            }
-            TypeKind::Error(poison) => {
-                return Err(NominalSchemaProjectionError::new(format!(
-                    "poisoned type {} cannot define a persisted data schema",
-                    poison.index()
-                )));
-            }
-            TypeKind::Result { ok, error } => {
-                self.type_shape(ok, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::ResultOk))?;
-                self.type_shape(error, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::ResultError))?;
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(ty.clone()),
-                });
-            }
-            TypeKind::Tuple(items) => {
-                for (ordinal, item) in items.iter().enumerate() {
-                    let ordinal = u32::try_from(ordinal)
-                        .map_err(|_| NominalSchemaProjectionError::ArithmeticOverflow)?;
-                    self.type_shape(item, substitutions, stack, generic_stack, budget)
-                        .map_err(|error| {
-                            error.within_step(NominalSchemaPathStep::TupleItem { ordinal })
-                        })?;
-                }
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(ty.clone()),
-                });
-            }
-            TypeKind::Array { item, .. } | TypeKind::Slice(item) => {
-                self.type_shape(item, substitutions, stack, generic_stack, budget)
-                    .map_err(|error| error.within_step(NominalSchemaPathStep::SequenceItem))?;
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(ty.clone()),
-                });
-            }
-            unsupported => {
-                return Err(NominalSchemaProjectionError::UnsupportedLeaf {
-                    path: NominalSchemaPath::default(),
-                    ty: Box::new(unsupported.clone()),
-                });
-            }
-        })
-    }
-}
-
-fn canonical_nominal_name(id: &ProjectNominalDeclarationId) -> String {
-    let kind = match id.kind() {
-        ProjectNominalDeclarationKind::Struct => "struct",
-        ProjectNominalDeclarationKind::Enum => "enum",
-        ProjectNominalDeclarationKind::TypeAlias => "type_alias",
-    };
-    format!(
-        "package={};module={};kind={kind};name={}",
-        id.world().package(),
-        id.module(),
-        id.name()
-    )
 }
 
 #[cfg(test)]

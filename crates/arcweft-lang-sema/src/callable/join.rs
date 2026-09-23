@@ -387,9 +387,7 @@ impl CheckedProjectFunctionRuntimeSelection {
             &self.base_instantiation,
             solution.type_bindings(),
             solution.const_bindings(),
-            solution
-                .effect_bindings()
-                .map(|(variable, value)| (*variable, value)),
+            solution.effect_bindings(),
             |ty, control| caller.instantiate_type_with_control(ty, control),
             control,
         )
@@ -1267,8 +1265,8 @@ impl CheckedCallableJoin {
                 hasher.update(id.semantic_digest().as_bytes());
                 hasher.update(digest.as_bytes());
                 hasher.update(signature.as_bytes());
-                write_effect(&mut hasher, catalog_effects);
-                write_effect(&mut hasher, effects);
+                write_effect(&mut hasher, catalog_effects)?;
+                write_effect(&mut hasher, effects)?;
                 write_result_schema(&mut hasher, result)?;
                 write_group(&mut hasher, *current_group);
                 write_optional_group(&mut hasher, *next_group);
@@ -1293,8 +1291,8 @@ impl CheckedCallableJoin {
                 hasher.update(&candidate.semantic_tag().to_le_bytes());
                 hasher.update(&[callable_family_tag(*family)]);
                 hasher.update(signature.as_bytes());
-                write_effect(&mut hasher, schema_effects);
-                write_effect(&mut hasher, effects);
+                write_effect(&mut hasher, schema_effects)?;
+                write_effect(&mut hasher, effects)?;
                 write_result_schema(&mut hasher, result)?;
                 write_group(&mut hasher, *current_group);
                 write_optional_group(&mut hasher, *next_group);
@@ -1531,10 +1529,7 @@ fn callable_instantiation_digest(
         instantiation,
         solution.type_bindings(),
         solution.const_bindings(),
-        solution
-            .effect_bindings()
-            .iter()
-            .map(|row| (row.variable(), row.value())),
+        solution.effect_bindings(),
         |ty, _| Ok(ty.clone()),
         &mut crate::types::UnmeteredTypeProjection,
     )
@@ -1547,9 +1542,7 @@ fn empty_callable_instantiation_digest()
         &ResolvedCallableBaseInstantiation::None,
         solution.type_bindings(),
         solution.const_bindings(),
-        solution
-            .effect_bindings()
-            .map(|(variable, value)| (*variable, value)),
+        solution.effect_bindings(),
         |ty, control| solution.instantiate_type_with_control(ty, control),
         &mut crate::types::UnmeteredTypeProjection,
     )
@@ -1569,7 +1562,12 @@ fn callable_instantiation_digest_from_bindings<'a, C: crate::types::TypeProjecti
             crate::types::ScopedArrayLengthView<'a>,
         ),
     >,
-    effects: impl ExactSizeIterator<Item = (crate::effect_row::EffectVar, &'a EffectRow)>,
+    effects: impl ExactSizeIterator<
+        Item = (
+            crate::types::ScopedEffectReferenceView<'a>,
+            crate::types::ScopedEffectRowView<'a>,
+        ),
+    >,
     project_base: impl Fn(
         &TypeKind,
         &mut C,
@@ -1682,8 +1680,11 @@ fn callable_instantiation_digest_from_bindings<'a, C: crate::types::TypeProjecti
         control
             .visit_binding()
             .map_err(crate::types::TypeProjectionError::Control)?;
-        hasher.update(variable.issuer().as_bytes());
-        hasher.update(&variable.index().to_le_bytes());
+        hasher.update(
+            variable
+                .semantic_identity_digest_with_control(control)?
+                .as_bytes(),
+        );
         hasher.update(
             value
                 .semantic_identity_digest_with_control(control)?
@@ -1784,8 +1785,12 @@ fn write_optional_group(hasher: &mut blake3::Hasher, group: Option<CallableGroup
     }
 }
 
-fn write_effect(hasher: &mut blake3::Hasher, effect: &EffectRow) {
-    hasher.update(effect.semantic_identity_digest().as_bytes());
+fn write_effect(
+    hasher: &mut blake3::Hasher,
+    effect: &EffectRow,
+) -> Result<(), crate::types::GenericScopeError> {
+    hasher.update(effect.semantic_identity_digest()?.as_bytes());
+    Ok(())
 }
 
 fn write_arguments(hasher: &mut blake3::Hasher, arguments: &[CheckedCallableArgument]) {

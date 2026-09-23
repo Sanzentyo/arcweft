@@ -1,5 +1,5 @@
 use super::*;
-use crate::callable::{CallableName, CallablePath};
+use crate::callable::{CallableName, CallableParameterPresence, CallablePath};
 use crate::types::{StandardMapFamily, TypeKind};
 use arcweft_data::DataFormat;
 use std::collections::BTreeSet;
@@ -96,6 +96,84 @@ fn standard_callable_inventory_is_typed_before_publication() {
             .iter()
             .all(|method| !method.member.as_str().contains('.'))
     );
+}
+
+#[test]
+fn data_standard_callables_publish_only_the_typed_contracts() {
+    let environment = TypeCheckEnv::standard();
+    let data_path = |member: &str| {
+        CallablePath::try_new(vec![
+            CallableName::try_new("data").unwrap(),
+            CallableName::try_new(member).unwrap(),
+        ])
+        .unwrap()
+    };
+    let functions = environment.standard_functions();
+    let shape = functions
+        .iter()
+        .find(|function| function.path == data_path("shape"))
+        .expect("data.shape has one typed standard schema");
+    assert!(matches!(
+        shape.schema.result_schema().value_type(),
+        Some(TypeKind::DataShape(_))
+    ));
+    assert_eq!(shape.schema.generic_inventory().types().len(), 1);
+    assert_eq!(shape.schema.groups()[0].parameters().len(), 1);
+    assert_eq!(
+        shape.schema.groups()[0].parameters()[0].presence(),
+        CallableParameterPresence::Optional
+    );
+
+    let encode = functions
+        .iter()
+        .find(|function| function.path == data_path("encode"))
+        .expect("data.encode has one typed standard schema");
+    assert_eq!(encode.schema.generic_inventory().types().len(), 1);
+    assert_eq!(encode.schema.groups()[0].parameters().len(), 3);
+    assert_eq!(
+        encode.schema.groups()[0].parameters()[2].presence(),
+        CallableParameterPresence::Optional
+    );
+    assert_eq!(
+        encode.schema.result_schema().value_type(),
+        Some(&TypeKind::Result {
+            ok: Box::new(TypeKind::Bytes),
+            error: Box::new(TypeKind::DataError),
+        })
+    );
+
+    let decode = functions
+        .iter()
+        .filter(|function| function.path == data_path("decode"))
+        .collect::<Vec<_>>();
+    assert_eq!(decode.len(), 2);
+    let untyped = decode
+        .iter()
+        .find(|function| function.schema.groups()[0].parameters().len() == 2)
+        .expect("two-argument decode has a closed DataValue result");
+    assert!(untyped.schema.generic_inventory().types().is_empty());
+    assert_eq!(
+        untyped.schema.result_schema().value_type(),
+        Some(&TypeKind::Result {
+            ok: Box::new(TypeKind::DataValue),
+            error: Box::new(TypeKind::DataError),
+        })
+    );
+    let typed = decode
+        .iter()
+        .find(|function| function.schema.groups()[0].parameters().len() == 3)
+        .expect("three-argument decode has a shape-inferred result");
+    assert_eq!(typed.schema.generic_inventory().types().len(), 1);
+    assert!(matches!(
+        typed.schema.groups()[0].parameters()[2].declared_type(),
+        Some(TypeKind::DataShape(_))
+    ));
+    assert!(matches!(
+        typed.schema.result_schema().value_type(),
+        Some(TypeKind::Result { ok, error })
+            if matches!(ok.as_ref(), TypeKind::GenericParam(_))
+                && error.as_ref() == &TypeKind::DataError
+    ));
 }
 
 #[test]
@@ -224,6 +302,85 @@ fn standard_closed_enum_inventories_preserve_owner_authored_order() {
 }
 
 #[test]
+fn data_value_and_error_enums_keep_the_complete_ordered_payload_algebra() {
+    let environment = TypeCheckEnv::standard();
+    let data_value = environment
+        .closed_enum(&TypeKind::DataValue)
+        .expect("DataValue is a closed source ADT");
+    assert_eq!(
+        data_value
+            .variants()
+            .iter()
+            .map(|variant| variant.name())
+            .collect::<Vec<_>>(),
+        [
+            "Unit", "Bool", "I128", "U128", "F32", "F64", "String", "Char", "Bytes", "Option",
+            "Seq", "Tuple", "Map", "Record", "Enum",
+        ]
+    );
+    assert_eq!(
+        data_value.variants()[0].payload(),
+        &EnumVariantPayload::Unit
+    );
+    assert_eq!(
+        data_value.variants()[1].payload(),
+        &EnumVariantPayload::Tuple(vec![TypeKind::Bool])
+    );
+    assert_eq!(
+        data_value.variants()[2].payload(),
+        &EnumVariantPayload::Tuple(vec![TypeKind::I128])
+    );
+    assert_eq!(
+        data_value.variants()[3].payload(),
+        &EnumVariantPayload::Tuple(vec![TypeKind::U128])
+    );
+    let EnumVariantPayload::Record(map_fields) = data_value.variants()[12].payload() else {
+        panic!("DataValue::Map preserves its map kind and typed entries");
+    };
+    assert_eq!(map_fields[0].name(), "kind");
+    assert_eq!(map_fields[0].ty(), &TypeKind::DataMapKind);
+    assert_eq!(map_fields[1].name(), "entries");
+    assert_eq!(
+        map_fields[1].ty(),
+        &TypeKind::Vec(Box::new(TypeKind::Tuple(vec![
+            TypeKind::DataValue,
+            TypeKind::DataValue,
+        ])))
+    );
+
+    let data_error_kind = environment
+        .closed_enum(&TypeKind::DataErrorKind)
+        .expect("DataErrorKind is closed");
+    assert_eq!(
+        data_error_kind
+            .variants()
+            .iter()
+            .map(|variant| variant.name())
+            .collect::<Vec<_>>(),
+        [
+            "MissingField",
+            "UnknownField",
+            "DuplicateField",
+            "InvalidType",
+            "InvalidEnumTag",
+            "NumberOutOfRange",
+            "InvalidEncoding",
+            "TrailingData",
+            "LimitExceeded",
+            "UnsupportedFormat",
+            "Io",
+            "Custom",
+        ]
+    );
+    assert!(
+        data_error_kind
+            .variants()
+            .iter()
+            .all(|variant| variant.payload() == &EnumVariantPayload::Unit)
+    );
+}
+
+#[test]
 fn standard_drop_policy_keeps_payload_case_and_zero_fade_alias_distinct() {
     let environment = TypeCheckEnv::standard();
     let policy_type = TypeKind::Named("DropPolicy".to_owned());
@@ -294,7 +451,7 @@ fn enum_record_payload_preserves_declaration_order_and_rejects_duplicates() {
     assert_eq!(
         fields
             .iter()
-            .map(super::enums::EnvironmentEnumRecordField::name)
+            .map(super::enums::EnvironmentRecordField::name)
             .collect::<Vec<_>>(),
         ["second", "first"]
     );

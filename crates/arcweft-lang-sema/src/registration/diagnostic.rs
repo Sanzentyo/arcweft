@@ -18,7 +18,9 @@ use arcweft_source::{
 
 use crate::{
     callable::CallableDiagnosticCode,
-    character_dialogue::CharacterDialogueCustomFieldRegistryError,
+    character_dialogue::{
+        CharacterDialogueCustomFieldRegistryError, CharacterDialogueRuntimeRoleError,
+    },
     env::nominal::AcceptedNominalCatalogError,
 };
 
@@ -54,6 +56,7 @@ pub enum CharacterRegistrationCode {
     CallableCatalog(CallableDiagnosticCode),
     GenericScope,
     CharacterDialogueCustomFields,
+    CharacterDialogueRoles,
     AcceptedNominalCatalog,
     StatementIngress,
     CompileTimeScalarTypes,
@@ -99,6 +102,7 @@ impl CharacterRegistrationCode {
             Self::CharacterDialogueCustomFields => {
                 "aw.character_dialogue.custom_fields.registration"
             }
+            Self::CharacterDialogueRoles => "aw.character_dialogue.roles.registration",
             Self::AcceptedNominalCatalog => "aw.nominal.catalog.registration",
             Self::StatementIngress => "aw.statement_ingress.registration",
             Self::CompileTimeScalarTypes => "aw.compile_time.scalar_types.registration",
@@ -204,6 +208,9 @@ pub enum CharacterRegistrationDiagnosticKind {
     },
     CharacterDialogueCustomFields {
         error: CharacterDialogueCustomFieldRegistryError,
+    },
+    CharacterDialogueRoles {
+        error: CharacterDialogueRuntimeRoleError,
     },
     AcceptedNominalCatalog {
         error: AcceptedNominalCatalogError,
@@ -340,6 +347,9 @@ impl CharacterRegistrationDiagnosticKind {
             }
             CharacterRegistrationDiagnosticKind::CharacterDialogueCustomFields { .. } => {
                 CharacterRegistrationCode::CharacterDialogueCustomFields
+            }
+            CharacterRegistrationDiagnosticKind::CharacterDialogueRoles { .. } => {
+                CharacterRegistrationCode::CharacterDialogueRoles
             }
             CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { .. } => {
                 CharacterRegistrationCode::AcceptedNominalCatalog

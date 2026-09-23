@@ -1,5 +1,7 @@
 //! Callable documentation, source evidence, and shared signature schemas.
 
+mod effect_parameters;
+
 use std::{
     collections::{BTreeSet, HashSet},
     sync::Arc,
@@ -91,6 +93,7 @@ pub struct RustCallableProvenance {
     package: RustPackageProvenance,
     rust_path: RustItemPath,
     purity: RustCallablePurity,
+    role: arcweft_rust_abi::ArcweftRustCallableRole,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -376,12 +379,14 @@ impl RustCallableProvenance {
         package: RustPackageProvenance,
         rust_path: RustItemPath,
         purity: RustCallablePurity,
+        role: arcweft_rust_abi::ArcweftRustCallableRole,
     ) -> Result<Self, RustProvenanceError> {
         Ok(Self {
             adapter,
             package,
             rust_path,
             purity,
+            role,
         })
     }
     pub const fn adapter(&self) -> &AdapterPackageId {
@@ -395,6 +400,10 @@ impl RustCallableProvenance {
     }
     pub const fn purity(&self) -> RustCallablePurity {
         self.purity
+    }
+
+    pub const fn role(&self) -> arcweft_rust_abi::ArcweftRustCallableRole {
+        self.role
     }
 }
 
@@ -488,6 +497,7 @@ enum CallableGenericParameterAuthority {
         owner: CallableGenericIssuerOwner,
         type_count: u16,
         const_count: u16,
+        effect_count: u32,
     },
     FunctionScheme(crate::types::GenericBinder),
 }
@@ -615,6 +625,7 @@ impl CallableGenericParameterIssuer {
                 owner,
                 type_count,
                 const_count,
+                effect_count: 0,
             },
         })
     }
@@ -669,6 +680,44 @@ impl CallableGenericParameterIssuer {
                     .map(|slot| scope.bound_const(0, slot).map_err(Into::into))
                     .collect()
             }
+        }
+    }
+
+    fn effect_parameters(
+        &self,
+    ) -> Result<Vec<crate::types::GenericEffectReference>, CallableSchemaError> {
+        match &self.authority {
+            CallableGenericParameterAuthority::Empty => Ok(Vec::new()),
+            CallableGenericParameterAuthority::Declaration { effect_count, .. } => {
+                let owner = self.generic_owner().expect("declaration effect owner");
+                Ok((0..*effect_count)
+                    .map(|slot| {
+                        crate::types::GenericEffectParameterId::new(owner.clone(), slot).into()
+                    })
+                    .collect())
+            }
+            CallableGenericParameterAuthority::FunctionScheme(binder) => {
+                let scope = self.template_scope();
+                (0..binder.effects())
+                    .map(|slot| scope.bound_effect(0, slot).map_err(Into::into))
+                    .collect()
+            }
+        }
+    }
+
+    fn owns_effect(&self, parameter: &crate::types::GenericEffectReference) -> bool {
+        match parameter {
+            crate::types::GenericEffectReference::Free(parameter) => self
+                .generic_owner()
+                .is_some_and(|owner| parameter.owner() == &owner),
+            crate::types::GenericEffectReference::Bound(parameter) => {
+                parameter.depth() == 0
+                    && matches!(
+                        self.authority,
+                        CallableGenericParameterAuthority::FunctionScheme(_)
+                    )
+            }
+            crate::types::GenericEffectReference::Inference(_) => false,
         }
     }
 
@@ -730,6 +779,26 @@ pub(crate) struct CallableGenericParameterInventory {
     template_scope: crate::types::GenericScope,
     types: Arc<[CallableGenericTypeUse]>,
     consts: Arc<[CallableGenericConstUse]>,
+    effects: Arc<[CallableGenericEffectUse]>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallableGenericEffectUse {
+    parameter: crate::types::GenericEffectReference,
+    role: CallableSchemaGenericRole,
+    first_use: CallableGenericFirstUse,
+}
+
+impl CallableGenericEffectUse {
+    pub(crate) const fn parameter(&self) -> &crate::types::GenericEffectReference {
+        &self.parameter
+    }
+    pub(crate) const fn role(&self) -> CallableSchemaGenericRole {
+        self.role
+    }
+    pub(crate) const fn first_use(&self) -> CallableGenericFirstUse {
+        self.first_use
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -776,6 +845,10 @@ impl CallableGenericParameterInventory {
 
     pub(crate) fn consts(&self) -> &[CallableGenericConstUse] {
         &self.consts
+    }
+
+    pub(crate) fn effects(&self) -> &[CallableGenericEffectUse] {
+        &self.effects
     }
 }
 
@@ -2130,14 +2203,14 @@ impl CallableSignatureSchema {
     }
 
     fn try_new_with_attached_content_inner(
-        groups: Vec<CallableParameterGroup>,
+        mut groups: Vec<CallableParameterGroup>,
         result: impl Into<CallableResultSchema>,
         effects: CallableEffectSchema,
         argument_policy: CallableArgumentPolicy,
         validator: CallableValidator,
         attached_content: Option<CallableAttachedContentParameter>,
         dependency: Option<CallableSchemaDependency>,
-        generic_issuer: CallableGenericParameterIssuer,
+        mut generic_issuer: CallableGenericParameterIssuer,
         limits: &CallableLimits,
     ) -> Result<Self, CallableSchemaError> {
         let result = result.into();
@@ -2397,7 +2470,9 @@ impl CallableSignatureSchema {
                 limit: limits.max_parameters_per_callable(),
             });
         }
-        let generic_inventory = seal_generic_inventory(&groups, &result, &generic_issuer)?;
+        generic_issuer.seal_input_effect_parameters(&mut groups)?;
+        let generic_inventory =
+            seal_generic_inventory(&groups, &result, &effects, &generic_issuer)?;
         Self::seal(CallableSignatureContents {
             groups: groups.into(),
             result,
@@ -2715,6 +2790,7 @@ impl CallableSignatureSchema {
 fn seal_generic_inventory(
     groups: &[CallableParameterGroup],
     result: &CallableResultSchema,
+    effects: &CallableEffectSchema,
     issuer: &CallableGenericParameterIssuer,
 ) -> Result<CallableGenericParameterInventory, CallableSchemaError> {
     let mut occurrences = Vec::new();
@@ -2736,10 +2812,14 @@ fn seal_generic_inventory(
         occurrences.push((result, result_position));
     }
     let template_scope = issuer.template_scope();
-    let collected = crate::types::StableGenericReferenceUseCollector::collect_many_in_scope(
-        occurrences,
-        &template_scope,
-    )?;
+    let mut collector = crate::types::StableGenericReferenceUseCollector::in_scope(&template_scope);
+    for (ty, position) in occurrences {
+        collector.visit_at(ty, position)?;
+    }
+    if let Some(row) = effects.fixed_row() {
+        collector.visit_effect_row_at(row, 0)?;
+    }
+    let collected = collector.finish();
     let candidate_types = issuer.type_parameters()?;
     for parameter in &candidate_types {
         if !collected.types().contains(parameter) {
@@ -2766,6 +2846,22 @@ fn seal_generic_inventory(
     for parameter in collected.consts() {
         if issuer.owns_const(parameter) && !candidate_consts.contains(parameter) {
             return Err(CallableSchemaError::MissingCandidateConst {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+
+    let candidate_effects = issuer.effect_parameters()?;
+    for parameter in &candidate_effects {
+        if !collected.effects().contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateEffect {
+                parameter: parameter.clone(),
+            });
+        }
+    }
+    for parameter in collected.effects() {
+        if issuer.owns_effect(parameter) && !candidate_effects.contains(parameter) {
+            return Err(CallableSchemaError::MissingCandidateEffect {
                 parameter: parameter.clone(),
             });
         }
@@ -2817,6 +2913,24 @@ fn seal_generic_inventory(
     Ok(CallableGenericParameterInventory {
         types,
         consts,
+        effects: collected
+            .effects()
+            .iter()
+            .map(|parameter| CallableGenericEffectUse {
+                parameter: parameter.clone(),
+                role: if candidate_effects.contains(parameter) {
+                    CallableSchemaGenericRole::Candidate
+                } else {
+                    CallableSchemaGenericRole::RigidReference
+                },
+                first_use: first_use_for(
+                    collected
+                        .first_effect_use(parameter)
+                        .expect("effect reference first use"),
+                    groups.len(),
+                ),
+            })
+            .collect(),
         template_scope,
     })
 }
@@ -3322,8 +3436,14 @@ mod evaluated_effect_schema_tests {
         ];
         for (operation, expected) in cases {
             let row = operation.declared_effect_row();
-            assert_eq!(row.tail(), crate::effect_row::EffectRowTail::Closed);
-            assert_eq!(row.concrete().to_labels(), expected);
+            assert!(row.is_closed());
+            assert_eq!(
+                row.closed_value()
+                    .as_ref()
+                    .expect("closed effect row")
+                    .to_labels(),
+                expected
+            );
         }
     }
 
@@ -3337,7 +3457,9 @@ mod evaluated_effect_schema_tests {
                 .effects()
                 .fixed_row()
                 .expect("evaluated effect has one fixed row")
-                .concrete()
+                .closed_value()
+                .as_ref()
+                .expect("closed effect row")
                 .to_labels(),
             ["event.emit"]
         );

@@ -9,8 +9,11 @@ use std::{
 };
 
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
-use super::RejectedConstraintSourceProjection;
+use super::application::{
+    ConstraintApplicationId, ConstraintApplicationScope, ConstraintApplicationScopes,
+};
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
+use super::hints::SourceProbeTerm;
 use super::normalization::{project_type, validate_selected_call_self};
 use super::{
     CheckedConstraintSourceProjection, ClosedMaterializationSubmission, ConstraintAcceptance,
@@ -19,21 +22,22 @@ use super::{
     PreparedConstraintSourceProjection, PreparedSourceConstraint, ProjectedExpectedHint,
     SolvedCandidate, SourceAlternativeHint, SourceError, SourcePhase, SourceProbeResult,
     SourceProbeSelection, TypeConstraintAbort, TypeConstraintCandidateFailure, TypeConstraintError,
-    TypeConstraintFailure, TypeConstraintInvariant, TypeConstraintProjectionClosure,
-    TypeConstraintProjectionInvariant, TypeConstraintRejection, TypeConstraintSolution,
-    TypeConstraintSourceProtocolInvariant, bindings_equal, relate_selected_call, seal_path,
+    TypeConstraintFailure, TypeConstraintFailureInvariant, TypeConstraintInvariant,
+    TypeConstraintProjectionClosure, TypeConstraintProjectionInvariant, TypeConstraintRejection,
+    TypeConstraintSolution, TypeConstraintSourceProtocolInvariant, relate_selected_call, seal_path,
     seal_type, validate_type,
 };
+use super::{ConstraintSourceId, RejectedConstraintSourceProjection};
 
 /// One equation retained until candidate closure. Source ordinals connect to
 /// the single source trace; selection and container evidence stay there.
 #[derive(Clone)]
 pub(crate) struct PendingEquation {
-    pub(crate) ordinal: u32,
+    pub(crate) ordinal: ConstraintEquationId,
     pub(crate) direction: ConstraintAcceptance,
     pub(crate) pattern: TypeKind,
     pub(crate) actual: TypeKind,
-    pub(crate) source_ordinal: Option<u32>,
+    pub(crate) source_ordinal: Option<PreparedSourceOrdinal>,
     pub(crate) final_expected: Option<TypeKind>,
 }
 
@@ -46,7 +50,7 @@ pub(crate) enum ChoiceForkRole {
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) struct ChoiceDerivationStep {
-    pub(crate) equation: u32,
+    pub(crate) equation: ConstraintEquationId,
     pub(crate) direction: ConstraintAcceptance,
     pub(crate) role: ChoiceForkRole,
     pub(crate) expected: Option<u32>,
@@ -59,8 +63,8 @@ pub(crate) struct DeferredCycleWitness {
 }
 
 mod source;
-pub(crate) use source::ClosedConstraintProbe;
-use source::{ActiveConstraintProbe, ClosedSourceSelection, ConstraintProbe};
+use source::{ActiveConstraintProbe, ConstraintProbe};
+pub(crate) use source::{ClosedConstraintProbe, ClosedConstraintSourceTrace};
 
 pub(crate) enum StoredSourceSelection<D: ConstraintDomain> {
     Unchecked,
@@ -107,6 +111,7 @@ impl<D: ConstraintDomain> PartialEq for StoredSourceSelection<D> {
 impl<D: ConstraintDomain> Eq for StoredSourceSelection<D> {}
 
 pub(crate) struct ConstraintPath<D: ConstraintDomain> {
+    pub(super) applications: Arc<ConstraintApplicationScopes<D>>,
     pub(crate) bindings: BTreeMap<GenericTypeReference, TypeKind>,
     pub(crate) const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
     pub(crate) effects: crate::effect_row::EffectConstraintEnvironment,
@@ -114,11 +119,24 @@ pub(crate) struct ConstraintPath<D: ConstraintDomain> {
     pub(crate) choice_key: Vec<ChoiceDerivationStep>,
     pub(crate) deferred_cycles: DeferredCycleWitness,
     pub(super) probe_trace: Vec<ConstraintProbe<D>>,
+    pub(super) projections: Vec<Arc<ProjectionRequest<D>>>,
 }
 
 impl<D: ConstraintDomain> ConstraintPath<D> {
-    pub(crate) fn empty(effects: crate::effect_row::EffectConstraintEnvironment) -> Self {
+    pub(super) fn empty(
+        application: ConstraintApplicationScope<D>,
+        effects: crate::effect_row::EffectConstraintEnvironment,
+    ) -> Self {
+        Self::empty_with_imported(application, effects, None)
+    }
+
+    pub(super) fn empty_with_imported(
+        application: ConstraintApplicationScope<D>,
+        effects: crate::effect_row::EffectConstraintEnvironment,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Self {
         Self {
+            applications: Arc::new(ConstraintApplicationScopes::root(application, imported)),
             bindings: BTreeMap::new(),
             const_bindings: BTreeMap::new(),
             effects,
@@ -126,6 +144,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
             choice_key: Vec::new(),
             deferred_cycles: DeferredCycleWitness::default(),
             probe_trace: Vec::new(),
+            projections: Vec::new(),
         }
     }
 }
@@ -133,6 +152,7 @@ impl<D: ConstraintDomain> ConstraintPath<D> {
 impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
     fn clone(&self) -> Self {
         Self {
+            applications: Arc::clone(&self.applications),
             bindings: self.bindings.clone(),
             const_bindings: self.const_bindings.clone(),
             effects: self.effects.clone(),
@@ -140,31 +160,263 @@ impl<D: ConstraintDomain> Clone for ConstraintPath<D> {
             choice_key: self.choice_key.clone(),
             deferred_cycles: self.deferred_cycles.clone(),
             probe_trace: self.probe_trace.clone(),
+            projections: self.projections.clone(),
         }
     }
 }
 
-/// An affine lower ticket.  It can be submitted exactly once by the driver.
+/// One affine source branch. Observation consumes its path; forks share the
+/// immutable input receipt and charge the surrounding context before cloning.
 pub(crate) struct ProbeTicket<D: ConstraintDomain> {
-    source: D::Source,
+    input: Arc<ProbeInput<D>>,
+    path: Option<ConstraintPath<D>>,
+}
+
+/// Exact parent source receipt retained while a nested callable contributes
+/// constraints to the same lower path.  The input identity binds the source,
+/// prepared schema alternatives, and exact path branch together.
+pub(crate) struct ConstraintSourceReceipt<D: ConstraintDomain> {
+    input: Arc<ProbeInput<D>>,
+}
+
+impl<D: ConstraintDomain> Clone for ConstraintSourceReceipt<D> {
+    fn clone(&self) -> Self {
+        Self {
+            input: Arc::clone(&self.input),
+        }
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintSourceReceipt<D> {
+    pub(crate) fn source(&self) -> ConstraintSourceId<D::Source> {
+        self.input.source
+    }
+
+    pub(crate) fn matches(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.input, &other.input)
+    }
+}
+
+/// A fork of one exact source path that may admit a child callable
+/// application.  Its receipt prevents a child candidate from attaching to a
+/// sibling source ticket.
+pub(crate) struct NestedConstraintPath<D: ConstraintDomain> {
+    receipt: ConstraintSourceReceipt<D>,
     path: ConstraintPath<D>,
+}
+
+/// Owner-bound handle to a result projection registered on one admitted child
+/// application.  It carries no open `TypeKind`; the lower transaction opens
+/// the schema term on the matching path when it submits the parent source.
+pub(crate) struct ConstraintResultProjection<D: ConstraintDomain> {
+    application: ConstraintApplicationId,
+    key: Arc<D::Projection>,
+}
+
+impl<D: ConstraintDomain> Clone for ConstraintResultProjection<D> {
+    fn clone(&self) -> Self {
+        Self {
+            application: self.application,
+            key: Arc::clone(&self.key),
+        }
+    }
+}
+
+impl<D: ConstraintDomain> PartialEq for ConstraintResultProjection<D> {
+    fn eq(&self, other: &Self) -> bool {
+        self.application == other.application && self.key == other.key
+    }
+}
+
+impl<D: ConstraintDomain> Eq for ConstraintResultProjection<D> {}
+
+impl<D: ConstraintDomain> ConstraintResultProjection<D> {
+    pub(crate) const fn application(&self) -> ConstraintApplicationId {
+        self.application
+    }
+
+    pub(crate) fn key(&self) -> &D::Projection {
+        &self.key
+    }
+}
+
+/// Open child application alternatives waiting for their result to be related
+/// to the exact parent source.  Completion remains owned by the parent path.
+pub(crate) struct PendingChildConstraint<D: ConstraintDomain> {
+    receipt: ConstraintSourceReceipt<D>,
+    alternatives: Vec<PendingChildAlternative<D>>,
+}
+
+struct PendingChildAlternative<D: ConstraintDomain> {
+    path: ConstraintPath<D>,
+    result: ConstraintResultProjection<D>,
+    branch: Option<Arc<D::ProbeSemanticBranch>>,
+}
+
+impl<D: ConstraintDomain> PendingChildConstraint<D> {
+    pub(crate) fn with_probe_branch(mut self, branch: D::ProbeSemanticBranch) -> Self {
+        let branch = Arc::new(branch);
+        for alternative in &mut self.alternatives {
+            alternative.branch = Some(Arc::clone(&branch));
+        }
+        self
+    }
+
+    pub(crate) fn append(&mut self, other: Self) -> Result<(), TypeConstraintError> {
+        if !self.receipt.matches(&other.receipt) {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        }
+        self.alternatives.extend(other.alternatives);
+        Ok(())
+    }
+}
+
+/// One source's alternatives retain their own path, term and semantic evidence.
+/// Construction consumes affine probe branches; no observation is broadcast.
+pub(crate) struct SourceProbeContribution<D: ConstraintDomain> {
+    input: Arc<ProbeInput<D>>,
+    alternatives: Vec<ObservedProbeAlternative<D>>,
+}
+
+struct ObservedProbeAlternative<D: ConstraintDomain> {
+    path: ConstraintPath<D>,
+    result: SourceProbeResult<D>,
+}
+
+impl<D: ConstraintDomain> SourceProbeContribution<D> {
+    pub(crate) fn append(&mut self, other: Self) -> Result<(), TypeConstraintError> {
+        if !Arc::ptr_eq(&self.input, &other.input) {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        self.alternatives.extend(other.alternatives);
+        Ok(())
+    }
+}
+
+/// Immutable source/schema observation shared while a probe updates its own
+/// constraint frontier. It owns no mutable bindings or application membership.
+pub(crate) struct ProbeInput<D: ConstraintDomain> {
+    source: ConstraintSourceId<D::Source>,
     prepared: Arc<PreparedSourceConstraint<D>>,
     hints: Vec<OwnedAlternativeHint<D>>,
     acceptance: ConstraintAcceptance,
-    equation_ordinal: Option<u32>,
+    equation_ordinal: Option<ConstraintEquationId>,
 }
 
 struct OwnedAlternativeHint<D: ConstraintDomain> {
     alternative: D::AlternativeIndex,
     expected: TypeKind,
     unbound: Box<[super::ConstraintGenericParameterId]>,
+    scope_lease: Option<super::ImportedGenericParameterScopeLease>,
 }
 
 impl<D: ConstraintDomain> ProbeTicket<D> {
-    pub(crate) const fn source(&self) -> D::Source {
-        self.source
+    #[cfg(test)]
+    pub(super) fn test_path(&self) -> &ConstraintPath<D> {
+        self.path.as_ref().expect("unobserved probe branch")
     }
 
+    pub(crate) fn source(&self) -> ConstraintSourceId<D::Source> {
+        self.input.source
+    }
+
+    pub(crate) fn input(&self) -> Arc<ProbeInput<D>> {
+        Arc::clone(&self.input)
+    }
+
+    pub(crate) fn receipt(&self) -> ConstraintSourceReceipt<D> {
+        ConstraintSourceReceipt {
+            input: Arc::clone(&self.input),
+        }
+    }
+
+    pub(crate) fn fork_for_child<A: TypeConstraintAccounting>(
+        &self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<NestedConstraintPath<D>, TypeConstraintError> {
+        let path = self
+            .path
+            .as_ref()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Ticket))?;
+        Ok(NestedConstraintPath {
+            receipt: self.receipt(),
+            path: context.fork_path(path)?,
+        })
+    }
+
+    pub(crate) fn fork<A: TypeConstraintAccounting>(
+        &self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Self, TypeConstraintError> {
+        let path = self
+            .path
+            .as_ref()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Ticket))?;
+        Ok(Self {
+            input: Arc::clone(&self.input),
+            path: Some(context.fork_path(path)?),
+        })
+    }
+
+    pub(crate) fn observe(
+        &mut self,
+        result: SourceProbeResult<D>,
+    ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+        let path = self
+            .path
+            .take()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Ticket))?;
+        Ok(SourceProbeContribution {
+            input: Arc::clone(&self.input),
+            alternatives: vec![ObservedProbeAlternative { path, result }],
+        })
+    }
+
+    pub(crate) fn observe_child(
+        &mut self,
+        pending: PendingChildConstraint<D>,
+        branch: D::ProbeSemanticBranch,
+        selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
+    ) -> Result<SourceProbeContribution<D>, TypeConstraintError> {
+        if !self.receipt().matches(&pending.receipt) {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::WrongSource,
+            ));
+        }
+        if self.path.is_none() || pending.alternatives.is_empty() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        let PendingChildConstraint {
+            receipt: _,
+            alternatives,
+        } = pending;
+        let branch = Arc::new(branch);
+        let alternatives = alternatives
+            .into_iter()
+            .map(|alternative| ObservedProbeAlternative {
+                path: alternative.path,
+                result: SourceProbeResult::projection(
+                    alternative.result,
+                    alternative.branch.unwrap_or_else(|| Arc::clone(&branch)),
+                    selection.clone(),
+                ),
+            })
+            .collect();
+        self.path.take();
+        Ok(SourceProbeContribution {
+            input: Arc::clone(&self.input),
+            alternatives,
+        })
+    }
+}
+
+impl<D: ConstraintDomain> ProbeInput<D> {
     /// Build borrowed per-alternative hints for the callback lifetime.  The
     /// temporary view cannot escape this call, so the callback never owns or
     /// rewrites a lower expected type.
@@ -175,44 +427,46 @@ impl<D: ConstraintDomain> ProbeTicket<D> {
         if self.prepared.is_unchecked() {
             return callback(ExpectedHint::Unchecked);
         }
-        let hints = self
-            .hints
-            .iter()
-            .map(|hint| {
-                let alternative = self
-                    .prepared
-                    .alternative(hint.alternative)
-                    .expect("prepared alternative is retained by its ticket");
-                let value_expected = if hint.unbound.is_empty() {
-                    ProjectedExpectedHint::Complete(&hint.expected)
-                } else {
-                    ProjectedExpectedHint::Parametric {
-                        expected: &hint.expected,
-                        unbound: &hint.unbound,
-                    }
-                };
-                SourceAlternativeHint::new(
-                    hint.alternative,
-                    alternative.evidence(),
-                    value_expected,
-                    self.prepared.source_projection(),
-                )
-            })
-            .collect::<Vec<_>>();
+        let hints =
+            self.hints
+                .iter()
+                .map(|hint| {
+                    let alternative = self
+                        .prepared
+                        .alternative(hint.alternative)
+                        .expect("prepared alternative is retained by its ticket");
+                    let value_expected = if hint.unbound.is_empty() {
+                        ProjectedExpectedHint::Complete(&hint.expected)
+                    } else {
+                        ProjectedExpectedHint::Parametric {
+                            expected: &hint.expected,
+                            unbound: &hint.unbound,
+                            scope_lease: hint.scope_lease.as_ref().expect(
+                                "parametric expected hints retain their source scope lease",
+                            ),
+                        }
+                    };
+                    SourceAlternativeHint::new(
+                        hint.alternative,
+                        alternative.evidence(),
+                        value_expected,
+                        self.prepared.source_projection(),
+                    )
+                })
+                .collect::<Vec<_>>();
         callback(ExpectedHint::Alternatives(&hints))
     }
 }
 
 pub(crate) enum ProbeSubmission<D: ConstraintDomain> {
-    Accepted(SourceProbeResult<D>),
+    Accepted(SourceProbeContribution<D>),
     Rejected(D::SourceErrorCause),
 }
 
 pub(crate) struct MaterializationTicket<D: ConstraintDomain> {
     identity: MaterializationTicketIdentity,
     correlation: MaterializationCorrelationOrdinal,
-    path: ConstraintPath<D>,
-    requests: Box<[ClosedMaterializationRequest<D>]>,
+    component: super::CompletedConstraintComponent<D>,
     phase: MaterializationTicketPhase,
 }
 
@@ -224,33 +478,25 @@ enum MaterializationTicketPhase {
 
 pub(crate) struct MaterializationCallbackBinding<D: ConstraintDomain> {
     identity: MaterializationTicketIdentity,
-    sources: Box<[D::Source]>,
+    sources: Box<[ConstraintSourceId<D::Source>]>,
 }
 
 #[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
-struct PreparedSourceOrdinal(u32);
-
-struct ClosedMaterializationRequest<D: ConstraintDomain> {
-    source: D::Source,
-    source_ordinal: PreparedSourceOrdinal,
-    row: ClosedMaterializationRequestRow<D>,
+pub(crate) struct PreparedSourceOrdinal {
+    application: ConstraintApplicationId,
+    ordinal: u32,
 }
 
-enum ClosedMaterializationRequestRow<D: ConstraintDomain> {
-    Unchecked {
-        source_projection: CheckedConstraintSourceProjection,
-        actual: TypeKind,
-        canonical_branch: Arc<D::ProbeSemanticBranch>,
-    },
-    Checked {
-        alternative: D::AlternativeIndex,
-        evidence: Arc<D::CheckedEvidence>,
-        source_projection: CheckedConstraintSourceProjection,
-        actual: TypeKind,
-        expected: TypeKind,
-        canonical_branch: Arc<D::ProbeSemanticBranch>,
-    },
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+pub(crate) struct ConstraintEquationId {
+    application: ConstraintApplicationId,
+    ordinal: u32,
 }
+
+/// Completion precedence follows the one ordered trace, not opening issuance
+/// or an application's independently numbered prepared sources.
+#[derive(Clone, Copy, Eq, Ord, PartialEq, PartialOrd)]
+struct MaterializationSourceOrdinal(u32);
 
 #[derive(Clone)]
 struct MaterializationTicketIdentity {
@@ -271,33 +517,9 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
     pub(crate) fn requests(
         &self,
     ) -> impl ExactSizeIterator<Item = MaterializedSourceRequest<'_, D>> + '_ {
-        self.requests.iter().map(|request| match &request.row {
-            ClosedMaterializationRequestRow::Unchecked {
-                source_projection,
-                actual,
-                canonical_branch,
-            } => MaterializedSourceRequest::Unchecked {
-                source: request.source,
-                source_projection,
-                actual,
-                canonical_branch: canonical_branch.as_ref(),
-            },
-            ClosedMaterializationRequestRow::Checked {
-                alternative,
-                evidence,
-                source_projection,
-                actual,
-                expected,
-                canonical_branch,
-            } => MaterializedSourceRequest::Checked {
-                source: request.source,
-                alternative: *alternative,
-                evidence: evidence.as_ref(),
-                source_projection,
-                actual,
-                expected,
-                canonical_branch: canonical_branch.as_ref(),
-            },
+        (0..self.component.sources().all().len()).map(|ordinal| {
+            MaterializedSourceRequest::from_component(&self.component, ordinal)
+                .expect("component source ordinal")
         })
     }
 
@@ -310,7 +532,13 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
         self.phase = MaterializationTicketPhase::CallbackBound;
         Ok(MaterializationCallbackBinding {
             identity: self.identity.clone(),
-            sources: self.requests.iter().map(|request| request.source).collect(),
+            sources: self
+                .component
+                .sources()
+                .all()
+                .iter()
+                .map(ClosedConstraintProbe::source)
+                .collect(),
         })
     }
 
@@ -324,7 +552,12 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
         if !materialization_identity_matches(&self.identity, &binding.identity) {
             return Err(TypeConstraintSourceProtocolInvariant::Ticket);
         }
-        let expected = self.requests.iter().map(|request| request.source);
+        let expected = self
+            .component
+            .sources()
+            .all()
+            .iter()
+            .map(ClosedConstraintProbe::source);
         if expected.eq(binding.sources.iter().copied()) {
             Ok(())
         } else {
@@ -348,11 +581,11 @@ impl<D: ConstraintDomain> MaterializationTicket<D> {
 }
 
 impl<D: ConstraintDomain> MaterializationCallbackBinding<D> {
-    pub(crate) fn sources(&self) -> &[D::Source] {
+    pub(crate) fn sources(&self) -> &[ConstraintSourceId<D::Source>] {
         &self.sources
     }
 
-    pub(crate) fn authorizes(&self, source: &D::Source) -> bool {
+    pub(crate) fn authorizes(&self, source: &ConstraintSourceId<D::Source>) -> bool {
         self.sources.iter().any(|candidate| candidate == source)
     }
 }
@@ -364,19 +597,21 @@ fn materialization_identity_matches(
     Arc::ptr_eq(&left.issuer, &right.issuer) && left.ordinal == right.ordinal
 }
 
-struct ProjectionRequest<D: ConstraintDomain> {
-    key: D::Projection,
+pub(super) struct ProjectionRequest<D: ConstraintDomain> {
+    application: ConstraintApplicationId,
+    key: Arc<D::Projection>,
     value: TypeKind,
     closure: TypeConstraintProjectionClosure,
 }
 
 struct ProbeOperation<D: ConstraintDomain> {
-    source: D::Source,
-    source_ordinal: u32,
+    source: ConstraintSourceId<D::Source>,
+    source_ordinal: PreparedSourceOrdinal,
     prepared: Arc<PreparedSourceConstraint<D>>,
     acceptance: ConstraintAcceptance,
-    equation_ordinal: Option<u32>,
+    equation_ordinal: Option<ConstraintEquationId>,
     rows: VecDeque<ConstraintPath<D>>,
+    active_input: Option<Arc<ProbeInput<D>>>,
     advanced: Vec<ConstraintPath<D>>,
     rejections: Vec<D::SourceErrorCause>,
     relation_rejections: Vec<RejectedConstraintSourceProjection<D>>,
@@ -421,19 +656,19 @@ pub(crate) enum ProbeStart {
 
 enum MaterializedRecord<D: ConstraintDomain> {
     Sealed {
-        path: ConstraintPath<D>,
+        component: super::CompletedConstraintComponent<D>,
         value: D::SealedBranchValue,
     },
     Rejected {
-        source_ordinal: u32,
+        source_ordinal: MaterializationSourceOrdinal,
         correlation: MaterializationCorrelationOrdinal,
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
         cause: D::SourceErrorCause,
     },
     Fatal {
-        source_ordinal: u32,
+        source_ordinal: MaterializationSourceOrdinal,
         correlation: MaterializationCorrelationOrdinal,
-        error: SourceError<D::Source, D::SourceErrorCause>,
+        error: SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>,
     },
 }
 
@@ -443,9 +678,10 @@ enum NormalizedPath<D: ConstraintDomain> {
 }
 
 pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
+    application: ConstraintApplicationId,
+    parent_receipt: Option<ConstraintSourceReceipt<D>>,
     frontier: Vec<ConstraintPath<D>>,
     first_failure: Option<TypeConstraintFailure<D>>,
-    projections: Vec<ProjectionRequest<D>>,
     next_equation: u32,
     next_source_ordinal: u32,
     first_cycle: Option<super::ConstraintGenericParameterId>,
@@ -455,18 +691,48 @@ pub(crate) struct TypeConstraintTransaction<D: ConstraintDomain> {
     active_materialization: Option<MaterializationTicketIdentity>,
     probe: Option<ProbeOperation<D>>,
     probe_group: Option<ProbeGroup<D>>,
-    prepared_sources: BTreeSet<D::Source>,
+    prepared_sources: BTreeSet<ConstraintSourceId<D::Source>>,
     materialization: VecDeque<MaterializationTicket<D>>,
     materialized: Vec<MaterializedRecord<D>>,
     closed: bool,
 }
 
 impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
-    pub(crate) fn new() -> Self {
-        Self {
-            frontier: Vec::new(),
+    #[cfg(test)]
+    pub(super) fn test_single_path(&self) -> &ConstraintPath<D> {
+        assert_eq!(
+            self.frontier.len(),
+            1,
+            "fixture has one current alternative"
+        );
+        &self.frontier[0]
+    }
+
+    /// A transaction always names an application already admitted on its path.
+    /// Template opening must use that application, which may be a descendant
+    /// of the path's root.
+    pub(super) fn from_path<A: TypeConstraintAccounting>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: ConstraintApplicationId,
+        path: ConstraintPath<D>,
+        inherited: Option<&TypeConstraintSolution>,
+    ) -> Result<Self, TypeConstraintError> {
+        Self::from_path_with_parent(context, application, path, inherited, None)
+    }
+
+    fn from_path_with_parent<A: TypeConstraintAccounting>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: ConstraintApplicationId,
+        path: ConstraintPath<D>,
+        inherited: Option<&TypeConstraintSolution>,
+        parent_receipt: Option<ConstraintSourceReceipt<D>>,
+    ) -> Result<Self, TypeConstraintError> {
+        let path = Self::prepare_application(context, application, path, inherited)?;
+        Ok(Self {
+            application,
+            parent_receipt,
+            frontier: vec![path],
             first_failure: None,
-            projections: Vec::new(),
             next_equation: 0,
             next_source_ordinal: 0,
             first_cycle: None,
@@ -480,22 +746,81 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             materialization: VecDeque::new(),
             materialized: Vec::new(),
             closed: false,
-        }
+        })
     }
 
-    pub(crate) fn initialize<A>(
-        &mut self,
+    pub(crate) fn initialize_from_nested_path<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        application: D::Application,
+        parameters: super::TypeConstraintParameterScope,
         inherited: Option<Arc<TypeConstraintSolution>>,
-    ) -> Result<(), super::TypeConstraintInitializationFailure>
+        nested: NestedConstraintPath<D>,
+    ) -> Result<Self, super::TypeConstraintInitializationFailure>
     where
         A: TypeConstraintAccounting,
     {
-        match Self::seed(context, inherited.as_deref()) {
-            Ok(path) => {
-                self.frontier.push(path);
-                Ok(())
+        let scope = ConstraintApplicationScope::new(application, parameters);
+        let application = scope.id();
+        let result = context
+            .admit_application(nested.path, scope)
+            .and_then(|path| {
+                Self::from_path_with_parent(
+                    context,
+                    application,
+                    path,
+                    inherited.as_deref(),
+                    Some(nested.receipt),
+                )
+            });
+        result.map_err(|error| match error {
+            TypeConstraintError::Abort(error) => {
+                super::TypeConstraintInitializationFailure::Abort(error)
             }
+            TypeConstraintError::Invariant(error) => {
+                super::TypeConstraintInitializationFailure::Invariant(error)
+            }
+            TypeConstraintError::Rejected(_) => {
+                super::TypeConstraintInitializationFailure::Invariant(
+                    super::TypeConstraintInvariant::InheritedSolution(
+                        super::InheritedSolutionInvariant {
+                            kind: super::InheritedSolutionInvariantKind::Forbidden,
+                            parameter: None,
+                        },
+                    ),
+                )
+            }
+        })
+    }
+
+    pub(crate) fn initialize<A>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: D::Application,
+        parameters: super::TypeConstraintParameterScope,
+        inherited: Option<Arc<TypeConstraintSolution>>,
+    ) -> Result<Self, super::TypeConstraintInitializationFailure>
+    where
+        A: TypeConstraintAccounting,
+    {
+        Self::initialize_with_imported(context, application, parameters, inherited, None)
+    }
+
+    pub(crate) fn initialize_with_imported<A>(
+        context: &mut TypeConstraintContext<'_, A, D>,
+        application: D::Application,
+        parameters: super::TypeConstraintParameterScope,
+        inherited: Option<Arc<TypeConstraintSolution>>,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Result<Self, super::TypeConstraintInitializationFailure>
+    where
+        A: TypeConstraintAccounting,
+    {
+        let scope = ConstraintApplicationScope::new(application, parameters);
+        let application = scope.id();
+        match context
+            .start_path_with_imported(scope, imported)
+            .and_then(|path| Self::from_path(context, application, path, inherited.as_deref()))
+        {
+            Ok(transaction) => Ok(transaction),
             Err(error) => Err(match error {
                 TypeConstraintError::Abort(error) => {
                     super::TypeConstraintInitializationFailure::Abort(error)
@@ -529,13 +854,6 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() || self.closed {
             return;
         }
-        let pattern = match context.open_template_type(pattern) {
-            Ok(pattern) => pattern,
-            Err(error) => {
-                self.first_failure = Some(error.into());
-                return;
-            }
-        };
         let ordinal = match self.next_equation.checked_add(1) {
             Some(next) => {
                 self.next_equation = next;
@@ -551,8 +869,18 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let frontier = core::mem::take(&mut self.frontier);
         let mut advanced = Vec::new();
         for mut path in frontier {
+            let pattern = match context.open_template_type(pattern, &path, self.application) {
+                Ok(pattern) => pattern,
+                Err(error) => {
+                    self.first_failure = Some(error.into());
+                    return;
+                }
+            };
             path.equations.push(PendingEquation {
-                ordinal,
+                ordinal: ConstraintEquationId {
+                    application: self.application,
+                    ordinal,
+                },
                 direction: acceptance,
                 pattern: pattern.clone(),
                 actual: actual.clone(),
@@ -587,26 +915,22 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() || self.closed {
             return;
         }
-        if let Err(error) = context
-            .validate_effect_row(left)
-            .and_then(|()| context.validate_effect_row(right))
-        {
-            self.first_failure = Some(error.into());
-            return;
-        }
         let frontier = core::mem::take(&mut self.frontier);
         let mut advanced = Vec::with_capacity(frontier.len());
         let mut rejection = None;
         for mut path in frontier {
+            if let Err(error) = context
+                .validate_effect_row(left, path.projection_view())
+                .and_then(|()| context.validate_effect_row(right, path.projection_view()))
+            {
+                self.first_failure = Some(error.into());
+                return;
+            }
             let constrained = (|| {
                 context.enter_node()?;
-                path.effects
-                    .constrain_subset(left, right)
-                    .map_err(super::map_effect_environment_error)?;
+                path.effects.constrain_subset(left, right, context)?;
                 context.enter_node()?;
-                path.effects
-                    .constrain_subset(right, left)
-                    .map_err(super::map_effect_environment_error)
+                path.effects.constrain_subset(right, left, context)
             })();
             match constrained {
                 Ok(()) => advanced.push(path),
@@ -633,24 +957,27 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
 
     pub(crate) fn request_projection<A: TypeConstraintAccounting>(
         &mut self,
-        context: &mut TypeConstraintContext<'_, A, D>,
+        _context: &mut TypeConstraintContext<'_, A, D>,
         key: D::Projection,
         value: &TypeKind,
         closure: TypeConstraintProjectionClosure,
     ) {
         if self.first_failure.is_none() && !self.closed {
-            let value = match context.open_template_type(value) {
-                Ok(value) => value,
-                Err(error) => {
-                    self.first_failure = Some(projection_error(error));
-                    return;
-                }
-            };
-            self.projections.push(ProjectionRequest {
-                key,
-                value,
+            if self.probe.is_some() || self.probe_group.is_some() {
+                self.record_failure(
+                    protocol_error(TypeConstraintSourceProtocolInvariant::Outcome).into(),
+                );
+                return;
+            }
+            let request = Arc::new(ProjectionRequest {
+                application: self.application,
+                key: Arc::new(key),
+                value: value.clone(),
                 closure,
             });
+            for path in &mut self.frontier {
+                path.projections.push(Arc::clone(&request));
+            }
         }
     }
 
@@ -723,7 +1050,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             ));
         }
         prepared.validate()?;
-        let source = prepared.source();
+        let source = ConstraintSourceId::new(self.application, prepared.source());
         if !self.prepared_sources.insert(source) {
             return Err(TypeConstraintError::Invariant(
                 TypeConstraintInvariant::PreparedSource(
@@ -739,11 +1066,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     .ok_or(TypeConstraintError::Abort(
                         TypeConstraintAbort::ArithmeticOverflow,
                     ))?;
-            Some(ordinal)
+            Some(ConstraintEquationId {
+                application: self.application,
+                ordinal,
+            })
         } else {
             None
         };
-        let source_ordinal = self.next_source_ordinal;
+        let source_ordinal = PreparedSourceOrdinal {
+            application: self.application,
+            ordinal: self.next_source_ordinal,
+        };
         self.next_source_ordinal =
             self.next_source_ordinal
                 .checked_add(1)
@@ -774,6 +1107,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
             acceptance,
             equation_ordinal,
             rows,
+            active_input: None,
             advanced: Vec::new(),
             rejections: Vec::new(),
             relation_rejections: Vec::new(),
@@ -792,6 +1126,11 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         let Some(operation) = self.probe.as_mut() else {
             return Ok(None);
         };
+        if operation.active_input.is_some() {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
         let Some(path) = operation.rows.pop_front() else {
             let operation = self.probe.take().expect("probe operation exists");
             if let Some(mut group) = self.probe_group.take() {
@@ -828,173 +1167,229 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         };
         let mut hints = Vec::new();
         for alternative in operation.prepared.alternatives() {
-            let expected = context.open_template_type(alternative.value_expected())?;
+            let expected = context.open_template_type(
+                alternative.value_expected(),
+                &path,
+                self.application,
+            )?;
             let projected = project_type(
                 &expected,
-                &path.bindings,
-                &path.const_bindings,
+                path.projection_view(),
                 ConstraintClosurePolicy::Hint,
                 context,
             )?;
+            let unbound = projected
+                .remaining
+                .iter()
+                .map(|parameter| parameter.parameter().clone())
+                .collect::<Box<[_]>>();
+            let scope_lease = if unbound.is_empty() {
+                None
+            } else {
+                Some(path.applications.import_parameters(&unbound)?)
+            };
             hints.push(OwnedAlternativeHint {
                 alternative: alternative.alternative(),
                 expected: projected.value,
-                unbound: projected
-                    .remaining
-                    .iter()
-                    .map(|parameter| parameter.parameter().clone())
-                    .collect(),
+                unbound,
+                scope_lease,
             });
         }
-        Ok(Some(ProbeTicket {
+        let input = Arc::new(ProbeInput {
             source: operation.source,
-            path,
             prepared: Arc::clone(&operation.prepared),
             hints,
             acceptance: operation.acceptance,
             equation_ordinal: operation.equation_ordinal,
+        });
+        operation.active_input = Some(Arc::clone(&input));
+        Ok(Some(ProbeTicket {
+            input,
+            path: Some(path),
         }))
     }
 
     pub(crate) fn submit_probe<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-        mut ticket: ProbeTicket<D>,
+        input: Arc<ProbeInput<D>>,
         submission: ProbeSubmission<D>,
     ) -> Result<(), TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
-        let operation = self.probe.as_mut().expect("probe ticket without operation");
+        let operation = self
+            .probe
+            .as_mut()
+            .ok_or_else(|| protocol_error(TypeConstraintSourceProtocolInvariant::Ticket))?;
+        if !operation
+            .active_input
+            .as_ref()
+            .is_some_and(|active| Arc::ptr_eq(active, &input))
+        {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        if let ProbeSubmission::Accepted(contribution) = &submission
+            && !Arc::ptr_eq(&input, &contribution.input)
+        {
+            return Err(protocol_error(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        operation.active_input = None;
         match submission {
             ProbeSubmission::Rejected(cause) => operation.rejections.push(cause),
-            ProbeSubmission::Accepted(result) => {
-                let (actual, branch, callback_selection) = result.into_parts();
-                if ticket
-                    .path
-                    .probe_trace
-                    .iter()
-                    .any(|probe| probe.source() == ticket.source)
-                {
-                    return Err(protocol_error(
-                        TypeConstraintSourceProtocolInvariant::Outcome,
-                    ));
-                }
-
-                let selected = if ticket.prepared.is_unchecked() {
-                    if !matches!(callback_selection, SourceProbeSelection::Unchecked) {
-                        return Err(protocol_error(
-                            TypeConstraintSourceProtocolInvariant::InvalidEvidence,
-                        ));
-                    }
-                    None
-                } else {
-                    let SourceProbeSelection::Checked {
-                        alternative,
-                        evidence,
-                    } = callback_selection
-                    else {
-                        return Err(protocol_error(
-                            TypeConstraintSourceProtocolInvariant::UnknownAlternative,
-                        ));
+            ProbeSubmission::Accepted(contribution) => {
+                for ObservedProbeAlternative { mut path, result } in contribution.alternatives {
+                    let (actual_term, branch, callback_selection) = result.into_parts();
+                    let (actual, result_origin) = resolve_probe_term(actual_term, &path, context)?;
+                    let callback_selection = match callback_selection {
+                        SourceProbeSelection::Unchecked => SourceProbeSelection::Unchecked,
+                        SourceProbeSelection::Checked {
+                            alternative,
+                            evidence,
+                        } => SourceProbeSelection::Checked {
+                            alternative,
+                            evidence,
+                        },
                     };
-                    match validate_source_selection(
-                        &ticket.prepared,
-                        alternative,
-                        evidence,
-                        &actual,
-                    )? {
-                        Some(selected) => Some(selected),
-                        None => return Ok(()),
+                    if path
+                        .probe_trace
+                        .iter()
+                        .any(|probe| probe.source() == input.source)
+                    {
+                        return Err(protocol_error(
+                            TypeConstraintSourceProtocolInvariant::Outcome,
+                        ));
                     }
-                };
 
-                let (pattern, stored_selection, source_projection, value_expected) = match selected
-                {
-                    None => {
-                        let Some(source_projection) = CheckedConstraintSourceProjection::derive(
-                            ticket.prepared.source_projection(),
-                            &actual,
-                        ) else {
-                            return Ok(());
+                    let selected = if input.prepared.is_unchecked() {
+                        if !matches!(callback_selection, SourceProbeSelection::Unchecked) {
+                            return Err(protocol_error(
+                                TypeConstraintSourceProtocolInvariant::InvalidEvidence,
+                            ));
+                        }
+                        None
+                    } else {
+                        let SourceProbeSelection::Checked {
+                            alternative,
+                            evidence,
+                        } = &callback_selection
+                        else {
+                            return Err(protocol_error(
+                                TypeConstraintSourceProtocolInvariant::UnknownAlternative,
+                            ));
                         };
-                        (
-                            None,
-                            StoredSourceSelection::Unchecked,
-                            source_projection,
-                            None,
-                        )
-                    }
-                    Some((alternative, evidence, value_expected, source_projection)) => {
-                        let value_expected = context.open_template_type(&value_expected)?;
-                        let pattern = source_projection.compose_expected(&value_expected);
-                        (
-                            Some(pattern),
-                            StoredSourceSelection::Checked {
-                                alternative,
-                                evidence,
-                            },
-                            source_projection,
-                            Some(value_expected),
-                        )
-                    }
-                };
+                        match validate_source_selection(
+                            &input.prepared,
+                            *alternative,
+                            Arc::clone(evidence),
+                            &actual,
+                        )? {
+                            Some(selected) => Some(selected),
+                            None => continue,
+                        }
+                    };
 
-                if let Some(expected) = pattern.as_ref() {
-                    ticket.path.equations.push(PendingEquation {
-                        ordinal: ticket.equation_ordinal.unwrap_or(self.next_equation),
-                        direction: ticket.acceptance,
-                        pattern: expected.clone(),
-                        actual: actual.clone(),
-                        source_ordinal: Some(operation.source_ordinal),
-                        final_expected: None,
+                    let (pattern, stored_selection, source_projection, value_expected) =
+                        match selected {
+                            None => {
+                                let Some(source_projection) =
+                                    CheckedConstraintSourceProjection::derive(
+                                        input.prepared.source_projection(),
+                                        &actual,
+                                    )
+                                else {
+                                    continue;
+                                };
+                                (
+                                    None,
+                                    StoredSourceSelection::Unchecked,
+                                    source_projection,
+                                    None,
+                                )
+                            }
+                            Some((alternative, evidence, value_expected, source_projection)) => {
+                                let value_expected = context.open_template_type(
+                                    &value_expected,
+                                    &path,
+                                    self.application,
+                                )?;
+                                let pattern = source_projection.compose_expected(&value_expected);
+                                (
+                                    Some(pattern),
+                                    StoredSourceSelection::Checked {
+                                        alternative,
+                                        evidence,
+                                    },
+                                    source_projection,
+                                    Some(value_expected),
+                                )
+                            }
+                        };
+
+                    if let Some(expected) = pattern.as_ref() {
+                        path.equations.push(PendingEquation {
+                            ordinal: input.equation_ordinal.ok_or_else(|| {
+                                protocol_error(TypeConstraintSourceProtocolInvariant::Outcome)
+                            })?,
+                            direction: input.acceptance,
+                            pattern: expected.clone(),
+                            actual: actual.clone(),
+                            source_ordinal: Some(operation.source_ordinal),
+                            final_expected: None,
+                        });
+                    }
+                    let rejected_alternative = match &stored_selection {
+                        StoredSourceSelection::Checked { alternative, .. } => Some(*alternative),
+                        StoredSourceSelection::Unchecked => None,
+                    };
+                    let relation_rejection = pattern.as_ref().map(|expected| {
+                        RejectedConstraintSourceProjection::new(
+                            input.source,
+                            rejected_alternative,
+                            source_projection.clone(),
+                            input.acceptance,
+                            expected.clone(),
+                            actual.clone(),
+                        )
                     });
-                }
-                let rejected_alternative = match &stored_selection {
-                    StoredSourceSelection::Checked { alternative, .. } => Some(*alternative),
-                    StoredSourceSelection::Unchecked => None,
-                };
-                let relation_rejection = pattern.as_ref().map(|expected| {
-                    RejectedConstraintSourceProjection::new(
-                        ticket.source,
-                        rejected_alternative,
-                        source_projection.clone(),
-                        ticket.acceptance,
-                        expected.clone(),
-                        actual.clone(),
-                    )
-                });
-                let probe = ConstraintProbe::Active(ActiveConstraintProbe {
-                    source: ticket.source,
-                    source_ordinal: operation.source_ordinal,
-                    branch: Arc::new(branch),
-                    selection: stored_selection,
-                    prepared_source_projection: ticket.prepared.source_projection(),
-                    value_expected,
-                    actual: actual.clone(),
-                });
-                ticket.path.probe_trace.push(probe);
+                    let probe = ConstraintProbe::Active(ActiveConstraintProbe {
+                        source: input.source,
+                        source_ordinal: operation.source_ordinal,
+                        branch: Arc::clone(&branch),
+                        selection: stored_selection,
+                        prepared_source_projection: input.prepared.source_projection(),
+                        value_expected,
+                        result_origin,
+                        actual: actual.clone(),
+                    });
+                    path.probe_trace.push(probe);
 
-                let related = if let Some(expected) = pattern.as_ref() {
-                    relate_selected_call(expected, &actual, ticket.path, context, ticket.acceptance)
-                } else {
-                    validate_type(&actual, context).map(|()| vec![ticket.path])
-                };
-                match related {
-                    Ok(paths) if paths.is_empty() => {
-                        if let Some(rejection) = relation_rejection {
-                            operation.relation_rejections.push(rejection);
+                    let related = if let Some(expected) = pattern.as_ref() {
+                        relate_selected_call(expected, &actual, path, context, input.acceptance)
+                    } else {
+                        validate_type(&actual, path.projection_view(), context).map(|()| vec![path])
+                    };
+                    match related {
+                        Ok(paths) if paths.is_empty() => {
+                            if let Some(rejection) = relation_rejection {
+                                operation.relation_rejections.push(rejection);
+                            }
                         }
-                    }
-                    Ok(paths) => operation.advanced.extend(paths),
-                    Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)) => {
-                        if let Some(rejection) = relation_rejection {
-                            operation.relation_rejections.push(rejection);
+                        Ok(paths) => operation.advanced.extend(paths),
+                        Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch)) => {
+                            if let Some(rejection) = relation_rejection {
+                                operation.relation_rejections.push(rejection);
+                            }
                         }
-                    }
-                    Err(error) => {
-                        self.first_failure = Some(error.into());
-                        operation.rows.clear();
+                        Err(error) => {
+                            self.first_failure = Some(error.into());
+                            operation.rows.clear();
+                            break;
+                        }
                     }
                 }
             }
@@ -1010,7 +1405,13 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         A: TypeConstraintAccounting,
     {
         if !self.closed {
-            self.close(context).map_err(materialization_immediate)?;
+            match self.close(context) {
+                Ok(()) => {}
+                // An incomplete or inconsistent component has no facts to
+                // materialize. `close` retains the typed rejection for finish.
+                Err(TypeConstraintError::Rejected(_)) => return Ok(None),
+                Err(error) => return Err(materialization_immediate(error)),
+            }
         }
         if self.active_materialization.is_some() {
             return Err(materialization_immediate(TypeConstraintError::Invariant(
@@ -1094,21 +1495,17 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         self.active_materialization = None;
         let MaterializationTicket {
             correlation,
-            path,
-            requests,
+            component,
             ..
         } = ticket;
         match closed.submission {
             ClosedMaterializationSubmission::Sealed(value) => {
-                ensure_unique_request_sources(&requests).map_err(materialization_immediate)?;
                 self.materialized
-                    .push(MaterializedRecord::Sealed { path, value });
+                    .push(MaterializedRecord::Sealed { component, value });
             }
             ClosedMaterializationSubmission::Rejected { source, cause } => {
-                ensure_unique_request_sources(&requests).map_err(materialization_immediate)?;
-                let source_ordinal = unique_request_ordinal(&requests, source)
-                    .map_err(materialization_immediate)?
-                    .0;
+                let source_ordinal = unique_request_ordinal(component.sources().all(), source)
+                    .map_err(materialization_immediate)?;
                 self.materialized.push(MaterializedRecord::Rejected {
                     source_ordinal,
                     correlation,
@@ -1122,10 +1519,9 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                         TypeConstraintSourceProtocolInvariant::WrongPhase,
                     )));
                 }
-                ensure_unique_request_sources(&requests).map_err(materialization_immediate)?;
-                let source_ordinal = unique_request_ordinal(&requests, *error.source())
-                    .map_err(materialization_immediate)?
-                    .0;
+                let source_ordinal =
+                    unique_request_ordinal(component.sources().all(), *error.source())
+                        .map_err(materialization_immediate)?;
                 self.materialized.push(MaterializedRecord::Fatal {
                     source_ordinal,
                     correlation,
@@ -1137,16 +1533,88 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
     }
 
     pub(crate) fn finish<A>(
-        mut self,
+        self,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
+        self.finish_alternatives(context)?.into_unique()
+    }
+
+    pub(crate) fn finish_alternatives<A>(
+        mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
+    where
+        A: TypeConstraintAccounting,
+    {
         match self.close(context) {
-            Ok(()) => self.finish_candidate(context),
+            Ok(()) => self.finish_candidate_alternatives(context),
             Err(error) => Err(error.into()),
         }
+    }
+
+    pub(crate) fn defer_child_result(
+        self,
+        key: D::Projection,
+    ) -> Result<PendingChildConstraint<D>, TypeConstraintFailure<D>> {
+        let Some(receipt) = self.parent_receipt else {
+            return Err(TypeConstraintFailure::Invariant(
+                TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        TypeConstraintSourceProtocolInvariant::WrongPhase,
+                    ),
+                ),
+            ));
+        };
+        if self.probe.is_some() || self.probe_group.is_some() || self.closed {
+            return Err(TypeConstraintFailure::Invariant(
+                TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        TypeConstraintSourceProtocolInvariant::WrongPhase,
+                    ),
+                ),
+            ));
+        }
+        if let Some(failure) = self.first_failure {
+            return Err(failure);
+        }
+        if self.frontier.is_empty() {
+            return Err(TypeConstraintFailure::Rejected(
+                TypeConstraintCandidateFailure::Constraint(TypeConstraintRejection::UnresolvedType),
+            ));
+        }
+        for path in &self.frontier {
+            let mut requests = path.projections.iter().filter(|request| {
+                request.application == self.application && request.key.as_ref() == &key
+            });
+            if requests.next().is_none() || requests.next().is_some() {
+                return Err(TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(
+                        TypeConstraintInvariant::Projection(
+                            TypeConstraintProjectionInvariant::MissingKey,
+                        ),
+                    ),
+                ));
+            }
+        }
+        let key = Arc::new(key);
+        Ok(PendingChildConstraint {
+            receipt,
+            alternatives: self
+                .frontier
+                .into_iter()
+                .map(|path| PendingChildAlternative {
+                    path,
+                    result: ConstraintResultProjection {
+                        application: self.application,
+                        key: Arc::clone(&key),
+                    },
+                    branch: None,
+                })
+                .collect(),
+        })
     }
 
     fn close<A>(
@@ -1168,147 +1636,103 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         if self.first_failure.is_some() {
             return Ok(());
         }
+        let result = self.close_frontier(context);
+        if let Err(error) = &result {
+            self.record_failure(error.clone().into());
+            self.materialization.clear();
+            self.materialized.clear();
+        }
+        result
+    }
+
+    fn close_frontier<A: TypeConstraintAccounting>(
+        &mut self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
         let frontier = core::mem::take(&mut self.frontier);
         let mut acyclic = Vec::new();
+        let mut completion_rejection = None;
         for path in frontier {
-            match self.normalize_path(path, context)? {
-                NormalizedPath::Acyclic(path) => acyclic.push(path),
-                NormalizedPath::Cyclic(parameter) => {
+            match self.normalize_path(path, context) {
+                Ok(NormalizedPath::Acyclic(path)) => acyclic.push(path),
+                Ok(NormalizedPath::Cyclic(parameter)) => {
                     if self.first_cycle.is_none() {
                         self.first_cycle = Some(parameter);
                     }
                 }
+                Err(TypeConstraintError::Rejected(rejection)) => {
+                    completion_rejection.get_or_insert(rejection);
+                }
+                Err(error) => return Err(error),
             }
         }
         if acyclic.is_empty() {
-            return Ok(());
+            return completion_rejection.map_or(Ok(()), |rejection| Err(rejection.into()));
         }
         self.first_cycle = None;
+        acyclic.sort_by(path_correlation_cmp::<D>);
 
-        let mut finalized = Vec::new();
+        let mut groups: Vec<Vec<super::CompletedConstraintComponent<D>>> = Vec::new();
         for mut path in acyclic {
-            close_source_rows(&mut path, context)?;
-            let effect_substitution = path
-                .effects
-                .substitution()
-                .map_err(super::map_effect_environment_error)?;
-            let mut valid = true;
-            for equation in &path.equations {
-                let pattern = equation
-                    .final_expected
-                    .as_ref()
-                    .unwrap_or(&equation.pattern);
-                let pattern = seal_type(
-                    pattern,
-                    &path.bindings,
-                    &path.const_bindings,
-                    &mut BTreeSet::new(),
-                    context,
-                )?
-                .substitute_effect_rows(&effect_substitution)
-                .map_err(|_| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })?;
-                let actual = seal_type(
-                    &equation.actual,
-                    &path.bindings,
-                    &path.const_bindings,
-                    &mut BTreeSet::new(),
-                    context,
-                )?
-                .substitute_effect_rows(&effect_substitution)
-                .map_err(|_| {
-                    super::effect_invariant(
-                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                        None,
-                    )
-                })?;
-                let accepted = match equation.direction {
-                    ConstraintAcceptance::PatternAcceptsActual => pattern
-                        .accepts_with(
-                            &actual,
-                            super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
-                            context,
-                        )
-                        .map_err(
-                            super::super::compatibility::binding_plan::map_compatibility_error,
-                        )?,
-                    ConstraintAcceptance::ActualAcceptsPattern => actual
-                        .accepts_with(
-                            &pattern,
-                            super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
-                            context,
-                        )
-                        .map_err(
-                            super::super::compatibility::binding_plan::map_compatibility_error,
-                        )?,
-                };
-                if !accepted {
-                    valid = false;
-                    break;
+            let component = match Self::complete_component(&mut path, self.application, context) {
+                Ok(component) => component,
+                Err(TypeConstraintError::Rejected(rejection)) => {
+                    completion_rejection.get_or_insert(rejection);
+                    continue;
                 }
-            }
-            if valid {
-                finalized.push(path);
-            }
-        }
-
-        let mut groups: Vec<Vec<ConstraintPath<D>>> = Vec::new();
-        for path in finalized {
+                Err(error) => return Err(error),
+            };
             let mut group_index = None;
             for (index, group) in groups.iter().enumerate() {
                 if let Some(first) = group.first()
-                    && bindings_equal(first, &path, context)?
+                    && first.equal_with(&component, context)?
                 {
                     group_index = Some(index);
                     break;
                 }
             }
             if let Some(index) = group_index {
-                groups[index].push(path);
+                groups[index].push(component);
             } else {
-                groups.push(vec![path]);
+                groups.push(vec![component]);
             }
         }
-
-        for mut group in groups {
-            group.sort_by(path_correlation_cmp::<D>);
-            for path in group {
-                if path.probe_trace.is_empty() {
-                    self.materialized.push(MaterializedRecord::Sealed {
-                        path,
-                        value: D::empty_sealed_branch(),
-                    });
-                    continue;
-                }
-                ensure_unique_sources(&path)?;
-                let requests = closed_materialization_requests(&path)?;
-                let correlation = MaterializationCorrelationOrdinal(self.next_correlation_ordinal);
-                self.next_correlation_ordinal =
-                    self.next_correlation_ordinal.checked_add(1).ok_or(
-                        TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow),
-                    )?;
-                let ticket_ordinal = self.next_materialization_ticket_ordinal;
-                self.next_materialization_ticket_ordinal =
-                    ticket_ordinal
-                        .checked_add(1)
-                        .ok_or(TypeConstraintError::Abort(
-                            TypeConstraintAbort::ArithmeticOverflow,
-                        ))?;
-                self.materialization.push_back(MaterializationTicket {
-                    identity: MaterializationTicketIdentity {
-                        issuer: Arc::clone(&self.materialization_issuer),
-                        ordinal: ticket_ordinal,
-                    },
-                    correlation,
-                    path,
-                    requests,
-                    phase: MaterializationTicketPhase::Ready,
+        if groups.is_empty()
+            && let Some(rejection) = completion_rejection
+        {
+            return Err(rejection.into());
+        }
+        for component in groups.into_iter().flatten() {
+            if component.sources().all().is_empty() {
+                self.materialized.push(MaterializedRecord::Sealed {
+                    component,
+                    value: D::empty_sealed_branch(),
                 });
+                continue;
             }
+            let correlation = MaterializationCorrelationOrdinal(self.next_correlation_ordinal);
+            self.next_correlation_ordinal =
+                self.next_correlation_ordinal
+                    .checked_add(1)
+                    .ok_or(TypeConstraintError::Abort(
+                        TypeConstraintAbort::ArithmeticOverflow,
+                    ))?;
+            let ticket_ordinal = self.next_materialization_ticket_ordinal;
+            self.next_materialization_ticket_ordinal =
+                ticket_ordinal
+                    .checked_add(1)
+                    .ok_or(TypeConstraintError::Abort(
+                        TypeConstraintAbort::ArithmeticOverflow,
+                    ))?;
+            self.materialization.push_back(MaterializationTicket {
+                identity: MaterializationTicketIdentity {
+                    issuer: Arc::clone(&self.materialization_issuer),
+                    ordinal: ticket_ordinal,
+                },
+                correlation,
+                component,
+                phase: MaterializationTicketPhase::Ready,
+            });
         }
         Ok(())
     }
@@ -1332,10 +1756,10 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
         Ok(NormalizedPath::Acyclic(path))
     }
 
-    fn finish_candidate<A>(
+    fn finish_candidate_alternatives<A>(
         &mut self,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>>
+    ) -> Result<super::CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>>
     where
         A: TypeConstraintAccounting,
     {
@@ -1373,20 +1797,23 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 source, phase, cause,
             )));
         }
-        let mut candidates: Vec<(ConstraintPath<D>, D::SealedBranchValue)> = Vec::new();
+        let mut candidates: Vec<(super::CompletedConstraintComponent<D>, D::SealedBranchValue)> =
+            Vec::new();
         let mut rejected = Vec::new();
         for record in core::mem::take(&mut self.materialized) {
             match record {
-                MaterializedRecord::Sealed { path, value } => {
+                MaterializedRecord::Sealed { component, value } => {
                     let mut duplicate = false;
-                    for (existing, existing_value) in &candidates {
-                        if bindings_equal(existing, &path, context)? && existing_value == &value {
+                    for (existing_component, existing_value) in &candidates {
+                        if existing_component.equal_with(&component, context)?
+                            && existing_value == &value
+                        {
                             duplicate = true;
                             break;
                         }
                     }
                     if !duplicate {
-                        candidates.push((path, value));
+                        candidates.push((component, value));
                     }
                 }
                 MaterializedRecord::Rejected {
@@ -1426,62 +1853,134 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                 ),
             ));
         }
-        if candidates.len() != 1 {
-            return Err(TypeConstraintError::Rejected(
-                TypeConstraintRejection::AmbiguousSolution {
-                    actual: candidates.len(),
-                },
-            )
-            .into());
-        }
-        let (path, sealed_branch) = candidates.pop().expect("candidate length checked");
-        context.check_cancelled()?;
-        context.validate_type_and_const_completion(&path.bindings, &path.const_bindings)?;
-        let projections = self.finish_projections(&path, context)?;
-        let effect_bindings = path
-            .effects
-            .bindings()
-            .map_err(super::map_effect_environment_error)?
-            .into_iter()
-            .collect::<BTreeMap<_, _>>();
-        let solution = Arc::new(TypeConstraintSolution::complete_path(
-            path.bindings,
-            path.const_bindings,
-            effect_bindings,
-            context,
-        )?);
-        let projections = projections
-            .into_iter()
-            .map(|(key, value)| solution.reify_projection(key, &value, context))
-            .collect::<Result<Box<[_]>, _>>()?;
-        let closed_sources = path
-            .probe_trace
-            .into_iter()
-            .map(ConstraintProbe::into_closed)
-            .collect::<Result<Box<[_]>, _>>()?;
-        Ok(SolvedCandidate {
-            solution,
+        let Some((component, sealed_branch)) = candidates.pop() else {
+            return Err(TypeConstraintError::Rejected(TypeConstraintRejection::Mismatch).into());
+        };
+        let first = SolvedCandidate {
+            component,
             sealed_branch,
-            projections,
-            closed_sources,
-        })
+        };
+        let remaining = candidates
+            .into_iter()
+            .map(|(component, sealed_branch)| SolvedCandidate {
+                component,
+                sealed_branch,
+            })
+            .collect();
+        context.check_cancelled()?;
+        Ok(super::CompletedCandidateAlternatives::new(first, remaining))
     }
 
-    fn finish_projections<A>(
-        &mut self,
-        path: &ConstraintPath<D>,
+    fn complete_component<A>(
+        path: &mut ConstraintPath<D>,
+        selected: ConstraintApplicationId,
         context: &mut TypeConstraintContext<'_, A, D>,
-    ) -> Result<Vec<(D::Projection, TypeKind)>, TypeConstraintFailure<D>>
+    ) -> Result<super::CompletedConstraintComponent<D>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
-        let requests = core::mem::take(&mut self.projections);
-        let effect_substitution = path
-            .effects
-            .substitution()
-            .map_err(super::map_effect_environment_error)?;
-        let mut projections = Vec::with_capacity(requests.len());
-        for request in requests {
+        context.check_cancelled()?;
+        ensure_unique_sources(path)?;
+        close_source_rows(path, context)?;
+        Self::validate_completed_equations(path, context)?;
+        context.validate_type_and_const_completion(path)?;
+        let selected_domain = path
+            .applications
+            .require_application(selected)?
+            .application();
+        for request in &path.projections {
+            path.applications.require_application(request.application)?;
+        }
+        let ordered = path
+            .applications
+            .applications()
+            .map(|scope| (scope.application(), scope.id()))
+            .collect::<BTreeMap<_, _>>();
+        let mut completed = BTreeMap::new();
+        for (domain, application) in ordered {
+            let solution = Arc::new(TypeConstraintSolution::complete_application(
+                path,
+                application,
+                context,
+            )?);
+            let projections = Self::finish_projections(path, application, &solution, context)?;
+            completed.insert(
+                domain,
+                super::CompletedConstraintApplication::new(solution, projections),
+            );
+        }
+        path.projections.clear();
+        let closed_sources = core::mem::take(&mut path.probe_trace)
+            .into_iter()
+            .map(ConstraintProbe::into_closed)
+            .collect::<Result<Box<[_]>, _>>()?;
+        Ok(super::CompletedConstraintComponent::new(
+            selected_domain,
+            completed,
+            ClosedConstraintSourceTrace::new(
+                selected,
+                Arc::clone(&path.applications),
+                closed_sources,
+            ),
+        ))
+    }
+
+    fn validate_completed_equations<A: TypeConstraintAccounting>(
+        path: &ConstraintPath<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let effect_substitution = path.effects.substitution(context)?;
+        for equation in &path.equations {
+            let pattern = equation
+                .final_expected
+                .as_ref()
+                .unwrap_or(&equation.pattern);
+            let mut project = |value| {
+                seal_type(value, path.projection_view(), &mut BTreeSet::new(), context)?
+                    .substitute_effect_rows(&effect_substitution)
+                    .map_err(|_error| {
+                        super::effect_invariant(
+                            super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                            None,
+                        )
+                    })
+            };
+            let pattern = project(pattern)?;
+            let actual = project(&equation.actual)?;
+            let (expected, actual) = match equation.direction {
+                ConstraintAcceptance::PatternAcceptsActual => (&pattern, &actual),
+                ConstraintAcceptance::ActualAcceptsPattern => (&actual, &pattern),
+            };
+            if !expected
+                .accepts_with(
+                    actual,
+                    super::super::compatibility::TypeCompatibilityPolicy::SelectedCall,
+                    context,
+                )
+                .map_err(super::super::compatibility::binding_plan::map_compatibility_error)?
+            {
+                return Err(TypeConstraintRejection::Mismatch.into());
+            }
+        }
+        Ok(())
+    }
+
+    fn finish_projections<A>(
+        path: &ConstraintPath<D>,
+        application: ConstraintApplicationId,
+        solution: &TypeConstraintSolution,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<Box<[super::KeyedConstraintProjection<D::Projection>]>, TypeConstraintError>
+    where
+        A: TypeConstraintAccounting,
+    {
+        let effect_substitution = path.effects.substitution(context)?;
+        let mut projections = Vec::new();
+        for request in path
+            .projections
+            .iter()
+            .filter(|request| request.application == application)
+        {
             let policy = match request.closure {
                 TypeConstraintProjectionClosure::Closed => {
                     ConstraintClosurePolicy::ProjectionClosed
@@ -1490,47 +1989,63 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     ConstraintClosurePolicy::ProjectionFuture
                 }
             };
-            let value = project_type(
-                &request.value,
-                &path.bindings,
-                &path.const_bindings,
-                policy,
-                context,
-            )
-            .map_err(projection_error::<D>)?
-            .value
-            .substitute_effect_rows(&effect_substitution)
-            .map_err(|_| {
-                super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                    None,
-                )
-            })?;
-            validate_selected_call_self(&value, context).map_err(projection_error::<D>)?;
-            projections.push((request.key, value));
-        }
-        projections.sort_by(|left, right| left.0.cmp(&right.0));
-        if projections.windows(2).any(|pair| pair[0].0 == pair[1].0) {
-            return Err(
-                TypeConstraintError::Invariant(TypeConstraintInvariant::Projection(
-                    TypeConstraintProjectionInvariant::DuplicateKey,
-                ))
-                .into(),
+            let opened = context
+                .open_template_type(&request.value, path, application)
+                .map_err(projection_error)?;
+            let value = project_type(&opened, path.projection_view(), policy, context)
+                .map_err(projection_error)?
+                .value
+                .substitute_effect_rows(&effect_substitution)
+                .map_err(|_error| {
+                    super::effect_invariant(
+                        super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                        None,
+                    )
+                })?;
+            if policy != ConstraintClosurePolicy::ProjectionFuture {
+                validate_selected_call_self(&value, context).map_err(projection_error)?;
+            }
+            projections.push(
+                solution
+                    .reify_projection(
+                        Arc::clone(&request.key),
+                        &value,
+                        path,
+                        application,
+                        policy,
+                        context,
+                    )
+                    .map_err(projection_error)?,
             );
         }
-        Ok(projections)
+        projections.sort_by(|left, right| left.key().cmp(right.key()));
+        if projections
+            .windows(2)
+            .any(|pair| pair[0].key() == pair[1].key())
+        {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::Projection(
+                    TypeConstraintProjectionInvariant::DuplicateKey,
+                ),
+            ));
+        }
+        Ok(projections.into_boxed_slice())
     }
 
-    fn seed<A>(
+    fn prepare_application<A>(
         context: &mut TypeConstraintContext<'_, A, D>,
+        application: ConstraintApplicationId,
+        path: ConstraintPath<D>,
         inherited: Option<&TypeConstraintSolution>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
     {
         context.check_cancelled()?;
+        let applications = Arc::clone(&path.applications);
+        let scope = applications.require_application(application)?;
         let Some(inherited) = inherited else {
-            if let Some(parameter) = context.required_inherited_keys().first() {
+            if let Some(parameter) = scope.parameters().required_inherited_keys().first() {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                         kind: InheritedSolutionInvariantKind::Unclosed,
@@ -1538,7 +2053,7 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     }),
                 ));
             }
-            if let Some(parameter) = context.required_inherited_const_keys().first() {
+            if let Some(parameter) = scope.parameters().required_inherited_const_keys().first() {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::InheritedSolution(InheritedSolutionInvariant {
                         kind: InheritedSolutionInvariantKind::Unclosed,
@@ -1546,15 +2061,15 @@ impl<D: ConstraintDomain> TypeConstraintTransaction<D> {
                     }),
                 ));
             }
-            if let Some(variable) = context.required_inherited_effects().first() {
+            if let Some(variable) = scope.effects().required_inherited().first() {
                 return Err(super::effect_invariant(
                     super::TypeConstraintEffectInvariantKind::MissingInherited,
-                    Some(*variable),
+                    Some(variable.clone()),
                 ));
             }
-            return context.start_path();
+            return Ok(path);
         };
-        inherited.restore_inherited_path(context)
+        inherited.restore_inherited_path(application, path, context)
     }
 }
 
@@ -1576,24 +2091,49 @@ fn materialization_immediate<D: ConstraintDomain>(
     }
 }
 
-fn projection_error<D: ConstraintDomain>(error: TypeConstraintError) -> TypeConstraintFailure<D> {
+fn projection_error(error: TypeConstraintError) -> TypeConstraintError {
     match error {
-        TypeConstraintError::Rejected(rejection) => TypeConstraintFailure::Invariant(
-            super::TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
+        TypeConstraintError::Rejected(rejection) => {
+            TypeConstraintError::Invariant(TypeConstraintInvariant::Projection(
                 TypeConstraintProjectionInvariant::Mismatch(rejection),
-            )),
-        ),
-        TypeConstraintError::Abort(error) => TypeConstraintFailure::Abort(error),
-        TypeConstraintError::Invariant(error) => TypeConstraintFailure::Invariant(
-            super::TypeConstraintFailureInvariant::Constraint(error),
-        ),
+            ))
+        }
+        TypeConstraintError::Abort(_) | TypeConstraintError::Invariant(_) => error,
+    }
+}
+
+fn resolve_probe_term<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    term: SourceProbeTerm<D>,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<(TypeKind, Option<ConstraintResultProjection<D>>), TypeConstraintError> {
+    match term {
+        SourceProbeTerm::Type(value) => Ok((value, None)),
+        SourceProbeTerm::Result(result) => {
+            path.applications.require_application(result.application)?;
+            let mut requests = path.projections.iter().filter(|request| {
+                request.application == result.application && request.key == result.key
+            });
+            let Some(request) = requests.next() else {
+                return Err(protocol_error(
+                    TypeConstraintSourceProtocolInvariant::WrongSource,
+                ));
+            };
+            if requests.next().is_some() {
+                return Err(protocol_error(
+                    TypeConstraintSourceProtocolInvariant::Outcome,
+                ));
+            }
+            let actual = context.open_template_type(&request.value, path, result.application)?;
+            Ok((actual, Some(result)))
+        }
     }
 }
 
 fn validate_source_selection<D: ConstraintDomain>(
     prepared: &PreparedSourceConstraint<D>,
     selected: D::AlternativeIndex,
-    evidence: D::ObservedEvidence,
+    evidence: Arc<D::ObservedEvidence>,
     actual: &TypeKind,
 ) -> Result<
     Option<(
@@ -1653,7 +2193,7 @@ fn validate_source_selection<D: ConstraintDomain>(
     };
     Ok(Some((
         selected,
-        Arc::new(evidence),
+        evidence,
         selected_row.value_expected().clone(),
         source_projection,
     )))
@@ -1676,66 +2216,15 @@ fn ensure_unique_sources<D: ConstraintDomain>(
     }
 }
 
-fn closed_materialization_requests<D: ConstraintDomain>(
-    path: &ConstraintPath<D>,
-) -> Result<Box<[ClosedMaterializationRequest<D>]>, TypeConstraintError> {
-    path.probe_trace
-        .iter()
-        .map(|probe| {
-            let probe = probe.closed()?;
-            let row = match probe.selection() {
-                ClosedSourceSelection::Checked {
-                    alternative,
-                    evidence,
-                    expected,
-                } => ClosedMaterializationRequestRow::Checked {
-                    alternative: *alternative,
-                    evidence: Arc::clone(evidence),
-                    source_projection: probe.source_projection().clone(),
-                    actual: probe.actual().clone(),
-                    expected: expected.clone(),
-                    canonical_branch: Arc::clone(probe.branch()),
-                },
-                ClosedSourceSelection::Unchecked => ClosedMaterializationRequestRow::Unchecked {
-                    source_projection: probe.source_projection().clone(),
-                    actual: probe.actual().clone(),
-                    canonical_branch: Arc::clone(probe.branch()),
-                },
-            };
-            Ok(ClosedMaterializationRequest {
-                source: probe.source(),
-                source_ordinal: PreparedSourceOrdinal(probe.ordinal()),
-                row,
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Vec::into_boxed_slice)
-}
-
-fn ensure_unique_request_sources<D: ConstraintDomain>(
-    requests: &[ClosedMaterializationRequest<D>],
-) -> Result<(), TypeConstraintError> {
-    let mut sources = BTreeSet::new();
-    if requests
-        .iter()
-        .any(|request| !sources.insert(request.source))
-    {
-        Err(protocol_error(
-            TypeConstraintSourceProtocolInvariant::Ticket,
-        ))
-    } else {
-        Ok(())
-    }
-}
-
 fn unique_request_ordinal<D: ConstraintDomain>(
-    requests: &[ClosedMaterializationRequest<D>],
-    source: D::Source,
-) -> Result<PreparedSourceOrdinal, TypeConstraintError> {
+    requests: &[ClosedConstraintProbe<D>],
+    source: ConstraintSourceId<D::Source>,
+) -> Result<MaterializationSourceOrdinal, TypeConstraintError> {
     let mut matches = requests
         .iter()
-        .filter(|request| request.source == source)
-        .map(|request| request.source_ordinal);
+        .enumerate()
+        .filter(|(_, request)| request.source() == source)
+        .map(|(ordinal, _)| ordinal);
     let Some(ordinal) = matches.next() else {
         return Err(protocol_error(
             TypeConstraintSourceProtocolInvariant::Ticket,
@@ -1746,9 +2235,11 @@ fn unique_request_ordinal<D: ConstraintDomain>(
             TypeConstraintSourceProtocolInvariant::Ticket,
         ));
     }
-    Ok(ordinal)
+    Ok(MaterializationSourceOrdinal(
+        u32::try_from(ordinal)
+            .map_err(|_| TypeConstraintError::Abort(TypeConstraintAbort::ArithmeticOverflow))?,
+    ))
 }
-
 fn close_source_rows<A, D>(
     path: &mut ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
@@ -1757,19 +2248,11 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    let effect_substitution = path
-        .effects
-        .substitution()
-        .map_err(super::map_effect_environment_error)?;
+    let effect_substitution = path.effects.substitution(context)?;
     let probes = core::mem::take(&mut path.probe_trace);
     let mut closed = Vec::with_capacity(probes.len());
     for probe in probes {
-        let probe = probe.close(
-            &path.bindings,
-            &path.const_bindings,
-            &effect_substitution,
-            context,
-        )?;
+        let probe = probe.close(path.projection_view(), &effect_substitution, context)?;
         for equation in &mut path.equations {
             if equation.source_ordinal == Some(probe.ordinal()) {
                 equation.actual = probe.actual().clone();

@@ -25,6 +25,7 @@ use crate::{
     },
     character_dialogue::{
         CharacterDialogueCustomFieldDescriptor, CharacterDialogueCustomFieldRegistry,
+        CharacterDialogueRuntimeRoleRegistry,
     },
     env::{
         TypeCheckEnv,
@@ -264,6 +265,17 @@ impl CharacterRegistrar {
                     ])
                 })?,
         );
+        let character_dialogue_roles = Arc::new(
+            CharacterDialogueRuntimeRoleRegistry::try_project(&nominal_world).map_err(|error| {
+                CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CharacterDialogueRoles { error },
+                        fallback.clone(),
+                        [],
+                    ),
+                ])
+            })?,
+        );
         let compile_time_scalars = RegisteredCompileTimeScalarTypes::try_from_world(&nominal_world)
             .map_err(|error| compile_time_scalar_registration_report(error, fallback.clone()))?;
 
@@ -288,11 +300,13 @@ impl CharacterRegistrar {
             .collect::<Vec<_>>();
         let rust_metadata = Arc::new(
             nominal_world
-                .try_project_rust_metadata(
+                .join_rust_metadata(
                     &rust_metadata_inputs,
                     NominalResolutionLimits::PRODUCTION,
                     NominalAggregationLimits::PRODUCTION,
                 )
+                .map_err(rust_metadata_join_registration_report)?
+                .project()
                 .map_err(environment_projection_registration_report)?,
         );
         let symbols = Arc::new(link.into_table());
@@ -300,6 +314,7 @@ impl CharacterRegistrar {
             generation: request.generation,
             symbols,
             nominal_world,
+            character_dialogue_roles,
             rust_metadata,
             statement_ingress,
             compile_time_scalars,
@@ -363,6 +378,7 @@ impl CharacterRegistrar {
             generation: _,
             symbols,
             nominal_world,
+            character_dialogue_roles,
             rust_metadata,
             statement_ingress,
             compile_time_scalars,
@@ -489,6 +505,7 @@ impl CharacterRegistrar {
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
+            character_dialogue_roles.semantic_digest(),
             &statement_ingress,
             &compile_time_scalars,
             &closed_enum_domains,
@@ -507,6 +524,7 @@ impl CharacterRegistrar {
         })?;
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
+            character_dialogue_roles,
             character_dialogue_fields,
             rust_metadata,
             callables,
@@ -760,6 +778,17 @@ impl CharacterRegistrar {
                 })?,
         );
 
+        let character_dialogue_roles = Arc::new(
+            CharacterDialogueRuntimeRoleRegistry::try_project(&nominal_world).map_err(|error| {
+                CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CharacterDialogueRoles { error },
+                        fallback.clone(),
+                        [],
+                    ),
+                ])
+            })?,
+        );
         let compile_time_scalars = RegisteredCompileTimeScalarTypes::try_from_world(&nominal_world)
             .map_err(|error| compile_time_scalar_registration_report(error, fallback.clone()))?;
 
@@ -785,11 +814,13 @@ impl CharacterRegistrar {
             .collect::<Vec<_>>();
         let rust_metadata = Arc::new(
             nominal_world
-                .try_project_rust_metadata(
+                .join_rust_metadata(
                     &rust_metadata_inputs,
                     NominalResolutionLimits::PRODUCTION,
                     NominalAggregationLimits::PRODUCTION,
                 )
+                .map_err(rust_metadata_join_registration_report)?
+                .project()
                 .map_err(environment_projection_registration_report)?,
         );
 
@@ -915,6 +946,7 @@ impl CharacterRegistrar {
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
             character_dialogue_fields.semantic_digest(),
+            character_dialogue_roles.semantic_digest(),
             &statement_ingress,
             &compile_time_scalars,
             &closed_enum_domains,
@@ -935,6 +967,7 @@ impl CharacterRegistrar {
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
+            character_dialogue_roles,
             character_dialogue_fields,
             rust_metadata,
             callables,
@@ -1042,6 +1075,21 @@ fn compile_time_scalar_registration_report(
     )])
 }
 
+fn rust_metadata_join_registration_report(
+    error: crate::env::rust_metadata::RustMetadataJoinError,
+) -> CharacterRegistrationReport {
+    let primary = error.source_span().clone();
+    CharacterRegistrationReport::from_diagnostics(vec![CharacterRegistrationDiagnostic::new(
+        CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog {
+            error: AcceptedNominalCatalogError::RustMetadataJoin {
+                error: Box::new(error),
+            },
+        },
+        primary,
+        [],
+    )])
+}
+
 fn environment_projection_registration_report(
     report: EnvironmentPublicationProjectionReport,
 ) -> CharacterRegistrationReport {
@@ -1067,7 +1115,6 @@ fn environment_projection_registration_report(
                 | EnvironmentPublicationProjectionErrorKind::UnboundMetadataTypeParameter {
                     ..
                 }
-                | EnvironmentPublicationProjectionErrorKind::MetadataOwnerMismatch { .. }
                 | EnvironmentPublicationProjectionErrorKind::RustMetadataCatalog { .. }
                 | EnvironmentPublicationProjectionErrorKind::Callable { .. } => {
                     crate::callable::CallableDiagnosticCode::CorruptCallableCatalog
@@ -1112,12 +1159,10 @@ fn accepted_external_environment(
     let mut inaccessible = BTreeMap::new();
     for input in facts.environment_inputs() {
         for nominal in input.input().nominal_inventory() {
-            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new_opaque(
+            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new(
                 nominal.id().clone(),
                 nominal.arity(),
-                nominal.runtime_carrier().producer().clone(),
-                nominal.runtime_carrier().value_class(),
-                nominal.runtime_carrier().persistence(),
+                nominal.semantics().clone(),
                 nominal.origin(),
                 Some(nominal.source().clone()),
             )?)?;

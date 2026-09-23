@@ -6,14 +6,13 @@
 
 use thiserror::Error;
 
-use crate::{
-    effect_row::{EffectConstraintEnvironmentError, EffectVar},
-    effects::EffectSet,
-};
+use crate::{effect_row::EffectConstraintEnvironmentError, effects::EffectSet};
 
 use super::{
-    GenericConstParameterId, GenericConstReference, GenericTypeParameterId, GenericTypeReference,
+    GenericConstParameterId, GenericConstReference, GenericEffectReference, GenericTypeParameterId,
+    GenericTypeReference,
 };
+mod application;
 pub(crate) mod context;
 mod hints;
 mod normalization;
@@ -21,11 +20,14 @@ mod references;
 mod shape;
 mod solution;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod tests;
 pub(crate) mod transaction;
 
 pub(crate) use super::compatibility::binding_plan::ConstraintAcceptance;
 pub(super) use super::compatibility::binding_plan::relate_selected_call;
+pub(crate) use application::{ConstraintSourceId, ImportedGenericParameterScopeLease};
 #[cfg(test)]
 pub(crate) use context::LocalConstraintAccounting;
 pub(crate) use context::{
@@ -42,19 +44,27 @@ pub(crate) use hints::{
     SourcePhase, SourceProbeOutcome, SourceProbeResult, SourceProbeSelection,
 };
 pub(crate) use normalization::{
+    ConstAliasResolution, TypeAliasResolution, resolve_const_alias, resolve_type_alias,
+};
+pub(crate) use normalization::{
     ConstraintClosurePolicy, KeyedConstraintProjection, RejectedConstraintSourceProjection,
     SolvedCandidate, TypeConstraintCandidateFailure, TypeConstraintFailure,
     TypeConstraintFailureInvariant,
 };
-pub(super) use normalization::{
-    bindings_equal, occurs_in_shape, seal_path, seal_type, validate_type,
-};
+pub(super) use normalization::{occurs_in_shape, seal_path, seal_type, validate_type};
 pub(crate) use shape::TypeConstraintShape;
 pub(crate) use solution::ClosedTypeInstantiation;
 pub(crate) use solution::TypeConstraintSolution;
+mod completion;
+pub(crate) use completion::{
+    CompletedCandidateAlternatives, CompletedConstraintApplication, CompletedConstraintComponent,
+};
 pub use solution::TypeInstantiationError;
-pub(crate) use transaction::ClosedConstraintProbe;
 pub(super) use transaction::{ChoiceDerivationStep, ChoiceForkRole, ConstraintPath};
+pub(crate) use transaction::{
+    ClosedConstraintProbe, ClosedConstraintSourceTrace, ConstraintSourceReceipt,
+    NestedConstraintPath, PendingChildConstraint,
+};
 
 /// Ordinary semantic incompatibilities are candidate rejections. They never
 /// describe malformed authority or operational exhaustion.
@@ -84,11 +94,11 @@ pub(crate) enum TypeConstraintRejection {
 pub(crate) enum ConstraintGenericParameterId {
     Type(GenericTypeReference),
     Const(GenericConstReference),
-    Effect(EffectVar),
+    Effect(GenericEffectReference),
 }
 
-impl From<EffectVar> for ConstraintGenericParameterId {
-    fn from(variable: EffectVar) -> Self {
+impl From<GenericEffectReference> for ConstraintGenericParameterId {
+    fn from(variable: GenericEffectReference) -> Self {
         Self::Effect(variable)
     }
 }
@@ -165,6 +175,10 @@ pub(crate) enum InheritedSolutionInvariantKind {
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub(crate) enum TypeConstraintParameterScopeInvariant {
+    #[error("application opening is outside the active constraint path")]
+    ApplicationOutOfScope,
+    #[error("constraint path already owns this application or generic opening")]
+    ApplicationAlreadyAdmitted,
     #[error("type parameter is outside the candidate parameter scope")]
     TypeParameterOutOfScope { parameter: GenericTypeReference },
     #[error("constant parameter is outside the candidate parameter scope")]
@@ -206,7 +220,7 @@ pub(crate) enum TypeConstraintEffectInvariantKind {
 #[error("effect constraint authority is invalid: {kind:?}")]
 pub(crate) struct TypeConstraintEffectInvariant {
     pub(crate) kind: TypeConstraintEffectInvariantKind,
-    pub(crate) variable: Option<EffectVar>,
+    pub(crate) variable: Option<GenericEffectReference>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -276,30 +290,52 @@ impl From<super::GenericScopeError> for TypeConstraintError {
     }
 }
 
-pub(super) fn map_effect_environment_error(
-    error: EffectConstraintEnvironmentError,
-) -> TypeConstraintError {
-    match error {
-        EffectConstraintEnvironmentError::MissingEffects { missing } => {
-            TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { missing })
+impl From<crate::effect_row::EffectRowError> for TypeConstraintError {
+    fn from(error: crate::effect_row::EffectRowError) -> Self {
+        match error {
+            crate::effect_row::EffectRowError::UnknownRow => {
+                effect_invariant(TypeConstraintEffectInvariantKind::UnknownRow, None)
+            }
+            crate::effect_row::EffectRowError::UnboundVariable { variable } => effect_invariant(
+                TypeConstraintEffectInvariantKind::ForeignVariable,
+                Some(variable),
+            ),
+            crate::effect_row::EffectRowError::ConflictingBinding { variable, .. }
+            | crate::effect_row::EffectRowError::CyclicBinding { variable } => effect_invariant(
+                TypeConstraintEffectInvariantKind::NonCanonicalInherited,
+                Some(variable),
+            ),
         }
-        EffectConstraintEnvironmentError::UnknownRow => {
-            effect_invariant(TypeConstraintEffectInvariantKind::UnknownRow, None)
+    }
+}
+
+impl From<EffectConstraintEnvironmentError> for TypeConstraintError {
+    fn from(error: EffectConstraintEnvironmentError) -> Self {
+        match error {
+            EffectConstraintEnvironmentError::MissingEffects { missing } => {
+                TypeConstraintError::Rejected(TypeConstraintRejection::EffectSubset { missing })
+            }
+            EffectConstraintEnvironmentError::AmbiguousCompletion => {
+                TypeConstraintError::Rejected(TypeConstraintRejection::UnresolvedType)
+            }
+            EffectConstraintEnvironmentError::UnknownRow => {
+                effect_invariant(TypeConstraintEffectInvariantKind::UnknownRow, None)
+            }
+            EffectConstraintEnvironmentError::ForeignVariable { variable } => effect_invariant(
+                TypeConstraintEffectInvariantKind::ForeignVariable,
+                Some(variable),
+            ),
+            EffectConstraintEnvironmentError::NonCanonicalScope => effect_invariant(
+                TypeConstraintEffectInvariantKind::DuplicateOrUnorderedScope,
+                None,
+            ),
         }
-        EffectConstraintEnvironmentError::ForeignVariable { variable } => effect_invariant(
-            TypeConstraintEffectInvariantKind::ForeignVariable,
-            Some(variable),
-        ),
-        EffectConstraintEnvironmentError::NonCanonicalScope => effect_invariant(
-            TypeConstraintEffectInvariantKind::DuplicateOrUnorderedScope,
-            None,
-        ),
     }
 }
 
 pub(super) fn effect_invariant(
     kind: TypeConstraintEffectInvariantKind,
-    variable: Option<EffectVar>,
+    variable: Option<GenericEffectReference>,
 ) -> TypeConstraintError {
     TypeConstraintError::Invariant(TypeConstraintInvariant::Effect(
         TypeConstraintEffectInvariant { kind, variable },
@@ -336,10 +372,10 @@ pub(crate) enum MaterializationImmediateFailure<D: ConstraintDomain> {
 pub(crate) enum ClosedMaterializationSubmission<D: ConstraintDomain> {
     Sealed(D::SealedBranchValue),
     Rejected {
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
         cause: D::SourceErrorCause,
     },
-    Fatal(SourceError<D::Source, D::SourceErrorCause>),
+    Fatal(SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>),
 }
 
 impl From<TypeConstraintAbort> for TypeConstraintError {

@@ -58,7 +58,12 @@ impl TypeKind {
             | Self::ActionResult
             | Self::AgentValue
             | Self::DataFormat
-            | Self::DataShape
+            | Self::DataValue
+            | Self::DataError
+            | Self::DataErrorKind
+            | Self::DataPath
+            | Self::DataPathSegment
+            | Self::DataMapKind
             | Self::AgentEntityMetadata
             | Self::AgentSourceAnchor
             | Self::AgentProjectGraphNeighborhood
@@ -105,6 +110,10 @@ impl TypeKind {
             },
             Self::Vec(child) => TypeConstraintShape::Unary {
                 kind: UnaryShape::Vec,
+                child,
+            },
+            Self::DataShape(child) => TypeConstraintShape::Unary {
+                kind: UnaryShape::DataShape,
                 child,
             },
             Self::Slice(child) => TypeConstraintShape::Unary {
@@ -457,6 +466,7 @@ pub(crate) enum UnaryShape {
     Range,
     Probe,
     Vec,
+    DataShape,
     Slice,
     Seq,
     Need,
@@ -477,6 +487,7 @@ impl UnaryShape {
             Self::Range => TypeKind::Range(child),
             Self::Probe => TypeKind::Probe(child),
             Self::Vec => TypeKind::Vec(child),
+            Self::DataShape => TypeKind::DataShape(child),
             Self::Slice => TypeKind::Slice(child),
             Self::Seq => TypeKind::Seq(child),
             Self::Need => TypeKind::Need(child),

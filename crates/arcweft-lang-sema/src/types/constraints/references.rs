@@ -1,9 +1,12 @@
 //! Scope-aware reference mapping over the shared semantic type shape.
 
-use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
+use super::super::{
+    ArrayLength, GenericConstReference, GenericEffectReference, GenericTypeReference, TypeKind,
+};
+use super::application::ConstraintApplicationScope;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::{
-    ConstraintDomain, TypeConstraintError, TypeConstraintInvariant,
+    ConstraintDomain, ConstraintPath, TypeConstraintError, TypeConstraintInvariant,
     TypeConstraintParameterScopeInvariant,
 };
 
@@ -14,19 +17,33 @@ pub(super) trait ConstraintReferenceMap {
     fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericTypeReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericTypeReference, TypeConstraintError>;
 
     fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericConstReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericConstReference, TypeConstraintError>;
+
+    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        reference: &GenericEffectReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericEffectReference, TypeConstraintError>;
 }
 
 pub(super) fn map_type<A, D>(
     ty: &TypeKind,
     mapping: &impl ConstraintReferenceMap,
+    application: &ConstraintApplicationScope<D>,
+    path: &ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind, TypeConstraintError>
 where
@@ -37,18 +54,21 @@ where
     context.enter_node()?;
     if let TypeKind::GenericParam(reference) = ty {
         return mapping
-            .type_reference(reference, context)
+            .type_reference(reference, application, path, context)
             .map(TypeKind::GenericParam);
     }
     let shape = ty.constraint_shape();
     context.with_binder(shape.binder(), |context| {
         let children = shape
             .children()
-            .map(|child| map_type(child, mapping, context))
+            .map(|child| map_type(child, mapping, application, path, context))
             .collect::<Result<Vec<_>, _>>()?;
         let mut result = shape.rebuild(children)?;
         if let TypeKind::Array { len, .. } = &mut result {
-            *len = map_length(len, mapping, context)?;
+            *len = map_length(len, mapping, application, path, context)?;
+        }
+        if let TypeKind::Function { effects, .. } = &mut result {
+            *effects = map_effect_row(effects, mapping, application, path, context)?;
         }
         Ok(result)
     })
@@ -57,6 +77,8 @@ where
 pub(super) fn map_length<A, D>(
     length: &ArrayLength,
     mapping: &impl ConstraintReferenceMap,
+    application: &ConstraintApplicationScope<D>,
+    path: &ConstraintPath<D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ArrayLength, TypeConstraintError>
 where
@@ -67,7 +89,7 @@ where
     context.enter_node()?;
     match length {
         ArrayLength::Generic(reference) => mapping
-            .const_reference(reference, context)
+            .const_reference(reference, application, path, context)
             .map(ArrayLength::Generic),
         _ => Ok(length.clone()),
     }
@@ -75,24 +97,68 @@ where
 
 pub(super) struct OpenTemplateReferences;
 
+pub(super) fn map_effect_row<A: TypeConstraintAccounting, D: ConstraintDomain>(
+    row: &crate::effect_row::EffectRow,
+    mapping: &impl ConstraintReferenceMap,
+    application: &ConstraintApplicationScope<D>,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<crate::effect_row::EffectRow, TypeConstraintError> {
+    row.try_map_variables(context, &mut |reference, context| {
+        mapping.effect_reference(reference, application, path, context)
+    })
+}
+
 impl ConstraintReferenceMap for OpenTemplateReferences {
+    fn effect_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        reference: &GenericEffectReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<GenericEffectReference, TypeConstraintError> {
+        let opened = if matches!(reference, GenericEffectReference::Inference(_)) {
+            reference.clone()
+        } else {
+            match reference.template_key(
+                application
+                    .parameters()
+                    .completed_contract()
+                    .template_scope(),
+                context.lexical_scope(),
+            )? {
+                Some(key) => application
+                    .parameters()
+                    .effect_reference(&key)
+                    .or_else(|| key.free_parameter().map(|_| key.clone()))
+                    .ok_or_else(|| effect_out_of_scope(reference))?,
+                None => reference.clone(),
+            }
+        };
+        context
+            .effect_eligibility(&opened, path.projection_view())
+            .ok_or_else(|| effect_out_of_scope(&opened))?;
+        Ok(opened)
+    }
     fn type_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericTypeReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericTypeReference, TypeConstraintError> {
         let opened = if matches!(reference, GenericTypeReference::Inference(_)) {
             reference.clone()
         } else {
             match reference.template_key(
-                context
-                    .parameter_scope
+                application
+                    .parameters()
                     .completed_contract()
                     .template_scope(),
                 context.lexical_scope(),
             )? {
-                Some(key) => context
-                    .parameter_scope
+                Some(key) => application
+                    .parameters()
                     .type_reference(&key)
                     .or_else(|| key.free_parameter().map(|_| key.clone()))
                     .ok_or_else(|| type_out_of_scope(reference))?,
@@ -100,7 +166,7 @@ impl ConstraintReferenceMap for OpenTemplateReferences {
             }
         };
         context
-            .parameter_eligibility(&opened)
+            .parameter_eligibility(&opened, path.projection_view())
             .ok_or_else(|| type_out_of_scope(&opened))?;
         Ok(opened)
     }
@@ -108,20 +174,22 @@ impl ConstraintReferenceMap for OpenTemplateReferences {
     fn const_reference<A: TypeConstraintAccounting, D: ConstraintDomain>(
         &self,
         reference: &GenericConstReference,
+        application: &ConstraintApplicationScope<D>,
+        path: &ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<GenericConstReference, TypeConstraintError> {
         let opened = if matches!(reference, GenericConstReference::Inference(_)) {
             reference.clone()
         } else {
             match reference.template_key(
-                context
-                    .parameter_scope
+                application
+                    .parameters()
                     .completed_contract()
                     .template_scope(),
                 context.lexical_scope(),
             )? {
-                Some(key) => context
-                    .parameter_scope
+                Some(key) => application
+                    .parameters()
                     .const_reference(&key)
                     .or_else(|| key.free_parameter().map(|_| key.clone()))
                     .ok_or_else(|| const_out_of_scope(reference))?,
@@ -129,7 +197,7 @@ impl ConstraintReferenceMap for OpenTemplateReferences {
             }
         };
         context
-            .const_parameter_eligibility(&opened)
+            .const_parameter_eligibility(&opened, path.projection_view())
             .ok_or_else(|| const_out_of_scope(&opened))?;
         Ok(opened)
     }
@@ -150,4 +218,11 @@ pub(super) fn const_out_of_scope(reference: &GenericConstReference) -> TypeConst
         },
     )
     .into()
+}
+
+pub(super) fn effect_out_of_scope(reference: &GenericEffectReference) -> TypeConstraintError {
+    super::effect_invariant(
+        super::TypeConstraintEffectInvariantKind::ForeignVariable,
+        Some(reference.clone()),
+    )
 }

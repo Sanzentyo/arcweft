@@ -84,6 +84,8 @@ pub enum AcceptedNominalOrigin {
 pub enum AcceptedNominalSemantics {
     Exact(TypeKind),
     Opaque(AcceptedOpaqueRuntimeCarrier),
+    /// Structural Rust declaration; executable shape requires its joined metadata.
+    RustAdt,
     Character(CharacterNominalType),
     Record(Arc<AcceptedEnvironmentRecordSemantics>),
     CompileTimeScalar(CompileTimeScalarKind),
@@ -280,7 +282,7 @@ pub struct AcceptedNominalRecord {
 }
 
 /// Failure to instantiate one already accepted nominal declaration.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
+#[derive(Clone, Debug, Eq, Error, Ord, PartialEq, PartialOrd)]
 pub enum AcceptedNominalInstantiationError {
     #[error("accepted nominal `{id}` expects {expected} type argument(s), but received {actual}")]
     WrongArity {
@@ -375,6 +377,18 @@ pub enum OpenNominalPatternError {
 pub enum AcceptedNominalCatalogError {
     #[error(transparent)]
     GenericScope(#[from] crate::types::GenericScopeError),
+    #[error("{error}")]
+    RustMetadataJoin {
+        error: Box<super::rust_metadata::RustMetadataJoinError>,
+    },
+    #[error(
+        "Rust ADT declaration {id:?} requires a Rust package owner, RustExport origin and source allocation"
+    )]
+    InvalidRustAdtPublication {
+        id: Box<AcceptedNominalId>,
+        origin: AcceptedNominalOrigin,
+        source_span: Option<SourceSpan>,
+    },
     #[error("duplicate accepted nominal path `{path}`")]
     DuplicateExactPath {
         path: TypePath,
@@ -500,6 +514,19 @@ impl AcceptedNominalRecord {
         origin: AcceptedNominalOrigin,
         source: Option<SourceSpan>,
     ) -> Result<Self, AcceptedNominalCatalogError> {
+        if (matches!(semantics, AcceptedNominalSemantics::RustAdt)
+            || origin == AcceptedNominalOrigin::RustExport)
+            && !(matches!(semantics, AcceptedNominalSemantics::RustAdt)
+                && matches!(id.owner(), AcceptedNominalOwnerId::RustPackage(_))
+                && origin == AcceptedNominalOrigin::RustExport
+                && source.is_some())
+        {
+            return Err(AcceptedNominalCatalogError::InvalidRustAdtPublication {
+                id: Box::new(id),
+                origin,
+                source_span: source,
+            });
+        }
         if arity > MAX_NOMINAL_ARITY
             || (arity != 0
                 && matches!(
@@ -617,6 +644,21 @@ impl AcceptedNominalRecord {
         )
     }
 
+    /// Publishes a structural role without claiming an executable carrier.
+    pub fn try_new_rust_adt(
+        id: AcceptedNominalId,
+        arity: u16,
+        source: SourceSpan,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        Self::try_new(
+            id,
+            arity,
+            AcceptedNominalSemantics::RustAdt,
+            AcceptedNominalOrigin::RustExport,
+            Some(source),
+        )
+    }
+
     /// Validates and creates one opaque accepted runtime-carrier record.
     pub fn try_new_opaque(
         id: AcceptedNominalId,
@@ -664,6 +706,7 @@ impl AcceptedNominalRecord {
         match &self.semantics {
             AcceptedNominalSemantics::Record(record) => Some(record),
             AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::RustAdt
             | AcceptedNominalSemantics::Opaque(_)
             | AcceptedNominalSemantics::Character(_)
             | AcceptedNominalSemantics::CompileTimeScalar(_) => None,
@@ -677,6 +720,7 @@ impl AcceptedNominalRecord {
             AcceptedNominalSemantics::Opaque(carrier) => Some(carrier),
             AcceptedNominalSemantics::Record(record) => record.runtime_carrier(),
             AcceptedNominalSemantics::Exact(_)
+            | AcceptedNominalSemantics::RustAdt
             | AcceptedNominalSemantics::Character(_)
             | AcceptedNominalSemantics::CompileTimeScalar(_) => None,
         }
@@ -708,9 +752,11 @@ impl AcceptedNominalRecord {
         }
         match &self.semantics {
             AcceptedNominalSemantics::Exact(ty) if arguments.is_empty() => Ok(ty.clone()),
-            AcceptedNominalSemantics::Opaque(_) => Ok(TypeKind::AcceptedNominal(
-                crate::types::AcceptedNominalType::new(self.id.clone(), arguments),
-            )),
+            AcceptedNominalSemantics::Opaque(_) | AcceptedNominalSemantics::RustAdt => {
+                Ok(TypeKind::AcceptedNominal(
+                    crate::types::AcceptedNominalType::new(self.id.clone(), arguments),
+                ))
+            }
             AcceptedNominalSemantics::Character(character) if arguments.is_empty() => {
                 Ok(TypeKind::CharacterNominal(character.clone()))
             }
@@ -1059,7 +1105,10 @@ impl TypeCheckEnv {
     pub(super) fn with_standard_accepted_nominals(self) -> Self {
         let environment = [
             ("DataFormat", TypeKind::DataFormat),
-            ("DataShape", TypeKind::DataShape),
+            ("DataValue", TypeKind::DataValue),
+            ("DataErrorKind", TypeKind::DataErrorKind),
+            ("DataPathSegment", TypeKind::DataPathSegment),
+            ("DataMapKind", TypeKind::DataMapKind),
             ("AgentValue", TypeKind::AgentValue),
             (
                 "ObservedObjectId",
@@ -1134,6 +1183,32 @@ impl TypeCheckEnv {
                 )
                 .expect("standard domain atoms have distinct non-reserved paths")
         });
+        let environment = environment
+            .try_with_nominal_record(
+                standard_domain_record(
+                    "DataError",
+                    TypeKind::DataError,
+                    [
+                        ("kind".to_owned(), TypeKind::DataErrorKind),
+                        ("path".to_owned(), TypeKind::DataPath),
+                        ("message".to_owned(), TypeKind::String),
+                    ],
+                )
+                .expect("DataError has a valid exact standard record schema"),
+            )
+            .expect("DataError has one standard nominal owner")
+            .try_with_nominal_record(
+                standard_domain_record(
+                    "DataPath",
+                    TypeKind::DataPath,
+                    [(
+                        "segments".to_owned(),
+                        TypeKind::Vec(Box::new(TypeKind::DataPathSegment)),
+                    )],
+                )
+                .expect("DataPath has a valid exact standard record schema"),
+            )
+            .expect("DataPath has one standard nominal owner");
         let environment = [
             CompileTimeScalarKind::Milli,
             CompileTimeScalarKind::Ratio,
@@ -1148,7 +1223,9 @@ impl TypeCheckEnv {
                 )
                 .expect("standard compile-time scalar atoms have distinct non-reserved paths")
         });
-        environment.with_standard_opaque_nominals()
+        environment
+            .with_standard_opaque_nominals()
+            .with_standard_character_dialogue_roles()
     }
 
     fn with_standard_opaque_nominals(self) -> Self {
@@ -1215,6 +1292,20 @@ pub(super) fn standard_exact_record(
     )
 }
 
+fn standard_domain_record(
+    name: &str,
+    ty: TypeKind,
+    fields: impl IntoIterator<Item = (String, TypeKind)>,
+) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
+    AcceptedNominalRecord::try_new_record(
+        standard_nominal_id(name),
+        ty,
+        fields,
+        AcceptedNominalOrigin::Domain,
+        None,
+    )
+}
+
 pub(super) fn standard_compile_time_scalar_record(
     kind: CompileTimeScalarKind,
     origin: AcceptedNominalOrigin,
@@ -1263,7 +1354,9 @@ fn validate_environment_record(
     record: &AcceptedEnvironmentRecordSemantics,
 ) -> Result<(), AcceptedNominalCatalogError> {
     let expected_type = direct_type_name(id.canonical_path())
-        .map(|name| TypeKind::Named(name.to_owned()))
+        .map(|name| {
+            TypeKind::primitive_name(name).unwrap_or_else(|| TypeKind::Named(name.to_owned()))
+        })
         .unwrap_or_else(|| record.ty().clone());
     let expected = expected_type.semantic_identity_digest()?;
     let actual = record.ty().semantic_identity_digest()?;

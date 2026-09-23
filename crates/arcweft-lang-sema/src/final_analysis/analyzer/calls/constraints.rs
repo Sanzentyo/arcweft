@@ -5,6 +5,8 @@
 //! here before a lower work session is opened; callback execution is kept in
 //! the affine client below so it cannot mint an expected type or projection.
 
+use crate::types::constraints::ConstraintSourceId;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     sync::Arc,
@@ -19,28 +21,28 @@ use crate::{
         CallConstraintInvariant, CallableArgumentSemanticAction, CallableArgumentSlotIndex,
         CallableCandidateId, CallableGroupIndex, CallableInstantiation, CallableParameterAdmission,
         CallableParameterConsumer, CallableParameterCoordinate, CallableRestContainerPolicy,
-        CallableResultSchema, CallableSemanticValueGuard, CallableValidator,
-        CheckedCallArgumentSlotSource, CheckedCallSite, CheckedSemanticValueEvidence,
+        CallableResultSchema, CallableSchemaGenericRole, CallableSemanticValueGuard,
+        CallableValidator, CandidateConstraintSourceContext, CheckedCallArgumentSlotSource,
+        CheckedCallResolverAuthority, CheckedCallSite, CheckedSemanticValueEvidence,
         DetachedPreparedResolvedCallable, EnclosingGenericParameterScope,
         ObservedSemanticValueEvidence, ParameterExpectedTypeProjection,
         PreparedArgumentSourceProjection, PreparedCallCalleeConstraintInputs, PreparedCallGraph,
         PreparedCallInputs, PreparedCallPrefixPayload, PreparedCallSemanticOperandOwner,
         PreparedCallSemanticOperandRole, PreparedCallableApplication,
-        PreparedConstraintInitialization, PreparedDialogueApplicationMetadataArgument,
-        PreparedFunctionValueOriginEvidence, PreparedResolvedCallable,
-        PreparedResolvedCallableDetachArena, PreparedSourceConstraintGroup,
-        VariantPayloadRequirement,
+        PreparedChildConstraintInitialization, PreparedConstraintInitialization,
+        PreparedDialogueApplicationMetadataArgument, PreparedFunctionValueOriginEvidence,
+        PreparedResolvedCallable, PreparedResolvedCallableDetachArena,
+        PreparedSourceConstraintGroup, VariantPayloadRequirement,
     },
     types::{
         GenericTypeReference, TypeKind,
         constraints::{
-            ClosedConstraintProbe, ConstraintAcceptance, ConstraintDomain, ExpectedHint,
-            KeyedConstraintProjection, MaterializationOutcome, MaterializedSourceRequest,
-            PreparedConstraintSourceProjection, PreparedSourceAlternative,
-            PreparedSourceConstraint, ProjectedExpectedHint, SourceError, SourcePhase,
-            SourceProbeOutcome, SourceProbeResult, TypeConstraintAbort, TypeConstraintFailure,
-            TypeConstraintFailureInvariant, TypeConstraintInitializationFailure,
-            TypeConstraintInvariant,
+            ConstraintAcceptance, ConstraintDomain, ExpectedHint, MaterializationOutcome,
+            MaterializedSourceRequest, PreparedConstraintSourceProjection,
+            PreparedSourceAlternative, PreparedSourceConstraint, ProjectedExpectedHint,
+            SourceError, SourcePhase, SourceProbeOutcome, SourceProbeResult, TypeConstraintAbort,
+            TypeConstraintFailure, TypeConstraintFailureInvariant,
+            TypeConstraintInitializationFailure, TypeConstraintInvariant,
         },
     },
 };
@@ -124,7 +126,35 @@ pub(crate) enum AnalyzerCallConstraintSource {
     },
 }
 
+type AnalyzerCallConstraintSourceId = ConstraintSourceId<AnalyzerCallConstraintSource>;
+
 impl AnalyzerCallConstraintSource {
+    fn expression_owner(self) -> Option<ExprId> {
+        match self {
+            Self::Receiver { source } | Self::Result { source } => Some(source),
+            Self::Argument {
+                source: CheckedCallArgumentSlotSource::Expression(source),
+                ..
+            }
+            | Self::DialoguePatch {
+                source: CheckedCallArgumentSlotSource::Expression(source),
+                ..
+            } => Some(source),
+            Self::DialogueApplicationMetadata { source, .. }
+            | Self::DialogueApplicationOperand { source, .. }
+            | Self::TextProxyObjectOperand { source, .. } => Some(source),
+            Self::BaseInstantiation
+            | Self::Argument {
+                source: CheckedCallArgumentSlotSource::CompactNumericElement { .. },
+                ..
+            }
+            | Self::DialoguePatch {
+                source: CheckedCallArgumentSlotSource::CompactNumericElement { .. },
+                ..
+            } => None,
+        }
+    }
+
     fn value_coordinate(self) -> Option<AnalyzerCallValueCoordinate> {
         match self {
             Self::Receiver { .. } => Some(AnalyzerCallValueCoordinate::Receiver),
@@ -226,27 +256,27 @@ enum AnalyzerCallValueCoordinate {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum AnalyzerCallScopeCoordinate {
     Probe {
-        source: AnalyzerCallConstraintSource,
+        source: AnalyzerCallConstraintSourceId,
     },
     Materialization {
-        owner: AnalyzerCallConstraintSource,
-        sources: Box<[AnalyzerCallConstraintSource]>,
+        owner: AnalyzerCallConstraintSourceId,
+        sources: Box<[AnalyzerCallConstraintSourceId]>,
     },
 }
 
 impl AnalyzerCallScopeCoordinate {
     fn owner_source(&self) -> AnalyzerCallConstraintSource {
         match self {
-            Self::Probe { source } => *source,
-            Self::Materialization { owner, .. } => *owner,
+            Self::Probe { source } => source.local(),
+            Self::Materialization { owner, .. } => owner.local(),
         }
     }
 
-    fn accepts_probe(&self, source: AnalyzerCallConstraintSource) -> bool {
+    fn accepts_probe(&self, source: AnalyzerCallConstraintSourceId) -> bool {
         matches!(self, Self::Probe { source: expected } if *expected == source)
     }
 
-    fn accepts_materialization(&self, source: AnalyzerCallConstraintSource) -> bool {
+    fn accepts_materialization(&self, source: AnalyzerCallConstraintSourceId) -> bool {
         matches!(self, Self::Materialization { sources, .. } if sources.iter().any(|expected| *expected == source))
     }
 }
@@ -257,7 +287,7 @@ impl AnalyzerCallScopeCoordinate {
 /// prevents a raw fact checkpoint from being reattached to another source.
 struct AnalyzerProbeCheckpoint {
     checkpoint: ProbeFactCheckpoint,
-    source: AnalyzerCallConstraintSource,
+    source: AnalyzerCallConstraintSourceId,
 }
 
 /// Analyzer-owned materialization checkpoint proof.  The ordered source list
@@ -265,7 +295,7 @@ struct AnalyzerProbeCheckpoint {
 /// close argument.  `next_source` records the validated request prefix.
 struct AnalyzerMaterializationCheckpoint {
     checkpoint: MaterializationFactCheckpoint,
-    sources: Box<[AnalyzerCallConstraintSource]>,
+    sources: Box<[AnalyzerCallConstraintSourceId]>,
     next_source: usize,
 }
 
@@ -278,7 +308,7 @@ pub(crate) enum AnalyzerCallSourceFailureCause {
     FinalSemantic(Box<crate::final_analysis::FinalSemanticAnalysisError>),
     NestedCallFatal {
         owner: ExprId,
-        error: Box<SourceError<AnalyzerCallConstraintSource, AnalyzerCallSourceFailureCause>>,
+        error: Box<SourceError<AnalyzerCallConstraintSourceId, AnalyzerCallSourceFailureCause>>,
     },
 }
 
@@ -299,6 +329,61 @@ impl AnalyzerCallSourceFailureCause {
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerCallProbeSemanticBranch {
     pub(crate) source: AnalyzerCallConstraintSource,
+    pub(crate) child_choice: Option<AnalyzerNestedCallChoice>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct AnalyzerNestedCallChoice {
+    application: ExprId,
+    site: crate::callable::CheckedCallSite,
+    candidate: CallableCandidateId,
+    schema: crate::callable::CallableSignatureSchemaDigest,
+    group: CallableGroupIndex,
+    rank_seed: super::super::AcceptedCandidateRank,
+}
+
+impl AnalyzerNestedCallChoice {
+    pub(crate) fn new(
+        application: ExprId,
+        site: crate::callable::CheckedCallSite,
+        candidate: CallableCandidateId,
+        schema: crate::callable::CallableSignatureSchemaDigest,
+        group: CallableGroupIndex,
+        rank_seed: super::super::AcceptedCandidateRank,
+    ) -> Self {
+        Self {
+            application,
+            site,
+            candidate,
+            schema,
+            group,
+            rank_seed,
+        }
+    }
+
+    pub(crate) const fn application(&self) -> ExprId {
+        self.application
+    }
+
+    pub(crate) const fn site(&self) -> crate::callable::CheckedCallSite {
+        self.site
+    }
+
+    pub(crate) fn candidate(&self) -> &CallableCandidateId {
+        &self.candidate
+    }
+
+    pub(crate) const fn schema(&self) -> crate::callable::CallableSignatureSchemaDigest {
+        self.schema
+    }
+
+    pub(crate) const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+
+    pub(crate) const fn rank_seed(&self) -> super::super::AcceptedCandidateRank {
+        self.rank_seed
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -470,7 +555,7 @@ impl AnalyzerPreparedDialoguePatchAdmission {
         >,
     ) -> bool {
         matches!(
-            rejected.source(),
+            rejected.source().local(),
             AnalyzerCallConstraintSource::DialoguePatch {
                 argument,
                 source: CheckedCallArgumentSlotSource::Expression(source),
@@ -499,6 +584,7 @@ pub(in crate::final_analysis::analyzer) enum AnalyzerCallSealedBranch {
     Empty,
     Materialized {
         projection: CandidateSemanticProjection,
+        nested_calls: Box<[super::PreparedSelectedNestedCall]>,
     },
 }
 
@@ -506,7 +592,24 @@ impl AnalyzerCallSealedBranch {
     fn semantic_replay_mismatch(&self, other: &Self) -> Option<CallConstraintInvariant> {
         let mismatch = match (self, other) {
             (Self::Empty, Self::Empty) => return None,
-            (Self::Materialized { projection: left }, Self::Materialized { projection: right }) => {
+            (
+                Self::Materialized {
+                    projection: left,
+                    nested_calls: left_calls,
+                },
+                Self::Materialized {
+                    projection: right,
+                    nested_calls: right_calls,
+                },
+            ) => {
+                if left_calls.len() != right_calls.len()
+                    || !left_calls
+                        .iter()
+                        .zip(right_calls.iter())
+                        .all(|(left, right)| left.semantic_replay_eq(right))
+                {
+                    return Some(CallConstraintInvariant::ReplaySealedBranchShapeMismatch);
+                }
                 left.semantic_replay_mismatch(right)?
             }
             (Self::Empty, Self::Materialized { .. }) | (Self::Materialized { .. }, Self::Empty) => {
@@ -546,7 +649,15 @@ impl AnalyzerCallSealedBranch {
 }
 
 #[derive(Debug, Eq, PartialEq)]
-pub(crate) struct AnalyzerCallPreparedSealedBranch;
+pub(crate) struct AnalyzerCallPreparedSealedBranch {
+    nested_calls: Vec<super::PreparedSelectedNestedCall>,
+}
+
+pub(crate) struct PreparedChildCandidateRun {
+    pub(crate) pending:
+        crate::types::constraints::PendingChildConstraint<AnalyzerCallConstraintDomain>,
+    pub(crate) descendants: Vec<super::PreparedCorrelatedCallRecipe>,
+}
 
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub(crate) enum AnalyzerCallProjection {
@@ -669,6 +780,7 @@ impl AnalyzerCallClientInvariant {
 }
 
 impl ConstraintDomain for AnalyzerCallConstraintDomain {
+    type Application = ExprId;
     type Source = AnalyzerCallConstraintSource;
     type AlternativeIndex = u32;
     type EvidenceRule = AnalyzerCallEvidenceRule;
@@ -709,7 +821,6 @@ impl ConstraintDomain for AnalyzerCallConstraintDomain {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AnalyzerCallEvidenceRule {
     kind: AnalyzerCallEvidenceRuleKind,
-    effect_projection: Option<AnalyzerCallEffectProjectionRequest>,
     compile_time_scalar:
         Option<Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>>,
 }
@@ -723,30 +834,17 @@ enum AnalyzerCallEvidenceRuleKind {
     Otherwise,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-struct AnalyzerCallEffectProjectionRequest {
-    coordinate: CallableParameterCoordinate,
-    expected: ParameterExpectedTypeProjection,
-    source_projection: PreparedConstraintSourceProjection,
-}
-
 impl AnalyzerCallEvidenceRule {
-    fn guarded(
-        guard: CallableSemanticValueGuard,
-        declared: TypeKind,
-        effect_projection: Option<AnalyzerCallEffectProjectionRequest>,
-    ) -> Self {
+    fn guarded(guard: CallableSemanticValueGuard, declared: TypeKind) -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Guarded { guard, declared },
-            effect_projection,
             compile_time_scalar: None,
         }
     }
 
-    fn otherwise(effect_projection: Option<AnalyzerCallEffectProjectionRequest>) -> Self {
+    fn otherwise() -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Otherwise,
-            effect_projection,
             compile_time_scalar: None,
         }
     }
@@ -756,7 +854,6 @@ impl AnalyzerCallEvidenceRule {
     ) -> Self {
         Self {
             kind: AnalyzerCallEvidenceRuleKind::Otherwise,
-            effect_projection: None,
             compile_time_scalar: Some(admission),
         }
     }
@@ -772,8 +869,37 @@ impl AnalyzerCallEvidenceRule {
 }
 
 struct AnalyzerCallObservedSource {
-    actual: TypeKind,
+    actual: Option<TypeKind>,
     evidence: ObservedSemanticValueEvidence,
+    pending_child:
+        Option<crate::types::constraints::PendingChildConstraint<AnalyzerCallConstraintDomain>>,
+    prepared_children: Vec<super::PreparedCorrelatedCallRecipe>,
+}
+
+impl AnalyzerCallObservedSource {
+    fn checked(actual: TypeKind, evidence: ObservedSemanticValueEvidence) -> Self {
+        Self {
+            actual: Some(actual),
+            evidence,
+            pending_child: None,
+            prepared_children: Vec::new(),
+        }
+    }
+
+    fn child(
+        pending_child: crate::types::constraints::PendingChildConstraint<
+            AnalyzerCallConstraintDomain,
+        >,
+        evidence: ObservedSemanticValueEvidence,
+        prepared_children: Vec<super::PreparedCorrelatedCallRecipe>,
+    ) -> Self {
+        Self {
+            actual: None,
+            evidence,
+            pending_child: Some(pending_child),
+            prepared_children,
+        }
+    }
 }
 
 fn validate_materialized_source_request(
@@ -781,14 +907,17 @@ fn validate_materialized_source_request(
     checked: &AnalyzerCallObservedSource,
 ) -> Result<(), TypeConstraintInvariant> {
     let source = *request.source();
-    if request.canonical_branch().source != source {
+    if request.canonical_branch().source != source.local() {
         return Err(TypeConstraintInvariant::SourceProtocol(
             crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
         ));
     }
-    if &checked.actual != request.actual()
-        || !request.source_projection().matches_actual(&checked.actual)
-    {
+    let Some(actual) = checked.actual.as_ref() else {
+        return Err(TypeConstraintInvariant::SourceProtocol(
+            crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+        ));
+    };
+    if actual != request.actual() || !request.source_projection().matches_actual(actual) {
         return Err(TypeConstraintInvariant::Projection(
             crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
                 crate::types::constraints::TypeConstraintRejection::Mismatch,
@@ -798,7 +927,7 @@ fn validate_materialized_source_request(
     if request.evidence().is_some_and(|evidence| {
         <AnalyzerCallConstraintDomain as ConstraintDomain>::project_checked_evidence(
             &checked.evidence,
-            request.actual(),
+            actual,
         )
         .as_ref()
             != Some(evidence)
@@ -815,6 +944,7 @@ fn validate_materialized_source_request(
 /// callback inputs that may bypass expression re-evaluation: the variant
 /// records which owner issued the actual, and the map key records its exact
 /// lower source coordinate.
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum AnalyzerPreparedSourceActual {
     ValueReceiver(TypeKind),
     DialogueApplicationMetadata(PreparedDialogueApplicationMetadataArgument),
@@ -872,7 +1002,7 @@ impl AnalyzerPreparedSourceActual {
 
 enum AnalyzerCallCheckFailure {
     Mismatch,
-    Fatal(SourceError<AnalyzerCallConstraintSource, AnalyzerCallSourceFailureCause>),
+    Fatal(SourceError<AnalyzerCallConstraintSourceId, AnalyzerCallSourceFailureCause>),
     Abort(TypeConstraintAbort),
     Invariant(AnalyzerCallClientInvariant),
 }
@@ -891,9 +1021,9 @@ struct AnalyzerCallActiveFactScope {
 pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control> {
     analyzer: &'a mut super::super::Analyzer<'project, 'catalog, 'control>,
     context: &'a AnalyzerExpressionContext<'a>,
+    application: Option<ExprId>,
     candidate: Option<Arc<PreparedResolvedCallable>>,
-    effect_projections:
-        BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallEffectProjectionRequest>,
+    consumer: Option<AnalyzerCallConsumerAdmission>,
     compile_time_scalar_admissions: BTreeMap<
         (AnalyzerCallConstraintSource, u32),
         Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
@@ -904,6 +1034,7 @@ pub(crate) struct AnalyzerCallExpressionClient<'a, 'project, 'catalog, 'control>
     pass: CandidateEvaluationPass,
     attempt: Option<PhysicalCallAttemptId>,
     active_fact_scope: Option<AnalyzerCallActiveFactScope>,
+    prepared_child_calls: &'a mut Vec<super::PreparedCorrelatedCallRecipe>,
 }
 
 impl<'a, 'project, 'catalog, 'control>
@@ -912,11 +1043,9 @@ impl<'a, 'project, 'catalog, 'control>
     fn new(
         analyzer: &'a mut super::super::Analyzer<'project, 'catalog, 'control>,
         context: &'a AnalyzerExpressionContext<'a>,
+        application: Option<ExprId>,
         candidate: Option<Arc<PreparedResolvedCallable>>,
-        effect_projections: BTreeMap<
-            (AnalyzerCallConstraintSource, u32),
-            AnalyzerCallEffectProjectionRequest,
-        >,
+        consumer: Option<AnalyzerCallConsumerAdmission>,
         compile_time_scalar_admissions: BTreeMap<
             (AnalyzerCallConstraintSource, u32),
             Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
@@ -931,18 +1060,21 @@ impl<'a, 'project, 'catalog, 'control>
         >,
         pass: CandidateEvaluationPass,
         attempt: Option<PhysicalCallAttemptId>,
+        prepared_child_calls: &'a mut Vec<super::PreparedCorrelatedCallRecipe>,
     ) -> Self {
         Self {
             analyzer,
             context,
+            application,
             candidate,
-            effect_projections,
+            consumer,
             compile_time_scalar_admissions,
             prepared_source_actuals,
             dialogue_patch_admissions,
             pass,
             attempt,
             active_fact_scope: None,
+            prepared_child_calls,
         }
     }
 
@@ -980,10 +1112,22 @@ impl<'a, 'project, 'catalog, 'control>
         source: AnalyzerCallConstraintSource,
         expected: CandidateExpectedType,
     ) -> Result<(), crate::final_analysis::FinalSemanticAnalysisError> {
+        let candidate = self.candidate.clone();
+        let attempt = self.attempt.clone();
+        self.record_physical_source_for(source, expected, candidate.as_deref(), attempt.as_ref())
+    }
+
+    fn record_physical_source_for(
+        &mut self,
+        source: AnalyzerCallConstraintSource,
+        expected: CandidateExpectedType,
+        candidate: Option<&PreparedResolvedCallable>,
+        attempt: Option<&PhysicalCallAttemptId>,
+    ) -> Result<(), crate::final_analysis::FinalSemanticAnalysisError> {
         let Some(physical) = source.physical_argument() else {
             return Ok(());
         };
-        let Some(candidate) = self.candidate.as_ref() else {
+        let Some(candidate) = candidate else {
             return Ok(());
         };
         let physical = PhysicalCandidateArgument::new(
@@ -993,7 +1137,7 @@ impl<'a, 'project, 'catalog, 'control>
             physical.kind(),
             expected,
         );
-        let attempt = self.attempt.clone().ok_or_else(|| {
+        let attempt = attempt.cloned().ok_or_else(|| {
             crate::final_analysis::FinalSemanticAnalysisError::CandidateFactTransaction {
                 violation: crate::final_analysis::CandidateFactTransactionViolation::PhysicalCallAttemptRootMismatch,
             }
@@ -1010,10 +1154,11 @@ impl<'a, 'project, 'catalog, 'control>
 
     fn admit_physical_source(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source_id: AnalyzerCallConstraintSourceId,
         phase: SourcePhase,
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
+        let source = source_id.local();
         if source.physical_argument().is_some() {
             self.analyzer
                 .control
@@ -1025,7 +1170,7 @@ impl<'a, 'project, 'catalog, 'control>
                         )
                     }
                     error => crate::callable::SourceCallbackFailure::fatal(SourceError::new(
-                        source,
+                        source_id,
                         phase,
                         AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
                     )),
@@ -1040,9 +1185,10 @@ impl<'a, 'project, 'catalog, 'control>
 
     fn active_source_check(
         &self,
-        source: AnalyzerCallConstraintSource,
+        source_id: AnalyzerCallConstraintSourceId,
         phase: SourcePhase,
     ) -> Result<(), AnalyzerCallClientInvariant> {
+        let source = source_id.local();
         let Some(active) = self.active_fact_scope.as_ref() else {
             return Err(AnalyzerCallClientInvariant::fact_transaction(
                 source,
@@ -1050,8 +1196,8 @@ impl<'a, 'project, 'catalog, 'control>
             ));
         };
         let accepted = match phase {
-            SourcePhase::Probe => active.coordinate.accepts_probe(source),
-            SourcePhase::Materialize => active.coordinate.accepts_materialization(source),
+            SourcePhase::Probe => active.coordinate.accepts_probe(source_id),
+            SourcePhase::Materialize => active.coordinate.accepts_materialization(source_id),
         };
         accepted.then_some(()).ok_or_else(|| {
             AnalyzerCallClientInvariant::active_fact_scope_mismatch(
@@ -1063,9 +1209,10 @@ impl<'a, 'project, 'catalog, 'control>
 
     fn probe_checkpoint_check(
         &self,
-        source: AnalyzerCallConstraintSource,
+        source_id: AnalyzerCallConstraintSourceId,
         checkpoint: &AnalyzerProbeCheckpoint,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
+        let source = source_id.local();
         let Some(active) = self.active_fact_scope.as_ref() else {
             return Err(crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::fact_transaction(
@@ -1074,8 +1221,8 @@ impl<'a, 'project, 'catalog, 'control>
                 ),
             ));
         };
-        if active.coordinate.accepts_probe(source)
-            && checkpoint.source == source
+        if active.coordinate.accepts_probe(source_id)
+            && checkpoint.source == source_id
             && active
                 .scope
                 .matches_probe_checkpoint(&checkpoint.checkpoint)
@@ -1092,9 +1239,10 @@ impl<'a, 'project, 'catalog, 'control>
 
     fn materialization_checkpoint_check(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source_id: AnalyzerCallConstraintSourceId,
         checkpoint: &mut AnalyzerMaterializationCheckpoint,
     ) -> Result<(), crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>> {
+        let source = source_id.local();
         let Some(active) = self.active_fact_scope.as_ref() else {
             return Err(crate::callable::SourceCallbackFailure::invariant(
                 AnalyzerCallClientInvariant::fact_transaction(
@@ -1111,7 +1259,7 @@ impl<'a, 'project, 'catalog, 'control>
             .scope
             .matches_materialization_checkpoint(&checkpoint.checkpoint)
         {
-            if checkpoint.sources.get(checkpoint.next_source) == Some(&source) {
+            if checkpoint.sources.get(checkpoint.next_source) == Some(&source_id) {
                 checkpoint.next_source += 1;
                 return Ok(());
             }
@@ -1126,17 +1274,42 @@ impl<'a, 'project, 'catalog, 'control>
 
     fn check_source(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source_id: AnalyzerCallConstraintSourceId,
         expectation: AnalyzerExpressionExpectation<'_>,
-        effect_projection: Option<&AnalyzerCallEffectProjectionRequest>,
         compile_time_scalar: Option<
             &crate::checked_compile_time::PreparedCompileTimeScalarAdmission,
         >,
+        application_context: Option<&super::PreparedCorrelatedCallRecipe>,
         phase: SourcePhase,
+        mut parent_probe: Option<
+            &mut crate::callable::CandidateConstraintSourceContext<
+                '_,
+                '_,
+                AnalyzerCallConstraintDomain,
+            >,
+        >,
     ) -> Result<AnalyzerCallObservedSource, AnalyzerCallCheckFailure> {
-        self.active_source_check(source, phase)
+        let source = source_id.local();
+        self.active_source_check(source_id, phase)
             .map_err(AnalyzerCallCheckFailure::Invariant)?;
-        if let Some(prepared) = self.prepared_source_actuals.get(&source) {
+        if application_context.is_some_and(|recipe| {
+            recipe.owner != recipe.source_preparation.application
+                || recipe.inputs.group() != recipe.group
+                || recipe.inputs.candidate() != Some(recipe.candidate.id())
+                || !recipe.consumer.validates_candidate(&recipe.candidate)
+        }) {
+            return Err(AnalyzerCallCheckFailure::Invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ),
+            ));
+        }
+        let prepared_source_actuals = application_context
+            .map_or(&self.prepared_source_actuals, |recipe| {
+                &recipe.source_preparation.prepared_source_actuals
+            });
+        if let Some(prepared) = prepared_source_actuals.get(&source) {
             if compile_time_scalar.is_some() || !prepared.validates(source) {
                 return Err(AnalyzerCallCheckFailure::Invariant(
                     AnalyzerCallClientInvariant::constraint(
@@ -1145,39 +1318,11 @@ impl<'a, 'project, 'catalog, 'control>
                     ),
                 ));
             }
-            let actual = match effect_projection {
-                None => prepared.actual().clone(),
-                Some(request) => {
-                    let candidate = self.candidate.as_ref().ok_or_else(|| {
-                        AnalyzerCallCheckFailure::Invariant(
-                            AnalyzerCallClientInvariant::constraint(
-                                source,
-                                CallConstraintInvariant::PreparedEffectInstantiationMismatch,
-                            ),
-                        )
-                    })?;
-                    let token = candidate
-                        .issue_parameter_effect_projection(
-                            request.coordinate,
-                            &request.expected,
-                            request.source_projection,
-                        )
-                        .map_err(|invariant| {
-                            AnalyzerCallCheckFailure::Invariant(
-                                AnalyzerCallClientInvariant::constraint(source, invariant),
-                            )
-                        })?;
-                    token.seal_actual(prepared.actual()).map_err(|invariant| {
-                        AnalyzerCallCheckFailure::Invariant(
-                            AnalyzerCallClientInvariant::constraint(source, invariant),
-                        )
-                    })?
-                }
-            };
-            return Ok(AnalyzerCallObservedSource {
+            let actual = prepared.actual().clone();
+            return Ok(AnalyzerCallObservedSource::checked(
                 actual,
-                evidence: prepared.evidence(),
-            });
+                prepared.evidence(),
+            ));
         }
         if matches!(
             source,
@@ -1209,8 +1354,24 @@ impl<'a, 'project, 'catalog, 'control>
                 ))
             })?;
         let child_context = self.context.child_candidate(authority);
+        let selected_candidate = application_context
+            .map(|recipe| &recipe.candidate)
+            .or(self.candidate.as_ref());
+        let selected_consumer = application_context
+            .map(|recipe| &recipe.consumer)
+            .or(self.consumer.as_ref());
+        if selected_candidate.is_some_and(|candidate| {
+            selected_consumer.is_some_and(|consumer| !consumer.validates_candidate(candidate))
+        }) {
+            return Err(AnalyzerCallCheckFailure::Invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ),
+            ));
+        }
         let child_context = if matches!(source, AnalyzerCallConstraintSource::Argument { .. })
-            && self.candidate.as_ref().is_some_and(|candidate| {
+            && selected_candidate.is_some_and(|candidate| {
                 candidate.schema().validator()
                     == &crate::callable::CallableValidator::ViewModifier(
                         crate::callable::ViewModifierId::Fx,
@@ -1222,6 +1383,120 @@ impl<'a, 'project, 'catalog, 'control>
         } else {
             child_context
         };
+        if phase == SourcePhase::Probe
+            && compile_time_scalar.is_none()
+            && let Some(parent_probe) = parent_probe.as_deref_mut()
+            && let Some(expression_owner) = source.expression_owner()
+        {
+            let module = self
+                .analyzer
+                .module(expression_owner.module())
+                .map_err(|error| {
+                    AnalyzerCallCheckFailure::Fatal(SourceError::new(
+                        source_id,
+                        phase,
+                        AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
+                    ))
+                })?;
+            let expression = module.resolve_expr(expression_owner).map_err(|_| {
+                AnalyzerCallCheckFailure::Fatal(SourceError::new(
+                    source_id,
+                    phase,
+                    AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(
+                        crate::final_analysis::FinalSemanticAnalysisError::InvalidOwner,
+                    )),
+                ))
+            })?;
+            if let arcweft_lang_hir::expr::HirExprKind::Call(call) = expression.kind() {
+                let (pending, prepared_children) = self
+                    .analyzer
+                    .probe_correlated_call_constraint_source(
+                        &child_context,
+                        self.application,
+                        module,
+                        expression_owner,
+                        call,
+                        &expectation,
+                        parent_probe,
+                    )
+                    .map_err(|error| match error {
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Rejected(_) => {
+                            AnalyzerCallCheckFailure::Mismatch
+                        }
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Fatal(error) => {
+                            AnalyzerCallCheckFailure::Fatal(SourceError::new(
+                                source_id,
+                                phase,
+                                AnalyzerCallSourceFailureCause::FinalSemantic(error),
+                            ))
+                        }
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Abort(error) => {
+                            AnalyzerCallCheckFailure::Abort(error)
+                        }
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
+                            crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::Fact(violation),
+                        ) => AnalyzerCallCheckFailure::Invariant(
+                            AnalyzerCallClientInvariant::fact_transaction(source, *violation),
+                        ),
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
+                            crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::Semantic(error),
+                        ) => AnalyzerCallCheckFailure::Invariant(
+                            AnalyzerCallClientInvariant::final_semantic(source, *error),
+                        ),
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
+                            crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::Cycle { owner },
+                        ) => AnalyzerCallCheckFailure::Invariant(
+                            AnalyzerCallClientInvariant::final_semantic(
+                                source,
+                                crate::final_analysis::FinalSemanticAnalysisError::ExpressionCycle { owner },
+                            ),
+                        ),
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Invariant(
+                            crate::final_analysis::analyzer::expression_error::AnalyzerExpressionInvariant::CallFrame {
+                                owner,
+                                violation,
+                            },
+                        ) => AnalyzerCallCheckFailure::Invariant(
+                            AnalyzerCallClientInvariant::call_frame(source, owner, *violation),
+                        ),
+                        crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Call {
+                            owner: inner_owner,
+                            failure,
+                        } => match failure {
+                            CallAnalysisFailure::FatalSource(error) => {
+                                AnalyzerCallCheckFailure::Fatal(SourceError::new(
+                                    source_id,
+                                    phase,
+                                    AnalyzerCallSourceFailureCause::NestedCallFatal {
+                                        owner: inner_owner,
+                                        error: Box::new(error),
+                                    },
+                                ))
+                            }
+                            CallAnalysisFailure::Abort(error) => {
+                                AnalyzerCallCheckFailure::Abort(error)
+                            }
+                            CallAnalysisFailure::Invariant(invariant) => {
+                                AnalyzerCallCheckFailure::Invariant(
+                                    AnalyzerCallClientInvariant::nested_call(
+                                        source,
+                                        inner_owner,
+                                        invariant,
+                                    ),
+                                )
+                            }
+                        },
+                })?;
+                if let Some(pending) = pending {
+                    return Ok(AnalyzerCallObservedSource::child(
+                        pending,
+                        ObservedSemanticValueEvidence::NoVariantCase,
+                        prepared_children,
+                    ));
+                }
+                return Err(AnalyzerCallCheckFailure::Mismatch);
+            }
+        }
         let result = self.analyzer.evaluate_call_constraint_source(
             &child_context,
             source,
@@ -1300,35 +1575,7 @@ impl<'a, 'project, 'catalog, 'control>
                         None
                     }
                 };
-                let actual = match effect_projection {
-                    None => checked_type.clone(),
-                    Some(request) => {
-                        let candidate = self.candidate.as_ref().ok_or_else(|| {
-                            AnalyzerCallCheckFailure::Invariant(
-                                AnalyzerCallClientInvariant::constraint(
-                                    source,
-                                    CallConstraintInvariant::PreparedEffectInstantiationMismatch,
-                                ),
-                            )
-                        })?;
-                        let token = candidate
-                            .issue_parameter_effect_projection(
-                                request.coordinate,
-                                &request.expected,
-                                request.source_projection,
-                            )
-                            .map_err(|invariant| {
-                                AnalyzerCallCheckFailure::Invariant(
-                                    AnalyzerCallClientInvariant::constraint(source, invariant),
-                                )
-                            })?;
-                        token.seal_actual(checked_type).map_err(|invariant| {
-                            AnalyzerCallCheckFailure::Invariant(
-                                AnalyzerCallClientInvariant::constraint(source, invariant),
-                            )
-                        })?
-                    }
-                };
+                let actual = checked_type.clone();
                 let evidence = variant.map_or(
                     ObservedSemanticValueEvidence::NoVariantCase,
                     |(ordinal, payload)| ObservedSemanticValueEvidence::VariantCase {
@@ -1337,14 +1584,14 @@ impl<'a, 'project, 'catalog, 'control>
                         payload,
                     },
                 );
-                Ok(AnalyzerCallObservedSource { actual, evidence })
+                Ok(AnalyzerCallObservedSource::checked(actual, evidence))
             }
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Rejected(_)) => {
                 Err(AnalyzerCallCheckFailure::Mismatch)
             }
             Err(crate::final_analysis::analyzer::expression_error::AnalyzerExpressionError::Fatal(error)) => {
                 Err(AnalyzerCallCheckFailure::Fatal(SourceError::new(
-                    source,
+                    source_id,
                     phase,
                     AnalyzerCallSourceFailureCause::FinalSemantic(error),
                 )))
@@ -1390,7 +1637,7 @@ impl<'a, 'project, 'catalog, 'control>
             }) => match failure {
                 CallAnalysisFailure::FatalSource(error) => {
                     Err(AnalyzerCallCheckFailure::Fatal(SourceError::new(
-                        source,
+                        source_id,
                         phase,
                         AnalyzerCallSourceFailureCause::NestedCallFatal {
                             owner: inner_owner,
@@ -1455,7 +1702,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn open_probe_checkpoint(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -1468,7 +1715,7 @@ trait AnalyzerCallConstraintOperations {
 
     fn open_materialization_checkpoint(
         &mut self,
-        sources: &[AnalyzerCallConstraintSource],
+        sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -1481,7 +1728,7 @@ trait AnalyzerCallConstraintOperations {
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
     ) -> Result<
         MaterializationOutcome<
-            AnalyzerCallConstraintSource,
+            AnalyzerCallConstraintSourceId,
             Self::PreparedSealedBranchValue,
             AnalyzerCallSourceFailureCause,
         >,
@@ -1525,14 +1772,25 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         SourceProbeOutcome<AnalyzerCallConstraintDomain>,
         crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
     > {
-        let source = probe.source();
+        let source_id = probe.source();
+        let source = source_id.local();
         probe.with_hint(|hint, probe| {
-        self.probe_checkpoint_check(source, checkpoint)?;
-        self.admit_physical_source(source, SourcePhase::Probe, probe.work())?;
+        self.probe_checkpoint_check(source_id, checkpoint)?;
+        let graph = self.analyzer.facts.prepared_calls().map_err(|violation| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::fact_transaction(source, violation),
+            )
+        })?;
+        probe.validate_graph(graph).map_err(|invariant| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(source, invariant),
+            )
+        })?;
+        self.admit_physical_source(source_id, SourcePhase::Probe, probe.work())?;
         self.record_physical_source(source, Self::physical_expected(source, &hint))
             .map_err(|error| {
                 crate::callable::SourceCallbackFailure::fatal(SourceError::new(
-                    source,
+                    source_id,
                     SourcePhase::Probe,
                     AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
                 ))
@@ -1540,7 +1798,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         let map_failure = |failure: AnalyzerCallCheckFailure| match failure {
             AnalyzerCallCheckFailure::Mismatch => {
                 crate::callable::SourceCallbackFailure::fatal(SourceError::new(
-                    source,
+                    source_id,
                     SourcePhase::Probe,
                     AnalyzerCallSourceFailureCause::Mismatch,
                 ))
@@ -1564,18 +1822,14 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             let expected_projection = ParameterExpectedTypeProjection::ApplyUnary(
                 crate::callable::CallableUnaryTypeConstructor::Option,
             );
-            let effect_projection = AnalyzerCallEffectProjectionRequest {
-                coordinate: admission.coordinate(),
-                expected: expected_projection.clone(),
-                source_projection: PreparedConstraintSourceProjection::Scalar,
-            };
             let clear_expected = expected_projection.apply_to(admission.declared());
             match self.check_source(
-                source,
+                source_id,
                 AnalyzerExpressionExpectation::from_complete(Some(&clear_expected)),
-                Some(&effect_projection),
+                None,
                 None,
                 SourcePhase::Probe,
+                None,
             ) {
                 Ok(checked) => {
                     let guard = CallableSemanticValueGuard::VariantCase {
@@ -1586,7 +1840,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     if guard.accepts_observation(admission.declared(), &checked.evidence) {
                         return Err(crate::callable::SourceCallbackFailure::fatal(
                             SourceError::new(
-                                source,
+                                source_id,
                                 SourcePhase::Probe,
                                 AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(
                                     admission.clear_failure(),
@@ -1594,7 +1848,9 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                             ),
                         ));
                     }
-                    observed = Some((checked.actual, checked.evidence));
+                    if let Some(actual) = checked.actual {
+                        observed = Some((actual, checked.evidence));
+                    }
                 }
                 Err(AnalyzerCallCheckFailure::Mismatch) => {}
                 Err(failure) => return Err(map_failure(failure)),
@@ -1603,16 +1859,44 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         match hint {
             ExpectedHint::Unchecked => {
                 match self.check_source(
-                    source,
+                    source_id,
                     AnalyzerExpressionExpectation::Unconstrained,
                     None,
                     None,
                     SourcePhase::Probe,
+                    Some(&mut *probe),
                 ) {
-                    Ok(checked) => Ok(SourceProbeOutcome::Accepted(SourceProbeResult::unchecked(
-                        checked.actual,
-                        AnalyzerCallProbeSemanticBranch { source },
-                    ))),
+                    Ok(checked) => {
+                        self.prepared_child_calls
+                            .extend(checked.prepared_children.iter().cloned());
+                        match (checked.actual, checked.pending_child) {
+                        (Some(actual), None) => probe.observe(SourceProbeResult::unchecked(
+                            actual,
+                            AnalyzerCallProbeSemanticBranch {
+                                source,
+                                child_choice: None,
+                            },
+                        )),
+                        (None, Some(pending)) => probe.observe_child(
+                            pending,
+                            AnalyzerCallProbeSemanticBranch {
+                                source,
+                                child_choice: None,
+                            },
+                            crate::types::constraints::SourceProbeSelection::Unchecked,
+                        ),
+                        _ => Err(crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::Lower(
+                                    TypeConstraintInvariant::SourceProtocol(
+                                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                                    ),
+                                ),
+                            ),
+                        )),
+                        }
+                    }
                     Err(AnalyzerCallCheckFailure::Mismatch) => Ok(SourceProbeOutcome::Rejected(
                         AnalyzerCallSourceFailureCause::Mismatch,
                     )),
@@ -1627,11 +1911,18 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         {
                             AnalyzerExpressionExpectation::from_complete(Some(expected))
                         }
-                        ProjectedExpectedHint::Parametric { expected, unbound }
+                        ProjectedExpectedHint::Parametric {
+                            expected,
+                            scope_lease,
+                            ..
+                        }
                             if alternative.source_projection().is_scalar() =>
                         {
-                            AnalyzerExpressionExpectation::parametric(expected, unbound)
-                                .ok_or_else(|| {
+                            AnalyzerExpressionExpectation::parametric_with_scope_lease(
+                                expected,
+                                scope_lease.clone(),
+                            )
+                            .ok_or_else(|| {
                                     crate::callable::SourceCallbackFailure::invariant(
                                         AnalyzerCallClientInvariant::constraint(
                                             source,
@@ -1650,25 +1941,56 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                         }
                     };
                     match self.check_source(
-                        source,
+                        source_id,
                         expectation,
-                        alternative.evidence().effect_projection.as_ref(),
                         alternative.evidence().compile_time_scalar.as_deref(),
+                        None,
                         SourcePhase::Probe,
+                        Some(&mut *probe),
                     ) {
                         Ok(checked) => {
+                            self.prepared_child_calls
+                                .extend(checked.prepared_children.iter().cloned());
                             if alternative.evidence().accepts(&checked.evidence) {
-                                return Ok(SourceProbeOutcome::Accepted(
-                                    SourceProbeResult::checked(
-                                        checked.actual,
-                                        AnalyzerCallProbeSemanticBranch { source },
+                                return match (checked.actual, checked.pending_child) {
+                                    (Some(actual), None) => probe.observe(SourceProbeResult::checked(
+                                        actual,
+                                        AnalyzerCallProbeSemanticBranch {
+                                            source,
+                                            child_choice: None,
+                                        },
                                         alternative.alternative(),
                                         checked.evidence,
-                                    ),
-                                ));
+                                    )),
+                                    (None, Some(pending)) => {
+                                        probe.observe_child(
+                                        pending,
+                                        AnalyzerCallProbeSemanticBranch {
+                                            source,
+                                            child_choice: None,
+                                        },
+                                        crate::types::constraints::SourceProbeSelection::Checked {
+                                            alternative: alternative.alternative(),
+                                            evidence: Arc::new(checked.evidence),
+                                        },
+                                        )
+                                    },
+                                    _ => Err(crate::callable::SourceCallbackFailure::invariant(
+                                        AnalyzerCallClientInvariant::constraint(
+                                            source,
+                                            CallConstraintInvariant::Lower(
+                                                TypeConstraintInvariant::SourceProtocol(
+                                                    crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                                                ),
+                                            ),
+                                        ),
+                                    )),
+                                };
                             }
                             if observed.is_none() {
-                                observed = Some((checked.actual, checked.evidence));
+                                if let Some(actual) = checked.actual {
+                                    observed = Some((actual, checked.evidence));
+                                }
                             }
                             continue;
                         }
@@ -1685,7 +2007,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                     );
                     return Err(crate::callable::SourceCallbackFailure::fatal(
                         SourceError::new(
-                            source,
+                            source_id,
                             SourcePhase::Probe,
                             AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(failure)),
                         ),
@@ -1701,7 +2023,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn open_probe_checkpoint(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -1721,7 +2043,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .open_callback_fact_scope()
             .map_err(|violation| {
                 crate::callable::SourceCheckpointFailure::client(
-                    AnalyzerCallClientInvariant::fact_transaction(source, violation),
+                    AnalyzerCallClientInvariant::fact_transaction(source.local(), violation),
                 )
             })?;
         let checkpoint = AnalyzerProbeCheckpoint {
@@ -1775,7 +2097,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
 
     fn open_materialization_checkpoint(
         &mut self,
-        sources: &[AnalyzerCallConstraintSource],
+        sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -1804,7 +2126,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
             .open_callback_fact_scope()
             .map_err(|violation| {
                 crate::callable::SourceCheckpointFailure::client(
-                    AnalyzerCallClientInvariant::fact_transaction(owner, violation),
+                    AnalyzerCallClientInvariant::fact_transaction(owner.local(), violation),
                 )
             })?;
         let checkpoint = AnalyzerMaterializationCheckpoint {
@@ -1823,7 +2145,7 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
     ) -> Result<
         MaterializationOutcome<
-            AnalyzerCallConstraintSource,
+            AnalyzerCallConstraintSourceId,
             Self::PreparedSealedBranchValue,
             AnalyzerCallSourceFailureCause,
         >,
@@ -1834,12 +2156,82 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
         CheckedSemanticValueEvidence: 'h,
         AnalyzerCallProbeSemanticBranch: 'h,
     {
-        for request in sources {
-            let source = *request.source();
-            self.materialization_checkpoint_check(source, checkpoint)?;
-            self.active_source_check(source, SourcePhase::Materialize)
+        let requests = sources.into_iter().collect::<Vec<_>>();
+        let mut requests_by_application = BTreeMap::<ExprId, Vec<usize>>::new();
+        for (index, request) in requests.iter().enumerate() {
+            requests_by_application
+                .entry(request.application_id())
+                .or_default()
+                .push(index);
+        }
+        let mut visited_applications = BTreeSet::new();
+        let (nested_calls, _) = collect_completed_nested_calls(
+            self.application.ok_or_else(|| {
+                crate::callable::SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::constraint(
+                        AnalyzerCallConstraintSource::BaseInstantiation,
+                        CallConstraintInvariant::PreparedCallSiteMismatch,
+                    ),
+                )
+            })?,
+            self.prepared_child_calls,
+            None,
+            &requests,
+            &requests_by_application,
+            &mut visited_applications,
+        )?;
+        if requests_by_application
+            .keys()
+            .any(|application| !visited_applications.contains(application))
+        {
+            return Err(crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                ),
+            ));
+        }
+
+        for request in requests {
+            let source_id = *request.source();
+            let source = source_id.local();
+            let application = request.application_id();
+            let application_context = if self.application == Some(application) {
+                None
+            } else {
+                let mut matches = nested_calls
+                    .iter()
+                    .filter(|selected| selected.recipe.owner == application);
+                let Some(selected) = matches.next() else {
+                    return Err(crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::PreparedCallSiteMismatch,
+                        ),
+                    ));
+                };
+                if matches.next().is_some()
+                    || selected.recipe.source_preparation.application != application
+                    || selected.recipe.inputs.group() != selected.recipe.group
+                    || selected.recipe.inputs.candidate() != Some(selected.recipe.candidate.id())
+                    || !selected
+                        .recipe
+                        .consumer
+                        .validates_candidate(&selected.recipe.candidate)
+                {
+                    return Err(crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ));
+                }
+                Some(&selected.recipe)
+            };
+            self.materialization_checkpoint_check(source_id, checkpoint)?;
+            self.active_source_check(source_id, SourcePhase::Materialize)
                 .map_err(crate::callable::SourceCallbackFailure::invariant)?;
-            self.admit_physical_source(source, SourcePhase::Materialize, work)?;
+            self.admit_physical_source(source_id, SourcePhase::Materialize, work)?;
             let expected =
                 source
                     .physical_argument()
@@ -1861,61 +2253,87 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                                 }),
                         },
                     );
-            self.record_physical_source(source, expected)
+            if self.application == Some(request.application_id()) {
+                let candidate = self.candidate.clone();
+                let attempt = self.attempt.clone();
+                self.record_physical_source_for(
+                    source,
+                    expected,
+                    candidate.as_deref(),
+                    attempt.as_ref(),
+                )
                 .map_err(|error| {
                     crate::callable::SourceCallbackFailure::fatal(SourceError::new(
-                        source,
+                        source_id,
                         SourcePhase::Materialize,
                         AnalyzerCallSourceFailureCause::FinalSemantic(Box::new(error)),
                     ))
                 })?;
-            let expected = request.expected();
-            let effect_projection = request
-                .alternative()
-                .and_then(|alternative| self.effect_projections.get(&(source, alternative)))
-                .cloned();
-            let compile_time_scalar = request.alternative().and_then(|alternative| {
-                self.compile_time_scalar_admissions
-                    .get(&(source, alternative))
-                    .cloned()
-            });
-            match self.check_source(
-                source,
-                AnalyzerExpressionExpectation::from_complete(expected),
-                effect_projection.as_ref(),
-                compile_time_scalar.as_deref(),
-                SourcePhase::Materialize,
-            ) {
-                Ok(checked) => {
-                    if let Err(invariant) = validate_materialized_source_request(&request, &checked)
-                    {
-                        return Err(crate::callable::SourceCallbackFailure::invariant(
+            }
+            let checked = if let Some(result) = request.result_projection() {
+                let actual = result
+                    .projection()
+                    .value()
+                    .to_quantified_type()
+                    .map_err(|_| {
+                        crate::callable::SourceCallbackFailure::invariant(
                             AnalyzerCallClientInvariant::constraint(
                                 source,
-                                CallConstraintInvariant::Lower(invariant),
+                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
                             ),
-                        ));
+                        )
+                    })?;
+                AnalyzerCallObservedSource::checked(
+                    actual,
+                    ObservedSemanticValueEvidence::NoVariantCase,
+                )
+            } else {
+                let expected = request.expected();
+                let compile_time_scalar = request.alternative().and_then(|alternative| {
+                    application_context
+                        .map_or(&self.compile_time_scalar_admissions, |recipe| {
+                            &recipe.source_preparation.compile_time_scalar_admissions
+                        })
+                        .get(&(source, alternative))
+                        .cloned()
+                });
+                match self.check_source(
+                    source_id,
+                    AnalyzerExpressionExpectation::from_complete(expected),
+                    compile_time_scalar.as_deref(),
+                    application_context,
+                    SourcePhase::Materialize,
+                    None,
+                ) {
+                    Ok(checked) => checked,
+                    Err(AnalyzerCallCheckFailure::Mismatch) => {
+                        return Ok(MaterializationOutcome::Rejected {
+                            source: source_id,
+                            cause: AnalyzerCallSourceFailureCause::Mismatch,
+                        });
+                    }
+                    Err(AnalyzerCallCheckFailure::Fatal(error)) => {
+                        return Err(crate::callable::SourceCallbackFailure::fatal(error));
+                    }
+                    Err(AnalyzerCallCheckFailure::Abort(error)) => {
+                        return Err(crate::callable::SourceCallbackFailure::Abort(error));
+                    }
+                    Err(AnalyzerCallCheckFailure::Invariant(invariant)) => {
+                        return Err(crate::callable::SourceCallbackFailure::invariant(invariant));
                     }
                 }
-                Err(AnalyzerCallCheckFailure::Mismatch) => {
-                    return Ok(MaterializationOutcome::Rejected {
+            };
+            if let Err(invariant) = validate_materialized_source_request(&request, &checked) {
+                return Err(crate::callable::SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::constraint(
                         source,
-                        cause: AnalyzerCallSourceFailureCause::Mismatch,
-                    });
-                }
-                Err(AnalyzerCallCheckFailure::Fatal(error)) => {
-                    return Err(crate::callable::SourceCallbackFailure::fatal(error));
-                }
-                Err(AnalyzerCallCheckFailure::Abort(error)) => {
-                    return Err(crate::callable::SourceCallbackFailure::Abort(error));
-                }
-                Err(AnalyzerCallCheckFailure::Invariant(invariant)) => {
-                    return Err(crate::callable::SourceCallbackFailure::invariant(invariant));
-                }
+                        CallConstraintInvariant::Lower(invariant),
+                    ),
+                ));
             }
         }
         Ok(MaterializationOutcome::Sealed(
-            AnalyzerCallPreparedSealedBranch,
+            AnalyzerCallPreparedSealedBranch { nested_calls },
         ))
     }
 
@@ -1973,10 +2391,13 @@ impl<'a, 'project, 'catalog, 'control> AnalyzerCallConstraintOperations
                 return Err(self.close_fact_failure(failure, coordinate));
             }
         };
-        let Some(_sealed) = sealed else {
+        let Some(sealed) = sealed else {
             return Ok(None);
         };
-        Ok(Some(AnalyzerCallSealedBranch::Materialized { projection }))
+        Ok(Some(AnalyzerCallSealedBranch::Materialized {
+            projection,
+            nested_calls: sealed.nested_calls.into_boxed_slice(),
+        }))
     }
 
     fn finish(
@@ -2037,7 +2458,7 @@ impl<O: AnalyzerCallConstraintOperations>
 
     fn open_probe_checkpoint(
         &mut self,
-        source: AnalyzerCallConstraintSource,
+        source: AnalyzerCallConstraintSourceId,
     ) -> Result<
         Self::ProbeCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -2054,7 +2475,7 @@ impl<O: AnalyzerCallConstraintOperations>
 
     fn open_materialization_checkpoint(
         &mut self,
-        sources: &[AnalyzerCallConstraintSource],
+        sources: &[AnalyzerCallConstraintSourceId],
     ) -> Result<
         Self::MaterializationCheckpoint,
         crate::callable::SourceCheckpointFailure<AnalyzerCallConstraintDomain>,
@@ -2069,7 +2490,7 @@ impl<O: AnalyzerCallConstraintOperations>
         work: &mut crate::callable::CandidateConstraintWorkSession<'_>,
     ) -> Result<
         MaterializationOutcome<
-            AnalyzerCallConstraintSource,
+            AnalyzerCallConstraintSourceId,
             Self::PreparedSealedBranchValue,
             AnalyzerCallSourceFailureCause,
         >,
@@ -2253,24 +2674,154 @@ pub(crate) struct PreparedCallConstraintSet {
     dialogue_patch_admissions:
         BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
     receiver_sources: Box<[PreparedSourceConstraint<AnalyzerCallConstraintDomain>]>,
-    effect_projections:
-        BTreeMap<(AnalyzerCallConstraintSource, u32), AnalyzerCallEffectProjectionRequest>,
     compile_time_scalar_admissions: BTreeMap<
         (AnalyzerCallConstraintSource, u32),
         Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
     >,
     base_constraints: Box<[PreparedCallTypeConstraint]>,
-    definition_effects: Option<PreparedCallableEffectConstraint>,
+    type_application_constraints: Box<[PreparedCallTypeConstraint]>,
     receiver_constraints: Box<[PreparedCallTypeConstraint]>,
     result_constraint: Option<PreparedCallTypeConstraint>,
     result_schema: CallableResultSchema,
     projection_requests: Box<[PreparedCallProjectionRequest]>,
-    initialization: PreparedConstraintInitialization,
+    initialization: PreparedCallConstraintInitialization,
 }
 
-struct PreparedCallableEffectConstraint {
-    projected: crate::effect_row::EffectRow,
-    known: crate::effect_row::EffectRow,
+struct PreparedCalleeProjectionOwners(Vec<Arc<CandidateSemanticProjection>>);
+
+impl PreparedCalleeProjectionOwners {
+    fn from_recipes(
+        recipes: &[super::PreparedCorrelatedCallRecipe],
+    ) -> Result<Self, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+        fn collect(
+            recipe: &super::PreparedCorrelatedCallRecipe,
+            projections: &mut Vec<Arc<CandidateSemanticProjection>>,
+        ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+            let projection = recipe.callee_prerequisites.as_ref().ok_or_else(|| {
+                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ))
+            })?;
+            if !projections
+                .iter()
+                .any(|existing| Arc::ptr_eq(existing, projection))
+            {
+                projections.push(Arc::clone(projection));
+            }
+            for descendant in &recipe.descendants {
+                collect(descendant, projections)?;
+            }
+            Ok(())
+        }
+
+        let mut projections = Vec::new();
+        for recipe in recipes {
+            collect(recipe, &mut projections)?;
+        }
+        Ok(Self(projections))
+    }
+
+    fn discard_all(
+        self,
+        analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+    ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+        for shared in self.0 {
+            let projection = Arc::try_unwrap(shared).map_err(|_| {
+                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ))
+            })?;
+            analyzer
+                .facts
+                .discard_candidate_projection(projection)
+                .map_err(|violation| {
+                    TypeConstraintFailure::client_invariant(
+                        AnalyzerCallClientInvariant::fact_transaction(
+                            AnalyzerCallConstraintSource::BaseInstantiation,
+                            violation,
+                        ),
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    fn retain_selected(
+        self,
+        analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+        nested_calls: &[super::PreparedSelectedNestedCall],
+    ) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+        for shared in self.0 {
+            let retained = nested_calls.iter().any(|selected| {
+                selected
+                    .recipe
+                    .callee_prerequisites
+                    .as_ref()
+                    .is_some_and(|projection| Arc::ptr_eq(&shared, projection))
+            });
+            if retained {
+                drop(shared);
+            } else {
+                let projection = Arc::try_unwrap(shared).map_err(|_| {
+                    TypeConstraintFailure::client_invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            AnalyzerCallConstraintSource::BaseInstantiation,
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    )
+                })?;
+                analyzer
+                    .facts
+                    .discard_candidate_projection(projection)
+                    .map_err(|violation| {
+                        TypeConstraintFailure::client_invariant(
+                            AnalyzerCallClientInvariant::fact_transaction(
+                                AnalyzerCallConstraintSource::BaseInstantiation,
+                                violation,
+                            ),
+                        )
+                    })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Immutable, application-owned source material needed when the selected
+/// correlated child is replayed during parent materialization. This carries
+/// preparation only; fact scopes and physical attempts remain owned by the
+/// active analyzer transaction.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct AnalyzerCallApplicationSources {
+    application: ExprId,
+    prepared_source_actuals: BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedSourceActual>,
+    dialogue_patch_admissions:
+        BTreeMap<AnalyzerCallConstraintSource, AnalyzerPreparedDialoguePatchAdmission>,
+    compile_time_scalar_admissions: BTreeMap<
+        (AnalyzerCallConstraintSource, u32),
+        Arc<crate::checked_compile_time::PreparedCompileTimeScalarAdmission>,
+    >,
+}
+
+impl PreparedCallConstraintSet {
+    pub(super) fn application_sources(
+        &self,
+        application: ExprId,
+    ) -> AnalyzerCallApplicationSources {
+        AnalyzerCallApplicationSources {
+            application,
+            prepared_source_actuals: self.prepared_source_actuals.clone(),
+            dialogue_patch_admissions: self.dialogue_patch_admissions.clone(),
+            compile_time_scalar_admissions: self.compile_time_scalar_admissions.clone(),
+        }
+    }
+}
+
+pub(crate) enum PreparedCallConstraintInitialization {
+    Root(PreparedConstraintInitialization),
+    Child(PreparedChildConstraintInitialization<AnalyzerCallConstraintDomain>),
 }
 
 /// One fully solved call transaction before the enclosing fact projection is
@@ -2281,6 +2832,7 @@ pub(crate) struct RanCandidateTransaction {
 }
 
 struct RanCandidateTransactionData {
+    application: ExprId,
     candidate: Arc<PreparedResolvedCallable>,
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
@@ -2304,8 +2856,77 @@ struct PreparedCallApplicationTransactionData {
     callee_inputs: PreparedCallCalleeConstraintInputs,
     inputs: PreparedCallInputs,
     sealed_branch: AnalyzerCallSealedBranch,
-    closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
-    projections: Box<[KeyedConstraintProjection<AnalyzerCallProjection>]>,
+    component: CompletedCallApplicationEvidence,
+}
+
+/// Shared immutable completion evidence limited to one exact admitted call
+/// application. The source component can contain nested applications, while
+/// each prepared record reads only its own application rows.
+#[derive(Clone, Eq, PartialEq)]
+pub(crate) struct CompletedCallApplicationEvidence {
+    component:
+        Arc<crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>>,
+    application: ExprId,
+}
+
+impl CompletedCallApplicationEvidence {
+    pub(crate) fn new(
+        component: Arc<
+            crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
+        >,
+        application: ExprId,
+    ) -> Result<Self, CallConstraintInvariant> {
+        if component.application(application).is_none() {
+            return Err(CallConstraintInvariant::PreparedCallSiteMismatch);
+        }
+        Ok(Self {
+            component,
+            application,
+        })
+    }
+
+    pub(crate) const fn application(&self) -> ExprId {
+        self.application
+    }
+
+    pub(crate) fn component(
+        &self,
+    ) -> &Arc<crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>>
+    {
+        &self.component
+    }
+
+    pub(crate) fn shared_component(
+        &self,
+    ) -> Arc<crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>>
+    {
+        Arc::clone(&self.component)
+    }
+
+    pub(crate) fn sources(&self) -> CompletedCallApplicationSources<'_> {
+        CompletedCallApplicationSources {
+            component: &self.component,
+            application: self.application,
+        }
+    }
+}
+
+pub(crate) struct CompletedCallApplicationSources<'a> {
+    component:
+        &'a crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
+    application: ExprId,
+}
+
+impl<'a> CompletedCallApplicationSources<'a> {
+    pub(crate) fn selected(
+        self,
+    ) -> impl Iterator<
+        Item = &'a crate::types::constraints::ClosedConstraintProbe<AnalyzerCallConstraintDomain>,
+    > + 'a {
+        self.component
+            .sources_for(self.application)
+            .expect("application evidence is admitted by its completed component")
+    }
 }
 
 pub(crate) struct PreparedCallArgumentSemanticProjection {
@@ -2328,11 +2949,13 @@ impl RanCandidateTransaction {
         let mapping = self.data.inputs.mapping();
         self.data
             .solved
-            .closed_sources
-            .iter()
+            .component
+            .sources()
+            .selected()
             .filter(|source| {
                 let (AnalyzerCallConstraintSource::Argument { slot, .. }
-                | AnalyzerCallConstraintSource::DialoguePatch { slot, .. }) = source.source()
+                | AnalyzerCallConstraintSource::DialoguePatch { slot, .. }) =
+                    source.source().local()
                 else {
                     return false;
                 };
@@ -2350,11 +2973,12 @@ impl RanCandidateTransaction {
     pub(crate) fn exact_argument_matches(&self) -> usize {
         self.data
             .solved
-            .closed_sources
-            .iter()
+            .component
+            .sources()
+            .selected()
             .filter(|source| {
                 matches!(
-                    source.source(),
+                    source.source().local(),
                     AnalyzerCallConstraintSource::Argument { .. }
                         | AnalyzerCallConstraintSource::DialoguePatch { .. }
                 ) && source.final_expected() == Some(source.actual())
@@ -2366,8 +2990,10 @@ impl RanCandidateTransaction {
     /// sole analyzer-to-callable application sealing seam.
     pub(crate) fn into_prepared_application(
         self,
+        checked_authority: CheckedCallResolverAuthority<'_>,
     ) -> Result<PreparedCallApplicationTransaction, CallConstraintInvariant> {
         let RanCandidateTransactionData {
+            application: application_owner,
             candidate,
             consumer,
             callee_inputs,
@@ -2377,13 +3003,24 @@ impl RanCandidateTransaction {
             solved,
         } = *self.data;
         let crate::types::constraints::SolvedCandidate {
-            solution,
+            component,
             sealed_branch,
-            projections,
-            closed_sources,
         } = solved;
-        let application =
-            PreparedCallableApplication::seal_from_selected_transaction(candidate, solution)?;
+        let component =
+            CompletedCallApplicationEvidence::new(Arc::new(component), application_owner)?;
+        let solution = component
+            .component()
+            .application(application_owner)
+            .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
+            .solution();
+        let terminal_effects = checked_authority
+            .terminal_effects_for(&candidate)
+            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+        let application = PreparedCallableApplication::seal_from_selected_transaction(
+            Arc::clone(&candidate),
+            Arc::clone(solution),
+            terminal_effects,
+        )?;
         let projected_result = application.result_schema()?;
         if application.completed_group() != current_group || projected_result != result {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
@@ -2395,14 +3032,49 @@ impl RanCandidateTransaction {
                 callee_inputs,
                 inputs,
                 sealed_branch,
-                closed_sources,
-                projections,
+                component,
             }),
         })
     }
 }
 
 impl PreparedCallApplicationTransaction {
+    pub(crate) fn from_completed_nested_call(
+        recipe: &super::PreparedCorrelatedCallRecipe,
+        component: Arc<
+            crate::types::constraints::CompletedConstraintComponent<AnalyzerCallConstraintDomain>,
+        >,
+        checked_authority: CheckedCallResolverAuthority<'_>,
+    ) -> Result<Self, CallConstraintInvariant> {
+        let evidence = CompletedCallApplicationEvidence::new(component, recipe.owner)?;
+        let solution = evidence
+            .component()
+            .application(recipe.owner)
+            .ok_or(CallConstraintInvariant::PreparedCallSiteMismatch)?
+            .solution();
+        let terminal_effects = checked_authority
+            .terminal_effects_for(&recipe.candidate)
+            .map_err(|_| CallConstraintInvariant::CheckedCallableAuthorityMismatch)?;
+        let application = PreparedCallableApplication::seal_from_selected_transaction(
+            Arc::clone(&recipe.candidate),
+            Arc::clone(solution),
+            terminal_effects,
+        )?;
+        if application.completed_group() != recipe.group {
+            return Err(CallConstraintInvariant::PreparedGroupMismatch);
+        }
+        Ok(Self {
+            data: Box::new(PreparedCallApplicationTransactionData {
+                application,
+                consumer: recipe.consumer.clone(),
+                callee_inputs: recipe.callee_inputs.clone(),
+                inputs: recipe.inputs.clone(),
+                sealed_branch: AnalyzerCallSealedBranch::Empty,
+                component: evidence,
+            }),
+        })
+    }
+
     pub(crate) fn candidate(&self) -> &PreparedResolvedCallable {
         self.data.application.selected()
     }
@@ -2470,9 +3142,10 @@ impl PreparedCallApplicationTransaction {
         );
         let closed = self
             .data
-            .closed_sources
-            .iter()
-            .find(|closed| closed.source().same_argument_identity(source))
+            .component
+            .sources()
+            .selected()
+            .find(|closed| closed.source().local().same_argument_identity(source))
             .ok_or(CallConstraintInvariant::MalformedMapperSeal)?;
         let action = match slot.coordinate() {
             None => {
@@ -2540,11 +3213,8 @@ impl PreparedCallApplicationTransaction {
         {
             return Some(mismatch);
         }
-        if self.data.closed_sources != other.data.closed_sources {
+        if self.data.component != other.data.component {
             return Some(CallConstraintInvariant::ReplayClosedSourcesMismatch);
-        }
-        if self.data.projections != other.data.projections {
-            return Some(CallConstraintInvariant::ReplayProjectionMismatch);
         }
         None
     }
@@ -2557,8 +3227,7 @@ impl PreparedCallApplicationTransaction {
         PreparedCallCalleeConstraintInputs,
         PreparedCallInputs,
         AnalyzerCallSealedBranch,
-        Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
-        Box<[KeyedConstraintProjection<AnalyzerCallProjection>]>,
+        CompletedCallApplicationEvidence,
     ) {
         (
             self.data.application,
@@ -2566,8 +3235,7 @@ impl PreparedCallApplicationTransaction {
             self.data.callee_inputs,
             self.data.inputs,
             self.data.sealed_branch,
-            self.data.closed_sources,
-            self.data.projections,
+            self.data.component,
         )
     }
 }
@@ -2924,7 +3592,7 @@ pub(crate) enum CallAnalysisInvariant {
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) enum CallAnalysisFailure {
-    FatalSource(SourceError<AnalyzerCallConstraintSource, AnalyzerCallSourceFailureCause>),
+    FatalSource(SourceError<AnalyzerCallConstraintSourceId, AnalyzerCallSourceFailureCause>),
     Abort(TypeConstraintAbort),
     Invariant(CallAnalysisInvariant),
 }
@@ -3079,7 +3747,7 @@ pub(crate) struct AnalyzerPreparedCandidateRecord {
     consumer: AnalyzerCallConsumerAdmission,
     callee_inputs: PreparedCallCalleeConstraintInputs,
     inputs: PreparedCallInputs,
-    closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
+    component: CompletedCallApplicationEvidence,
 }
 
 impl AnalyzerPreparedCandidateRecord {
@@ -3089,7 +3757,7 @@ impl AnalyzerPreparedCandidateRecord {
         consumer: AnalyzerCallConsumerAdmission,
         callee_inputs: PreparedCallCalleeConstraintInputs,
         inputs: PreparedCallInputs,
-        closed_sources: Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
+        component: CompletedCallApplicationEvidence,
     ) -> Result<Self, CallConstraintInvariant> {
         let semantic_operands = inputs.semantic_operands();
         let is_dialogue_application = matches!(
@@ -3100,7 +3768,8 @@ impl AnalyzerPreparedCandidateRecord {
             callee_inputs,
             PreparedCallCalleeConstraintInputs::StaticContentCallee(_)
         );
-        if !consumer.validates_candidate(selected)
+        if component.application() != metadata.expression
+            || !consumer.validates_candidate(selected)
             || inputs.candidate() != Some(selected.id())
             || !static_content_callee_matches(&callee_inputs, selected.id(), inputs.schema())
             || (is_dialogue_application && semantic_operands.is_empty())
@@ -3127,7 +3796,7 @@ impl AnalyzerPreparedCandidateRecord {
             consumer,
             callee_inputs,
             inputs,
-            closed_sources,
+            component,
         })
     }
 
@@ -3153,7 +3822,7 @@ impl AnalyzerPreparedCandidateRecord {
             consumer,
             callee_inputs,
             inputs,
-            closed_sources,
+            component,
         } = self;
         AnalyzerPreparedCandidateRecordParts {
             expression: metadata.expression,
@@ -3165,7 +3834,7 @@ impl AnalyzerPreparedCandidateRecord {
             consumer,
             callee_inputs,
             inputs,
-            closed_sources,
+            component,
         }
     }
 }
@@ -3180,8 +3849,7 @@ pub(crate) struct AnalyzerPreparedCandidateRecordParts {
     pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
     pub(crate) inputs: PreparedCallInputs,
-    pub(in crate::final_analysis::analyzer) closed_sources:
-        Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
+    pub(in crate::final_analysis::analyzer) component: CompletedCallApplicationEvidence,
 }
 
 impl AnalyzerPreparedCandidateRecordParts {
@@ -3199,7 +3867,7 @@ impl AnalyzerPreparedCandidateRecordParts {
             consumer: self.consumer,
             callee_inputs: self.callee_inputs,
             inputs: self.inputs,
-            closed_sources: self.closed_sources,
+            component: self.component,
         })
     }
 }
@@ -3217,8 +3885,7 @@ pub(crate) struct AnalyzerDetachedCandidateRecord {
     pub(crate) consumer: AnalyzerCallConsumerAdmission,
     pub(crate) callee_inputs: PreparedCallCalleeConstraintInputs,
     pub(crate) inputs: PreparedCallInputs,
-    pub(in crate::final_analysis::analyzer) closed_sources:
-        Box<[ClosedConstraintProbe<AnalyzerCallConstraintDomain>]>,
+    pub(in crate::final_analysis::analyzer) component: CompletedCallApplicationEvidence,
 }
 
 /// The single analyzer preparation gate. It seals one composite prepared-input
@@ -3228,6 +3895,7 @@ pub(crate) struct AnalyzerDetachedCandidateRecord {
 pub(crate) fn validate_and_prepare_call_constraints(
     graph: &AnalyzerPreparedCallGraph,
     candidate: Arc<PreparedResolvedCallable>,
+    checked_authority: CheckedCallResolverAuthority<'_>,
     inputs: PreparedCallInputs,
     authored_arguments: &[arcweft_lang_hir::expr::HirCallArgument],
     expected_result: Option<&TypeKind>,
@@ -3238,42 +3906,85 @@ pub(crate) fn validate_and_prepare_call_constraints(
     scalar_types: &crate::registration::RegisteredCompileTimeScalarTypes,
     consumer: AnalyzerCallConsumerAdmission,
     enclosing: &EnclosingGenericParameterScope,
-    known_callable_effects: Option<&crate::effects::EffectSet>,
+    parent_source: Option<&CandidateConstraintSourceContext<'_, '_, AnalyzerCallConstraintDomain>>,
+    site: CheckedCallSite,
 ) -> CallAnalysisResult<PreparedCallConstraintSet> {
     let group = candidate.call_group();
     if inputs.candidate() != Some(candidate.id())
         || inputs.group() != group
         || inputs.schema() != candidate.schema().semantic_digest()
+        || !inputs.validates_type_application(&candidate)
     {
         return Err(CallAnalysisFailure::Invariant(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
         ));
     }
-    let initialization = graph
-        .validate_and_issue_constraint_initialization(&candidate, enclosing)
-        .map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+    let terminal_effects = checked_authority
+        .terminal_effects_for(&candidate)
+        .map_err(|_| {
+            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                CallConstraintInvariant::CheckedCallableAuthorityMismatch,
+            ))
         })?;
-    let future_parameters = initialization.future_parameters().to_vec();
-    let definition_effects = known_callable_effects
-        .filter(|_| candidate.schema().effects().fixed_row().is_none())
-        .map(|known| {
-            candidate
-                .constraint_callable_effects()
-                .map(|projected| PreparedCallableEffectConstraint {
-                    projected,
-                    known: crate::effect_row::EffectRow::closed(known.clone()),
-                })
+    let initialization = match parent_source {
+        Some(parent_source) => PreparedCallConstraintInitialization::Child(
+            parent_source
+                .issue_child_initialization(graph, result_source, site, &candidate, enclosing)
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-                })
-        })
-        .transpose()?;
+                })?,
+        ),
+        None => PreparedCallConstraintInitialization::Root(
+            graph
+                .validate_and_issue_constraint_initialization(&candidate, enclosing)
+                .map_err(|error| {
+                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+                })?,
+        ),
+    };
+    let future_parameters = match &initialization {
+        PreparedCallConstraintInitialization::Root(initialization) => {
+            initialization.future_parameters()
+        }
+        PreparedCallConstraintInitialization::Child(initialization) => {
+            initialization.future_parameters()
+        }
+    }
+    .to_vec();
     if !consumer.validates_candidate(&candidate) {
         return Err(CallAnalysisFailure::Invariant(
             CallAnalysisInvariant::Constraint(CallConstraintInvariant::MalformedMapperSeal),
         ));
     }
+    let type_application_constraints = match inputs.type_application() {
+        crate::callable::PreparedCallTypeApplication::Absent => Vec::new(),
+        crate::callable::PreparedCallTypeApplication::Present(arguments) => {
+            let mut constraints = Vec::with_capacity(arguments.len());
+            let parameters = candidate
+                .schema()
+                .generic_inventory()
+                .types()
+                .iter()
+                .filter(|entry| entry.role() == CallableSchemaGenericRole::Candidate);
+            for (entry, actual) in parameters.zip(arguments.iter()) {
+                let Some(actual) = actual else {
+                    return Err(CallAnalysisFailure::Invariant(
+                        CallAnalysisInvariant::Constraint(
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ));
+                };
+                constraints.push(PreparedCallTypeConstraint {
+                    source: AnalyzerCallConstraintSource::BaseInstantiation,
+                    pattern: TypeKind::GenericParam(entry.parameter().clone()),
+                    actual: actual.clone(),
+                    acceptance: ConstraintAcceptance::PatternAcceptsActual,
+                });
+            }
+            constraints
+        }
+    };
+    let type_application_constraints = type_application_constraints.into_boxed_slice();
     let view_fx_runtime_parameters = consumer.runtime_parameters();
     let mut compile_time_scalar_admission_map = BTreeMap::new();
     for row in compile_time_scalar_admissions {
@@ -3772,7 +4483,6 @@ pub(crate) fn validate_and_prepare_call_constraints(
         (groups.into_boxed_slice(), actuals)
     };
 
-    let mut effect_projections = BTreeMap::new();
     let mut compile_time_scalar_admissions = BTreeMap::new();
     for group in &source_groups {
         for prepared in group.sources() {
@@ -3789,19 +4499,6 @@ pub(crate) fn validate_and_prepare_call_constraints(
                     return Err(CallAnalysisFailure::Invariant(
                         CallAnalysisInvariant::Constraint(
                             CallConstraintInvariant::MalformedMapperSeal,
-                        ),
-                    ));
-                }
-                let Some(request) = alternative.evidence().effect_projection.as_ref() else {
-                    continue;
-                };
-                if effect_projections
-                    .insert((source, alternative.alternative()), request.clone())
-                    .is_some()
-                {
-                    return Err(CallAnalysisFailure::Invariant(
-                        CallAnalysisInvariant::Constraint(
-                            CallConstraintInvariant::PreparedEffectInstantiationMismatch,
                         ),
                     ));
                 }
@@ -3909,7 +4606,11 @@ pub(crate) fn validate_and_prepare_call_constraints(
             CallableInstantiation::None,
         ) => {
             let constraint = candidate
-                .prepare_function_value_constraint(group, actual)
+                .prepare_function_value_constraint(group, actual, terminal_effects)
+                .map_err(|error| {
+                    CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+                })?
+                .into_ready()
                 .map_err(|error| {
                     CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
                 })?;
@@ -3951,23 +4652,28 @@ pub(crate) fn validate_and_prepare_call_constraints(
     }
 
     let result_constraint = if let Some(expected) = expected_result {
-        let token = candidate
-            .issue_group_result_effect_projection(group)
+        let result = candidate
+            .result_schema_for_group(group, terminal_effects)
+            .map_err(|error| {
+                CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+            })?
+            .into_ready()
             .map_err(|error| {
                 CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
             })?;
-        let pattern = token.projected_type().map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?;
-        let projected_expected = token.seal_actual(expected).map_err(|error| {
-            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-        })?;
+        let CallableResultSchema::Value(pattern) = result else {
+            return Err(CallAnalysisFailure::Invariant(
+                CallAnalysisInvariant::Constraint(
+                    CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                ),
+            ));
+        };
         Some(PreparedCallTypeConstraint {
             source: AnalyzerCallConstraintSource::Result {
                 source: result_source,
             },
             pattern,
-            actual: projected_expected,
+            actual: expected.clone(),
             acceptance: ConstraintAcceptance::ActualAcceptsPattern,
         })
     } else {
@@ -3986,9 +4692,13 @@ pub(crate) fn validate_and_prepare_call_constraints(
             closure: result_closure,
         })
         .collect::<Vec<_>>();
-    let result_schema = candidate.result_schema_for_group(group).map_err(|error| {
-        CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
-    })?;
+    let result_schema = candidate
+        .result_schema_for_group(group, terminal_effects)
+        .map_err(|error| CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)))?
+        .into_ready()
+        .map_err(|error| {
+            CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error))
+        })?;
     if let CallableResultSchema::Value(result_projection) = &result_schema {
         projection_requests.push(PreparedCallProjectionRequest {
             key: AnalyzerCallProjection::Result,
@@ -4019,10 +4729,9 @@ pub(crate) fn validate_and_prepare_call_constraints(
         prepared_source_actuals,
         dialogue_patch_admissions: dialogue_patch_admission_map,
         receiver_sources: receiver_sources.into_boxed_slice(),
-        effect_projections,
         compile_time_scalar_admissions,
         base_constraints: base_constraints.into_boxed_slice(),
-        definition_effects,
+        type_application_constraints,
         receiver_constraints: receiver_constraints.into_boxed_slice(),
         result_constraint,
         result_schema,
@@ -4059,11 +4768,7 @@ fn typed_source_constraint(
         source,
         PreparedConstraintSourceProjection::Scalar,
         [],
-        PreparedSourceAlternative::new(
-            0,
-            AnalyzerCallEvidenceRule::otherwise(None),
-            expected.clone(),
-        ),
+        PreparedSourceAlternative::new(0, AnalyzerCallEvidenceRule::otherwise(), expected.clone()),
     )
     .map_err(|error| {
         CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
@@ -4260,18 +4965,9 @@ fn prepare_parameter_source_constraint(
         .iter()
         .enumerate()
         .map(|(ordinal, guarded)| {
-            let effect_projection = Some(AnalyzerCallEffectProjectionRequest {
-                coordinate,
-                expected: guarded.expected().clone(),
-                source_projection: projection,
-            });
             PreparedSourceAlternative::new(
                 u32::try_from(ordinal).unwrap_or(u32::MAX),
-                AnalyzerCallEvidenceRule::guarded(
-                    guarded.guard().clone(),
-                    declared.clone(),
-                    effect_projection,
-                ),
+                AnalyzerCallEvidenceRule::guarded(guarded.guard().clone(), declared.clone()),
                 guarded.expected().apply_to(&declared),
             )
         })
@@ -4279,11 +4975,7 @@ fn prepare_parameter_source_constraint(
     let otherwise = rule.otherwise();
     let otherwise = PreparedSourceAlternative::new(
         u32::try_from(rule.guarded().len()).unwrap_or(u32::MAX),
-        AnalyzerCallEvidenceRule::otherwise(Some(AnalyzerCallEffectProjectionRequest {
-            coordinate,
-            expected: otherwise.expected().clone(),
-            source_projection: projection,
-        })),
+        AnalyzerCallEvidenceRule::otherwise(),
         otherwise.expected().apply_to(&declared),
     );
     PreparedSourceConstraint::checked(source, projection, guarded, otherwise).map_err(|error| {
@@ -4310,6 +5002,7 @@ fn prepare_parameter_source_constraint(
 /// publication; its caller chooses singleton move or multi-candidate replay.
 pub(crate) fn run_prepared_candidate(
     analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+    application: ExprId,
     work: &mut crate::callable::ResolverWork,
     context: &AnalyzerExpressionContext<'_>,
     pass: CandidateEvaluationPass,
@@ -4325,16 +5018,22 @@ pub(crate) fn run_prepared_candidate(
         prepared_source_actuals,
         dialogue_patch_admissions,
         receiver_sources,
-        effect_projections,
         compile_time_scalar_admissions,
         base_constraints,
-        definition_effects,
+        type_application_constraints,
         receiver_constraints,
         result_constraint,
         result_schema,
         projection_requests,
         initialization,
     } = set;
+    let PreparedCallConstraintInitialization::Root(initialization) = initialization else {
+        return Err(TypeConstraintFailure::Invariant(
+            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongPhase,
+            )),
+        ));
+    };
     let session = work
         .begin_candidate_constraint_session(
             analyzer.catalogs.callable_limits,
@@ -4345,28 +5044,41 @@ pub(crate) fn run_prepared_candidate(
                 TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow)
             }
         })?;
+    let mut prepared_child_calls = Vec::new();
     let operations = AnalyzerCallExpressionClient::new(
         analyzer,
         context,
+        Some(application),
         Some(Arc::clone(&candidate)),
-        effect_projections,
+        Some(consumer.clone()),
         compile_time_scalar_admissions,
         prepared_source_actuals,
         dialogue_patch_admissions,
         pass,
         attempt,
+        &mut prepared_child_calls,
     );
     let mut expected_projection_keys = projection_requests
         .iter()
         .map(|request| request.key.clone())
         .collect::<Vec<_>>();
-    let solved = session
+    let expected_result = result_constraint
+        .as_ref()
+        .map(|constraint| constraint.actual.clone());
+    let alternatives = session
         .with_driver(
+            application,
             initialization,
             AnalyzerCallConstraintClient::new(operations),
             |mut driver| {
-                if let Some(effects) = definition_effects {
-                    driver.constrain_effect_equality(&effects.projected, &effects.known);
+                for constraint in &type_application_constraints {
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
                 }
                 for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
                     let _ = constraint.source;
@@ -4397,7 +5109,786 @@ pub(crate) fn run_prepared_candidate(
                 for request in projection_requests {
                     driver.request_projection(request.key, &request.value, request.closure);
                 }
-                driver.finish()
+                driver.finish_alternatives()
+            },
+        )
+        .map_err(|failure| match failure {
+            crate::callable::CandidateConstraintDriverStartFailure::Prepared(error) => {
+                TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    error,
+                ))
+            }
+            crate::callable::CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::Abort(error),
+            ) => TypeConstraintFailure::Abort(error),
+            crate::callable::CandidateConstraintDriverStartFailure::Lower(
+                TypeConstraintInitializationFailure::Invariant(error),
+            ) => {
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(error))
+            }
+        });
+    let alternatives = match alternatives {
+        Ok(alternatives) => alternatives,
+        Err(failure) => {
+            let callee_owners =
+                PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+            drop(prepared_child_calls);
+            callee_owners.discard_all(analyzer)?;
+            return Err(failure);
+        }
+    };
+    let alternatives = match alternatives {
+        Ok(alternatives) => alternatives,
+        Err(failure) => {
+            let callee_owners =
+                PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+            drop(prepared_child_calls);
+            callee_owners.discard_all(analyzer)?;
+            return Err(failure);
+        }
+    };
+    let callee_owners = PreparedCalleeProjectionOwners::from_recipes(&prepared_child_calls)?;
+    drop(prepared_child_calls);
+    expected_projection_keys.sort();
+    let validation = (|| {
+        for solved in alternatives.iter() {
+            validate_completed_candidate_sources(solved)?;
+            let actual_projection_keys = solved
+                .component
+                .selected()
+                .projections()
+                .iter()
+                .map(|projection| projection.key().clone())
+                .collect::<Vec<_>>();
+            if expected_projection_keys != actual_projection_keys {
+                return Err(TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
+                        crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
+                    )),
+                ));
+            }
+        }
+        Ok(())
+    })();
+    if let Err(failure) = validation {
+        let candidate_cleanup = discard_completed_candidate_alternatives(analyzer, alternatives);
+        let callee_cleanup = callee_owners.discard_all(analyzer);
+        candidate_cleanup?;
+        callee_cleanup?;
+        return Err(failure);
+    }
+    let selected_index = match select_completed_candidate_alternative(
+        candidate.as_ref(),
+        &inputs,
+        expected_result.as_ref(),
+        &alternatives,
+    ) {
+        Ok(index) => index,
+        Err(failure) => {
+            let candidate_cleanup =
+                discard_completed_candidate_alternatives(analyzer, alternatives);
+            let callee_cleanup = callee_owners.discard_all(analyzer);
+            candidate_cleanup?;
+            callee_cleanup?;
+            return Err(failure);
+        }
+    };
+    let solved = alternatives
+        .into_index_with(selected_index, |discarded| match discarded.sealed_branch {
+            AnalyzerCallSealedBranch::Empty => Ok(()),
+            AnalyzerCallSealedBranch::Materialized { projection, .. } => {
+                analyzer.facts.discard_candidate_projection(projection)
+            }
+        })
+        .map_err(|violation| {
+            TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::fact_transaction(
+                AnalyzerCallConstraintSource::BaseInstantiation,
+                violation,
+            ))
+        })
+        .and_then(|solved| {
+            solved.ok_or_else(|| {
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                    ),
+                ))
+            })
+        });
+    let solved = match solved {
+        Ok(solved) => solved,
+        Err(failure) => {
+            callee_owners.discard_all(analyzer)?;
+            return Err(failure);
+        }
+    };
+    let current_group = candidate.call_group();
+    let result = match result_schema {
+        CallableResultSchema::ContentEmission(operation) => {
+            Ok(CallableResultSchema::ContentEmission(operation))
+        }
+        CallableResultSchema::Value(_) => (|| {
+            let projection = solved
+                .component
+                .selected()
+                .projections()
+                .iter()
+                .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
+                .ok_or_else(|| {
+                    TypeConstraintFailure::Invariant(
+                        TypeConstraintFailureInvariant::Constraint(
+                            TypeConstraintInvariant::Projection(
+                                crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
+                            ),
+                        ),
+                    )
+                })?;
+            let result = projection.value().to_quantified_type().map_err(|error| {
+                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::Instantiation(error),
+                ))
+            })?;
+            Ok(CallableResultSchema::Value(result))
+        })(),
+    };
+    let result = match result {
+        Ok(result) => result,
+        Err(failure) => {
+            drop(solved);
+            callee_owners.discard_all(analyzer)?;
+            return Err(failure);
+        }
+    };
+    let selected_nested_calls = match &solved.sealed_branch {
+        AnalyzerCallSealedBranch::Empty => &[][..],
+        AnalyzerCallSealedBranch::Materialized { nested_calls, .. } => nested_calls,
+    };
+    callee_owners.retain_selected(analyzer, selected_nested_calls)?;
+    Ok(RanCandidateTransaction {
+        data: Box::new(RanCandidateTransactionData {
+            application,
+            candidate,
+            consumer,
+            callee_inputs,
+            inputs,
+            current_group,
+            result,
+            solved,
+        }),
+    })
+}
+
+fn validate_completed_candidate_sources(
+    solved: &crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+    let mut coordinates = BTreeSet::new();
+    for source in solved.component.sources().all() {
+        if let Some(coordinate) = source.source().local().value_coordinate()
+            && !coordinates.insert((source.source().application(), coordinate))
+        {
+            return Err(TypeConstraintFailure::Invariant(
+                TypeConstraintFailureInvariant::Constraint(
+                    TypeConstraintInvariant::SourceProtocol(
+                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Ticket,
+                    ),
+                ),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn discard_completed_candidate_alternatives(
+    analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+    alternatives: crate::types::constraints::CompletedCandidateAlternatives<
+        AnalyzerCallConstraintDomain,
+    >,
+) -> Result<(), TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+    let discarded = alternatives
+        .into_index_with(usize::MAX, |candidate| match candidate.sealed_branch {
+            AnalyzerCallSealedBranch::Empty => Ok(()),
+            AnalyzerCallSealedBranch::Materialized { projection, .. } => {
+                analyzer.facts.discard_candidate_projection(projection)
+            }
+        })
+        .map_err(|violation| {
+            TypeConstraintFailure::client_invariant(AnalyzerCallClientInvariant::fact_transaction(
+                AnalyzerCallConstraintSource::BaseInstantiation,
+                violation,
+            ))
+        })?;
+    if discarded.is_some() {
+        return Err(TypeConstraintFailure::Invariant(
+            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+            )),
+        ));
+    }
+    Ok(())
+}
+
+fn collect_completed_nested_calls<'h>(
+    application: ExprId,
+    recipes: &[super::PreparedCorrelatedCallRecipe],
+    parent_recipe: Option<&super::PreparedCorrelatedCallRecipe>,
+    requests: &[MaterializedSourceRequest<'h, AnalyzerCallConstraintDomain>],
+    requests_by_application: &BTreeMap<ExprId, Vec<usize>>,
+    visited_applications: &mut BTreeSet<ExprId>,
+) -> Result<
+    (
+        Vec<super::PreparedSelectedNestedCall>,
+        Option<super::super::AcceptedCandidateRank>,
+    ),
+    crate::callable::SourceCallbackFailure<AnalyzerCallConstraintDomain>,
+> {
+    if !visited_applications.insert(application)
+        || parent_recipe.is_some_and(|recipe| {
+            recipe.owner != application || recipe.parent_application.is_none()
+        })
+    {
+        return Err(crate::callable::SourceCallbackFailure::invariant(
+            AnalyzerCallClientInvariant::constraint(
+                AnalyzerCallConstraintSource::BaseInstantiation,
+                CallConstraintInvariant::PreparedCallSiteMismatch,
+            ),
+        ));
+    }
+
+    let mut own_rank = parent_recipe.map(|recipe| recipe.rank_seed);
+    let mut children = Vec::<super::PreparedSelectedNestedCall>::new();
+    let mut child_indexes = BTreeMap::<ExprId, usize>::new();
+    for index in requests_by_application
+        .get(&application)
+        .into_iter()
+        .flatten()
+    {
+        let request = requests.get(*index).ok_or_else(|| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                ),
+            )
+        })?;
+        let source = request.source().local();
+        if request.application_id() != application {
+            return Err(crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                ),
+            ));
+        }
+        if request.canonical_branch().source != source {
+            return Err(crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    source,
+                    CallConstraintInvariant::MalformedMapperSeal,
+                ),
+            ));
+        }
+
+        match (
+            request.result_projection(),
+            request.canonical_branch().child_choice.as_ref(),
+        ) {
+            (Some(result), Some(choice)) => {
+                let recipe = super::PreparedCorrelatedCallRecipe::find_choice(
+                    recipes,
+                    request.canonical_branch().source,
+                    choice,
+                )
+                .ok_or_else(|| {
+                    crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    )
+                })?;
+                let child_application = result.application_id();
+                if recipe.parent_application != Some(application)
+                    || child_application == application
+                    || child_application != recipe.owner
+                    || child_application != choice.application()
+                    || recipe.site != choice.site()
+                    || recipe.site != crate::callable::CheckedCallSite::HirCall(recipe.owner)
+                    || result.projection().key() != &AnalyzerCallProjection::Result
+                    || source.expression_owner() != Some(recipe.owner)
+                {
+                    return Err(crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::MalformedMapperSeal,
+                        ),
+                    ));
+                }
+                let actual = result
+                    .projection()
+                    .value()
+                    .to_quantified_type()
+                    .map_err(|_| {
+                        crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                            ),
+                        )
+                    })?;
+                if &actual != request.actual() {
+                    return Err(crate::callable::SourceCallbackFailure::invariant(
+                        AnalyzerCallClientInvariant::constraint(
+                            source,
+                            CallConstraintInvariant::Lower(TypeConstraintInvariant::Projection(
+                                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
+                                    crate::types::constraints::TypeConstraintRejection::Mismatch,
+                                ),
+                            )),
+                        ),
+                    ));
+                }
+
+                let selection = if request.expected().is_some() {
+                    super::CheckedTypeSelection::Expected
+                } else {
+                    super::CheckedTypeSelection::Inferred
+                };
+                let child_index = if let Some(index) = child_indexes.get(&child_application) {
+                    if !children[*index].recipe.semantic_replay_eq(recipe) {
+                        return Err(crate::callable::SourceCallbackFailure::invariant(
+                            AnalyzerCallClientInvariant::constraint(
+                                source,
+                                CallConstraintInvariant::PreparedCallSiteMismatch,
+                            ),
+                        ));
+                    }
+                    if selection == super::CheckedTypeSelection::Expected {
+                        children[*index].selection = selection;
+                    }
+                    *index
+                } else {
+                    let index = children.len();
+                    child_indexes.insert(child_application, index);
+                    children.push(super::PreparedSelectedNestedCall {
+                        recipe: recipe.clone(),
+                        rank: recipe.rank_seed,
+                        selection,
+                    });
+                    index
+                };
+                if request.expected() == Some(&actual) {
+                    children[child_index].rank.exact_matches = children[child_index]
+                        .rank
+                        .exact_matches
+                        .checked_add(1)
+                        .ok_or_else(|| {
+                            crate::callable::SourceCallbackFailure::Abort(
+                                TypeConstraintAbort::ArithmeticOverflow,
+                            )
+                        })?;
+                }
+            }
+            (Some(_), None) | (None, Some(_)) => {
+                return Err(crate::callable::SourceCallbackFailure::invariant(
+                    AnalyzerCallClientInvariant::constraint(
+                        source,
+                        CallConstraintInvariant::Lower(TypeConstraintInvariant::SourceProtocol(
+                            crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                        )),
+                    ),
+                ));
+            }
+            (None, None) => {}
+        }
+
+        if let Some(rank) = own_rank.as_mut()
+            && matches!(
+                source,
+                AnalyzerCallConstraintSource::Argument { .. }
+                    | AnalyzerCallConstraintSource::DialoguePatch { .. }
+            )
+        {
+            if request.expected() == Some(request.actual()) {
+                rank.exact_matches = rank.exact_matches.checked_add(1).ok_or_else(|| {
+                    crate::callable::SourceCallbackFailure::Abort(
+                        TypeConstraintAbort::ArithmeticOverflow,
+                    )
+                })?;
+            }
+            if parent_recipe
+                .is_some_and(|recipe| recipe.declared_exact_source(source, request.actual()))
+            {
+                rank.declared_exact_matches =
+                    rank.declared_exact_matches.checked_add(1).ok_or_else(|| {
+                        crate::callable::SourceCallbackFailure::Abort(
+                            TypeConstraintAbort::ArithmeticOverflow,
+                        )
+                    })?;
+            }
+        }
+    }
+
+    let mut completed = Vec::new();
+    for mut child in children {
+        let (descendants, rank) = collect_completed_nested_calls(
+            child.recipe.owner,
+            &child.recipe.descendants,
+            Some(&child.recipe),
+            requests,
+            requests_by_application,
+            visited_applications,
+        )?;
+        child.rank = rank.ok_or_else(|| {
+            crate::callable::SourceCallbackFailure::invariant(
+                AnalyzerCallClientInvariant::constraint(
+                    AnalyzerCallConstraintSource::BaseInstantiation,
+                    CallConstraintInvariant::PreparedCallSiteMismatch,
+                ),
+            )
+        })?;
+        completed.extend(descendants);
+        child.recipe.descendants.clear();
+        completed.push(child);
+    }
+    Ok((completed, own_rank))
+}
+
+fn select_completed_candidate_alternative(
+    candidate: &PreparedResolvedCallable,
+    inputs: &PreparedCallInputs,
+    expected_result: Option<&TypeKind>,
+    alternatives: &crate::types::constraints::CompletedCandidateAlternatives<
+        AnalyzerCallConstraintDomain,
+    >,
+) -> Result<usize, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+    let mut frontier = Vec::new();
+    for index in 0..alternatives.len() {
+        let current = alternatives.iter().nth(index).ok_or_else(|| {
+            TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                TypeConstraintInvariant::SourceProtocol(
+                    crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                ),
+            ))
+        })?;
+        let mut dominated = false;
+        let mut survivors = Vec::with_capacity(frontier.len() + 1);
+        for existing in frontier.drain(..) {
+            match compare_completed_candidate_alternatives(
+                candidate,
+                inputs,
+                expected_result,
+                current,
+                alternatives.iter().nth(existing).ok_or_else(|| {
+                    TypeConstraintFailure::Invariant(
+                        TypeConstraintFailureInvariant::Constraint(
+                            TypeConstraintInvariant::SourceProtocol(
+                                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome,
+                            ),
+                        ),
+                    )
+                })?,
+            )? {
+                Some(std::cmp::Ordering::Greater) => {}
+                Some(std::cmp::Ordering::Less) => {
+                    survivors.push(existing);
+                    dominated = true;
+                }
+                Some(std::cmp::Ordering::Equal) | None => survivors.push(existing),
+            }
+        }
+        if !dominated {
+            survivors.push(index);
+        }
+        frontier = survivors;
+    }
+    if let [selected] = frontier.as_slice() {
+        return Ok(*selected);
+    }
+    Err(TypeConstraintFailure::Rejected(
+        crate::types::constraints::TypeConstraintCandidateFailure::Constraint(
+            crate::types::constraints::TypeConstraintRejection::AmbiguousSolution {
+                actual: frontier.len(),
+            },
+        ),
+    ))
+}
+
+fn compare_completed_candidate_alternatives(
+    candidate: &PreparedResolvedCallable,
+    inputs: &PreparedCallInputs,
+    expected_result: Option<&TypeKind>,
+    left: &crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+    right: &crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+) -> Result<Option<std::cmp::Ordering>, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+    let left_rank = completed_candidate_rank(candidate, inputs, expected_result, left)?;
+    let right_rank = completed_candidate_rank(candidate, inputs, expected_result, right)?;
+    let outer = compare_completed_rank(&left_rank, &right_rank);
+    if outer != std::cmp::Ordering::Equal {
+        return Ok(Some(outer));
+    }
+    let left_nested: &[super::PreparedSelectedNestedCall] = match &left.sealed_branch {
+        AnalyzerCallSealedBranch::Empty => &[],
+        AnalyzerCallSealedBranch::Materialized { nested_calls, .. } => nested_calls,
+    };
+    let right_nested: &[super::PreparedSelectedNestedCall] = match &right.sealed_branch {
+        AnalyzerCallSealedBranch::Empty => &[],
+        AnalyzerCallSealedBranch::Materialized { nested_calls, .. } => nested_calls,
+    };
+    Ok(compare_nested_call_products(left_nested, right_nested))
+}
+
+fn completed_candidate_rank(
+    candidate: &PreparedResolvedCallable,
+    inputs: &PreparedCallInputs,
+    expected_result: Option<&TypeKind>,
+    solved: &crate::types::constraints::SolvedCandidate<AnalyzerCallConstraintDomain>,
+) -> Result<super::super::AcceptedCandidateRank, TypeConstraintFailure<AnalyzerCallConstraintDomain>>
+{
+    let mut exact_matches = 0usize;
+    let mut declared_exact_matches = 0usize;
+    for source in solved.component.sources().selected() {
+        let source_kind = source.source().local();
+        if !matches!(
+            source_kind,
+            AnalyzerCallConstraintSource::Argument { .. }
+                | AnalyzerCallConstraintSource::DialoguePatch { .. }
+        ) {
+            continue;
+        }
+        if source.final_expected() == Some(source.actual()) {
+            exact_matches = exact_matches.checked_add(1).ok_or_else(|| {
+                TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow)
+            })?;
+        }
+        let slot = match source_kind {
+            AnalyzerCallConstraintSource::Argument { slot, .. }
+            | AnalyzerCallConstraintSource::DialoguePatch { slot, .. } => slot,
+            _ => unreachable!("the source family was checked above"),
+        };
+        if inputs
+            .mapping()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots().iter())
+            .find(|mapped| mapped.slot() == slot)
+            .and_then(|mapped| mapped.declared_expected())
+            == Some(source.actual())
+        {
+            declared_exact_matches = declared_exact_matches.checked_add(1).ok_or_else(|| {
+                TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow)
+            })?;
+        }
+    }
+    if let Some(expected) = expected_result
+        && let Some(result) = solved
+            .component
+            .selected()
+            .projections()
+            .iter()
+            .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
+    {
+        let result = result.value().to_quantified_type().map_err(|error| {
+            TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
+                TypeConstraintInvariant::Instantiation(error),
+            ))
+        })?;
+        if &result == expected {
+            exact_matches = exact_matches.checked_add(1).ok_or_else(|| {
+                TypeConstraintFailure::Abort(TypeConstraintAbort::ArithmeticOverflow)
+            })?;
+        }
+    }
+    Ok(super::super::AcceptedCandidateRank {
+        exact_matches,
+        declared_exact_matches,
+        unchecked_or_open: inputs.unchecked_or_open_slots(),
+        omitted_parameters: inputs.omitted_parameters(),
+        authority: candidate.authority(),
+    })
+}
+
+fn compare_completed_rank(
+    left: &super::super::AcceptedCandidateRank,
+    right: &super::super::AcceptedCandidateRank,
+) -> std::cmp::Ordering {
+    left.exact_matches
+        .cmp(&right.exact_matches)
+        .then_with(|| {
+            left.declared_exact_matches
+                .cmp(&right.declared_exact_matches)
+        })
+        .then_with(|| right.unchecked_or_open.cmp(&left.unchecked_or_open))
+        .then_with(|| right.omitted_parameters.cmp(&left.omitted_parameters))
+        .then_with(|| compare_completed_authority(left.authority, right.authority))
+}
+
+fn compare_completed_authority(
+    left: Option<super::super::CallableAuthorityRank>,
+    right: Option<super::super::CallableAuthorityRank>,
+) -> std::cmp::Ordering {
+    use super::super::CallableAuthorityRank;
+    match (left, right) {
+        (Some(CallableAuthorityRank::Standard), Some(CallableAuthorityRank::Adapter)) => {
+            std::cmp::Ordering::Greater
+        }
+        (Some(CallableAuthorityRank::Adapter), Some(CallableAuthorityRank::Standard)) => {
+            std::cmp::Ordering::Less
+        }
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+fn compare_nested_call_products(
+    left: &[super::PreparedSelectedNestedCall],
+    right: &[super::PreparedSelectedNestedCall],
+) -> Option<std::cmp::Ordering> {
+    if left.len() != right.len()
+        || left.iter().any(|left_choice| {
+            !right
+                .iter()
+                .any(|right_choice| right_choice.recipe.owner == left_choice.recipe.owner)
+        })
+    {
+        return None;
+    }
+    let mut better = false;
+    let mut worse = false;
+    for left_choice in left {
+        let Some(right_choice) = right
+            .iter()
+            .find(|choice| choice.recipe.owner == left_choice.recipe.owner)
+        else {
+            return None;
+        };
+        match compare_completed_rank(&left_choice.rank, &right_choice.rank) {
+            std::cmp::Ordering::Greater => better = true,
+            std::cmp::Ordering::Less => worse = true,
+            std::cmp::Ordering::Equal => {}
+        }
+    }
+    match (better, worse) {
+        (true, false) => Some(std::cmp::Ordering::Greater),
+        (false, true) => Some(std::cmp::Ordering::Less),
+        (false, false) => Some(std::cmp::Ordering::Equal),
+        (true, true) => None,
+    }
+}
+
+/// Drive one candidate as a nested application on the current source path.
+/// The parent probe keeps ownership of completion and attaches the returned
+/// Result port before either application is sealed.
+pub(crate) fn run_prepared_child_candidate(
+    analyzer: &mut super::super::Analyzer<'_, '_, '_>,
+    application: ExprId,
+    site: crate::callable::CheckedCallSite,
+    context: &AnalyzerExpressionContext<'_>,
+    pass: CandidateEvaluationPass,
+    attempt: Option<PhysicalCallAttemptId>,
+    parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+        '_,
+        '_,
+        AnalyzerCallConstraintDomain,
+    >,
+    set: PreparedCallConstraintSet,
+) -> Result<PreparedChildCandidateRun, TypeConstraintFailure<AnalyzerCallConstraintDomain>> {
+    let PreparedCallConstraintSet {
+        candidate,
+        consumer,
+        callee_inputs: _,
+        inputs: _,
+        source_groups,
+        prepared_source_actuals,
+        dialogue_patch_admissions,
+        receiver_sources,
+        compile_time_scalar_admissions,
+        base_constraints,
+        type_application_constraints,
+        receiver_constraints,
+        result_constraint,
+        result_schema,
+        projection_requests,
+        initialization,
+    } = set;
+    let PreparedCallConstraintInitialization::Child(initialization) = initialization else {
+        return Err(TypeConstraintFailure::Invariant(
+            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::WrongPhase,
+            )),
+        ));
+    };
+    if !matches!(result_schema, CallableResultSchema::Value(_))
+        || !projection_requests
+            .iter()
+            .any(|request| request.key == AnalyzerCallProjection::Result)
+    {
+        return Err(TypeConstraintFailure::Invariant(
+            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
+                crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
+            )),
+        ));
+    }
+    let mut descendants = Vec::new();
+    let operations = AnalyzerCallExpressionClient::new(
+        analyzer,
+        context,
+        Some(application),
+        Some(Arc::clone(&candidate)),
+        Some(consumer),
+        compile_time_scalar_admissions,
+        prepared_source_actuals,
+        dialogue_patch_admissions,
+        pass,
+        attempt,
+        &mut descendants,
+    );
+    let pending = parent_source
+        .with_child_driver(
+            initialization,
+            application,
+            site,
+            &candidate,
+            AnalyzerCallConstraintClient::new(operations),
+            |mut driver| {
+                for constraint in &type_application_constraints {
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                for constraint in base_constraints.iter().chain(receiver_constraints.iter()) {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                for prepared in receiver_sources {
+                    driver.probe_source(prepared, ConstraintAcceptance::PatternAcceptsActual)?;
+                }
+                for group in source_groups {
+                    driver.probe_source_group(group, ConstraintAcceptance::PatternAcceptsActual)?;
+                }
+                if let Some(constraint) = result_constraint {
+                    let _ = constraint.source;
+                    if constraint.pattern != constraint.actual {
+                        driver.constrain(
+                            &constraint.pattern,
+                            &constraint.actual,
+                            constraint.acceptance,
+                        );
+                    }
+                }
+                for request in projection_requests {
+                    driver.request_projection(request.key, &request.value, request.closure);
+                }
+                driver.defer_child_result(AnalyzerCallProjection::Result)
             },
         )
         .map_err(|failure| match failure {
@@ -4416,71 +5907,9 @@ pub(crate) fn run_prepared_candidate(
                 TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(error))
             }
         })??;
-    let mut source_coordinates = BTreeSet::new();
-    for source in &solved.closed_sources {
-        if let Some(coordinate) = source.source().value_coordinate()
-            && !source_coordinates.insert(coordinate)
-        {
-            return Err(TypeConstraintFailure::Invariant(
-                TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::SourceProtocol(
-                        crate::types::constraints::TypeConstraintSourceProtocolInvariant::Ticket,
-                    ),
-                ),
-            ));
-        }
-    }
-    expected_projection_keys.sort();
-    let actual_projection_keys = solved
-        .projections
-        .iter()
-        .map(|projection| projection.key().clone())
-        .collect::<Vec<_>>();
-    if expected_projection_keys != actual_projection_keys {
-        return Err(TypeConstraintFailure::Invariant(
-            TypeConstraintFailureInvariant::Constraint(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
-            )),
-        ));
-    }
-    let current_group = candidate.call_group();
-    let result = match result_schema {
-        CallableResultSchema::ContentEmission(operation) => {
-            CallableResultSchema::ContentEmission(operation)
-        }
-        CallableResultSchema::Value(_) => solved
-            .projections
-            .iter()
-            .find(|projection| projection.key() == &AnalyzerCallProjection::Result)
-            .map(|projection| {
-                projection
-                    .value()
-                    .to_quantified_type()
-                    .map(CallableResultSchema::Value)
-            })
-            .ok_or_else(|| {
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::Projection(
-                        crate::types::constraints::TypeConstraintProjectionInvariant::MissingKey,
-                    ),
-                ))
-            })?
-            .map_err(|error| {
-                TypeConstraintFailure::Invariant(TypeConstraintFailureInvariant::Constraint(
-                    TypeConstraintInvariant::Instantiation(error),
-                ))
-            })?,
-    };
-    Ok(RanCandidateTransaction {
-        data: Box::new(RanCandidateTransactionData {
-            candidate,
-            consumer,
-            callee_inputs,
-            inputs,
-            current_group,
-            result,
-            solved,
-        }),
+    Ok(PreparedChildCandidateRun {
+        pending,
+        descendants,
     })
 }
 
@@ -4505,43 +5934,104 @@ mod tests {
     }
 
     #[test]
-    fn materialization_request_rejects_projection_branch_actual_and_evidence_tamper() {
+    fn materialization_request_validates_replayed_actual_evidence_and_branch() {
+        use crate::types::constraints::{
+            LocalConstraintAccounting,
+            context::TypeConstraintLimits,
+            test_support::ConstraintTestSetup,
+            transaction::{ProbeSubmission, TypeConstraintTransaction},
+        };
+
         let fixture = crate::final_analysis::tests::fixture("fn caller() { 1; }\n", None);
         let owner = callback_test_owner(&fixture);
         let source = AnalyzerCallConstraintSource::Result { source: owner };
-        let actual = TypeKind::I32;
-        let expected = TypeKind::I32;
-        let scalar = crate::types::constraints::CheckedConstraintSourceProjection::Scalar;
-        let branch = AnalyzerCallProbeSemanticBranch { source };
+        let cancellation = AtomicBool::new(false);
+        let materialization = |branch_source| {
+            let (mut context, parameters) = ConstraintTestSetup::<
+                LocalConstraintAccounting<'_>,
+                AnalyzerCallConstraintDomain,
+            >::new(
+                TypeConstraintLimits::new(1_024, 512, 128, 64).with_source_limits(64, 64),
+                &cancellation,
+            )
+            .into_parts();
+            let mut transaction =
+                TypeConstraintTransaction::initialize(&mut context, owner, parameters, None)
+                    .expect("prepared application");
+            transaction
+                .begin_prepared_probe(
+                    &mut context,
+                    PreparedSourceConstraint::checked(
+                        source,
+                        PreparedConstraintSourceProjection::Scalar,
+                        [],
+                        PreparedSourceAlternative::new(
+                            0,
+                            AnalyzerCallEvidenceRule::otherwise(),
+                            TypeKind::I32,
+                        ),
+                    )
+                    .expect("prepared source"),
+                    ConstraintAcceptance::PatternAcceptsActual,
+                )
+                .expect("source probe");
+            let mut probe = transaction
+                .next_probe(&mut context)
+                .expect("project source")
+                .expect("one source");
+            let contribution = probe
+                .observe(SourceProbeResult::checked(
+                    TypeKind::I32,
+                    AnalyzerCallProbeSemanticBranch {
+                        source: branch_source,
+                        child_choice: None,
+                    },
+                    0,
+                    ObservedSemanticValueEvidence::NoVariantCase,
+                ))
+                .expect("source observation");
+            transaction
+                .submit_probe(
+                    &mut context,
+                    probe.input(),
+                    ProbeSubmission::Accepted(contribution),
+                )
+                .expect("admitted observation");
+            assert!(
+                transaction
+                    .next_probe(&mut context)
+                    .expect("close probe")
+                    .is_none()
+            );
+            transaction
+                .next_materialization_ticket(&mut context)
+                .expect("completed component")
+                .expect("one materialization")
+        };
+
+        let ticket = materialization(source);
+        let request = ticket.requests().next().expect("completed source request");
         let checked = AnalyzerCallObservedSource {
-            actual: actual.clone(),
+            actual: Some(TypeKind::I32),
             evidence: ObservedSemanticValueEvidence::NoVariantCase,
+            pending_child: None,
+            prepared_children: Vec::new(),
         };
-        let evidence = CheckedSemanticValueEvidence::NoVariantCase;
-        let request = MaterializedSourceRequest::Checked {
-            source,
-            alternative: 0,
-            evidence: &evidence,
-            source_projection: &scalar,
-            actual: &actual,
-            expected: &expected,
-            canonical_branch: &branch,
-        };
-        assert_eq!(request.expected(), Some(&expected));
+        assert_eq!(request.expected(), Some(&TypeKind::I32));
+        assert!(request.component().application(owner).is_some());
         assert_eq!(
             validate_materialized_source_request(&request, &checked),
             Ok(())
         );
 
-        let wrong_actual = TypeKind::I64;
-        let request = MaterializedSourceRequest::Unchecked {
-            source,
-            source_projection: &scalar,
-            actual: &wrong_actual,
-            canonical_branch: &branch,
+        let wrong_actual = AnalyzerCallObservedSource {
+            actual: Some(TypeKind::I64),
+            evidence: ObservedSemanticValueEvidence::NoVariantCase,
+            pending_child: None,
+            prepared_children: Vec::new(),
         };
         assert!(matches!(
-            validate_materialized_source_request(&request, &checked),
+            validate_materialized_source_request(&request, &wrong_actual),
             Err(TypeConstraintInvariant::Projection(
                 crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
                     crate::types::constraints::TypeConstraintRejection::Mismatch,
@@ -4549,60 +6039,32 @@ mod tests {
             ))
         ));
 
-        let spread = crate::types::constraints::CheckedConstraintSourceProjection::SpreadContainer(
-            crate::types::constraints::CheckedConstraintContainerConstructor::Vec,
-        );
-        let request = MaterializedSourceRequest::Unchecked {
-            source,
-            source_projection: &spread,
-            actual: &actual,
-            canonical_branch: &branch,
+        let wrong_evidence = AnalyzerCallObservedSource {
+            actual: Some(TypeKind::I32),
+            evidence: ObservedSemanticValueEvidence::VariantCase {
+                owner: TypeKind::I32,
+                ordinal: 0,
+                payload: VariantPayloadRequirement::Unit,
+            },
+            pending_child: None,
+            prepared_children: Vec::new(),
         };
         assert!(matches!(
-            validate_materialized_source_request(&request, &checked),
-            Err(TypeConstraintInvariant::Projection(
-                crate::types::constraints::TypeConstraintProjectionInvariant::Mismatch(
-                    crate::types::constraints::TypeConstraintRejection::Mismatch,
-                )
-            ))
-        ));
-
-        let wrong_branch = AnalyzerCallProbeSemanticBranch {
-            source: AnalyzerCallConstraintSource::BaseInstantiation,
-        };
-        let request = MaterializedSourceRequest::Unchecked {
-            source,
-            source_projection: &scalar,
-            actual: &actual,
-            canonical_branch: &wrong_branch,
-        };
-        assert!(matches!(
-            validate_materialized_source_request(&request, &checked),
-            Err(TypeConstraintInvariant::SourceProtocol(
-                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome
-            ))
-        ));
-
-        let wrong_evidence = CheckedSemanticValueEvidence::VariantCase {
-            owner: actual
-                .semantic_identity_digest()
-                .expect("stable fixture type"),
-            ordinal: 0,
-            payload: VariantPayloadRequirement::Unit,
-        };
-        let request = MaterializedSourceRequest::Checked {
-            source,
-            alternative: 0,
-            evidence: &wrong_evidence,
-            source_projection: &scalar,
-            actual: &actual,
-            expected: &expected,
-            canonical_branch: &branch,
-        };
-        assert!(matches!(
-            validate_materialized_source_request(&request, &checked),
+            validate_materialized_source_request(&request, &wrong_evidence),
             Err(TypeConstraintInvariant::SourceProtocol(
                 crate::types::constraints::TypeConstraintSourceProtocolInvariant::InvalidEvidence
+            ))
+        ));
+
+        let wrong_branch_ticket = materialization(AnalyzerCallConstraintSource::BaseInstantiation);
+        let wrong_branch = wrong_branch_ticket
+            .requests()
+            .next()
+            .expect("source request");
+        assert!(matches!(
+            validate_materialized_source_request(&wrong_branch, &checked),
+            Err(TypeConstraintInvariant::SourceProtocol(
+                crate::types::constraints::TypeConstraintSourceProtocolInvariant::Outcome
             ))
         ));
     }
@@ -4635,7 +6097,7 @@ mod tests {
         ));
 
         let inner_error = SourceError::new(
-            outer_source,
+            crate::types::constraints::test_support::source_id(outer_source),
             SourcePhase::Probe,
             AnalyzerCallSourceFailureCause::Mismatch,
         );
@@ -4671,19 +6133,27 @@ mod tests {
         )
         .expect("analyzer");
         let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
             None,
-            BTreeMap::new(),
+            None,
+            None,
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             CandidateEvaluationPass::Probe,
             None,
+            &mut prepared_child_calls,
         );
-        let existing = AnalyzerCallConstraintSource::Receiver { source: owner };
-        let requested = AnalyzerCallConstraintSource::Result { source: owner };
+        let existing = crate::types::constraints::test_support::source_id(
+            AnalyzerCallConstraintSource::Receiver { source: owner },
+        );
+        let requested = ConstraintSourceId::new(
+            existing.application(),
+            AnalyzerCallConstraintSource::Result { source: owner },
+        );
         let checkpoint =
             AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, existing)
                 .unwrap_or_else(|_| panic!("first callback scope"));
@@ -4699,7 +6169,7 @@ mod tests {
         let SourceCheckpointFailure::Client(invariant) = conflict else {
             panic!("active callback conflict must retain a client invariant");
         };
-        assert_eq!(invariant.source, requested);
+        assert_eq!(invariant.source, requested.local());
         let AnalyzerCallClientInvariantCause::ActiveFactScopeConflict {
             existing: actual_existing,
             requested: actual_requested,
@@ -4740,7 +6210,7 @@ mod tests {
         let SourceCheckpointFailure::Client(invariant) = conflict else {
             panic!("active callback conflict must retain a client invariant");
         };
-        assert_eq!(invariant.source, existing);
+        assert_eq!(invariant.source, existing.local());
         let AnalyzerCallClientInvariantCause::ActiveFactScopeConflict {
             existing: actual_existing,
             requested: actual_requested,
@@ -4780,19 +6250,27 @@ mod tests {
         )
         .expect("analyzer");
         let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
             None,
-            BTreeMap::new(),
+            None,
+            None,
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             CandidateEvaluationPass::Probe,
             None,
+            &mut prepared_child_calls,
         );
-        let source = AnalyzerCallConstraintSource::Receiver { source: owner };
-        let wrong_source = AnalyzerCallConstraintSource::Result { source: owner };
+        let source = crate::types::constraints::test_support::source_id(
+            AnalyzerCallConstraintSource::Receiver { source: owner },
+        );
+        let wrong_source = ConstraintSourceId::new(
+            source.application(),
+            AnalyzerCallConstraintSource::Result { source: owner },
+        );
         let mut checkpoint =
             AnalyzerCallConstraintOperations::open_probe_checkpoint(&mut client, source)
                 .unwrap_or_else(|_| panic!("callback scope"));
@@ -4826,19 +6304,27 @@ mod tests {
         )
         .expect("analyzer");
         let context = AnalyzerExpressionContext::published(Rc::clone(&analyzer.call_frames));
+        let mut prepared_child_calls = Vec::new();
         let mut client = AnalyzerCallExpressionClient::new(
             &mut analyzer,
             &context,
             None,
-            BTreeMap::new(),
+            None,
+            None,
             BTreeMap::new(),
             BTreeMap::new(),
             BTreeMap::new(),
             CandidateEvaluationPass::Probe,
             None,
+            &mut prepared_child_calls,
         );
-        let first = AnalyzerCallConstraintSource::Receiver { source: owner };
-        let second = AnalyzerCallConstraintSource::Result { source: owner };
+        let first = crate::types::constraints::test_support::source_id(
+            AnalyzerCallConstraintSource::Receiver { source: owner },
+        );
+        let second = ConstraintSourceId::new(
+            first.application(),
+            AnalyzerCallConstraintSource::Result { source: owner },
+        );
         let mut checkpoint = AnalyzerCallConstraintOperations::open_materialization_checkpoint(
             &mut client,
             &[first, second],
@@ -4905,7 +6391,7 @@ mod tests {
             crate::types::constraints::RejectedConstraintSourceProjection::<
                 AnalyzerCallConstraintDomain,
             >::test_new(
-                source,
+                crate::types::constraints::test_support::source_id(source),
                 alternative,
                 projection,
                 acceptance,

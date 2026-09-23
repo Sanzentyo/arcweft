@@ -6,7 +6,6 @@ use crate::{
         CallableCandidateId, CheckedCallApplication, CheckedProjectFunctionRuntimeInput,
         CheckedProjectFunctionRuntimeOutcome, select_project_function_runtime,
     },
-    effect_row::EffectRowTail,
     final_analysis::FinalSemanticAnalysis,
     types::TypeKind,
 };
@@ -37,12 +36,94 @@ fn application_rows(analysis: &FinalSemanticAnalysis, name: &str) -> Vec<Vec<Str
     let mut rows = project_applications(analysis, name)
         .into_iter()
         .map(|(_, application)| {
-            assert_eq!(application.core().effects().tail(), EffectRowTail::Closed);
-            application.core().effects().concrete().to_labels()
+            assert!(application.core().effects().is_closed());
+            application
+                .core()
+                .effects()
+                .closed_value()
+                .as_ref()
+                .expect("closed effect row")
+                .to_labels()
         })
         .collect::<Vec<_>>();
     rows.sort();
     rows
+}
+
+#[test]
+fn inferred_prefix_preserves_body_effects_and_aliases_in_either_source_order() {
+    let declarations = concat!(
+        "fn staged(first: i64)(second: i64) -> i64 { read(first + second) }\n",
+        "fn read(value: i64) -> i64 effects { fs.read } { value }\n",
+    );
+    let caller = concat!(
+        "flow main() -> i64 {\n",
+        "    let prefix = staged(1i64)\n",
+        "    let alias = prefix\n",
+        "    return alias(41i64)\n",
+        "}\n",
+    );
+    for source in [
+        format!("{declarations}{caller}"),
+        format!("{caller}{declarations}"),
+    ] {
+        let fixture = fixture(&source, None);
+        let analysis =
+            analyze(&fixture).expect("the body prerequisite is independent of source order");
+        assert_eq!(
+            application_rows(&analysis, "staged"),
+            [Vec::<String>::new(), vec!["fs.read".to_owned()]]
+        );
+        let applications = project_applications(&analysis, "staged");
+        let prefix = applications
+            .iter()
+            .find_map(|(_, application)| {
+                let Some(TypeKind::Function { effects, .. }) = application.result().value_type()
+                else {
+                    return None;
+                };
+                Some(effects)
+            })
+            .expect("one retained prefix");
+        assert_eq!(
+            prefix
+                .closed_value()
+                .expect("inferred terminal row")
+                .to_labels(),
+            ["fs.read"]
+        );
+    }
+}
+
+#[test]
+fn inferred_effectful_prefix_is_rejected_by_a_pure_callback() {
+    let fixture = fixture(
+        r#"
+fn staged(first: i64)(second: i64) -> i64 { read(first + second) }
+fn read(value: i64) -> i64 effects { fs.read } { value }
+fn invoke(handler: i64 -> i64 effects {}, value: i64) -> i64 { handler(value) }
+fn caller() {
+    let prefix = staged(1i64)
+    invoke(prefix, 41i64);
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("inferred callback mismatch remains inspectable");
+    let rejected = analysis
+        .calls()
+        .filter_map(|(owner, call)| {
+            matches!(
+                call.outcome(),
+                crate::callable::CallAnalysisOutcome::Rejected(_)
+            )
+            .then_some(owner)
+        })
+        .collect::<Vec<_>>();
+    let [owner] = rejected.as_slice() else {
+        panic!("only the callback invocation is rejected")
+    };
+    super::callable_values::assert_unselected_call_has_no_execution(&analysis, *owner);
 }
 
 #[test]
@@ -76,11 +157,56 @@ fn caller() {
     let [(_, prefix)] = prefixes.as_slice() else {
         panic!("the prefix itself is valid");
     };
-    assert!(prefix.core().effects().concrete().is_empty());
+    assert!(
+        prefix
+            .core()
+            .effects()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .is_empty()
+    );
     let Some(TypeKind::Function { effects, .. }) = prefix.result().value_type() else {
         panic!("retained terminal group");
     };
-    assert_eq!(effects.concrete().to_labels(), ["fs.read"]);
+    assert_eq!(
+        effects
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
+        ["fs.read"]
+    );
+}
+
+#[test]
+fn explicit_row_survives_a_returned_prefix_alias() {
+    let fixture = fixture(
+        r#"
+fn staged(first: i64)(second: i64) -> i64 effects { fs.read } { first + second }
+flow main() -> i64 {
+    let returned = staged(1i64)
+    let alias = returned
+    return alias(42i64)
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("the returned prefix keeps its authored terminal row");
+    let mut rows = analysis
+        .calls()
+        .filter_map(|(_, call)| call.selected_application())
+        .map(|application| {
+            application
+                .core()
+                .effects()
+                .closed_value()
+                .expect("checked call effect row")
+                .to_labels()
+        })
+        .collect::<Vec<_>>();
+    rows.sort();
+    assert_eq!(rows, [Vec::<String>::new(), vec!["fs.read".to_owned()]]);
 }
 
 #[test]
@@ -147,8 +273,15 @@ flow main() -> i64 { return ignore(|value: i64| writer(value), 42i64) }
     let TypeKind::Function { effects, .. } = callback.abi_type() else {
         panic!("callback ABI")
     };
-    assert_eq!(effects.tail(), EffectRowTail::Closed);
-    assert_eq!(effects.concrete().to_labels(), ["fs.write"]);
+    assert!(effects.is_closed());
+    assert_eq!(
+        effects
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
+        ["fs.write"]
+    );
     assert_eq!(callback.binding_type(), callback.abi_type());
     let instance = selection.close_instance(None).expect("closed callable ABI");
     assert!(
@@ -198,8 +331,15 @@ flow main() -> i64 {
     let [TypeKind::Function { effects, .. }] = produced.prefix_types() else {
         panic!("the prefix retains one callback binding")
     };
-    assert_eq!(effects.tail(), EffectRowTail::Closed);
-    assert_eq!(effects.concrete().to_labels(), ["fs.write"]);
+    assert!(effects.is_closed());
+    assert_eq!(
+        effects
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
+        ["fs.write"]
+    );
 }
 
 #[test]
@@ -355,6 +495,79 @@ flow main() -> i64 {
 }
 
 #[test]
+fn invoked_callback_keeps_its_own_row_when_returned_with_another_callback_result() {
+    let fixture = fixture(
+        r#"
+fn reader(value: i64) -> i64 effects { fs.read } { value }
+fn writer(value: i64) -> i64 effects { fs.write } { value }
+fn both_and_keep(first: i64 -> i64, second: i64 -> i64, value: i64) -> (i64, i64 -> i64) {
+    (second(first(value)), first)
+}
+flow main() -> i64 {
+    let result = both_and_keep(|value: i64| reader(value), |value: i64| writer(value), 42i64)
+    return 42i64
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("invocation union does not widen an escaping callback");
+    assert_eq!(
+        application_rows(&analysis, "both_and_keep"),
+        [vec!["fs.read".to_owned(), "fs.write".to_owned()]]
+    );
+    let applications = project_applications(&analysis, "both_and_keep");
+    let [(_, application)] = applications.as_slice() else {
+        panic!("one selected application");
+    };
+    let Some(TypeKind::Tuple(result)) = application.result().value_type() else {
+        panic!("the result retains both tuple fields");
+    };
+    let [TypeKind::I64, TypeKind::Function { effects, .. }] = result.as_slice() else {
+        panic!("the second tuple field is the original callback");
+    };
+    assert!(effects.is_closed());
+    assert_eq!(
+        effects
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
+        ["fs.read"]
+    );
+}
+
+#[test]
+fn shared_prefix_opens_later_callback_effects_independently() {
+    let fixture = fixture(
+        r#"
+fn reader(value: i64) -> i64 effects { fs.read } { value }
+fn apply_later(value: i64)(handler: i64 -> i64) -> i64 { handler(value) }
+flow main() -> i64 {
+    let prefix = apply_later(21i64)
+    let pure = prefix(|value: i64| value)
+    let reading = prefix(|value: i64| reader(value))
+    return pure + reading
+}
+"#,
+        None,
+    );
+    let analysis = analyze(&fixture).expect("each use opens the residual effect binder freshly");
+    assert_eq!(
+        application_rows(&analysis, "apply_later"),
+        [
+            Vec::<String>::new(),
+            Vec::<String>::new(),
+            vec!["fs.read".to_owned()]
+        ]
+    );
+    assert!(
+        analysis
+            .calls()
+            .all(|(_, call)| call.selected_application().is_some())
+    );
+}
+
+#[test]
 fn curried_function_types_expose_effects_only_on_the_terminal_group() {
     let fixture = fixture(
         r#"
@@ -374,14 +587,20 @@ flow main() -> i64 {
     assert_eq!(applications.len(), 3);
     for (_, application) in applications {
         let group = application.core().current_group().get();
-        assert_eq!(application.core().effects().tail(), EffectRowTail::Closed);
+        assert!(application.core().effects().is_closed());
         let expected_call = if group == 2 {
             vec!["fs.read"]
         } else {
             Vec::new()
         };
         assert_eq!(
-            application.core().effects().concrete().to_labels(),
+            application
+                .core()
+                .effects()
+                .closed_value()
+                .as_ref()
+                .expect("closed effect row")
+                .to_labels(),
             expected_call
         );
         let mut result = application
@@ -402,9 +621,13 @@ flow main() -> i64 {
             } else {
                 Vec::new()
             };
-            assert_eq!(effects.tail(), EffectRowTail::Closed);
+            assert!(effects.is_closed());
             assert_eq!(
-                effects.concrete().to_labels(),
+                effects
+                    .closed_value()
+                    .as_ref()
+                    .expect("closed effect row")
+                    .to_labels(),
                 expected,
                 "remaining group {remaining}"
             );

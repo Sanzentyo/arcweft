@@ -16,6 +16,7 @@ use crate::expr::{
 };
 use crate::identity::{ExprId, HirModuleId, SyntheticOwner, TypeId};
 use crate::module::HirModule;
+use crate::symbol::CallableDeclarationKey;
 
 use super::{
     HirAnalysisProjectView, HirExpressionEvaluationEdge, HirProjectEvaluationTopology,
@@ -40,6 +41,33 @@ pub struct HirSelectedExpressionGraph {
     owners: BTreeSet<SyntheticOwner>,
     edges: BTreeMap<ExprId, Box<[HirExpressionEvaluationEdge]>>,
     type_roots: BTreeSet<TypeId>,
+}
+
+/// A selected semantic graph restricted to one declaration body. Its typed
+/// identity prevents a partial preparation graph from being published as a
+/// complete project graph.
+#[derive(Debug, Eq, PartialEq)]
+pub struct HirSelectedDeclarationExpressionGraph {
+    declaration: CallableDeclarationKey,
+    graph: HirSelectedExpressionGraph,
+}
+
+impl HirSelectedDeclarationExpressionGraph {
+    pub const fn declaration(&self) -> &CallableDeclarationKey {
+        &self.declaration
+    }
+
+    pub fn expression_owners(&self) -> impl Iterator<Item = ExprId> + '_ {
+        self.graph.expression_owners()
+    }
+
+    pub fn contains_statement(&self, owner: crate::identity::StmtId) -> bool {
+        self.graph.contains_owner(SyntheticOwner::Stmt(owner))
+    }
+
+    pub fn expression_edges(&self, owner: ExprId) -> &[HirExpressionEvaluationEdge] {
+        self.graph.expression_edges(owner)
+    }
 }
 
 /// Exact semantic child inventory selected for one accepted Call. Raw HIR
@@ -278,6 +306,89 @@ pub enum HirRuntimeExpressionProjection {
 }
 
 impl HirAnalysisProjectView<'_> {
+    /// Selects one body's expression edges with the same callable/postfix
+    /// traversal used for final project acceptance. No owner outside the
+    /// sealed declaration topology is admitted to this preparation graph.
+    pub fn selected_declaration_expression_graph(
+        self,
+        topology: &Arc<HirProjectEvaluationTopology>,
+        declaration: &CallableDeclarationKey,
+        selected_postfix: impl FnMut(ExprId) -> Option<ExprId>,
+        selected_call_edges: impl FnMut(ExprId) -> Option<HirSelectedCallExpressionDisposition>,
+    ) -> Result<HirSelectedDeclarationExpressionGraph, HirSelectedExpressionInventoryError> {
+        let body = topology
+            .declaration(declaration)
+            .map_err(|_| HirSelectedExpressionInventoryError::InvalidSelectedGraph)?;
+        let paths = body.paths();
+        let outer = topology
+            .expression_owners()
+            .filter(|owner| {
+                paths.expression(*owner).is_some_and(|path| {
+                    matches!(
+                        path.steps().first(),
+                        Some(super::HirSemanticPathStep::DeclarationBody(_))
+                    )
+                })
+            })
+            .collect::<BTreeSet<_>>();
+        let traversal =
+            self.selected_expression_owners_in_domain(SelectedExpressionTraversalInput {
+                domain: SelectedExpressionDomain::SemanticAnalysis,
+                topology,
+                outer_owners: Some(&outer),
+                execution_roots: &[],
+                selected_postfix,
+                selected_call_edges,
+                expression_disposition: |_| {
+                    Some(HirRuntimeExpressionProjection::Structural {
+                        value: HirRuntimeValueRetention::Retain,
+                    })
+                },
+            })?;
+        if traversal.reached != traversal.typed
+            || traversal.edges.len() != traversal.typed.len()
+            || traversal.edges.values().any(|edges| {
+                edges
+                    .iter()
+                    .any(|edge| !traversal.typed.contains(&edge.child()))
+            })
+        {
+            return Err(HirSelectedExpressionInventoryError::InvalidSelectedGraph);
+        }
+        let mut graph = HirSelectedExpressionGraph {
+            topology: Arc::clone(topology),
+            owners: traversal
+                .typed
+                .into_iter()
+                .map(SyntheticOwner::Expr)
+                .collect(),
+            edges: traversal.edges,
+            type_roots: traversal.type_roots,
+        };
+        for (_, module) in self.modules() {
+            let statements = module
+                .statements()
+                .filter_map(|(owner, _)| {
+                    (paths.statement(owner).is_some()
+                        && graph.selects_owner_region(SyntheticOwner::Stmt(owner)))
+                    .then_some(SyntheticOwner::Stmt(owner))
+                })
+                .collect::<Vec<_>>();
+            graph.owners.extend(statements);
+            if let Some(owner) = module
+                .slots()
+                .poisoned_live_owners()
+                .find(|owner| graph.contains_owner(*owner))
+            {
+                return Err(HirSelectedExpressionInventoryError::RecoveredOwner { owner });
+            }
+        }
+        Ok(HirSelectedDeclarationExpressionGraph {
+            declaration: declaration.clone(),
+            graph,
+        })
+    }
+
     /// Returns the exact expression graph reachable after bounded postfix
     /// ambiguity has been resolved by the supplied accepted decisions.
     ///

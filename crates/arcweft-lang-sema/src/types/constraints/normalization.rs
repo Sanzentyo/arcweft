@@ -1,5 +1,7 @@
 //! Canonical type projection, path normalization, and equality.
 
+use super::ConstraintSourceId;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
@@ -7,11 +9,12 @@ use std::{
 };
 
 use super::super::{ArrayLength, GenericConstReference, GenericTypeReference, TypeKind};
+use super::application::ConstraintApplicationScopes;
 use super::context::{TypeConstraintAccounting, TypeConstraintContext};
 use super::{
-    CheckedConstraintSourceProjection, ClosedConstraintProbe, ConstraintAcceptance,
-    ConstraintDomain, ConstraintPath, SourceError, TypeConstraintAbort, TypeConstraintError,
-    TypeConstraintInvariant, TypeConstraintRejection, TypeConstraintShape, TypeConstraintSolution,
+    CheckedConstraintSourceProjection, ConstraintAcceptance, ConstraintDomain, ConstraintPath,
+    SourceError, TypeConstraintAbort, TypeConstraintError, TypeConstraintInvariant,
+    TypeConstraintRejection, TypeConstraintShape,
 };
 
 #[cfg(test)]
@@ -20,6 +23,8 @@ mod tests;
 /// Closure phase used by the one typed projected-type visitor.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ConstraintClosurePolicy {
+    /// Admit source type structure and scope without following active bindings.
+    Validation,
     Hint,
     ProjectionClosed,
     ProjectionFuture,
@@ -45,26 +50,161 @@ pub(crate) struct ProjectedConstraintType {
     pub(crate) remaining: Box<[RemainingConstraintParameter]>,
 }
 
-/// Borrow-only substitution authority accepted by the single projection
-/// visitor. This trait is confined to the private constraint owner, so the
-/// active path map and the opaque completed solution are its only producers.
-pub(super) trait ConstraintBindingLookup {
-    fn binding(&self, parameter: &GenericTypeReference) -> Option<&TypeKind>;
+/// Read-only state of one path's scoped type/constant projection. Only the
+/// path and its consuming normalization operation construct this view.
+pub(crate) struct ConstraintProjectionView<'a, D: ConstraintDomain> {
+    applications: &'a ConstraintApplicationScopes<D>,
+    bindings: &'a BTreeMap<GenericTypeReference, TypeKind>,
+    const_bindings: &'a BTreeMap<GenericConstReference, ArrayLength>,
 }
 
-pub(super) trait ConstraintConstBindingLookup {
-    fn const_binding(&self, parameter: &GenericConstReference) -> Option<&ArrayLength>;
-}
+impl<D: ConstraintDomain> Copy for ConstraintProjectionView<'_, D> {}
 
-impl ConstraintBindingLookup for BTreeMap<GenericTypeReference, TypeKind> {
-    fn binding(&self, parameter: &GenericTypeReference) -> Option<&TypeKind> {
-        self.get(parameter)
+impl<D: ConstraintDomain> Clone for ConstraintProjectionView<'_, D> {
+    fn clone(&self) -> Self {
+        *self
     }
 }
 
-impl ConstraintConstBindingLookup for BTreeMap<GenericConstReference, ArrayLength> {
-    fn const_binding(&self, parameter: &GenericConstReference) -> Option<&ArrayLength> {
-        self.get(parameter)
+impl<'a, D: ConstraintDomain> ConstraintProjectionView<'a, D> {
+    pub(super) const fn applications(self) -> &'a ConstraintApplicationScopes<D> {
+        self.applications
+    }
+
+    pub(super) fn binding(self, parameter: &GenericTypeReference) -> Option<&'a TypeKind> {
+        self.bindings.get(parameter)
+    }
+
+    pub(super) fn const_binding(
+        self,
+        parameter: &GenericConstReference,
+    ) -> Option<&'a ArrayLength> {
+        self.const_bindings.get(parameter)
+    }
+}
+
+impl<D: ConstraintDomain> ConstraintPath<D> {
+    pub(crate) fn projection_view(&self) -> ConstraintProjectionView<'_, D> {
+        ConstraintProjectionView {
+            applications: &self.applications,
+            bindings: &self.bindings,
+            const_bindings: &self.const_bindings,
+        }
+    }
+}
+
+/// The path-local representative of a generic reference after following only
+/// direct generic aliases. Structural bindings remain typed values so the
+/// ordinary relation visitor can handle their children under the right
+/// binders.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum TypeAliasResolution {
+    Parameter(GenericTypeReference),
+    Structure(TypeKind),
+    Cycle(Box<[GenericTypeReference]>),
+}
+
+/// The path-local representative of a generic constant after following only
+/// direct generic aliases. Non-alias constant values remain typed array-length
+/// values so the relation visitor owns unresolved/error handling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum ConstAliasResolution {
+    Parameter(GenericConstReference),
+    Value(ArrayLength),
+    Cycle(Box<[GenericConstReference]>),
+}
+
+/// Resolve direct alias chains with the same scope checks and node budget as
+/// other path projections. A deterministic representative is retained for a
+/// genuine alias cycle so callers can defer it without recursing forever.
+pub(crate) fn resolve_type_alias<A, D>(
+    parameter: &GenericTypeReference,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<TypeAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    let view = path.projection_view();
+    let mut current = parameter.clone();
+    let mut positions = BTreeMap::<GenericTypeReference, usize>::new();
+    let mut chain = Vec::new();
+    loop {
+        context.check_cancelled()?;
+        context.enter_node()?;
+        if context.parameter_eligibility(&current, view).is_none() {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::ParameterScope(
+                    super::TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
+                        parameter: current,
+                    },
+                ),
+            ));
+        }
+        if let Some(start) = positions.get(&current).copied() {
+            let mut cycle = chain[start..].to_vec();
+            cycle.sort();
+            cycle.dedup();
+            return Ok(TypeAliasResolution::Cycle(cycle.into_boxed_slice()));
+        }
+        positions.insert(current.clone(), chain.len());
+        chain.push(current.clone());
+        let Some(bound) = view.binding(&current) else {
+            return Ok(TypeAliasResolution::Parameter(current));
+        };
+        match bound.constraint_shape() {
+            TypeConstraintShape::Generic(next) => current = next.clone(),
+            _ => return Ok(TypeAliasResolution::Structure(bound.clone())),
+        }
+    }
+}
+
+/// Resolve direct constant alias chains under the exact application scope and
+/// node budget. A deterministic cycle witness is deferred to path closure.
+pub(crate) fn resolve_const_alias<A, D>(
+    parameter: &GenericConstReference,
+    path: &ConstraintPath<D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+) -> Result<ConstAliasResolution, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    let view = path.projection_view();
+    let mut current = parameter.clone();
+    let mut positions = BTreeMap::<GenericConstReference, usize>::new();
+    let mut chain = Vec::new();
+    loop {
+        context.check_cancelled()?;
+        context.enter_node()?;
+        if context
+            .const_parameter_eligibility(&current, view)
+            .is_none()
+        {
+            return Err(TypeConstraintError::Invariant(
+                TypeConstraintInvariant::ParameterScope(
+                    super::TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
+                        parameter: current,
+                    },
+                ),
+            ));
+        }
+        if let Some(start) = positions.get(&current).copied() {
+            let mut cycle = chain[start..].to_vec();
+            cycle.sort();
+            cycle.dedup();
+            return Ok(ConstAliasResolution::Cycle(cycle.into_boxed_slice()));
+        }
+        positions.insert(current.clone(), chain.len());
+        chain.push(current.clone());
+        let Some(bound) = view.const_binding(&current) else {
+            return Ok(ConstAliasResolution::Parameter(current));
+        };
+        match bound {
+            ArrayLength::Generic(next) => current = next.clone(),
+            _ => return Ok(ConstAliasResolution::Value(bound.clone())),
+        }
     }
 }
 
@@ -75,47 +215,54 @@ pub(super) use projection::{project_const_argument, project_type};
 pub(crate) fn const_occurs_in<A, D>(
     value: &ArrayLength,
     parameter: &GenericConstReference,
-    bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    context.enter_node()?;
-    let ArrayLength::Generic(candidate) = value else {
-        return match value {
-            ArrayLength::Const(_) => Ok(false),
-            ArrayLength::Error(_) | ArrayLength::Inferred => {
-                Err(TypeConstraintRejection::UnresolvedType.into())
-            }
-            ArrayLength::Generic(_) => unreachable!("generic handled above"),
+    let mut current = value;
+    let mut visited = BTreeSet::new();
+    loop {
+        context.enter_node()?;
+        let ArrayLength::Generic(candidate) = current else {
+            return match current {
+                ArrayLength::Const(_) => Ok(false),
+                ArrayLength::Error(_) | ArrayLength::Inferred => {
+                    Err(TypeConstraintRejection::UnresolvedType.into())
+                }
+                ArrayLength::Generic(_) => unreachable!("generic handled above"),
+            };
         };
-    };
-    if candidate == parameter {
-        return Ok(true);
+        if candidate == parameter {
+            return Ok(true);
+        }
+        if !visited.insert(candidate.clone()) {
+            return Ok(false);
+        }
+        let Some(bound) = view.const_binding(candidate) else {
+            return Ok(false);
+        };
+        current = bound;
     }
-    let Some(bound) = bindings.get(candidate) else {
-        return Ok(false);
-    };
-    const_occurs_in(bound, parameter, bindings, context)
 }
 
 #[derive(Debug, Eq, PartialEq)]
 pub(crate) struct KeyedConstraintProjection<P> {
-    key: P,
+    key: Arc<P>,
     value: super::super::ScopedType,
 }
 
 impl<P> KeyedConstraintProjection<P> {
-    pub(super) fn new(key: P, value: TypeKind, scope: super::super::GenericScope) -> Self {
+    pub(super) fn new(key: Arc<P>, value: TypeKind, scope: super::super::GenericScope) -> Self {
         Self {
             key,
             value: super::super::ScopedType::new(value, scope),
         }
     }
 
-    pub(crate) const fn key(&self) -> &P {
+    pub(crate) fn key(&self) -> &P {
         &self.key
     }
 
@@ -126,19 +273,21 @@ impl<P> KeyedConstraintProjection<P> {
 
 #[derive(Eq, PartialEq)]
 pub(crate) struct SolvedCandidate<D: ConstraintDomain> {
-    pub(crate) solution: Arc<TypeConstraintSolution>,
+    pub(crate) component: super::CompletedConstraintComponent<D>,
     pub(crate) sealed_branch: D::SealedBranchValue,
-    pub(crate) projections: Box<[KeyedConstraintProjection<D::Projection>]>,
-    pub(crate) closed_sources: Box<[ClosedConstraintProbe<D>]>,
 }
 
 impl<D: ConstraintDomain> fmt::Debug for SolvedCandidate<D> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("SolvedCandidate")
-            .field("solution", &self.solution)
-            .field("projection_count", &self.projections.len())
-            .field("closed_source_count", &self.closed_sources.len())
+            .field("solution", self.component.selected().solution())
+            .field("application_count", &self.component.applications().len())
+            .field(
+                "projection_count",
+                &self.component.selected().projections().len(),
+            )
+            .field("closed_source_count", &self.component.sources().all().len())
             .finish()
     }
 }
@@ -151,7 +300,7 @@ impl<D: ConstraintDomain> fmt::Debug for SolvedCandidate<D> {
 /// may map this proof to a terminal authored diagnostic without rechecking the
 /// expression or duplicating type compatibility.
 pub(crate) struct RejectedConstraintSourceProjection<D: ConstraintDomain> {
-    source: D::Source,
+    source: ConstraintSourceId<D::Source>,
     alternative: Option<D::AlternativeIndex>,
     source_projection: CheckedConstraintSourceProjection,
     acceptance: ConstraintAcceptance,
@@ -161,7 +310,7 @@ pub(crate) struct RejectedConstraintSourceProjection<D: ConstraintDomain> {
 
 impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
     pub(super) fn new(
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
         source_projection: CheckedConstraintSourceProjection,
         acceptance: ConstraintAcceptance,
@@ -178,7 +327,7 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
         }
     }
 
-    pub(crate) const fn source(&self) -> D::Source {
+    pub(crate) const fn source(&self) -> ConstraintSourceId<D::Source> {
         self.source
     }
 
@@ -204,7 +353,7 @@ impl<D: ConstraintDomain> RejectedConstraintSourceProjection<D> {
 
     #[cfg(test)]
     pub(crate) fn test_new(
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
         alternative: Option<D::AlternativeIndex>,
         source_projection: CheckedConstraintSourceProjection,
         acceptance: ConstraintAcceptance,
@@ -241,7 +390,7 @@ impl<D: ConstraintDomain> fmt::Debug for RejectedConstraintSourceProjection<D> {
 
 pub(crate) enum TypeConstraintCandidateFailure<D: ConstraintDomain> {
     Constraint(TypeConstraintRejection),
-    Source(Box<SourceError<D::Source, Box<[D::SourceErrorCause]>>>),
+    Source(Box<SourceError<ConstraintSourceId<D::Source>, Box<[D::SourceErrorCause]>>>),
     SourceProjection(Box<RejectedConstraintSourceProjection<D>>),
 }
 
@@ -277,7 +426,7 @@ impl<D: ConstraintDomain> fmt::Debug for TypeConstraintFailureInvariant<D> {
 
 pub(crate) enum TypeConstraintFailure<D: ConstraintDomain> {
     Rejected(TypeConstraintCandidateFailure<D>),
-    FatalSource(Box<SourceError<D::Source, D::SourceErrorCause>>),
+    FatalSource(Box<SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>>),
     Abort(TypeConstraintAbort),
     Invariant(TypeConstraintFailureInvariant<D>),
 }
@@ -287,7 +436,9 @@ impl<D: ConstraintDomain> TypeConstraintFailure<D> {
         Self::Rejected(error)
     }
 
-    pub(crate) fn fatal_source(error: SourceError<D::Source, D::SourceErrorCause>) -> Self {
+    pub(crate) fn fatal_source(
+        error: SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>,
+    ) -> Self {
         Self::FatalSource(Box::new(error))
     }
 
@@ -374,47 +525,61 @@ where
 
 pub(crate) fn validate_type<A, D>(
     ty: &TypeKind,
+    view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<(), TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    project_type(
-        ty,
-        &BTreeMap::<GenericTypeReference, TypeKind>::new(),
-        &BTreeMap::<GenericConstReference, ArrayLength>::new(),
-        ConstraintClosurePolicy::Hint,
-        context,
-    )
-    .map(|_| ())
+    project_type(ty, view, ConstraintClosurePolicy::Validation, context).map(|_| ())
 }
 
 pub(crate) fn occurs_in_shape<A, D>(
     shape: TypeConstraintShape<'_>,
     parameter: &GenericTypeReference,
-    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
+    view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    context.validate_type_header(shape)?;
+    occurs_in_shape_inner(shape, parameter, view, context, &mut BTreeSet::new())
+}
+
+fn occurs_in_shape_inner<A, D>(
+    shape: TypeConstraintShape<'_>,
+    parameter: &GenericTypeReference,
+    view: ConstraintProjectionView<'_, D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    aliases: &mut BTreeSet<GenericTypeReference>,
+) -> Result<bool, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
+    context.validate_type_header(shape, view)?;
     match shape {
         TypeConstraintShape::Unresolved => Err(TypeConstraintRejection::UnresolvedType.into()),
         TypeConstraintShape::Generic(candidate) => {
             if candidate == parameter {
                 return Ok(true);
             }
-            let Some(bound) = bindings.get(candidate) else {
+            if !aliases.insert(candidate.clone()) {
+                return Ok(false);
+            }
+            let Some(bound) = view.binding(candidate) else {
+                aliases.remove(candidate);
                 return Ok(false);
             };
-            occurs_in_type(bound, parameter, bindings, context)
+            let result = occurs_in_type_inner(bound, parameter, view, context, aliases);
+            aliases.remove(candidate);
+            result
         }
         shape => context.with_binder(shape.binder(), |context| {
             for child in shape.children() {
-                if occurs_in_type(child, parameter, bindings, context)? {
+                if occurs_in_type_inner(child, parameter, view, context, aliases)? {
                     return Ok(true);
                 }
             }
@@ -426,15 +591,29 @@ where
 pub(crate) fn occurs_in_type<A, D>(
     ty: &TypeKind,
     parameter: &GenericTypeReference,
-    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
+    view: ConstraintProjectionView<'_, D>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<bool, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
+    occurs_in_type_inner(ty, parameter, view, context, &mut BTreeSet::new())
+}
+
+fn occurs_in_type_inner<A, D>(
+    ty: &TypeKind,
+    parameter: &GenericTypeReference,
+    view: ConstraintProjectionView<'_, D>,
+    context: &mut TypeConstraintContext<'_, A, D>,
+    aliases: &mut BTreeSet<GenericTypeReference>,
+) -> Result<bool, TypeConstraintError>
+where
+    A: TypeConstraintAccounting,
+    D: ConstraintDomain,
+{
     context.enter_node()?;
-    occurs_in_shape(ty.constraint_shape(), parameter, bindings, context)
+    occurs_in_shape_inner(ty.constraint_shape(), parameter, view, context, aliases)
 }
 
 pub(crate) fn seal_path<A, D>(
@@ -448,7 +627,9 @@ where
     if path.bindings.is_empty() && path.const_bindings.is_empty() {
         return Ok(path);
     }
+    let source_applications = Arc::clone(&path.applications);
     let ConstraintPath {
+        applications,
         bindings: source,
         const_bindings: const_source,
         effects,
@@ -456,8 +637,15 @@ where
         choice_key,
         deferred_cycles,
         probe_trace,
+        projections,
     } = path;
+    let source_view = ConstraintProjectionView {
+        applications: &source_applications,
+        bindings: &source,
+        const_bindings: &const_source,
+    };
     let mut sealed = ConstraintPath {
+        applications,
         bindings: BTreeMap::new(),
         const_bindings: BTreeMap::new(),
         effects,
@@ -465,15 +653,16 @@ where
         choice_key,
         deferred_cycles,
         probe_trace,
+        projections,
     };
     for (parameter, value) in &source {
         let mut visiting = BTreeSet::new();
-        let value = seal_type(value, &source, &const_source, &mut visiting, context)?;
+        let value = seal_type(value, source_view, &mut visiting, context)?;
         context.add_sealed_binding(&mut sealed, parameter.clone(), value)?;
     }
     for (parameter, value) in &const_source {
         let mut visiting = BTreeSet::new();
-        let value = seal_const(value, &const_source, &mut visiting, context)?;
+        let value = seal_const(value, source_view, &mut visiting, context)?;
         context.add_sealed_const_binding(&mut sealed, parameter.clone(), value)?;
     }
     Ok(sealed)
@@ -481,8 +670,7 @@ where
 
 pub(crate) fn seal_type<A, D>(
     ty: &TypeKind,
-    bindings: &BTreeMap<GenericTypeReference, TypeKind>,
-    const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<TypeKind, TypeConstraintError>
@@ -493,8 +681,7 @@ where
     let mut remaining = BTreeSet::new();
     project_type_inner(
         ty,
-        bindings,
-        const_bindings,
+        view,
         ConstraintClosurePolicy::Hint,
         context,
         visiting,
@@ -504,7 +691,7 @@ where
 
 fn seal_const<A, D>(
     value: &ArrayLength,
-    bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+    view: ConstraintProjectionView<'_, D>,
     visiting: &mut BTreeSet<GenericConstReference>,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ArrayLength, TypeConstraintError>
@@ -515,7 +702,7 @@ where
     let mut remaining = BTreeSet::new();
     project_array_length(
         value,
-        bindings,
+        view,
         ConstraintClosurePolicy::Hint,
         context,
         visiting,
@@ -523,60 +710,22 @@ where
     )
 }
 
-pub(crate) fn bindings_equal<A, D>(
-    left: &ConstraintPath<D>,
-    right: &ConstraintPath<D>,
-    context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<bool, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    if left.bindings.len() != right.bindings.len()
-        || left.const_bindings != right.const_bindings
-        || !left
-            .effects
-            .bindings_equal(&right.effects)
-            .map_err(super::map_effect_environment_error)?
-    {
-        return Ok(false);
-    }
-    for ((left_parameter, left_value), (right_parameter, right_value)) in
-        left.bindings.iter().zip(&right.bindings)
-    {
-        if left_parameter != right_parameter || !types_equal(left_value, right_value, context)? {
-            return Ok(false);
-        }
-    }
-    Ok(true)
-}
-
-pub(crate) fn types_equal<A, D>(
+/// Completed terms have already passed their own lexical-scope seal. Equality
+/// still visits every compared type and effect node using the live work owner.
+pub(super) fn completed_types_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
     left: &TypeKind,
     right: &TypeKind,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<bool, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
+) -> Result<bool, TypeConstraintError> {
     context.enter_node()?;
-    let left_shape = left.constraint_shape();
-    let right_shape = right.constraint_shape();
-    types_equal_entered(left_shape, right_shape, context)
+    type_shapes_equal(left.constraint_shape(), right.constraint_shape(), context)
 }
 
-pub(crate) fn types_equal_entered<A, D>(
+fn type_shapes_equal<A: TypeConstraintAccounting, D: ConstraintDomain>(
     left_shape: TypeConstraintShape<'_>,
     right_shape: TypeConstraintShape<'_>,
     context: &mut TypeConstraintContext<'_, A, D>,
-) -> Result<bool, TypeConstraintError>
-where
-    A: TypeConstraintAccounting,
-    D: ConstraintDomain,
-{
-    context.validate_type_header(left_shape)?;
-    context.validate_type_header(right_shape)?;
+) -> Result<bool, TypeConstraintError> {
     if matches!(left_shape, TypeConstraintShape::Unresolved)
         || matches!(right_shape, TypeConstraintShape::Unresolved)
     {
@@ -592,7 +741,7 @@ where
             ..
         },
     ) = (left_shape, right_shape)
-        && left_effects != right_effects
+        && !left_effects.equal_with(right_effects, context)?
     {
         return Ok(false);
     }
@@ -604,8 +753,17 @@ where
         let mut right_children = right_shape.children();
         loop {
             match (left_children.next(), right_children.next()) {
-                (Some(left), Some(right)) if types_equal(left, right, context)? => {}
-                (Some(_), Some(_)) | (Some(_), None) | (None, Some(_)) => return Ok(false),
+                (Some(left), Some(right)) => {
+                    context.enter_node()?;
+                    if !type_shapes_equal(
+                        left.constraint_shape(),
+                        right.constraint_shape(),
+                        context,
+                    )? {
+                        return Ok(false);
+                    }
+                }
+                (Some(_), None) | (None, Some(_)) => return Ok(false),
                 (None, None) => return Ok(true),
             }
         }

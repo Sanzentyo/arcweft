@@ -28,6 +28,10 @@ mod resolver;
 mod schema;
 mod view_modifier;
 
+pub use catalog::{
+    CheckedRustFieldDefaultProgram, RegisteredRustFieldDefaultProgram, RustFieldDefaultBindingError,
+};
+
 pub use crate::types::StandardMapFamily;
 pub use crate::types::{CheckedConstraintContainerConstructor, CheckedConstraintSourceProjection};
 pub(crate) use application::{
@@ -54,20 +58,20 @@ pub use checked_application::{
     CheckedCallArgumentPassing, CheckedCallAttachedContentOperand,
     CheckedCallAttachedContentSource, CheckedCallCalleeExecution,
     CheckedCallCandidateInventoryDigest, CheckedCallConsumerAdmission, CheckedCallContinuation,
-    CheckedCallContinuationDigest, CheckedCallEffectBinding, CheckedCallExecutionArgument,
-    CheckedCallExecutionProjection, CheckedCallExecutionSlot, CheckedCallExecutionSource,
-    CheckedCallOperandDestination, CheckedCallReceiverProjection, CheckedCallResult,
-    CheckedCallRuntimeOperand, CheckedCallSemanticOperand, CheckedCallSemanticOperandSource,
-    CheckedCallSemanticSelection, CheckedCandidateIndex, CheckedCandidateInventory,
-    CheckedCapacityMethodIdentity, CheckedCapacityOperation, CheckedCaptureMode,
-    CheckedCaptureSignatureRow, CheckedContentCallableCoordinate,
-    CheckedDeferredContinuationConstParameter, CheckedDeferredContinuationParameter,
-    CheckedDialogueCallableIdentity, CheckedDomainMethodIdentity, CheckedFunctionValueIdentity,
-    CheckedLanguageCallableIdentity, CheckedLexicalCallableIdentity, FrozenCallTypeSolution,
-    FrozenCallTypeSolutionDigest, ResolvedCallable, ResolvedCallableAuthority,
-    ResolvedCallableBase, ResolvedCallableBaseInstantiation, ResolvedCallableDigest,
-    ResolvedCallableIssuerEvidence, ResolvedCallableOrigin, ResolvedCallableStableIdentity,
-    ResolvedCallableState, ResolvedDialogueCalleeIdentity,
+    CheckedCallContinuationDigest, CheckedCallExecutionArgument, CheckedCallExecutionProjection,
+    CheckedCallExecutionSlot, CheckedCallExecutionSource, CheckedCallOperandDestination,
+    CheckedCallReceiverProjection, CheckedCallResult, CheckedCallRuntimeOperand,
+    CheckedCallSemanticOperand, CheckedCallSemanticOperandSource, CheckedCallSemanticSelection,
+    CheckedCandidateIndex, CheckedCandidateInventory, CheckedCapacityMethodIdentity,
+    CheckedCapacityOperation, CheckedCaptureMode, CheckedCaptureSignatureRow,
+    CheckedContentCallableCoordinate, CheckedDeferredContinuationConstParameter,
+    CheckedDeferredContinuationParameter, CheckedDialogueCallableIdentity,
+    CheckedDomainMethodIdentity, CheckedFunctionValueIdentity, CheckedLanguageCallableIdentity,
+    CheckedLexicalCallableIdentity, FrozenCallTypeSolution, FrozenCallTypeSolutionDigest,
+    ResolvedCallable, ResolvedCallableAuthority, ResolvedCallableBase,
+    ResolvedCallableBaseInstantiation, ResolvedCallableDigest, ResolvedCallableIssuerEvidence,
+    ResolvedCallableOrigin, ResolvedCallableStableIdentity, ResolvedCallableState,
+    ResolvedDialogueCalleeIdentity,
 };
 pub(crate) use checked_application::{
     CheckedCallApplicationCoreSeal, CheckedCallConsumerAdmissionSeal,
@@ -99,7 +103,8 @@ pub(crate) use continuation::{
     PreparedCallGraphDelta, PreparedCallGraphIngress, PreparedCallGraphReplayMismatch,
     PreparedCallGraphSealAuthority, PreparedCallGraphSealNodeKey, PreparedCallGraphSealPayload,
     PreparedCallGraphSelectedNode, PreparedCallGraphSiteState, PreparedCallPrefixPayload,
-    PreparedCallPrefixReplayMismatch, PreparedCallSiteContinuation,
+    PreparedCallPrefixReplayMismatch, PreparedCallResultRef, PreparedCallSiteContinuation,
+    PreparedCallableEffectView, PreparedChildConstraintInitialization,
     PreparedConstraintInitialization,
 };
 pub use continuation::{
@@ -184,12 +189,12 @@ pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublica
 #[cfg(test)]
 pub(crate) use resolver::prepare_function_value_origin_query;
 pub(crate) use resolver::{
-    CallResolverAuthority, CallResolverContext, CallResolverRequest,
-    CheckedCallableEffectInstantiation, DetachedPreparedResolvedCallable, FinalCallCalleeFacts,
-    PrepareFinalCallCalleeError, PreparedCallAttachedContentOperand, PreparedCallCallee,
-    PreparedCallCalleeConstraintInputs, PreparedCallInputs, PreparedCallSemanticOperand,
-    PreparedCallSemanticOperandOwner, PreparedCallSemanticOperandRole,
-    PreparedCallableDefinitionKey, PreparedCallableEffectInstantiationEvidence,
+    CallResolverAuthority, CallResolverContext, CallResolverRequest, CallableProjection,
+    CallableTerminalEffectProjection, CheckedCallResolverAuthority,
+    DetachedPreparedResolvedCallable, FinalCallCalleeFacts, PrepareFinalCallCalleeError,
+    PreparedCallAttachedContentOperand, PreparedCallCallee, PreparedCallCalleeConstraintInputs,
+    PreparedCallInputs, PreparedCallSemanticOperand, PreparedCallSemanticOperandOwner,
+    PreparedCallSemanticOperandRole, PreparedCallTypeApplication, PreparedCallableDefinitionKey,
     PreparedCaptureIdentityRow, PreparedDialogueCalleeIdentity,
     PreparedFunctionValueOriginEvidence, PreparedFunctionValueOriginIdentity,
     PreparedFunctionValueOriginProducer, PreparedFunctionValueOriginProgress,

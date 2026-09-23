@@ -9,11 +9,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use thiserror::Error;
 
-use crate::effect_row::EffectVar;
-
 use super::{
-    ArrayLength, GenericConstParameterId, GenericTypeParameterId, SemanticTypeDigest, TypeKind,
+    ArrayLength, GenericConstParameterId, GenericEffectParameterId, GenericTypeParameterId,
+    SemanticTypeDigest, TypeKind,
 };
+
+#[cfg(test)]
+mod tests;
 
 /// Owned lexical context for a projected type term. Consumers must explicitly
 /// close it at the root or transfer its incoming binders to a function scheme.
@@ -56,6 +58,9 @@ pub type ScopedArrayLengthView<'a> = ScopedView<'a, ArrayLength>;
 pub type ScopedTypeReferenceView<'a> = ScopedView<'a, GenericTypeReference>;
 /// A template constant-parameter key with its declaration/scheme scope.
 pub type ScopedConstReferenceView<'a> = ScopedView<'a, GenericConstReference>;
+pub type ScopedEffectReferenceView<'a> = ScopedView<'a, GenericEffectReference>;
+pub type ScopedEffectRowView<'a> = ScopedView<'a, crate::effect_row::EffectRow>;
+pub type ScopedEffectPredicateView<'a> = ScopedView<'a, crate::effect_row::EffectPredicate>;
 
 impl<'a, T> ScopedView<'a, T> {
     pub(in crate::types) const fn sealed(value: &'a T, scope: &'a GenericScope) -> Self {
@@ -136,6 +141,44 @@ impl ScopedConstReferenceView<'_> {
             .map_err(super::TypeProjectionError::Control)?;
         ArrayLength::Generic(self.value.clone())
             .canonical_checked_bytes_in_scope_with_control(self.scope, control)
+    }
+}
+
+impl ScopedEffectRowView<'_> {
+    pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        self.value.semantic_identity_digest_in_scope(self.scope)
+    }
+
+    pub fn semantic_identity_digest_with_control<C: super::TypeProjectionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
+        self.value
+            .semantic_identity_digest_in_scope_with_control(self.scope, control)
+    }
+}
+
+impl ScopedEffectPredicateView<'_> {
+    pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        self.value.semantic_identity_digest_in_scope(self.scope)
+    }
+}
+
+impl ScopedEffectReferenceView<'_> {
+    pub fn semantic_identity_digest(self) -> Result<SemanticTypeDigest, GenericScopeError> {
+        crate::effect_row::EffectRow::open(crate::effects::EffectSet::new(), self.value.clone())
+            .semantic_identity_digest_in_scope(self.scope)
+    }
+
+    pub fn semantic_identity_digest_with_control<C: super::TypeProjectionControl>(
+        self,
+        control: &mut C,
+    ) -> Result<SemanticTypeDigest, super::TypeProjectionError<C::Error>> {
+        control
+            .check()
+            .map_err(super::TypeProjectionError::Control)?;
+        crate::effect_row::EffectRow::open(crate::effects::EffectSet::new(), self.value.clone())
+            .semantic_identity_digest_in_scope_with_control(self.scope, control)
     }
 }
 /// Arity of the three namespaces bound by a function scheme.
@@ -283,9 +326,9 @@ pub enum GenericConstReference {
     Inference(InferenceConstParameter),
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum GenericEffectReference {
-    Free(EffectVar),
+    Free(GenericEffectParameterId),
     Bound(BoundEffectParameter),
     Inference(InferenceEffectParameter),
 }
@@ -302,8 +345,8 @@ impl From<GenericConstParameterId> for GenericConstReference {
     }
 }
 
-impl From<EffectVar> for GenericEffectReference {
-    fn from(parameter: EffectVar) -> Self {
+impl From<GenericEffectParameterId> for GenericEffectReference {
+    fn from(parameter: GenericEffectParameterId) -> Self {
         Self::Free(parameter)
     }
 }
@@ -533,6 +576,58 @@ impl GenericConstReference {
                     return Ok(None);
                 };
                 incoming.bound_const(depth, parameter.slot()).map(Some)
+            }
+        }
+    }
+}
+
+impl GenericEffectReference {
+    pub(crate) fn source_label(&self) -> String {
+        match self {
+            Self::Free(parameter) => parameter.source_label(),
+            Self::Bound(parameter) => {
+                format!("$bound-effect<{}>#{}", parameter.depth, parameter.slot)
+            }
+            Self::Inference(parameter) => format!("$inference-effect#{}", parameter.slot),
+        }
+    }
+
+    pub(crate) const fn free_parameter(&self) -> Option<&GenericEffectParameterId> {
+        match self {
+            Self::Free(parameter) => Some(parameter),
+            Self::Bound(_) | Self::Inference(_) => None,
+        }
+    }
+
+    /// Resolves an effect occurrence relative to the incoming template. A
+    /// reference owned by an inner function stays rigid inside that binder.
+    pub(crate) fn template_key(
+        &self,
+        incoming: &GenericScope,
+        occurrence: &GenericScope,
+    ) -> Result<Option<Self>, GenericScopeError> {
+        match self {
+            Self::Free(_) => Ok(Some(self.clone())),
+            Self::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Effect,
+            }),
+            Self::Bound(parameter) => {
+                occurrence.bound_effect(parameter.depth(), parameter.slot())?;
+                let local = occurrence
+                    .binders
+                    .len()
+                    .checked_sub(incoming.binders.len())
+                    .ok_or(GenericScopeError::UnknownDepth {
+                        depth: parameter.depth(),
+                    })?;
+                let Some(depth) = usize::try_from(parameter.depth())
+                    .ok()
+                    .and_then(|depth| depth.checked_sub(local))
+                    .and_then(|depth| u32::try_from(depth).ok())
+                else {
+                    return Ok(None);
+                };
+                incoming.bound_effect(depth, parameter.slot()).map(Some)
             }
         }
     }

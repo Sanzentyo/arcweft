@@ -8,9 +8,10 @@ use crate::{
     effect_model::{CallTarget, CallableId, EffectProgram},
     effect_row::{
         ClosedEffectRowReport, EffectRow, EffectRowCloseError, EffectRowError, EffectRowReport,
-        EffectRowSummary, EffectRowTail, EffectSubstitution, EffectVar,
+        EffectRowSummary, EffectSubstitution,
     },
     effects::{EffectId, EffectSet},
+    types::GenericEffectReference,
 };
 
 /// Final effect summary for one callable.
@@ -49,17 +50,22 @@ pub struct EffectAnalysisReport {
 /// Computes the least fixed-point effect closure and validates all contracts.
 pub fn analyze_effects(
     program: &EffectProgram,
-    inferred_rows: &BTreeMap<CallableId, EffectVar>,
+    inferred_rows: &BTreeMap<CallableId, GenericEffectReference>,
 ) -> EffectAnalysisReport {
     let mut diagnostics = collect_graph_diagnostics(program);
     let mut summaries = initial_summaries(program);
     let fixed_point_iterations = propagate_local_effects(program, &mut summaries);
     let rows = collect_effect_rows(&summaries, inferred_rows);
     let traces = collect_effect_traces(program, &summaries);
-    let mut row_substitutions = EffectSubstitution::new();
-    for variable in inferred_rows.values().copied() {
-        row_substitutions.close_fresh_inferred_tail(variable);
-    }
+    let row_substitutions =
+        EffectSubstitution::from_rows(inferred_rows.iter().filter_map(|(callable, variable)| {
+            summaries.get(callable).map(|summary| {
+                (
+                    variable.clone(),
+                    EffectRow::closed(summary.inferred().clone()),
+                )
+            })
+        }));
 
     diagnostics.extend(validate_contracts(program, &summaries));
     diagnostics.sort_by(|left, right| diagnostic_sort_key(left).cmp(&diagnostic_sort_key(right)));
@@ -182,30 +188,17 @@ impl EffectAnalysisReport {
     /// Resolves an inferred row emitted by this analysis into its final effect set.
     ///
     /// Function types are created before fixed-point effect propagation finishes,
-    /// so their open row contains the owning variable but not necessarily the
-    /// callable's final concrete effects. The report owns that variable-to-row
-    /// join and keeps tooling from exposing an internal `eN` tail.
+    /// so their formulas reference the owning variables before the final
+    /// effects are known. The report resolves every reference through the same
+    /// completed substitution used by its closed boundary report.
     pub fn resolve_effect_row(&self, row: &EffectRow) -> Result<EffectSet, EffectRowError> {
-        match row.tail() {
-            EffectRowTail::Closed => Ok(row.concrete().clone()),
-            EffectRowTail::Unknown => Err(EffectRowError::UnknownRow),
-            EffectRowTail::Variable(variable) => self
-                .rows
-                .summaries()
-                .find_map(|(_, summary)| {
-                    (summary.inferred().tail() == EffectRowTail::Variable(variable))
-                        .then(|| row.concrete().union(summary.inferred().concrete()))
-                })
-                .ok_or(EffectRowError::UnboundVariable {
-                    variable: variable.index(),
-                }),
-        }
+        row.resolve(&self.row_substitutions)
     }
 }
 
 fn collect_effect_rows(
     summaries: &BTreeMap<CallableId, EffectSummary>,
-    inferred_rows: &BTreeMap<CallableId, EffectVar>,
+    inferred_rows: &BTreeMap<CallableId, GenericEffectReference>,
 ) -> EffectRowReport {
     EffectRowReport::new(summaries.values().map(|summary| {
         inferred_rows.get(summary.callable()).map_or_else(
@@ -221,7 +214,7 @@ fn collect_effect_rows(
                 EffectRowSummary::open_inferred(
                     summary.callable().clone(),
                     summary.inferred().clone(),
-                    *tail,
+                    tail.clone(),
                     summary.declared().cloned(),
                     summary.forbidden().clone(),
                 )

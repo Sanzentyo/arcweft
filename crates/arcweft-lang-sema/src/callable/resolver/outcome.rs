@@ -2,7 +2,6 @@
 
 use arcweft_character::id::CharacterId;
 
-use super::super::ParameterExpectedTypeProjection;
 use super::{
     Arc, CallableAuthorityRank, CallableCandidateId, CallableDeclarationKey, CallableGroupIndex,
     CallableLimits, CallableName, CallableParameterIndex, CallablePath, CallableRecord,
@@ -11,10 +10,6 @@ use super::{
     ResolveCallError, ResolvedAssociatedTypeReceiver, TypeKind,
 };
 use crate::callable::CallableResultSchema;
-
-use crate::types::constraints::{
-    CheckedConstraintSourceProjection, PreparedConstraintSourceProjection,
-};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SignatureOrigin {
@@ -57,7 +52,6 @@ pub(crate) struct PreparedResolvedCallableDefinition {
     checked: Option<CheckedCallableId>,
     record: Option<Arc<CallableRecord>>,
     intrinsic_schema: Option<Arc<CallableSignatureSchema>>,
-    effect_instantiation: super::PreparedCallableEffectInstantiation,
     instantiation: CallableInstantiation,
     equivalent_sources: Arc<[EquivalentCallableSource]>,
     authority: Option<CallableAuthorityRank>,
@@ -68,26 +62,6 @@ pub(crate) struct PreparedResolvedCallableDefinition {
 pub(crate) struct PreparedResolvedCallable {
     definition: Arc<PreparedResolvedCallableDefinition>,
     state: PreparedResolvedCallableState,
-}
-
-/// Move-only permission to project one raw source type into the prepared
-/// effect namespace owned by an exact callable definition. The token retains
-/// only a private typed plan and a borrow of that definition; it cannot be
-/// reattached to another schema or overlay.
-pub(crate) struct PreparedCallableEffectProjectionToken<'a> {
-    definition: &'a PreparedResolvedCallableDefinition,
-    plan: PreparedCallableEffectProjectionPlan,
-}
-
-enum PreparedCallableEffectProjectionPlan {
-    Parameter {
-        coordinate: super::super::CallableParameterCoordinate,
-        expected: ParameterExpectedTypeProjection,
-        source_projection: PreparedConstraintSourceProjection,
-    },
-    GroupResult {
-        current_group: CallableGroupIndex,
-    },
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -108,9 +82,6 @@ impl PreparedResolvedCallableDefinition {
             && self.checked == other.checked
             && self.record == other.record
             && self.intrinsic_schema == other.intrinsic_schema
-            && self
-                .effect_instantiation
-                .replay_eq(&other.effect_instantiation)
             && self.instantiation == other.instantiation
             && self.equivalent_sources == other.equivalent_sources
             && self.authority == other.authority
@@ -125,112 +96,21 @@ impl PreparedResolvedCallableDefinition {
             .expect("prepared definition construction validates one schema authority")
     }
 
-    fn source_invocation_effects(&self) -> crate::effect_row::EffectRow {
-        self.schema()
-            .effects()
-            .fixed_row()
-            .cloned()
-            .unwrap_or_else(crate::effect_row::EffectRow::unknown)
-    }
-
-    fn source_function_type_from_group(
-        &self,
-        start: CallableGroupIndex,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        let effects = self.source_invocation_effects();
-        self.schema()
-            .project_function_type_from_group(
-                start,
-                &effects,
-                || {
-                    self.schema()
-                        .value_type()
-                        .cloned()
-                        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-                },
-                |_, parameter| {
-                    parameter
-                        .declared_type()
-                        .cloned()
-                        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-                },
-            )
-            .map_err(super::super::CallConstraintInvariant::from)
-    }
-
     fn projected_function_type_from_group(
-        &self,
-        start: CallableGroupIndex,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        let effects = self
-            .effect_instantiation
-            .project_invocation_effects(self.schema())?;
-        self.projected_function_type_from_group_with_effects(start, &effects)
-    }
-
-    fn projected_function_type_from_group_with_effects(
         &self,
         start: CallableGroupIndex,
         effects: &crate::effect_row::EffectRow,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
         self.schema()
-            .project_function_type_from_group(
-                start,
-                effects,
-                || self.effect_instantiation.project_result(self.schema()),
-                |coordinate, _| {
-                    self.effect_instantiation
-                        .project_parameter(self.schema(), coordinate)?
-                        .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)
-                },
-            )
-            .map_err(super::super::CallConstraintInvariant::from)
-    }
-
-    fn source_result_type_for_group(
-        &self,
-        current_group: CallableGroupIndex,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        let next = CallableGroupIndex::try_from_usize(
-            current_group
-                .get()
-                .checked_add(1)
-                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?,
-        )
-        .map_err(|_| super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        if matches!(
-            self.instantiation,
-            CallableInstantiation::Extension { group, .. } if group == next
-        ) || self.schema().group(next).is_none()
-        {
-            if self.schema().group(current_group).is_none() {
-                return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
-            }
-            return self
-                .schema()
-                .value_type()
-                .cloned()
-                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory);
-        }
-        self.source_function_type_from_group(next)
-    }
-
-    fn projected_result_type_for_group(
-        &self,
-        current_group: CallableGroupIndex,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        let CallableResultSchema::Value(result) =
-            self.projected_result_schema_for_group(current_group)?
-        else {
-            return Err(super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch);
-        };
-        Ok(result)
+            .declared_function_type_from_group(start, effects)
     }
 
     fn projected_result_schema_for_group(
         &self,
         current_group: CallableGroupIndex,
-    ) -> Result<CallableResultSchema, super::super::CallConstraintInvariant> {
+        terminal_effects: CallableTerminalEffectProjection<'_>,
+    ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
+    {
         let next = CallableGroupIndex::try_from_usize(
             current_group
                 .get()
@@ -246,102 +126,68 @@ impl PreparedResolvedCallableDefinition {
             if self.schema().group(current_group).is_none() {
                 return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
             }
-            return match self.schema().result_schema() {
-                CallableResultSchema::Value(_) => self
-                    .effect_instantiation
-                    .project_result(self.schema())
-                    .map(CallableResultSchema::Value),
-                CallableResultSchema::ContentEmission(operation) => {
-                    Ok(CallableResultSchema::ContentEmission(*operation))
-                }
-            };
+            return Ok(CallableProjection::Ready(
+                self.schema().result_schema().clone(),
+            ));
         }
-        self.projected_function_type_from_group(next)
-            .map(CallableResultSchema::Value)
+        match terminal_effects {
+            CallableTerminalEffectProjection::Known(effects) => self
+                .projected_function_type_from_group(next, effects)
+                .map(CallableResultSchema::Value)
+                .map(CallableProjection::Ready),
+            CallableTerminalEffectProjection::Pending(checked) => {
+                Ok(CallableProjection::Pending(CallableProjectionPending {
+                    checked: checked.clone(),
+                    group: next,
+                }))
+            }
+        }
     }
 }
 
-impl PreparedCallableEffectProjectionToken<'_> {
-    /// Returns the owner-generated projected pattern for scalar/base
-    /// constraints. Spread source patterns depend on the checked raw
-    /// constructor and are therefore available only while consuming the
-    /// token.
-    pub(crate) fn projected_type(&self) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        match &self.plan {
-            PreparedCallableEffectProjectionPlan::Parameter {
-                coordinate,
-                expected,
-                source_projection: PreparedConstraintSourceProjection::Scalar,
-            } => self
-                .definition
-                .effect_instantiation
-                .project_parameter(self.definition.schema(), *coordinate)?
-                .map(|declared| expected.apply_to(&declared))
-                .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory),
-            PreparedCallableEffectProjectionPlan::Parameter { .. } => {
-                Err(super::super::CallConstraintInvariant::PreparedEffectInstantiationMismatch)
-            }
-            PreparedCallableEffectProjectionPlan::GroupResult { current_group } => self
-                .definition
-                .projected_result_type_for_group(*current_group),
-        }
+/// The terminal invocation row is borrowed from the checked catalog authority
+/// for the duration of projection. Inferred rows that are not closed yet stay
+/// identified as pending; they are never replaced with an unknown or empty
+/// row on a projected callable type.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CallableTerminalEffectProjection<'a> {
+    Known(&'a crate::effect_row::EffectRow),
+    Pending(&'a CheckedCallableId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallableProjectionPending {
+    checked: CheckedCallableId,
+    group: CallableGroupIndex,
+}
+
+impl CallableProjectionPending {
+    pub(crate) const fn checked(&self) -> &CheckedCallableId {
+        &self.checked
     }
 
-    /// Consumes the definition-bound capability and returns the only lower
-    /// input allowed to replace unresolved source tails. The typed plan was
-    /// issued from the same definition that built the lower source row; no
-    /// lower-normalized expected type participates in this authority.
-    pub(crate) fn seal_actual(
-        self,
-        actual: &TypeKind,
-    ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
-        let (source, projected) = match &self.plan {
-            PreparedCallableEffectProjectionPlan::Parameter {
-                coordinate,
-                expected: value_projection,
-                source_projection,
-            } => {
-                let source = self
-                    .definition
-                    .schema()
-                    .group(coordinate.group())
-                    .and_then(|group| group.parameter(coordinate.parameter()))
-                    .and_then(|parameter| parameter.declared_type())
-                    .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-                let projected = self
-                    .definition
-                    .effect_instantiation
-                    .project_parameter(self.definition.schema(), *coordinate)?
-                    .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-                let source = value_projection.apply_to(source);
-                let projected = value_projection.apply_to(&projected);
-                match source_projection {
-                    PreparedConstraintSourceProjection::Scalar => (source, projected),
-                    PreparedConstraintSourceProjection::InferSpreadContainer { .. } => {
-                        let checked = CheckedConstraintSourceProjection::derive(
-                            *source_projection,
-                            actual,
-                        )
-                        .ok_or(
-                            super::super::CallConstraintInvariant::PreparedEffectInstantiationMismatch,
-                        )?;
-                        (
-                            checked.compose_expected(&source),
-                            checked.compose_expected(&projected),
-                        )
-                    }
-                }
-            }
-            PreparedCallableEffectProjectionPlan::GroupResult { current_group } => (
-                self.definition
-                    .source_result_type_for_group(*current_group)?,
-                self.definition
-                    .projected_result_type_for_group(*current_group)?,
+    pub(crate) const fn group(&self) -> CallableGroupIndex {
+        self.group
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum CallableProjection<T> {
+    Ready(T),
+    Pending(CallableProjectionPending),
+}
+
+impl<T> CallableProjection<T> {
+    pub(crate) fn into_ready(self) -> Result<T, super::super::CallConstraintInvariant> {
+        match self {
+            Self::Ready(value) => Ok(value),
+            Self::Pending(pending) => Err(
+                super::super::CallConstraintInvariant::PendingCallableEffectProjection {
+                    checked: Box::new(pending.checked),
+                    group: pending.group,
+                },
             ),
-        };
-        self.definition
-            .effect_instantiation
-            .seal_source_actual(&source, &projected, actual)
+        }
     }
 }
 
@@ -394,7 +240,6 @@ pub(crate) struct PreparedResolvedCallableDefinitionSealInput {
     pub(crate) identity: super::PreparedResolvedCallableIdentity,
     pub(crate) origin: SignatureOrigin,
     pub(crate) checked: super::super::ResolvedCallableCheckedDefinition,
-    pub(crate) effect_instantiation: super::PreparedCallableEffectInstantiation,
     pub(crate) instantiation: CallableInstantiation,
     pub(crate) equivalent_sources: Arc<[EquivalentCallableSource]>,
     pub(crate) authority: Option<CallableAuthorityRank>,
@@ -516,7 +361,6 @@ impl PreparedResolvedCallableDetachArena {
                     checked,
                     record,
                     intrinsic_schema,
-                    effect_instantiation,
                     instantiation,
                     equivalent_sources,
                     authority,
@@ -538,7 +382,6 @@ impl PreparedResolvedCallableDetachArena {
                     identity,
                     origin,
                     checked,
-                    effect_instantiation,
                     instantiation,
                     equivalent_sources,
                     authority,
@@ -909,13 +752,11 @@ impl PreparedResolvedCallable {
             function_origin,
         )
         .ok_or(ResolveCallError::InvalidResolvedCallable)?;
-        let schema = record
+        record
             .as_ref()
             .map(|record| record.schema())
             .or(intrinsic_schema.as_deref())
             .ok_or(ResolveCallError::InvalidResolvedCallable)?;
-        let effect_instantiation = super::PreparedCallableEffectInstantiation::seal(schema)
-            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
         Ok(Self {
             definition: Arc::new(PreparedResolvedCallableDefinition {
                 id,
@@ -924,7 +765,6 @@ impl PreparedResolvedCallable {
                 checked,
                 record,
                 intrinsic_schema,
-                effect_instantiation,
                 instantiation,
                 equivalent_sources: equivalent_sources.into(),
                 authority,
@@ -969,72 +809,17 @@ impl PreparedResolvedCallable {
         &self,
         coordinate: super::super::CallableParameterCoordinate,
     ) -> Result<Option<TypeKind>, super::super::CallConstraintInvariant> {
-        self.definition
-            .effect_instantiation
-            .project_parameter(self.schema(), coordinate)
+        Ok(self.schema().parameter_type(coordinate).cloned())
     }
 
-    /// The definition's effect row in the authorized candidate namespace.
-    /// This describes terminal invocation, including when the current call
-    /// merely creates a continuation.
-    pub(crate) fn constraint_callable_effects(
-        &self,
-    ) -> Result<crate::effect_row::EffectRow, super::super::CallConstraintInvariant> {
-        self.definition
-            .effect_instantiation
-            .project_invocation_effects(self.schema())
-    }
-
-    /// Projects the complete callable type through this definition's sole
-    /// higher-order effect overlay while using the caller-supplied checked
-    /// invocation row only for the terminal curried application boundary.
+    /// Projects this signature with the checked invocation row supplied by its
+    /// body-effect authority for the terminal curried application boundary.
     pub(crate) fn constraint_callable_type_with_terminal_effects(
         &self,
         effects: &crate::effect_row::EffectRow,
     ) -> Result<TypeKind, super::super::CallConstraintInvariant> {
         self.definition
-            .projected_function_type_from_group_with_effects(self.base_call_group(), effects)
-    }
-
-    pub(crate) fn issue_parameter_effect_projection(
-        &self,
-        coordinate: super::super::CallableParameterCoordinate,
-        expected: &ParameterExpectedTypeProjection,
-        source_projection: PreparedConstraintSourceProjection,
-    ) -> Result<PreparedCallableEffectProjectionToken<'_>, super::super::CallConstraintInvariant>
-    {
-        self.schema()
-            .group(coordinate.group())
-            .and_then(|group| group.parameter(coordinate.parameter()))
-            .and_then(|parameter| parameter.declared_type())
-            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        self.definition
-            .effect_instantiation
-            .project_parameter(self.schema(), coordinate)?
-            .ok_or(super::super::CallConstraintInvariant::MalformedSchemaInventory)?;
-        Ok(PreparedCallableEffectProjectionToken {
-            definition: &self.definition,
-            plan: PreparedCallableEffectProjectionPlan::Parameter {
-                coordinate,
-                expected: expected.clone(),
-                source_projection,
-            },
-        })
-    }
-
-    pub(crate) fn issue_group_result_effect_projection(
-        &self,
-        current_group: CallableGroupIndex,
-    ) -> Result<PreparedCallableEffectProjectionToken<'_>, super::super::CallConstraintInvariant>
-    {
-        self.definition
-            .source_result_type_for_group(current_group)?;
-        self.definition
-            .projected_result_type_for_group(current_group)?;
-        Ok(PreparedCallableEffectProjectionToken {
-            definition: &self.definition,
-            plan: PreparedCallableEffectProjectionPlan::GroupResult { current_group },
-        })
+            .projected_function_type_from_group(self.base_call_group(), effects)
     }
 
     /// Checks a value callee against the authority that selected it. A saved
@@ -1046,7 +831,11 @@ impl PreparedResolvedCallable {
         &self,
         current_group: CallableGroupIndex,
         actual: &TypeKind,
-    ) -> Result<Option<(TypeKind, TypeKind)>, super::super::CallConstraintInvariant> {
+        terminal_effects: CallableTerminalEffectProjection<'_>,
+    ) -> Result<
+        CallableProjection<Option<(TypeKind, TypeKind)>>,
+        super::super::CallConstraintInvariant,
+    > {
         if current_group != self.call_group() {
             return Err(super::super::CallConstraintInvariant::PreparedGroupMismatch);
         }
@@ -1057,29 +846,32 @@ impl PreparedResolvedCallable {
                         super::super::CallConstraintInvariant::PreparedFunctionTypeMismatch,
                     );
                 }
-                Ok(None)
+                Ok(CallableProjection::Ready(None))
             }
-            PreparedResolvedCallableState::Base => {
-                let source = self
-                    .definition
-                    .source_function_type_from_group(current_group)?;
-                let pattern = self
-                    .definition
-                    .projected_function_type_from_group(current_group)?;
-                let actual = self
-                    .definition
-                    .effect_instantiation
-                    .seal_source_actual(&source, &pattern, actual)?;
-                Ok(Some((pattern, actual)))
-            }
+            PreparedResolvedCallableState::Base => match terminal_effects {
+                CallableTerminalEffectProjection::Known(effects) => {
+                    let pattern = self
+                        .definition
+                        .projected_function_type_from_group(current_group, effects)?;
+                    Ok(CallableProjection::Ready(Some((pattern, actual.clone()))))
+                }
+                CallableTerminalEffectProjection::Pending(checked) => {
+                    let next = CallableGroupIndex::try_from_usize(
+                        current_group
+                            .get()
+                            .checked_add(1)
+                            .ok_or(super::super::CallConstraintInvariant::PreparedGroupMismatch)?,
+                    )
+                    .map_err(|_| super::super::CallConstraintInvariant::PreparedGroupMismatch)?;
+                    Ok(CallableProjection::Pending(CallableProjectionPending {
+                        checked: checked.clone(),
+                        group: next,
+                    }))
+                }
+            },
         }
     }
 
-    pub(crate) fn prepared_effect_instantiation(
-        &self,
-    ) -> &super::PreparedCallableEffectInstantiation {
-        &self.definition.effect_instantiation
-    }
     pub fn instantiation(&self) -> &CallableInstantiation {
         &self.definition.instantiation
     }
@@ -1130,9 +922,11 @@ impl PreparedResolvedCallable {
     pub(crate) fn result_schema_for_group(
         &self,
         current_group: CallableGroupIndex,
-    ) -> Result<CallableResultSchema, super::super::CallConstraintInvariant> {
+        terminal_effects: CallableTerminalEffectProjection<'_>,
+    ) -> Result<CallableProjection<CallableResultSchema>, super::super::CallConstraintInvariant>
+    {
         self.definition
-            .projected_result_schema_for_group(current_group)
+            .projected_result_schema_for_group(current_group, terminal_effects)
     }
 }
 

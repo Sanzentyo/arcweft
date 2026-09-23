@@ -247,6 +247,61 @@ flow main() -> i64 { return fallback(empty(), 42i64) }
 }
 
 #[test]
+fn correlated_child_keeps_the_exact_candidate_when_an_overload_shares_its_result() {
+    let generic_owner = generic_test_owner(73);
+    let generic_parameter = TypeKind::generic_parameter(GenericTypeParameterId::new(
+        GenericParameterOwnerId::AcceptedNominal(generic_owner.clone()),
+        0,
+    ));
+    let generic_issuer = CallableGenericParameterIssuer::accepted_nominal(generic_owner, 1, 0)
+        .expect("one accepted generic parameter");
+    let fixture = typed_overload_fixture(
+        r#"
+fn consume<T>(selected: i64, later: T) -> T { later }
+flow main() -> String { return consume(choose(42i64), "later") }
+"#,
+        "choose",
+        vec![
+            TestCallableOverload::strict([TypeKind::I64], TypeKind::I64),
+            TestCallableOverload::strict([generic_parameter], TypeKind::I64)
+                .with_generic_issuer(generic_issuer),
+        ],
+    );
+    let analysis = analyze(&fixture).expect("the selected child call seals with its parent");
+    assert_selected_calls(&analysis, 2);
+
+    let (child_owner, child) = analysis
+        .calls()
+        .find_map(|(owner, facts)| {
+            let application = facts.selected_application()?;
+            matches!(
+                application.result(),
+                crate::callable::CheckedCallResult::Value(TypeKind::I64)
+            )
+            .then_some((owner, application))
+        })
+        .expect("the nested overload call returns i64");
+    assert_eq!(
+        analysis
+            .expression(child_owner)
+            .expect("the nested call has a checked-expression fact")
+            .type_selection(),
+        Some(CheckedTypeSelection::Expected),
+        "the child fact retains its exact parent argument expectation"
+    );
+    let crate::callable::CallableCandidateId::Environment(selected) =
+        child.core().candidates().selected().id()
+    else {
+        panic!("the nested overload retains its environment candidate identity");
+    };
+    assert_eq!(
+        selected.overload().get(),
+        0,
+        "the exact concrete candidate wins even though the other candidate has the same result"
+    );
+}
+
+#[test]
 fn correlated_ordinary_calls_combine_complementary_parent_evidence() {
     for (left, right) in [
         ("left(1i64)", "right(\"two\")"),

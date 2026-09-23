@@ -4,7 +4,10 @@
 //! to the client's affine close operation; the driver never unconditionally
 //! rolls a checkpoint back and therefore cannot double-close a materialization.
 
-use super::continuation::{CallConstraintInvariant, PreparedConstraintInitialization};
+use super::continuation::{
+    CallConstraintInvariant, PreparedChildConstraintInitialization, PreparedConstraintAuthority,
+    PreparedConstraintInitialization,
+};
 pub(crate) use super::limits::CandidateConstraintWorkSession;
 use crate::types::constraints::context::TypeConstraintContext;
 use crate::types::constraints::transaction::{
@@ -12,11 +15,12 @@ use crate::types::constraints::transaction::{
     ProbeSubmission, ProbeTicket, TypeConstraintTransaction,
 };
 use crate::types::constraints::{
-    ClosedMaterializationSubmission, ConstraintDomain, ExpectedHint,
-    MaterializationImmediateFailure, MaterializationOutcome, MaterializedSourceRequest,
+    ClosedMaterializationSubmission, CompletedCandidateAlternatives, ConstraintDomain,
+    ConstraintSourceId, ExpectedHint, MaterializationImmediateFailure, MaterializationOutcome,
+    MaterializedSourceRequest, NestedConstraintPath, PendingChildConstraint,
     PreparedSourceConstraint, SolvedCandidate, SourceError, SourcePhase, SourceProbeOutcome,
-    TypeConstraintAbort, TypeConstraintFailure, TypeConstraintFailureInvariant,
-    TypeConstraintInitializationFailure, TypeConstraintInvariant,
+    SourceProbeSelection, TypeConstraintAbort, TypeConstraintFailure,
+    TypeConstraintFailureInvariant, TypeConstraintInitializationFailure, TypeConstraintInvariant,
     TypeConstraintSourceProtocolInvariant,
 };
 use crate::types::{ConstraintAcceptance, TypeKind};
@@ -38,7 +42,7 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
 
     fn open_probe_checkpoint(
         &mut self,
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<D>>;
 
     fn close_probe_checkpoint(
@@ -48,7 +52,7 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
 
     fn open_materialization_checkpoint(
         &mut self,
-        sources: &[D::Source],
+        sources: &[ConstraintSourceId<D::Source>],
     ) -> Result<Self::MaterializationCheckpoint, SourceCheckpointFailure<D>>;
 
     fn materialize_sources<'h, I>(
@@ -57,13 +61,18 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
         checkpoint: &mut Self::MaterializationCheckpoint,
         work: &mut CandidateConstraintWorkSession<'_>,
     ) -> Result<
-        MaterializationOutcome<D::Source, Self::PreparedSealedBranchValue, D::SourceErrorCause>,
+        MaterializationOutcome<
+            ConstraintSourceId<D::Source>,
+            Self::PreparedSealedBranchValue,
+            D::SourceErrorCause,
+        >,
         SourceCallbackFailure<D>,
     >
     where
         I: IntoIterator<Item = MaterializedSourceRequest<'h, D>>,
         D::CheckedEvidence: 'h,
-        D::ProbeSemanticBranch: 'h;
+        D::ProbeSemanticBranch: 'h,
+        D: 'h;
 
     fn close_materialization_checkpoint(
         &mut self,
@@ -76,18 +85,51 @@ pub(crate) trait TypeConstraintClient<D: ConstraintDomain> {
         Self: Sized;
 }
 
-/// A probe borrows both its exact lower ticket and the running component's
+/// A probe owns its exact lower ticket and borrows the running component's
 /// context. The driver alone constructs this capability; a client cannot pair
 /// another source's hint with a fresh or unrelated accounting context.
 pub(crate) struct CandidateConstraintSourceContext<'probe, 'control, D: ConstraintDomain> {
-    ticket: &'probe ProbeTicket<D>,
+    ticket: ProbeTicket<D>,
+    authority: &'probe PreparedConstraintAuthority,
     context:
         &'probe mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
 }
 
 impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'probe, 'control, D> {
-    pub(crate) fn source(&self) -> D::Source {
+    pub(crate) fn validate_graph<P, U>(
+        &self,
+        graph: &super::PreparedCallGraph<P, U>,
+    ) -> Result<(), CallConstraintInvariant> {
+        graph.validate_constraint_authority(self.authority)
+    }
+
+    pub(crate) fn issue_child_initialization<P, U>(
+        &self,
+        graph: &super::PreparedCallGraph<P, U>,
+        application: D::Application,
+        site: crate::callable::CheckedCallSite,
+        candidate: &crate::callable::PreparedResolvedCallable,
+        enclosing: &crate::callable::EnclosingGenericParameterScope,
+    ) -> Result<PreparedChildConstraintInitialization<D>, CallConstraintInvariant>
+    where
+        P: super::PreparedCallPrefixPayload<Unselected = U>,
+    {
+        graph.validate_and_issue_child_constraint_initialization(
+            self.authority,
+            self.ticket.receipt(),
+            application,
+            site,
+            candidate,
+            enclosing,
+        )
+    }
+
+    pub(crate) fn source(&self) -> ConstraintSourceId<D::Source> {
         self.ticket.source()
+    }
+
+    pub(crate) fn receipt(&self) -> crate::types::constraints::ConstraintSourceReceipt<D> {
+        self.ticket.receipt()
     }
 
     pub(crate) fn work(&mut self) -> &mut CandidateConstraintWorkSession<'control> {
@@ -98,17 +140,124 @@ impl<'probe, 'control, D: ConstraintDomain> CandidateConstraintSourceContext<'pr
         &mut self,
         operation: impl for<'hint> FnOnce(ExpectedHint<'hint, D>, &mut Self) -> R,
     ) -> R {
-        let ticket = self.ticket;
-        ticket.with_hint(|hint| operation(hint, self))
+        let input = self.ticket.input();
+        input.with_hint(|hint| operation(hint, self))
+    }
+
+    /// Attach the source's observed term to this branch exactly once.
+    pub(crate) fn observe(
+        &mut self,
+        result: crate::types::constraints::SourceProbeResult<D>,
+    ) -> Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>> {
+        self.ticket
+            .observe(result)
+            .map(SourceProbeOutcome::Accepted)
+            .map_err(SourceCallbackFailure::Constraint)
+    }
+
+    pub(crate) fn observe_child(
+        &mut self,
+        pending: PendingChildConstraint<D>,
+        branch: D::ProbeSemanticBranch,
+        selection: SourceProbeSelection<D::AlternativeIndex, Arc<D::ObservedEvidence>>,
+    ) -> Result<SourceProbeOutcome<D>, SourceCallbackFailure<D>> {
+        self.ticket
+            .observe_child(pending, branch, selection)
+            .map(SourceProbeOutcome::Accepted)
+            .map_err(SourceCallbackFailure::Constraint)
+    }
+
+    /// Run a child candidate on a fork of this exact source's path. Its
+    /// application is admitted into the same scope/equation inventory, so the
+    /// parent can relate the child result before either application seals.
+    pub(crate) fn with_child_driver<C, R>(
+        &mut self,
+        initialization: PreparedChildConstraintInitialization<D>,
+        application: D::Application,
+        site: crate::callable::CheckedCallSite,
+        candidate: &crate::callable::PreparedResolvedCallable,
+        client: C,
+        drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'control, D, C>) -> R,
+    ) -> Result<R, CandidateConstraintDriverStartFailure>
+    where
+        C: TypeConstraintClient<D>,
+    {
+        let receipt = self.ticket.receipt();
+        if !initialization.validates(self.authority, &receipt, application, site, candidate) {
+            return Err(CandidateConstraintDriverStartFailure::Prepared(
+                CallConstraintInvariant::PreparedCallSiteMismatch,
+            ));
+        }
+        let nested: NestedConstraintPath<D> =
+            self.ticket.fork_for_child(self.context).map_err(|error| {
+                CandidateConstraintDriverStartFailure::Lower(match error {
+                    crate::types::constraints::TypeConstraintError::Abort(error) => {
+                        TypeConstraintInitializationFailure::Abort(error)
+                    }
+                    crate::types::constraints::TypeConstraintError::Invariant(error) => {
+                        TypeConstraintInitializationFailure::Invariant(error)
+                    }
+                    crate::types::constraints::TypeConstraintError::Rejected(_) => {
+                        TypeConstraintInitializationFailure::Invariant(
+                            crate::types::constraints::TypeConstraintInvariant::SourceProtocol(
+                                TypeConstraintSourceProtocolInvariant::Outcome,
+                            ),
+                        )
+                    }
+                })
+            })?;
+        let (authority, parameters, inherited) = initialization
+            .into_lower_parts()
+            .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
+        let lower = TypeConstraintTransaction::initialize_from_nested_path(
+            self.context,
+            application,
+            parameters,
+            inherited,
+            nested,
+        )
+        .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let driver = CandidateConstraintDriver {
+            context: self.context,
+            authority,
+            lower,
+            client,
+            ticket_issuer: Arc::new(SourceCallbackTicketIssuer),
+            next_ticket_ordinal: 0,
+            active_ticket: None,
+        };
+        let result = drive(driver);
+        Ok(result)
+    }
+
+    /// Branch constraints while retaining the same lexical scopes, work
+    /// reservation and physical-source callback checkpoint.
+    pub(crate) fn with_alternative<R>(
+        &mut self,
+        operation: impl FnOnce(
+            &mut CandidateConstraintSourceContext<'_, 'control, D>,
+        ) -> Result<R, SourceCallbackFailure<D>>,
+    ) -> Result<R, SourceCallbackFailure<D>> {
+        let ticket = self
+            .ticket
+            .fork(self.context)
+            .map_err(SourceCallbackFailure::Constraint)?;
+        let mut alternative = CandidateConstraintSourceContext {
+            ticket,
+            authority: self.authority,
+            context: self.context,
+        };
+        operation(&mut alternative)
     }
 }
 
 /// Callback failures are deliberately separate from ordinary semantic
 /// rejections.  Only the driver may validate and promote a fatal source error.
 pub(crate) enum SourceCallbackFailure<D: ConstraintDomain> {
-    Fatal(Box<SourceError<D::Source, D::SourceErrorCause>>),
+    Fatal(Box<SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>>),
     Abort(TypeConstraintAbort),
     Invariant(Box<D::ClientInvariant>),
+    Constraint(crate::types::constraints::TypeConstraintError),
 }
 
 pub(crate) enum SourceCheckpointFailure<D: ConstraintDomain> {
@@ -117,7 +266,9 @@ pub(crate) enum SourceCheckpointFailure<D: ConstraintDomain> {
 }
 
 impl<D: ConstraintDomain> SourceCallbackFailure<D> {
-    pub(crate) fn fatal(error: SourceError<D::Source, D::SourceErrorCause>) -> Self {
+    pub(crate) fn fatal(
+        error: SourceError<ConstraintSourceId<D::Source>, D::SourceErrorCause>,
+    ) -> Self {
         Self::Fatal(Box::new(error))
     }
 
@@ -142,7 +293,7 @@ struct SourceCallbackTicketIssuer;
 
 enum SourceCallbackAuthority<D: ConstraintDomain> {
     Probe {
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
     },
     Materialize {
         binding: MaterializationCallbackBinding<D>,
@@ -198,6 +349,7 @@ pub(crate) struct CandidateConstraintDriver<
 > {
     context:
         &'driver mut TypeConstraintContext<'control, CandidateConstraintWorkSession<'control>, D>,
+    authority: PreparedConstraintAuthority,
     lower: TypeConstraintTransaction<D>,
     client: C,
     ticket_issuer: Arc<SourceCallbackTicketIssuer>,
@@ -217,6 +369,7 @@ impl<'a> CandidateConstraintWorkSession<'a> {
     /// and releasing the surrounding accounting reservation are separate acts.
     pub(crate) fn with_driver<D, C, R>(
         self,
+        application: D::Application,
         initialization: PreparedConstraintInitialization,
         client: C,
         drive: impl for<'driver> FnOnce(CandidateConstraintDriver<'driver, 'a, D, C>) -> R,
@@ -225,17 +378,21 @@ impl<'a> CandidateConstraintWorkSession<'a> {
         D: ConstraintDomain,
         C: TypeConstraintClient<D>,
     {
-        let (parameter_scope, effect_scope, inherited) = initialization
+        let (authority, parameter_scope, inherited, imported_scope) = initialization
             .into_lower_parts()
             .map_err(CandidateConstraintDriverStartFailure::Prepared)?;
-        let mut context =
-            TypeConstraintContext::with_accounting(self, parameter_scope, effect_scope);
-        let mut lower = TypeConstraintTransaction::new();
-        lower
-            .initialize(&mut context, inherited)
-            .map_err(CandidateConstraintDriverStartFailure::Lower)?;
+        let mut context = TypeConstraintContext::with_accounting(self);
+        let lower = TypeConstraintTransaction::initialize_with_imported(
+            &mut context,
+            application,
+            parameter_scope,
+            inherited,
+            imported_scope,
+        )
+        .map_err(CandidateConstraintDriverStartFailure::Lower)?;
         let driver = CandidateConstraintDriver {
             context: &mut context,
+            authority,
             lower,
             client,
             ticket_issuer: Arc::new(SourceCallbackTicketIssuer),
@@ -388,7 +545,7 @@ where
 
     fn begin_probe_callback(
         &mut self,
-        source: D::Source,
+        source: ConstraintSourceId<D::Source>,
     ) -> Result<
         (
             SourceCallbackTicket<D>,
@@ -452,7 +609,7 @@ where
                 }
             }
             (Some(source), Err(SourceCallbackFailure::Invariant(invariant))) => {
-                if D::client_invariant_source(invariant) != source {
+                if D::client_invariant_source(invariant) != source.local() {
                     Some(TypeConstraintSourceProtocolInvariant::WrongSource)
                 } else {
                     None
@@ -474,6 +631,7 @@ where
         }
         match attempt {
             Ok(outcome) => Ok(outcome),
+            Err(SourceCallbackFailure::Constraint(error)) => Err(error.into()),
             Err(SourceCallbackFailure::Fatal(error)) => {
                 Err(TypeConstraintFailure::FatalSource(error))
             }
@@ -530,7 +688,11 @@ where
         ticket: SourceCallbackTicket<D>,
         checkpoint: BoundSourceCheckpoint<C::MaterializationCheckpoint>,
         attempt: Result<
-            MaterializationOutcome<D::Source, C::PreparedSealedBranchValue, D::SourceErrorCause>,
+            MaterializationOutcome<
+                ConstraintSourceId<D::Source>,
+                C::PreparedSealedBranchValue,
+                D::SourceErrorCause,
+            >,
             SourceCallbackFailure<D>,
         >,
     ) -> Result<ClosedMaterialization<D>, MaterializationImmediateFailure<D>> {
@@ -566,7 +728,9 @@ where
                 }
             }
             (Some(binding), Err(SourceCallbackFailure::Invariant(invariant))) => (!binding
-                .authorizes(&D::client_invariant_source(invariant)))
+                .sources()
+                .iter()
+                .any(|source| source.local() == D::client_invariant_source(invariant)))
             .then_some(TypeConstraintSourceProtocolInvariant::WrongSource),
             _ => None,
         };
@@ -607,6 +771,33 @@ where
                         cause,
                     })
                     .map_err(Self::materialization_protocol_failure)
+            }
+            Err(SourceCallbackFailure::Constraint(error)) => {
+                let sealed = Self::finish_materialization_close(
+                    authority_failure,
+                    invalid,
+                    self.close_materialization_checkpoint_once(checkpoint.checkpoint, None),
+                )?;
+                if sealed.is_some() {
+                    return Err(Self::materialization_protocol_failure(
+                        TypeConstraintSourceProtocolInvariant::Outcome,
+                    ));
+                }
+                Err(match error {
+                    crate::types::constraints::TypeConstraintError::Abort(error) => {
+                        MaterializationImmediateFailure::Abort(error)
+                    }
+                    crate::types::constraints::TypeConstraintError::Invariant(error) => {
+                        MaterializationImmediateFailure::Invariant(
+                            TypeConstraintFailureInvariant::Constraint(error),
+                        )
+                    }
+                    crate::types::constraints::TypeConstraintError::Rejected(_) => {
+                        Self::materialization_protocol_failure(
+                            TypeConstraintSourceProtocolInvariant::Outcome,
+                        )
+                    }
+                })
             }
             Err(SourceCallbackFailure::Fatal(error)) => {
                 let sealed = Self::finish_materialization_close(
@@ -703,12 +894,15 @@ where
                 }
             };
             let mut source_context = CandidateConstraintSourceContext {
-                ticket: &lower_ticket,
+                ticket: lower_ticket,
+                authority: &self.authority,
                 context: self.context,
             };
             let attempt = self
                 .client
                 .probe_source(&mut checkpoint.checkpoint, &mut source_context);
+            let lower_ticket = source_context.ticket;
+            let input = lower_ticket.input();
             let submission = match self.close_probe_callback(callback_ticket, checkpoint, attempt) {
                 Ok(SourceProbeOutcome::Accepted(result)) => ProbeSubmission::Accepted(result),
                 Ok(SourceProbeOutcome::Rejected(cause)) => ProbeSubmission::Rejected(cause),
@@ -717,10 +911,7 @@ where
                     break;
                 }
             };
-            if let Err(error) = self
-                .lower
-                .submit_probe(self.context, lower_ticket, submission)
-            {
+            if let Err(error) = self.lower.submit_probe(self.context, input, submission) {
                 self.lower.record_failure(error.into());
                 break;
             }
@@ -804,14 +995,35 @@ where
         Ok(())
     }
 
-    pub(crate) fn finish(mut self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
+    pub(crate) fn finish(self) -> Result<SolvedCandidate<D>, TypeConstraintFailure<D>> {
+        self.finish_alternatives()?.into_unique()
+    }
+
+    pub(crate) fn finish_alternatives(
+        mut self,
+    ) -> Result<CompletedCandidateAlternatives<D>, TypeConstraintFailure<D>> {
         if let Err(failure) = self.materialize_all() {
             self.lower.record_failure(failure);
         }
         if let Err(failure) = self.client.finish() {
             self.lower.record_failure(Self::checkpoint_failure(failure));
         }
-        self.lower.finish(self.context)
+        self.lower.finish_alternatives(self.context)
+    }
+
+    pub(crate) fn defer_child_result(
+        mut self,
+        key: D::Projection,
+    ) -> Result<PendingChildConstraint<D>, TypeConstraintFailure<D>> {
+        if self.active_ticket.is_some() {
+            self.lower.record_failure(Self::protocol_failure(
+                TypeConstraintSourceProtocolInvariant::Ticket,
+            ));
+        }
+        if let Err(failure) = self.client.finish() {
+            self.lower.record_failure(Self::checkpoint_failure(failure));
+        }
+        self.lower.defer_child_result(key)
     }
 }
 
@@ -856,7 +1068,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn open_probe_checkpoint(
         &mut self,
-        _source: (),
+        _source: ConstraintSourceId<()>,
     ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<crate::types::NoConstraintClient>>
     {
         Ok(())
@@ -871,7 +1083,7 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn open_materialization_checkpoint(
         &mut self,
-        _sources: &[()],
+        _sources: &[ConstraintSourceId<()>],
     ) -> Result<
         Self::MaterializationCheckpoint,
         SourceCheckpointFailure<crate::types::NoConstraintClient>,
@@ -881,11 +1093,11 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
 
     fn materialize_sources<'h, I>(
         &mut self,
-        _sources: I,
+        sources: I,
         _checkpoint: &mut Self::MaterializationCheckpoint,
         _work: &mut CandidateConstraintWorkSession<'_>,
     ) -> Result<
-        MaterializationOutcome<(), (), ()>,
+        MaterializationOutcome<ConstraintSourceId<()>, (), ()>,
         SourceCallbackFailure<crate::types::NoConstraintClient>,
     >
     where
@@ -893,7 +1105,11 @@ impl TypeConstraintClient<crate::types::NoConstraintClient> for crate::types::No
         (): 'h,
     {
         Err(SourceCallbackFailure::fatal(SourceError::new(
-            (),
+            *sources
+                .into_iter()
+                .next()
+                .expect("materialization request")
+                .source(),
             crate::types::constraints::SourcePhase::Materialize,
             (),
         )))
@@ -962,6 +1178,13 @@ pub(crate) mod tests {
     }
 
     fn base_initialization(
+        scope: TypeConstraintParameterScope,
+    ) -> PreparedConstraintInitialization {
+        initialization_from_graph(&crate::callable::PreparedCallGraph::<()>::new(), scope)
+    }
+
+    fn initialization_from_graph(
+        graph: &crate::callable::PreparedCallGraph<()>,
         scope: TypeConstraintParameterScope,
     ) -> PreparedConstraintInitialization {
         let parameters = scope
@@ -1056,9 +1279,10 @@ pub(crate) mod tests {
         let enclosing = crate::callable::EnclosingGenericParameterScope::sealed(
             std::iter::empty::<crate::types::GenericTypeParameterId>(),
             std::iter::empty::<crate::types::GenericConstParameterId>(),
+            std::iter::empty::<crate::types::GenericEffectParameterId>(),
         )
         .expect("test enclosing scope");
-        crate::callable::PreparedCallGraph::<()>::new()
+        graph
             .validate_and_issue_base_constraint_initialization(&candidate, &enclosing)
             .expect("test initialization gate")
     }
@@ -1073,6 +1297,7 @@ pub(crate) mod tests {
     struct Domain;
 
     impl ConstraintDomain for Domain {
+        type Application = u32;
         type Source = u8;
         type AlternativeIndex = u8;
         type EvidenceRule = ();
@@ -1111,6 +1336,7 @@ pub(crate) mod tests {
     #[derive(Clone, Copy)]
     enum CallbackMode {
         Success,
+        SourceAlternatives,
         Rejected,
         Fatal,
         ProbeAbort,
@@ -1120,6 +1346,8 @@ pub(crate) mod tests {
         GroupRejectedThenAbort,
         GroupRejectedThenInvariant,
         WrongFatalSource,
+        WrongFatalApplication,
+        MaterializationWrongApplication,
         MaterializationRejected,
         MaterializationWrongSource,
         MaterializationFatal,
@@ -1166,13 +1394,13 @@ pub(crate) mod tests {
                     | CallbackMode::GroupRejectedThenAbort
                     | CallbackMode::GroupRejectedThenInvariant
             ) {
-                if source == 1 {
+                if source.local() == 1 {
                     return Ok(SourceProbeOutcome::Rejected("group head rejection"));
                 }
                 return match self.mode {
-                    CallbackMode::GroupRejectedThenSuccess => Ok(SourceProbeOutcome::Accepted(
-                        SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
-                    )),
+                    CallbackMode::GroupRejectedThenSuccess => {
+                        probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))
+                    }
                     CallbackMode::GroupRejectedThenFatal => Err(SourceCallbackFailure::fatal(
                         SourceError::new(source, SourcePhase::Probe, "group tail fatal"),
                     )),
@@ -1186,9 +1414,46 @@ pub(crate) mod tests {
                 };
             }
             match self.mode {
+                CallbackMode::SourceAlternatives => {
+                    let context = std::ptr::from_ref(&*probe.context);
+                    let authority = std::ptr::from_ref(probe.authority);
+                    let foreign_graph = crate::callable::PreparedCallGraph::<()>::new();
+                    assert_eq!(
+                        probe.validate_graph(&foreign_graph),
+                        Err(CallConstraintInvariant::ForeignPreparedIssuer)
+                    );
+                    let first = probe.with_alternative(|alternative| {
+                        assert_eq!(alternative.source(), source);
+                        assert_eq!(std::ptr::from_ref(&*alternative.context), context);
+                        assert_eq!(std::ptr::from_ref(alternative.authority), authority);
+                        assert_eq!(
+                            alternative.validate_graph(&foreign_graph),
+                            Err(CallConstraintInvariant::ForeignPreparedIssuer)
+                        );
+                        alternative.observe(SourceProbeResult::checked(
+                            TypeKind::I32,
+                            Branch,
+                            0,
+                            (),
+                        ))
+                    })?;
+                    let SourceProbeOutcome::Accepted(mut first) = first else {
+                        unreachable!("observed branch")
+                    };
+                    let SourceProbeOutcome::Accepted(second) =
+                        probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))?
+                    else {
+                        unreachable!("observed branch")
+                    };
+                    first
+                        .append(second)
+                        .map_err(SourceCallbackFailure::Constraint)?;
+                    Ok(SourceProbeOutcome::Accepted(first))
+                }
                 CallbackMode::Success
                 | CallbackMode::MaterializationRejected
                 | CallbackMode::MaterializationWrongSource
+                | CallbackMode::MaterializationWrongApplication
                 | CallbackMode::MaterializationFatal
                 | CallbackMode::MaterializationReversedFatal
                 | CallbackMode::MaterializationAbort
@@ -1200,17 +1465,31 @@ pub(crate) mod tests {
                 | CallbackMode::GroupRejectedThenSuccess
                 | CallbackMode::GroupRejectedThenFatal
                 | CallbackMode::GroupRejectedThenAbort
-                | CallbackMode::GroupRejectedThenInvariant => Ok(SourceProbeOutcome::Accepted(
-                    SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()),
-                )),
+                | CallbackMode::GroupRejectedThenInvariant => {
+                    probe.observe(SourceProbeResult::checked(TypeKind::I32, Branch, 0, ()))
+                }
                 CallbackMode::Rejected => Ok(SourceProbeOutcome::Rejected("rejected")),
                 CallbackMode::ProbeAbort => {
                     Err(SourceCallbackFailure::Abort(TypeConstraintAbort::Cancelled))
                 }
                 CallbackMode::ProbeInvariant => Err(SourceCallbackFailure::invariant(())),
-                CallbackMode::WrongFatalSource => Err(SourceCallbackFailure::fatal(
-                    SourceError::new(source.saturating_add(1), SourcePhase::Probe, "fatal"),
-                )),
+                CallbackMode::WrongFatalSource => {
+                    Err(SourceCallbackFailure::fatal(SourceError::new(
+                        ConstraintSourceId::new(
+                            source.application(),
+                            source.local().saturating_add(1),
+                        ),
+                        SourcePhase::Probe,
+                        "fatal",
+                    )))
+                }
+                CallbackMode::WrongFatalApplication => {
+                    Err(SourceCallbackFailure::fatal(SourceError::new(
+                        crate::types::constraints::test_support::source_id(source.local()),
+                        SourcePhase::Probe,
+                        "another application's fatal",
+                    )))
+                }
                 CallbackMode::Fatal => Err(SourceCallbackFailure::fatal(SourceError::new(
                     source,
                     SourcePhase::Probe,
@@ -1221,7 +1500,7 @@ pub(crate) mod tests {
 
         fn open_probe_checkpoint(
             &mut self,
-            _source: u8,
+            _source: ConstraintSourceId<u8>,
         ) -> Result<Self::ProbeCheckpoint, SourceCheckpointFailure<Domain>> {
             self.counts.probe_begin.fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::OpenProbeFailure) {
@@ -1246,13 +1525,19 @@ pub(crate) mod tests {
 
         fn open_materialization_checkpoint(
             &mut self,
-            sources: &[u8],
+            sources: &[ConstraintSourceId<u8>],
         ) -> Result<Self::MaterializationCheckpoint, SourceCheckpointFailure<Domain>> {
             self.counts
                 .materialize_begin
                 .fetch_add(1, Ordering::Relaxed);
             if matches!(self.mode, CallbackMode::MaterializationReversedFatal) {
-                assert_eq!(sources, &[10, 20]);
+                assert_eq!(
+                    sources
+                        .iter()
+                        .map(|source| source.local())
+                        .collect::<Vec<_>>(),
+                    [10, 20]
+                );
             }
             if matches!(self.mode, CallbackMode::OpenMaterializationFailure) {
                 Err(SourceCheckpointFailure::Protocol(
@@ -1268,7 +1553,10 @@ pub(crate) mod tests {
             sources: I,
             _checkpoint: &mut Self::MaterializationCheckpoint,
             _work: &mut CandidateConstraintWorkSession<'_>,
-        ) -> Result<MaterializationOutcome<u8, u8, &'static str>, SourceCallbackFailure<Domain>>
+        ) -> Result<
+            MaterializationOutcome<ConstraintSourceId<u8>, u8, &'static str>,
+            SourceCallbackFailure<Domain>,
+        >
         where
             I: IntoIterator<Item = MaterializedSourceRequest<'h, Domain>>,
             <Domain as ConstraintDomain>::CheckedEvidence: 'h,
@@ -1276,21 +1564,33 @@ pub(crate) mod tests {
         {
             self.counts.materialize_call.fetch_add(1, Ordering::Relaxed);
             let requests = sources.into_iter().collect::<Vec<_>>();
+            let source_id =
+                |local| ConstraintSourceId::new(requests[0].source().application(), local);
             match self.mode {
-                CallbackMode::Success => Ok(MaterializationOutcome::Sealed(3)),
+                CallbackMode::Success | CallbackMode::SourceAlternatives => {
+                    Ok(MaterializationOutcome::Sealed(3))
+                }
                 CallbackMode::Rejected | CallbackMode::MaterializationRejected => {
                     Ok(MaterializationOutcome::Rejected {
-                        source: 1,
+                        source: source_id(1),
                         cause: "materialized rejection",
                     })
                 }
                 CallbackMode::MaterializationWrongSource => Ok(MaterializationOutcome::Rejected {
-                    source: 9,
+                    source: source_id(9),
                     cause: "wrong source",
                 }),
+                CallbackMode::MaterializationWrongApplication => {
+                    Ok(MaterializationOutcome::Rejected {
+                        source: crate::types::constraints::test_support::source_id(
+                            requests[0].source().local(),
+                        ),
+                        cause: "another application's rejection",
+                    })
+                }
                 CallbackMode::Fatal | CallbackMode::MaterializationFatal => {
                     Err(SourceCallbackFailure::fatal(SourceError::new(
-                        1,
+                        source_id(1),
                         SourcePhase::Materialize,
                         "materialized fatal",
                     )))
@@ -1299,7 +1599,7 @@ pub(crate) mod tests {
                     assert_eq!(
                         requests
                             .iter()
-                            .map(|request| *request.source())
+                            .map(|request| request.source().local())
                             .collect::<Vec<_>>(),
                         vec![10, 20]
                     );
@@ -1310,7 +1610,7 @@ pub(crate) mod tests {
                         (10, "earlier source")
                     };
                     Err(SourceCallbackFailure::fatal(SourceError::new(
-                        source,
+                        source_id(source),
                         SourcePhase::Materialize,
                         cause,
                     )))
@@ -1326,6 +1626,7 @@ pub(crate) mod tests {
                 | CallbackMode::ProbeAbort
                 | CallbackMode::ProbeInvariant
                 | CallbackMode::WrongFatalSource
+                | CallbackMode::WrongFatalApplication
                 | CallbackMode::GroupRejectedThenSuccess
                 | CallbackMode::GroupRejectedThenFatal
                 | CallbackMode::GroupRejectedThenAbort
@@ -1399,6 +1700,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let result = session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
                 |mut driver| {
@@ -1425,6 +1727,78 @@ pub(crate) mod tests {
         run_with_limits(mode, counts, PRODUCTION_CALLABLE_LIMITS).0
     }
 
+    #[test]
+    fn driver_retains_the_initialized_graph_authority_through_source_work() {
+        let graph = crate::callable::PreparedCallGraph::<()>::new();
+        let foreign = crate::callable::PreparedCallGraph::<()>::new();
+        let initialization =
+            initialization_from_graph(&graph, TypeConstraintParameterScope::empty());
+        let cancellation = std::sync::atomic::AtomicBool::new(false);
+        let mut work = ResolverWork::new(4_096);
+        let session = work
+            .begin_candidate_constraint_session(PRODUCTION_CALLABLE_LIMITS, &cancellation)
+            .unwrap();
+        let counts = Arc::new(Counts::default());
+        let result = session
+            .with_driver::<Domain, _, _>(
+                0,
+                initialization,
+                Client {
+                    counts: Arc::clone(&counts),
+                    mode: CallbackMode::SourceAlternatives,
+                },
+                |mut driver| {
+                    assert_eq!(
+                        graph.validate_constraint_authority(&driver.authority),
+                        Ok(())
+                    );
+                    assert_eq!(
+                        foreign.validate_constraint_authority(&driver.authority),
+                        Err(CallConstraintInvariant::ForeignPreparedIssuer)
+                    );
+                    driver.probe_prepared_source(
+                        prepared_source(1),
+                        ConstraintAcceptance::PatternAcceptsActual,
+                    )?;
+                    assert_eq!(
+                        graph.validate_constraint_authority(&driver.authority),
+                        Ok(())
+                    );
+                    driver.finish()
+                },
+            )
+            .expect("prepared initialization");
+        assert!(
+            result.is_ok(),
+            "same graph remains valid after source alternatives: {result:?}"
+        );
+        assert_eq!(counts.probe_begin.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 2);
+        assert_eq!(work.type_constraint_report().branches, 2);
+    }
+
+    #[test]
+    fn source_alternatives_share_context_and_close_one_probe_checkpoint() {
+        let counts = Arc::new(Counts::default());
+        let (result, work) = run_with_limits(
+            CallbackMode::SourceAlternatives,
+            Arc::clone(&counts),
+            PRODUCTION_CALLABLE_LIMITS,
+        );
+        assert!(
+            result.is_ok(),
+            "equivalent observations coalesce after completion: {result:?}"
+        );
+        assert_eq!(work.branches, 2);
+        assert_eq!(counts.probe_begin.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.probe_call.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+        assert_eq!(counts.materialize_call.load(Ordering::Relaxed), 2);
+        assert_eq!(counts.materialize_begin.load(Ordering::Relaxed), 2);
+        assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 2);
+    }
+
     fn run_group(
         mode: CallbackMode,
         counts: Arc<Counts>,
@@ -1436,6 +1810,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client { counts, mode },
                 |mut driver| {
@@ -1476,7 +1851,7 @@ pub(crate) mod tests {
             match mode {
                 CallbackMode::GroupRejectedThenFatal => assert!(matches!(
                     result,
-                    Err(TypeConstraintFailure::FatalSource(ref error)) if error.source() == &2
+                    Err(TypeConstraintFailure::FatalSource(ref error)) if error.source().local() == 2
                 )),
                 CallbackMode::GroupRejectedThenAbort => assert!(matches!(
                     result,
@@ -1504,6 +1879,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         let failure = session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -1542,6 +1918,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         let result = session.with_driver::<Domain, _, _>(
+            0,
             initialization(TypeConstraintParameterScope::empty()),
             Client {
                 counts: Arc::clone(&counts),
@@ -1572,6 +1949,7 @@ pub(crate) mod tests {
             .expect("candidate session");
         let counts = Arc::new(Counts::default());
         let result = session.with_driver::<Domain, _, _>(
+            0,
             initialization(TypeConstraintParameterScope::empty()),
             Client {
                 counts: Arc::clone(&counts),
@@ -1622,6 +2000,7 @@ pub(crate) mod tests {
         .expect("choice scope");
         let result = session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(scope),
                 Client {
                     counts: Arc::clone(&counts),
@@ -1630,10 +2009,16 @@ pub(crate) mod tests {
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::Choice(vec![
-                            TypeKind::generic_parameter(first),
-                            TypeKind::generic_parameter(second),
+                            TypeKind::Tuple(vec![
+                                TypeKind::generic_parameter(first.clone()),
+                                TypeKind::generic_parameter(second.clone()),
+                            ]),
+                            TypeKind::Tuple(vec![
+                                TypeKind::generic_parameter(second),
+                                TypeKind::generic_parameter(first),
+                            ]),
                         ]),
-                        &TypeKind::I32,
+                        &TypeKind::Tuple(vec![TypeKind::I32, TypeKind::String]),
                         ConstraintAcceptance::PatternAcceptsActual,
                     );
                     driver
@@ -1685,6 +2070,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         let result = session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -1775,6 +2161,7 @@ pub(crate) mod tests {
         .expect("choice scope");
         let result = session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(scope),
                 Client {
                     counts: Arc::clone(&counts),
@@ -1783,10 +2170,16 @@ pub(crate) mod tests {
                 |mut driver| {
                     driver.constrain(
                         &TypeKind::Choice(vec![
-                            TypeKind::generic_parameter(first),
-                            TypeKind::generic_parameter(second),
+                            TypeKind::Tuple(vec![
+                                TypeKind::generic_parameter(first.clone()),
+                                TypeKind::generic_parameter(second.clone()),
+                            ]),
+                            TypeKind::Tuple(vec![
+                                TypeKind::generic_parameter(second),
+                                TypeKind::generic_parameter(first),
+                            ]),
                         ]),
-                        &TypeKind::I32,
+                        &TypeKind::Tuple(vec![TypeKind::I32, TypeKind::String]),
                         ConstraintAcceptance::PatternAcceptsActual,
                     );
                     driver
@@ -1808,7 +2201,7 @@ pub(crate) mod tests {
             .expect("prepared initialization");
         match result {
             Err(TypeConstraintFailure::FatalSource(error)) => {
-                assert_eq!(error.source(), &10);
+                assert_eq!(error.source().local(), 10);
                 assert_eq!(error.cause(), &"earlier source");
             }
             other => panic!("expected earliest authored fatal source, got {other:?}"),
@@ -1909,6 +2302,37 @@ pub(crate) mod tests {
         ));
         assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
         assert_eq!(report.source_probes(), 1);
+    }
+
+    #[test]
+    fn callback_source_from_another_application_cannot_authorize_a_submission() {
+        for mode in [
+            CallbackMode::WrongFatalApplication,
+            CallbackMode::MaterializationWrongApplication,
+        ] {
+            let counts = Arc::new(Counts::default());
+            let (result, _) =
+                run_with_limits(mode, Arc::clone(&counts), PRODUCTION_CALLABLE_LIMITS);
+            assert!(matches!(
+                result,
+                Err(TypeConstraintFailure::Invariant(
+                    TypeConstraintFailureInvariant::Constraint(
+                        TypeConstraintInvariant::SourceProtocol(
+                            TypeConstraintSourceProtocolInvariant::WrongSource
+                        )
+                    )
+                ))
+            ));
+            assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
+            let expected_materialization_closes = usize::from(matches!(
+                mode,
+                CallbackMode::MaterializationWrongApplication
+            ));
+            assert_eq!(
+                counts.materialize_close.load(Ordering::Relaxed),
+                expected_materialization_closes
+            );
+        }
     }
 
     #[test]
@@ -2019,6 +2443,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -2026,14 +2451,16 @@ pub(crate) mod tests {
                 },
                 |mut driver| {
                     let (ticket, checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("driver mints a probe ticket");
                     let foreign_ticket = SourceCallbackTicket {
                         identity: SourceCallbackTicketIdentity {
                             issuer: Arc::new(SourceCallbackTicketIssuer),
                             ordinal: 0,
                         },
-                        authority: SourceCallbackAuthority::Probe { source: 1 },
+                        authority: SourceCallbackAuthority::Probe {
+                            source: crate::types::constraints::test_support::source_id(1),
+                        },
                     };
                     assert!(matches!(
                         driver.close_probe_callback(
@@ -2052,7 +2479,7 @@ pub(crate) mod tests {
                     assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
 
                     let (valid_ticket, valid_checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign close clears the active ticket");
                     driver
                         .close_probe_callback(
@@ -2075,6 +2502,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -2082,7 +2510,7 @@ pub(crate) mod tests {
                 },
                 |mut driver| {
                     let (ticket, mut checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("driver can mint the next generation");
                     checkpoint.identity.issuer = Arc::new(SourceCallbackTicketIssuer);
                     assert!(matches!(
@@ -2102,7 +2530,7 @@ pub(crate) mod tests {
                     assert_eq!(counts.probe_close.load(Ordering::Relaxed), 1);
 
                     let (valid_ticket, valid_checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign checkpoint close clears the active ticket");
                     driver
                         .close_probe_callback(
@@ -2127,6 +2555,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -2152,7 +2581,9 @@ pub(crate) mod tests {
                             issuer: Arc::new(SourceCallbackTicketIssuer),
                             ordinal: 0,
                         },
-                        authority: SourceCallbackAuthority::Probe { source: 1 },
+                        authority: SourceCallbackAuthority::Probe {
+                            source: crate::types::constraints::test_support::source_id(1),
+                        },
                     };
                     assert!(matches!(
                         driver.close_materialization_callback(
@@ -2171,7 +2602,7 @@ pub(crate) mod tests {
                     ));
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign close clears the active callback ticket");
                     driver
                         .close_probe_callback(
@@ -2193,6 +2624,7 @@ pub(crate) mod tests {
         let counts = Arc::new(Counts::default());
         session
             .with_driver::<Domain, _, _>(
+                0,
                 initialization(TypeConstraintParameterScope::empty()),
                 Client {
                     counts: Arc::clone(&counts),
@@ -2231,7 +2663,7 @@ pub(crate) mod tests {
                     ));
                     assert_eq!(counts.materialize_close.load(Ordering::Relaxed), 1);
                     let (probe_ticket, probe_checkpoint) = driver
-                        .begin_probe_callback(1)
+                        .begin_probe_callback(crate::types::constraints::test_support::source_id(1))
                         .expect("foreign checkpoint close clears the active callback ticket");
                     driver
                         .close_probe_callback(

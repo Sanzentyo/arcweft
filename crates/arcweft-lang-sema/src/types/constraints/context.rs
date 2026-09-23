@@ -1,32 +1,32 @@
-//! Candidate-owned accounting context, limits, and scope.
+//! Constraint work accounting, limits, and lexical traversal state.
 //!
 //! This module owns the persistent cancellation/work context. The transaction
 //! lives in the sibling `transaction` module and only borrows it per phase.
 
+#[cfg(test)]
+use std::collections::BTreeMap;
 use std::{
-    collections::{BTreeMap, BTreeSet},
     marker::PhantomData,
     sync::atomic::{AtomicBool, Ordering},
 };
 
 use crate::effect_row::{
-    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable,
-    EffectIssuerRebindError, EffectRow, EffectVar, EffectVarIssuer,
+    EffectConstraintEligibility, EffectConstraintEnvironment, EffectConstraintVariable, EffectRow,
 };
 
 use super::super::generics::OpenedGenericScope;
 use super::super::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericParameterKind, GenericScope,
-    GenericScopeError, GenericTypeReference, TypeCompatibilityControl, TypeKind,
+    GenericBinder, GenericConstReference, GenericEffectReference, GenericParameterKind,
+    GenericScope, GenericScopeError, GenericTypeReference, TypeCompatibilityControl, TypeKind,
 };
 #[cfg(test)]
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
-#[cfg(test)]
-use super::NoConstraintClient;
+use super::application::{ConstraintApplicationId, ConstraintApplicationScope};
+use super::normalization::ConstraintProjectionView;
 use super::{
     ConstraintDomain, ConstraintPath, TypeConstraintAbort, TypeConstraintError,
     TypeConstraintInvariant, TypeConstraintParameterScopeInvariant, TypeConstraintShape,
-    effect_invariant, map_effect_environment_error, occurs_in_shape,
+    effect_invariant, occurs_in_shape,
 };
 
 /// Inclusive bounds for one candidate's type-constraint relation.
@@ -167,154 +167,114 @@ pub(crate) enum TypeConstraintProjectionClosure {
     AllowFutureEligible,
 }
 
-/// Complete issuer-backed effect-variable inventory for one lower run. The
-/// callable preparation owner supplies canonical rows and the exact inherited
-/// key contract; lower never derives scope from the types it happens to see.
+/// Declaration or scheme effect-parameter contract. It contains no application
+/// issuer; TypeConstraintParameterScope opens its slots alongside type and
+/// constant slots in the same OpenedGenericScope.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct TypeConstraintEffectScope {
     variables: Box<[EffectConstraintVariable]>,
-    required_inherited: Box<[EffectVar]>,
+    free_variables: Box<[EffectConstraintVariable]>,
+    required_inherited: Box<[GenericEffectReference]>,
 }
 
 impl TypeConstraintEffectScope {
     pub(crate) fn seal_call_scope<V, R>(
         variables: V,
         required_inherited: R,
-    ) -> Result<Self, super::TypeConstraintInvariant>
+    ) -> Result<Self, TypeConstraintInvariant>
     where
         V: IntoIterator<Item = EffectConstraintVariable>,
-        R: IntoIterator<Item = EffectVar>,
+        R: IntoIterator<Item = GenericEffectReference>,
     {
-        let variables = variables.into_iter().collect::<Vec<_>>();
-        let issuer = variables.first().map(|row| row.variable().issuer());
-        if variables
-            .windows(2)
-            .any(|rows| rows[0].variable() >= rows[1].variable())
-            || variables.iter().enumerate().any(|(index, row)| {
-                issuer != Some(row.variable().issuer())
-                    || u32::try_from(index).ok() != Some(row.variable().index())
-            })
+        let (free_variables, variables): (Vec<_>, Vec<_>) = variables
+            .into_iter()
+            .partition(|row| row.eligibility() == EffectConstraintEligibility::Rigid);
+        if [&free_variables, &variables].into_iter().any(|rows| {
+            rows.windows(2)
+                .any(|rows| rows[0].variable() >= rows[1].variable())
+        }) || free_variables.iter().any(|row| {
+            !matches!(
+                row.variable(),
+                GenericEffectReference::Free(_) | GenericEffectReference::Inference(_)
+            )
+        }) || variables
+            .iter()
+            .any(|row| matches!(row.variable(), GenericEffectReference::Inference(_)))
         {
             return Err(effect_scope_invariant(
                 super::TypeConstraintEffectInvariantKind::DuplicateOrUnorderedScope,
-                variables.windows(2).find_map(|rows| {
-                    (rows[0].variable() >= rows[1].variable()).then_some(rows[1].variable())
-                }),
+                None,
             ));
         }
         let required_inherited = required_inherited.into_iter().collect::<Vec<_>>();
         if required_inherited.windows(2).any(|rows| rows[0] >= rows[1]) {
             return Err(effect_scope_invariant(
                 super::TypeConstraintEffectInvariantKind::DuplicateOrUnorderedInherited,
-                required_inherited
-                    .windows(2)
-                    .find_map(|rows| (rows[0] >= rows[1]).then_some(rows[1])),
+                None,
             ));
         }
         for variable in &required_inherited {
-            let Some(row) = variables.iter().find(|row| row.variable() == *variable) else {
+            let Some(row) = variables.iter().find(|row| row.variable() == variable) else {
                 return Err(effect_scope_invariant(
                     super::TypeConstraintEffectInvariantKind::RequiredInheritedOutOfScope,
-                    Some(*variable),
+                    Some(variable.clone()),
                 ));
             };
-            if !matches!(row.eligibility(), EffectConstraintEligibility::Bindable) {
+            if row.eligibility() != EffectConstraintEligibility::Bindable {
                 return Err(effect_scope_invariant(
                     super::TypeConstraintEffectInvariantKind::RequiredInheritedNotBindable,
-                    Some(*variable),
+                    Some(variable.clone()),
                 ));
             }
         }
         Ok(Self {
             variables: variables.into_boxed_slice(),
+            free_variables: free_variables.into_boxed_slice(),
             required_inherited: required_inherited.into_boxed_slice(),
         })
     }
 
-    pub(crate) fn variables(&self) -> &[EffectConstraintVariable] {
-        &self.variables
+    pub(crate) fn variables(&self) -> impl Iterator<Item = &EffectConstraintVariable> {
+        self.free_variables.iter().chain(self.variables.iter())
     }
 
-    pub(crate) fn eligibility(&self, variable: EffectVar) -> Option<EffectConstraintEligibility> {
+    fn candidate_rows(&self) -> impl Iterator<Item = &EffectConstraintVariable> {
+        self.variables.iter()
+    }
+
+    fn template_eligibility(
+        &self,
+        reference: &GenericEffectReference,
+    ) -> Option<EffectConstraintEligibility> {
         self.variables
-            .binary_search_by_key(&variable, |row| row.variable())
+            .binary_search_by(|row| row.variable().cmp(reference))
             .ok()
             .map(|index| self.variables[index].eligibility())
     }
 
-    pub(crate) fn required_inherited(&self) -> &[EffectVar] {
+    pub(crate) fn required_inherited(&self) -> &[GenericEffectReference] {
         &self.required_inherited
     }
 
-    /// Accepts only the exact variable inventory and the monotone continuation
-    /// transition `FutureEligible -> FutureEligible | Bindable`. Completed
-    /// bindable rows cannot become future rows again.
     pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
-        self.variables.len() == other.variables.len()
+        self.free_variables == other.free_variables
+            && self.variables.len() == other.variables.len()
             && self
                 .variables
                 .iter()
                 .zip(&other.variables)
                 .all(|(completed, next)| {
                     completed.variable() == next.variable()
-                        && matches!(
-                            (completed.eligibility(), next.eligibility()),
-                            (
-                                EffectConstraintEligibility::Bindable,
-                                EffectConstraintEligibility::Bindable,
-                            ) | (
-                                EffectConstraintEligibility::FutureEligible,
-                                EffectConstraintEligibility::FutureEligible
-                                    | EffectConstraintEligibility::Bindable,
-                            )
-                        )
+                        && (completed.eligibility() == next.eligibility()
+                            || (completed.eligibility()
+                                == EffectConstraintEligibility::FutureEligible
+                                && next.eligibility() == EffectConstraintEligibility::Bindable))
                 })
     }
-
-    /// Rebind the complete prepared scope at the checked-call boundary. This
-    /// is a bijective issuer transition owned by the sealed solution; it does
-    /// not reconstruct or revalidate solution rows downstream.
-    pub(super) fn checked_rebind_issuer(
-        &self,
-        prepared: EffectVarIssuer,
-        checked: EffectVarIssuer,
-        authorized_ordinals: &BTreeSet<u32>,
-    ) -> Result<Self, EffectIssuerRebindError> {
-        let rebind = |variable: EffectVar| {
-            if variable.issuer() != prepared {
-                return Err(EffectIssuerRebindError::ForeignVariable { variable });
-            }
-            if !authorized_ordinals.contains(&variable.index()) {
-                return Err(EffectIssuerRebindError::UnauthorizedVariable { variable });
-            }
-            Ok(variable.rebind_issuer(prepared, checked))
-        };
-        let variables = self
-            .variables
-            .iter()
-            .map(|row| {
-                Ok(EffectConstraintVariable::new(
-                    rebind(row.variable())?,
-                    row.eligibility(),
-                ))
-            })
-            .collect::<Result<Box<[_]>, _>>()?;
-        let required_inherited = self
-            .required_inherited
-            .iter()
-            .copied()
-            .map(rebind)
-            .collect::<Result<Box<[_]>, _>>()?;
-        Ok(Self {
-            variables,
-            required_inherited,
-        })
-    }
 }
-
 fn effect_scope_invariant(
     kind: super::TypeConstraintEffectInvariantKind,
-    variable: Option<EffectVar>,
+    variable: Option<GenericEffectReference>,
 ) -> super::TypeConstraintInvariant {
     match effect_invariant(kind, variable) {
         TypeConstraintError::Invariant(invariant) => invariant,
@@ -386,15 +346,16 @@ pub(crate) struct TypeConstraintParameterScope {
     contract: CompletedParameterScope,
 }
 
-/// Declaration and free-reference inventory retained after an application
-/// closes. It contains no application issuer or inference reference.
+/// Declaration and rigid-reference inventory retained after an application
+/// closes. Rigid references may name a parent-owned inference variable.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) struct CompletedParameterScope {
     template_scope: GenericScope,
     type_parameters: Box<[TypeConstraintTypeParameterScopeRow]>,
     const_parameters: Box<[TypeConstraintConstParameterScopeRow]>,
-    free_types: Box<[GenericTypeReference]>,
-    free_consts: Box<[GenericConstReference]>,
+    effects: TypeConstraintEffectScope,
+    rigid_types: Box<[GenericTypeReference]>,
+    rigid_consts: Box<[GenericConstReference]>,
     required_inherited: RequiredInheritedBindingKeys,
 }
 
@@ -407,6 +368,7 @@ impl TypeConstraintParameterScope {
         template_binder: GenericBinder,
         type_parameters: T,
         const_parameters: C,
+        effects: TypeConstraintEffectScope,
         required_inherited_keys: R,
         required_inherited_const_keys: Q,
     ) -> Result<Self, super::TypeConstraintInvariant>
@@ -417,6 +379,38 @@ impl TypeConstraintParameterScope {
         Q: IntoIterator<Item = GenericConstReference>,
     {
         let template_scope = GenericScope::default().with_binder(template_binder);
+        for row in effects.variables() {
+            match row.variable() {
+                GenericEffectReference::Free(_) => {}
+                GenericEffectReference::Inference(_)
+                    if row.eligibility() == EffectConstraintEligibility::Rigid => {}
+                GenericEffectReference::Bound(parameter)
+                    if parameter.depth() == 0
+                        && row.eligibility() != EffectConstraintEligibility::Rigid =>
+                {
+                    template_scope
+                        .bound_effect(0, parameter.slot())
+                        .map_err(TypeConstraintInvariant::GenericScope)?;
+                }
+                _ => {
+                    return Err(effect_scope_invariant(
+                        super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                        Some(row.variable().clone()),
+                    ));
+                }
+            }
+        }
+        for slot in 0..template_binder.effects() {
+            let reference = template_scope
+                .bound_effect(0, slot)
+                .map_err(TypeConstraintInvariant::GenericScope)?;
+            if effects.template_eligibility(&reference).is_none() {
+                return Err(effect_scope_invariant(
+                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                    Some(reference),
+                ));
+            }
+        }
         let (free_type_rows, type_parameters): (Vec<_>, Vec<_>) = type_parameters
             .into_iter()
             .partition(|row| row.eligibility == TypeConstraintParameterEligibility::Rigid);
@@ -437,7 +431,10 @@ impl TypeConstraintParameterScope {
         validate_scope_rows(const_parameters.iter().map(|row| &row.parameter), true)?;
 
         for parameter in &free_types {
-            if !matches!(parameter, GenericTypeReference::Free(_)) {
+            if !matches!(
+                parameter,
+                GenericTypeReference::Free(_) | GenericTypeReference::Inference(_)
+            ) {
                 return Err(scope_invariant(
                     TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
                         parameter: parameter.clone(),
@@ -446,7 +443,10 @@ impl TypeConstraintParameterScope {
             }
         }
         for parameter in &free_consts {
-            if !matches!(parameter, GenericConstReference::Free(_)) {
+            if !matches!(
+                parameter,
+                GenericConstReference::Free(_) | GenericConstReference::Inference(_)
+            ) {
                 return Err(scope_invariant(
                     TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
                         parameter: parameter.clone(),
@@ -571,14 +571,23 @@ impl TypeConstraintParameterScope {
                 count: const_parameters.len(),
             })
         })?;
-        let opening = OpenedGenericScope::new(GenericBinder::new(type_count, const_count, 0))
-            .map_err(TypeConstraintInvariant::GenericScope)?;
+        let effect_count = effects.candidate_rows().count();
+        let effect_count = u32::try_from(effect_count).map_err(|_| {
+            TypeConstraintInvariant::GenericScope(GenericScopeError::BinderArityOverflow {
+                kind: GenericParameterKind::Effect,
+                count: effect_count,
+            })
+        })?;
+        let opening =
+            OpenedGenericScope::new(GenericBinder::new(type_count, const_count, effect_count))
+                .map_err(TypeConstraintInvariant::GenericScope)?;
         let contract = CompletedParameterScope {
             template_scope,
             type_parameters: type_parameters.into_boxed_slice(),
             const_parameters: const_parameters.into_boxed_slice(),
-            free_types: free_types.into_boxed_slice(),
-            free_consts: free_consts.into_boxed_slice(),
+            effects,
+            rigid_types: free_types.into_boxed_slice(),
+            rigid_consts: free_consts.into_boxed_slice(),
             required_inherited: RequiredInheritedBindingKeys {
                 type_keys: required_inherited_keys.into_boxed_slice(),
                 const_keys: required_inherited_const_keys.into_boxed_slice(),
@@ -606,6 +615,8 @@ impl TypeConstraintParameterScope {
                 TypeConstraintTypeParameterScopeRow::new(parameter, eligibility)
             }),
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         )
@@ -645,6 +656,8 @@ impl TypeConstraintParameterScope {
             constants.into_iter().map(|(parameter, eligibility)| {
                 TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
             }),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         )
@@ -657,6 +670,8 @@ impl TypeConstraintParameterScope {
             GenericBinder::EMPTY,
             std::iter::empty(),
             std::iter::empty(),
+            crate::types::constraints::TypeConstraintEffectScope::seal_call_scope([], [])
+                .expect("empty effect scope"),
             std::iter::empty(),
             std::iter::empty(),
         )
@@ -665,6 +680,10 @@ impl TypeConstraintParameterScope {
 
     pub(super) const fn completed_contract(&self) -> &CompletedParameterScope {
         &self.contract
+    }
+
+    pub(super) fn application_issuer(&self) -> super::super::generics::GenericApplicationIssuer {
+        self.opening.issuer()
     }
 
     pub(crate) fn type_reference(
@@ -689,6 +708,83 @@ impl TypeConstraintParameterScope {
             .binary_search_by(|row| row.parameter.cmp(parameter))
             .ok()?;
         self.opening.const_reference(u16::try_from(slot).ok()?).ok()
+    }
+
+    pub(crate) fn effect_reference(
+        &self,
+        parameter: &GenericEffectReference,
+    ) -> Option<GenericEffectReference> {
+        let slot = self
+            .contract
+            .effects
+            .candidate_rows()
+            .position(|row| row.variable() == parameter)?;
+        self.opening
+            .effect_reference(u32::try_from(slot).ok()?)
+            .ok()
+    }
+
+    pub(super) fn effect_declaration(
+        &self,
+        reference: &GenericEffectReference,
+    ) -> Option<&GenericEffectReference> {
+        let GenericEffectReference::Inference(variable) = reference else {
+            return None;
+        };
+        (variable.issuer() == self.opening.issuer()).then_some(())?;
+        self.contract
+            .effects
+            .candidate_rows()
+            .nth(usize::try_from(variable.slot()).ok()?)
+            .map(EffectConstraintVariable::variable)
+    }
+
+    pub(crate) fn effect_eligibility(
+        &self,
+        reference: &GenericEffectReference,
+    ) -> Option<EffectConstraintEligibility> {
+        match reference {
+            GenericEffectReference::Free(_) | GenericEffectReference::Inference(_) => self
+                .contract
+                .effects
+                .free_variables
+                .binary_search_by(|row| row.variable().cmp(reference))
+                .ok()
+                .map(|_| EffectConstraintEligibility::Rigid)
+                .or_else(|| {
+                    matches!(reference, GenericEffectReference::Inference(_))
+                        .then(|| {
+                            self.effect_declaration(reference).and_then(|parameter| {
+                                self.contract.effects.template_eligibility(parameter)
+                            })
+                        })
+                        .flatten()
+                }),
+            GenericEffectReference::Bound(_) => None,
+        }
+    }
+
+    pub(crate) const fn effect_contract(&self) -> &TypeConstraintEffectScope {
+        &self.contract.effects
+    }
+
+    pub(super) fn opened_effect_variables(&self) -> Vec<EffectConstraintVariable> {
+        let mut rows = self
+            .contract
+            .effects
+            .variables()
+            .map(|row| {
+                let reference = if row.eligibility() == EffectConstraintEligibility::Rigid {
+                    row.variable().clone()
+                } else {
+                    self.effect_reference(row.variable())
+                        .expect("sealed effect slot")
+                };
+                EffectConstraintVariable::new(reference, row.eligibility())
+            })
+            .collect::<Vec<_>>();
+        rows.sort_by(|left, right| left.variable().cmp(right.variable()));
+        rows
     }
 
     pub(super) fn type_declaration(
@@ -724,15 +820,20 @@ impl TypeConstraintParameterScope {
         reference: &GenericTypeReference,
     ) -> Option<TypeConstraintParameterEligibility> {
         match reference {
-            GenericTypeReference::Free(_) => self
+            GenericTypeReference::Free(_) | GenericTypeReference::Inference(_) => self
                 .contract
-                .free_types
+                .rigid_types
                 .binary_search(reference)
                 .ok()
-                .map(|_| TypeConstraintParameterEligibility::Rigid),
-            GenericTypeReference::Inference(_) => self
-                .type_declaration(reference)
-                .and_then(|parameter| self.contract.eligibility(parameter)),
+                .map(|_| TypeConstraintParameterEligibility::Rigid)
+                .or_else(|| {
+                    matches!(reference, GenericTypeReference::Inference(_))
+                        .then(|| {
+                            self.type_declaration(reference)
+                                .and_then(|parameter| self.contract.eligibility(parameter))
+                        })
+                        .flatten()
+                }),
             GenericTypeReference::Bound(_) => None,
         }
     }
@@ -742,15 +843,20 @@ impl TypeConstraintParameterScope {
         reference: &GenericConstReference,
     ) -> Option<TypeConstraintConstEligibility> {
         match reference {
-            GenericConstReference::Free(_) => self
+            GenericConstReference::Free(_) | GenericConstReference::Inference(_) => self
                 .contract
-                .free_consts
+                .rigid_consts
                 .binary_search(reference)
                 .ok()
-                .map(|_| TypeConstraintConstEligibility::Rigid),
-            GenericConstReference::Inference(_) => self
-                .const_declaration(reference)
-                .and_then(|parameter| self.contract.const_eligibility(parameter)),
+                .map(|_| TypeConstraintConstEligibility::Rigid)
+                .or_else(|| {
+                    matches!(reference, GenericConstReference::Inference(_))
+                        .then(|| {
+                            self.const_declaration(reference)
+                                .and_then(|parameter| self.contract.const_eligibility(parameter))
+                        })
+                        .flatten()
+                }),
             GenericConstReference::Bound(_) => None,
         }
     }
@@ -779,6 +885,9 @@ impl TypeConstraintParameterScope {
 }
 
 impl CompletedParameterScope {
+    pub(super) const fn effect_contract(&self) -> &TypeConstraintEffectScope {
+        &self.effects
+    }
     pub(super) const fn template_scope(&self) -> &GenericScope {
         &self.template_scope
     }
@@ -816,8 +925,9 @@ impl CompletedParameterScope {
     /// `FutureEligible` alone may become `Bindable` in a later group.
     pub(super) fn accepts_continuation_scope(&self, other: &Self) -> bool {
         self.template_scope == other.template_scope
-            && self.free_types == other.free_types
-            && self.free_consts == other.free_consts
+            && self.effects.accepts_continuation_scope(&other.effects)
+            && self.rigid_types == other.rigid_types
+            && self.rigid_consts == other.rigid_consts
             && self.type_parameters.len() == other.type_parameters.len()
             && self
                 .type_parameters
@@ -992,31 +1102,17 @@ impl<'c> TypeConstraintContextIssuer<'c> for LocalConstraintAccounting<'c> {
     }
 }
 
-/// Cancellation and checked-accounting context for one candidate relation.
-/// `A` is the one accounting authority; `C` carries the source/branch
+/// Cancellation and checked-accounting context for a constraint component.
+/// `A` is the one accounting authority; `D` carries the source/branch
 /// inventory used by the correlated transaction without importing callable
 /// declarations into the types layer.
 pub(crate) struct TypeConstraintContext<'c, A: TypeConstraintAccounting, D: ConstraintDomain> {
     limits: TypeConstraintLimits,
     cancellation: &'c AtomicBool,
     accounting: A,
-    pub(crate) parameter_scope: TypeConstraintParameterScope,
-    pub(crate) effect_scope: TypeConstraintEffectScope,
     lexical_scope: GenericScope,
     work: TypeConstraintWorkReport,
     domain: PhantomData<fn() -> D>,
-}
-
-#[cfg(test)]
-impl<'c> TypeConstraintContext<'c, LocalConstraintAccounting<'c>, NoConstraintClient> {
-    pub(crate) fn new(limits: TypeConstraintLimits, cancellation: &'c AtomicBool) -> Self {
-        Self::with_accounting(
-            LocalConstraintAccounting::new(limits, cancellation),
-            TypeConstraintParameterScope::empty(),
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        )
-    }
 }
 
 impl<'c, A, D> TypeConstraintContext<'c, A, D>
@@ -1024,11 +1120,7 @@ where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
 {
-    pub(crate) fn with_accounting(
-        accounting: A,
-        parameter_scope: TypeConstraintParameterScope,
-        effect_scope: TypeConstraintEffectScope,
-    ) -> Self
+    pub(crate) fn with_accounting(accounting: A) -> Self
     where
         A: TypeConstraintContextIssuer<'c>,
     {
@@ -1038,40 +1130,10 @@ where
             limits,
             cancellation,
             accounting,
-            parameter_scope,
-            effect_scope,
             lexical_scope: GenericScope::default(),
             work: TypeConstraintWorkReport::default(),
             domain: PhantomData,
         }
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_scope(
-        limits: TypeConstraintLimits,
-        cancellation: &'c AtomicBool,
-        parameter_scope: TypeConstraintParameterScope,
-    ) -> TypeConstraintContext<'c, LocalConstraintAccounting<'c>, D> {
-        TypeConstraintContext::with_accounting(
-            LocalConstraintAccounting::new(limits, cancellation),
-            parameter_scope,
-            TypeConstraintEffectScope::seal_call_scope([], [])
-                .expect("empty test effect scope is canonical"),
-        )
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_scopes(
-        limits: TypeConstraintLimits,
-        cancellation: &'c AtomicBool,
-        parameter_scope: TypeConstraintParameterScope,
-        effect_scope: TypeConstraintEffectScope,
-    ) -> TypeConstraintContext<'c, LocalConstraintAccounting<'c>, D> {
-        TypeConstraintContext::with_accounting(
-            LocalConstraintAccounting::new(limits, cancellation),
-            parameter_scope,
-            effect_scope,
-        )
     }
 
     pub(crate) fn check_cancelled(&self) -> Result<(), TypeConstraintError> {
@@ -1085,6 +1147,7 @@ where
     pub(crate) fn parameter_eligibility(
         &self,
         parameter: &GenericTypeReference,
+        view: ConstraintProjectionView<'_, D>,
     ) -> Option<TypeConstraintParameterEligibility> {
         if let GenericTypeReference::Bound(parameter) = parameter {
             return self
@@ -1093,12 +1156,13 @@ where
                 .ok()
                 .map(|_| TypeConstraintParameterEligibility::Rigid);
         }
-        self.parameter_scope.eligibility(parameter)
+        view.applications().parameter_eligibility(parameter)
     }
 
     pub(crate) fn const_parameter_eligibility(
         &self,
         parameter: &GenericConstReference,
+        view: ConstraintProjectionView<'_, D>,
     ) -> Option<TypeConstraintConstEligibility> {
         if let GenericConstReference::Bound(parameter) = parameter {
             return self
@@ -1107,7 +1171,7 @@ where
                 .ok()
                 .map(|_| TypeConstraintConstEligibility::Rigid);
         }
-        self.parameter_scope.const_eligibility(parameter)
+        view.applications().const_parameter_eligibility(parameter)
     }
 
     pub(crate) fn with_binder<T>(
@@ -1137,33 +1201,33 @@ where
     /// publication. Future groups and rigid references remain open.
     pub(super) fn validate_type_and_const_completion(
         &self,
-        bindings: &BTreeMap<GenericTypeReference, TypeKind>,
-        const_bindings: &BTreeMap<GenericConstReference, ArrayLength>,
+        path: &ConstraintPath<D>,
     ) -> Result<(), TypeConstraintError> {
-        for (parameter, eligibility) in self.parameter_scope.iter() {
-            if matches!(eligibility, TypeConstraintParameterEligibility::Bindable)
-                && !self
-                    .parameter_scope
-                    .type_reference(parameter)
-                    .is_some_and(|reference| bindings.contains_key(&reference))
-            {
-                return Err(super::TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone().into(),
+        for application in path.applications.applications() {
+            let scope = application.parameters();
+            for (parameter, eligibility) in scope.iter() {
+                if matches!(eligibility, TypeConstraintParameterEligibility::Bindable)
+                    && !scope
+                        .type_reference(parameter)
+                        .is_some_and(|reference| path.bindings.contains_key(&reference))
+                {
+                    return Err(super::TypeConstraintRejection::IncompleteInstantiation {
+                        parameter: parameter.clone().into(),
+                    }
+                    .into());
                 }
-                .into());
             }
-        }
-        for (parameter, eligibility) in self.parameter_scope.const_iter() {
-            if matches!(eligibility, TypeConstraintConstEligibility::Bindable)
-                && !self
-                    .parameter_scope
-                    .const_reference(parameter)
-                    .is_some_and(|reference| const_bindings.contains_key(&reference))
-            {
-                return Err(super::TypeConstraintRejection::IncompleteInstantiation {
-                    parameter: parameter.clone().into(),
+            for (parameter, eligibility) in scope.const_iter() {
+                if matches!(eligibility, TypeConstraintConstEligibility::Bindable)
+                    && !scope
+                        .const_reference(parameter)
+                        .is_some_and(|reference| path.const_bindings.contains_key(&reference))
+                {
+                    return Err(super::TypeConstraintRejection::IncompleteInstantiation {
+                        parameter: parameter.clone().into(),
+                    }
+                    .into());
                 }
-                .into());
             }
         }
         Ok(())
@@ -1174,17 +1238,18 @@ where
     pub(crate) fn validate_type_header(
         &self,
         shape: TypeConstraintShape<'_>,
+        view: ConstraintProjectionView<'_, D>,
     ) -> Result<(), TypeConstraintError> {
         match shape {
             TypeConstraintShape::Generic(parameter)
-                if self.parameter_eligibility(parameter).is_none() =>
+                if self.parameter_eligibility(parameter, view).is_none() =>
             {
                 Err(super::references::type_out_of_scope(parameter))
             }
             TypeConstraintShape::Array {
                 len: super::super::ArrayLength::Generic(parameter),
                 ..
-            } if self.const_parameter_eligibility(parameter).is_none() => {
+            } if self.const_parameter_eligibility(parameter, view).is_none() => {
                 Err(super::references::const_out_of_scope(parameter))
             }
             TypeConstraintShape::Array {
@@ -1200,9 +1265,18 @@ where
     pub(crate) fn open_template_type(
         &mut self,
         ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        application: ConstraintApplicationId,
     ) -> Result<TypeKind, TypeConstraintError> {
-        self.with_template_scope(|context| {
-            super::references::map_type(ty, &super::references::OpenTemplateReferences, context)
+        let application = path.applications.require_application(application)?;
+        self.with_template_scope(application, |context| {
+            super::references::map_type(
+                ty,
+                &super::references::OpenTemplateReferences,
+                application,
+                path,
+                context,
+            )
         })
     }
 
@@ -1210,19 +1284,28 @@ where
     pub(crate) fn open_template_length(
         &mut self,
         length: &super::super::ArrayLength,
+        path: &ConstraintPath<D>,
+        application: ConstraintApplicationId,
     ) -> Result<super::super::ArrayLength, TypeConstraintError> {
-        self.with_template_scope(|context| {
+        let application = path.applications.require_application(application)?;
+        self.with_template_scope(application, |context| {
             super::references::map_length(
                 length,
                 &super::references::OpenTemplateReferences,
+                application,
+                path,
                 context,
             )
         })
     }
 
-    fn with_template_scope<R>(&mut self, operation: impl FnOnce(&mut Self) -> R) -> R {
-        let template = self
-            .parameter_scope
+    fn with_template_scope<R>(
+        &mut self,
+        application: &ConstraintApplicationScope<D>,
+        operation: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let template = application
+            .parameters()
             .completed_contract()
             .template_scope()
             .clone();
@@ -1235,44 +1318,39 @@ where
     pub(super) fn lexical_scope(&self) -> &GenericScope {
         &self.lexical_scope
     }
-    pub(super) fn required_inherited_keys(&self) -> &[GenericTypeReference] {
-        self.parameter_scope.required_inherited_keys()
-    }
-
-    pub(super) fn required_inherited_const_keys(&self) -> &[GenericConstReference] {
-        self.parameter_scope.required_inherited_const_keys()
-    }
-
-    pub(super) fn required_inherited_effects(&self) -> &[EffectVar] {
-        self.effect_scope.required_inherited()
-    }
-
     pub(crate) fn effect_eligibility(
         &self,
-        variable: EffectVar,
+        variable: &GenericEffectReference,
+        view: ConstraintProjectionView<'_, D>,
     ) -> Option<EffectConstraintEligibility> {
-        self.effect_scope.eligibility(variable)
-    }
-
-    pub(crate) fn validate_effect_row(&self, row: &EffectRow) -> Result<(), TypeConstraintError> {
-        match row.tail() {
-            crate::effect_row::EffectRowTail::Closed => Ok(()),
-            crate::effect_row::EffectRowTail::Variable(variable)
-                if self.effect_scope.eligibility(variable).is_some() =>
-            {
-                Ok(())
-            }
-            crate::effect_row::EffectRowTail::Variable(variable) => Err(effect_invariant(
-                super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                Some(variable),
-            )),
-            crate::effect_row::EffectRowTail::Unknown => Err(effect_invariant(
-                super::TypeConstraintEffectInvariantKind::UnknownRow,
-                None,
-            )),
+        match variable {
+            GenericEffectReference::Bound(parameter) => self
+                .lexical_scope
+                .bound_effect(parameter.depth(), parameter.slot())
+                .ok()
+                .map(|_| EffectConstraintEligibility::Rigid),
+            _ => view.applications().effect_eligibility(variable),
         }
     }
 
+    pub(crate) fn validate_effect_row(
+        &self,
+        row: &EffectRow,
+        view: ConstraintProjectionView<'_, D>,
+    ) -> Result<(), TypeConstraintError> {
+        let variables = row.variables().map_err(|_| {
+            effect_invariant(super::TypeConstraintEffectInvariantKind::UnknownRow, None)
+        })?;
+        for variable in variables {
+            if self.effect_eligibility(variable, view).is_none() {
+                return Err(effect_invariant(
+                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
+                    Some(variable.clone()),
+                ));
+            }
+        }
+        Ok(())
+    }
     pub(crate) fn enter_node(&mut self) -> Result<(), TypeConstraintError> {
         self.charge_counter(1, Counter::Nodes)
     }
@@ -1285,11 +1363,27 @@ where
         self.charge_counter(1, Counter::Materializations)
     }
 
-    pub(crate) fn start_path(&mut self) -> Result<ConstraintPath<D>, TypeConstraintError> {
+    pub(super) fn start_path(
+        &mut self,
+        application: ConstraintApplicationScope<D>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        self.start_path_with_imported(application, None)
+    }
+
+    pub(super) fn start_path_with_imported(
+        &mut self,
+        application: ConstraintApplicationScope<D>,
+        imported: Option<super::ImportedGenericParameterScopeLease>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
-        let effects = EffectConstraintEnvironment::new(self.effect_scope.variables())
-            .map_err(map_effect_environment_error)?;
-        Ok(ConstraintPath::empty(effects))
+        let effects =
+            EffectConstraintEnvironment::new(&application.parameters().opened_effect_variables())
+                .map_err(TypeConstraintError::from)?;
+        Ok(ConstraintPath::empty_with_imported(
+            application,
+            effects,
+            imported,
+        ))
     }
 
     pub(crate) fn fork_path(
@@ -1298,6 +1392,42 @@ where
     ) -> Result<ConstraintPath<D>, TypeConstraintError> {
         self.charge_counter(1, Counter::Branches)?;
         Ok(path.clone())
+    }
+
+    /// Extend only this frontier row. Other rows keep their original scope
+    /// inventory, so an unchosen application's variables never become eligible.
+    pub(super) fn admit_application(
+        &mut self,
+        mut path: ConstraintPath<D>,
+        application: ConstraintApplicationScope<D>,
+    ) -> Result<ConstraintPath<D>, TypeConstraintError> {
+        self.check_cancelled()?;
+        path.applications
+            .validate_admission(&application)
+            .map_err(|error| {
+                TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(error))
+            })?;
+        // Copy-on-write scope insertion visits the existing inventory. Admit
+        // that work and the new effect rows before allocating or mutating it.
+        let nodes = path
+            .applications
+            .len()
+            .checked_add(1)
+            .and_then(|count| count.checked_add(application.effects().variables().count()))
+            .and_then(|count| u64::try_from(count).ok())
+            .ok_or(TypeConstraintError::Abort(
+                TypeConstraintAbort::ArithmeticOverflow,
+            ))?;
+        self.charge_counter(nodes, Counter::Nodes)?;
+        path.effects
+            .admit_variables(&application.parameters().opened_effect_variables())
+            .map_err(TypeConstraintError::from)?;
+        std::sync::Arc::make_mut(&mut path.applications)
+            .admit(application)
+            .map_err(|error| {
+                TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(error))
+            })?;
+        Ok(path)
     }
 
     pub(crate) fn add_binding(
@@ -1311,7 +1441,7 @@ where
         if path.bindings.contains_key(&parameter) {
             return Ok(Some(path));
         }
-        match self.parameter_scope.eligibility(&parameter) {
+        match self.parameter_eligibility(&parameter, path.projection_view()) {
             None => {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::ParameterScope(
@@ -1341,7 +1471,7 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         let mut path = path;
-        if occurs_in_shape(value_shape, &parameter, &path.bindings, self)? {
+        if occurs_in_shape(value_shape, &parameter, path.projection_view(), self)? {
             // A back-edge is evidence, not an immediate candidate failure.
             // The close phase can discard this row while retaining a valid
             // sibling and gives later source failures precedence.
@@ -1363,7 +1493,7 @@ where
         if path.const_bindings.contains_key(&parameter) {
             return Ok(Some(path));
         }
-        match self.parameter_scope.const_eligibility(&parameter) {
+        match self.const_parameter_eligibility(&parameter, path.projection_view()) {
             None => {
                 return Err(TypeConstraintError::Invariant(
                     TypeConstraintInvariant::ParameterScope(
@@ -1396,7 +1526,7 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         let mut path = path;
-        if super::normalization::const_occurs_in(value, &parameter, &path.const_bindings, self)? {
+        if super::normalization::const_occurs_in(value, &parameter, path.projection_view(), self)? {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
@@ -1423,7 +1553,7 @@ where
             ))?;
         self.charge_binding(binding_count)?;
         let shape = value.constraint_shape();
-        if occurs_in_shape(shape, &parameter, &path.bindings, self)? {
+        if occurs_in_shape(shape, &parameter, path.projection_view(), self)? {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
@@ -1449,7 +1579,8 @@ where
                 TypeConstraintAbort::ArithmeticOverflow,
             ))?;
         self.charge_binding(binding_count)?;
-        if super::normalization::const_occurs_in(&value, &parameter, &path.const_bindings, self)? {
+        if super::normalization::const_occurs_in(&value, &parameter, path.projection_view(), self)?
+        {
             path.deferred_cycles
                 .parameters
                 .insert(parameter.clone().into());
@@ -1464,11 +1595,14 @@ where
     pub(super) fn restore_completed_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
+        application: ConstraintApplicationId,
         parameter: GenericTypeReference,
         value: TypeKind,
     ) -> Result<(), TypeConstraintError> {
-        let reference = self
-            .parameter_scope
+        let reference = path
+            .applications
+            .require_application(application)?
+            .parameters()
             .type_reference(&parameter)
             .ok_or_else(|| {
                 TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
@@ -1497,11 +1631,14 @@ where
     pub(super) fn restore_completed_const_binding(
         &mut self,
         path: &mut ConstraintPath<D>,
+        application: ConstraintApplicationId,
         parameter: GenericConstReference,
         value: super::super::ArrayLength,
     ) -> Result<(), TypeConstraintError> {
-        let reference = self
-            .parameter_scope
+        let reference = path
+            .applications
+            .require_application(application)?
+            .parameters()
             .const_reference(&parameter)
             .ok_or_else(|| {
                 TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
@@ -1627,6 +1764,18 @@ where
     type Error = TypeConstraintError;
 
     fn enter(&mut self, _expected: &TypeKind, _actual: &TypeKind) -> Result<(), Self::Error> {
+        self.enter_node()
+    }
+}
+
+impl<A: TypeConstraintAccounting, D: ConstraintDomain> crate::effect_row::DecisionControl
+    for TypeConstraintContext<'_, A, D>
+{
+    type Error = TypeConstraintError;
+
+    fn charge(&mut self, _work: crate::effect_row::DecisionWork) -> Result<(), Self::Error> {
+        // Semantic decision visits and emitted nodes consume the same existing
+        // structural/work counters, including cancellation and external accounting.
         self.enter_node()
     }
 }

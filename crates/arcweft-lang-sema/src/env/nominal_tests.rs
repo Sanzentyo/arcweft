@@ -30,6 +30,18 @@ fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
     RuntimeOpaqueTypeProducerId::try_new(value).expect("valid test producer")
 }
 
+fn rust_source() -> SourceSpan {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-test://nominal/rust-publication").unwrap(),
+        SourceName::Generated,
+        "Rust declaration",
+    )
+    .unwrap();
+    document
+        .span(SourceRange::new(0, document.text().len()))
+        .unwrap()
+}
+
 fn opaque_semantics(value: &str) -> AcceptedNominalSemantics {
     AcceptedNominalSemantics::Opaque(AcceptedOpaqueRuntimeCarrier::new(
         producer(value),
@@ -237,7 +249,7 @@ fn duplicate_exact_path_is_rejected_deterministically() {
         None,
     )
     .expect("record");
-    let rust = AcceptedNominalRecord::try_new(
+    let rust = AcceptedNominalRecord::try_new_rust_adt(
         AcceptedNominalId::new(
             AcceptedNominalOwnerId::RustPackage(
                 RustPackageId::try_new("a-owner").expect("package"),
@@ -245,9 +257,7 @@ fn duplicate_exact_path_is_rejected_deterministically() {
             path("domain.Value"),
         ),
         0,
-        opaque_semantics("fixture.lang-sema.alpha"),
-        AcceptedNominalOrigin::RustExport,
-        None,
+        rust_source(),
     )
     .expect("record");
 
@@ -308,14 +318,8 @@ fn accepted_record_instantiation_checks_arity_and_preserves_exact_identity() {
         AcceptedNominalOwnerId::RustPackage(RustPackageId::try_new("typed-box").expect("package")),
         path("vendor.Box"),
     );
-    let record = AcceptedNominalRecord::try_new(
-        id.clone(),
-        1,
-        opaque_semantics("fixture.lang-sema.alpha"),
-        AcceptedNominalOrigin::RustExport,
-        None,
-    )
-    .expect("generic opaque nominal record");
+    let record = AcceptedNominalRecord::try_new_rust_adt(id.clone(), 1, rust_source())
+        .expect("generic Rust nominal record");
 
     let instantiated = record
         .try_instantiate(vec![TypeKind::I32])
@@ -888,7 +892,10 @@ fn environment_record_rejects_duplicate_fields() {
 fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
     for (name, semantics) in [
         ("DataFormat", TypeKind::DataFormat),
-        ("DataShape", TypeKind::DataShape),
+        ("DataValue", TypeKind::DataValue),
+        ("DataErrorKind", TypeKind::DataErrorKind),
+        ("DataPathSegment", TypeKind::DataPathSegment),
+        ("DataMapKind", TypeKind::DataMapKind),
         ("AgentValue", TypeKind::AgentValue),
         (
             "ObservedObjectId",
@@ -986,17 +993,60 @@ fn assert_exact_standard_domain_nominals(environment: &TypeCheckEnv) {
 }
 
 #[test]
+fn data_errors_and_paths_are_exact_standard_records() {
+    let environment = TypeCheckEnv::new();
+    let error = environment
+        .nominal_catalog()
+        .exact(&path("DataError"))
+        .expect("DataError accepted record");
+    let AcceptedNominalSemantics::Record(error) = error.semantics() else {
+        panic!("DataError must retain its record fields");
+    };
+    assert_eq!(error.ty(), &TypeKind::DataError);
+    assert_eq!(
+        error
+            .fields()
+            .iter()
+            .map(|field| (field.diagnostic_name(), field.ty()))
+            .collect::<Vec<_>>(),
+        vec![
+            ("kind", &TypeKind::DataErrorKind),
+            ("path", &TypeKind::DataPath),
+            ("message", &TypeKind::String),
+        ]
+    );
+
+    let path_record = environment
+        .nominal_catalog()
+        .exact(&path("DataPath"))
+        .expect("DataPath accepted record");
+    let AcceptedNominalSemantics::Record(path_semantics) = path_record.semantics() else {
+        panic!("DataPath must retain its typed path segments");
+    };
+    assert_eq!(path_semantics.ty(), &TypeKind::DataPath);
+    assert_eq!(path_semantics.fields()[0].diagnostic_name(), "segments");
+    assert_eq!(
+        path_semantics.fields()[0].ty(),
+        &TypeKind::Vec(Box::new(TypeKind::DataPathSegment))
+    );
+    assert!(
+        environment
+            .nominal_catalog()
+            .exact(&path("DataShape"))
+            .is_none()
+    );
+}
+
+#[test]
 fn rust_export_publishes_typed_package_and_exact_path_atomically() {
     let package = RustPackageId::try_new("truck_game").expect("package");
-    let accepted = AcceptedNominalRecord::try_new(
+    let accepted = AcceptedNominalRecord::try_new_rust_adt(
         AcceptedNominalId::new(
             AcceptedNominalOwnerId::RustPackage(package.clone()),
             path("Rank"),
         ),
         0,
-        opaque_semantics("fixture.lang-sema.reduction"),
-        AcceptedNominalOrigin::RustExport,
-        None,
+        rust_source(),
     )
     .expect("accepted Rust nominal");
     let environment = TypeCheckEnv::default()
@@ -1014,8 +1064,7 @@ fn rust_export_publishes_typed_package_and_exact_path_atomically() {
     assert_eq!(record.origin(), AcceptedNominalOrigin::RustExport);
     assert!(matches!(
         record.semantics(),
-        AcceptedNominalSemantics::Opaque(carrier)
-            if carrier.producer().as_str() == "fixture.lang-sema.reduction"
+        AcceptedNominalSemantics::RustAdt
     ));
 }
 

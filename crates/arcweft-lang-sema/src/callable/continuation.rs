@@ -17,8 +17,8 @@ use thiserror::Error;
 use crate::effect_row::{EffectConstraintEligibility, EffectConstraintVariable};
 
 use crate::types::{
-    GenericConstParameterId, GenericConstReference, GenericTypeParameterId, GenericTypeReference,
-    TypeKind,
+    GenericConstParameterId, GenericConstReference, GenericEffectReference, GenericTypeParameterId,
+    GenericTypeReference, TypeKind,
     constraints::{
         TypeConstraintConstEligibility, TypeConstraintEffectScope, TypeConstraintInvariant,
         TypeConstraintParameterEligibility, TypeConstraintParameterScope, TypeConstraintRejection,
@@ -28,6 +28,12 @@ use crate::types::{
 };
 
 use super::{CallableGenericFirstUse, CallableGroupIndex, CallableResultSchema};
+
+mod effects;
+use effects::PreparedEffectDelta;
+pub(crate) use effects::{
+    PreparedCallResultRef, PreparedCallableEffectRows, PreparedCallableEffectView,
+};
 
 /// The typed semantic family of an attached-content call site.
 ///
@@ -112,6 +118,8 @@ pub(crate) enum CallConstraintInvariant {
     PreparedBaseMismatch,
     #[error("prepared callable schema does not match continuation")]
     PreparedSchemaMismatch,
+    #[error("prepared callable does not match checked terminal effect-row authority")]
+    CheckedCallableAuthorityMismatch,
     #[error("prepared callable record does not match its checked call site")]
     PreparedCallSiteMismatch,
     #[error("checked expression coordinate is absent for call source {owner:?}")]
@@ -120,16 +128,15 @@ pub(crate) enum CallConstraintInvariant {
     MissingCheckedBindingCoordinate { owner: LocalId },
     #[error("prepared callable group does not match continuation")]
     PreparedGroupMismatch,
+    #[error("terminal effect row for checked callable {checked:?} is pending at group {group:?}")]
+    PendingCallableEffectProjection {
+        checked: Box<super::CheckedCallableId>,
+        group: CallableGroupIndex,
+    },
     #[error("prepared callable deferred rows do not match continuation")]
     PreparedDeferredMismatch,
-    #[error("prepared callable effect instantiation does not match its checked issuer")]
+    #[error("callable effect instantiation is invalid")]
     PreparedEffectInstantiationMismatch,
-    #[error("raw effect source does not match the definition-owned typed position")]
-    PreparedEffectSourceShapeMismatch,
-    #[error("raw effect source has an unresolved tail at a closed or unowned position")]
-    PreparedEffectSourceTailMismatch,
-    #[error("raw effect source variable is foreign to its definition-owned position")]
-    PreparedEffectSourceForeignVariable,
     #[error("prepared callable function type does not match continuation")]
     PreparedFunctionTypeMismatch,
     #[error("composite local function value cannot be prepared as a continuation")]
@@ -240,33 +247,104 @@ impl std::error::Error for PreparedCallGraphInvariant {}
 /// The graph issuer consumes it and does not retain a parallel scope table.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct EnclosingGenericParameterScope {
-    types: Box<[GenericTypeParameterId]>,
-    consts: Box<[GenericConstParameterId]>,
+    types: Box<[GenericTypeReference]>,
+    consts: Box<[GenericConstReference]>,
+    effects: Box<[GenericEffectReference]>,
+    imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
 }
 
 impl EnclosingGenericParameterScope {
-    pub(crate) fn sealed<T, C>(types: T, consts: C) -> Result<Self, CallConstraintInvariant>
+    pub(crate) fn sealed<T, C, E>(
+        types: T,
+        consts: C,
+        effects: E,
+    ) -> Result<Self, CallConstraintInvariant>
     where
         T: IntoIterator<Item = GenericTypeParameterId>,
         C: IntoIterator<Item = GenericConstParameterId>,
+        E: IntoIterator<Item = crate::types::GenericEffectParameterId>,
+    {
+        Self::sealed_references(
+            types.into_iter().map(Into::into),
+            consts.into_iter().map(Into::into),
+            effects.into_iter().map(Into::into),
+            None,
+        )
+    }
+
+    pub(crate) fn sealed_with_imported_scope<T, C, E>(
+        types: T,
+        consts: C,
+        effects: E,
+        imported: Option<&crate::types::constraints::ImportedGenericParameterScopeLease>,
+    ) -> Result<Self, CallConstraintInvariant>
+    where
+        T: IntoIterator<Item = GenericTypeReference>,
+        C: IntoIterator<Item = GenericConstReference>,
+        E: IntoIterator<Item = crate::types::GenericEffectReference>,
+    {
+        let mut types = types.into_iter().collect::<BTreeSet<_>>();
+        let mut consts = consts.into_iter().collect::<BTreeSet<_>>();
+        let mut effects = effects.into_iter().collect::<BTreeSet<_>>();
+        if let Some(imported) = imported {
+            for parameter in imported.parameters() {
+                match parameter {
+                    crate::types::constraints::ConstraintGenericParameterId::Type(parameter) => {
+                        types.insert(parameter.clone());
+                    }
+                    crate::types::constraints::ConstraintGenericParameterId::Const(parameter) => {
+                        consts.insert(parameter.clone());
+                    }
+                    crate::types::constraints::ConstraintGenericParameterId::Effect(parameter) => {
+                        effects.insert(parameter.clone());
+                    }
+                }
+            }
+        }
+        Self::sealed_references(types, consts, effects, imported.cloned())
+    }
+
+    fn sealed_references<T, C, E>(
+        types: T,
+        consts: C,
+        effects: E,
+        imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+    ) -> Result<Self, CallConstraintInvariant>
+    where
+        T: IntoIterator<Item = GenericTypeReference>,
+        C: IntoIterator<Item = GenericConstReference>,
+        E: IntoIterator<Item = GenericEffectReference>,
     {
         let types = types.into_iter().collect::<Vec<_>>();
         let consts = consts.into_iter().collect::<Vec<_>>();
-        if !strictly_ordered(&types) || !strictly_ordered(&consts) {
+        let effects = effects.into_iter().collect::<Vec<_>>();
+        if !strictly_ordered(&types) || !strictly_ordered(&consts) || !strictly_ordered(&effects) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
         Ok(Self {
             types: types.into_boxed_slice(),
             consts: consts.into_boxed_slice(),
+            effects: effects.into_boxed_slice(),
+            imported_scope,
         })
     }
 
-    pub(crate) fn types(&self) -> &[GenericTypeParameterId] {
+    pub(crate) fn types(&self) -> &[GenericTypeReference] {
         &self.types
     }
 
-    pub(crate) fn consts(&self) -> &[GenericConstParameterId] {
+    pub(crate) fn consts(&self) -> &[GenericConstReference] {
         &self.consts
+    }
+
+    pub(crate) fn effects(&self) -> &[GenericEffectReference] {
+        &self.effects
+    }
+
+    fn imported_scope(
+        &self,
+    ) -> Option<&crate::types::constraints::ImportedGenericParameterScopeLease> {
+        self.imported_scope.as_ref()
     }
 }
 
@@ -447,6 +525,7 @@ pub(crate) struct PreparedCallGraphDelta<P, U = ()> {
     touched_sites: BTreeSet<CheckedCallSite>,
     baseline_nodes: BTreeSet<PreparedCallNodeId>,
     nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
+    effects: PreparedEffectDelta,
 }
 
 impl<P, U> PreparedCallGraphDelta<P, U> {
@@ -519,6 +598,8 @@ pub(crate) enum PreparedCallGraphReplayMismatch {
     NodePrefix(PreparedCallPrefixReplayMismatch),
     #[error("canonical unselected node payload differs")]
     UnselectedPayload,
+    #[error("prepared body-effect prerequisites differ")]
+    EffectPrerequisites,
 }
 
 impl<P: PreparedCallPrefixPayload> PreparedCallGraphDelta<P, P::Unselected> {
@@ -529,6 +610,9 @@ impl<P: PreparedCallPrefixPayload> PreparedCallGraphDelta<P, P::Unselected> {
     pub(crate) fn replay_mismatch(&self, other: &Self) -> Option<PreparedCallGraphReplayMismatch> {
         if !Arc::ptr_eq(&self.issuer, &other.issuer) {
             return Some(PreparedCallGraphReplayMismatch::Issuer);
+        }
+        if !self.effects.replay_eq(&other.effects) {
+            return Some(PreparedCallGraphReplayMismatch::EffectPrerequisites);
         }
         let Some(left_nodes) = canonical_delta_nodes(self) else {
             return Some(PreparedCallGraphReplayMismatch::LeftMalformed);
@@ -783,6 +867,7 @@ struct PreparedCallGraphActiveDelta {
     id: u64,
     touched_nodes: BTreeSet<PreparedCallNodeId>,
     touched_sites: BTreeSet<CheckedCallSite>,
+    effect_baseline: BTreeSet<u64>,
 }
 
 impl Clone for PreparedCallGraphActiveDelta {
@@ -791,6 +876,7 @@ impl Clone for PreparedCallGraphActiveDelta {
             id: self.id,
             touched_nodes: self.touched_nodes.clone(),
             touched_sites: self.touched_sites.clone(),
+            effect_baseline: self.effect_baseline.clone(),
         }
     }
 }
@@ -802,6 +888,7 @@ pub(crate) struct PreparedCallGraph<P, U = ()> {
     active_deltas: Vec<PreparedCallGraphActiveDelta>,
     sites: BTreeMap<CheckedCallSite, PreparedCallNodeId>,
     nodes: BTreeMap<PreparedCallNodeId, Box<PreparedCallNode<P, U>>>,
+    effects: PreparedCallableEffectRows,
 }
 
 pub(crate) struct PreparedCallGraphSelectedNode<'a, P> {
@@ -978,6 +1065,17 @@ impl<P, U> Default for PreparedCallGraph<P, U> {
 }
 
 impl<P, U> PreparedCallGraph<P, U> {
+    pub(super) fn validate_constraint_authority(
+        &self,
+        authority: &PreparedConstraintAuthority,
+    ) -> Result<(), CallConstraintInvariant> {
+        if Arc::ptr_eq(&self.issuer, &authority.issuer) {
+            Ok(())
+        } else {
+            Err(CallConstraintInvariant::ForeignPreparedIssuer)
+        }
+    }
+
     pub(crate) fn new() -> Self {
         Self {
             issuer: Arc::new(PreparedCallGraphIssuer),
@@ -986,11 +1084,12 @@ impl<P, U> PreparedCallGraph<P, U> {
             active_deltas: Vec::new(),
             sites: BTreeMap::new(),
             nodes: BTreeMap::new(),
+            effects: PreparedCallableEffectRows::default(),
         }
     }
 
     pub(crate) fn validate_seal_ready(&self) -> Result<(), CallConstraintInvariant> {
-        if self.active_deltas.is_empty() {
+        if self.active_deltas.is_empty() && self.effects.is_ready() {
             Ok(())
         } else {
             Err(CallConstraintInvariant::ActiveFactScope)
@@ -1011,6 +1110,46 @@ impl<P, U> PreparedCallGraph<P, U> {
             }),
             PreparedCallNodePayload::Unselected(_) => None,
         })
+    }
+
+    pub(crate) const fn effect_rows(&self) -> &PreparedCallableEffectRows {
+        &self.effects
+    }
+
+    pub(crate) fn extracted_effect_view<'a>(
+        &'a self,
+        delta: &'a PreparedCallGraphDelta<P, U>,
+    ) -> Result<PreparedCallableEffectView<'a>, CallConstraintInvariant> {
+        self.validate_delta(delta)?;
+        self.effects.extracted_view(&delta.effects)
+    }
+
+    pub(crate) fn request_effect_projection(
+        &mut self,
+        site: CheckedCallSite,
+        candidate: &super::PreparedResolvedCallable,
+    ) -> Result<PreparedCallResultRef, CallConstraintInvariant> {
+        self.ensure_active_delta()?;
+        self.effects.request(&self.issuer, site, candidate)
+    }
+
+    pub(crate) fn complete_effect_projection(
+        &mut self,
+        reference: &PreparedCallResultRef,
+        checked: &super::CheckedCallableId,
+        row: crate::effect_row::EffectRow,
+    ) -> Result<(), CallConstraintInvariant> {
+        let active = self
+            .active_deltas
+            .last()
+            .ok_or(CallConstraintInvariant::PreparedGraphDeltaStale)?;
+        self.effects.complete(
+            &self.issuer,
+            &active.effect_baseline,
+            reference,
+            checked,
+            row,
+        )
     }
 
     pub(crate) fn site_state(&self, site: CheckedCallSite) -> Option<PreparedCallGraphSiteState> {
@@ -1069,7 +1208,10 @@ impl<P, U> PreparedCallGraph<P, U> {
         ),
         CallConstraintInvariant,
     > {
-        if !self.active_deltas.is_empty() || self.sites.len() != self.nodes.len() {
+        if !self.active_deltas.is_empty()
+            || !self.effects.is_ready()
+            || self.sites.len() != self.nodes.len()
+        {
             return Err(CallConstraintInvariant::ActiveFactScope);
         }
         let authority = PreparedCallGraphSealAuthority {
@@ -1141,6 +1283,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             id,
             touched_nodes: BTreeSet::new(),
             touched_sites: BTreeSet::new(),
+            effect_baseline: self.effects.snapshot(),
         });
         Ok(PreparedCallGraphCheckpoint {
             issuer: Arc::clone(&self.issuer),
@@ -1215,6 +1358,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         self.active_deltas.clear();
         self.sites.clear();
         self.nodes.clear();
+        self.effects.clear();
         Ok(())
     }
 
@@ -1323,6 +1467,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         for node in active.touched_nodes {
             self.nodes.remove(&node);
         }
+        self.effects.rollback(&active.effect_baseline);
         Ok(())
     }
 
@@ -1403,6 +1548,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             touched_sites: active.touched_sites.clone(),
             baseline_nodes,
             nodes: BTreeMap::new(),
+            effects: self.effects.extract(active.effect_baseline),
         };
         for site in &active.touched_sites {
             self.sites.remove(site);
@@ -1441,6 +1587,9 @@ impl<P, U> PreparedCallGraph<P, U> {
         }
         if !Arc::ptr_eq(&self.issuer, &delta.issuer) {
             restore_error!(CallConstraintInvariant::ForeignPreparedIssuer);
+        }
+        if let Err(violation) = self.effects.validate_restore(&delta.effects) {
+            restore_error!(violation);
         }
         let touched_nodes = delta.touched_nodes.clone();
         let touched_sites = delta.touched_sites.clone();
@@ -1512,6 +1661,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             parent.touched_nodes.extend(touched_nodes);
             parent.touched_sites.extend(touched_sites);
         }
+        self.effects.restore(delta.effects);
         Ok(())
     }
 
@@ -1979,6 +2129,32 @@ impl<P, U> PreparedCallGraph<P, U> {
         )
     }
 
+    pub(super) fn validate_and_issue_child_constraint_initialization<D>(
+        &self,
+        parent_authority: &PreparedConstraintAuthority,
+        receipt: crate::types::constraints::ConstraintSourceReceipt<D>,
+        application: D::Application,
+        site: CheckedCallSite,
+        candidate: &super::PreparedResolvedCallable,
+        enclosing: &EnclosingGenericParameterScope,
+    ) -> Result<PreparedChildConstraintInitialization<D>, CallConstraintInvariant>
+    where
+        D: crate::types::constraints::ConstraintDomain,
+        P: PreparedCallPrefixPayload<Unselected = U>,
+    {
+        self.validate_constraint_authority(parent_authority)?;
+        let initialization =
+            self.validate_and_issue_constraint_initialization(candidate, enclosing)?;
+        Ok(PreparedChildConstraintInitialization {
+            initialization,
+            receipt,
+            application,
+            site,
+            candidate: candidate.id().clone(),
+            schema: candidate.schema().semantic_digest(),
+        })
+    }
+
     #[cfg(test)]
     pub(crate) fn validate_and_issue_base_constraint_initialization(
         &self,
@@ -2038,12 +2214,12 @@ where
     let mut free_types = BTreeSet::new();
     let mut free_consts = BTreeSet::new();
     for parameter in enclosing.types() {
-        if !free_types.insert(GenericTypeReference::Free(parameter.clone())) {
+        if !free_types.insert(parameter.clone()) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
     for parameter in enclosing.consts() {
-        if !free_consts.insert(GenericConstReference::Free(parameter.clone())) {
+        if !free_consts.insert(parameter.clone()) {
             return Err(CallConstraintInvariant::MalformedSchemaInventory);
         }
     }
@@ -2175,40 +2351,33 @@ where
         .chain(consts.into_iter().map(|(parameter, eligibility)| {
             TypeConstraintConstParameterScopeRow::new(parameter, eligibility)
         }));
-    let scope = TypeConstraintParameterScope::seal_call_scope(
-        inventory.template_binder(),
-        type_rows,
-        const_rows,
-        required,
-        required_consts,
-    )
-    .map_err(CallConstraintInvariant::Lower)?;
-
     let inherited_effects = continuation_seed
         .as_ref()
         .map(|seed| {
             seed.solution
                 .effect_bindings()
-                .map(|(variable, _)| *variable)
+                .map(|(variable, _)| variable.value().clone())
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
     let inherited_effects = inherited_effects.into_iter().collect::<BTreeSet<_>>();
     let mut required_effects = Vec::new();
-    let effect_rows = candidate
-        .prepared_effect_instantiation()
-        .variables()
+    let mut free_effects = enclosing.effects().iter().cloned().collect::<BTreeSet<_>>();
+    let effect_rows = inventory
+        .effects()
         .iter()
         .map(|row| {
-            let variable = row.variable();
+            let variable = row.parameter().clone();
             let inherited = inherited_effects.contains(&variable);
-            let eligibility = if inherited {
-                required_effects.push(variable);
+            let eligibility = if row.role() == super::CallableSchemaGenericRole::RigidReference {
+                EffectConstraintEligibility::Rigid
+            } else if inherited {
+                required_effects.push(variable.clone());
                 EffectConstraintEligibility::Bindable
             } else {
                 match row.first_use() {
                     CallableGenericFirstUse::Group(group) if group < current_group => {
-                        required_effects.push(variable);
+                        required_effects.push(variable.clone());
                         EffectConstraintEligibility::Bindable
                     }
                     CallableGenericFirstUse::Group(group)
@@ -2233,13 +2402,33 @@ where
                     }
                 }
             };
-            Ok(EffectConstraintVariable::new(variable, eligibility))
+            if eligibility == EffectConstraintEligibility::Rigid {
+                free_effects.insert(variable);
+                Ok(None)
+            } else {
+                Ok(Some(EffectConstraintVariable::new(variable, eligibility)))
+            }
         })
         .collect::<Result<Vec<_>, _>>()?;
     required_effects.sort_unstable();
     required_effects.dedup();
+    let effect_rows = free_effects
+        .into_iter()
+        .map(|reference| {
+            EffectConstraintVariable::new(reference, EffectConstraintEligibility::Rigid)
+        })
+        .chain(effect_rows.into_iter().flatten());
     let effect_scope = TypeConstraintEffectScope::seal_call_scope(effect_rows, required_effects)
         .map_err(CallConstraintInvariant::Lower)?;
+    let scope = TypeConstraintParameterScope::seal_call_scope(
+        inventory.template_binder(),
+        type_rows,
+        const_rows,
+        effect_scope,
+        required,
+        required_consts,
+    )
+    .map_err(CallConstraintInvariant::Lower)?;
 
     let seed = match continuation_seed {
         Some(seed) => PreparedCallConstraintSeed::Prepared(seed),
@@ -2250,9 +2439,9 @@ where
     Ok(PreparedConstraintInitialization {
         issuer,
         parameter_scope: scope,
-        effect_scope,
         future_parameters,
         continuation_seed: seed,
+        imported_scope: enclosing.imported_scope().cloned(),
     })
 }
 
@@ -2261,9 +2450,70 @@ where
 pub(crate) struct PreparedConstraintInitialization {
     issuer: Arc<PreparedCallGraphIssuer>,
     parameter_scope: TypeConstraintParameterScope,
-    effect_scope: TypeConstraintEffectScope,
     future_parameters: Box<[GenericTypeReference]>,
     continuation_seed: PreparedCallConstraintSeed,
+    imported_scope: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
+}
+
+/// One child application authorized by the same prepared graph and an exact
+/// live parent source receipt. The lower source callback consumes this token
+/// together with that receipt before admitting the child to the parent's path.
+pub(crate) struct PreparedChildConstraintInitialization<
+    D: crate::types::constraints::ConstraintDomain,
+> {
+    initialization: PreparedConstraintInitialization,
+    receipt: crate::types::constraints::ConstraintSourceReceipt<D>,
+    application: D::Application,
+    site: CheckedCallSite,
+    candidate: super::CallableCandidateId,
+    schema: super::CallableSignatureSchemaDigest,
+}
+
+impl<D: crate::types::constraints::ConstraintDomain> PreparedChildConstraintInitialization<D> {
+    pub(crate) fn future_parameters(&self) -> &[GenericTypeReference] {
+        self.initialization.future_parameters()
+    }
+
+    pub(super) fn validates(
+        &self,
+        authority: &PreparedConstraintAuthority,
+        receipt: &crate::types::constraints::ConstraintSourceReceipt<D>,
+        application: D::Application,
+        site: CheckedCallSite,
+        candidate: &super::PreparedResolvedCallable,
+    ) -> bool {
+        Arc::ptr_eq(&self.initialization.issuer, &authority.issuer)
+            && self.receipt.matches(receipt)
+            && self.application == application
+            && self.site == site
+            && &self.candidate == candidate.id()
+            && self.schema == candidate.schema().semantic_digest()
+    }
+
+    pub(super) fn into_lower_parts(
+        self,
+    ) -> Result<
+        (
+            PreparedConstraintAuthority,
+            TypeConstraintParameterScope,
+            Option<Arc<TypeConstraintSolution>>,
+        ),
+        CallConstraintInvariant,
+    > {
+        let (authority, parameters, inherited, imported) =
+            self.initialization.into_lower_parts()?;
+        if imported.is_some() {
+            return Err(CallConstraintInvariant::MalformedSchemaInventory);
+        }
+        Ok((authority, parameters, inherited))
+    }
+}
+
+/// The graph identity validated alongside the exact initialization seed.
+/// A running driver retains it and lends it to its source callbacks; consumers
+/// cannot recreate it from a graph ID, an application coordinate or a scope.
+pub(super) struct PreparedConstraintAuthority {
+    issuer: Arc<PreparedCallGraphIssuer>,
 }
 
 enum PreparedCallConstraintSeed {
@@ -2282,18 +2532,19 @@ impl PreparedConstraintInitialization {
         self,
     ) -> Result<
         (
+            PreparedConstraintAuthority,
             TypeConstraintParameterScope,
-            TypeConstraintEffectScope,
             Option<Arc<TypeConstraintSolution>>,
+            Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
         ),
         CallConstraintInvariant,
     > {
         let Self {
             issuer,
             parameter_scope,
-            effect_scope,
             future_parameters: _,
             continuation_seed,
+            imported_scope,
         } = self;
         let solution = match continuation_seed {
             PreparedCallConstraintSeed::None {
@@ -2311,7 +2562,12 @@ impl PreparedConstraintInitialization {
                 Some(seed.into_solution())
             }
         };
-        Ok((parameter_scope, effect_scope, solution))
+        Ok((
+            PreparedConstraintAuthority { issuer },
+            parameter_scope,
+            solution,
+            imported_scope,
+        ))
     }
 }
 
@@ -2325,16 +2581,16 @@ mod initialization_tests {
         let PreparedConstraintInitialization {
             issuer: _,
             parameter_scope,
-            effect_scope,
             future_parameters,
             continuation_seed,
+            imported_scope: _,
         } = initialization;
         let foreign = PreparedConstraintInitialization {
             issuer: Arc::new(PreparedCallGraphIssuer),
             parameter_scope,
-            effect_scope,
             future_parameters,
             continuation_seed,
+            imported_scope: None,
         };
         assert!(matches!(
             foreign.into_lower_parts(),

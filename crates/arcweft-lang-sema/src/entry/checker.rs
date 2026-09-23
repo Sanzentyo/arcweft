@@ -1334,7 +1334,7 @@ impl<'a> EntryCheckContext<'a> {
                 semantic_type: checked_nominal.identity(),
                 runtime_nominal: projection.nominal().clone(),
                 layout: projection.layout(),
-                schema_digest: digest::nominal_schema(projection.shape()),
+                schema_digest: digest::nominal_schema(projection.layout()),
                 source,
             }),
             Err(error) => {

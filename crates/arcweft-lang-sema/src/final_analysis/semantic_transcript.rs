@@ -3905,13 +3905,11 @@ fn write_project_callable(
             super::CheckedExecutableControlRole::FlowRequired => 1,
         }],
     );
-    if !matches!(
-        facts.exposed_row().tail(),
-        crate::effect_row::EffectRowTail::Closed
-    ) {
-        return Err(SemanticTranscriptError::MissingIdentity);
-    }
-    write_effects(hasher, facts.exposed_row().concrete())?;
+    let effects = facts
+        .exposed_row()
+        .closed_value()
+        .ok_or(SemanticTranscriptError::MissingIdentity)?;
+    write_effects(hasher, &effects)?;
     Ok(())
 }
 

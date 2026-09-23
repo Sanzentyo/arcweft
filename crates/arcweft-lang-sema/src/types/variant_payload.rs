@@ -25,6 +25,7 @@ pub(crate) struct AcceptedVariantCaseSemanticId([u8; 32]);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum VariantPayloadOwnerFamily {
     Project,
+    AcceptedRust,
     CharacterNominal,
     BuiltinClosed,
     Option,
@@ -70,6 +71,8 @@ pub struct CheckedVariantPayload {
 /// Failure to bind a payload shape to one accepted variant case.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, thiserror::Error)]
 pub enum VariantPayloadSealError {
+    #[error("variant case {ordinal} is absent from its accepted nominal definition")]
+    MissingCase { ordinal: u32 },
     #[error("variant payload owner has an invalid generic scope: {0}")]
     InvalidOwnerScope(#[from] GenericScopeError),
     #[error("variant payload owner contains a poisoned type")]
@@ -269,6 +272,7 @@ impl VariantPayloadOwnerFamily {
             Self::Option => 3,
             Self::Result => 4,
             Self::RuntimeBuiltin => 5,
+            Self::AcceptedRust => 6,
         }
     }
 }

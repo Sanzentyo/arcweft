@@ -25,6 +25,11 @@ use crate::registration::AcceptedNominalWorldStamp;
 
 const CATALOG_DOMAIN: &[u8] = b"arcweft.registered-callable-catalog.v1\0";
 
+mod defaults;
+pub use defaults::{
+    CheckedRustFieldDefaultProgram, RegisteredRustFieldDefaultProgram, RustFieldDefaultBindingError,
+};
+
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct EnvironmentDeclarationOrdinal(u32);
 
@@ -393,8 +398,7 @@ fn validate_method_role(
                 || !matches!(
                     schema.effects(),
                     super::CallableEffectSchema::Fixed(row)
-                        if matches!(row.tail(), crate::effect_row::EffectRowTail::Closed)
-                            && row.concrete().is_empty()
+                        if row.is_empty()
                 )
             {
                 return Err(CallableCatalogError::IdKeyMismatch);
@@ -788,6 +792,7 @@ pub struct RegisteredCallableCatalog {
     environment: EnvironmentCallableCatalog,
     nominal_resolutions: crate::nominal::NominalResolutionIndex,
     digest: super::RegisteredCallableCatalogDigest,
+    rust_defaults: defaults::RustFieldDefaultIndex,
 }
 impl RegisteredCallableCatalog {
     pub(crate) fn try_new(
@@ -797,12 +802,14 @@ impl RegisteredCallableCatalog {
         nominal_resolutions: crate::nominal::NominalResolutionIndex,
     ) -> Result<Self, CallableCatalogError> {
         let digest = registered_catalog_digest(&nominal_world, &project, &environment)?;
+        let rust_defaults = defaults::RustFieldDefaultIndex::new(&environment)?;
         Ok(Self {
             nominal_world,
             project,
             environment,
             nominal_resolutions,
             digest,
+            rust_defaults,
         })
     }
     pub const fn nominal_world(&self) -> &AcceptedNominalWorldStamp {

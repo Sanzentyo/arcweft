@@ -470,7 +470,14 @@ fn opening() {
     assert_eq!(attached.presence(), CallableParameterPresence::Defaulted);
     let default = attached.default().expect("checked default row");
     assert_eq!(default.source(), default_source);
-    assert!(default.effects().concrete().is_empty());
+    assert!(
+        default
+            .effects()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .is_empty()
+    );
     assert_eq!(
         default.suspension(),
         crate::final_analysis::CheckedSuspensionRole::NonSuspending,

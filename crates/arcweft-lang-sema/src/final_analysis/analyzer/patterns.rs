@@ -262,30 +262,26 @@ impl Analyzer<'_, '_, '_> {
 }
 
 pub(super) fn seed_item_parameter_types(
+    owner: arcweft_lang_hir::identity::ItemId,
     item: &HirItem,
     context: PatternSeedContext<'_>,
+    catalog: &crate::callable::RegisteredCallableCatalog,
     locals: &mut BTreeMap<LocalId, TypeKind>,
     patterns: &mut BTreeMap<PatternId, TypeKind>,
 ) -> Result<(), FinalSemanticAnalysisError> {
     fn seed_parameter(
         parameter: &arcweft_lang_hir::item::HirParameter,
+        declared: &TypeKind,
         context: PatternSeedContext<'_>,
         locals: &mut BTreeMap<LocalId, TypeKind>,
         patterns: &mut BTreeMap<PatternId, TypeKind>,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let declared = context.environment.canonical_accepted_type(
-            context.types.get(&parameter.ty()).cloned().ok_or(
-                FinalSemanticAnalysisError::TypeResolutionFailed {
-                    owner: parameter.ty(),
-                },
-            )?,
-        );
         let binding = match parameter.kind() {
             arcweft_lang_hir::item::HirParameterKind::RestPositional => {
-                TypeKind::Vec(Box::new(declared))
+                TypeKind::Vec(Box::new(declared.clone()))
             }
             arcweft_lang_hir::item::HirParameterKind::Fixed
-            | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => declared,
+            | arcweft_lang_hir::item::HirParameterKind::ExtensionReceiver => declared.clone(),
         };
         seed_pattern_locals(context, parameter.pattern(), &binding, locals, patterns)
     }
@@ -311,72 +307,135 @@ pub(super) fn seed_item_parameter_types(
         }
         Ok(())
     }
+    use crate::callable::{
+        CallableGroupIndex, CallableParameterCoordinate, CallableParameterIndex,
+    };
+    use arcweft_lang_hir::source_index::HirCallableSourceOwner;
+
+    // The accepted signature owns omitted input effect parameters. Reading raw
+    // annotations here would give the declaration body a different contract.
+    let parameter_type = |source, group, parameter| {
+        let symbol = context
+            .symbols
+            .callable_at_source(context.module.snapshot_id(), owner, source)
+            .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+        let coordinate = CallableParameterCoordinate::new(
+            CallableGroupIndex::try_from_usize(group)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?,
+            CallableParameterIndex::try_from_usize(parameter)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?,
+        );
+        catalog
+            .project_record(symbol.declaration())
+            .and_then(|record| record.schema().parameter_type(coordinate))
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
+    };
     match item.kind() {
         HirItemKind::Flow(flow) => {
-            for parameter in flow.parameters() {
-                seed_parameter(parameter, context, locals, patterns)?;
+            for (index, parameter) in flow.parameters().iter().enumerate() {
+                seed_parameter(
+                    parameter,
+                    parameter_type(HirCallableSourceOwner::Item, 0, index)?,
+                    context,
+                    locals,
+                    patterns,
+                )?;
             }
         }
         HirItemKind::Function(function) => {
-            for group in function.parameter_groups() {
-                for parameter in group.parameters() {
-                    seed_parameter(parameter, context, locals, patterns)?;
+            for (group_index, group) in function.parameter_groups().iter().enumerate() {
+                for (index, parameter) in group.parameters().iter().enumerate() {
+                    seed_parameter(
+                        parameter,
+                        parameter_type(HirCallableSourceOwner::Item, group_index, index)?,
+                        context,
+                        locals,
+                        patterns,
+                    )?;
                 }
             }
             seed_attached_content(function.attached_content(), context.environment, locals)?;
         }
         HirItemKind::Predicate(predicate) => {
-            for parameter in predicate.parameters() {
-                seed_parameter(parameter, context, locals, patterns)?;
+            for (index, parameter) in predicate.parameters().iter().enumerate() {
+                seed_parameter(
+                    parameter,
+                    parameter_type(HirCallableSourceOwner::Item, 0, index)?,
+                    context,
+                    locals,
+                    patterns,
+                )?;
             }
         }
         HirItemKind::Proof(proof) => {
-            for parameter in proof.parameters() {
-                seed_parameter(parameter, context, locals, patterns)?;
+            for (index, parameter) in proof.parameters().iter().enumerate() {
+                seed_parameter(
+                    parameter,
+                    parameter_type(HirCallableSourceOwner::Item, 0, index)?,
+                    context,
+                    locals,
+                    patterns,
+                )?;
             }
         }
         HirItemKind::View(view) => {
-            for parameter in view.parameters() {
-                seed_parameter(parameter, context, locals, patterns)?;
+            for (index, parameter) in view.parameters().iter().enumerate() {
+                seed_parameter(
+                    parameter,
+                    parameter_type(HirCallableSourceOwner::ViewItem, 0, index)?,
+                    context,
+                    locals,
+                    patterns,
+                )?;
             }
         }
         HirItemKind::ExternCapability(capability) => {
-            for member in capability.members() {
-                let HirCapabilityMember::Function(function) = member else {
+            for (member, value) in capability.members().iter().enumerate() {
+                let HirCapabilityMember::Function(function) = value else {
                     continue;
                 };
-                for group in function.parameter_groups() {
-                    for parameter in group.parameters() {
-                        seed_parameter(parameter, context, locals, patterns)?;
+                let source = HirCallableSourceOwner::ExternCapabilityFunction {
+                    member: u16::try_from(member)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?,
+                };
+                for (group_index, group) in function.parameter_groups().iter().enumerate() {
+                    for (index, parameter) in group.parameters().iter().enumerate() {
+                        seed_parameter(
+                            parameter,
+                            parameter_type(source, group_index, index)?,
+                            context,
+                            locals,
+                            patterns,
+                        )?;
                     }
                 }
                 seed_attached_content(function.attached_content(), context.environment, locals)?;
             }
         }
         HirItemKind::Impl(implementation) => {
-            let self_ty = context.types.get(&implementation.target()).cloned().ok_or(
-                FinalSemanticAnalysisError::TypeResolutionFailed {
-                    owner: implementation.target(),
-                },
-            )?;
-            for member in implementation.members() {
-                let HirImplMember::Function(function) = member else {
+            for (member, value) in implementation.members().iter().enumerate() {
+                let HirImplMember::Function(function) = value else {
                     continue;
                 };
-                for group in function.parameter_groups() {
-                    for parameter in group.parameters() {
+                let source = HirCallableSourceOwner::ImplFunction {
+                    member: u16::try_from(member)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?,
+                };
+                for (group_index, group) in function.parameter_groups().iter().enumerate() {
+                    for (index, parameter) in group.parameters().iter().enumerate() {
+                        let declared = parameter_type(source, group_index, index)?;
                         match parameter {
                             arcweft_lang_hir::item::HirMethodParameter::Receiver(receiver) => {
                                 seed_pattern_locals(
                                     context,
                                     receiver.pattern(),
-                                    &self_ty,
+                                    declared,
                                     locals,
                                     patterns,
                                 )?;
                             }
                             arcweft_lang_hir::item::HirMethodParameter::Typed(parameter) => {
-                                seed_parameter(parameter, context, locals, patterns)?;
+                                seed_parameter(parameter, declared, context, locals, patterns)?;
                             }
                         }
                     }
@@ -385,16 +444,26 @@ pub(super) fn seed_item_parameter_types(
             }
         }
         HirItemKind::Trait(trait_item) => {
-            for member in trait_item.members() {
-                let HirTraitMember::Function(function) = member else {
+            for (member, value) in trait_item.members().iter().enumerate() {
+                let HirTraitMember::Function(function) = value else {
                     continue;
                 };
-                for group in function.parameter_groups() {
-                    for parameter in group.parameters() {
+                let source = HirCallableSourceOwner::TraitFunction {
+                    member: u16::try_from(member)
+                        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?,
+                };
+                for (group_index, group) in function.parameter_groups().iter().enumerate() {
+                    for (index, parameter) in group.parameters().iter().enumerate() {
                         if let arcweft_lang_hir::item::HirMethodParameter::Typed(parameter) =
                             parameter
                         {
-                            seed_parameter(parameter, context, locals, patterns)?;
+                            seed_parameter(
+                                parameter,
+                                parameter_type(source, group_index, index)?,
+                                context,
+                                locals,
+                                patterns,
+                            )?;
                         }
                     }
                 }
@@ -871,14 +940,28 @@ fn resolve_record_pattern_schema<'a>(
                 fields,
             })
         }
-        TypeKind::Named(name) => {
+        TypeKind::VariantPayload(payload) => {
+            if !matches!(path, HirPatternRecordPath::Absent) {
+                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
+            }
+            let fields = payload
+                .shape()
+                .record_fields()
+                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
+            Ok(ResolvedRecordPatternSchema::VariantPayload { payload, fields })
+        }
+        _ => {
+            let semantic_type = ty
+                .semantic_identity_digest()
+                .map_err(|_| FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             let accepted = context
                 .environment
-                .accepted_environment_record(name)
+                .nominal_catalog()
+                .environment_record_for_semantic_type(semantic_type)
                 .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             let semantics = accepted
                 .environment_record()
-                .filter(|record| record.ty() == ty)
+                .filter(|record| record.ty() == ty && record.semantic_type() == semantic_type)
                 .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
             match path {
                 HirPatternRecordPath::Absent => {}
@@ -902,17 +985,6 @@ fn resolve_record_pattern_schema<'a>(
                 semantics,
             })
         }
-        TypeKind::VariantPayload(payload) => {
-            if !matches!(path, HirPatternRecordPath::Absent) {
-                return Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner });
-            }
-            let fields = payload
-                .shape()
-                .record_fields()
-                .ok_or(FinalSemanticAnalysisError::PatternTypeUnavailable { owner })?;
-            Ok(ResolvedRecordPatternSchema::VariantPayload { payload, fields })
-        }
-        _ => Err(FinalSemanticAnalysisError::PatternTypeUnavailable { owner }),
     }
 }
 

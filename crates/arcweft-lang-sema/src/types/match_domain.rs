@@ -176,12 +176,18 @@ impl TypeKind {
             Self::StatementIngress(_) => {
                 MatchDomainInput::Immediate(MatchDomainFamily::ClosedOpaqueAtomic)
             }
-            Self::CharacterNominal(_) | Self::AgentResourceBody => {
+            Self::CharacterNominal(_)
+            | Self::AgentResourceBody
+            | Self::DataValue
+            | Self::DataErrorKind
+            | Self::DataPathSegment
+            | Self::DataMapKind => {
                 MatchDomainInput::Immediate(MatchDomainFamily::RequiresClosedVariant)
             }
             Self::AgentBuiltin(builtin) => MatchDomainInput::AgentBuiltin(*builtin),
             Self::Ref(entity) => MatchDomainInput::OptionalOpenChild(entity.value()),
             Self::Range(inner)
+            | Self::DataShape(inner)
             | Self::Probe(inner)
             | Self::Need(inner)
             | Self::ThreadHandle(inner)
@@ -242,7 +248,8 @@ impl TypeKind {
             | Self::ActionResult
             | Self::AgentValue
             | Self::DataFormat
-            | Self::DataShape
+            | Self::DataError
+            | Self::DataPath
             | Self::AgentEntityMetadata
             | Self::AgentSourceAnchor
             | Self::AgentProjectGraphNeighborhood

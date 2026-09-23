@@ -10,7 +10,6 @@ use crate::{
         CallableParameterPassing, CallableParameterPresence, CheckedCallableExecution,
         CheckedCallableFacts, EffectContractOrigin,
     },
-    effect_row::EffectRowTail,
     effects::EffectSet,
     final_analysis::{CheckedFunctionExecution, CheckedItemRole},
     types::{ArrayLength, MapKind, TypeKind},
@@ -364,9 +363,9 @@ impl<'a> EntryContractBuilder<'a> {
         }
         let result = Some(self.canonical_type_kind(checked_result)?);
         let declared = facts.exposed_row();
-        if declared.tail() != EffectRowTail::Closed {
-            return Err("entry role callable effect row must be closed".to_owned());
-        }
+        let contract_effects = declared
+            .closed_value()
+            .ok_or_else(|| "entry role callable effect row must be closed".to_owned())?;
         Ok((
             CanonicalCallableContract {
                 signature: CanonicalSignature {
@@ -375,7 +374,7 @@ impl<'a> EntryContractBuilder<'a> {
                     result,
                     where_predicates,
                 },
-                contract_effects: declared.concrete().clone(),
+                contract_effects,
             },
             facts.effect_contract_origin() == Some(EffectContractOrigin::Authored),
         ))
@@ -426,7 +425,15 @@ impl<'a> EntryContractBuilder<'a> {
             }
             TypeKind::AgentValue => CanonicalType::Atomic(CanonicalAtomic::AgentValue),
             TypeKind::DataFormat => CanonicalType::Atomic(CanonicalAtomic::DataFormat),
-            TypeKind::DataShape => CanonicalType::Atomic(CanonicalAtomic::DataShape),
+            TypeKind::DataShape(inner) => {
+                self.canonical_application(CanonicalConstructor::DataShape, [inner.as_ref()])?
+            }
+            TypeKind::DataValue => CanonicalType::Atomic(CanonicalAtomic::DataValue),
+            TypeKind::DataError => CanonicalType::Atomic(CanonicalAtomic::DataError),
+            TypeKind::DataErrorKind => CanonicalType::Atomic(CanonicalAtomic::DataErrorKind),
+            TypeKind::DataPath => CanonicalType::Atomic(CanonicalAtomic::DataPath),
+            TypeKind::DataPathSegment => CanonicalType::Atomic(CanonicalAtomic::DataPathSegment),
+            TypeKind::DataMapKind => CanonicalType::Atomic(CanonicalAtomic::DataMapKind),
             TypeKind::Unit => CanonicalType::Atomic(CanonicalAtomic::Unit),
             TypeKind::Never => CanonicalType::Atomic(CanonicalAtomic::Never),
             TypeKind::Named(name) => canonical_atomic(name)
@@ -568,19 +575,20 @@ impl<'a> EntryContractBuilder<'a> {
                 params,
                 return_type,
                 effects,
-            } if binder.is_empty() && effects.tail() == EffectRowTail::Closed => {
-                CanonicalType::Function {
-                    params: params
-                        .iter()
-                        .map(|parameter| self.canonical_type_kind(parameter))
-                        .collect::<Result<Vec<_>, _>>()?,
-                    result: Box::new(self.canonical_type_kind(return_type)?),
-                    effects: CanonicalEffectRow {
-                        effects: effects.concrete().to_labels(),
-                        tail: 0,
-                    },
-                }
-            }
+            } if binder.is_empty() && effects.is_closed() => CanonicalType::Function {
+                params: params
+                    .iter()
+                    .map(|parameter| self.canonical_type_kind(parameter))
+                    .collect::<Result<Vec<_>, _>>()?,
+                result: Box::new(self.canonical_type_kind(return_type)?),
+                effects: CanonicalEffectRow {
+                    effects: effects
+                        .closed_value()
+                        .expect("closed function row")
+                        .to_labels(),
+                    tail: 0,
+                },
+            },
             TypeKind::Tuple(items) => CanonicalType::Tuple(
                 items
                     .iter()
@@ -661,13 +669,12 @@ fn inferred_effects(facts: &CheckedCallableFacts, role: &str) -> Result<EffectSe
     let row = facts
         .actual_row()
         .ok_or_else(|| format!("{role} has no checked body-inference effect row"))?;
-    if row.tail() != EffectRowTail::Closed {
-        return Err(format!(
+    row.closed_value().ok_or_else(|| {
+        format!(
             "{role} inferred effect row `{}` is not closed",
             row.display_label()
-        ));
-    }
-    Ok(row.concrete().clone())
+        )
+    })
 }
 
 fn require_inferred_empty(facts: &CheckedCallableFacts, role: &str) -> Result<(), String> {
@@ -765,7 +772,12 @@ fn canonical_atomic(path: &str) -> Option<CanonicalAtomic> {
         "Unit" => CanonicalAtomic::Unit,
         "Never" => CanonicalAtomic::Never,
         "DataFormat" => CanonicalAtomic::DataFormat,
-        "DataShape" => CanonicalAtomic::DataShape,
+        "DataValue" => CanonicalAtomic::DataValue,
+        "DataError" => CanonicalAtomic::DataError,
+        "DataErrorKind" => CanonicalAtomic::DataErrorKind,
+        "DataPath" => CanonicalAtomic::DataPath,
+        "DataPathSegment" => CanonicalAtomic::DataPathSegment,
+        "DataMapKind" => CanonicalAtomic::DataMapKind,
         "AgentValue" => CanonicalAtomic::AgentValue,
         "TextCluster" => CanonicalAtomic::TextCluster,
         "Duration" => CanonicalAtomic::Duration,
@@ -796,6 +808,7 @@ fn canonical_constructor(path: &str) -> Option<CanonicalConstructor> {
         "Probe" => CanonicalConstructor::Probe,
         "ThreadHandle" => CanonicalConstructor::ThreadHandle,
         "Shared" => CanonicalConstructor::Shared,
+        "DataShape" => CanonicalConstructor::DataShape,
         _ => return None,
     })
 }

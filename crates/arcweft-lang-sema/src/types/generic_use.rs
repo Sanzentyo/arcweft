@@ -6,17 +6,17 @@
 //! exact type, constant, and effect identities it encounters. Callable schema construction
 //! supplies an opaque occurrence position when it needs first-use rows.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use thiserror::Error;
 
-use crate::effect_row::{EffectRowTail, EffectVar};
+use crate::effect_row::EffectRow;
 
 use super::{
-    ArrayLength, GenericConstParameterId, GenericConstReference, GenericParameterKind,
-    GenericParameterOwnerId, GenericScope, GenericScopeError, GenericTypeParameterId,
-    GenericTypeReference, TypeKind,
+    ArrayLength, GenericConstParameterId, GenericConstReference, GenericEffectParameterId,
+    GenericEffectReference, GenericParameterKind, GenericParameterOwnerId, GenericScope,
+    GenericScopeError, GenericTypeParameterId, GenericTypeReference, TypeKind,
 };
 
 #[cfg(test)]
@@ -29,6 +29,7 @@ pub(crate) type StableGenericReferenceUseCollector = GenericUseCollector<StableR
 pub(crate) trait GenericUseDomain {
     type TypeKey: Clone + Ord + std::fmt::Debug;
     type ConstKey: Clone + Ord + std::fmt::Debug;
+    type EffectKey: Clone + Ord + std::fmt::Debug;
     fn type_key(
         reference: &GenericTypeReference,
         scope: &GenericScope,
@@ -39,6 +40,11 @@ pub(crate) trait GenericUseDomain {
         scope: &GenericScope,
         local_depth: usize,
     ) -> Result<Option<Self::ConstKey>, TypeGenericUseError>;
+    fn effect_key(
+        reference: &GenericEffectReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::EffectKey>, TypeGenericUseError>;
 }
 
 #[derive(Clone, Debug)]
@@ -53,6 +59,21 @@ pub(crate) struct StableReferenceUses;
 impl GenericUseDomain for StableReferenceUses {
     type TypeKey = GenericTypeReference;
     type ConstKey = GenericConstReference;
+    type EffectKey = GenericEffectReference;
+
+    fn effect_key(
+        reference: &GenericEffectReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::EffectKey>, TypeGenericUseError> {
+        if matches!(reference, GenericEffectReference::Inference(_)) {
+            return Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Effect,
+            }
+            .into());
+        }
+        ReferenceUses::effect_key(reference, scope, local_depth)
+    }
 
     fn type_key(
         reference: &GenericTypeReference,
@@ -86,6 +107,25 @@ impl GenericUseDomain for StableReferenceUses {
 impl GenericUseDomain for DeclarationUses {
     type TypeKey = GenericTypeParameterId;
     type ConstKey = GenericConstParameterId;
+    type EffectKey = GenericEffectParameterId;
+
+    fn effect_key(
+        reference: &GenericEffectReference,
+        scope: &GenericScope,
+        _local_depth: usize,
+    ) -> Result<Option<Self::EffectKey>, TypeGenericUseError> {
+        match reference {
+            GenericEffectReference::Free(parameter) => Ok(Some(parameter.clone())),
+            GenericEffectReference::Bound(parameter) => {
+                scope.bound_effect(parameter.depth(), parameter.slot())?;
+                Ok(None)
+            }
+            GenericEffectReference::Inference(_) => Err(GenericScopeError::EscapedInference {
+                kind: GenericParameterKind::Effect,
+            }
+            .into()),
+        }
+    }
 
     fn type_key(
         reference: &GenericTypeReference,
@@ -141,6 +181,22 @@ impl GenericUseDomain for DeclarationUses {
 impl GenericUseDomain for ReferenceUses {
     type TypeKey = GenericTypeReference;
     type ConstKey = GenericConstReference;
+    type EffectKey = GenericEffectReference;
+
+    fn effect_key(
+        reference: &GenericEffectReference,
+        scope: &GenericScope,
+        local_depth: usize,
+    ) -> Result<Option<Self::EffectKey>, TypeGenericUseError> {
+        match reference {
+            GenericEffectReference::Inference(_) => Ok(Some(reference.clone())),
+            GenericEffectReference::Bound(_) => reference
+                .template_key(&scope.without_inner(local_depth)?, scope)
+                .map_err(Into::into),
+            _ => DeclarationUses::effect_key(reference, scope, local_depth)
+                .map(|key| key.map(GenericEffectReference::Free)),
+        }
+    }
 
     fn type_key(
         reference: &GenericTypeReference,
@@ -196,15 +252,20 @@ pub enum TypeGenericUseError {
 /// They let a higher schema owner project the lower collection into its own
 /// typed first-use algebra without teaching this layer about callable groups.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct TypeGenericUseInventory<T = GenericTypeParameterId, C = GenericConstParameterId> {
+pub(crate) struct TypeGenericUseInventory<
+    T = GenericTypeParameterId,
+    C = GenericConstParameterId,
+    E = GenericEffectParameterId,
+> {
     types: Arc<[T]>,
     consts: Arc<[C]>,
-    effects: Arc<[EffectVar]>,
+    effects: Arc<[E]>,
     type_first_use: BTreeMap<T, u32>,
     const_first_use: BTreeMap<C, u32>,
+    effect_first_use: BTreeMap<E, u32>,
 }
 
-impl<T: Ord, C: Ord> TypeGenericUseInventory<T, C> {
+impl<T: Ord, C: Ord, E: Ord> TypeGenericUseInventory<T, C, E> {
     pub(crate) fn types(&self) -> &[T] {
         &self.types
     }
@@ -213,7 +274,7 @@ impl<T: Ord, C: Ord> TypeGenericUseInventory<T, C> {
         &self.consts
     }
 
-    pub(crate) fn effects(&self) -> &[EffectVar] {
+    pub(crate) fn effects(&self) -> &[E] {
         &self.effects
     }
 
@@ -224,6 +285,10 @@ impl<T: Ord, C: Ord> TypeGenericUseInventory<T, C> {
     pub(crate) fn first_const_use(&self, parameter: &C) -> Option<u32> {
         self.const_first_use.get(parameter).copied()
     }
+
+    pub(crate) fn first_effect_use(&self, parameter: &E) -> Option<u32> {
+        self.effect_first_use.get(parameter).copied()
+    }
 }
 
 /// Exhaustive, metered-free visitor for generic occurrences in [`TypeKind`].
@@ -233,18 +298,22 @@ pub(crate) struct GenericUseCollector<M: GenericUseDomain> {
     incoming_depth: usize,
     types: BTreeMap<M::TypeKey, u32>,
     consts: BTreeMap<M::ConstKey, u32>,
-    effects: BTreeSet<EffectVar>,
+    effects: BTreeMap<M::EffectKey, u32>,
     domain: std::marker::PhantomData<M>,
 }
 
 impl<M: GenericUseDomain> GenericUseCollector<M> {
     pub(crate) fn new() -> Self {
+        Self::in_scope(&GenericScope::default())
+    }
+
+    pub(crate) fn in_scope(scope: &GenericScope) -> Self {
         Self {
-            scope: GenericScope::default(),
-            incoming_depth: 0,
+            scope: scope.clone(),
+            incoming_depth: scope.binders().len(),
             types: BTreeMap::new(),
             consts: BTreeMap::new(),
-            effects: BTreeSet::new(),
+            effects: BTreeMap::new(),
             domain: std::marker::PhantomData,
         }
     }
@@ -302,7 +371,12 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             | TypeKind::ActionResult
             | TypeKind::AgentValue
             | TypeKind::DataFormat
-            | TypeKind::DataShape
+            | TypeKind::DataValue
+            | TypeKind::DataError
+            | TypeKind::DataErrorKind
+            | TypeKind::DataPath
+            | TypeKind::DataPathSegment
+            | TypeKind::DataMapKind
             | TypeKind::AgentEntityMetadata
             | TypeKind::AgentSourceAnchor
             | TypeKind::AgentProjectGraphNeighborhood
@@ -330,6 +404,7 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
             TypeKind::Range(inner)
             | TypeKind::Probe(inner)
             | TypeKind::Vec(inner)
+            | TypeKind::DataShape(inner)
             | TypeKind::Slice(inner)
             | TypeKind::Seq(inner)
             | TypeKind::Need(inner)
@@ -360,12 +435,10 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
                 return_type,
                 effects,
             } => {
-                if let EffectRowTail::Variable(variable) = effects.tail() {
-                    self.effects.insert(variable);
-                }
                 let nested = self.scope.with_binder(*binder);
                 let enclosing = std::mem::replace(&mut self.scope, nested);
                 let result = (|| {
+                    self.visit_effect_row_at(effects, position)?;
                     for parameter in params {
                         self.visit_at(parameter, position)?;
                     }
@@ -425,17 +498,17 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
 
     pub(crate) fn collect(
         ty: &TypeKind,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
         Self::collect_in_scope(ty, &GenericScope::default())
     }
 
     pub(crate) fn collect_in_scope(
         ty: &TypeKind,
         scope: &GenericScope,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
-        let mut collector = Self::new();
-        collector.scope = scope.clone();
-        collector.incoming_depth = scope.binders().len();
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
+        let mut collector = Self::in_scope(scope);
         collector.visit(ty)?;
         Ok(collector.finish())
     }
@@ -443,33 +516,58 @@ impl<M: GenericUseDomain> GenericUseCollector<M> {
     #[cfg(test)]
     pub(crate) fn collect_many<'a>(
         types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
         Self::collect_many_in_scope(types, &GenericScope::default())
     }
 
     pub(crate) fn collect_many_in_scope<'a>(
         types: impl IntoIterator<Item = (&'a TypeKind, u32)>,
         scope: &GenericScope,
-    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey>, TypeGenericUseError> {
-        let mut collector = Self::new();
-        collector.scope = scope.clone();
-        collector.incoming_depth = scope.binders().len();
+    ) -> Result<TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey>, TypeGenericUseError>
+    {
+        let mut collector = Self::in_scope(scope);
         for (ty, position) in types {
             collector.visit_at(ty, position)?;
         }
         Ok(collector.finish())
     }
 
-    pub(crate) fn finish(self) -> TypeGenericUseInventory<M::TypeKey, M::ConstKey> {
+    pub(crate) fn finish(self) -> TypeGenericUseInventory<M::TypeKey, M::ConstKey, M::EffectKey> {
         let types = self.types.keys().cloned().collect::<Vec<_>>().into();
         let consts = self.consts.keys().cloned().collect::<Vec<_>>().into();
         TypeGenericUseInventory {
             types,
             consts,
-            effects: self.effects.into_iter().collect(),
+            effects: self.effects.keys().cloned().collect(),
             type_first_use: self.types,
             const_first_use: self.consts,
+            effect_first_use: self.effects,
         }
+    }
+
+    pub(crate) fn visit_effect_row_at(
+        &mut self,
+        row: &EffectRow,
+        position: u32,
+    ) -> Result<(), TypeGenericUseError> {
+        // An annotation awaiting inference supplies no references. This
+        // inventory does not certify it as a resolved or empty effect row.
+        if let Ok(references) = row.variables() {
+            for reference in references {
+                if let Some(key) = M::effect_key(
+                    reference,
+                    &self.scope,
+                    self.scope.binders().len() - self.incoming_depth,
+                )? {
+                    self.effects
+                        .entry(key)
+                        .and_modify(|first| *first = (*first).min(position))
+                        .or_insert(position);
+                }
+            }
+        }
+        Ok(())
     }
 
     pub(crate) fn visit_array_length(

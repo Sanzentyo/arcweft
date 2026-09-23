@@ -14,37 +14,26 @@ use super::super::{
     shape::TypeConstraintChildren,
 };
 use super::{
-    ConstraintBindingLookup, ConstraintClosurePolicy, ConstraintConstBindingLookup,
-    ProjectedConstraintType, RemainingConstraintParameter,
+    ConstraintClosurePolicy, ConstraintProjectionView, ProjectedConstraintType,
+    RemainingConstraintParameter,
 };
 
 /// Each type/constant occurrence is admitted before lookup or reconstruction.
 /// Bindings are followed transitively, with branch-local cycle guards; they
 /// are not the simultaneous closed substitutions used by runtime instances.
-pub(in crate::types::constraints) fn project_type<A, D, B, C>(
+pub(in crate::types::constraints) fn project_type<A, D>(
     ty: &TypeKind,
-    bindings: &B,
-    const_bindings: &C,
+    view: ConstraintProjectionView<'_, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ProjectedConstraintType, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
-    B: ConstraintBindingLookup + ?Sized,
-    C: ConstraintConstBindingLookup + ?Sized,
 {
     let mut visiting = BTreeSet::new();
     let mut remaining = BTreeSet::new();
-    let value = project_type_inner(
-        ty,
-        bindings,
-        const_bindings,
-        policy,
-        context,
-        &mut visiting,
-        &mut remaining,
-    )?;
+    let value = project_type_inner(ty, view, policy, context, &mut visiting, &mut remaining)?;
     Ok(ProjectedConstraintType {
         value,
         remaining: remaining.into_iter().collect(),
@@ -62,10 +51,9 @@ enum ProjectionFrame<'ty> {
     },
 }
 
-pub(super) fn project_type_inner<'ty, A, D, B, C>(
+pub(super) fn project_type_inner<'ty, A, D>(
     ty: &'ty TypeKind,
-    bindings: &'ty B,
-    const_bindings: &C,
+    view: ConstraintProjectionView<'ty, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericTypeReference>,
@@ -74,8 +62,6 @@ pub(super) fn project_type_inner<'ty, A, D, B, C>(
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
-    B: ConstraintBindingLookup + ?Sized,
-    C: ConstraintConstBindingLookup + ?Sized,
 {
     let mut frames = Vec::new();
     let result = context.with_binder(GenericBinder::EMPTY, |context| {
@@ -89,22 +75,25 @@ where
                     return Err(TypeConstraintRejection::UnresolvedType.into());
                 }
                 TypeConstraintShape::Generic(parameter) => {
-                    let eligibility =
-                        context.parameter_eligibility(parameter).ok_or_else(|| {
+                    let eligibility = context.parameter_eligibility(parameter, view).ok_or_else(
+                        || {
                             TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
                                 TypeConstraintParameterScopeInvariant::TypeParameterOutOfScope {
                                     parameter: parameter.clone(),
                                 },
                             ))
-                        })?;
-                    if let Some(bound) = bindings.binding(parameter) {
+                        },
+                    )?;
+                    if !matches!(policy, ConstraintClosurePolicy::Validation)
+                        && let Some(bound) = view.binding(parameter)
+                    {
                         if visiting.insert(parameter.clone()) {
                             frames.push(ProjectionFrame::Binding(parameter));
                             current = bound;
                             continue;
                         }
                         match policy {
-                            ConstraintClosurePolicy::Hint => {
+                            ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => {
                                 remaining
                                     .insert(RemainingConstraintParameter(parameter.clone().into()));
                                 TypeKind::GenericParam(parameter.clone())
@@ -137,7 +126,7 @@ where
                     let length = match shape {
                         TypeConstraintShape::Array { len, .. } => Some(project_array_length(
                             len,
-                            const_bindings,
+                            view,
                             policy,
                             context,
                             &mut BTreeSet::new(),
@@ -148,10 +137,23 @@ where
                     let enclosing = (!shape.binder().is_empty())
                         .then(|| context.enter_binder_scope(shape.binder()));
                     if let TypeConstraintShape::Function { effects, .. } = shape {
-                        context.validate_effect_row(effects)?;
-                        if let crate::effect_row::EffectRowTail::Variable(variable) = effects.tail()
-                        {
-                            remaining.insert(RemainingConstraintParameter(variable.into()));
+                        if effects.is_known() {
+                            context.validate_effect_row(effects, view)?;
+                            for variable in effects.variables().expect("validated effect row") {
+                                if context.effect_eligibility(variable, view)
+                                    != Some(crate::effect_row::EffectConstraintEligibility::Rigid)
+                                {
+                                    remaining.insert(RemainingConstraintParameter(
+                                        variable.clone().into(),
+                                    ));
+                                }
+                            }
+                        } else if policy != ConstraintClosurePolicy::ProjectionFuture {
+                            // A future projection may carry an unresolved source
+                            // function row whose owner closes it later. Keep it
+                            // unknown; only effect constraints may require a
+                            // concrete row or an issuer-backed variable.
+                            context.validate_effect_row(effects, view)?;
                         }
                     }
                     let mut children = shape.children();
@@ -233,7 +235,7 @@ fn allows_unbound_type(
     eligibility: TypeConstraintParameterEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Hint => true,
+        ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => true,
         ConstraintClosurePolicy::ProjectionClosed => {
             eligibility == TypeConstraintParameterEligibility::Rigid
         }
@@ -247,20 +249,19 @@ fn allows_unbound_type(
     }
 }
 
-pub(in crate::types::constraints) fn project_const_argument<A, D, C>(
+pub(in crate::types::constraints) fn project_const_argument<A, D>(
     value: &ArrayLength,
-    bindings: &C,
+    view: ConstraintProjectionView<'_, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
 ) -> Result<ArrayLength, TypeConstraintError>
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
-    C: ConstraintConstBindingLookup + ?Sized,
 {
     project_array_length(
         value,
-        bindings,
+        view,
         policy,
         context,
         &mut BTreeSet::new(),
@@ -268,9 +269,9 @@ where
     )
 }
 
-pub(super) fn project_array_length<'ty, A, D, C>(
+pub(super) fn project_array_length<'ty, A, D>(
     length: &'ty ArrayLength,
-    bindings: &'ty C,
+    view: ConstraintProjectionView<'ty, D>,
     policy: ConstraintClosurePolicy,
     context: &mut TypeConstraintContext<'_, A, D>,
     visiting: &mut BTreeSet<GenericConstReference>,
@@ -279,7 +280,6 @@ pub(super) fn project_array_length<'ty, A, D, C>(
 where
     A: TypeConstraintAccounting,
     D: ConstraintDomain,
-    C: ConstraintConstBindingLookup + ?Sized,
 {
     let mut entered = Vec::new();
     let result = (|| {
@@ -290,19 +290,22 @@ where
             match current {
                 ArrayLength::Const(_) => return Ok(current.clone()),
                 ArrayLength::Generic(parameter) => {
-                    let eligibility = context.const_parameter_eligibility(parameter).ok_or_else(
-                        || {
+                    let eligibility = context
+                        .const_parameter_eligibility(parameter, view)
+                        .ok_or_else(|| {
                             TypeConstraintError::Invariant(TypeConstraintInvariant::ParameterScope(
                                 TypeConstraintParameterScopeInvariant::ConstParameterOutOfScope {
                                     parameter: parameter.clone(),
                                 },
                             ))
-                        },
-                    )?;
-                    if let Some(bound) = bindings.const_binding(parameter) {
+                        })?;
+                    if !matches!(policy, ConstraintClosurePolicy::Validation)
+                        && let Some(bound) = view.const_binding(parameter)
+                    {
                         if !visiting.insert(parameter.clone()) {
                             return match policy {
-                                ConstraintClosurePolicy::Hint => {
+                                ConstraintClosurePolicy::Validation
+                                | ConstraintClosurePolicy::Hint => {
                                     remaining.insert(RemainingConstraintParameter(
                                         parameter.clone().into(),
                                     ));
@@ -351,7 +354,7 @@ fn allows_unbound_const(
     eligibility: TypeConstraintConstEligibility,
 ) -> bool {
     match policy {
-        ConstraintClosurePolicy::Hint => true,
+        ConstraintClosurePolicy::Validation | ConstraintClosurePolicy::Hint => true,
         ConstraintClosurePolicy::ProjectionClosed => {
             eligibility == TypeConstraintConstEligibility::Rigid
         }

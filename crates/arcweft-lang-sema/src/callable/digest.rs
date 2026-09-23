@@ -4,7 +4,6 @@ use arcweft_lang_hir::symbol::CallableDeclarationKey;
 use arcweft_source::SourceSpan;
 
 use crate::{
-    effect_row::EffectRowTail,
     registration::AcceptedNominalWorldStamp,
     types::{ArrayLength, GenericScopeError, TypeKind},
 };
@@ -252,6 +251,18 @@ impl CanonicalEncoder {
         for entry in inventory.consts() {
             self.generic_const_use(entry);
         }
+        self.usize(inventory.effects().len());
+        for entry in inventory.effects() {
+            self.effect_row(&crate::effect_row::EffectRow::open(
+                crate::effects::EffectSet::new(),
+                entry.parameter().clone(),
+            ));
+            self.tag(match entry.role() {
+                CallableSchemaGenericRole::Candidate => 0,
+                CallableSchemaGenericRole::RigidReference => 1,
+            });
+            self.generic_first_use(entry.first_use());
+        }
     }
 
     fn generic_type_use(&mut self, entry: &CallableGenericTypeUse) {
@@ -451,19 +462,7 @@ impl CanonicalEncoder {
         match effects {
             CallableEffectSchema::Fixed(row) => {
                 self.tag(0);
-                self.usize(row.concrete().len());
-                for effect in row.concrete().iter() {
-                    self.string(effect.as_str());
-                }
-                match row.tail() {
-                    EffectRowTail::Closed => self.tag(0),
-                    EffectRowTail::Variable(variable) => {
-                        self.tag(1);
-                        self.bytes(variable.issuer().as_bytes());
-                        self.u32(variable.index());
-                    }
-                    EffectRowTail::Unknown => self.tag(2),
-                }
+                self.effect_row(row);
             }
             CallableEffectSchema::Project { declaration } => {
                 self.tag(1);
@@ -726,6 +725,10 @@ impl CanonicalEncoder {
             RustCallablePurity::External => 0,
             RustCallablePurity::Pure => 1,
             RustCallablePurity::Task => 2,
+        });
+        self.tag(match rust.role() {
+            arcweft_rust_abi::ArcweftRustCallableRole::Function => 0,
+            arcweft_rust_abi::ArcweftRustCallableRole::DefaultConstructor => 1,
         });
     }
 
@@ -1078,5 +1081,16 @@ mod tests {
                 .expect("canonical fixture encoding"),
             expected.into_bytes().expect("canonical fixture encoding")
         );
+    }
+}
+
+impl CanonicalEncoder {
+    pub(super) fn effect_row(&mut self, row: &crate::effect_row::EffectRow) {
+        match row.semantic_identity_digest_in_scope(&self.scope) {
+            Ok(digest) => self.bytes(digest.as_bytes()),
+            Err(error) => {
+                self.error.get_or_insert(error);
+            }
+        }
     }
 }

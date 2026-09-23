@@ -21,6 +21,7 @@ pub enum TypeMismatchPathSegment {
     EntityPayloadPresence,
     EntityPayload,
     ProbeItem,
+    DataShapeItem,
     VectorItem,
     ArrayLength,
     ArrayItem,
@@ -465,11 +466,49 @@ impl TypeKind {
                 };
                 None
             }
-            Self::DataShape => {
-                let Self::DataShape = actual else {
+            Self::DataValue => {
+                let Self::DataValue = actual else {
                     unreachable!("equal discriminants")
                 };
                 None
+            }
+            Self::DataError => {
+                let Self::DataError = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DataErrorKind => {
+                let Self::DataErrorKind = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DataPath => {
+                let Self::DataPath = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DataPathSegment => {
+                let Self::DataPathSegment = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DataMapKind => {
+                let Self::DataMapKind = actual else {
+                    unreachable!("equal discriminants")
+                };
+                None
+            }
+            Self::DataShape(expected) => {
+                let Self::DataShape(actual) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                expected
+                    .first_mismatch(actual)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::DataShapeItem))
             }
             Self::AgentEntityMetadata => {
                 let Self::AgentEntityMetadata = actual else {

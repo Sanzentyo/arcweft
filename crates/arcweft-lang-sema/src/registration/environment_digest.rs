@@ -14,6 +14,14 @@ use super::{
 
 const ENVIRONMENT_DOMAIN: &[u8] = b"arcweft.registered-semantic-environment.v1\0";
 const VISIBILITY_DOMAIN: &[u8] = b"arcweft.accepted-nominal-visibility.v1\0";
+
+impl EnvironmentPublicationItemId {
+    pub(crate) fn semantic_digest(&self) -> [u8; 32] {
+        let mut encoder = Encoder::new(b"arcweft.environment-publication-item.v1\0");
+        encoder.publication_item(self);
+        encoder.finish()
+    }
+}
 #[cfg(test)]
 const TEST_CALLABLE_REPLACEMENT_DOMAIN: &[u8] =
     b"arcweft.registered-semantic-environment.test-callable-replacement.v1\0";
@@ -23,6 +31,7 @@ pub(super) fn derive(
     rust_metadata_digest: &[u8; 32],
     callable_catalog_digest: &[u8; 32],
     character_dialogue_fields_digest: &[u8; 32],
+    character_dialogue_roles_digest: &[u8; 32],
     statement_ingress: &RegisteredStatementIngressTypes,
     compile_time_scalars: &RegisteredCompileTimeScalarTypes,
     closed_enum_domains: &RegisteredClosedEnumDomainCatalog,
@@ -36,10 +45,21 @@ pub(super) fn derive(
     encoder.string(world.world().profile());
     encoder.bytes(world.symbol_revision().as_source_set().as_bytes());
     encoder.bytes(world.nominal_catalog().digest().as_bytes());
+    let mut namespaces = world
+        .typecheck_env()
+        .namespace_bindings()
+        .collect::<Vec<_>>();
+    namespaces.sort_by(|left, right| left.0.cmp(right.0));
+    encoder.len(namespaces.len());
+    for (name, ty) in namespaces {
+        encoder.string(name);
+        encoder.bytes(ty.semantic_identity_digest()?.as_bytes());
+    }
     encoder.bytes(&visibility_digest(world.visibility()));
     encoder.bytes(rust_metadata_digest);
     encoder.bytes(callable_catalog_digest);
     encoder.bytes(character_dialogue_fields_digest);
+    encoder.bytes(character_dialogue_roles_digest);
     encoder.bytes(
         statement_ingress
             .input()

@@ -10,6 +10,7 @@ use super::super::{
 };
 use super::PreparedCandidateOutcome;
 use crate::callable::ResolvedCallable;
+use std::borrow::Cow;
 
 pub(super) fn physical_evaluation_kind(
     argument: &HirCallArgument,
@@ -50,27 +51,88 @@ pub(in super::super) fn source_callable_schema_type(
 }
 
 impl Analyzer<'_, '_, '_> {
-    pub(super) fn source_call_effects(
+    pub(super) fn checked_callable_effect_authority(
+        &self,
+    ) -> Result<crate::callable::CheckedCallResolverAuthority<'_>, FinalSemanticAnalysisError> {
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        Ok(crate::callable::CheckedCallResolverAuthority::preparing(
+            &staged.builder,
+            graph.effect_rows().view(),
+        ))
+    }
+
+    pub(super) fn checked_callable_effect_authority_with_projection<'a>(
+        &'a self,
+        projection: &'a super::super::CandidateSemanticProjection,
+    ) -> Result<crate::callable::CheckedCallResolverAuthority<'a>, FinalSemanticAnalysisError> {
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let graph = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let effects = projection
+            .effect_view(graph)
+            .map_err(FinalSemanticAnalysisError::from)?;
+        Ok(crate::callable::CheckedCallResolverAuthority::preparing(
+            &staged.builder,
+            effects,
+        ))
+    }
+
+    pub(in crate::final_analysis::analyzer) fn source_callable_terminal_effects<'a>(
+        &'a self,
+        candidate: &'a PreparedResolvedCallable,
+    ) -> Result<crate::callable::CallableTerminalEffectProjection<'a>, FinalSemanticAnalysisError>
+    {
+        self.checked_callable_effect_authority()?
+            .terminal_effects_for(candidate)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+    }
+
+    /// The contribution available before body inference. An inferred project
+    /// callee is already retained as a typed edge in the prepared call graph;
+    /// its body row is added by callable closure and final call sealing.
+    /// An unknown fixed/detached row has no such deferred authority.
+    pub(super) fn source_call_intrinsic_effects(
         &self,
         candidate: &PreparedResolvedCallable,
         current_group: CallableGroupIndex,
-    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
+    ) -> Result<EffectSet, FinalSemanticAnalysisError> {
         if candidate.next_group_for(current_group).is_some() {
-            return Ok(EffectRow::closed(EffectSet::new()));
+            return Ok(EffectSet::new());
         }
-        self.source_callable_effects(candidate)
-    }
-
-    pub(super) fn source_callable_effects(
-        &self,
-        candidate: &PreparedResolvedCallable,
-    ) -> Result<EffectRow, FinalSemanticAnalysisError> {
-        if let Some(row) = candidate.schema().effects().fixed_row() {
-            return Ok(row.clone());
+        let terminal_effects = self.source_callable_terminal_effects(candidate)?;
+        if let crate::callable::CallableTerminalEffectProjection::Known(row) = terminal_effects
+            && row.is_known()
+        {
+            return row
+                .constant_effects()
+                .map_err(|_| FinalSemanticAnalysisError::OpenEffectRow);
         }
+        let crate::callable::CallableEffectSchema::Project { declaration } =
+            candidate.schema().effects()
+        else {
+            return Err(FinalSemanticAnalysisError::OpenEffectRow);
+        };
         let owner = candidate
             .checked()
             .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        if let crate::callable::CallableTerminalEffectProjection::Pending(checked) =
+            terminal_effects
+            && checked != owner
+        {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
         let staged = self
             .staged_callables
             .as_ref()
@@ -79,10 +141,69 @@ impl Analyzer<'_, '_, '_> {
             .builder
             .pending_by_id(owner)
             .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-        Ok(callable
-            .known_exposed_row()
-            .cloned()
-            .unwrap_or_else(EffectRow::unknown))
+        if !matches!(owner.declaration(), crate::callable::CheckedCallableDeclaration::Project(actual) if actual == declaration)
+            || !staged.bodies.iter().any(|body| &body.id == owner)
+            || !matches!(
+                callable
+                    .body_contract()
+                    .map(crate::callable::CallableEffectContract::permission),
+                Some(crate::callable::EffectPermission::UnboundedInference)
+            )
+        {
+            return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+        }
+        Ok(EffectSet::new())
+    }
+
+    pub(super) fn source_callable_effects(
+        &self,
+        candidate: &PreparedResolvedCallable,
+        projection: Option<&super::super::CandidateSemanticProjection>,
+    ) -> Result<Option<EffectRow>, FinalSemanticAnalysisError> {
+        let authority = match projection {
+            Some(projection) => {
+                self.checked_callable_effect_authority_with_projection(projection)?
+            }
+            None => self.checked_callable_effect_authority()?,
+        };
+        match authority
+            .terminal_effects_for(candidate)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+        {
+            crate::callable::CallableTerminalEffectProjection::Known(row) => Ok(Some(row.clone())),
+            crate::callable::CallableTerminalEffectProjection::Pending(checked)
+                if candidate.checked() == Some(checked) =>
+            {
+                Ok(None)
+            }
+            crate::callable::CallableTerminalEffectProjection::Pending(_) => {
+                Err(FinalSemanticAnalysisError::CheckedCallableCatalog)
+            }
+        }
+    }
+
+    pub(in crate::final_analysis::analyzer) fn source_result_schema_for_group(
+        &self,
+        owner: arcweft_lang_hir::identity::ExprId,
+        candidate: &PreparedResolvedCallable,
+        group: CallableGroupIndex,
+    ) -> Result<crate::callable::CallableResultSchema, FinalSemanticAnalysisError> {
+        let terminal_effects = self
+            .checked_callable_effect_authority()?
+            .terminal_effects_for(candidate)
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        match candidate
+            .result_schema_for_group(group, terminal_effects)
+            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?
+        {
+            crate::callable::CallableProjection::Ready(schema) => Ok(schema),
+            crate::callable::CallableProjection::Pending(pending) => Err(
+                FinalSemanticAnalysisError::CallableEffectProjectionPending {
+                    checked: Box::new(pending.checked().clone()),
+                    group: pending.group(),
+                },
+            ),
+        }
     }
 }
 
@@ -90,16 +211,26 @@ pub(in super::super) fn final_callable_effects(
     candidate: &ResolvedCallable,
     checked: &CheckedCallableCatalog,
 ) -> Result<EffectRow, FinalSemanticAnalysisError> {
-    if let Some(fixed) = candidate.schema().effects().fixed_row() {
-        return Ok(fixed.clone());
+    final_callable_effect_row(candidate, checked).map(Cow::into_owned)
+}
+
+pub(in super::super) fn final_callable_effect_row<'a>(
+    candidate: &ResolvedCallable,
+    checked: &'a CheckedCallableCatalog,
+) -> Result<Cow<'a, EffectRow>, FinalSemanticAnalysisError> {
+    if let Some(id) = candidate.checked() {
+        return checked
+            .callable(id)
+            .map(|facts| Cow::Borrowed(facts.exposed_row()))
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog);
     }
-    let id = candidate
-        .checked()
-        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-    checked
-        .callable(id)
-        .map(|facts| facts.exposed_row().clone())
-        .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+    candidate
+        .schema()
+        .effects()
+        .fixed_row()
+        .cloned()
+        .map(Cow::Owned)
+        .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)
 }
 
 pub(in super::super) fn final_call_effects(

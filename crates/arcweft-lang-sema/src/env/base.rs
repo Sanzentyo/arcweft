@@ -221,6 +221,7 @@ impl StandardDropPolicyCase {
 pub(crate) struct EnvironmentValueBinding {
     ty: TypeKind,
     standard: Option<StandardEnvironmentValue>,
+    namespace: bool,
 }
 
 impl EnvironmentEnumSchema {
@@ -509,6 +510,7 @@ impl TypeCheckEnv {
             .with_standard_statement_ingress_types()
             .with_standard_accepted_nominals()
             .with_standard_runtime_value_enums()
+            .with_standard_data_enums()
             .with_standard_runtime_callables()
     }
 
@@ -551,8 +553,25 @@ impl TypeCheckEnv {
             .with_standard_dialogue_value_enums()
             .with_standard_agent_enums()
             .with_typed_standard_schema(standard_callable_path(["fmt"]), fmt_schema())
-            .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
-            .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
+            .with_typed_standard_schema(
+                standard_callable_path(["data", "shape"]),
+                data_shape_schema(),
+            )
+            .with_typed_standard_schema(
+                standard_callable_path(["data", "encode"]),
+                data_encode_schema(),
+            )
+            .with_typed_standard_schema(
+                standard_callable_path(["data", "decode"]),
+                data_decode_value_schema(),
+            )
+            .with_typed_standard_overload_schema(
+                standard_callable_path(["data", "decode"]),
+                standard_overload(1),
+                data_decode_typed_schema(),
+            )
+            .with_namespace("data", TypeKind::Named("DataNamespace".to_owned()))
+            .with_namespace("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
             .with_content_functions()
             .with_standard_function(
@@ -569,34 +588,6 @@ impl TypeCheckEnv {
                             TypeKind::Named("PresentationLifetime".to_owned()),
                         ),
                     ],
-                ),
-            )
-            .with_standard_function(
-                ["data", "encode"],
-                FunctionSignature::new(
-                    TypeKind::Bytes,
-                    [
-                        FunctionParam::required("value", TypeKind::AgentValue),
-                        FunctionParam::required("format", TypeKind::DataFormat),
-                    ],
-                ),
-            )
-            .with_standard_function(
-                ["data", "decode"],
-                FunctionSignature::new(
-                    TypeKind::AgentValue,
-                    [
-                        FunctionParam::required("bytes", TypeKind::Bytes),
-                        FunctionParam::required("format", TypeKind::DataFormat),
-                        FunctionParam::defaulted("shape", TypeKind::DataShape),
-                    ],
-                ),
-            )
-            .with_standard_function(
-                ["data", "shape"],
-                FunctionSignature::new(
-                    TypeKind::DataShape,
-                    [FunctionParam::required("value", TypeKind::AgentValue)],
                 ),
             )
     }
@@ -646,6 +637,124 @@ impl TypeCheckEnv {
                 )
             })
             .expect("Agent resource body variants have one canonical typed schema")
+    }
+
+    fn with_standard_data_enums(self) -> Self {
+        let value = TypeKind::DataValue;
+        let value_entries = TypeKind::Vec(Box::new(TypeKind::Tuple(vec![
+            value.clone(),
+            value.clone(),
+        ])));
+        let value_record = TypeKind::Map {
+            kind: crate::types::MapKind::BTree,
+            key: Box::new(TypeKind::String),
+            value: Box::new(value.clone()),
+        };
+        let environment = [
+            ("Unit", EnumVariantPayload::Unit),
+            ("Bool", EnumVariantPayload::Tuple(vec![TypeKind::Bool])),
+            ("I128", EnumVariantPayload::Tuple(vec![TypeKind::I128])),
+            ("U128", EnumVariantPayload::Tuple(vec![TypeKind::U128])),
+            ("F32", EnumVariantPayload::Tuple(vec![TypeKind::F32])),
+            ("F64", EnumVariantPayload::Tuple(vec![TypeKind::F64])),
+            ("String", EnumVariantPayload::Tuple(vec![TypeKind::String])),
+            ("Char", EnumVariantPayload::Tuple(vec![TypeKind::Char])),
+            ("Bytes", EnumVariantPayload::Tuple(vec![TypeKind::Bytes])),
+            (
+                "Option",
+                EnumVariantPayload::Tuple(vec![TypeKind::Option(Box::new(value.clone()))]),
+            ),
+            (
+                "Seq",
+                EnumVariantPayload::Tuple(vec![TypeKind::Vec(Box::new(value.clone()))]),
+            ),
+            (
+                "Tuple",
+                EnumVariantPayload::Tuple(vec![TypeKind::Vec(Box::new(value.clone()))]),
+            ),
+            (
+                "Map",
+                EnumVariantPayload::record([
+                    ("kind", TypeKind::DataMapKind),
+                    ("entries", value_entries),
+                ])
+                .expect("DataValue map payload fields are distinct"),
+            ),
+            ("Record", EnumVariantPayload::Tuple(vec![value_record])),
+            (
+                "Enum",
+                EnumVariantPayload::record([
+                    ("variant", TypeKind::String),
+                    ("payload", TypeKind::Option(Box::new(value))),
+                ])
+                .expect("DataValue enum payload fields are distinct"),
+            ),
+        ]
+        .into_iter()
+        .fold(self, |environment, (variant, payload)| {
+            environment
+                .try_with_enum_variant_payload(
+                    EnvironmentBindingId::try_new("DataValue")
+                        .expect("DataValue owner identity is valid"),
+                    TypeKind::DataValue,
+                    variant,
+                    payload,
+                )
+                .expect("DataValue case inventory has distinct payloads")
+        });
+        let environment = environment
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("DataErrorKind")
+                    .expect("DataErrorKind owner identity is valid"),
+                TypeKind::DataErrorKind,
+                [
+                    "MissingField",
+                    "UnknownField",
+                    "DuplicateField",
+                    "InvalidType",
+                    "InvalidEnumTag",
+                    "NumberOutOfRange",
+                    "InvalidEncoding",
+                    "TrailingData",
+                    "LimitExceeded",
+                    "UnsupportedFormat",
+                    "Io",
+                    "Custom",
+                ],
+            )
+            .expect("DataErrorKind case inventory is closed and distinct")
+            .try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("DataPathSegment")
+                    .expect("DataPathSegment owner identity is valid"),
+                TypeKind::DataPathSegment,
+                "Field",
+                EnumVariantPayload::Tuple(vec![TypeKind::String]),
+            )
+            .expect("DataPathSegment Field payload is valid")
+            .try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("DataPathSegment")
+                    .expect("DataPathSegment owner identity is valid"),
+                TypeKind::DataPathSegment,
+                "Index",
+                EnumVariantPayload::Tuple(vec![TypeKind::USize]),
+            )
+            .expect("DataPathSegment Index payload is valid")
+            .try_with_enum_variant_payload(
+                EnvironmentBindingId::try_new("DataPathSegment")
+                    .expect("DataPathSegment owner identity is valid"),
+                TypeKind::DataPathSegment,
+                "Variant",
+                EnumVariantPayload::Tuple(vec![TypeKind::String]),
+            )
+            .expect("DataPathSegment Variant payload is valid");
+        environment
+            .try_with_enum_variants(
+                EnvironmentBindingId::try_new("DataMapKind")
+                    .expect("DataMapKind owner identity is valid"),
+                TypeKind::DataMapKind,
+                ["Ordered", "Sorted", "BTree"],
+            )
+            .expect("DataMapKind case inventory is closed and distinct")
     }
 
     #[must_use]
@@ -1388,6 +1497,18 @@ impl TypeCheckEnv {
         self.symbols.get(id.as_str()).map(|binding| &binding.ty)
     }
 
+    pub(crate) fn is_namespace_binding(&self, id: &EnvironmentBindingId) -> bool {
+        self.symbols
+            .get(id.as_str())
+            .is_some_and(|binding| binding.namespace)
+    }
+
+    pub(crate) fn namespace_bindings(&self) -> impl Iterator<Item = (&str, &TypeKind)> {
+        self.symbols
+            .iter()
+            .filter_map(|(name, binding)| binding.namespace.then_some((name.as_str(), &binding.ty)))
+    }
+
     pub(crate) fn standard_environment_value(
         &self,
         id: &EnvironmentBindingId,
@@ -1452,6 +1573,20 @@ impl TypeCheckEnv {
             EnvironmentValueBinding {
                 ty: normalize_type_kind(ty),
                 standard: None,
+                namespace: false,
+            },
+        );
+        self
+    }
+
+    #[must_use]
+    fn with_namespace(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
+        self.symbols.insert(
+            name.into(),
+            EnvironmentValueBinding {
+                ty: normalize_type_kind(ty),
+                standard: None,
+                namespace: true,
             },
         );
         self
@@ -1469,6 +1604,7 @@ impl TypeCheckEnv {
             EnvironmentValueBinding {
                 ty: normalize_type_kind(ty),
                 standard: Some(value),
+                namespace: false,
             },
         );
         assert!(
@@ -1821,6 +1957,139 @@ fn fmt_schema() -> CallableSignatureSchema {
         CallableValidator::Ordinary,
         CallableGenericParameterIssuer::empty(),
     )
+}
+
+fn data_shape_schema() -> CallableSignatureSchema {
+    let owner = LanguageIntrinsicGenericOwner::DataShape;
+    let value = language_intrinsic_generic(owner);
+    standard_schema(
+        vec![vec![standard_parameter(
+            0,
+            "value",
+            CallableParameterAdmission::checked(value.clone()),
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Optional,
+        )]],
+        TypeKind::DataShape(Box::new(value)),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+            .expect("data shape generic owner has one typed parameter"),
+    )
+}
+
+fn data_encode_schema() -> CallableSignatureSchema {
+    let owner = LanguageIntrinsicGenericOwner::DataEncode;
+    let value = language_intrinsic_generic(owner);
+    standard_schema(
+        vec![vec![
+            standard_parameter(
+                0,
+                "value",
+                CallableParameterAdmission::checked(value.clone()),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                1,
+                "format",
+                CallableParameterAdmission::checked(TypeKind::DataFormat),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                2,
+                "shape",
+                CallableParameterAdmission::checked(TypeKind::DataShape(Box::new(value.clone()))),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Optional,
+            ),
+        ]],
+        data_result(TypeKind::Bytes),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+            .expect("data encode generic owner has one typed parameter"),
+    )
+}
+
+fn data_decode_value_schema() -> CallableSignatureSchema {
+    standard_schema(
+        vec![vec![
+            standard_parameter(
+                0,
+                "bytes",
+                CallableParameterAdmission::checked(TypeKind::Bytes),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                1,
+                "format",
+                CallableParameterAdmission::checked(TypeKind::DataFormat),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+        ]],
+        data_result(TypeKind::DataValue),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::empty(),
+    )
+}
+
+fn data_decode_typed_schema() -> CallableSignatureSchema {
+    let owner = LanguageIntrinsicGenericOwner::DataDecode;
+    let value = language_intrinsic_generic(owner);
+    standard_schema(
+        vec![vec![
+            standard_parameter(
+                0,
+                "bytes",
+                CallableParameterAdmission::checked(TypeKind::Bytes),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                1,
+                "format",
+                CallableParameterAdmission::checked(TypeKind::DataFormat),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+            standard_parameter(
+                2,
+                "shape",
+                CallableParameterAdmission::checked(TypeKind::DataShape(Box::new(value.clone()))),
+                CallableParameterPassing::PositionalOrNamed,
+                CallableParameterPresence::Required,
+            ),
+        ]],
+        data_result(value),
+        CallableArgumentPolicy::new(
+            UnknownNamedArgumentPolicy::Reject,
+            SpreadArgumentPolicy::FixedLiteralOnly,
+        ),
+        CallableValidator::Ordinary,
+        CallableGenericParameterIssuer::language_intrinsic(owner, 1, 0)
+            .expect("data decode generic owner has one typed parameter"),
+    )
+}
+
+fn data_result(value: TypeKind) -> TypeKind {
+    TypeKind::Result {
+        ok: Box::new(value),
+        error: Box::new(TypeKind::DataError),
+    }
 }
 
 fn evaluated_log_schema(level: CallableLogLevel) -> CallableSignatureSchema {

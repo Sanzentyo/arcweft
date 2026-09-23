@@ -5,25 +5,18 @@
 //! continuation validates only the monotone scope transition and exact
 //! inherited-key join before restoring those rows.
 
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    slice,
-};
+use std::{slice, sync::Arc};
 
-use crate::effect_row::{
-    EffectConstraintEligibility, EffectIssuerRebindError, EffectRow, EffectVar, EffectVarIssuer,
-};
+use crate::effect_row::{EffectConstraintEligibility, EffectRow};
 
 use super::super::{
-    ArrayLength, GenericConstReference, GenericScope, GenericTypeReference, ScopedArrayLengthView,
-    ScopedConstReferenceView, ScopedTypeReferenceView, ScopedTypeView, TypeKind,
+    ArrayLength, GenericConstReference, GenericEffectReference, GenericScope, GenericTypeReference,
+    ScopedArrayLengthView, ScopedConstReferenceView, ScopedEffectReferenceView,
+    ScopedEffectRowView, ScopedTypeReferenceView, ScopedTypeView, TypeKind,
 };
 #[cfg(test)]
 use super::super::{GenericConstParameterId, GenericTypeParameterId};
-use super::context::{
-    CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext,
-    TypeConstraintEffectScope,
-};
+use super::context::{CompletedParameterScope, TypeConstraintAccounting, TypeConstraintContext};
 use super::normalization::{project_const_argument, project_type, validate_selected_call_self};
 use super::{
     ConstraintClosurePolicy, ConstraintDomain, ConstraintPath, TypeConstraintError,
@@ -66,12 +59,12 @@ impl CheckedTypeArgumentBinding {
 
 #[derive(Debug, Eq, PartialEq)]
 struct CheckedEffectArgumentBinding {
-    variable: EffectVar,
+    variable: GenericEffectReference,
     value: EffectRow,
 }
 
 impl CheckedEffectArgumentBinding {
-    fn new(variable: EffectVar, value: EffectRow) -> Self {
+    fn new(variable: GenericEffectReference, value: EffectRow) -> Self {
         Self { variable, value }
     }
 }
@@ -84,7 +77,6 @@ impl CheckedEffectArgumentBinding {
 #[derive(Debug, Eq, PartialEq)]
 struct CompletedTypeConstraintAuthority {
     parameter_scope: CompletedParameterScope,
-    effect_scope: TypeConstraintEffectScope,
 }
 
 #[derive(Clone, Copy)]
@@ -115,9 +107,68 @@ pub(crate) struct TypeConstraintSolution {
     bindings: Box<[CheckedTypeArgumentBinding]>,
     const_bindings: Box<[CheckedConstArgumentBinding]>,
     effect_bindings: Box<[CheckedEffectArgumentBinding]>,
+    effect_predicate: crate::effect_row::EffectPredicate,
 }
 
 impl TypeConstraintSolution {
+    pub(super) fn equal_with<A: TypeConstraintAccounting, D: ConstraintDomain>(
+        &self,
+        other: &Self,
+        context: &mut TypeConstraintContext<'_, A, D>,
+    ) -> Result<bool, TypeConstraintError> {
+        context.check_cancelled()?;
+        // These inventories contain reference identities and eligibility only;
+        // their type/effect values are compared through the controlled folds below.
+        for solution in [self, other] {
+            let scope = &solution.authority.parameter_scope;
+            for _ in scope.iter() {
+                context.enter_node()?;
+            }
+            for _ in scope.const_iter() {
+                context.enter_node()?;
+            }
+            for _ in scope.effect_contract().variables() {
+                context.enter_node()?;
+            }
+        }
+        if self.authority != other.authority
+            || self.residual != other.residual
+            || self.bindings.len() != other.bindings.len()
+            || self.const_bindings.len() != other.const_bindings.len()
+            || self.effect_bindings.len() != other.effect_bindings.len()
+        {
+            return Ok(false);
+        }
+        for (left, right) in self.bindings.iter().zip(&other.bindings) {
+            context.enter_node()?;
+            if left.parameter != right.parameter
+                || !super::normalization::completed_types_equal(&left.value, &right.value, context)?
+            {
+                return Ok(false);
+            }
+        }
+        for (left, right) in self.const_bindings.iter().zip(&other.const_bindings) {
+            context.enter_node()?;
+            if left != right {
+                return Ok(false);
+            }
+        }
+        for (left, right) in self.effect_bindings.iter().zip(&other.effect_bindings) {
+            context.enter_node()?;
+            if left.variable != right.variable || !left.value.equal_with(&right.value, context)? {
+                return Ok(false);
+            }
+        }
+        self.effect_predicate
+            .equal_with(&other.effect_predicate, context)
+    }
+
+    pub(crate) fn effect_predicate(&self) -> crate::types::ScopedEffectPredicateView<'_> {
+        crate::types::ScopedEffectPredicateView::sealed(
+            &self.effect_predicate,
+            self.residual.scope(),
+        )
+    }
     pub(crate) fn type_parameter_view<'a>(
         &'a self,
         parameter: &'a GenericTypeReference,
@@ -139,6 +190,10 @@ impl TypeConstraintSolution {
         self.residual.contains_const(parameter)
     }
 
+    pub(crate) fn has_residual_effects(&self) -> bool {
+        self.residual.binder().effects() != 0
+    }
+
     pub(crate) fn bindings(&self) -> TypeConstraintBindingIter<'_> {
         TypeConstraintBindingIter {
             rows: self.bindings.iter(),
@@ -148,7 +203,11 @@ impl TypeConstraintSolution {
     }
 
     pub(crate) fn effect_bindings(&self) -> TypeConstraintEffectBindingIter<'_> {
-        TypeConstraintEffectBindingIter(self.effect_bindings.iter())
+        TypeConstraintEffectBindingIter {
+            rows: self.effect_bindings.iter(),
+            scope: self.residual.scope(),
+            template_scope: self.authority.parameter_scope.template_scope(),
+        }
     }
 
     pub(crate) fn const_bindings(&self) -> TypeConstraintConstBindingIter<'_> {
@@ -161,11 +220,26 @@ impl TypeConstraintSolution {
 
     pub(super) fn reify_projection<A: TypeConstraintAccounting, D: ConstraintDomain, P>(
         &self,
-        key: P,
+        key: Arc<P>,
         ty: &TypeKind,
+        path: &ConstraintPath<D>,
+        application: super::application::ConstraintApplicationId,
+        closure: ConstraintClosurePolicy,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<super::KeyedConstraintProjection<P>, TypeConstraintError> {
-        let value = self.residual.reify_type(ty, context)?;
+        let application =
+            path.applications
+                .application(application)
+                .ok_or(TypeConstraintError::Invariant(
+                    super::TypeConstraintInvariant::ParameterScope(
+                        super::TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
+                    ),
+                ))?;
+        let value = self.residual.reify_type(ty, path, application, context)?;
+        if closure == ConstraintClosurePolicy::ProjectionFuture {
+            self.residual
+                .validate_reified_future_type(&value, path, context)?;
+        }
         Ok(super::KeyedConstraintProjection::new(
             key,
             value,
@@ -176,68 +250,50 @@ impl TypeConstraintSolution {
     /// Complete and seal one active lower path. No caller may publish or
     /// inherit its rows until this owner has projected the whole path and
     /// checked its scope and completeness.
-    pub(super) fn complete_path<A, D>(
-        bindings: BTreeMap<GenericTypeReference, TypeKind>,
-        const_bindings: BTreeMap<GenericConstReference, ArrayLength>,
-        effect_bindings: BTreeMap<EffectVar, EffectRow>,
+    pub(super) fn complete_application<A, D>(
+        path: &ConstraintPath<D>,
+        application: super::application::ConstraintApplicationId,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
-        Self::seal_rows(
-            bindings,
-            const_bindings,
-            effect_bindings,
+        let application =
+            path.applications
+                .application(application)
+                .ok_or(TypeConstraintError::Invariant(
+                    super::TypeConstraintInvariant::ParameterScope(
+                        super::TypeConstraintParameterScopeInvariant::ApplicationOutOfScope,
+                    ),
+                ))?;
+        Self::seal_application(
+            path,
+            application,
             CompletedSolutionInput::ActivePath,
             context,
         )
     }
 
     #[cfg(test)]
-    pub(crate) fn test_seal_completed<A, D, B, E>(
+    pub(crate) fn test_seal_completed<A, D, B>(
         bindings: B,
-        effect_bindings: E,
+        path: &mut ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
         B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
-        E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
-        let bindings = bindings
-            .into_iter()
-            .map(|(parameter, value)| {
-                let reference = context
-                    .parameter_scope
-                    .type_reference(&parameter.clone().into())
-                    .unwrap_or(GenericTypeReference::Free(parameter));
-                let value = context.open_template_type(&value).map_err(|error| {
-                    map_completed_self_error(
-                        error,
-                        reference.clone().into(),
-                        CompletedSolutionInput::ClaimedCompleted,
-                    )
-                })?;
-                Ok((reference, value))
-            })
-            .collect::<Result<Vec<_>, TypeConstraintError>>()?;
-        Self::seal_rows(
-            bindings,
-            std::iter::empty(),
-            effect_bindings,
-            CompletedSolutionInput::ClaimedCompleted,
-            context,
-        )
+        Self::test_seal_completed_with_consts(bindings, std::iter::empty(), path, context)
     }
 
     #[cfg(test)]
-    pub(crate) fn test_seal_completed_with_consts<A, D, B, C, E>(
+    pub(crate) fn test_seal_completed_with_consts<A, D, B, C>(
         bindings: B,
         const_bindings: C,
-        effect_bindings: E,
+        path: &mut ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
@@ -245,61 +301,86 @@ impl TypeConstraintSolution {
         D: ConstraintDomain,
         B: IntoIterator<Item = (GenericTypeParameterId, TypeKind)>,
         C: IntoIterator<Item = (GenericConstParameterId, ArrayLength)>,
-        E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
+        let applications = Arc::clone(&path.applications);
+        let application = applications.root_scope();
         let bindings = bindings
             .into_iter()
             .map(|(parameter, value)| {
-                let reference = context
-                    .parameter_scope
+                let reference = application
+                    .parameters()
                     .type_reference(&parameter.clone().into())
                     .unwrap_or(GenericTypeReference::Free(parameter));
-                let value = context.open_template_type(&value).map_err(|error| {
-                    map_completed_self_error(
-                        error,
-                        reference.clone().into(),
-                        CompletedSolutionInput::ClaimedCompleted,
-                    )
-                })?;
+                let value = context
+                    .open_template_type(&value, path, application.id())
+                    .map_err(|error| {
+                        map_completed_self_error(
+                            error,
+                            reference.clone().into(),
+                            CompletedSolutionInput::ClaimedCompleted,
+                        )
+                    })?;
                 Ok((reference, value))
             })
             .collect::<Result<Vec<_>, TypeConstraintError>>()?;
         let const_bindings = const_bindings
             .into_iter()
             .map(|(parameter, value)| {
-                let reference = context
-                    .parameter_scope
+                let reference = application
+                    .parameters()
                     .const_reference(&parameter.clone().into())
                     .unwrap_or(GenericConstReference::Free(parameter));
-                let value = context.open_template_length(&value)?;
+                let value = context.open_template_length(&value, path, application.id())?;
                 Ok((reference, value))
             })
             .collect::<Result<Vec<_>, TypeConstraintError>>()?;
-        Self::seal_rows(
-            bindings,
-            const_bindings,
-            effect_bindings,
+        for rows in [
+            bindings
+                .iter()
+                .map(|(key, _)| super::ConstraintGenericParameterId::from(key.clone()))
+                .collect::<Vec<_>>(),
+            const_bindings
+                .iter()
+                .map(|(key, _)| super::ConstraintGenericParameterId::from(key.clone()))
+                .collect::<Vec<_>>(),
+        ] {
+            if let Some(pair) = rows.windows(2).find(|pair| pair[0] >= pair[1]) {
+                return Err(completed_solution_invariant(
+                    super::InheritedSolutionInvariantKind::DuplicateOrUnordered,
+                    Some(pair[1].clone()),
+                ));
+            }
+        }
+        path.bindings = bindings.into_iter().collect();
+        path.const_bindings = const_bindings.into_iter().collect();
+        Self::seal_application(
+            path,
+            application,
             CompletedSolutionInput::ClaimedCompleted,
             context,
         )
     }
 
-    fn seal_rows<A, D, B, C, E>(
-        bindings: B,
-        const_bindings: C,
-        effect_bindings: E,
+    fn seal_application<A, D>(
+        path: &ConstraintPath<D>,
+        application: &super::application::ConstraintApplicationScope<D>,
         input: CompletedSolutionInput,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<Self, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
-        B: IntoIterator<Item = (GenericTypeReference, TypeKind)>,
-        C: IntoIterator<Item = (GenericConstReference, ArrayLength)>,
-        E: IntoIterator<Item = (EffectVar, EffectRow)>,
     {
-        let source_bindings = bindings.into_iter().collect::<Vec<_>>();
-        let source_const_bindings = const_bindings.into_iter().collect::<Vec<_>>();
+        let source_bindings = path
+            .bindings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Vec<_>>();
+        let source_const_bindings = path
+            .const_bindings
+            .iter()
+            .map(|(key, value)| (key.clone(), value.clone()))
+            .collect::<Vec<_>>();
         if let Some(rows) = source_bindings
             .windows(2)
             .find(|rows| rows[0].0 >= rows[1].0)
@@ -318,15 +399,10 @@ impl TypeConstraintSolution {
                 Some(rows[1].0.clone().into()),
             ));
         }
-        let lookup = source_bindings.iter().cloned().collect::<BTreeMap<_, _>>();
-        let const_lookup = source_const_bindings
-            .iter()
-            .cloned()
-            .collect::<BTreeMap<_, _>>();
-        let residual = ResidualGenericBinder::for_path(&lookup, &const_lookup, context)?;
+        let residual = ResidualGenericBinder::for_application(path, application)?;
         let mut bindings = Vec::with_capacity(source_bindings.len());
         for (parameter, value) in source_bindings {
-            match context.parameter_eligibility(&parameter) {
+            match context.parameter_eligibility(&parameter, path.projection_view()) {
                 None => {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::OutOfScope,
@@ -344,6 +420,13 @@ impl TypeConstraintSolution {
                     | TypeConstraintParameterEligibility::FutureEligible,
                 ) => {}
             }
+            let Some(declaration) = application
+                .parameters()
+                .type_declaration(&parameter)
+                .cloned()
+            else {
+                continue;
+            };
             if matches!(
                 value.constraint_shape(),
                 TypeConstraintShape::Generic(bound) if bound == &parameter
@@ -361,8 +444,7 @@ impl TypeConstraintSolution {
             }
             let projected = project_type(
                 &value,
-                &lookup,
-                &const_lookup,
+                path.projection_view(),
                 ConstraintClosurePolicy::SolutionCompletion,
                 context,
             )
@@ -378,16 +460,14 @@ impl TypeConstraintSolution {
             validate_selected_call_self(&projected.value, context).map_err(|error| {
                 map_completed_self_error(error, parameter.clone().into(), input)
             })?;
-            let declaration = context
-                .parameter_scope
-                .type_declaration(&parameter)
-                .ok_or_else(|| super::references::type_out_of_scope(&parameter))?
-                .clone();
-            bindings.push((declaration, residual.reify_type(&projected.value, context)?));
+            bindings.push((
+                declaration,
+                residual.reify_type(&projected.value, path, application, context)?,
+            ));
         }
         let mut const_bindings = Vec::with_capacity(source_const_bindings.len());
         for (parameter, value) in source_const_bindings {
-            match context.const_parameter_eligibility(&parameter) {
+            match context.const_parameter_eligibility(&parameter, path.projection_view()) {
                 None => {
                     return Err(completed_solution_invariant(
                         super::InheritedSolutionInvariantKind::OutOfScope,
@@ -405,6 +485,13 @@ impl TypeConstraintSolution {
                     | super::TypeConstraintConstEligibility::FutureEligible,
                 ) => {}
             }
+            let Some(declaration) = application
+                .parameters()
+                .const_declaration(&parameter)
+                .cloned()
+            else {
+                continue;
+            };
             if matches!(&value, ArrayLength::Generic(bound) if bound == &parameter) {
                 if !input.requires_canonical_claim() {
                     return Err(TypeConstraintRejection::CyclicInstantiation {
@@ -419,7 +506,7 @@ impl TypeConstraintSolution {
             }
             let projected = project_const_argument(
                 &value,
-                &const_lookup,
+                path.projection_view(),
                 ConstraintClosurePolicy::SolutionCompletion,
                 context,
             )
@@ -438,57 +525,49 @@ impl TypeConstraintSolution {
                     Some(parameter.clone().into()),
                 ));
             }
-            let declaration = context
-                .parameter_scope
-                .const_declaration(&parameter)
-                .ok_or_else(|| super::references::const_out_of_scope(&parameter))?
-                .clone();
-            const_bindings.push((declaration, residual.reify_length(&projected, context)?));
-        }
-        context.validate_type_and_const_completion(&lookup, &const_lookup)?;
-
-        let effect_bindings = effect_bindings.into_iter().collect::<Vec<_>>();
-        if let Some(rows) = effect_bindings
-            .windows(2)
-            .find(|rows| rows[0].0 >= rows[1].0)
-        {
-            return Err(super::effect_invariant(
-                super::TypeConstraintEffectInvariantKind::DuplicateOrUnorderedInherited,
-                Some(rows[1].0),
+            const_bindings.push((
+                declaration,
+                residual.reify_length(&projected, path, application, context)?,
             ));
         }
-        for (variable, value) in &effect_bindings {
-            if context.effect_eligibility(*variable).is_none() {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                    Some(*variable),
-                ));
-            }
-            if !matches!(value.tail(), crate::effect_row::EffectRowTail::Closed) {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::NonCanonicalInherited,
-                    Some(*variable),
-                ));
-            }
-        }
-        for row in context.effect_scope.variables() {
-            if matches!(row.eligibility(), EffectConstraintEligibility::Bindable)
-                && effect_bindings
-                    .binary_search_by_key(&row.variable(), |(variable, _)| *variable)
-                    .is_err()
-            {
-                return Err(super::effect_invariant(
-                    super::TypeConstraintEffectInvariantKind::MissingInherited,
-                    Some(row.variable()),
-                ));
-            }
-        }
+        context.validate_type_and_const_completion(path)?;
 
+        let completed_effects = path.effects.complete(context)?;
+        let opened_effect_bindings = completed_effects.bindings;
+        let effect_predicate = residual.reify_effect_predicate(
+            &completed_effects.predicate,
+            path,
+            application,
+            context,
+        )?;
+        let mut effect_bindings = Vec::new();
+        for row in application.effects().variables() {
+            if row.eligibility() != EffectConstraintEligibility::Bindable {
+                continue;
+            }
+            let reference = application
+                .parameters()
+                .effect_reference(row.variable())
+                .expect("sealed effect parameter opening");
+            let value = opened_effect_bindings
+                .iter()
+                .find(|(key, _)| key == &reference)
+                .map(|(_, value)| value)
+                .ok_or_else(|| {
+                    super::effect_invariant(
+                        super::TypeConstraintEffectInvariantKind::MissingInherited,
+                        Some(row.variable().clone()),
+                    )
+                })?;
+            context.validate_effect_row(value, path.projection_view())?;
+            let value = residual.reify_effect_row(value, path, application, context)?;
+            effect_bindings.push((row.variable().clone(), value));
+        }
         Ok(Self {
             residual,
+            effect_predicate,
             authority: CompletedTypeConstraintAuthority {
-                parameter_scope: context.parameter_scope.completed_contract().clone(),
-                effect_scope: context.effect_scope.clone(),
+                parameter_scope: application.parameters().completed_contract().clone(),
             },
             bindings: bindings
                 .into_iter()
@@ -511,20 +590,26 @@ impl TypeConstraintSolution {
     /// inventory and exact required keys) before transferring the rows.
     pub(super) fn restore_inherited_path<A, D>(
         &self,
+        application: super::application::ConstraintApplicationId,
+        mut path: ConstraintPath<D>,
         context: &mut TypeConstraintContext<'_, A, D>,
     ) -> Result<ConstraintPath<D>, TypeConstraintError>
     where
         A: TypeConstraintAccounting,
         D: ConstraintDomain,
     {
+        let applications = Arc::clone(&path.applications);
+        let application = applications.require_application(application)?;
+        let parameters = application.parameters();
+        let effects = application.effects();
         if !self
             .authority
             .parameter_scope
-            .accepts_continuation_scope(context.parameter_scope.completed_contract())
+            .accepts_continuation_scope(parameters.completed_contract())
         {
             if let Some((parameter, _)) = self.bindings().find(|(parameter, _)| {
                 matches!(
-                    context.parameter_eligibility(parameter.value()),
+                    context.parameter_eligibility(parameter.value(), path.projection_view()),
                     Some(TypeConstraintParameterEligibility::Rigid)
                 )
             }) {
@@ -535,7 +620,7 @@ impl TypeConstraintSolution {
             }
             if let Some((parameter, _)) = self.const_bindings().find(|(parameter, _)| {
                 matches!(
-                    context.const_parameter_eligibility(parameter.value()),
+                    context.const_parameter_eligibility(parameter.value(), path.projection_view()),
                     Some(super::TypeConstraintConstEligibility::Rigid)
                 )
             }) {
@@ -547,30 +632,28 @@ impl TypeConstraintSolution {
             let parameter = self
                 .bindings()
                 .find_map(|(parameter, _)| {
-                    context
-                        .parameter_scope
+                    parameters
                         .type_reference(parameter.value())
                         .is_none()
                         .then(|| parameter.value().clone().into())
                 })
                 .or_else(|| {
                     self.const_bindings().find_map(|(parameter, _)| {
-                        context
-                            .parameter_scope
+                        parameters
                             .const_reference(parameter.value())
                             .is_none()
                             .then(|| parameter.value().clone().into())
                     })
                 })
                 .or_else(|| {
-                    context
+                    parameters
                         .required_inherited_keys()
                         .first()
                         .cloned()
                         .map(Into::into)
                 })
                 .or_else(|| {
-                    context
+                    parameters
                         .required_inherited_const_keys()
                         .first()
                         .cloned()
@@ -581,94 +664,50 @@ impl TypeConstraintSolution {
                 parameter,
             ));
         }
-        if !self
-            .authority
-            .effect_scope
-            .accepts_continuation_scope(&context.effect_scope)
-        {
-            return Err(super::effect_invariant(
-                super::TypeConstraintEffectInvariantKind::ForeignVariable,
-                self.effect_bindings().next().map(|(variable, _)| *variable),
-            ));
-        }
-        require_exact_type_keys(self, context.required_inherited_keys())?;
-        require_exact_const_keys(self, context.required_inherited_const_keys())?;
-        require_exact_effect_keys(self, context.required_inherited_effects())?;
+        require_exact_type_keys(self, parameters.required_inherited_keys())?;
+        require_exact_const_keys(self, parameters.required_inherited_const_keys())?;
+        require_exact_effect_keys(self, effects.required_inherited())?;
+        let predicate = self.residual.reopen_effect_predicate(
+            &self.effect_predicate,
+            &path,
+            application,
+            context,
+        )?;
+        path.effects.restore_predicate(&predicate, context)?;
 
-        let mut path = context.start_path()?;
         for (parameter, value) in self.bindings() {
-            let value = self.residual.reopen_type(value.value(), context)?;
-            context.restore_completed_binding(&mut path, parameter.value().clone(), value)?;
+            let value = self
+                .residual
+                .reopen_type(value.value(), &path, application, context)?;
+            context.restore_completed_binding(
+                &mut path,
+                application.id(),
+                parameter.value().clone(),
+                value,
+            )?;
         }
         for (parameter, value) in self.const_bindings() {
-            let value = self.residual.reopen_length(value.value(), context)?;
-            context.restore_completed_const_binding(&mut path, parameter.value().clone(), value)?;
+            let value = self
+                .residual
+                .reopen_length(value.value(), &path, application, context)?;
+            context.restore_completed_const_binding(
+                &mut path,
+                application.id(),
+                parameter.value().clone(),
+                value,
+            )?;
         }
         for (variable, value) in self.effect_bindings() {
+            let reference = parameters
+                .effect_reference(variable.value())
+                .expect("the inherited contract retains each effect parameter");
+            let value =
+                self.residual
+                    .reopen_effect_row(value.value(), &path, application, context)?;
             path.effects
-                .restore_completed_inherited(*variable, value.concrete());
+                .restore_completed_inherited(reference, &value, context)?;
         }
         Ok(path)
-    }
-
-    pub(crate) fn checked_rebind_effect_issuer(
-        &self,
-        prepared: EffectVarIssuer,
-        checked: EffectVarIssuer,
-        authorized_ordinals: &BTreeSet<u32>,
-    ) -> Result<Self, EffectIssuerRebindError> {
-        let bindings = self
-            .bindings()
-            .map(|(parameter, value)| {
-                Ok(CheckedTypeArgumentBinding::new(
-                    parameter.value().clone(),
-                    value.value().checked_rebind_effect_rows(
-                        prepared,
-                        checked,
-                        authorized_ordinals,
-                    )?,
-                ))
-            })
-            .collect::<Result<Box<[_]>, _>>()?;
-        let effect_bindings = self
-            .effect_bindings()
-            .map(|(variable, value)| {
-                if variable.issuer() != prepared {
-                    return Err(EffectIssuerRebindError::ForeignVariable {
-                        variable: *variable,
-                    });
-                }
-                if !authorized_ordinals.contains(&variable.index()) {
-                    return Err(EffectIssuerRebindError::UnauthorizedVariable {
-                        variable: *variable,
-                    });
-                }
-                Ok(CheckedEffectArgumentBinding::new(
-                    variable.rebind_issuer(prepared, checked),
-                    value.checked_rebind_issuer(prepared, checked, authorized_ordinals)?,
-                ))
-            })
-            .collect::<Result<Box<[_]>, _>>()?;
-        let const_bindings = self
-            .const_bindings()
-            .map(|(parameter, value)| {
-                CheckedConstArgumentBinding::new(parameter.value().clone(), value.value().clone())
-            })
-            .collect();
-        Ok(Self {
-            residual: self.residual.clone(),
-            authority: CompletedTypeConstraintAuthority {
-                parameter_scope: self.authority.parameter_scope.clone(),
-                effect_scope: self.authority.effect_scope.checked_rebind_issuer(
-                    prepared,
-                    checked,
-                    authorized_ordinals,
-                )?,
-            },
-            bindings,
-            const_bindings,
-            effect_bindings,
-        })
     }
 }
 
@@ -740,21 +779,24 @@ fn require_exact_const_keys(
 
 fn require_exact_effect_keys(
     solution: &TypeConstraintSolution,
-    required: &[EffectVar],
+    required: &[GenericEffectReference],
 ) -> Result<(), TypeConstraintError> {
-    let rows = solution.effect_bindings().collect::<Vec<_>>();
+    let rows = solution
+        .effect_bindings()
+        .map(|(parameter, value)| (parameter.value(), value.value()))
+        .collect::<Vec<_>>();
     let mut row_index = 0;
     for required_key in required {
         if row_index < rows.len() && rows[row_index].0 < required_key {
             return Err(super::effect_invariant(
                 super::TypeConstraintEffectInvariantKind::UnexpectedInherited,
-                Some(*rows[row_index].0),
+                Some(rows[row_index].0.clone()),
             ));
         }
         if row_index == rows.len() || rows[row_index].0 > required_key {
             return Err(super::effect_invariant(
                 super::TypeConstraintEffectInvariantKind::MissingInherited,
-                Some(*required_key),
+                Some(required_key.clone()),
             ));
         }
         row_index += 1;
@@ -762,7 +804,7 @@ fn require_exact_effect_keys(
     if let Some((variable, _)) = rows.get(row_index) {
         return Err(super::effect_invariant(
             super::TypeConstraintEffectInvariantKind::UnexpectedInherited,
-            Some(**variable),
+            Some((*variable).clone()),
         ));
     }
     Ok(())
@@ -877,9 +919,11 @@ pub(crate) struct TypeConstraintConstBindingIter<'a> {
     template_scope: &'a GenericScope,
 }
 
-pub(crate) struct TypeConstraintEffectBindingIter<'a>(
-    slice::Iter<'a, CheckedEffectArgumentBinding>,
-);
+pub(crate) struct TypeConstraintEffectBindingIter<'a> {
+    rows: slice::Iter<'a, CheckedEffectArgumentBinding>,
+    scope: &'a GenericScope,
+    template_scope: &'a GenericScope,
+}
 
 impl<'a> Iterator for TypeConstraintBindingIter<'a> {
     type Item = (ScopedTypeReferenceView<'a>, ScopedTypeView<'a>);
@@ -941,39 +985,43 @@ impl ExactSizeIterator for TypeConstraintConstBindingIter<'_> {
     }
 }
 impl<'a> Iterator for TypeConstraintEffectBindingIter<'a> {
-    type Item = (&'a EffectVar, &'a EffectRow);
+    type Item = (ScopedEffectReferenceView<'a>, ScopedEffectRowView<'a>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.0
-            .next()
-            .map(|binding| (&binding.variable, &binding.value))
+        self.rows.next().map(|binding| {
+            (
+                ScopedEffectReferenceView::sealed(&binding.variable, self.template_scope),
+                ScopedEffectRowView::sealed(&binding.value, self.scope),
+            )
+        })
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
-        self.0.size_hint()
+        self.rows.size_hint()
     }
 }
 
 impl DoubleEndedIterator for TypeConstraintEffectBindingIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
-        self.0
-            .next_back()
-            .map(|binding| (&binding.variable, &binding.value))
+        self.rows.next_back().map(|binding| {
+            (
+                ScopedEffectReferenceView::sealed(&binding.variable, self.template_scope),
+                ScopedEffectRowView::sealed(&binding.value, self.scope),
+            )
+        })
     }
 }
 
 impl ExactSizeIterator for TypeConstraintEffectBindingIter<'_> {
     fn len(&self) -> usize {
-        self.0.len()
+        self.rows.len()
     }
 }
 
 #[cfg(test)]
 mod malformed_completed_tests {
     use super::*;
-    use crate::types::constraints::context::{
-        LocalConstraintAccounting, TypeConstraintContext, TypeConstraintLimits,
-    };
+    use crate::types::constraints::context::{LocalConstraintAccounting, TypeConstraintLimits};
     use crate::types::constraints::{
         InheritedSolutionInvariant, InheritedSolutionInvariantKind, NoConstraintClient,
         TypeConstraintInvariant, TypeConstraintParameterEligibility, TypeConstraintParameterScope,
@@ -1000,13 +1048,16 @@ mod malformed_completed_tests {
             .collect::<Vec<_>>();
         let scope = TypeConstraintParameterScope::new(parameters).expect("unique test scope");
         let cancellation = AtomicBool::new(false);
-        let mut context =
-            TypeConstraintContext::<LocalConstraintAccounting<'_>, NoConstraintClient>::with_scope(
-                TypeConstraintLimits::new(256, 128, 32, 16),
-                &cancellation,
-                scope,
-            );
-        TypeConstraintSolution::test_seal_completed(rows, std::iter::empty(), &mut context)
+        let (mut context, mut path) = super::super::test_support::ConstraintTestSetup::<
+            LocalConstraintAccounting<'_>,
+            NoConstraintClient,
+        >::with_scope(
+            TypeConstraintLimits::new(256, 128, 32, 16),
+            &cancellation,
+            scope,
+        )
+        .into_path();
+        TypeConstraintSolution::test_seal_completed(rows, &mut path, &mut context)
     }
 
     #[test]

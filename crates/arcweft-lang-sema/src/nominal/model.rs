@@ -46,6 +46,7 @@ pub enum BuiltinTypeConstructor {
     String,
     Char,
     Bytes,
+    DataShape,
     Unit,
     Never,
     CharacterDialogue,
@@ -375,6 +376,7 @@ impl BuiltinTypeConstructor {
         Self::String,
         Self::Char,
         Self::Bytes,
+        Self::DataShape,
         Self::Unit,
         Self::Never,
         Self::CharacterDialogue,
@@ -423,6 +425,7 @@ impl BuiltinTypeConstructor {
             Self::String => "String",
             Self::Char => "char",
             Self::Bytes => "Bytes",
+            Self::DataShape => "DataShape",
             Self::Unit => "Unit",
             Self::Never => "Never",
             Self::CharacterDialogue => "CharacterDialogue",
@@ -475,6 +478,7 @@ impl BuiltinTypeConstructor {
             | Self::StageActorHandle
             | Self::CueHandle
             | Self::VoiceHandle => 0,
+            Self::DataShape => 1,
             Self::Vec
             | Self::Slice
             | Self::Seq

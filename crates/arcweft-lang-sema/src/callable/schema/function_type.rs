@@ -29,6 +29,38 @@ pub(crate) enum CallableFunctionTypeProjectionError<E> {
 }
 
 impl CallableSignatureSchema {
+    pub(crate) fn parameter_type(
+        &self,
+        coordinate: CallableParameterCoordinate,
+    ) -> Option<&TypeKind> {
+        self.group(coordinate.group())
+            .and_then(|group| group.parameter(coordinate.parameter()))
+            .and_then(CallableParameter::declared_type)
+    }
+
+    pub(crate) fn declared_function_type_from_group(
+        &self,
+        first_group: CallableGroupIndex,
+        terminal_effects: &EffectRow,
+    ) -> Result<TypeKind, crate::callable::CallConstraintInvariant> {
+        self.project_function_type_from_group(
+            first_group,
+            terminal_effects,
+            || {
+                self.value_type()
+                    .cloned()
+                    .ok_or(crate::callable::CallConstraintInvariant::MalformedSchemaInventory)
+            },
+            |_, parameter| {
+                parameter
+                    .declared_type()
+                    .cloned()
+                    .ok_or(crate::callable::CallConstraintInvariant::MalformedSchemaInventory)
+            },
+        )
+        .map_err(Into::into)
+    }
+
     /// Projects a complete remaining group chain. Earlier groups only retain
     /// arguments; the terminal group carries the callable's invocation row.
     /// Projection failures retain the caller context's typed cause.

@@ -23,8 +23,8 @@ pub(crate) use constraints::{
 
 use semantics::select_prepared_candidates;
 pub(super) use semantics::{
-    checked_project_nominal, final_call_effects, final_callable_effects, nominal_substitutions,
-    source_callable_schema_type,
+    checked_project_nominal, final_call_effects, final_callable_effect_row, final_callable_effects,
+    nominal_substitutions, source_callable_schema_type,
 };
 
 use super::expression_types::value_resolution_type;
@@ -226,6 +226,179 @@ enum PreparedCandidateRunOutcome {
     },
 }
 
+enum PreparedChildCandidateRunOutcome {
+    Deferred {
+        candidate: Arc<PreparedResolvedCallable>,
+        pending: crate::types::constraints::PendingChildConstraint<
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+        rank_seed: AcceptedCandidateRank,
+        recipe: PreparedCallCandidateRecipe,
+        descendants: Vec<PreparedCorrelatedCallRecipe>,
+    },
+    Rejected {
+        candidate: Arc<PreparedResolvedCallable>,
+        result: CallableResultSchema,
+        evidence: PreparedCandidateRejection,
+    },
+}
+
+enum PreparedCandidatePreparationOutcome {
+    Accepted {
+        transaction: RanCandidateTransaction,
+        rank: AcceptedCandidateRank,
+    },
+    Deferred {
+        candidate: Arc<PreparedResolvedCallable>,
+        pending: crate::types::constraints::PendingChildConstraint<
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+        rank_seed: AcceptedCandidateRank,
+        recipe: PreparedCallCandidateRecipe,
+        descendants: Vec<PreparedCorrelatedCallRecipe>,
+    },
+    Rejected {
+        candidate: Arc<PreparedResolvedCallable>,
+        result: CallableResultSchema,
+        evidence: PreparedCandidateRejection,
+        branch: constraints::AnalyzerCallSealedBranch,
+    },
+}
+
+enum PreparedCallCandidateExecution {
+    Root(RanCandidateTransaction),
+    Deferred {
+        pending: crate::types::constraints::PendingChildConstraint<
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+        descendants: Vec<PreparedCorrelatedCallRecipe>,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PreparedCallCandidateRecipe {
+    candidate: Arc<PreparedResolvedCallable>,
+    group: CallableGroupIndex,
+    consumer: constraints::AnalyzerCallConsumerAdmission,
+    callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
+    inputs: crate::callable::PreparedCallInputs,
+    source_preparation: constraints::AnalyzerCallApplicationSources,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PreparedCorrelatedCallRecipe {
+    owner: ExprId,
+    site: crate::callable::CheckedCallSite,
+    parent_application: Option<ExprId>,
+    parent_source: constraints::AnalyzerCallConstraintSource,
+    candidate: Arc<PreparedResolvedCallable>,
+    group: CallableGroupIndex,
+    rank_seed: AcceptedCandidateRank,
+    consumer: constraints::AnalyzerCallConsumerAdmission,
+    callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
+    inputs: crate::callable::PreparedCallInputs,
+    source_preparation: constraints::AnalyzerCallApplicationSources,
+    callee_prerequisites: Option<Arc<super::state::CandidateSemanticProjection>>,
+    considered: Box<[Arc<PreparedResolvedCallable>]>,
+    function_value_origin: Option<Arc<PreparedFunctionValueOriginEvidence>>,
+    dialogue_context: CharacterDialoguePatchContext,
+    accounting: crate::callable::CallResolverAccountingReport,
+    attempt: PhysicalCallAttemptId,
+    descendants: Vec<PreparedCorrelatedCallRecipe>,
+}
+
+impl PreparedCorrelatedCallRecipe {
+    /// Replay compares the selected source and preparation, not the nonce of
+    /// the physical evaluation that produced that preparation.
+    fn semantic_replay_eq(&self, other: &Self) -> bool {
+        self.owner == other.owner
+            && self.site == other.site
+            && self.parent_application == other.parent_application
+            && self.parent_source == other.parent_source
+            && self.candidate == other.candidate
+            && self.group == other.group
+            && self.rank_seed == other.rank_seed
+            && self.consumer == other.consumer
+            && self.callee_inputs == other.callee_inputs
+            && self.inputs == other.inputs
+            && self.source_preparation == other.source_preparation
+            && match (&self.callee_prerequisites, &other.callee_prerequisites) {
+                (Some(left), Some(right)) => left.semantic_replay_mismatch(right).is_none(),
+                (None, None) => true,
+                _ => false,
+            }
+            && self.considered == other.considered
+            && self.function_value_origin == other.function_value_origin
+            && self.dialogue_context == other.dialogue_context
+            && self.accounting == other.accounting
+            && self.descendants.len() == other.descendants.len()
+            && self
+                .descendants
+                .iter()
+                .zip(other.descendants.iter())
+                .all(|(left, right)| left.semantic_replay_eq(right))
+    }
+
+    fn matches_choice(&self, choice: &constraints::AnalyzerNestedCallChoice) -> bool {
+        self.owner == choice.application()
+            && self.site == choice.site()
+            && self.candidate.id() == choice.candidate()
+            && self.candidate.schema().semantic_digest() == choice.schema()
+            && self.group == choice.group()
+            && self.rank_seed == choice.rank_seed()
+    }
+
+    fn find_choice<'a>(
+        recipes: &'a [Self],
+        parent_source: constraints::AnalyzerCallConstraintSource,
+        choice: &constraints::AnalyzerNestedCallChoice,
+    ) -> Option<&'a Self> {
+        let mut matches = recipes.iter().filter(|recipe| {
+            recipe.parent_source == parent_source && recipe.matches_choice(choice)
+        });
+        let first = matches.next()?;
+        if matches.any(|recipe| !recipe.semantic_replay_eq(first)) {
+            return None;
+        }
+        Some(first)
+    }
+
+    fn declared_exact_source(
+        &self,
+        source: constraints::AnalyzerCallConstraintSource,
+        actual: &TypeKind,
+    ) -> bool {
+        let slot = match source {
+            constraints::AnalyzerCallConstraintSource::Argument { slot, .. }
+            | constraints::AnalyzerCallConstraintSource::DialoguePatch { slot, .. } => slot,
+            _ => return false,
+        };
+        self.inputs
+            .mapping()
+            .arguments()
+            .iter()
+            .flat_map(|argument| argument.slots().iter())
+            .find(|mapped| mapped.slot() == slot)
+            .and_then(|mapped| mapped.declared_expected())
+            == Some(actual)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(super) struct PreparedSelectedNestedCall {
+    recipe: PreparedCorrelatedCallRecipe,
+    rank: AcceptedCandidateRank,
+    selection: CheckedTypeSelection,
+}
+
+impl PreparedSelectedNestedCall {
+    fn semantic_replay_eq(&self, other: &Self) -> bool {
+        self.recipe.semantic_replay_eq(&other.recipe)
+            && self.rank == other.rank
+            && self.selection == other.selection
+    }
+}
+
 enum PreparedCandidateOutcome {
     Accepted {
         transaction: SealedAcceptedCandidate,
@@ -381,12 +554,15 @@ struct PreparedCandidateRequest<'a, 'ctx> {
     owner: ExprId,
     site: crate::callable::CheckedCallSite,
     authored_arguments: &'a [HirCallArgument],
+    explicit_type_application: Option<&'a arcweft_lang_hir::expr::HirCallTypeApplication>,
     dialogue_application_metadata:
         Option<&'a crate::callable::PreparedDialogueApplicationMetadataInventory>,
     semantic_operands: Box<[crate::callable::PreparedCallSemanticOperand]>,
     candidate: Arc<PreparedResolvedCallable>,
     current_group: CallableGroupIndex,
     expected_result: Option<&'a TypeKind>,
+    expected_result_scope:
+        Option<&'a crate::types::constraints::ImportedGenericParameterScopeLease>,
     callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs,
     pass: CandidateEvaluationPass,
     attempt: Option<&'a PhysicalCallAttemptId>,
@@ -811,6 +987,424 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    pub(super) fn probe_correlated_call_constraint_source(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        parent_application: Option<ExprId>,
+        module: &HirModule,
+        owner: ExprId,
+        call: &HirCallInvocation,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+    ) -> Result<
+        (
+            Option<
+                crate::types::constraints::PendingChildConstraint<
+                    constraints::AnalyzerCallConstraintDomain,
+                >,
+            >,
+            Vec<PreparedCorrelatedCallRecipe>,
+        ),
+        AnalyzerExpressionError,
+    > {
+        let frame = match context.enter_call(owner) {
+            Ok(frame) => frame,
+            Err(CallFrameEnterFailure::Abort(error)) => {
+                return Err(AnalyzerExpressionError::Abort(error));
+            }
+            Err(CallFrameEnterFailure::Invariant(violation)) => {
+                return Err(AnalyzerExpressionError::Invariant(
+                    AnalyzerExpressionInvariant::CallFrame {
+                        owner,
+                        violation: Box::new(violation),
+                    },
+                ));
+            }
+        };
+        let attempt = frame.physical_attempt(context);
+        if let Err(violation) = self.facts.begin_physical_call_attempt(attempt.clone()) {
+            return close_call_frame(owner, frame, Err(AnalyzerExpressionError::fact(violation)));
+        }
+        let result = self.probe_correlated_call_constraint_source_inner(
+            context,
+            parent_application,
+            module,
+            owner,
+            call,
+            expectation,
+            parent_source,
+            &attempt,
+        );
+        let close = match &result {
+            Ok(_) => PhysicalCallAttemptClose::Completed,
+            Err(error) if error.is_cancellation() => PhysicalCallAttemptClose::Cancelled,
+            Err(_) => PhysicalCallAttemptClose::Failed,
+        };
+        let result = match self.facts.close_physical_call_attempt(&attempt, close) {
+            Ok(()) => result,
+            Err(violation) => Err(AnalyzerExpressionError::fact(violation)),
+        };
+        close_call_frame(owner, frame, result)
+    }
+
+    fn probe_correlated_call_constraint_source_inner(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        parent_application: Option<ExprId>,
+        module: &HirModule,
+        owner: ExprId,
+        call: &HirCallInvocation,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+        attempt: &PhysicalCallAttemptId,
+    ) -> Result<
+        (
+            Option<
+                crate::types::constraints::PendingChildConstraint<
+                    constraints::AnalyzerCallConstraintDomain,
+                >,
+            >,
+            Vec<PreparedCorrelatedCallRecipe>,
+        ),
+        AnalyzerExpressionError,
+    > {
+        let outcome = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+            |this, expression_authority, _transaction_authority| {
+                let candidate_context = AnalyzerExpressionContext::candidate(
+                    expression_authority,
+                    Rc::clone(&this.call_frames),
+                )
+                .with_consumer(context.consumer());
+                let prepared = this
+                    .probe_correlated_call_constraint_source_prepared(
+                        &candidate_context,
+                        parent_application,
+                        module,
+                        owner,
+                        call,
+                        expectation,
+                        parent_source,
+                        attempt,
+                    )
+                    .map_err(CandidateFactOperationFailure::from)?;
+                drop(candidate_context);
+                if prepared.0.is_some() != !prepared.1.is_empty() {
+                    return Err(CandidateFactOperationFailure::Expression(
+                        AnalyzerExpressionError::Call {
+                            owner,
+                            failure: CallAnalysisFailure::Invariant(
+                                CallAnalysisInvariant::Constraint(
+                                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                                ),
+                            ),
+                        },
+                    ));
+                }
+                if prepared.1.is_empty() {
+                    Ok(CandidateFactTransactionAction::Rollback(prepared))
+                } else {
+                    Ok(CandidateFactTransactionAction::Extract(prepared))
+                }
+            },
+        )?;
+        match outcome {
+            CandidateFactTransactionOutcome::Extracted {
+                value: (pending, mut recipes),
+                projection,
+            } => {
+                if recipes.is_empty() {
+                    return Err(AnalyzerExpressionError::fact(
+                        CandidateFactTransactionViolation::UnrecoverableLedger,
+                    ));
+                }
+                let projection = Arc::new(projection);
+                for recipe in &mut recipes {
+                    recipe.callee_prerequisites = Some(Arc::clone(&projection));
+                }
+                Ok((pending, recipes))
+            }
+            CandidateFactTransactionOutcome::RolledBack(prepared) => Ok(prepared),
+            CandidateFactTransactionOutcome::Committed(_) => Err(AnalyzerExpressionError::fact(
+                CandidateFactTransactionViolation::UnrecoverableLedger,
+            )),
+        }
+    }
+
+    fn probe_correlated_call_constraint_source_prepared(
+        &mut self,
+        context: &AnalyzerExpressionContext<'_>,
+        parent_application: Option<ExprId>,
+        module: &HirModule,
+        owner: ExprId,
+        call: &HirCallInvocation,
+        expectation: &AnalyzerExpressionExpectation<'_>,
+        parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+        attempt: &PhysicalCallAttemptId,
+    ) -> Result<
+        (
+            Option<
+                crate::types::constraints::PendingChildConstraint<
+                    constraints::AnalyzerCallConstraintDomain,
+                >,
+            >,
+            Vec<PreparedCorrelatedCallRecipe>,
+        ),
+        AnalyzerExpressionError,
+    > {
+        let source = CallSource {
+            module,
+            owner,
+            call,
+            site: crate::callable::CheckedCallSite::HirCall(owner),
+            expectation,
+            dialogue_application_metadata: None,
+            attempt,
+        };
+        let argument_count = u64::try_from(call.arguments().len()).map_err(|_| {
+            AnalyzerExpressionError::Abort(
+                crate::types::constraints::TypeConstraintAbort::ArithmeticOverflow,
+            )
+        })?;
+        let mut work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
+        if work.record_logical_argument_checks(argument_count).is_err() {
+            return Err(AnalyzerExpressionError::Abort(
+                crate::types::constraints::TypeConstraintAbort::WorkLimit {
+                    requested: argument_count,
+                    consumed: 0,
+                    limit: self.catalogs.callable_limits.max_query_work(),
+                },
+            ));
+        }
+        let staged_callee = self.stage_call_callee_children(
+            context,
+            module,
+            call,
+            expectation.contextual_shape(),
+            source.site,
+        )?;
+        if staged_callee.recovery.is_some() {
+            return Err(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::CallResolutionFailed { owner },
+            ));
+        }
+        let dialogue_context = CharacterDialoguePatchContext::ReusableValue;
+        let mut resolution = match self.resolve_call_query(
+            context,
+            source,
+            work,
+            argument_count,
+            dialogue_context,
+            staged_callee.function_value_origin,
+        )? {
+            CallQueryResolution::Callable(resolution) => *resolution,
+            CallQueryResolution::NonCallable => {
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                ));
+            }
+        };
+        resolution.dialogue_patch_admissions =
+            self.prepare_character_dialogue_source_admission(source, &resolution)?;
+        self.prepare_correlated_child_candidates(
+            context,
+            parent_application,
+            source,
+            &mut resolution,
+            parent_source,
+        )
+    }
+
+    fn prepare_correlated_child_candidates(
+        &mut self,
+        source_context: &AnalyzerExpressionContext<'_>,
+        parent_application: Option<ExprId>,
+        source: CallSource<'_>,
+        resolution: &mut ResolvedCallQuery,
+        parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+    ) -> Result<
+        (
+            Option<
+                crate::types::constraints::PendingChildConstraint<
+                    constraints::AnalyzerCallConstraintDomain,
+                >,
+            >,
+            Vec<PreparedCorrelatedCallRecipe>,
+        ),
+        AnalyzerExpressionError,
+    > {
+        let mut candidates = Vec::new();
+        for candidate in &resolution.considered {
+            self.control
+                .check()
+                .map_err(AnalyzerExpressionError::fatal)?;
+            resolution
+                .work
+                .record_candidate_argument_probes(resolution.argument_count)
+                .and_then(|_| {
+                    resolution
+                        .work
+                        .charge_argument_mapping(resolution.argument_count)
+                })
+                .map_err(|_| {
+                    AnalyzerExpressionError::fatal(
+                        FinalSemanticAnalysisError::CallResolutionFailed {
+                            owner: source.owner,
+                        },
+                    )
+                })?;
+            let candidate_group = if resolution.callee_inputs.is_function_value() {
+                resolution.current_group
+            } else {
+                candidate.call_group()
+            };
+            let prepared = self
+                .run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
+                    |this, authority, _transaction_authority| {
+                        let candidate_context = AnalyzerExpressionContext::candidate(
+                            authority,
+                            Rc::clone(&this.call_frames),
+                        )
+                        .with_consumer(source_context.consumer());
+                        let result = this.prepare_child_candidate(
+                            PreparedCandidateRequest {
+                                module: source.module,
+                                owner: source.owner,
+                                site: source.site,
+                                authored_arguments: source.call.arguments(),
+                                explicit_type_application: Some(
+                                    source.call.explicit_type_application(),
+                                ),
+                                dialogue_application_metadata: source.dialogue_application_metadata,
+                                semantic_operands: Box::new([]),
+                                candidate: Arc::clone(candidate),
+                                current_group: candidate_group,
+                                expected_result: source.expectation.nested_call_type(),
+                                expected_result_scope: source.expectation.nested_call_scope_lease(),
+                                callee_inputs: resolution.callee_inputs.clone(),
+                                pass: CandidateEvaluationPass::Probe,
+                                attempt: Some(source.attempt),
+                                context: &candidate_context,
+                                dialogue_patch_admissions: &resolution.dialogue_patch_admissions,
+                                compile_time_scalar_admissions: Box::new([]),
+                            },
+                            &mut resolution.work,
+                            parent_source,
+                        );
+                        drop(candidate_context);
+                        result
+                            .map(CandidateFactTransactionAction::Extract)
+                            .map_err(CandidateFactOperationFailure::from)
+                    },
+                )?;
+            let outcome = match prepared {
+                CandidateFactTransactionOutcome::Extracted { value, projection } => {
+                    self.facts
+                        .discard_candidate_projection(projection)
+                        .map_err(AnalyzerExpressionError::fact)?;
+                    value
+                }
+                CandidateFactTransactionOutcome::Committed(_)
+                | CandidateFactTransactionOutcome::RolledBack { .. } => {
+                    return Err(AnalyzerExpressionError::fact(
+                        crate::final_analysis::CandidateFactTransactionViolation::UnrecoverableLedger,
+                    ));
+                }
+            };
+            if let PreparedChildCandidateRunOutcome::Deferred {
+                candidate: selected,
+                pending: candidate_pending,
+                rank_seed,
+                recipe,
+                descendants,
+            } = outcome
+            {
+                if !Arc::ptr_eq(&recipe.candidate, &selected)
+                    || recipe.candidate.id() != selected.id()
+                    || recipe.candidate.schema().semantic_digest()
+                        != selected.schema().semantic_digest()
+                    || recipe.group != selected.call_group()
+                    || recipe.inputs.candidate() != Some(selected.id())
+                {
+                    return Err(AnalyzerExpressionError::Call {
+                        owner: source.owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                        )),
+                    });
+                }
+                candidates.push((selected, candidate_pending, rank_seed, recipe, descendants));
+            }
+        }
+        let function_value_origin = resolution.function_value_origin.take().map(Arc::new);
+        let accounting = resolution.work.call_accounting();
+        let mut pending: Option<
+            crate::types::constraints::PendingChildConstraint<
+                constraints::AnalyzerCallConstraintDomain,
+            >,
+        > = None;
+        let mut recipes = Vec::with_capacity(candidates.len());
+        for (candidate, candidate_pending, rank_seed, recipe, descendants) in candidates {
+            let choice = constraints::AnalyzerNestedCallChoice::new(
+                source.owner,
+                source.site,
+                candidate.id().clone(),
+                candidate.schema().semantic_digest(),
+                recipe.group,
+                rank_seed,
+            );
+            let candidate_pending =
+                candidate_pending.with_probe_branch(constraints::AnalyzerCallProbeSemanticBranch {
+                    source: parent_source.source().local(),
+                    child_choice: Some(choice),
+                });
+            let recipe = PreparedCorrelatedCallRecipe {
+                owner: source.owner,
+                site: source.site,
+                parent_application,
+                parent_source: parent_source.source().local(),
+                candidate,
+                group: recipe.group,
+                rank_seed,
+                consumer: recipe.consumer,
+                callee_inputs: recipe.callee_inputs,
+                inputs: recipe.inputs,
+                source_preparation: recipe.source_preparation,
+                callee_prerequisites: None,
+                considered: resolution.considered.clone().into_boxed_slice(),
+                function_value_origin: function_value_origin.clone(),
+                dialogue_context: resolution.dialogue_context,
+                accounting: accounting.clone(),
+                attempt: source.attempt.clone(),
+                descendants,
+            };
+            if let Some(existing) = pending.as_mut() {
+                existing.append(candidate_pending).map_err(|error| {
+                    terminal_lower_constraint_failure(source.owner, error.into())
+                })?;
+            } else {
+                pending = Some(candidate_pending);
+            }
+            recipes.push(recipe);
+        }
+        Ok((pending, recipes))
+    }
+
     fn checked_character_dialogue_resolution(
         &mut self,
         source: CallSource<'_>,
@@ -1203,6 +1797,19 @@ impl Analyzer<'_, '_, '_> {
         ))
     }
 
+    fn is_environment_namespace(&self, resolution: &CheckedValueResolution) -> bool {
+        let CheckedValueResolution::Registered(value) = resolution else {
+            return false;
+        };
+        value.environment_binding().is_some_and(|binding| {
+            self.catalogs
+                .world
+                .environment()
+                .typecheck_env()
+                .is_namespace_binding(binding)
+        })
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "call-query resolution keeps preparation, charged resolver execution, and checked fact publication atomic"
@@ -1360,30 +1967,33 @@ impl Analyzer<'_, '_, '_> {
                     .map(crate::callable::CallablePath::dotted_name)
                     .or_else(|| target.method().map(|method| method.as_str().to_owned()))
                     .unwrap_or_else(|| "<recovered>".to_owned());
-                let lookup = source
-                    .module
-                    .source_site(
-                        source.module.provenance().source_identity(),
-                        HirSourceQuery::Expr {
-                            owner: source.owner,
-                            role: HirExprSourceRole::CallCallee,
-                        },
-                    )
-                    .map_err(|_| {
+                let call_source = match source.module.source_site(
+                    source.module.provenance().source_identity(),
+                    HirSourceQuery::Expr {
+                        owner: source.owner,
+                        role: HirExprSourceRole::CallCallee,
+                    },
+                ) {
+                    Ok(lookup) => {
+                        let HirSourcePresence::Present(HirSourceSite::Span(span)) =
+                            lookup.presence()
+                        else {
+                            return Err(AnalyzerExpressionError::fatal(
+                                FinalSemanticAnalysisError::RecoveredOwner,
+                            ));
+                        };
+                        span.clone()
+                    }
+                    Err(_) => expression_span(source.module, source.owner).map_err(|_| {
                         AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::InvalidOwner)
-                    })?;
-                let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence()
-                else {
-                    return Err(AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::RecoveredOwner,
-                    ));
+                    })?,
                 };
                 return Err(AnalyzerExpressionError::fatal(
                     FinalSemanticAnalysisError::UnknownCallTarget {
                         owner: source.owner,
                         kind: target.kind(),
                         name,
-                        call_source: span.clone(),
+                        call_source,
                     },
                 ));
             }
@@ -1656,11 +2266,15 @@ impl Analyzer<'_, '_, '_> {
                             owner: source.owner,
                             site: source.site,
                             authored_arguments: source.call.arguments(),
+                            explicit_type_application: Some(
+                                source.call.explicit_type_application(),
+                            ),
                             dialogue_application_metadata: source.dialogue_application_metadata,
                             semantic_operands: Box::new([]),
                             candidate: Arc::clone(candidate),
                             current_group: candidate_group,
-                            expected_result: source.expectation.complete_type(),
+                            expected_result: source.expectation.nested_call_type(),
+                            expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
                             pass: CandidateEvaluationPass::Probe,
                             attempt: Some(source.attempt),
@@ -1811,11 +2425,13 @@ impl Analyzer<'_, '_, '_> {
                             family: crate::callable::CheckedAttachedContentApplicationFamily::DialogueLine,
                         },
                         authored_arguments: &[],
+                        explicit_type_application: None,
                         dialogue_application_metadata: None,
                         semantic_operands: structural_inputs.semantic_operands().to_vec().into_boxed_slice(),
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
                         expected_result: expected,
+                        expected_result_scope: None,
                         callee_inputs:
                             crate::callable::PreparedCallCalleeConstraintInputs::DialogueApplication,
                         pass: CandidateEvaluationPass::Probe,
@@ -1852,14 +2468,15 @@ impl Analyzer<'_, '_, '_> {
                 ));
             }
         };
-        let transaction =
-            ran.into_prepared_application()
-                .map_err(|error| AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })?;
+        let transaction = ran
+            .into_prepared_application(
+                self.checked_callable_effect_authority_with_projection(&outer_projection)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+            )
+            .map_err(|error| AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             considered,
@@ -2148,11 +2765,14 @@ impl Analyzer<'_, '_, '_> {
                             family: crate::callable::CheckedAttachedContentApplicationFamily::ContentCall,
                         },
                         authored_arguments: invocation.arguments(),
+                        explicit_type_application:
+                            Some(invocation.explicit_type_application()),
                         dialogue_application_metadata: None,
                         semantic_operands: Box::new([semantic_operand.clone()]),
                         candidate: Arc::clone(&candidate),
                         current_group: candidate.call_group(),
                         expected_result: None,
+                        expected_result_scope: None,
                         callee_inputs: crate::callable::PreparedCallCalleeConstraintInputs::
                             StaticContentCallee(static_content_callee),
                         pass: CandidateEvaluationPass::Probe,
@@ -2184,14 +2804,15 @@ impl Analyzer<'_, '_, '_> {
                 return Err(AnalyzerExpressionError::rejected(owner));
             }
         };
-        let transaction =
-            ran.into_prepared_application()
-                .map_err(|error| AnalyzerExpressionError::Call {
-                    owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })?;
+        let transaction = ran
+            .into_prepared_application(
+                self.checked_callable_effect_authority_with_projection(&outer_projection)
+                    .map_err(AnalyzerExpressionError::fatal)?,
+            )
+            .map_err(|error| AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })?;
         let inventory = AnalyzerPreparedCandidateInventory::from_considered(
             transaction.candidate(),
             vec![Arc::clone(&candidate)],
@@ -2273,27 +2894,43 @@ impl Analyzer<'_, '_, '_> {
             .remove(selected_index)
             .into_accepted(source.owner)?;
         let (selected_ran, selected_outer_projection) = selected_transaction.into_parts();
-        let selected_transaction = selected_ran.into_prepared_application().map_err(|error| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner: source.owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-        })?;
+        let selected_transaction = selected_ran
+            .into_prepared_application(
+                self.checked_callable_effect_authority_with_projection(&selected_outer_projection)
+                    .map_err(AnalyzerExpressionError::fatal)
+                    .map_err(CandidateFactOperationFailure::Expression)?,
+            )
+            .map_err(|error| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                    owner: source.owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        error,
+                    )),
+                })
+            })?;
         let selected = selected_transaction.selected_shared().clone();
         let current_group = selected_transaction.current_group();
         let (selected_transaction, outer_projection) = if singleton {
             (selected_transaction, selected_outer_projection)
         } else {
-            resolution
+            if resolution
                 .work
                 .record_selected_replay_argument_visits(resolution.argument_count)
-                .map_err(|_| {
-                    AnalyzerExpressionError::fatal(
-                        FinalSemanticAnalysisError::CallResolutionFailed {
-                            owner: source.owner,
-                        },
-                    )
-                })?;
+                .is_err()
+            {
+                self.discard_prepared_call_transaction_projection(
+                    source.owner,
+                    selected_transaction,
+                    selected_outer_projection,
+                )
+                .map_err(CandidateFactOperationFailure::Expression)?;
+                return Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed {
+                        owner: source.owner,
+                    },
+                )
+                .into());
+            }
             let replay = self.run_candidate_fact_transaction::<_, CandidateFactOperationFailure>(
                 |this, authority, _transaction_authority| {
                     let context = AnalyzerExpressionContext::candidate(
@@ -2307,11 +2944,15 @@ impl Analyzer<'_, '_, '_> {
                             owner: source.owner,
                             site: source.site,
                             authored_arguments: source.call.arguments(),
+                            explicit_type_application: Some(
+                                source.call.explicit_type_application(),
+                            ),
                             dialogue_application_metadata: source.dialogue_application_metadata,
                             semantic_operands: Box::new([]),
                             candidate: Arc::clone(&selected),
                             current_group,
-                            expected_result: source.expectation.complete_type(),
+                            expected_result: source.expectation.nested_call_type(),
+                            expected_result_scope: source.expectation.nested_call_scope_lease(),
                             callee_inputs: resolution.callee_inputs.clone(),
                             pass: CandidateEvaluationPass::SelectedReplay,
                             attempt: Some(source.attempt),
@@ -2331,7 +2972,19 @@ impl Analyzer<'_, '_, '_> {
                         }
                     }
                 },
-            )?;
+            );
+            let replay = match replay {
+                Ok(replay) => replay,
+                Err(failure) => {
+                    self.discard_prepared_call_transaction_projection(
+                        source.owner,
+                        selected_transaction,
+                        selected_outer_projection,
+                    )
+                    .map_err(CandidateFactOperationFailure::Expression)?;
+                    return Err(failure.into());
+                }
+            };
             let (replay_ran, replay_outer_projection, replay_rank) = match replay {
                 CandidateFactTransactionOutcome::Extracted {
                     value: PreparedCandidateRunOutcome::Accepted { transaction, rank },
@@ -2340,6 +2993,12 @@ impl Analyzer<'_, '_, '_> {
                 CandidateFactTransactionOutcome::RolledBack(
                     PreparedCandidateRunOutcome::Rejected { .. },
                 ) => {
+                    self.discard_prepared_call_transaction_projection(
+                        source.owner,
+                        selected_transaction,
+                        selected_outer_projection,
+                    )
+                    .map_err(CandidateFactOperationFailure::Expression)?;
                     return Err(AnalyzerExpressionError::Call {
                         owner: source.owner,
                         failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
@@ -2351,6 +3010,12 @@ impl Analyzer<'_, '_, '_> {
                 CandidateFactTransactionOutcome::Committed(_)
                 | CandidateFactTransactionOutcome::Extracted { .. }
                 | CandidateFactTransactionOutcome::RolledBack { .. } => {
+                    self.discard_prepared_call_transaction_projection(
+                        source.owner,
+                        selected_transaction,
+                        selected_outer_projection,
+                    )
+                    .map_err(CandidateFactOperationFailure::Expression)?;
                     return Err(AnalyzerExpressionError::Call {
                         owner: source.owner,
                         failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
@@ -2360,20 +3025,40 @@ impl Analyzer<'_, '_, '_> {
                     .into());
                 }
             };
-            let replay_transaction = replay_ran.into_prepared_application().map_err(|error| {
-                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                    owner: source.owner,
-                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
-                        error,
-                    )),
-                })
-            })?;
+            let replay_transaction = replay_ran
+                .into_prepared_application(
+                    self.checked_callable_effect_authority_with_projection(
+                        &replay_outer_projection,
+                    )
+                    .map_err(AnalyzerExpressionError::fatal)
+                    .map_err(CandidateFactOperationFailure::Expression)?,
+                )
+                .map_err(|error| {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                        owner: source.owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error,
+                        )),
+                    })
+                })?;
             let replay_mismatch = if selected_rank != replay_rank {
                 Some(crate::callable::CallConstraintInvariant::ReplayRankMismatch)
             } else {
                 selected_transaction.replay_mismatch(&replay_transaction)
             };
             if let Some(replay_mismatch) = replay_mismatch {
+                self.discard_prepared_call_transaction_projection(
+                    source.owner,
+                    selected_transaction,
+                    selected_outer_projection,
+                )
+                .map_err(CandidateFactOperationFailure::Expression)?;
+                self.discard_prepared_call_transaction_projection(
+                    source.owner,
+                    replay_transaction,
+                    replay_outer_projection,
+                )
+                .map_err(CandidateFactOperationFailure::Expression)?;
                 return Err(AnalyzerExpressionError::Call {
                     owner: source.owner,
                     failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
@@ -2388,8 +3073,7 @@ impl Analyzer<'_, '_, '_> {
                 _selected_callee_inputs,
                 _selected_inputs,
                 selected_branch,
-                _selected_closed_sources,
-                _selected_projections,
+                _selected_component,
             ) = selected_transaction.into_parts();
             self.facts
                 .discard_candidate_projection(selected_outer_projection)
@@ -2398,17 +3082,11 @@ impl Analyzer<'_, '_, '_> {
                         violation,
                     ))
                 })?;
-            if let constraints::AnalyzerCallSealedBranch::Materialized { projection } =
-                selected_branch
-            {
-                self.facts
-                    .discard_candidate_projection(projection)
-                    .map_err(|violation| {
-                        CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(
-                            violation,
-                        ))
-                    })?;
-            }
+            self.discard_nested_call_callee_prerequisites_from_branch(
+                source.owner,
+                selected_branch,
+            )
+            .map_err(CandidateFactOperationFailure::Expression)?;
             (replay_transaction, replay_outer_projection)
         };
         let result = selected_transaction.result().map_err(|error| {
@@ -2426,15 +3104,18 @@ impl Analyzer<'_, '_, '_> {
                 })
             })?;
 
-        let effects = match self.source_call_effects(&selected, current_group) {
+        let direct_effects = match self.source_call_intrinsic_effects(&selected, current_group) {
             Ok(effects) => effects,
             Err(error) => {
                 return Err(AnalyzerExpressionError::fatal(error).into());
             }
         };
         let callee_expression = match &result {
-            CallableResultSchema::Value(value) => self
-                .stage_resolved_callee_expression(
+            CallableResultSchema::Value(value) => {
+                let callable_effects = self
+                    .source_callable_effects(&selected, Some(&outer_projection))
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                self.stage_resolved_callee_expression(
                     source.owner,
                     source.site,
                     source.module,
@@ -2442,11 +3123,10 @@ impl Analyzer<'_, '_, '_> {
                     &selected,
                     &resolution.callee_inputs,
                     value,
-                    &self
-                        .source_callable_effects(&selected)
-                        .map_err(AnalyzerExpressionError::fatal)?,
+                    callable_effects.as_ref(),
                 )
-                .map_err(AnalyzerExpressionError::fatal)?,
+                .map_err(AnalyzerExpressionError::fatal)?
+            }
             CallableResultSchema::ContentEmission(_) => {
                 if source.expectation.complete_type().is_some() {
                     return Err(CandidateFactOperationFailure::Expression(
@@ -2514,6 +3194,9 @@ impl Analyzer<'_, '_, '_> {
             transaction_authority,
             source.site,
         )?;
+        // The provisional expression stores intrinsic effects. Selected calls
+        // retain their declared rows or project-body edges until the existing
+        // callable closure and final execution-effect publication complete them.
         match result {
             CallableResultSchema::Value(result) => Ok(CheckedExpression::value(
                 result,
@@ -2522,7 +3205,7 @@ impl Analyzer<'_, '_, '_> {
                 } else {
                     CheckedTypeSelection::Inferred
                 },
-                effects.concrete().clone(),
+                direct_effects,
                 expression_resolution,
             )),
             CallableResultSchema::ContentEmission(callable) => {
@@ -2535,7 +3218,7 @@ impl Analyzer<'_, '_, '_> {
                 }
                 Ok(CheckedExpression::content_emission(
                     callable,
-                    effects.concrete().clone(),
+                    direct_effects,
                     expression_resolution,
                 ))
             }
@@ -2557,32 +3240,76 @@ impl Analyzer<'_, '_, '_> {
                 ..
             } => owner,
         };
-        self.facts
-            .apply_candidate_projection(transaction_authority, outer_projection)
-            .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
-        let result = transaction.result().map_err(|error| {
-            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
-                owner,
-                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
-            })
-        })?;
-        let (
-            application,
-            consumer,
-            callee_inputs,
-            inputs,
-            sealed_branch,
-            closed_sources,
-            _projections,
-        ) = transaction.into_parts();
-        match sealed_branch {
-            constraints::AnalyzerCallSealedBranch::Empty => {}
-            constraints::AnalyzerCallSealedBranch::Materialized { projection } => {
+        let result = match transaction.result() {
+            Ok(result) => result,
+            Err(error) => {
+                let (_, _, _, _, branch, _) = transaction.into_parts();
+                self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
+                    .map_err(CandidateFactOperationFailure::Expression)?;
                 self.facts
-                    .apply_candidate_projection(transaction_authority, projection)
-                    .map_err(|failure| {
-                        CandidateFactOperationFailure::Projection(Box::new(failure))
+                    .discard_candidate_projection(outer_projection)
+                    .map_err(|violation| {
+                        CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(
+                            violation,
+                        ))
                     })?;
+                return Err(CandidateFactOperationFailure::Expression(
+                    AnalyzerExpressionError::Call {
+                        owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error,
+                        )),
+                    },
+                ));
+            }
+        };
+        let (application, consumer, callee_inputs, inputs, sealed_branch, component) =
+            transaction.into_parts();
+        let (materialized_projection, mut nested_calls) = match sealed_branch {
+            constraints::AnalyzerCallSealedBranch::Empty => (None, Vec::new()),
+            constraints::AnalyzerCallSealedBranch::Materialized {
+                projection,
+                nested_calls,
+            } => (Some(projection), nested_calls.into_vec()),
+        };
+        let shared_component = component.shared_component();
+        if let Err(failure) = self
+            .facts
+            .apply_candidate_projection(transaction_authority, outer_projection)
+        {
+            self.discard_nested_call_callee_prerequisites(
+                owner,
+                std::mem::take(&mut nested_calls).into_boxed_slice(),
+            )
+            .map_err(CandidateFactOperationFailure::Expression)?;
+            return Err(CandidateFactOperationFailure::Projection(Box::new(failure)));
+        }
+        if let Some(projection) = materialized_projection {
+            if let Err(failure) = self
+                .facts
+                .apply_candidate_projection(transaction_authority, projection)
+            {
+                self.discard_nested_call_callee_prerequisites(
+                    owner,
+                    std::mem::take(&mut nested_calls).into_boxed_slice(),
+                )
+                .map_err(CandidateFactOperationFailure::Expression)?;
+                return Err(CandidateFactOperationFailure::Projection(Box::new(failure)));
+            }
+        }
+        let mut nested_calls = nested_calls.into_iter();
+        while let Some(nested) = nested_calls.next() {
+            if let Err(failure) = self.stage_completed_nested_call(
+                nested,
+                Arc::clone(&shared_component),
+                transaction_authority,
+            ) {
+                self.discard_nested_call_callee_prerequisites(
+                    owner,
+                    nested_calls.collect::<Vec<_>>().into_boxed_slice(),
+                )
+                .map_err(CandidateFactOperationFailure::Expression)?;
+                return Err(failure);
             }
         }
         let record = AnalyzerPreparedCandidateRecord::seal(
@@ -2591,7 +3318,7 @@ impl Analyzer<'_, '_, '_> {
             consumer,
             callee_inputs,
             inputs,
-            closed_sources,
+            component,
         )
         .map_err(|error| {
             CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
@@ -2627,6 +3354,308 @@ impl Analyzer<'_, '_, '_> {
         Ok(result)
     }
 
+    fn stage_completed_nested_call(
+        &mut self,
+        selected: PreparedSelectedNestedCall,
+        component: Arc<
+            crate::types::constraints::CompletedConstraintComponent<
+                constraints::AnalyzerCallConstraintDomain,
+            >,
+        >,
+        transaction_authority: &CandidateFactTransactionAuthority<'_>,
+    ) -> Result<(), CandidateFactOperationFailure> {
+        let PreparedSelectedNestedCall {
+            mut recipe,
+            selection,
+            ..
+        } = selected;
+        let owner = recipe.owner;
+        let callee_prerequisites = recipe.callee_prerequisites.take().ok_or_else(|| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                )),
+            })
+        })?;
+        let callee_prerequisites = Arc::try_unwrap(callee_prerequisites).map_err(|_| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                    crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                )),
+            })
+        })?;
+        self.facts
+            .apply_candidate_projection(transaction_authority, callee_prerequisites)
+            .map_err(|failure| CandidateFactOperationFailure::Projection(Box::new(failure)))?;
+        let module = self.module(owner.module()).map_err(|error| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+        })?;
+        let expression = module.resolve_expr(owner).map_err(|_| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(
+                FinalSemanticAnalysisError::InvalidOwner,
+            ))
+        })?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                    )),
+                },
+            ));
+        };
+        if recipe.site != crate::callable::CheckedCallSite::HirCall(owner) {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                    )),
+                },
+            ));
+        }
+        let transaction = PreparedCallApplicationTransaction::from_completed_nested_call(
+            &recipe,
+            Arc::clone(&component),
+            self.checked_callable_effect_authority()
+                .map_err(AnalyzerExpressionError::fatal)
+                .map_err(CandidateFactOperationFailure::Expression)?,
+        )
+        .map_err(|error| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })
+        })?;
+        let result = match transaction.result() {
+            Ok(result) => result,
+            Err(error) => {
+                let (_, _, _, _, branch, _) = transaction.into_parts();
+                self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
+                    .map_err(CandidateFactOperationFailure::Expression)?;
+                return Err(CandidateFactOperationFailure::Expression(
+                    AnalyzerExpressionError::Call {
+                        owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error,
+                        )),
+                    },
+                ));
+            }
+        };
+        let selected_callable = transaction.selected_shared().clone();
+        let current_group = transaction.current_group();
+        let direct_effects = self
+            .source_call_intrinsic_effects(&selected_callable, current_group)
+            .map_err(|error| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+            })?;
+        if let crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { source, actual } =
+            &recipe.callee_inputs
+            && !self
+                .facts
+                .expressions()
+                .get(source)
+                .is_some_and(|checked| checked.value_type() == Some(actual))
+        {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::PreparedBaseMismatch,
+                    )),
+                },
+            ));
+        }
+        let callee_expression = match &result {
+            CallableResultSchema::Value(value) => {
+                let callable_effects = self
+                    .source_callable_effects(&selected_callable, None)
+                    .map_err(|error| {
+                        CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(
+                            error,
+                        ))
+                    })?;
+                self.stage_resolved_callee_expression(
+                    owner,
+                    recipe.site,
+                    module,
+                    call,
+                    &selected_callable,
+                    &recipe.callee_inputs,
+                    value,
+                    callable_effects.as_ref(),
+                )
+                .map_err(|error| {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+                })?
+            }
+            CallableResultSchema::ContentEmission(_) => {
+                return Err(CandidateFactOperationFailure::Expression(
+                    AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
+                ));
+            }
+        };
+        let expectation = AnalyzerExpressionExpectation::Unconstrained;
+        let source = CallSource {
+            module,
+            owner,
+            call,
+            site: recipe.site,
+            expectation: &expectation,
+            dialogue_application_metadata: None,
+            attempt: &recipe.attempt,
+        };
+        let expression_resolution = self
+            .checked_character_dialogue_resolution(
+                source,
+                &selected_callable,
+                recipe.dialogue_context,
+                &transaction,
+            )
+            .map_err(|failure| match failure {
+                CharacterDialogueResolutionFailure::Semantic(error) => {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+                }
+                CharacterDialogueResolutionFailure::Constraint(error) => {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                        owner,
+                        failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                            error,
+                        )),
+                    })
+                }
+            })?
+            .unwrap_or(CheckedExpressionResolution::Call);
+        let inventory = AnalyzerPreparedCandidateInventory::from_considered(
+            transaction.candidate(),
+            recipe.considered.to_vec(),
+        )
+        .map_err(|error| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })
+        })?;
+        let function_value_origin = recipe
+            .function_value_origin
+            .map(Arc::try_unwrap)
+            .transpose()
+            .map_err(|_| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                })
+            })?;
+        let metadata = AnalyzerPreparedCandidateMetadata::new(
+            owner,
+            AnalyzerPreparedExpressionResolution::Complete(expression_resolution.clone()),
+            callee_expression,
+            self.enclosing_ordinary_callable(module, owner)
+                .map_err(|error| {
+                    CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+                })?,
+            inventory,
+            function_value_origin,
+            recipe.accounting,
+        );
+        let (application, consumer, callee_inputs, inputs, sealed_branch, component_evidence) =
+            transaction.into_parts();
+        if !matches!(sealed_branch, constraints::AnalyzerCallSealedBranch::Empty)
+            || component_evidence.application() != owner
+        {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::PreparedCallSiteMismatch,
+                    )),
+                },
+            ));
+        }
+        let record = AnalyzerPreparedCandidateRecord::seal(
+            metadata,
+            application.selected(),
+            consumer,
+            callee_inputs,
+            inputs,
+            component_evidence,
+        )
+        .map_err(|error| {
+            CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                owner,
+                failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(error)),
+            })
+        })?;
+        let prefix = constraints::AnalyzerPreparedCallPrefix::new(recipe.site, application, record)
+            .map_err(|error| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        error,
+                    )),
+                })
+            })?;
+        let (sealed_result, _) = self
+            .facts
+            .seal_selected_application(transaction_authority, recipe.site, prefix)
+            .map_err(|violation| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fact(violation))
+            })?;
+        if sealed_result != result {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::PreparedFunctionTypeMismatch,
+                    )),
+                },
+            ));
+        }
+        let CallableResultSchema::Value(value) = result else {
+            return Err(CandidateFactOperationFailure::Expression(
+                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::WrongPayloadFamily),
+            ));
+        };
+        let checked =
+            CheckedExpression::value(value, selection, direct_effects, expression_resolution);
+        let checked = self
+            .attach_nested_path_evidence(owner, checked.into())
+            .map_err(CandidateFactOperationFailure::Expression)?;
+        self.record_implicit_capture_fact(owner, &checked)
+            .map_err(|error| {
+                CandidateFactOperationFailure::Expression(AnalyzerExpressionError::fatal(error))
+            })?;
+        let write = if self.facts.expressions().contains_key(&owner) {
+            self.facts.replace_existing_expression(owner, checked)
+        } else {
+            self.facts.publish_new_expression(owner, checked)
+        };
+        write.map_err(|error| {
+            CandidateFactOperationFailure::Expression(match error {
+                super::state::ExpressionFactWriteViolation::AlreadyPublished => {
+                    AnalyzerExpressionError::invariant(FinalSemanticAnalysisError::DuplicateFact {
+                        family: super::SemanticFactFamily::Expression,
+                    })
+                }
+                super::state::ExpressionFactWriteViolation::MissingPublishedFact => {
+                    AnalyzerExpressionError::invariant(
+                        FinalSemanticAnalysisError::WrongPayloadFamily,
+                    )
+                }
+                super::state::ExpressionFactWriteViolation::Candidate(violation) => {
+                    AnalyzerExpressionError::fact(violation)
+                }
+            })
+        })?;
+        Ok(())
+    }
+
     fn publish_ambiguous_call(
         &mut self,
         source: CallSource<'_>,
@@ -2647,6 +3676,7 @@ impl Analyzer<'_, '_, '_> {
                 let recovery = batch.into_recovery(source.owner, primary, tied)?;
                 this.apply_primary_recovery_projection(
                     &transaction_authority,
+                    source.owner,
                     recovery.primary_projection,
                     recovery.discarded_projections,
                 )?;
@@ -2698,6 +3728,7 @@ impl Analyzer<'_, '_, '_> {
                 let recovery = batch.into_recovery(source.owner, primary, retained)?;
                 this.apply_primary_recovery_projection(
                     &transaction_authority,
+                    source.owner,
                     recovery.primary_projection,
                     recovery.discarded_projections,
                 )?;
@@ -2740,20 +3771,31 @@ impl Analyzer<'_, '_, '_> {
     fn apply_primary_recovery_projection(
         &mut self,
         transaction_authority: &CandidateFactTransactionAuthority<'_>,
+        owner: ExprId,
         primary: PreparedCandidateSemanticProjection,
         discarded: Vec<PreparedCandidateSemanticProjection>,
     ) -> Result<(), AnalyzerExpressionError> {
         for projection in discarded {
-            self.discard_recovery_projection(projection)?;
+            self.discard_recovery_projection(owner, projection)?;
         }
         let PreparedCandidateSemanticProjection { outer, branch } = primary;
+        let branch_projection = match branch {
+            constraints::AnalyzerCallSealedBranch::Empty => None,
+            constraints::AnalyzerCallSealedBranch::Materialized {
+                projection,
+                nested_calls,
+            } => {
+                self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
+                Some(projection)
+            }
+        };
         self.facts
             .apply_candidate_projection(transaction_authority, outer)
             .map_err(|failure| {
                 let (violation, _projection) = failure.into_parts();
                 AnalyzerExpressionError::fact(violation)
             })?;
-        if let constraints::AnalyzerCallSealedBranch::Materialized { projection } = branch {
+        if let Some(projection) = branch_projection {
             self.facts
                 .apply_candidate_projection(transaction_authority, projection)
                 .map_err(|failure| {
@@ -2766,18 +3808,96 @@ impl Analyzer<'_, '_, '_> {
 
     fn discard_recovery_projection(
         &self,
+        owner: ExprId,
         projection: PreparedCandidateSemanticProjection,
     ) -> Result<(), AnalyzerExpressionError> {
         let PreparedCandidateSemanticProjection { outer, branch } = projection;
+        self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)?;
         self.facts
             .discard_candidate_projection(outer)
             .map_err(AnalyzerExpressionError::fact)?;
-        if let constraints::AnalyzerCallSealedBranch::Materialized { projection } = branch {
+        Ok(())
+    }
+
+    fn discard_nested_call_callee_prerequisites(
+        &self,
+        owner: ExprId,
+        nested_calls: Box<[PreparedSelectedNestedCall]>,
+    ) -> Result<(), AnalyzerExpressionError> {
+        fn collect(
+            owner: ExprId,
+            recipe: &mut PreparedCorrelatedCallRecipe,
+            projections: &mut Vec<Arc<super::state::CandidateSemanticProjection>>,
+        ) -> Result<(), AnalyzerExpressionError> {
+            let projection = recipe.callee_prerequisites.take().ok_or_else(|| {
+                AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                }
+            })?;
+            if !projections
+                .iter()
+                .any(|existing| Arc::ptr_eq(existing, &projection))
+            {
+                projections.push(projection);
+            }
+            for descendant in &mut recipe.descendants {
+                collect(owner, descendant, projections)?;
+            }
+            recipe.descendants.clear();
+            Ok(())
+        }
+
+        let mut projections = Vec::new();
+        for mut selected in nested_calls.into_vec() {
+            collect(owner, &mut selected.recipe, &mut projections)?;
+        }
+        for shared in projections {
+            let projection =
+                Arc::try_unwrap(shared).map_err(|_| AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                })?;
             self.facts
                 .discard_candidate_projection(projection)
                 .map_err(AnalyzerExpressionError::fact)?;
         }
         Ok(())
+    }
+
+    fn discard_nested_call_callee_prerequisites_from_branch(
+        &self,
+        owner: ExprId,
+        branch: constraints::AnalyzerCallSealedBranch,
+    ) -> Result<(), AnalyzerExpressionError> {
+        if let constraints::AnalyzerCallSealedBranch::Materialized {
+            projection,
+            nested_calls,
+        } = branch
+        {
+            self.discard_nested_call_callee_prerequisites(owner, nested_calls)?;
+            self.facts
+                .discard_candidate_projection(projection)
+                .map_err(AnalyzerExpressionError::fact)?;
+        }
+        Ok(())
+    }
+
+    fn discard_prepared_call_transaction_projection(
+        &self,
+        owner: ExprId,
+        transaction: PreparedCallApplicationTransaction,
+        outer: super::state::CandidateSemanticProjection,
+    ) -> Result<(), AnalyzerExpressionError> {
+        let (_, _, _, _, branch, _) = transaction.into_parts();
+        self.facts
+            .discard_candidate_projection(outer)
+            .map_err(AnalyzerExpressionError::fact)?;
+        self.discard_nested_call_callee_prerequisites_from_branch(owner, branch)
     }
 
     fn publish_recovery_call(
@@ -2810,16 +3930,19 @@ impl Analyzer<'_, '_, '_> {
             owner: source.owner,
         })?;
         let callee_expression = match &result {
-            CallableResultSchema::Value(value) => self.stage_resolved_callee_expression(
-                source.owner,
-                source.site,
-                source.module,
-                source.call,
-                primary,
-                &callee_inputs,
-                value,
-                &self.source_callable_effects(primary)?,
-            )?,
+            CallableResultSchema::Value(value) => {
+                let callable_effects = self.source_callable_effects(primary, None)?;
+                self.stage_resolved_callee_expression(
+                    source.owner,
+                    source.site,
+                    source.module,
+                    source.call,
+                    primary,
+                    &callee_inputs,
+                    value,
+                    callable_effects.as_ref(),
+                )?
+            }
             CallableResultSchema::ContentEmission(_) => AnalyzerPreparedCalleeExpression::none(),
         };
         let tied = candidates
@@ -2986,7 +4109,8 @@ impl Analyzer<'_, '_, '_> {
                         .map_err(AnalyzerExpressionError::fatal)?;
                     match full_resolution {
                         Some(resolution) => {
-                            if owns_callee_expression_fact
+                            if !self.is_environment_namespace(&resolution)
+                                && owns_callee_expression_fact
                                 && let Some(ty) = self
                                     .staged_value_resolution_type(&resolution, *value_receiver)
                                     .map_err(AnalyzerExpressionError::fatal)?
@@ -3020,7 +4144,8 @@ impl Analyzer<'_, '_, '_> {
                                 .map_err(AnalyzerExpressionError::fatal)?
                             {
                                 Some(resolution) => {
-                                    if owns_callee_expression_fact
+                                    if !self.is_environment_namespace(&resolution)
+                                        && owns_callee_expression_fact
                                         && let Some(ty) = self
                                             .staged_value_resolution_type(
                                                 &resolution,
@@ -3396,16 +4521,97 @@ impl Analyzer<'_, '_, '_> {
         request: PreparedCandidateRequest<'_, '_>,
         work: &mut ResolverWork,
     ) -> Result<PreparedCandidateRunOutcome, AnalyzerExpressionError> {
+        let owner = request.owner;
+        match self.prepare_candidate_impl(request, work, None)? {
+            PreparedCandidatePreparationOutcome::Accepted { transaction, rank } => {
+                Ok(PreparedCandidateRunOutcome::Accepted { transaction, rank })
+            }
+            PreparedCandidatePreparationOutcome::Rejected {
+                candidate,
+                result,
+                evidence,
+                branch,
+            } => Ok(PreparedCandidateRunOutcome::Rejected {
+                candidate,
+                result,
+                evidence,
+                branch,
+            }),
+            PreparedCandidatePreparationOutcome::Deferred { .. } => {
+                Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                ))
+            }
+        }
+    }
+
+    fn prepare_child_candidate(
+        &mut self,
+        request: PreparedCandidateRequest<'_, '_>,
+        work: &mut ResolverWork,
+        parent_source: &mut crate::callable::CandidateConstraintSourceContext<
+            '_,
+            '_,
+            constraints::AnalyzerCallConstraintDomain,
+        >,
+    ) -> Result<PreparedChildCandidateRunOutcome, AnalyzerExpressionError> {
+        let owner = request.owner;
+        match self.prepare_candidate_impl(request, work, Some(parent_source))? {
+            PreparedCandidatePreparationOutcome::Deferred {
+                candidate,
+                pending,
+                rank_seed,
+                recipe,
+                descendants,
+            } => Ok(PreparedChildCandidateRunOutcome::Deferred {
+                candidate,
+                pending,
+                rank_seed,
+                recipe,
+                descendants,
+            }),
+            PreparedCandidatePreparationOutcome::Rejected {
+                candidate,
+                result,
+                evidence,
+                ..
+            } => Ok(PreparedChildCandidateRunOutcome::Rejected {
+                candidate,
+                result,
+                evidence,
+            }),
+            PreparedCandidatePreparationOutcome::Accepted { .. } => {
+                Err(AnalyzerExpressionError::fatal(
+                    FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                ))
+            }
+        }
+    }
+
+    fn prepare_candidate_impl(
+        &mut self,
+        request: PreparedCandidateRequest<'_, '_>,
+        work: &mut ResolverWork,
+        mut parent_source: Option<
+            &mut crate::callable::CandidateConstraintSourceContext<
+                '_,
+                '_,
+                constraints::AnalyzerCallConstraintDomain,
+            >,
+        >,
+    ) -> Result<PreparedCandidatePreparationOutcome, AnalyzerExpressionError> {
         let PreparedCandidateRequest {
             module,
             owner,
             site,
             authored_arguments,
+            explicit_type_application,
             dialogue_application_metadata,
             semantic_operands,
             candidate,
             current_group,
             expected_result,
+            expected_result_scope,
             callee_inputs,
             pass,
             attempt,
@@ -3413,6 +4619,8 @@ impl Analyzer<'_, '_, '_> {
             dialogue_patch_admissions,
             compile_time_scalar_admissions,
         } = request;
+        self.prepare_pending_result_projection(site, &candidate)
+            .map_err(AnalyzerExpressionError::fatal)?;
         let implicit = match candidate.instantiation() {
             CallableInstantiation::Extension {
                 group, parameter, ..
@@ -3432,14 +4640,10 @@ impl Analyzer<'_, '_, '_> {
         })? {
             PreparedAttachedContentAdmission::Accepted(operand) => operand,
             PreparedAttachedContentAdmission::Rejected => {
-                let result = candidate
-                    .result_schema_for_group(current_group)
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })?;
-                return Ok(PreparedCandidateRunOutcome::Rejected {
+                let result = self
+                    .source_result_schema_for_group(owner, &candidate, current_group)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                return Ok(PreparedCandidatePreparationOutcome::Rejected {
                     candidate: Arc::clone(&candidate),
                     result,
                     evidence: PreparedCandidateRejection::Mapping(
@@ -3458,14 +4662,10 @@ impl Analyzer<'_, '_, '_> {
                 authored_arguments,
                 implicit,
             ) else {
-                let result = candidate
-                    .result_schema_for_group(current_group)
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })?;
-                return Ok(PreparedCandidateRunOutcome::Rejected {
+                let result = self
+                    .source_result_schema_for_group(owner, &candidate, current_group)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                return Ok(PreparedCandidatePreparationOutcome::Rejected {
                     candidate: Arc::clone(&candidate),
                     result,
                     evidence: PreparedCandidateRejection::Mapping(
@@ -3506,14 +4706,10 @@ impl Analyzer<'_, '_, '_> {
                 authored_arguments,
                 None,
             ) else {
-                let result = candidate
-                    .result_schema_for_group(current_group)
-                    .map_err(|_| {
-                        AnalyzerExpressionError::fatal(
-                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
-                        )
-                    })?;
-                return Ok(PreparedCandidateRunOutcome::Rejected {
+                let result = self
+                    .source_result_schema_for_group(owner, &candidate, current_group)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                return Ok(PreparedCandidatePreparationOutcome::Rejected {
                     candidate: Arc::clone(&candidate),
                     result,
                     evidence: PreparedCandidateRejection::Mapping(
@@ -3545,8 +4741,38 @@ impl Analyzer<'_, '_, '_> {
                 omitted_parameters,
             )
         };
+        let type_application = match explicit_type_application
+            .filter(|application| application.spelling().is_some())
+        {
+            Some(application) => crate::callable::PreparedCallTypeApplication::Present(
+                application
+                    .arguments()
+                    .iter()
+                    .map(|argument| match argument {
+                        arcweft_lang_hir::expr::HirCallTypeArgument::Resolved { ty } => {
+                            self.types.get(ty).cloned()
+                        }
+                        arcweft_lang_hir::expr::HirCallTypeArgument::InvalidPresent { .. }
+                        | arcweft_lang_hir::expr::HirCallTypeArgument::Missing => None,
+                    })
+                    .collect(),
+            ),
+            None => crate::callable::PreparedCallTypeApplication::Absent,
+        };
         let inputs =
-            crate::callable::PreparedCallInputs::new(mapping, semantic_operands, attached_content);
+            crate::callable::PreparedCallInputs::new(mapping, semantic_operands, attached_content)
+                .with_type_application(type_application);
+        if !inputs.validates_type_application(&candidate) {
+            let result = self
+                .source_result_schema_for_group(owner, &candidate, current_group)
+                .map_err(AnalyzerExpressionError::fatal)?;
+            return Ok(PreparedCandidatePreparationOutcome::Rejected {
+                candidate: Arc::clone(&candidate),
+                result,
+                evidence: PreparedCandidateRejection::Constraint,
+                branch: constraints::AnalyzerCallSealedBranch::Empty,
+            });
+        }
         let mut rank = AcceptedCandidateRank {
             exact_matches: 0,
             declared_exact_matches: 0,
@@ -3554,13 +4780,9 @@ impl Analyzer<'_, '_, '_> {
             omitted_parameters: inputs.omitted_parameters(),
             authority: candidate.authority(),
         };
-        let default_result = candidate
-            .result_schema_for_group(current_group)
-            .map_err(|_| {
-                AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
-                    owner,
-                })
-            })?;
+        let default_result = self
+            .source_result_schema_for_group(owner, &candidate, current_group)
+            .map_err(AnalyzerExpressionError::fatal)?;
         let prepared_candidate = Arc::clone(&candidate);
         let view_fx_runtime_parameters = self.view_fx_runtime_parameter_overrides(
             context,
@@ -3598,69 +4820,125 @@ impl Analyzer<'_, '_, '_> {
                     })
             })
             .transpose()?;
-        let enclosing = EnclosingGenericParameterScope::sealed(
-            enclosing_inventory
-                .into_iter()
-                .flat_map(|inventory| inventory.types().iter())
-                .map(|entry| {
-                    entry.parameter().free_parameter().cloned().ok_or_else(|| {
+        let enclosing_types = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.types().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericTypeReference::Free)
+                    .ok_or_else(|| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::CallResolutionFailed { owner },
                         )
                     })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-            enclosing_inventory
-                .into_iter()
-                .flat_map(|inventory| inventory.consts().iter())
-                .map(|entry| {
-                    entry.parameter().free_parameter().cloned().ok_or_else(|| {
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericTypeReference>, _>>()?;
+        let enclosing_consts = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.consts().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericConstReference::Free)
+                    .ok_or_else(|| {
                         AnalyzerExpressionError::fatal(
                             FinalSemanticAnalysisError::CallResolutionFailed { owner },
                         )
                     })
-                })
-                .collect::<Result<Vec<_>, _>>()?,
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericConstReference>, _>>()?;
+        let enclosing_effects = enclosing_inventory
+            .into_iter()
+            .flat_map(|inventory| inventory.effects().iter())
+            .map(|entry| {
+                entry
+                    .parameter()
+                    .free_parameter()
+                    .cloned()
+                    .map(crate::types::GenericEffectReference::Free)
+                    .ok_or_else(|| {
+                        AnalyzerExpressionError::fatal(
+                            FinalSemanticAnalysisError::CallResolutionFailed { owner },
+                        )
+                    })
+            })
+            .collect::<Result<BTreeSet<crate::types::GenericEffectReference>, _>>()?;
+        let enclosing = EnclosingGenericParameterScope::sealed_with_imported_scope(
+            enclosing_types,
+            enclosing_consts,
+            enclosing_effects,
+            parent_source
+                .is_none()
+                .then_some(expected_result_scope)
+                .flatten(),
         )
         .map_err(|_| {
             AnalyzerExpressionError::fatal(FinalSemanticAnalysisError::CallResolutionFailed {
                 owner,
             })
         })?;
-        let callable_effects = self
-            .source_callable_effects(&prepared_candidate)
-            .map_err(AnalyzerExpressionError::fatal)?;
         let constraint_set = validate_and_prepare_call_constraints(
             self.facts
                 .prepared_calls()
                 .map_err(AnalyzerExpressionError::fact)?,
             prepared_candidate,
-            inputs,
+            self.checked_callable_effect_authority()
+                .map_err(AnalyzerExpressionError::fatal)?,
+            inputs.clone(),
             authored_arguments,
             expected_result,
             owner,
-            callee_inputs,
+            callee_inputs.clone(),
             dialogue_patch_admissions,
             &compile_time_scalar_admissions,
             self.catalogs.world().environment().compile_time_scalars(),
-            consumer,
+            consumer.clone(),
             &enclosing,
-            matches!(
-                callable_effects.tail(),
-                crate::effect_row::EffectRowTail::Closed
-            )
-            .then_some(callable_effects.concrete()),
+            parent_source.as_deref(),
+            site,
         )
         .map_err(|failure| terminal_call_constraint_failure(owner, failure))?;
-        let transaction = match run_prepared_candidate(
-            self,
-            work,
-            context,
-            pass,
-            attempt.cloned(),
-            constraint_set,
-        ) {
-            Ok(ran) => ran,
+        let child_recipe = parent_source.as_ref().map(|_| PreparedCallCandidateRecipe {
+            candidate: Arc::clone(&candidate),
+            group: current_group,
+            consumer,
+            callee_inputs,
+            inputs,
+            source_preparation: constraint_set.application_sources(owner),
+        });
+        let execution = match parent_source.as_deref_mut() {
+            Some(parent_source) => constraints::run_prepared_child_candidate(
+                self,
+                owner,
+                site,
+                context,
+                pass,
+                attempt.cloned(),
+                parent_source,
+                constraint_set,
+            )
+            .map(|contribution| PreparedCallCandidateExecution::Deferred {
+                pending: contribution.pending,
+                descendants: contribution.descendants,
+            }),
+            None => run_prepared_candidate(
+                self,
+                owner,
+                work,
+                context,
+                pass,
+                attempt.cloned(),
+                constraint_set,
+            )
+            .map(PreparedCallCandidateExecution::Root),
+        };
+        let execution = match execution {
+            Ok(execution) => execution,
             Err(crate::types::constraints::TypeConstraintFailure::Rejected(error)) => {
                 if let crate::types::constraints::TypeConstraintCandidateFailure::SourceProjection(
                     rejected,
@@ -3673,7 +4951,7 @@ impl Analyzer<'_, '_, '_> {
                         admission.mismatch_failure(rejected.actual().clone()),
                     ));
                 }
-                return Ok(PreparedCandidateRunOutcome::Rejected {
+                return Ok(PreparedCandidatePreparationOutcome::Rejected {
                     candidate: Arc::clone(&candidate),
                     result: default_result,
                     evidence: PreparedCandidateRejection::Constraint,
@@ -3697,21 +4975,41 @@ impl Analyzer<'_, '_, '_> {
                 return Err(terminal_lower_constraint_failure(owner, failure));
             }
         };
-        let result = transaction.result().clone();
-        rank.exact_matches = rank
-            .exact_matches
-            .checked_add(transaction.exact_argument_matches())
-            .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
-            .map_err(AnalyzerExpressionError::fatal)?;
-        rank.declared_exact_matches = transaction.declared_exact_argument_matches();
-        if matches!(&result, CallableResultSchema::Value(value) if expected_result == Some(value)) {
-            rank.exact_matches = rank
-                .exact_matches
-                .checked_add(1)
-                .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
-                .map_err(AnalyzerExpressionError::fatal)?;
+        match execution {
+            PreparedCallCandidateExecution::Root(transaction) => {
+                let result = transaction.result().clone();
+                rank.exact_matches = rank
+                    .exact_matches
+                    .checked_add(transaction.exact_argument_matches())
+                    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
+                    .map_err(AnalyzerExpressionError::fatal)?;
+                rank.declared_exact_matches = transaction.declared_exact_argument_matches();
+                if matches!(&result, CallableResultSchema::Value(value) if expected_result == Some(value))
+                {
+                    rank.exact_matches = rank
+                        .exact_matches
+                        .checked_add(1)
+                        .ok_or(FinalSemanticAnalysisError::AccountingOverflow)
+                        .map_err(AnalyzerExpressionError::fatal)?;
+                }
+                Ok(PreparedCandidatePreparationOutcome::Accepted { transaction, rank })
+            }
+            PreparedCallCandidateExecution::Deferred {
+                pending,
+                descendants,
+            } => Ok(PreparedCandidatePreparationOutcome::Deferred {
+                candidate: Arc::clone(&candidate),
+                pending,
+                rank_seed: rank,
+                recipe: child_recipe.ok_or_else(|| AnalyzerExpressionError::Call {
+                    owner,
+                    failure: CallAnalysisFailure::Invariant(CallAnalysisInvariant::Constraint(
+                        crate::callable::CallConstraintInvariant::MalformedMapperSeal,
+                    )),
+                })?,
+                descendants,
+            }),
         }
-        Ok(PreparedCandidateRunOutcome::Accepted { transaction, rank })
     }
 
     pub(super) fn evaluate_call_constraint_source(
@@ -3850,7 +5148,7 @@ impl Analyzer<'_, '_, '_> {
         selected: &PreparedResolvedCallable,
         callee_inputs: &crate::callable::PreparedCallCalleeConstraintInputs,
         result: &TypeKind,
-        callable_effects: &EffectRow,
+        callable_effects: Option<&EffectRow>,
     ) -> Result<AnalyzerPreparedCalleeExpression, FinalSemanticAnalysisError> {
         if selected.requires_value_callee() {
             let HirCallCallee::Value { value } = call.callee() else {
@@ -3914,30 +5212,50 @@ impl Analyzer<'_, '_, '_> {
         }
         let (value, nominal_receiver) = match call.callee() {
             HirCallCallee::Value { value } => (*value, false),
-            HirCallCallee::UnresolvedDot { value_receiver, .. }
-                if !self.facts.expressions().contains_key(value_receiver) =>
-            {
-                (*value_receiver, true)
-            }
-            HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. } => {
-                let retained = match (call.callee(), callee_inputs) {
-                    (
-                        HirCallCallee::UnresolvedDot { value_receiver, .. },
-                        crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
-                            source,
-                            ..
+            HirCallCallee::UnresolvedDot { value_receiver, .. } => match callee_inputs {
+                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver {
+                    source,
+                    actual,
+                } if source == value_receiver => {
+                    let checked = self.facts.expressions().get(value_receiver).ok_or(
+                        FinalSemanticAnalysisError::CallResolutionFailed {
+                            owner: *value_receiver,
                         },
-                    ) if value_receiver == source => Some(*source),
-                    (
-                        HirCallCallee::UnresolvedDot { value_receiver, .. },
-                        crate::callable::PreparedCallCalleeConstraintInputs::DialogueCallee,
-                    ) => Some(*value_receiver),
-                    _ => None,
-                };
-                return Ok(retained.map_or_else(
-                    AnalyzerPreparedCalleeExpression::none,
-                    AnalyzerPreparedCalleeExpression::semantic,
-                ));
+                    )?;
+                    if checked.value_type() != Some(actual) {
+                        return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                            owner: *value_receiver,
+                        });
+                    }
+                    return Ok(AnalyzerPreparedCalleeExpression::semantic(*value_receiver));
+                }
+                crate::callable::PreparedCallCalleeConstraintInputs::ValueReceiver { .. } => {
+                    return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                        owner: *value_receiver,
+                    });
+                }
+                crate::callable::PreparedCallCalleeConstraintInputs::DialogueCallee => {
+                    if !self.facts.expressions().contains_key(value_receiver) {
+                        return Err(FinalSemanticAnalysisError::CallResolutionFailed {
+                            owner: *value_receiver,
+                        });
+                    }
+                    return Ok(AnalyzerPreparedCalleeExpression::semantic(*value_receiver));
+                }
+                crate::callable::PreparedCallCalleeConstraintInputs::Free
+                | crate::callable::PreparedCallCalleeConstraintInputs::EnumConstructor
+                | crate::callable::PreparedCallCalleeConstraintInputs::AssociatedType { .. }
+                | crate::callable::PreparedCallCalleeConstraintInputs::StaticContentCallee(_) => {
+                    (*value_receiver, true)
+                }
+                crate::callable::PreparedCallCalleeConstraintInputs::DialogueApplication
+                | crate::callable::PreparedCallCalleeConstraintInputs::FunctionValue { .. }
+                | crate::callable::PreparedCallCalleeConstraintInputs::NonCallable => {
+                    return Ok(AnalyzerPreparedCalleeExpression::none());
+                }
+            },
+            HirCallCallee::Associated { .. } => {
+                return Ok(AnalyzerPreparedCalleeExpression::none());
             }
         };
         if nominal_receiver {
@@ -3947,6 +5265,12 @@ impl Analyzer<'_, '_, '_> {
             let Some(ty) = ty else {
                 return Ok(AnalyzerPreparedCalleeExpression::none());
             };
+            if let Some(checked) = self.facts.expressions().get(&value) {
+                if checked.value_type() != Some(ty) {
+                    return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value });
+                }
+                return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
+            }
             self.facts
                 .publish_new_expression(
                     value,
@@ -3963,6 +5287,35 @@ impl Analyzer<'_, '_, '_> {
         let expression = module
             .resolve_expr(value)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if matches!(expression.kind(), HirExprKind::ShortVariant(_))
+            && matches!(
+                callee_inputs,
+                crate::callable::PreparedCallCalleeConstraintInputs::EnumConstructor
+            )
+            && !matches!(
+                self.facts.expressions().get(&value),
+                Some(super::PreparedExpressionFact::Variant(_))
+            )
+        {
+            let template = selected
+                .schema()
+                .value_type()
+                .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
+            let prepared = self
+                .prepare_variant_expression_kind(value, expression, Some(template), true)
+                .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
+                .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?;
+            if self.facts.expressions().contains_key(&value) {
+                self.facts
+                    .replace_existing_expression(value, prepared)
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            } else {
+                self.facts
+                    .publish_new_expression(value, prepared)
+                    .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+            }
+            return Ok(AnalyzerPreparedCalleeExpression::semantic(value));
+        }
         let method_callee = match expression.kind() {
             HirExprKind::Select(select) => {
                 let HirSelectedMember::Name(name) = select.member() else {
@@ -3997,7 +5350,9 @@ impl Analyzer<'_, '_, '_> {
         } else {
             None
         };
-        let ty = match instantiated_callee_type(selected, result, callable_effects) {
+        let ty = match callable_effects
+            .and_then(|effects| instantiated_callee_type(selected, result, effects))
+        {
             Some(ty) => ty,
             None if method_callee.is_none()
                 && matches!(

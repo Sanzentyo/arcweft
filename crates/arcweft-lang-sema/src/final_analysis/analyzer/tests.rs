@@ -900,6 +900,17 @@ fn rolled_back_prepared_continuation_is_stale_without_independent_fallback() {
         0,
         "rollback removes the issued continuation node"
     );
+    assert_eq!(
+        analyzer
+            .facts
+            .prepared_calls()
+            .expect("prepared graph")
+            .effect_rows()
+            .rows()
+            .count(),
+        0,
+        "rollback also removes the inferred body prerequisite"
+    );
     let stale = captured.borrow_mut().take().expect("captured continuation");
     let result = crate::callable::PreparedCallContinuationAuthority::resolve_prepared_continuation(
         analyzer

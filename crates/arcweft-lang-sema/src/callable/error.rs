@@ -109,6 +109,12 @@ pub enum CallableSchemaError {
     MissingCandidateType { parameter: GenericTypeReference },
     #[error("callable schema candidate const parameter {parameter:?} does not occur in the schema")]
     MissingCandidateConst { parameter: GenericConstReference },
+    #[error(
+        "callable schema candidate effect parameter {parameter:?} does not occur in the schema"
+    )]
+    MissingCandidateEffect {
+        parameter: crate::types::GenericEffectReference,
+    },
     #[error("callable generic parameter issuer has an invalid owner arity")]
     InvalidCandidateIssuer,
     #[error("callable schema must contain an initial parameter group")]

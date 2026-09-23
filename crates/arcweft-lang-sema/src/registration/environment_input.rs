@@ -160,6 +160,7 @@ pub enum EnvironmentTypeProjectionKind {
     F64,
     String,
     Char,
+    Bytes,
     Vec(Box<EnvironmentTypeProjectionNode>),
     Seq(Box<EnvironmentTypeProjectionNode>),
     Option(Box<EnvironmentTypeProjectionNode>),
@@ -191,7 +192,7 @@ pub enum AcceptedNominalInputVisibility {
 pub struct AcceptedNominalInventoryInput {
     id: AcceptedNominalId,
     arity: u16,
-    runtime_carrier: AcceptedOpaqueRuntimeCarrier,
+    semantics: crate::env::nominal::AcceptedNominalSemantics,
     visibility: AcceptedNominalInputVisibility,
     origin: AcceptedNominalOrigin,
     source: SourceSpan,
@@ -378,7 +379,7 @@ impl EnvironmentTypeProjectionNode {
 }
 
 impl AcceptedNominalInventoryInput {
-    pub fn new(
+    pub fn new_opaque(
         id: AcceptedNominalId,
         arity: u16,
         runtime_carrier: AcceptedOpaqueRuntimeCarrier,
@@ -390,7 +391,7 @@ impl AcceptedNominalInventoryInput {
         Self {
             id,
             arity,
-            runtime_carrier,
+            semantics: crate::env::nominal::AcceptedNominalSemantics::Opaque(runtime_carrier),
             visibility,
             origin,
             source,
@@ -406,8 +407,26 @@ impl AcceptedNominalInventoryInput {
         self.arity
     }
 
-    pub const fn runtime_carrier(&self) -> &AcceptedOpaqueRuntimeCarrier {
-        &self.runtime_carrier
+    pub const fn semantics(&self) -> &crate::env::nominal::AcceptedNominalSemantics {
+        &self.semantics
+    }
+
+    pub fn new_rust_adt(
+        id: AcceptedNominalId,
+        arity: u16,
+        visibility: AcceptedNominalInputVisibility,
+        source: SourceSpan,
+        item: EnvironmentPublicationItemId,
+    ) -> Self {
+        Self {
+            id,
+            arity,
+            semantics: crate::env::nominal::AcceptedNominalSemantics::RustAdt,
+            visibility,
+            origin: AcceptedNominalOrigin::RustExport,
+            source,
+            item,
+        }
     }
 
     pub const fn visibility(&self) -> AcceptedNominalInputVisibility {
@@ -976,6 +995,7 @@ fn append_type_spans<'a>(root: &'a EnvironmentTypeProjectionNode, spans: &mut Ve
             | EnvironmentTypeProjectionKind::F64
             | EnvironmentTypeProjectionKind::String
             | EnvironmentTypeProjectionKind::Char
+            | EnvironmentTypeProjectionKind::Bytes
             | EnvironmentTypeProjectionKind::CharacterNominal(_)
             | EnvironmentTypeProjectionKind::TypeParameter { .. } => {}
         }
@@ -1001,7 +1021,7 @@ fn append_rust_metadata_spans<'a>(
             RustStructMetadataInput::Record(fields) => {
                 fields
                     .iter()
-                    .for_each(|(_, field)| append_type_spans(field, spans));
+                    .for_each(|field| append_type_spans(field.ty(), spans));
             }
         },
         RustTypeMetadataPublicationKind::Enum { variants } => {
@@ -1017,7 +1037,7 @@ fn append_rust_metadata_spans<'a>(
                     RustVariantPayloadInput::Record(fields) => {
                         fields
                             .iter()
-                            .for_each(|(_, field)| append_type_spans(field, spans));
+                            .for_each(|field| append_type_spans(field.ty(), spans));
                     }
                 }
             }

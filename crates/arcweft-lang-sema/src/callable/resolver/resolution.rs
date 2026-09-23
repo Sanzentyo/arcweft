@@ -146,6 +146,11 @@ fn resolve_dialogue_call(
     let schema = id
         .signature_schema(DialogueSchemaContext {
             callee,
+            roles: request
+                .authority
+                .world()
+                .environment()
+                .character_dialogue_roles(),
             module: request.authority.module().key().path(),
             custom_fields: request
                 .authority

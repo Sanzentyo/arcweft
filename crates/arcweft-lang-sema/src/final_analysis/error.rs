@@ -306,6 +306,13 @@ pub enum FinalSemanticAnalysisError {
     DiagnosticSourceMismatch,
     #[error("semantic effect row is not closed")]
     OpenEffectRow,
+    #[error(
+        "terminal effect-row projection for checked callable {checked:?} remains pending at group {group:?}"
+    )]
+    CallableEffectProjectionPending {
+        checked: Box<CheckedCallableId>,
+        group: crate::callable::CallableGroupIndex,
+    },
     #[error("semantic candidate fact transaction violation: {violation}")]
     CandidateFactTransaction {
         violation: CandidateFactTransactionViolation,

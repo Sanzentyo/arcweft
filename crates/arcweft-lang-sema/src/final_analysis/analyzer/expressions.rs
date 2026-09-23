@@ -57,10 +57,10 @@ use super::entities::EntityReferenceResolutionError;
 
 /// Typed contextual expectation carried from a parent lower source.
 ///
-/// `Complete` may constrain a nested call's result. `Parametric` exposes its
-/// shape to contextual syntax, including constructor lookup. Its unbound
-/// inference parameters remain owned by the parent constraint scope; the
-/// independent child call solver receives only a complete result expectation.
+/// `Complete` and `Parametric` may constrain a nested call's result.
+/// `Parametric` also exposes its shape to contextual syntax, including
+/// constructor lookup. Its unbound inference parameters remain owned by the
+/// parent constraint scope and are passed to child calls as rigid parameters.
 /// Projecting the carrier to a child shape
 /// intersects the exact sorted unbound inventory; a child with no remaining
 /// outer parameters becomes complete.
@@ -77,6 +77,7 @@ pub(super) enum AnalyzerExpressionExpectation<'a> {
     Parametric {
         expected: &'a TypeKind,
         unbound: Arc<[crate::types::constraints::ConstraintGenericParameterId]>,
+        scope_lease: Option<crate::types::constraints::ImportedGenericParameterScopeLease>,
     },
 }
 
@@ -113,7 +114,24 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         Some(Self::Parametric {
             expected,
             unbound: Arc::from(unbound),
+            scope_lease: None,
         })
+    }
+
+    pub(super) fn parametric_with_scope_lease(
+        expected: &'a TypeKind,
+        scope_lease: crate::types::constraints::ImportedGenericParameterScopeLease,
+    ) -> Option<Self> {
+        let unbound = scope_lease.parameters();
+        let mut expectation = Self::parametric(expected, unbound)?;
+        if let Self::Parametric {
+            scope_lease: imported,
+            ..
+        } = &mut expectation
+        {
+            *imported = Some(scope_lease);
+        }
+        Some(expectation)
     }
 
     pub(super) fn contextual_shape(&self) -> Option<&'a TypeKind> {
@@ -122,21 +140,57 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
-            Self::Parametric { expected, unbound } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| matches!(candidate, crate::types::constraints::ConstraintGenericParameterId::Type(candidate) if candidate == parameter))) => {
+            Self::Parametric {
+                expected, unbound, ..
+            } if matches!(expected, TypeKind::GenericParam(parameter) if unbound.iter().any(|candidate| matches!(candidate, crate::types::constraints::ConstraintGenericParameterId::Type(candidate) if candidate == parameter))) => {
                 None
             }
-            Self::Parametric { expected, .. } => Some(expected),
+            Self::Parametric {
+                expected,
+                scope_lease: Some(_),
+                ..
+            } => Some(expected),
+            Self::Parametric { .. } => None,
         }
     }
 
-    /// A complete expectation may be checked directly or become an independent
-    /// child call's result equation. Parametric relations belong to the parent.
+    /// Expectations usable by expression checks that require a closed result
+    /// type. Nested calls use `nested_call_type` plus the retained scope lease.
     pub(super) const fn complete_type(&self) -> Option<&'a TypeKind> {
         match self {
             Self::Complete(expected)
             | Self::CompileTimePublicId(expected)
             | Self::EnumConstructorHead(expected) => Some(expected),
             Self::Unconstrained | Self::Parametric { .. } => None,
+        }
+    }
+
+    /// Result equation available to a nested call. Unlike `complete_type`, this
+    /// preserves a parent-owned parametric expectation; the corresponding
+    /// unbound parameters must accompany it as rigid enclosing parameters.
+    pub(super) const fn nested_call_type(&self) -> Option<&'a TypeKind> {
+        match self {
+            Self::Complete(expected)
+            | Self::CompileTimePublicId(expected)
+            | Self::EnumConstructorHead(expected) => Some(expected),
+            Self::Parametric {
+                expected,
+                scope_lease: Some(_),
+                ..
+            } => Some(expected),
+            Self::Unconstrained | Self::Parametric { .. } => None,
+        }
+    }
+
+    pub(super) fn nested_call_scope_lease(
+        &self,
+    ) -> Option<&crate::types::constraints::ImportedGenericParameterScopeLease> {
+        match self {
+            Self::Parametric {
+                scope_lease: Some(scope_lease),
+                ..
+            } => Some(scope_lease),
+            _ => None,
         }
     }
 
@@ -173,7 +227,12 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
         let Some(expected) = expected else {
             return Ok(AnalyzerExpressionExpectation::Unconstrained);
         };
-        let Self::Parametric { unbound, .. } = self else {
+        let Self::Parametric {
+            unbound,
+            scope_lease,
+            ..
+        } = self
+        else {
             return Ok(AnalyzerExpressionExpectation::Complete(expected));
         };
         let inventory = crate::types::TypeGenericReferenceUseCollector::collect(expected)?;
@@ -198,6 +257,7 @@ impl<'a> AnalyzerExpressionExpectation<'a> {
             Ok(AnalyzerExpressionExpectation::Parametric {
                 expected,
                 unbound: Arc::from(projected),
+                scope_lease: scope_lease.clone(),
             })
         }
     }
@@ -491,7 +551,7 @@ impl Analyzer<'_, '_, '_> {
         result
     }
 
-    fn attach_nested_path_evidence(
+    pub(super) fn attach_nested_path_evidence(
         &self,
         owner: ExprId,
         checked: super::PreparedExpressionFact,
@@ -818,7 +878,7 @@ impl Analyzer<'_, '_, '_> {
         Ok(())
     }
 
-    fn record_implicit_capture_fact(
+    pub(super) fn record_implicit_capture_fact(
         &mut self,
         expression: ExprId,
         fact: &super::PreparedExpressionFact,
@@ -981,7 +1041,6 @@ impl Analyzer<'_, '_, '_> {
                     .map(Some)
             }
             HirExprKind::ShortVariant(_) => self.prepare_variant_expression_kind(
-                context,
                 owner,
                 expression,
                 expected,
@@ -3246,9 +3305,8 @@ impl Analyzer<'_, '_, '_> {
             },
         }))
     }
-    fn prepare_variant_expression_kind(
+    pub(super) fn prepare_variant_expression_kind(
         &self,
-        _context: &AnalyzerExpressionContext<'_>,
         owner: ExprId,
         expression: &HirExpr,
         expected: Option<&TypeKind>,

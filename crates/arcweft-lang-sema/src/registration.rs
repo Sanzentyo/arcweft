@@ -32,10 +32,10 @@ pub use environment_input::{
 pub use limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits};
 pub use model::{
     AcceptedNominalSource, AcceptedNominalVisibilityIndex, AcceptedNominalWorld,
-    AcceptedNominalWorldLookupError, AcceptedNominalWorldStamp, CharacterInventoryDescriptorV1,
-    CharacterInventoryDigest, CharacterInventoryIntegrityError, CharacterInventoryRevision,
-    CharacterRegistrar, CharacterRegistrationRequest, CompileTimeScalarBuiltinAtom,
-    CompileTimeScalarBuiltinIdentity, CompileTimeScalarTypeIdentity,
+    AcceptedNominalWorldLookupError, AcceptedNominalWorldStamp, AcceptedRustProjectionStamp,
+    CharacterInventoryDescriptorV1, CharacterInventoryDigest, CharacterInventoryIntegrityError,
+    CharacterInventoryRevision, CharacterRegistrar, CharacterRegistrationRequest,
+    CompileTimeScalarBuiltinAtom, CompileTimeScalarBuiltinIdentity, CompileTimeScalarTypeIdentity,
     CompileTimeScalarTypeRegistrationError, CompileTimeScalarTypeResolutionError,
     CompileTimeScalarTypeRoleId, ExternalOwnerLookupError, ExternalRegistrationFact,
     ProjectRegistrationFacts, ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest,

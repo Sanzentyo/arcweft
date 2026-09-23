@@ -1,5 +1,12 @@
 //! Accepted-world registry for typed `CharacterDialogue` custom patch fields.
 
+mod runtime_types;
+
+pub use runtime_types::{
+    CharacterDialogueRoleDeclarationMismatch, CharacterDialogueRuntimeRoleDeclaration,
+    CharacterDialogueRuntimeRoleError, CharacterDialogueRuntimeRoleRegistry,
+};
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};

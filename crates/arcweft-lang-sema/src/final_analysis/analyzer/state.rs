@@ -337,6 +337,18 @@ pub(super) struct CandidateSemanticProjection {
     data: Box<CandidateSemanticProjectionData>,
 }
 
+impl CandidateSemanticProjection {
+    pub(super) fn effect_view<'a>(
+        &'a self,
+        graph: &'a AnalyzerPreparedCallGraph,
+    ) -> Result<crate::callable::PreparedCallableEffectView<'a>, CandidateFactTransactionViolation>
+    {
+        graph
+            .extracted_effect_view(&self.data.graph_delta)
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+}
+
 struct CandidateSemanticProjectionData {
     authority: CandidateProjectionAuthority,
     graph_delta: PreparedCallGraphDelta<AnalyzerPreparedCallPrefix, AnalyzerPreparedUnselectedCall>,
@@ -862,6 +874,29 @@ impl SemanticFactState {
                 crate::callable::CallConstraintInvariant::PreparedGraphConsumed.into(),
             )
         })
+    }
+
+    pub(super) fn request_effect_projection(
+        &mut self,
+        site: CheckedCallSite,
+        candidate: &crate::callable::PreparedResolvedCallable,
+    ) -> Result<crate::callable::PreparedCallResultRef, CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        self.prepared_calls_mut()?
+            .request_effect_projection(site, candidate)
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
+    }
+
+    pub(super) fn complete_effect_projection(
+        &mut self,
+        reference: &crate::callable::PreparedCallResultRef,
+        checked: &crate::callable::CheckedCallableId,
+        row: crate::effect_row::EffectRow,
+    ) -> Result<(), CandidateFactTransactionViolation> {
+        self.ensure_healthy()?;
+        self.prepared_calls_mut()?
+            .complete_effect_projection(reference, checked, row)
+            .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
     }
 
     pub(super) fn seal_selected_application(

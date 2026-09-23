@@ -2462,11 +2462,15 @@ fn validate_call_result(
     let effects = application.core().effects();
     if application.result().value_type() != checked.value_type()
         || !effects.is_known()
-        || !effects.concrete().is_subset(checked.effects())
+        || !effects
+            .constant_effects()
+            .map_err(|_| FinalSemanticAnalysisError::OpenEffectRow)?
+            .is_subset(checked.effects())
     {
         return Err(FinalSemanticAnalysisError::CallFactMismatch);
     }
-    matches!(effects.tail(), crate::effect_row::EffectRowTail::Closed)
+    effects
+        .is_closed()
         .then_some(())
         .ok_or(FinalSemanticAnalysisError::OpenEffectRow)
 }

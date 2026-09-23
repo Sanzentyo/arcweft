@@ -1,7 +1,7 @@
 use core::convert::Infallible;
 
 use crate::{
-    effect_row::{EffectRow, EffectRowTail},
+    effect_row::{DecisionControl, DecisionWork, EffectRow},
     types::{ArrayLength, TypeKind},
 };
 
@@ -235,7 +235,12 @@ where
         | (TypeKind::ActionTarget, TypeKind::ActionTarget)
         | (TypeKind::ActionResult, TypeKind::ActionResult)
         | (TypeKind::DataFormat, TypeKind::DataFormat)
-        | (TypeKind::DataShape, TypeKind::DataShape)
+        | (TypeKind::DataValue, TypeKind::DataValue)
+        | (TypeKind::DataError, TypeKind::DataError)
+        | (TypeKind::DataErrorKind, TypeKind::DataErrorKind)
+        | (TypeKind::DataPath, TypeKind::DataPath)
+        | (TypeKind::DataPathSegment, TypeKind::DataPathSegment)
+        | (TypeKind::DataMapKind, TypeKind::DataMapKind)
         | (TypeKind::AgentEntityMetadata, TypeKind::AgentEntityMetadata)
         | (TypeKind::AgentSourceAnchor, TypeKind::AgentSourceAnchor)
         | (TypeKind::AgentProjectGraphNeighborhood, TypeKind::AgentProjectGraphNeighborhood)
@@ -583,6 +588,7 @@ where
             }
         }
         (TypeKind::DialogueLine(expected), TypeKind::DialogueLine(actual))
+        | (TypeKind::DataShape(expected), TypeKind::DataShape(actual))
         | (TypeKind::Probe(expected), TypeKind::Probe(actual))
         | (TypeKind::Vec(expected), TypeKind::Vec(actual))
         | (TypeKind::Seq(expected), TypeKind::Seq(actual))
@@ -668,7 +674,14 @@ where
                 || if structural {
                     expected_effects != actual_effects
                 } else {
-                    !effect_rows_compatible(expected_effects, actual_effects)
+                    !effect_rows_compatible(
+                        expected_effects,
+                        actual_effects,
+                        expected,
+                        actual,
+                        control,
+                        meter,
+                    )?
                 }
             {
                 return Ok(false);
@@ -785,17 +798,47 @@ where
     Ok(true)
 }
 
-fn effect_rows_compatible(expected: &EffectRow, actual: &EffectRow) -> bool {
-    match (expected.tail(), actual.tail()) {
-        (EffectRowTail::Unknown, _) | (_, EffectRowTail::Unknown) => true,
-        (EffectRowTail::Closed, EffectRowTail::Closed)
-        | (EffectRowTail::Variable(_), EffectRowTail::Closed | EffectRowTail::Variable(_)) => {
-            actual
-                .concrete()
-                .effects_not_covered_by(expected.concrete())
-                .is_empty()
+fn effect_rows_compatible<C: TypeCompatibilityControl>(
+    expected_row: &EffectRow,
+    actual_row: &EffectRow,
+    expected: &TypeKind,
+    actual: &TypeKind,
+    control: &mut C,
+    meter: bool,
+) -> Result<bool, TypeCompatibilityFailure<C::Error>> {
+    // Strict policies have already rejected unknown annotations in their
+    // complete-tree validation. Recovery preserves the original diagnostic.
+    if !expected_row.is_known() || !actual_row.is_known() {
+        return Ok(true);
+    }
+    actual_row
+        .is_covered_by(
+            expected_row,
+            &mut EffectCompatibilityControl {
+                control,
+                expected,
+                actual,
+                meter,
+            },
+        )
+        .map_err(TypeCompatibilityFailure::Control)
+}
+
+struct EffectCompatibilityControl<'a, C> {
+    control: &'a mut C,
+    expected: &'a TypeKind,
+    actual: &'a TypeKind,
+    meter: bool,
+}
+
+impl<C: TypeCompatibilityControl> DecisionControl for EffectCompatibilityControl<'_, C> {
+    type Error = C::Error;
+
+    fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+        if self.meter {
+            self.control.enter(self.expected, self.actual)?;
         }
-        (EffectRowTail::Closed, EffectRowTail::Variable(_)) => false,
+        Ok(())
     }
 }
 
@@ -922,7 +965,7 @@ fn forbidden_here(ty: &TypeKind) -> Option<TypeCompatibilityForbidden> {
             ArrayLength::Inferred => Some(TypeCompatibilityForbidden::ArrayLengthInferred),
             ArrayLength::Const(_) | ArrayLength::Generic(_) => None,
         },
-        TypeKind::Function { effects, .. } if matches!(effects.tail(), EffectRowTail::Unknown) => {
+        TypeKind::Function { effects, .. } if !effects.is_known() => {
             Some(TypeCompatibilityForbidden::UnknownEffectTail)
         }
         _ => None,

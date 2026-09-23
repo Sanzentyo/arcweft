@@ -51,7 +51,12 @@ pub(crate) fn visit_project_nominals<E>(
         | TypeKind::ActionResult
         | TypeKind::AgentValue
         | TypeKind::DataFormat
-        | TypeKind::DataShape
+        | TypeKind::DataValue
+        | TypeKind::DataError
+        | TypeKind::DataErrorKind
+        | TypeKind::DataPath
+        | TypeKind::DataPathSegment
+        | TypeKind::DataMapKind
         | TypeKind::AgentEntityMetadata
         | TypeKind::AgentSourceAnchor
         | TypeKind::AgentProjectGraphNeighborhood
@@ -81,6 +86,7 @@ pub(crate) fn visit_project_nominals<E>(
         TypeKind::Range(inner)
         | TypeKind::Probe(inner)
         | TypeKind::Vec(inner)
+        | TypeKind::DataShape(inner)
         | TypeKind::Slice(inner)
         | TypeKind::Seq(inner)
         | TypeKind::Need(inner)

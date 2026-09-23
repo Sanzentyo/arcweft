@@ -76,6 +76,8 @@ use super::{
     PostfixBracketResolution, PreparedExecutableIngressSeal, PreparedStatementPayload,
     RegisteredSemanticValueId, SemanticFactFamily, analyze_final_project,
 };
+#[path = "tests/accepted_rust_nominal.rs"]
+mod accepted_rust_nominal;
 #[path = "tests/call_diagnostics.rs"]
 mod call_diagnostics;
 #[path = "tests/callable_values.rs"]
@@ -84,6 +86,8 @@ mod callable_values;
 mod compile_time_scalars;
 #[path = "tests/content_callables.rs"]
 mod content_callables;
+#[path = "tests/data_callables.rs"]
+mod data_callables;
 #[path = "tests/dialogue_mark_authority.rs"]
 mod dialogue_mark_authority;
 #[path = "tests/evaluated_effects.rs"]
@@ -2247,14 +2251,16 @@ fn load_opening_assets() -> ArcResult<ImageHandle> {
     admission
         .try_digest(&value, 1_024)
         .expect("the exact accepted opaque value has canonical identity");
-    let restored = admission
+    let snapshot = admission
         .try_snapshot(&value)
-        .expect("the exact accepted opaque value snapshots")
-        .into_runtime_value()
-        .expect("the core snapshot restores the opaque value");
-    admission
-        .validate_live_value(&restored)
-        .expect("restored opaque evidence remains exact");
+        .expect("the exact accepted opaque value snapshots");
+    let arcweft_core::value::AwbcRuntimeValueSnapshot::Opaque(snapshot) = snapshot else {
+        panic!("the accepted opaque carrier retains its owner in the snapshot");
+    };
+    assert_eq!(&snapshot.producer, owner.producer());
+    assert_eq!(snapshot.semantic_identity, owner.semantic_identity());
+    assert_eq!(snapshot.value_class, owner.value_class());
+    assert_eq!(snapshot.persistence, owner.persistence());
 
     let foreign = self::fixture("fn foreign() {}", None);
     let stale = RuntimeProducerArgumentClassifier::try_new(&report, &foreign.registered)
@@ -2750,7 +2756,7 @@ fn producer_admission_rejects_compact_spread_slots() {
 }
 
 #[test]
-fn type_level_function_argument_fails_at_the_exact_call_projection() {
+fn callback_parameter_passes_through_another_function_without_invoking_its_row() {
     let fixture = fixture(
         concat!(
             "fn consume(callback: i64 -> i64) {}\n",
@@ -2758,10 +2764,16 @@ fn type_level_function_argument_fails_at_the_exact_call_projection() {
         ),
         None,
     );
-    assert!(matches!(
-        analyze(&fixture),
-        Err(FinalSemanticAnalysisError::CallConstraintFailure(_))
-    ));
+    let analysis =
+        analyze(&fixture).expect("an input callback has a declaration-owned effect parameter");
+    let (_, call) = analysis.calls().next().expect("consume call");
+    let application = call
+        .selected_application()
+        .expect("callback argument accepted");
+    assert!(
+        application.core().effects().is_empty(),
+        "passing an unused callback does not invoke it"
+    );
 }
 
 #[test]
@@ -3221,8 +3233,8 @@ fn checked_catalog_keeps_closure_body_effects_latent() {
     assert_eq!(
         facts
             .actual_row()
-            .map(crate::effect_row::EffectRow::concrete),
-        Some(&outer_effects),
+            .and_then(crate::effect_row::EffectRow::closed_value),
+        Some(outer_effects.clone()),
         "creating the closure must not perform its body effects"
     );
 
@@ -3246,14 +3258,18 @@ fn checked_catalog_keeps_closure_body_effects_latent() {
         catalog
             .closure_row(&closure_id)
             .expect("checked closure row")
-            .concrete(),
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row"),
         &closure_effects
     );
     assert_eq!(
         catalog
             .closure_at_source(closure_source)
             .expect("source-indexed checked closure row")
-            .concrete(),
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row"),
         &closure_effects
     );
     assert!(!outer_effects.contains(&EffectId::parse("fs.read").expect("effect identity")));
@@ -3289,7 +3305,14 @@ fn root() {
     else {
         panic!("the closure value keeps its function type");
     };
-    assert_eq!(effects.concrete().to_labels(), ["fs.read"]);
+    assert_eq!(
+        effects
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
+        ["fs.read"]
+    );
     let closure_source = module
         .source_site(
             module.provenance().source_identity(),
@@ -3309,7 +3332,9 @@ fn root() {
             .checked_callables()
             .closure_at_source(closure_source)
             .expect("source-indexed checked closure row")
-            .concrete()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
             .to_labels(),
         ["fs.read"]
     );
@@ -5750,11 +5775,13 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                     assert_eq!(actual_binder, expected_binder);
                     assert_eq!(actual_params, expected_params);
                     assert_eq!(actual_return, expected_return);
-                    assert_eq!(actual_effects.concrete(), expected_effects.concrete());
-                    assert!(matches!(
-                        actual_effects.tail(),
-                        crate::effect_row::EffectRowTail::Variable(_)
-                    ));
+                    assert_eq!(
+                        actual_effects.constant_effects().expect("known effect row"),
+                        expected_effects
+                            .constant_effects()
+                            .expect("known effect row")
+                    );
+                    assert!(actual_effects.is_known() && !actual_effects.is_closed());
                 }
                 _ => assert_eq!(actual, expected),
             }
@@ -5789,15 +5816,16 @@ fn enum_shorthand_and_partial_placeholder_are_candidate_contextual() {
                 assert_eq!(published_binder, expected_binder);
                 assert_eq!(published_params, expected_params);
                 assert_eq!(published_return, expected_return);
-                assert_eq!(published_effects.concrete(), expected_effects.concrete());
                 assert_eq!(
-                    published_effects.tail(),
-                    crate::effect_row::EffectRowTail::Closed
+                    published_effects
+                        .constant_effects()
+                        .expect("known effect row"),
+                    expected_effects
+                        .constant_effects()
+                        .expect("known effect row")
                 );
-                assert!(matches!(
-                    expected_effects.tail(),
-                    crate::effect_row::EffectRowTail::Variable(_)
-                ));
+                assert!(published_effects.is_closed());
+                assert!(expected_effects.is_known() && !expected_effects.is_closed());
             }
             _ => assert_eq!(published, primary_expected),
         }
@@ -6152,14 +6180,28 @@ fn ordinary_function_effect_contract_preserves_omitted_empty_and_nonempty_states
         inferred.effect_contract_origin(),
         Some(EffectContractOrigin::BodyInference)
     );
-    assert!(inferred.exposed_row().concrete().is_empty());
+    assert!(
+        inferred
+            .exposed_row()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .is_empty()
+    );
 
     let empty = checked_function_facts(&report, &fixture, "empty");
     assert_eq!(
         empty.effect_contract_origin(),
         Some(EffectContractOrigin::Authored)
     );
-    assert!(empty.exposed_row().concrete().is_empty());
+    assert!(
+        empty
+            .exposed_row()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .is_empty()
+    );
 
     let bounded = checked_function_facts(&report, &fixture, "bounded");
     assert_eq!(
@@ -6167,7 +6209,12 @@ fn ordinary_function_effect_contract_preserves_omitted_empty_and_nonempty_states
         Some(EffectContractOrigin::Authored)
     );
     assert_eq!(
-        bounded.exposed_row().concrete().to_labels(),
+        bounded
+            .exposed_row()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .to_labels(),
         ["debug.record", "fs.read"]
     );
 
@@ -6230,7 +6277,14 @@ fn outer(value: i64) -> i64 { helper(value) }
         Some(CheckedOrdinaryFunctionEmission::ExpressionFunctionSite)
     );
     assert_eq!(outer.suspension(), CheckedSuspensionRole::NonSuspending);
-    assert!(outer.exposed_row().concrete().is_empty());
+    assert!(
+        outer
+            .exposed_row()
+            .closed_value()
+            .as_ref()
+            .expect("closed effect row")
+            .is_empty()
+    );
     assert_eq!(outer.control(), CheckedExecutableControlRole::FlowRequired);
     assert_eq!(
         outer.ordinary_function_emission(),

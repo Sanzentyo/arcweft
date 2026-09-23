@@ -2,9 +2,11 @@
 //!
 //! A graph prefix must not carry a callable, group, and lower solution as
 //! independent values.  Those values are sealed together here and can only
-//! be inspected through callable-owned projections.  The analyzer receives
+//! be inspected through callable-owned projections. The analyzer receives
 //! the application as part of its prepared prefix, but cannot construct one
-//! or obtain the raw lower solution from this module.
+//! or obtain the raw lower solution from this module. Its result is projected
+//! once from the borrowed checked-catalog row and retained as an application
+//! result, never as a second effect-row authority.
 
 use std::sync::Arc;
 use thiserror::Error;
@@ -13,7 +15,8 @@ use crate::types::{TypeKind, constraints::TypeConstraintSolution};
 
 use super::{
     CallConstraintInvariant, CallableGroupIndex, CallableResultSchema,
-    CallableSignatureSchemaDigest, DetachedPreparedResolvedCallable, PreparedResolvedCallable,
+    CallableSignatureSchemaDigest, CallableTerminalEffectProjection,
+    DetachedPreparedResolvedCallable, PreparedResolvedCallable,
     PreparedResolvedCallableDetachArena,
 };
 
@@ -25,6 +28,7 @@ pub(crate) struct PreparedCallableApplication {
     selected: Arc<PreparedResolvedCallable>,
     completed_group: CallableGroupIndex,
     solution: Arc<TypeConstraintSolution>,
+    result: CallableResultSchema,
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -35,12 +39,14 @@ pub(crate) enum PreparedCallableApplicationReplayMismatch {
     CompletedGroup,
     #[error("constraint solution differs")]
     Solution,
+    #[error("projected application result differs")]
+    Result,
 }
 
-/// Projection-free application after stage-one candidate detachment.  The
-/// selected callable is represented exactly once and the lower solution has
-/// already crossed into the opaque final-solution seed; no selected `Arc` is
-/// cloned into a parallel candidate inventory.
+/// Detached application after stage one. The selected callable is represented
+/// exactly once and the lower solution has crossed into the opaque
+/// final-solution seed; the prepared projection is discarded so final sealing
+/// can recompute it from the frozen checked-catalog row.
 pub(crate) struct DetachedPreparedCallableApplication {
     selected: DetachedPreparedResolvedCallable,
     solution: super::checked_application::FrozenCallTypeSolutionSeed,
@@ -66,15 +72,31 @@ impl PreparedCallableApplication {
     pub(crate) fn seal_from_selected_transaction(
         selected: Arc<PreparedResolvedCallable>,
         solution: Arc<TypeConstraintSolution>,
+        terminal_effects: CallableTerminalEffectProjection<'_>,
     ) -> Result<Self, CallConstraintInvariant> {
         let completed_group = selected.call_group();
         if selected.schema().group(completed_group).is_none() {
             return Err(CallConstraintInvariant::PreparedGroupMismatch);
         }
+        let declared = selected
+            .result_schema_for_group(completed_group, terminal_effects)?
+            .into_ready()?;
+        let result = match declared {
+            CallableResultSchema::Value(value) => CallableResultSchema::Value(
+                solution
+                    .apply_template(&value)?
+                    .view()
+                    .to_quantified_type()?,
+            ),
+            CallableResultSchema::ContentEmission(operation) => {
+                CallableResultSchema::ContentEmission(operation)
+            }
+        };
         Ok(Self {
             selected,
             completed_group,
             solution,
+            result,
         })
     }
 
@@ -95,20 +117,7 @@ impl PreparedCallableApplication {
     }
 
     pub(crate) fn result_schema(&self) -> Result<CallableResultSchema, CallConstraintInvariant> {
-        let declared = self
-            .selected
-            .result_schema_for_group(self.completed_group)?;
-        Ok(match declared {
-            CallableResultSchema::Value(value) => CallableResultSchema::Value(
-                self.solution
-                    .apply_template(&value)?
-                    .view()
-                    .to_quantified_type()?,
-            ),
-            CallableResultSchema::ContentEmission(operation) => {
-                CallableResultSchema::ContentEmission(operation)
-            }
-        })
+        Ok(self.result.clone())
     }
 
     pub(crate) fn result_type(&self) -> Result<TypeKind, CallConstraintInvariant> {
@@ -137,8 +146,6 @@ impl PreparedCallableApplication {
             && selected.equivalent_sources() == candidate.equivalent_sources()
             && selected.authority() == candidate.authority()
             && selected.schema().semantic_digest() == candidate.schema().semantic_digest()
-            && selected.prepared_effect_instantiation().issuer()
-                == candidate.prepared_effect_instantiation().issuer()
     }
 
     pub(super) fn solution(&self) -> &Arc<TypeConstraintSolution> {
@@ -159,16 +166,11 @@ impl PreparedCallableApplication {
         if self.completed_group != other.completed_group {
             return Some(PreparedCallableApplicationReplayMismatch::CompletedGroup);
         }
-        if !self
-            .selected
-            .prepared_effect_instantiation()
-            .solution_replay_eq(
-                &self.solution,
-                other.selected.prepared_effect_instantiation(),
-                &other.solution,
-            )
-        {
+        if self.solution != other.solution {
             return Some(PreparedCallableApplicationReplayMismatch::Solution);
+        }
+        if self.result != other.result {
+            return Some(PreparedCallableApplicationReplayMismatch::Result);
         }
         None
     }
@@ -184,9 +186,9 @@ impl PreparedCallableApplication {
             selected,
             completed_group,
             solution,
+            result: _,
         } = self;
         let schema = selected.schema().semantic_digest();
-        let effect_instantiation = selected.prepared_effect_instantiation().evidence();
         let selected = arena.detach(selected)?;
         Ok(DetachedPreparedCallableApplication {
             selected,
@@ -194,7 +196,6 @@ impl PreparedCallableApplication {
                 schema,
                 completed_group,
                 solution,
-                effect_instantiation,
             ),
         })
     }

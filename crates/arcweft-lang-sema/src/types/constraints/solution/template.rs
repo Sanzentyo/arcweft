@@ -1,15 +1,15 @@
 //! Capture-avoiding application of completed rows to declaration templates.
 
-use crate::effect_row::{EffectRow, EffectSubstitution};
+use crate::effect_row::EffectRow;
 use crate::types::{
-    ArrayLength, GenericBinder, GenericConstReference, GenericParameterKind, GenericScope,
-    GenericScopeError, GenericTypeReference, ScopedType, ScopedTypeView, TypeKind,
-    TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
+    ArrayLength, GenericBinder, GenericConstReference, GenericEffectReference,
+    GenericParameterKind, GenericScope, GenericScopeError, GenericTypeReference, ScopedType,
+    ScopedTypeView, TypeKind, TypeProjectionControl, TypeProjectionError, TypeProjectionNodeKind,
 };
 
 use super::super::shape::{TypeConstraintChildren, TypeConstraintShape};
-use crate::types::projection_control::UnmeteredTypeProjection;
 use crate::types::projection_control::visit_effect_row;
+use crate::types::projection_control::{EffectProjectionControl, UnmeteredTypeProjection};
 
 use super::{TypeConstraintSolution, TypeInstantiationError};
 
@@ -21,10 +21,6 @@ impl TypeConstraintSolution {
         &self,
         ty: &TypeKind,
     ) -> Result<ScopedType, TypeInstantiationError> {
-        let effects = EffectSubstitution::from_rows(
-            self.effect_bindings()
-                .map(|(variable, value)| (*variable, value.clone())),
-        );
         let residual = self.residual.scope();
         let template = self.authority.parameter_scope.template_scope();
         let value = map_term(
@@ -38,7 +34,7 @@ impl TypeConstraintSolution {
                         .binary_search_by(|row| row.parameter.cmp(&parameter))
                     {
                         let value = ScopedTypeView::sealed(&self.bindings[index].value, residual);
-                        return lift_value(value, target, &effects);
+                        return lift_value(value, target);
                     }
                     if let Some(slot) = self.residual.type_slot(&parameter) {
                         return Ok(TypeKind::GenericParam(
@@ -70,7 +66,35 @@ impl TypeConstraintSolution {
                 }
                 keep_const(reference, source)
             },
-            &|row| row.resolve_partial(&effects).map_err(Into::into),
+            &|row, source, target| {
+                map_effects(row, &|reference| {
+                    if let Some(parameter) = reference.template_key(template, source)? {
+                        if let Ok(index) = self
+                            .effect_bindings
+                            .binary_search_by(|row| row.variable.cmp(&parameter))
+                        {
+                            return lift_effects(
+                                &self.effect_bindings[index].value,
+                                residual,
+                                target,
+                            );
+                        }
+                        if let Some(slot) = self.residual.effect_slot(&parameter) {
+                            return Ok(EffectRow::open(
+                                crate::effects::EffectSet::new(),
+                                target.bound_effect(depth_difference(target, residual)?, slot)?,
+                            ));
+                        }
+                        if matches!(parameter, GenericEffectReference::Bound(_)) {
+                            return Err(TypeInstantiationError::UnboundEffect { parameter });
+                        }
+                    }
+                    Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        keep_effect(reference, source)?,
+                    ))
+                })
+            },
         )?;
         Ok(ScopedType::new(value, residual.clone()))
     }
@@ -88,7 +112,14 @@ impl ScopedTypeView<'_> {
             &root,
             &|reference, source, _| keep_type(reference, source),
             &|reference, source, _| keep_const(reference, source),
-            &|row| Ok(row.clone()),
+            &|row, source, _| {
+                map_effects(row, &|reference| {
+                    Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        keep_effect(reference, source)?,
+                    ))
+                })
+            },
         )
     }
 
@@ -146,16 +177,49 @@ impl ScopedTypeView<'_> {
                 )?;
                 Ok(ArrayLength::Generic(target.bound_const(depth, slot)?))
             };
-        let project = |ty: &TypeKind| {
-            map_term(ty, &source, &target, &type_map, &const_map, &|row| {
-                Ok(row.clone())
+        let effect_map = |row: &EffectRow, source: &GenericScope, target: &GenericScope| {
+            map_effects(row, &|reference| {
+                let GenericEffectReference::Bound(parameter) = reference else {
+                    return Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        keep_effect(reference, source)?,
+                    ));
+                };
+                source.bound_effect(parameter.depth(), parameter.slot())?;
+                let local = source.binders().len() - root_depth;
+                let (depth, slot) = if (parameter.depth() as usize) < local {
+                    (parameter.depth(), parameter.slot())
+                } else {
+                    let owner = source.binders().len() - 1 - parameter.depth() as usize;
+                    let offset = merge_binders(&source.binders()[..owner])?.effects();
+                    let slot = parameter.slot().checked_add(offset).ok_or(
+                        GenericScopeError::BinderArityOverflow {
+                            kind: GenericParameterKind::Effect,
+                            count: parameter.slot() as usize + offset as usize,
+                        },
+                    )?;
+                    (
+                        u32::try_from(target.binders().len() - 1).map_err(|_| {
+                            GenericScopeError::UnknownDepth {
+                                depth: parameter.depth(),
+                            }
+                        })?,
+                        slot,
+                    )
+                };
+                Ok(EffectRow::open(
+                    crate::effects::EffectSet::new(),
+                    target.bound_effect(depth, slot)?,
+                ))
             })
         };
+        let project =
+            |ty: &TypeKind| map_term(ty, &source, &target, &type_map, &const_map, &effect_map);
         Ok(TypeKind::function_with_binder(
             merged,
             params.iter().map(project).collect::<Result<Vec<_>, _>>()?,
             project(return_type)?,
-            effects.clone(),
+            effect_map(effects, &source, &target)?,
         ))
     }
 }
@@ -214,7 +278,6 @@ fn depth_difference(
 fn lift_value(
     value: ScopedTypeView<'_>,
     target: &GenericScope,
-    effects: &EffectSubstitution,
 ) -> Result<TypeKind, TypeInstantiationError> {
     let inserted = depth_difference(target, value.scope())?;
     let root_depth = value.scope().binders().len();
@@ -262,7 +325,12 @@ fn lift_value(
                 target.bound_const(depth, parameter.slot())?,
             ))
         },
-        &|row| row.resolve_partial(effects).map_err(Into::into),
+        &|row, source, target| {
+            map_effects(row, &|reference| {
+                let reference = lift_effect(reference, source, target, root_depth, inserted)?;
+                Ok(EffectRow::open(crate::effects::EffectSet::new(), reference))
+            })
+        },
     )
 }
 
@@ -324,6 +392,87 @@ fn keep_const(
     }
 }
 
+pub(super) fn keep_effect(
+    reference: &GenericEffectReference,
+    scope: &GenericScope,
+) -> Result<GenericEffectReference, TypeInstantiationError> {
+    match reference {
+        GenericEffectReference::Free(_) => Ok(reference.clone()),
+        GenericEffectReference::Bound(parameter) => {
+            Ok(scope.bound_effect(parameter.depth(), parameter.slot())?)
+        }
+        GenericEffectReference::Inference(_) => Err(GenericScopeError::EscapedInference {
+            kind: GenericParameterKind::Effect,
+        }
+        .into()),
+    }
+}
+
+fn lift_effect(
+    reference: &GenericEffectReference,
+    source: &GenericScope,
+    target: &GenericScope,
+    root_depth: usize,
+    inserted: u32,
+) -> Result<GenericEffectReference, TypeInstantiationError> {
+    let GenericEffectReference::Bound(parameter) = reference else {
+        return keep_effect(reference, source);
+    };
+    source.bound_effect(parameter.depth(), parameter.slot())?;
+    let local = source.binders().len() - root_depth;
+    let depth = if (parameter.depth() as usize) < local {
+        parameter.depth()
+    } else {
+        parameter
+            .depth()
+            .checked_add(inserted)
+            .ok_or(GenericScopeError::UnknownDepth {
+                depth: parameter.depth(),
+            })?
+    };
+    Ok(target.bound_effect(depth, parameter.slot())?)
+}
+
+fn lift_effects(
+    row: &EffectRow,
+    source: &GenericScope,
+    target: &GenericScope,
+) -> Result<EffectRow, TypeInstantiationError> {
+    let inserted = depth_difference(target, source)?;
+    map_effects(row, &|reference| {
+        Ok(EffectRow::open(
+            crate::effects::EffectSet::new(),
+            lift_effect(reference, source, target, source.binders().len(), inserted)?,
+        ))
+    })
+}
+
+fn map_effects(
+    row: &EffectRow,
+    mapping: &impl Fn(&GenericEffectReference) -> Result<EffectRow, TypeInstantiationError>,
+) -> Result<EffectRow, TypeInstantiationError> {
+    map_effects_with_control(row, 1, &mut UnmeteredTypeProjection, &|reference, _| {
+        mapping(reference).map_err(Into::into)
+    })
+    .map_err(TypeProjectionError::into_instantiation)
+}
+
+pub(super) fn map_effects_with_control<C: TypeProjectionControl>(
+    row: &EffectRow,
+    depth: u64,
+    control: &mut C,
+    mapping: &impl Fn(
+        &GenericEffectReference,
+        &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
+) -> Result<EffectRow, TypeProjectionError<C::Error>> {
+    visit_effect_row(control, row, depth)?;
+    row.try_substitute_variables(
+        &mut EffectProjectionControl { control, depth },
+        &mut |reference, adapter| mapping(reference, adapter.control),
+    )
+}
+
 pub(super) fn map_term(
     ty: &TypeKind,
     source: &GenericScope,
@@ -338,7 +487,11 @@ pub(super) fn map_term(
         &GenericScope,
         &GenericScope,
     ) -> Result<ArrayLength, TypeInstantiationError>,
-    effects: &impl Fn(&EffectRow) -> Result<EffectRow, TypeInstantiationError>,
+    effects: &impl Fn(
+        &EffectRow,
+        &GenericScope,
+        &GenericScope,
+    ) -> Result<EffectRow, TypeInstantiationError>,
 ) -> Result<TypeKind, TypeInstantiationError> {
     map_term_with_control(
         ty,
@@ -356,7 +509,7 @@ pub(super) fn map_term(
                 Err(TypeInstantiationError::UnresolvedType.into())
             }
         },
-        &|row, _, _| effects(row).map_err(Into::into),
+        &|row, source, target, _, _| effects(row, source, target).map_err(Into::into),
     )
     .map_err(TypeProjectionError::into_instantiation)
 }
@@ -394,7 +547,13 @@ pub(super) fn map_term_with_control<C: TypeProjectionControl>(
         u64,
         &mut C,
     ) -> Result<ArrayLength, TypeProjectionError<C::Error>>,
-    effects: &impl Fn(&EffectRow, u64, &mut C) -> Result<EffectRow, TypeProjectionError<C::Error>>,
+    effects: &impl Fn(
+        &EffectRow,
+        &GenericScope,
+        &GenericScope,
+        u64,
+        &mut C,
+    ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
 ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
     control.check().map_err(TypeProjectionError::Control)?;
     let mut frames = Vec::<ProjectionFrame<'_>>::new();
@@ -466,7 +625,13 @@ impl ProjectionFrame<'_> {
             u64,
             &mut C,
         ) -> Result<ArrayLength, TypeProjectionError<C::Error>>,
-        effects: &impl Fn(&EffectRow, u64, &mut C) -> Result<EffectRow, TypeProjectionError<C::Error>>,
+        effects: &impl Fn(
+            &EffectRow,
+            &GenericScope,
+            &GenericScope,
+            u64,
+            &mut C,
+        ) -> Result<EffectRow, TypeProjectionError<C::Error>>,
     ) -> Result<TypeKind, TypeProjectionError<C::Error>> {
         self.shape.rebuild_with(
             self.projected,
@@ -479,7 +644,15 @@ impl ProjectionFrame<'_> {
                     .map_err(TypeProjectionError::Control)?;
                 consts(length, &self.source, &self.target, depth, control)
             },
-            |control, row| effects(row, child_depth(self.depth)?, control),
+            |control, row| {
+                effects(
+                    row,
+                    &self.source,
+                    &self.target,
+                    child_depth(self.depth)?,
+                    control,
+                )
+            },
         )
     }
 }
@@ -507,9 +680,65 @@ pub(super) fn clone_term_with_control<C: TypeProjectionControl>(
                 Err(TypeInstantiationError::UnresolvedType.into())
             }
         },
-        &|row, depth, control| {
-            visit_effect_row(control, row, depth)?;
-            Ok(row.clone())
+        &|row, source, _, depth, control| {
+            map_effects_with_control(row, depth, control, &|reference, _| {
+                Ok(EffectRow::open(
+                    crate::effects::EffectSet::new(),
+                    keep_effect(reference, source)?,
+                ))
+            })
         },
     )
+}
+
+impl TypeKind {
+    /// Instantiates declaration parameters simultaneously, charging every
+    /// occurrence before copying it. Replacements retain their own scope and
+    /// are never substituted through the declaration a second time.
+    pub(crate) fn instantiate_type_parameters_with_control<C: TypeProjectionControl>(
+        &self,
+        substitutions: &std::collections::BTreeMap<
+            &crate::types::GenericTypeParameterId,
+            &TypeKind,
+        >,
+        control: &mut C,
+    ) -> Result<Self, TypeProjectionError<C::Error>> {
+        let root = GenericScope::default();
+        map_term_with_control(
+            self,
+            &root,
+            &root,
+            1,
+            control,
+            &|reference, scope, _, depth, control| match reference {
+                GenericTypeReference::Free(parameter) => {
+                    control
+                        .visit_binding()
+                        .map_err(TypeProjectionError::Control)?;
+                    let replacement = substitutions.get(parameter).ok_or_else(|| {
+                        TypeInstantiationError::UnboundType {
+                            parameter: reference.clone(),
+                        }
+                    })?;
+                    clone_term_with_control(replacement, depth, control)
+                }
+                _ => keep_type(reference, scope).map_err(Into::into),
+            },
+            &|length, scope, _, _, _| match length {
+                ArrayLength::Generic(reference) => keep_const(reference, scope).map_err(Into::into),
+                ArrayLength::Const(_) => Ok(length.clone()),
+                ArrayLength::Error(_) | ArrayLength::Inferred => {
+                    Err(TypeInstantiationError::UnresolvedType.into())
+                }
+            },
+            &|row, source, _, depth, control| {
+                map_effects_with_control(row, depth, control, &|reference, _| {
+                    Ok(EffectRow::open(
+                        crate::effects::EffectSet::new(),
+                        keep_effect(reference, source)?,
+                    ))
+                })
+            },
+        )
+    }
 }
