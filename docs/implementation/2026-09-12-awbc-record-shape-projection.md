@@ -1014,3 +1014,24 @@ separate from workspace check/Clippy success. A complete `just test-workspace`
 and final goal acceptance have not passed; effect rows, callable execution,
 CharacterDialogue producer, Match, View, task-plan, nominal/scheduler/restore
 acceptance and the applicable Tier 2 evidence remain required.
+
+## Selected host and effect boundary continuation — 2026-09-23
+
+Inspected `main` and `origin/main` at
+`9c49b09ee78f42f2ae9683ef5973ef2969df2921` with a clean working tree
+and empty index before this note. The following coherent cuts were pushed:
+
+| Owner cut | Full Git SHA | Observed evidence |
+| --- | --- | --- |
+| Omitted function-effect rows in typed local/pattern bindings | `dd0a04ded372a2a18c024a5b3cd250aaf6e9b718` | Sema 873/879; six prior higher-order effect failures only; affected Clippy passed. |
+| Signal `Watch<T>` setter and bodyless trait receiver facts | `7cba825fed854eaa98aadd94a95c7b2f6a736473` | Sema 875/881; six prior failures; Signal CLI run and trait CLI check fixtures passed; Clippy passed. |
+| Final selected-call target effect availability | `add67ef212099a70a0e68a64c652a23c1657fb72` | Sema 878/884; six prior failures; adapter-sema target tests and affected Clippy passed. |
+| Program-owned VirtualPath and selected manifest host calls | `5bd7e40a88fe96fe166dbbfa7d3a63e5d27fc49e` | Core 543/543; native/AWBC file I/O and selected-host contract 5/5; real 010 spec check; affected 11-crate Clippy and workspace rustfmt passed. |
+| Explicit native CLI stdout/stderr/exit with typed `Never` | `9c49b09ee78f42f2ae9683ef5973ef2969df2921` | Adapter-context 24/24, host-adapter 9/9, runtime-host 5/5, native/AWBC CLI contract 8/8, real 001 spec run; sema 878/884 with the same six failures; affected Clippy and workspace rustfmt passed. |
+
+The six sema failures require symbolic higher-order callback rows and
+application-specific substitution; no final inference acceptance is claimed.
+The CLI fixture suite also reaches `020_relative_ids.arcw`, whose named scope
+is accepted by sema but lacks runtime-plan/Core/AWBC identity projection.
+The remaining goal phases, `just test-workspace`, structural refresh, and
+applicable Tier 2 validation have not been completed at this checkpoint.
