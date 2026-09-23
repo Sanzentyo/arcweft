@@ -76,7 +76,8 @@ file I/O to `arcweft-rust-abi-build`:
 
 ```rust
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+    ArcweftRustCallableRole, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
+    ArcweftRustPackageId, ArcweftRustTypePath,
     ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeRef,
 };
 use arcweft_rust_abi_build::{
@@ -85,19 +86,22 @@ use arcweft_rust_abi_build::{
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let manifest = ArcweftRustManifest::builder(ArcweftRustPackage {
-        name: "truck_game".to_owned(),
+        id: ArcweftRustPackageId::try_new("truck_game")?,
         version: env!("CARGO_PKG_VERSION").to_owned(),
         metadata_hash: None,
     })
     .with_function(ArcweftRustFunction {
         name: "mini_games.truck.score_to_rank".to_owned(),
         rust_path: "truck_game::score_to_rank".to_owned(),
+        role: ArcweftRustCallableRole::Function,
         params: vec![ArcweftRustParam {
             name: "score".to_owned(),
             ty: ArcweftRustTypeRef::I32,
         }],
-        return_type: ArcweftRustTypeRef::Named {
-            name: "Rank".to_owned(),
+        return_type: ArcweftRustTypeRef::Nominal {
+            package: ArcweftRustPackageId::try_new("truck_game")?,
+            path: ArcweftRustTypePath::try_new(["Rank".try_into()?])?,
+            arguments: Vec::new(),
         },
         purity: ArcweftRustPurity::Pure,
         effects: Vec::new(),
@@ -115,6 +119,65 @@ Non-Arcweft-aware Rust crates are exposed through a small annotated wrapper
 crate. Raw pointers, unsafe ABIs, non-static borrows, and unsupported generic
 exports are rejected by the metadata macro rather than accepted as dynamic
 fallbacks.
+
+### Rust data policy and field defaults
+
+`ArcweftType` and `ArcweftReflect` use the same `#[arcweft(...)]` attribute
+grammar. The ABI declaration retains resolved field and case wire names,
+record unknown-field policy, enum tag/content/repr/discriminants, field
+Bytes format, and explicit default/skip intent. Repr discriminants use
+canonical decimal strings in schema-1 JSON so the full signed 128-bit domain
+round-trips without JSON numeric narrowing. Accepted metadata carries these
+properties into the nominal source graph; its canonical layout operation
+commits them. Per-occurrence policies remain attached to the selected program
+rows, so a shared logical Bytes type can have different field wire formats.
+
+Rust `Encode`/`Decode` derives preserve `Value::Enum` for every enum tagging
+and repr policy. Codecs apply those policies using the selected `TypeShape`;
+the typed value is not preformatted into a record or numeric discriminant.
+
+Metadata collection never executes a field default. A path default such as
+`#[arcweft(default = "default_flag")]` names an `#[arcweft_export(pure)]`
+function. The generated metadata joins that function's actual registered
+declaration and checks its nullary signature and exact field result type.
+Trait defaults and skipped fields require an explicitly exported pure
+constructor for the concrete field type:
+
+```rust
+#[derive(arcweft_rust_abi_macros::ArcweftType)]
+pub struct Cache(bool);
+
+#[arcweft_rust_abi_macros::arcweft_export(pure, name = "default_cache")]
+impl Default for Cache {
+    fn default() -> Self { Self(false) }
+}
+```
+
+The manifest must register the emitted `default_cache` callable metadata.
+This is an explicit purity contract for the real generated wrapper; merely
+implementing Rust `Default` does not grant it. Accepted sema verifies a unique
+registered callable, empty effect row, no inputs, exact result semantic type,
+and matching checked publication generation. The program ID commits the
+complete declaration/signature proof, not the source path alone. The selected
+Plan/AWBC retains the existing pure helper and binding, and each default field
+stores its exact `default_program` edge. Decode requests that field through a
+Sans-I/O provider; the provider executes the selected pure program through the
+host's admitted backend and validates its returned runtime value against the
+field row before conversion. A caller without a provider receives an explicit
+missing-default error. `has_default` alone never synthesizes a value.
+
+For an existing primitive or foreign `Default` implementation, declare the
+same concrete wrapper without writing an orphan trait implementation:
+
+```rust
+arcweft_rust_abi_macros::arcweft_export_default!(pure, pub fn default_flag() -> bool);
+arcweft_rust_abi_macros::arcweft_export_default!(pure, pub fn default_text() -> String);
+```
+
+The generated body calls the exact `core::default::Default` implementation.
+These declarations require no arguments and a concrete result type. A generic
+record field binds to the corresponding concrete wrapper after instantiation;
+missing, wrong-result, or duplicate constructor declarations fail admission.
 
 ## WASM plugin
 

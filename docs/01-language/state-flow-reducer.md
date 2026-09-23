@@ -28,6 +28,12 @@ effects {}
 root state として entry から選択し、typed lens で扱う。`state` 専用宣言は
 使わない。
 
+State と Event の型は、型引数を適用した nominal 定義のグラフで検証する。
+再帰的なフィールドも同じ型の定義へ接続し、型名だけの葉には置き換えない。
+initializer の結果、入力 event、reducer が確定する state、保存から復元する
+state は、実行中のプログラムが持つ型定義と layout に従う。entry binding に
+別の schema のコピーを持たせない。
+
 ## Event
 
 ```arcw

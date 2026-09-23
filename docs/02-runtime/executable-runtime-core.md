@@ -174,9 +174,48 @@ byte-identical.
 - matrix/tensor f32/f64;
 - task handle, need handle, and explicit `Dynamic`.
 
-Records store `{ public_id?, fields: [{ name, ty }] }`; variants store
-`{ public_id?, cases: [{ name, payload? }] }`. The layout digest covers the
-runtime representation for all type tags, not source-language spelling.
+Records store `{ public_id?, fields: [{ field, name, ty }] }`; variants store
+`{ owner, arguments, cases: [{ name, payload? }] }`. Each complete runtime type
+row retains its semantic identity. An executable nominal record also retains
+its public ID, source layout digest, ordered arguments, and record shape.
+
+Record shape uses the shared core `RuntimeNominalRecordShape`:
+Unit, Tuple, Record, and Newtype have wire tags 0, 1, 2, and 3. Each field
+encodes its explicit one-based ID, optional string-table name, and type ID.
+Anonymous and named-record fields require nonempty unique names; tuple and
+newtype fields are unnamed. Unit has no fields, and Newtype has exactly one.
+Empty Tuple, empty Record, and Unit remain distinct. All IDs use the existing
+shortest-u32-varint encoding, and the contract version remains 1.
+
+The canonical source schema proof establishes the layout digest before plan
+publication. Executable projection preserves that digest. It cannot recompute
+the source layout from erased metadata: for example, the same executable
+Bytes type can participate in source schemas with Binary, Base64, Hex, or
+Array presentation. AWBC validates field coordinates, shapes, references and
+structural cycles against its own type table; value and restore checks use
+the active program's declared type and layout. Nominal body back-edges are
+permitted, while generic-argument and other structural cycles are rejected.
+
+Project declarations and joined Rust ADTs use the same source graph projection.
+Edges identify the exact instantiated nominal; recursive edges do not become
+named schema leaves. Compiler semantic facts carry the source document through
+runtime-plan lowering. Before publication, plan construction correlates every
+definition, ordered field/case, child type and layout with the candidate type
+and domain tables, then discards the proof. Combining source documents retains
+equal definitions once and rejects conflicting definitions atomically.
+
+Entry state/event roles contain nominal identity, semantic identity and layout;
+their version-one encoding contains no copied schema. Initializer values,
+incoming events, committed reducer state and restored root values are admitted
+through the selected native or AWBC program's type rows. The Entry nominal
+schema digest is distinct from the executable layout digest and must preserve
+binding identity across implementation-only callable changes. Source-generation
+provenance must not turn such a change into a changed data contract.
+Project nominal type identity commits the declaration's world, module, owner
+path, kind, name and instantiated arguments. The source-set revision belongs
+to generation admission, not that identity. Definition changes still change
+the source graph layout, while an old checked declaration is rejected by the
+current generation even when its semantic type identity is unchanged.
 
 Structural record contracts retain declaration-order field coordinates and
 names. A field's coordinate, exact name, and recursive type participate in
@@ -203,6 +242,12 @@ the payload's item through the owning program, including the Tuple container.
 little-endian payloads plus width kind; floats use IEEE bit patterns; aggregate
 constants reference other constants; records/variants include their type ID;
 tensors store shape and exact scalar bits. Cycles are rejected.
+
+Record constants contain only their type ID and ordered child constant IDs.
+Variant constants contain only their type ID, case ordinal, and optional
+payload constant ID. Names come from the selected type row. `MakeRecord`
+likewise carries only its destination, type ID, and ordered value registers.
+The removed duplicate name fields are rejected by structured decoding.
 
 ```rust
 struct AwbcEffectSet { effects: Vec<AwbcStringId> } // sorted, unique
