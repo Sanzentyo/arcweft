@@ -112,7 +112,8 @@ impl Analyzer<'_, '_, '_> {
             return Ok(EffectSet::new());
         }
         let terminal_effects = self.source_callable_terminal_effects(candidate)?;
-        if let crate::callable::CallableTerminalEffectProjection::Known(row) = terminal_effects
+        if let crate::callable::CallableTerminalEffectProjection::Known { effects: row, .. } =
+            terminal_effects
             && row.is_known()
         {
             return row
@@ -170,7 +171,9 @@ impl Analyzer<'_, '_, '_> {
             .terminal_effects_for(candidate)
             .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
         {
-            crate::callable::CallableTerminalEffectProjection::Known(row) => Ok(Some(row.clone())),
+            crate::callable::CallableTerminalEffectProjection::Known { effects: row, .. } => {
+                Ok(Some(row.clone()))
+            }
             crate::callable::CallableTerminalEffectProjection::Pending(checked)
                 if candidate.checked() == Some(checked) =>
             {

@@ -13,11 +13,13 @@ use super::{
     HirPredicateBody, HirProofBody, HirSourceQuery, HirStmtKind, HirTraitMember, ItemId,
     ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
     StagedCheckedCallables, TypeId, TypeKind,
-    callable_effect_graph::CallableEffectGraph,
+    callable_effect_graph::{CallableEffectGraph, prepared_fixed_call_effect_rows},
     calls::{AnalyzerPreparedCallGraph, AnalyzerPreparedCallPrefix},
     statements::{checked_effect_expression, function_effect_contract, scope_span, source_span},
 };
-use crate::callable::{CheckedCallSite, EffectPermission, PreparedCallGraphSelectedNode};
+use crate::callable::{
+    CallableResultSchema, CheckedCallSite, EffectPermission, PreparedCallGraphSelectedNode,
+};
 use arcweft_lang_hir::{
     body_edges::{HirBodyChild, HirBodyProjection},
     expr::{
@@ -120,6 +122,97 @@ fn callable_label(module: &HirModule, owner: ItemId) -> Result<String, FinalSema
             .ok_or(FinalSemanticAnalysisError::RecoveredOwner),
         _ => Err(FinalSemanticAnalysisError::InvalidCallableOwner),
     }
+}
+
+pub(super) fn inferred_callable_result_schema(
+    modules: &BTreeMap<super::HirModuleId, &HirModule>,
+    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+    schema: &crate::callable::CallableSignatureSchema,
+    expressions: &BTreeMap<ExprId, super::PreparedExpressionFact>,
+) -> Result<Option<CallableResultSchema>, FinalSemanticAnalysisError> {
+    let Some(declared) = schema.result_schema().value_type() else {
+        return Ok(None);
+    };
+    if !result_schema_has_omitted_function_rows(schema) {
+        return Ok(None);
+    }
+    let module = modules
+        .get(&symbol.source_item().module())
+        .copied()
+        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+    let item = module
+        .resolve_item(symbol.source_item())
+        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+    let body = match (symbol.source_owner(), item.kind()) {
+        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => function.body(),
+        (HirCallableSourceOwner::ImplFunction { member }, HirItemKind::Impl(implementation)) => {
+            let Some(HirImplMember::Function(function)) =
+                implementation.members().get(usize::from(member))
+            else {
+                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+            };
+            let Some(body) = function.body() else {
+                return Err(FinalSemanticAnalysisError::UnsupportedCallableBody {
+                    owner: symbol.source_item(),
+                });
+            };
+            body
+        }
+        _ => return Err(FinalSemanticAnalysisError::OpenEffectRow),
+    };
+    let HirFunctionBody::Block {
+        statements, tail, ..
+    } = body
+    else {
+        return Err(FinalSemanticAnalysisError::RecoveredOwner);
+    };
+    let result_owner = match statements.last() {
+        Some(statement) => {
+            let statement = module
+                .resolve_stmt(*statement)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            match statement.kind() {
+                HirStmtKind::Return { value } => *value,
+                _ => *tail,
+            }
+        }
+        None => *tail,
+    };
+    let actual = expressions
+        .get(&result_owner)
+        .and_then(super::PreparedExpressionFact::value_type)
+        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+            owner: result_owner,
+        })?;
+    let inferred = declared
+        .binding_type_with_inferred_effects(actual)
+        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?;
+    if inferred == *declared {
+        return Err(FinalSemanticAnalysisError::OpenEffectRow);
+    }
+    Ok(Some(CallableResultSchema::Value(inferred)))
+}
+
+pub(super) fn result_schema_has_omitted_function_rows(
+    schema: &crate::callable::CallableSignatureSchema,
+) -> bool {
+    use crate::types::constraints::TypeConstraintShape;
+
+    let Some(ty) = schema.result_schema().value_type() else {
+        return false;
+    };
+    let mut pending = vec![ty];
+    while let Some(ty) = pending.pop() {
+        let shape = ty.constraint_shape();
+        if matches!(
+            shape,
+            TypeConstraintShape::Function { effects, .. } if !effects.is_known()
+        ) {
+            return true;
+        }
+        pending.extend(shape.children());
+    }
+    false
 }
 
 #[expect(
@@ -608,18 +701,24 @@ impl Analyzer<'_, '_, '_> {
         ),
         FinalSemanticAnalysisError,
     > {
+        let prepared_calls = self
+            .facts
+            .prepared_calls()
+            .map_err(FinalSemanticAnalysisError::from)?;
+        let fixed_call_effect_rows = prepared_fixed_call_effect_rows(prepared_calls, self.control)?;
         let mut prepared_effects =
             crate::final_analysis::statement_effects::prepare_execution_effects(
                 crate::final_analysis::statement_effects::PreparedExecutionEffectInput {
                     modules: &self.modules,
                     topology: self.topology.as_ref(),
                     selected,
+                    call_effects: &fixed_call_effect_rows,
                     expressions: &input.expressions,
                     statements: &input.statements,
                     control: self.control,
                 },
             )?;
-        let mut rows = BTreeMap::<CheckedCallableId, EffectSet>::new();
+        let mut rows = BTreeMap::<CheckedCallableId, EffectRow>::new();
         for body in &staged.bodies {
             self.control.check()?;
             let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
@@ -635,9 +734,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let graph = CallableEffectGraph::build(
             &staged.bodies,
-            self.facts
-                .prepared_calls()
-                .map_err(FinalSemanticAnalysisError::from)?,
+            prepared_calls,
             &prepared_effects,
             self.control,
         )?;
@@ -652,11 +749,7 @@ impl Analyzer<'_, '_, '_> {
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             if let EffectPermission::Bounded(row) = contract.permission()
                 && bounded_call_effect_rows
-                    .insert(
-                        body.id.clone(),
-                        row.closed_value()
-                            .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
-                    )
+                    .insert(body.id.clone(), row.clone())
                     .is_some()
             {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
@@ -673,7 +766,7 @@ impl Analyzer<'_, '_, '_> {
             .effect_rows()
             .rows()
         {
-            if prepared.closed_value().as_ref() != rows.get(checked) {
+            if Some(prepared) != rows.get(checked) {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
@@ -736,9 +829,7 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
                 let exposed = match contract.permission() {
                     EffectPermission::UnboundedInference => inferred.clone(),
-                    EffectPermission::Bounded(row) => row
-                        .closed_value()
-                        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+                    EffectPermission::Bounded(row) => row.clone(),
                 };
                 Ok((body.id.clone(), exposed))
             })
@@ -770,8 +861,33 @@ impl Analyzer<'_, '_, '_> {
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
             staged
                 .builder
-                .assign_inferred_row(&body.id, EffectRow::closed(row))
+                .assign_inferred_row(&body.id, row)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            };
+            let result_schema = {
+                let pending = staged
+                    .builder
+                    .pending_by_id(&body.id)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                let symbol = self
+                    .symbols
+                    .callable(declaration)
+                    .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+                inferred_callable_result_schema(
+                    &self.modules,
+                    symbol,
+                    pending.record().schema(),
+                    self.facts.expressions(),
+                )?
+            };
+            if let Some(result_schema) = result_schema {
+                staged
+                    .builder
+                    .assign_inferred_result_schema(&body.id, result_schema)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            }
             let suspension = if suspension_rows
                 .get(&body.id)
                 .copied()
@@ -785,9 +901,6 @@ impl Analyzer<'_, '_, '_> {
                 .builder
                 .assign_suspension_role(&body.id, suspension)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
-                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
-            };
             let symbol = self
                 .symbols
                 .callable(declaration)
@@ -818,12 +931,12 @@ impl Analyzer<'_, '_, '_> {
                     super::statements::expression_span(module, closure.owner())?,
                 )
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-                let row = EffectRow::closed(graph.close_selected_expression_effects(
+                let row = graph.close_selected_expression_effects(
                     closure.expressions(),
                     closure.effects(),
                     &call_effect_rows,
                     self.control,
-                )?);
+                )?;
                 let suspension = if graph.close_selected_expression_suspension(
                     closure.expressions(),
                     closure.direct_suspension(),
@@ -904,7 +1017,9 @@ impl Analyzer<'_, '_, '_> {
             .map(|(owner, item)| {
                 let actual = prepared_effects
                     .item_effects(*owner)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .closed_value()
+                    .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?;
                 // Preserve authored scopes and unused permissions. Only body
                 // effects not already covered by that bound need publication
                 // (all inferred effects, or implicit control.suspend).
@@ -994,7 +1109,9 @@ impl Analyzer<'_, '_, '_> {
                 permitted.insert(EffectId::control_suspend());
                 let actual = prepared_effects
                     .item_effects(owner)
-                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+                    .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                    .closed_value()
+                    .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?;
                 let missing = actual.effects_not_covered_by(&permitted);
                 if missing.is_empty() {
                     continue;

@@ -127,11 +127,14 @@ impl PreparedResolvedCallableDefinition {
                 return Err(super::super::CallConstraintInvariant::MalformedSchemaInventory);
             }
             return Ok(CallableProjection::Ready(
-                self.schema().result_schema().clone(),
+                terminal_effects
+                    .inferred_result_schema()
+                    .cloned()
+                    .unwrap_or_else(|| self.schema().result_schema().clone()),
             ));
         }
         match terminal_effects {
-            CallableTerminalEffectProjection::Known(effects) => self
+            CallableTerminalEffectProjection::Known { effects, .. } => self
                 .projected_function_type_from_group(next, effects)
                 .map(CallableResultSchema::Value)
                 .map(CallableProjection::Ready),
@@ -145,14 +148,26 @@ impl PreparedResolvedCallableDefinition {
     }
 }
 
-/// The terminal invocation row is borrowed from the checked catalog authority
-/// for the duration of projection. Inferred rows that are not closed yet stay
-/// identified as pending; they are never replaced with an unknown or empty
-/// row on a projected callable type.
+/// The terminal invocation row and optional body-inferred result schema are
+/// borrowed from the checked callable authority for the duration of
+/// projection. Inferred rows that are not available stay identified as
+/// pending; they are never replaced with an unknown or empty row.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CallableTerminalEffectProjection<'a> {
-    Known(&'a crate::effect_row::EffectRow),
+    Known {
+        effects: &'a crate::effect_row::EffectRow,
+        result_schema: Option<&'a CallableResultSchema>,
+    },
     Pending(&'a CheckedCallableId),
+}
+
+impl<'a> CallableTerminalEffectProjection<'a> {
+    pub(crate) const fn inferred_result_schema(self) -> Option<&'a CallableResultSchema> {
+        match self {
+            Self::Known { result_schema, .. } => result_schema,
+            Self::Pending(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -849,7 +864,7 @@ impl PreparedResolvedCallable {
                 Ok(CallableProjection::Ready(None))
             }
             PreparedResolvedCallableState::Base => match terminal_effects {
-                CallableTerminalEffectProjection::Known(effects) => {
+                CallableTerminalEffectProjection::Known { effects, .. } => {
                     let pattern = self
                         .definition
                         .projected_function_type_from_group(current_group, effects)?;

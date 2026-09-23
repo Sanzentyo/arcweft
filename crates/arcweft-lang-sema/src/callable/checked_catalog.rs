@@ -27,10 +27,10 @@ use crate::{
 use super::{
     CallableAccess, CallableAttachedContentExecution, CallableAttachedContentPolicy,
     CallableCandidateId, CallableEffectSchema, CallableGroupIndex, CallableName,
-    CallableParameterPassing, CallableParameterPresence, CallableRecord, CheckedCallableContext,
-    CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId, CheckedContentRole,
-    EnvironmentCallablePublicationDigest, ReceiverMethodKey, RegisteredCallableCatalog,
-    RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
+    CallableParameterPassing, CallableParameterPresence, CallableRecord, CallableResultSchema,
+    CheckedCallableContext, CheckedCallableDeclaration, CheckedCallableId, CheckedClosureId,
+    CheckedContentRole, EnvironmentCallablePublicationDigest, ReceiverMethodKey,
+    RegisteredCallableCatalog, RegisteredCallableCatalogDigest, StandardTraitCatalogVersion,
 };
 
 /// Exact generation shared by every record in one frozen checked catalog.
@@ -602,6 +602,7 @@ pub struct CheckedCallableFacts {
     suspension: CheckedSuspensionRole,
     control: CheckedExecutableControlRole,
     effects: CheckedCallableEffects,
+    inferred_result_schema: Option<CallableResultSchema>,
     attached_content: Option<CheckedCallableAttachedContentParameter>,
     interface_digest: Option<CallableInterfaceDigest>,
 }
@@ -641,6 +642,19 @@ impl CheckedCallableFacts {
 
     pub fn signature(&self) -> &super::CallableSignatureSchema {
         self.record.schema()
+    }
+
+    /// Result interface after checked body inference filled omitted nested
+    /// function rows. The accepted signature remains the declaration's source
+    /// authority; this projection belongs to its checked facts.
+    pub fn result_schema(&self) -> &CallableResultSchema {
+        self.inferred_result_schema
+            .as_ref()
+            .unwrap_or_else(|| self.signature().result_schema())
+    }
+
+    pub(crate) const fn inferred_result_schema(&self) -> Option<&CallableResultSchema> {
+        self.inferred_result_schema.as_ref()
     }
 
     pub fn source(&self) -> Option<&super::CallableSource> {
@@ -793,6 +807,9 @@ impl CheckedCallableFacts {
         visitor: &mut impl FnMut(&TypeKind) -> Result<(), E>,
     ) -> Result<(), E> {
         self.record.schema().visit_types(visitor)?;
+        if let Some(CallableResultSchema::Value(value)) = &self.inferred_result_schema {
+            visitor(value)?;
+        }
         if let Some(attached) = &self.attached_content {
             visitor(attached.binding_type())?;
             visitor(attached.abi_type())?;
@@ -993,6 +1010,7 @@ impl CheckedCallableCatalog {
                 facts.suspension(),
                 facts.control(),
                 facts.exposed_row(),
+                facts.inferred_result_schema(),
                 row.as_ref(),
             )?;
             sealed.insert(id.clone(), (row, digest));
@@ -1320,6 +1338,7 @@ pub(crate) enum CheckedCallableCatalogBuildError {
     DuplicateSource,
     SourceIdentityMismatch,
     InvalidState,
+    InvalidInference,
     MissingInference,
     DuplicateInference,
     DuplicateValidation,
@@ -1369,6 +1388,7 @@ pub(crate) struct PendingCheckedCallable {
     control: Option<CheckedExecutableControlRole>,
     contract: PendingCallableEffectContract,
     inferred: Option<EffectRow>,
+    inferred_result_schema: Option<CallableResultSchema>,
     completion: PendingCallableCompletion,
 }
 
@@ -1405,6 +1425,10 @@ impl PendingCheckedCallable {
                 self.record.schema().effects().fixed_row()
             }
         }
+    }
+
+    pub(crate) const fn inferred_result_schema(&self) -> Option<&CallableResultSchema> {
+        self.inferred_result_schema.as_ref()
     }
 }
 
@@ -1608,6 +1632,7 @@ impl CheckedCallableCatalogBuilder {
             control,
             contract,
             inferred: None,
+            inferred_result_schema: None,
             completion,
         };
         let previous = self.pending.insert(id.clone(), pending);
@@ -1661,6 +1686,36 @@ impl CheckedCallableCatalogBuilder {
         }
         pending.inferred = Some(inferred);
         pending.completion = PendingCallableCompletion::AwaitingValidation;
+        Ok(())
+    }
+
+    pub(crate) fn assign_inferred_result_schema(
+        &mut self,
+        id: &CheckedCallableId,
+        inferred: CallableResultSchema,
+    ) -> Result<(), CheckedCallableCatalogBuildError> {
+        if self.state != CheckedCatalogBuildState::Inferring {
+            return Err(CheckedCallableCatalogBuildError::InvalidState);
+        }
+        let pending = self
+            .pending
+            .get_mut(id)
+            .ok_or(CheckedCallableCatalogBuildError::MissingInference)?;
+        if !matches!(pending.contract, PendingCallableEffectContract::Body(_))
+            || pending.inferred_result_schema.is_some()
+        {
+            return Err(CheckedCallableCatalogBuildError::DuplicateInference);
+        }
+        let valid = match (pending.record.schema().result_schema(), &inferred) {
+            (CallableResultSchema::Value(declared), CallableResultSchema::Value(actual)) => {
+                declared.binding_type_with_inferred_effects(actual).as_ref() == Some(actual)
+            }
+            _ => false,
+        };
+        if !valid {
+            return Err(CheckedCallableCatalogBuildError::InvalidInference);
+        }
+        pending.inferred_result_schema = Some(inferred);
         Ok(())
     }
 
@@ -1775,19 +1830,21 @@ impl CheckedCallableCatalogBuilder {
         };
 
         let mut staged_substitution = self.effect_substitution.clone();
-        let actual = EffectRow::closed(
-            inferred
-                .resolve(&staged_substitution)
-                .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?,
-        );
         if let EffectPermission::Bounded(permitted) = contract.permission() {
-            EffectRow::check_subset(&actual, permitted, &mut staged_substitution)
+            EffectRow::check_subset(&inferred, permitted, &mut staged_substitution)
                 .map_err(|error| CheckedCallableCatalogBuildError::EffectSubset(Box::new(error)))?;
         }
-        let forbidden = actual
-            .closed_value()
-            .expect("resolved actual row")
-            .intersection(contract.forbidden());
+        let actual = inferred
+            .resolve_partial(&staged_substitution)
+            .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?;
+        if !actual.is_closed() && !contract.forbidden().is_empty() {
+            return Err(CheckedCallableCatalogBuildError::UnknownEffectRow);
+        }
+        let forbidden = if let Some(actual) = actual.closed_value() {
+            actual.intersection(contract.forbidden())
+        } else {
+            EffectSet::new()
+        };
         if !forbidden.is_empty() {
             return Err(CheckedCallableCatalogBuildError::ForbiddenEffects(
                 forbidden,
@@ -1963,16 +2020,6 @@ impl CheckedCallableCatalogBuilder {
             return Err(CheckedCallableCatalogBuildError::InvalidState);
         }
         self.validate_freeze_indices()?;
-        for execution in self.closure_rows.values_mut() {
-            execution.effects = EffectRow::closed(
-                execution
-                    .effects
-                    .resolve(&self.effect_substitution)
-                    .map_err(|error| {
-                        CheckedCallableCatalogBuildError::EffectRow(Box::new(error))
-                    })?,
-            );
-        }
         let mut records = BTreeMap::new();
         for (id, pending) in std::mem::take(&mut self.pending) {
             if pending.id != id || pending.completion != PendingCallableCompletion::Complete {
@@ -2004,6 +2051,7 @@ impl CheckedCallableCatalogBuilder {
                 suspension,
                 control,
                 effects,
+                inferred_result_schema: pending.inferred_result_schema,
                 attached_content: None,
                 interface_digest: None,
             };
@@ -2142,7 +2190,7 @@ impl CheckedCallableCatalogBuilder {
             }
             execution
                 .effects
-                .resolve(&self.effect_substitution)
+                .resolve_partial(&self.effect_substitution)
                 .map_err(|error| CheckedCallableCatalogBuildError::EffectRow(Box::new(error)))?;
         }
         Ok(())
@@ -2487,6 +2535,7 @@ fn interface_digest(
     suspension: CheckedSuspensionRole,
     control: CheckedExecutableControlRole,
     exposed: &EffectRow,
+    inferred_result: Option<&CallableResultSchema>,
     attached: Option<&CheckedCallableAttachedContentParameter>,
 ) -> Result<CallableInterfaceDigest, CheckedCallableCatalogBuildError> {
     let binding_coordinate = attached
@@ -2498,6 +2547,15 @@ fn interface_digest(
         .map(|default| default.coordinate().canonical_bytes())
         .transpose()
         .map_err(|_| CheckedCallableCatalogBuildError::InvalidAttachedContentInterface)?;
+    let inferred_result_digest = inferred_result
+        .and_then(CallableResultSchema::value_type)
+        .map(|ty| {
+            ty.semantic_identity_digest_in_scope(
+                record.schema().generic_inventory().template_scope(),
+            )
+        })
+        .transpose()
+        .map_err(|_| CheckedCallableCatalogBuildError::InvalidInference)?;
     let mut encoder = super::digest::CanonicalEncoder::default();
     match record.id() {
         CallableCandidateId::Project(declaration) => {
@@ -2552,6 +2610,9 @@ fn interface_digest(
         CheckedExecutableControlRole::FlowRequired => 1,
     });
     encode_row(&mut encoder, exposed);
+    encoder.option(inferred_result_digest.as_ref(), |encoder, digest| {
+        encoder.bytes(digest.as_bytes());
+    });
     match (attached, binding_coordinate.as_deref()) {
         (None, None) => encoder.bool(false),
         (Some(attached), Some(binding_coordinate)) => {

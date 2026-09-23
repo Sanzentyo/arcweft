@@ -11,7 +11,10 @@
 use std::sync::Arc;
 use thiserror::Error;
 
-use crate::types::{TypeKind, constraints::TypeConstraintSolution};
+use crate::{
+    effect_row::{EffectRow, EffectSubstitution},
+    types::{TypeKind, constraints::TypeConstraintSolution},
+};
 
 use super::{
     CallConstraintInvariant, CallableGroupIndex, CallableResultSchema,
@@ -29,6 +32,25 @@ pub(crate) struct PreparedCallableApplication {
     completed_group: CallableGroupIndex,
     solution: Arc<TypeConstraintSolution>,
     result: CallableResultSchema,
+}
+
+/// Read-only effect projection capability for one exact prepared application.
+/// It can outlive a graph-node borrow without losing that application's
+/// effect substitutions or becoming a declaration-wide cache.
+#[derive(Clone)]
+pub(crate) struct PreparedCallableEffectProjection {
+    solution: Arc<TypeConstraintSolution>,
+}
+
+impl PreparedCallableEffectProjection {
+    pub(crate) fn specialize(&self, row: &EffectRow) -> Result<EffectRow, CallConstraintInvariant> {
+        let substitutions = EffectSubstitution::from_rows(
+            self.solution
+                .effect_bindings()
+                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
+        );
+        row.resolve_partial(&substitutions).map_err(Into::into)
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -133,6 +155,23 @@ impl PreparedCallableApplication {
             return Err(CallConstraintInvariant::PreparedFunctionTypeMismatch);
         }
         Ok(result)
+    }
+
+    /// Applies this exact selected application's effect bindings while
+    /// retaining any declaration-owned residual rows. Body-effect inference
+    /// uses the formula before the application closes it; a different call of
+    /// the same declaration may specialize the same formula differently.
+    pub(crate) fn specialize_effect_row(
+        &self,
+        row: &EffectRow,
+    ) -> Result<EffectRow, CallConstraintInvariant> {
+        self.effect_projection().specialize(row)
+    }
+
+    pub(crate) fn effect_projection(&self) -> PreparedCallableEffectProjection {
+        PreparedCallableEffectProjection {
+            solution: Arc::clone(&self.solution),
+        }
     }
 
     pub(super) fn base_matches(&self, candidate: &PreparedResolvedCallable) -> bool {

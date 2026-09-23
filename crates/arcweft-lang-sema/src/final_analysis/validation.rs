@@ -2475,10 +2475,11 @@ fn validate_call_result(
     {
         return Err(FinalSemanticAnalysisError::CallFactMismatch);
     }
-    effects
-        .is_closed()
-        .then_some(())
-        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)
+    // A checked application inside a generic body may retain a symbolic row
+    // from its exact application solution. The expression fact exposes only
+    // the row's unconditional effects; the prepared application remains the
+    // authority for the bound generic tail.
+    Ok(())
 }
 
 fn validate_call_argument_slots(

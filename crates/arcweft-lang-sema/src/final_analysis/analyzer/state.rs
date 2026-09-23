@@ -892,10 +892,11 @@ impl SemanticFactState {
         reference: &crate::callable::PreparedCallResultRef,
         checked: &crate::callable::CheckedCallableId,
         row: crate::effect_row::EffectRow,
+        result_schema: Option<crate::callable::CallableResultSchema>,
     ) -> Result<(), CandidateFactTransactionViolation> {
         self.ensure_healthy()?;
         self.prepared_calls_mut()?
-            .complete_effect_projection(reference, checked, row)
+            .complete_effect_projection(reference, checked, row, result_schema)
             .map_err(|error| CandidateFactTransactionViolation::PreparedCallGraph(error.into()))
     }
 

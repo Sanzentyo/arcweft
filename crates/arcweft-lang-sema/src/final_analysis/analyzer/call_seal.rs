@@ -1375,7 +1375,21 @@ fn seal_selected_call(
         &site,
     )?;
     let terminal_effects = final_callable_effect_row(selected, checked_callables)?;
-    let effects = final_call_effects(selected, solution.completed_group(), checked_callables)?;
+    let checked_facts = selected
+        .checked()
+        .map(|checked| {
+            checked_callables
+                .callable(checked)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)
+        })
+        .transpose()?;
+    let inferred_result_schema =
+        checked_facts.and_then(crate::callable::CheckedCallableFacts::inferred_result_schema);
+    let terminal_call_effects =
+        final_call_effects(selected, solution.completed_group(), checked_callables)?;
+    let effects = solution
+        .specialize_effect_row(&terminal_call_effects)
+        .map_err(|error| final_call_seal_error(location, error))?;
     let consumer = record
         .consumer
         .checked_seal(selected)
@@ -1398,6 +1412,7 @@ fn seal_selected_call(
         core,
         expected_result,
         terminal_effects.as_ref(),
+        inferred_result_schema,
     )
     .map_err(|error| final_call_seal_error(location, error))?;
     Ok(SealedSelectedCall {
@@ -1713,12 +1728,7 @@ impl super::Analyzer<'_, '_, '_> {
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed
-                                .application
-                                .core()
-                                .effects()
-                                .closed_value()
-                                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+                            effects: sealed.application.core().effects().constant_effects()?,
                             callee,
                         };
                         applications.insert(key, sealed.application.clone());
@@ -1768,12 +1778,7 @@ impl super::Analyzer<'_, '_, '_> {
                         let update = PendingSelectedExpressionUpdate {
                             resolution: sealed.expression_resolution,
                             result: checked_call_result_schema(&sealed.application)?,
-                            effects: sealed
-                                .application
-                                .core()
-                                .effects()
-                                .closed_value()
-                                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+                            effects: sealed.application.core().effects().constant_effects()?,
                             callee,
                         };
                         applications.insert(key, sealed.application.clone());

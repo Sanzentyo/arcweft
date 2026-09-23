@@ -306,6 +306,8 @@ pub enum FinalSemanticAnalysisError {
     DiagnosticSourceMismatch,
     #[error("semantic effect row is not closed")]
     OpenEffectRow,
+    #[error(transparent)]
+    EffectRow(#[from] crate::effect_row::EffectRowError),
     #[error(
         "terminal effect-row projection for checked callable {checked:?} remains pending at group {group:?}"
     )]

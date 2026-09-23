@@ -23,6 +23,7 @@ use arcweft_lang_hir::{
 
 use crate::{
     callable::{CallTargetFacts, CheckedCallableCatalog, CheckedCallableDeclaration},
+    effect_row::{DecisionControl, DecisionWork, EffectRow},
     effects::{EffectId, EffectSet},
 };
 
@@ -33,11 +34,21 @@ use super::{
 };
 
 /// One typed execution fold before final project-call rows are closed.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 struct PreparedExecutionEffectRow {
-    effects: EffectSet,
+    effects: EffectRow,
     expressions: BTreeSet<ExprId>,
     direct_suspension: bool,
+}
+
+impl Default for PreparedExecutionEffectRow {
+    fn default() -> Self {
+        Self {
+            effects: EffectRow::closed(EffectSet::new()),
+            expressions: BTreeSet::new(),
+            direct_suspension: false,
+        }
+    }
 }
 
 /// Transaction-local executable row consumed while attached-default
@@ -77,11 +88,34 @@ impl PreparedExecutableSuspensionRow {
 }
 
 impl PreparedExecutionEffectRow {
-    fn union_with(&mut self, other: &Self) {
-        self.effects.union_with(&other.effects);
+    fn union_with(
+        &mut self,
+        other: &Self,
+        control: FinalSemanticAnalysisControl<'_>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.effects = union_effect_rows(&self.effects, &other.effects, control)?;
         self.expressions.extend(other.expressions.iter().copied());
         self.direct_suspension |= other.direct_suspension;
+        Ok(())
     }
+}
+
+struct EffectRowUnionControl<'a>(FinalSemanticAnalysisControl<'a>);
+
+impl DecisionControl for EffectRowUnionControl<'_> {
+    type Error = FinalSemanticAnalysisError;
+
+    fn charge(&mut self, _: DecisionWork) -> Result<(), Self::Error> {
+        self.0.check()
+    }
+}
+
+pub(crate) fn union_effect_rows(
+    left: &EffectRow,
+    right: &EffectRow,
+    control: FinalSemanticAnalysisControl<'_>,
+) -> Result<EffectRow, FinalSemanticAnalysisError> {
+    left.union(right, &mut EffectRowUnionControl(control))
 }
 
 /// One latent closure body and its exact selected expression inventory.
@@ -96,7 +130,7 @@ impl PreparedClosureExecutionEffectRow {
         self.owner
     }
 
-    pub(crate) const fn effects(&self) -> &EffectSet {
+    pub(crate) const fn effects(&self) -> &EffectRow {
         &self.row.effects
     }
 
@@ -131,7 +165,7 @@ impl PreparedExecutionEffectCatalog {
     pub(crate) fn declaration_effects(
         &self,
         declaration: &CallableDeclarationKey,
-    ) -> Option<&EffectSet> {
+    ) -> Option<&EffectRow> {
         self.declarations.get(declaration).map(|row| &row.effects)
     }
 
@@ -156,7 +190,7 @@ impl PreparedExecutionEffectCatalog {
     pub(crate) fn item_effects(
         &self,
         item: arcweft_lang_hir::identity::ItemId,
-    ) -> Option<&EffectSet> {
+    ) -> Option<&EffectRow> {
         self.items.get(&item).map(|row| &row.effects)
     }
 
@@ -178,7 +212,7 @@ impl PreparedExecutionEffectCatalog {
     pub(crate) fn replace_item_effects(
         &mut self,
         item: arcweft_lang_hir::identity::ItemId,
-        effects: EffectSet,
+        effects: EffectRow,
     ) -> Result<(), FinalSemanticAnalysisError> {
         let row = self
             .items
@@ -208,6 +242,7 @@ pub(crate) struct PreparedExecutionEffectInput<'a> {
     pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     pub(crate) topology: &'a HirProjectEvaluationTopology,
     pub(crate) selected: &'a CheckedSelectedExpressionGraph,
+    pub(crate) call_effects: &'a BTreeMap<ExprId, EffectRow>,
     pub(crate) expressions: &'a [(ExprId, PreparedExpressionFact)],
     pub(crate) statements: &'a [(StmtId, PreparedStatementPayload)],
     pub(crate) control: FinalSemanticAnalysisControl<'a>,
@@ -226,6 +261,7 @@ pub(crate) struct PreparedDeclarationExecutionEffectInput<'a> {
     pub(crate) modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     pub(crate) topology: &'a HirProjectEvaluationTopology,
     pub(crate) selected: &'a arcweft_lang_hir::project::HirSelectedDeclarationExpressionGraph,
+    pub(crate) call_effects: &'a BTreeMap<ExprId, EffectRow>,
     pub(crate) expressions: &'a [(ExprId, PreparedExpressionFact)],
     pub(crate) statements: &'a [(StmtId, PreparedStatementPayload)],
     pub(crate) control: FinalSemanticAnalysisControl<'a>,
@@ -241,6 +277,7 @@ pub(crate) fn prepare_declaration_execution_effects(
         input.modules,
         input.topology,
         PreparedEffectSelection::Declaration(input.selected),
+        input.call_effects,
         input.expressions,
         input.statements,
         input.control,
@@ -278,6 +315,7 @@ struct PreparedExecutionEffectSealer<'a> {
     modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
     topology: &'a HirProjectEvaluationTopology,
     selected: PreparedEffectSelection<'a>,
+    call_effects: &'a BTreeMap<ExprId, EffectRow>,
     expression_facts: BTreeMap<ExprId, &'a PreparedExpressionFact>,
     statement_facts: BTreeMap<StmtId, &'a PreparedStatementPayload>,
     expression_rows: BTreeMap<ExprId, PreparedExecutionEffectRow>,
@@ -297,6 +335,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             input.modules,
             input.topology,
             PreparedEffectSelection::Project(input.selected),
+            input.call_effects,
             input.expressions,
             input.statements,
             input.control,
@@ -307,6 +346,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         modules: &'a BTreeMap<HirModuleId, &'a HirModule>,
         topology: &'a HirProjectEvaluationTopology,
         selection: PreparedEffectSelection<'a>,
+        call_effects: &'a BTreeMap<ExprId, EffectRow>,
         expressions: &'a [(ExprId, PreparedExpressionFact)],
         statements: &'a [(StmtId, PreparedStatementPayload)],
         control: FinalSemanticAnalysisControl<'a>,
@@ -347,6 +387,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             modules,
             topology,
             selected: selection,
+            call_effects,
             expression_facts,
             statement_facts,
             expression_rows: BTreeMap::new(),
@@ -378,7 +419,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                     }
                     let mut row = PreparedExecutionEffectRow::default();
                     for root in body.roots() {
-                        row.union_with(&self.fold_body(root.projection())?);
+                        row.union_with(&self.fold_body(root.projection())?, self.control)?;
                     }
                     if self
                         .declarations
@@ -392,12 +433,12 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                         self.items
                             .entry(body.source_item())
                             .or_default()
-                            .union_with(&row);
+                            .union_with(&row, self.control)?;
                     }
                 }
                 let mut item_row = self.items.remove(&entry.item()).unwrap_or_default();
                 for root in entry.roots() {
-                    item_row.union_with(&self.fold_body(root.projection())?);
+                    item_row.union_with(&self.fold_body(root.projection())?, self.control)?;
                 }
                 self.items.insert(entry.item(), item_row);
             }
@@ -416,7 +457,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         self.active_declaration = Some(declaration.clone());
         let mut row = PreparedExecutionEffectRow::default();
         for root in topology.body().roots() {
-            row.union_with(&self.fold_body(root.projection())?);
+            row.union_with(&self.fold_body(root.projection())?, self.control)?;
         }
         self.active_declaration = None;
         self.declarations.insert(declaration.clone(), row);
@@ -471,7 +512,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 HirBodyChild::Expression(owner) => self.seal_expression(owner)?,
                 HirBodyChild::Statement(owner) => self.seal_statement(owner)?,
             };
-            row.union_with(&child);
+            row.union_with(&child, self.control)?;
         }
         Ok(row)
     }
@@ -496,10 +537,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
             .kind();
         let mut row = PreparedExecutionEffectRow {
-            effects: fact.effects().clone(),
+            effects: EffectRow::closed(fact.effects().clone()),
             expressions: BTreeSet::from([owner]),
             direct_suspension: matches!(kind, HirExprKind::Await(_)),
         };
+        if let Some(call_effects) = self.call_effects.get(&owner) {
+            row.effects = union_effect_rows(&row.effects, call_effects, self.control)?;
+        }
         let latent_callable = matches!(
             fact.checked_resolution(),
             Some(super::CheckedExpressionResolution::ImplicitCallable(_))
@@ -547,7 +591,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 && !independent_computation
                 && !matches!(role, HirExpressionChildRole::ClosureBody)
             {
-                row.union_with(&child_row);
+                row.union_with(&child_row, self.control)?;
             }
         }
         if let Some(body) = kind
@@ -559,7 +603,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 && !latent_callable
                 && !independent_computation
             {
-                row.union_with(&body_row);
+                row.union_with(&body_row, self.control)?;
             }
         }
         let eager_owned_children = matches!(kind, HirExprKind::Await(_));
@@ -576,7 +620,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 },
             };
             if eager_owned_children {
-                row.union_with(&child);
+                row.union_with(&child, self.control)?;
             }
         }
         if !self.active_expressions.remove(&owner)
@@ -622,7 +666,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
                 | HirStatementChild::Type(_)
                 | HirStatementChild::Local(_) => continue,
             };
-            row.union_with(&child);
+            row.union_with(&child, self.control)?;
         }
         for body in kind
             .body_projections()
@@ -630,7 +674,7 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
         {
             let body_row = self.fold_body(body.projection())?;
             if body.role() != &HirStatementBodyRole::On {
-                row.union_with(&body_row);
+                row.union_with(&body_row, self.control)?;
             }
         }
         match self.statement_facts.get(&owner).copied().ok_or(
@@ -639,7 +683,13 @@ impl<'a> PreparedExecutionEffectSealer<'a> {
             },
         )? {
             PreparedStatementPayload::Suspension(_) | PreparedStatementPayload::Yield => {
-                row.effects.insert(EffectId::control_suspend());
+                let mut suspend_effect = EffectSet::new();
+                suspend_effect.insert(EffectId::control_suspend());
+                row.effects = union_effect_rows(
+                    &row.effects,
+                    &EffectRow::closed(suspend_effect),
+                    self.control,
+                )?;
                 row.direct_suspension = true;
             }
             PreparedStatementPayload::HirOwned
@@ -1096,11 +1146,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 Ok(CompletedStatementEffectFold::evaluated_effect(
                     child_effects,
                     effect.application().clone(),
-                    application
-                        .core()
-                        .effects()
-                        .closed_value()
-                        .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
+                    application.core().effects().constant_effects()?,
                 ))
             }
             CheckedStatementPayload::Structural
@@ -1137,13 +1183,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
         if application.core().site().expression() != owner {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        effects.union_with(
-            &application
-                .core()
-                .effects()
-                .closed_value()
-                .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
-        );
+        effects.union_with(&application.core().effects().constant_effects()?);
         Ok(())
     }
 
@@ -1159,7 +1199,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 .declaration_effects
                 .get(declaration)
                 .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if actual.closed_value().as_ref() != Some(completed) {
+            if &actual.constant_effects()? != completed {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }
@@ -1194,7 +1234,7 @@ impl<'a, P: CheckedStatementPayloadSealer> StatementEffectSealer<'a, P> {
                 .callables
                 .closure_at_source(source)
                 .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
-            if row.closed_value().as_ref() != Some(effects) {
+            if &row.constant_effects()? != effects {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             }
         }

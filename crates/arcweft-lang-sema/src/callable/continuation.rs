@@ -92,6 +92,8 @@ impl CheckedCallSite {
 pub(crate) enum CallConstraintInvariant {
     #[error(transparent)]
     Instantiation(#[from] crate::types::TypeInstantiationError),
+    #[error(transparent)]
+    EffectRow(#[from] crate::effect_row::EffectRowError),
     #[error("call argument mapping was not sealed by its producer")]
     MalformedMapperSeal,
     #[error("callable generic schema inventory is malformed")]
@@ -1138,6 +1140,7 @@ impl<P, U> PreparedCallGraph<P, U> {
         reference: &PreparedCallResultRef,
         checked: &super::CheckedCallableId,
         row: crate::effect_row::EffectRow,
+        result_schema: Option<super::CallableResultSchema>,
     ) -> Result<(), CallConstraintInvariant> {
         let active = self
             .active_deltas
@@ -1149,6 +1152,7 @@ impl<P, U> PreparedCallGraph<P, U> {
             reference,
             checked,
             row,
+            result_schema,
         )
     }
 

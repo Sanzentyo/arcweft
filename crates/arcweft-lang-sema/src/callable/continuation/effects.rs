@@ -5,8 +5,8 @@ use super::{
 };
 use crate::{
     callable::{
-        CallableCandidateId, CallableGroupIndex, CallableSignatureSchemaDigest, CheckedCallableId,
-        PreparedResolvedCallable,
+        CallableCandidateId, CallableGroupIndex, CallableResultSchema,
+        CallableSignatureSchemaDigest, CheckedCallableId, PreparedResolvedCallable,
     },
     effect_row::EffectRow,
 };
@@ -33,6 +33,7 @@ struct PreparedEffectRequest {
     checked: CheckedCallableId,
     group: CallableGroupIndex,
     row: Option<EffectRow>,
+    result_schema: Option<CallableResultSchema>,
 }
 
 /// The inferred preparation row has exactly one owner. Candidate graph
@@ -69,6 +70,21 @@ impl<'a> PreparedCallableEffectView<'a> {
             })
             .or_else(|| self.live.row(checked))
     }
+
+    pub(crate) fn result_schema(
+        self,
+        checked: &CheckedCallableId,
+    ) -> Option<&'a CallableResultSchema> {
+        self.extracted
+            .and_then(|delta| {
+                delta.requests.values().find_map(|request| {
+                    (&request.checked == checked)
+                        .then_some(request.result_schema.as_ref())
+                        .flatten()
+                })
+            })
+            .or_else(|| self.live.result_schema(checked))
+    }
 }
 
 impl PreparedEffectDelta {
@@ -99,6 +115,17 @@ impl PreparedCallableEffectRows {
         self.requests.values().find_map(|request| {
             (&request.checked == checked)
                 .then_some(request.row.as_ref())
+                .flatten()
+        })
+    }
+
+    pub(crate) fn result_schema(
+        &self,
+        checked: &CheckedCallableId,
+    ) -> Option<&CallableResultSchema> {
+        self.requests.values().find_map(|request| {
+            (&request.checked == checked)
+                .then_some(request.result_schema.as_ref())
                 .flatten()
         })
     }
@@ -154,6 +181,7 @@ impl PreparedCallableEffectRows {
                 checked: checked.clone(),
                 group: candidate.call_group(),
                 row: None,
+                result_schema: None,
             },
         );
         Ok(PreparedCallResultRef {
@@ -169,6 +197,7 @@ impl PreparedCallableEffectRows {
         reference: &PreparedCallResultRef,
         checked: &CheckedCallableId,
         row: EffectRow,
+        result_schema: Option<CallableResultSchema>,
     ) -> Result<(), CallConstraintInvariant> {
         if !Arc::ptr_eq(issuer, &reference.issuer) {
             return Err(CallConstraintInvariant::ForeignPreparedIssuer);
@@ -180,10 +209,11 @@ impl PreparedCallableEffectRows {
             .requests
             .get_mut(&reference.request)
             .ok_or(CallConstraintInvariant::MissingOrStalePreparedNode)?;
-        if &request.checked != checked || request.row.is_some() {
+        if &request.checked != checked || request.row.is_some() || request.result_schema.is_some() {
             return Err(CallConstraintInvariant::CheckedCallableAuthorityMismatch);
         }
         request.row = Some(row);
+        request.result_schema = result_schema;
         Ok(())
     }
 

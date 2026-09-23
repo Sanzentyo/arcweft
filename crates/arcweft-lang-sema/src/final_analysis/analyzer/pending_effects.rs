@@ -18,7 +18,9 @@ use crate::{
 
 use super::{
     Analyzer,
+    callable_effect_graph::prepared_fixed_call_effect_rows,
     executable_ingress::{PreparedExecutableDeclarationInventory, PreparedExecutableIngressFacts},
+    items::{inferred_callable_result_schema, result_schema_has_omitted_function_rows},
 };
 
 impl Analyzer<'_, '_, '_> {
@@ -35,7 +37,10 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
                 owner: site.expression(),
             })?;
-        if matches!(result, CallableProjection::Pending(_)) {
+        if matches!(result, CallableProjection::Pending(_))
+            || (result_schema_has_omitted_function_rows(candidate.schema())
+                && effects.inferred_result_schema().is_none())
+        {
             self.prepare_callable_body_effects(site, candidate)?;
         }
         Ok(())
@@ -46,9 +51,16 @@ impl Analyzer<'_, '_, '_> {
         site: CheckedCallSite,
         candidate: &PreparedResolvedCallable,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        let checked = match self.source_callable_terminal_effects(candidate)? {
-            CallableTerminalEffectProjection::Known(_) => return Ok(()),
+        let terminal = self.source_callable_terminal_effects(candidate)?;
+        let needs_result = result_schema_has_omitted_function_rows(candidate.schema())
+            && terminal.inferred_result_schema().is_none();
+        let checked = match terminal {
+            CallableTerminalEffectProjection::Known { .. } if !needs_result => return Ok(()),
             CallableTerminalEffectProjection::Pending(checked) => checked.clone(),
+            CallableTerminalEffectProjection::Known { .. } => candidate
+                .checked()
+                .cloned()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?,
         };
         let CheckedCallableDeclaration::Project(declaration) = checked.declaration() else {
             return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
@@ -69,8 +81,16 @@ impl Analyzer<'_, '_, '_> {
         self.pipe_stack = pipes;
         self.function_site_stack = function_sites;
         let row = prepared?;
+        let result_schema = inferred_callable_result_schema(
+            &self.modules,
+            self.symbols
+                .callable(&declaration)
+                .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?,
+            candidate.schema(),
+            self.facts.expressions(),
+        )?;
         self.facts
-            .complete_effect_projection(&reference, &checked, row)
+            .complete_effect_projection(&reference, &checked, row, result_schema)
             .map_err(FinalSemanticAnalysisError::from)
     }
 
@@ -92,6 +112,7 @@ impl Analyzer<'_, '_, '_> {
             .facts
             .prepared_calls()
             .map_err(FinalSemanticAnalysisError::from)?;
+        let call_effects = prepared_fixed_call_effect_rows(graph, self.control)?;
         let selected = self.executable.selected_declaration_expression_graph(
             &self.topology,
             declaration,
@@ -124,6 +145,7 @@ impl Analyzer<'_, '_, '_> {
                 modules: &self.modules,
                 topology: &self.topology,
                 selected: &selected,
+                call_effects: &call_effects,
                 expressions: &expressions,
                 statements: &statements,
                 control: self.control,
@@ -153,21 +175,28 @@ impl Analyzer<'_, '_, '_> {
                 (
                     node.site(),
                     Arc::clone(node.prefix().application().selected_shared()),
+                    node.prefix().application().effect_projection(),
                 )
             })
             .collect::<Vec<_>>();
-        for (site, candidate) in calls {
+        for (site, candidate, effect_projection) in calls {
             self.prepare_callable_body_effects(site, &candidate)?;
-            let CallableTerminalEffectProjection::Known(row) =
+            let CallableTerminalEffectProjection::Known { effects: row, .. } =
                 self.source_callable_terminal_effects(&candidate)?
             else {
                 return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
             };
-            effects.union_with(
-                &row.closed_value()
-                    .ok_or(FinalSemanticAnalysisError::OpenEffectRow)?,
-            );
+            let row = effect_projection.specialize(&row).map_err(|_| {
+                FinalSemanticAnalysisError::CallResolutionFailed {
+                    owner: site.expression(),
+                }
+            })?;
+            effects = crate::final_analysis::statement_effects::union_effect_rows(
+                &effects,
+                &row,
+                self.control,
+            )?;
         }
-        Ok(EffectRow::closed(effects))
+        Ok(effects)
     }
 }

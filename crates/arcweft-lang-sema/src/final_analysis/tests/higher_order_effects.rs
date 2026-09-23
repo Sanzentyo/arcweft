@@ -504,6 +504,7 @@ fn both_and_keep(first: i64 -> i64, second: i64 -> i64, value: i64) -> (i64, i64
     (second(first(value)), first)
 }
 flow main() -> i64 {
+    let pure = both_and_keep(|value: i64| value, |value: i64| value, 20i64)
     let result = both_and_keep(|value: i64| reader(value), |value: i64| writer(value), 42i64)
     return 42i64
 }
@@ -513,26 +514,65 @@ flow main() -> i64 {
     let analysis = analyze(&fixture).expect("invocation union does not widen an escaping callback");
     assert_eq!(
         application_rows(&analysis, "both_and_keep"),
-        [vec!["fs.read".to_owned(), "fs.write".to_owned()]]
+        [
+            Vec::<String>::new(),
+            vec!["fs.read".to_owned(), "fs.write".to_owned()]
+        ]
     );
     let applications = project_applications(&analysis, "both_and_keep");
-    let [(_, application)] = applications.as_slice() else {
-        panic!("one selected application");
-    };
-    let Some(TypeKind::Tuple(result)) = application.result().value_type() else {
-        panic!("the result retains both tuple fields");
-    };
-    let [TypeKind::I64, TypeKind::Function { effects, .. }] = result.as_slice() else {
-        panic!("the second tuple field is the original callback");
-    };
-    assert!(effects.is_closed());
+    assert_eq!(applications.len(), 2);
+    let mut returned_rows = applications
+        .iter()
+        .map(|(_, application)| {
+            let Some(TypeKind::Tuple(result)) = application.result().value_type() else {
+                panic!("the result retains both tuple fields");
+            };
+            let [TypeKind::I64, TypeKind::Function { effects, .. }] = result.as_slice() else {
+                panic!("the second tuple field is the original callback");
+            };
+            assert!(effects.is_closed());
+            effects
+                .closed_value()
+                .as_ref()
+                .expect("closed returned callback row")
+                .to_labels()
+        })
+        .collect::<Vec<_>>();
+    returned_rows.sort();
     assert_eq!(
-        effects
-            .closed_value()
-            .as_ref()
-            .expect("closed effect row")
-            .to_labels(),
-        ["fs.read"]
+        returned_rows,
+        [Vec::<String>::new(), vec!["fs.read".to_owned()]]
+    );
+    let writer_effect = crate::effects::EffectId::parse("fs.write").expect("effect identity");
+    let (_, application) = applications
+        .iter()
+        .find(|(_, application)| {
+            application
+                .core()
+                .effects()
+                .closed_value()
+                .is_some_and(|row| row.contains(&writer_effect))
+        })
+        .expect("effectful selected application");
+    let checked_id = analysis
+        .checked_callables()
+        .checked_for_candidate(application.core().candidates().selected().id())
+        .expect("checked callable identity");
+    let checked = analysis
+        .checked_callables()
+        .callable(checked_id)
+        .expect("published checked callable");
+    assert!(checked.inferred_result_schema().is_some());
+    let Some(TypeKind::Tuple(checked_result)) = checked.result_schema().value_type() else {
+        panic!("the checked callable publishes its inferred result schema");
+    };
+    let [TypeKind::I64, TypeKind::Function { effects, .. }] = checked_result.as_slice() else {
+        panic!("the checked result retains the callback position");
+    };
+    assert!(effects.is_known());
+    assert!(
+        !effects.is_closed(),
+        "the declaration keeps its symbolic row"
     );
 }
 

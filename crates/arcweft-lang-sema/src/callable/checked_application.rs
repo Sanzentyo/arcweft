@@ -704,6 +704,7 @@ impl ResolvedCallableBase {
         current: CallableGroupIndex,
         solution: &FrozenCallTypeSolution,
         terminal_effects: &EffectRow,
+        inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<CallableResultSchema, CallConstraintInvariant> {
         let next = CallableGroupIndex::try_from_usize(
             current
@@ -717,7 +718,7 @@ impl ResolvedCallableBase {
             ResolvedCallableBaseInstantiation::Extension { group, .. } if *group == next
         ) || self.schema().group(next).is_none()
         {
-            return match self.schema().result_schema() {
+            return match inferred_result_schema.unwrap_or_else(|| self.schema().result_schema()) {
                 CallableResultSchema::Value(result) => solution
                     .instantiate_result(result)
                     .map(CallableResultSchema::Value),
@@ -1106,6 +1107,18 @@ impl FrozenCallTypeSolution {
         ),
     > {
         self.solution.effect_bindings()
+    }
+
+    pub(crate) fn specialize_effect_row(
+        &self,
+        row: &EffectRow,
+    ) -> Result<EffectRow, CallConstraintInvariant> {
+        let substitutions = EffectSubstitution::from_rows(
+            self.solution
+                .effect_bindings()
+                .map(|(parameter, value)| (parameter.value().clone(), value.value().clone())),
+        );
+        row.resolve_partial(&substitutions).map_err(Into::into)
     }
     pub fn deferred(&self) -> &[CheckedDeferredContinuationParameter] {
         &self.deferred
@@ -2198,7 +2211,8 @@ impl CheckedCallConsumerAdmission {
                     selected.base().result_schema_for_group(
                         current_group,
                         solution,
-                        terminal_effects
+                        terminal_effects,
+                        None,
                     ),
                     Ok(CallableResultSchema::Value(TypeKind::CompileTimeFx(_)))
                 );
@@ -2298,7 +2312,7 @@ impl CheckedCallApplicationCore {
             {
                 EffectRow::closed(crate::effects::EffectSet::new())
             } else {
-                fixed.clone()
+                input.solution.specialize_effect_row(fixed)?
             };
             if expected != input.effects {
                 return Err(CallConstraintInvariant::PreparedSchemaMismatch);
@@ -2580,10 +2594,15 @@ impl CheckedCallApplication {
         core: Arc<CheckedCallApplicationCore>,
         expected: CheckedCallResultSeal,
         terminal_effects: &EffectRow,
+        inferred_result_schema: Option<&CallableResultSchema>,
     ) -> Result<Self, CallConstraintInvariant> {
         let base = core.candidates().selected().base();
-        let projected =
-            base.result_schema_for_group(core.current_group(), core.solution(), terminal_effects)?;
+        let projected = base.result_schema_for_group(
+            core.current_group(),
+            core.solution(),
+            terminal_effects,
+            inferred_result_schema,
+        )?;
         let result = match (base.next_group_for(core.current_group()), expected) {
             (None, CheckedCallResultSeal::Value { prepared }) if matches!(&projected, CallableResultSchema::Value(value) if prepared == *value) =>
             {

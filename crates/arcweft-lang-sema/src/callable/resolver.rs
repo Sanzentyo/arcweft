@@ -1364,7 +1364,10 @@ impl<'a> CheckedCallResolverAuthority<'a> {
                 .schema()
                 .effects()
                 .fixed_row()
-                .map(CallableTerminalEffectProjection::Known)
+                .map(|effects| CallableTerminalEffectProjection::Known {
+                    effects,
+                    result_schema: None,
+                })
                 .ok_or(super::CheckedCallableLookupError::Missing);
         };
         let actual = self.checked_for_candidate(candidate.id())?;
@@ -1384,14 +1387,25 @@ impl<'a> CheckedCallResolverAuthority<'a> {
                 let row = pending
                     .known_exposed_row()
                     .or_else(|| effects.and_then(|rows| rows.row(expected)));
+                let result_schema = pending
+                    .inferred_result_schema()
+                    .or_else(|| effects.and_then(|rows| rows.result_schema(expected)));
                 Ok(row.map_or_else(
                     || CallableTerminalEffectProjection::Pending(expected),
-                    CallableTerminalEffectProjection::Known,
+                    |effects| CallableTerminalEffectProjection::Known {
+                        effects,
+                        result_schema,
+                    },
                 ))
             }
-            Self::Frozen(catalog) => catalog
-                .callable(expected)
-                .map(|facts| CallableTerminalEffectProjection::Known(facts.exposed_row())),
+            Self::Frozen(catalog) => {
+                catalog
+                    .callable(expected)
+                    .map(|facts| CallableTerminalEffectProjection::Known {
+                        effects: facts.exposed_row(),
+                        result_schema: facts.inferred_result_schema(),
+                    })
+            }
         }
     }
 
