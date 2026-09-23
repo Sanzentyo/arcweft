@@ -187,10 +187,9 @@ pub fn emit_cargo_rerun_hints(options: &MetadataBuildOptions) {
 mod tests {
     use super::*;
     use arcweft_rust_abi::{
-        ArcweftRustFunction, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
-        ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
-        ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
-        ArcweftRustTypeRef,
+        ArcweftRustFunction, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustParam,
+        ArcweftRustPurity, ArcweftRustStructShape, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+        ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef,
     };
 
     #[test]
@@ -204,6 +203,7 @@ mod tests {
             metadata_hash: None,
         })
         .with_function(ArcweftRustFunction {
+            role: Default::default(),
             name: "mini_games.truck.score_to_rank".to_owned(),
             rust_path: "truck_game::score_to_rank".to_owned(),
             params: vec![ArcweftRustParam {
@@ -231,7 +231,7 @@ mod tests {
     }
 
     #[test]
-    fn producer_changes_deterministic_json_and_hash() {
+    fn structural_shape_changes_deterministic_json_and_hash() {
         let package = ArcweftRustPackage {
             id: ArcweftRustPackageId::try_new("truck_game").expect("valid package ID"),
             version: "0.1.0".to_owned(),
@@ -242,24 +242,23 @@ mod tests {
                 ArcweftRustTypePathSegment::try_new("Model").expect("valid path segment")
             ])
             .expect("non-empty path");
-        let manifest = |producer: &str| {
+        let manifest = |shape| {
             ArcweftRustManifest::new(package.clone()).with_type(ArcweftRustTypeDecl {
+                data_policy: None,
                 path: type_path.clone(),
                 rust_path: "truck_game::Model".to_owned(),
-                opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(producer)
-                    .expect("valid fixture producer"),
                 parameters: Vec::new(),
-                kind: ArcweftRustTypeKind::Struct {
-                    shape: ArcweftRustStructShape::Unit,
-                },
+                kind: ArcweftRustTypeKind::Struct { shape },
             })
         };
-        let left = manifest("fixture.rust-abi.left")
+        let left = manifest(ArcweftRustStructShape::Unit)
             .to_json_pretty()
             .expect("valid JSON");
-        let right = manifest("fixture.rust-abi.right")
-            .to_json_pretty()
-            .expect("valid JSON");
+        let right = manifest(ArcweftRustStructShape::Tuple {
+            fields: vec![ArcweftRustTypeRef::I32],
+        })
+        .to_json_pretty()
+        .expect("valid JSON");
 
         assert_ne!(left, right);
         assert_ne!(
